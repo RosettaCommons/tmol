@@ -50,7 +50,7 @@
     <script>DOCUMENTATION_OPTIONS.pagename = 'user_guide/development';</script>
     <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
     <script src="../_static/tmol-explorers.js?v=089c5f52"></script>
-    <link rel="canonical" href="https://uw-ipd.github.io/tmol/latest/user_guide/development.html" />
+    <link rel="canonical" href="https://RosettaCommons.github.io/tmol/latest/user_guide/development.html" />
     <link rel="icon" href="../_static/favicon.ico"/>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -238,7 +238,7 @@
           
           
           
-          <a href="https://github.com/uw-ipd/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
         </li>
 </ul></div>
       
@@ -365,7 +365,7 @@
           
           
           
-          <a href="https://github.com/uw-ipd/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
         </li>
 </ul></div>
         
@@ -454,7 +454,7 @@
 <p>For build requirements and platform support, see <a class="reference internal" href="../installation.html"><span class="doc">installation</span></a>.</p>
 <section id="local-setup">
 <h2>Local setup<a class="headerlink" href="#local-setup" title="Link to this heading">#</a></h2>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/uw-ipd/tmol.git
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/RosettaCommons/tmol.git
 <span class="nb">cd</span><span class="w"> </span>tmol
 python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"torch&gt;=2.14"</span><span class="w"> </span><span class="s2">"scikit-build-core&gt;=0.10"</span><span class="w"> </span><span class="s2">"cmake&gt;=3.24,&lt;4"</span><span class="w"> </span><span class="s2">"pybind11&gt;=2.12"</span><span class="w"> </span>ninja<span class="w"> </span>packaging
 python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--no-build-isolation<span class="w"> </span>-e<span class="w"> </span><span class="s2">".[dev]"</span>
@@ -605,11 +605,22 @@ apptainer<span class="w"> </span>run<span class="w"> </span>--nv<span class="w">
 </section>
 <section id="ci">
 <h2>CI<a class="headerlink" href="#ci" title="Link to this heading">#</a></h2>
-<p>GitHub Actions runs linting, the Linux x86-64, Linux aarch64, and Apple Silicon
-CPU suites, and CPU documentation builds on hosted runners. CUDA tests,
-benchmarks, and the CUDA-only tutorial smoke tests use the self-hosted DIGS
-runner. PR docs builds upload rendered HTML artifacts; same-repository PRs also
-publish previews under the Pages site.</p>
+<p>GitHub Actions runs linting and the Linux x86-64, Linux aarch64, and Apple Silicon
+CPU suites automatically on pushes to <code class="docutils literal notranslate"><span class="pre">main</span></code> and pull requests. Documentation
+also builds on hosted CPU runners.</p>
+<p>Maintainers with write, maintain, or admin access can dispatch <strong>GPU CI</strong> from
+<code class="docutils literal notranslate"><span class="pre">main</span></code>, selecting a pull request number or a branch, tag, or commit. It resolves
+an immutable commit, checks the initiating and rerunning users’ current access,
+and reports a separate <code class="docutils literal notranslate"><span class="pre">GPU</span> <span class="pre">CI</span></code> status on that commit. Rerun all jobs when
+retrying so authorization runs again. CUDA tests use the existing Slurm and
+Apptainer configuration; wheel and release validation use the same access gate.</p>
+<p>Before registering a self-hosted GPU runner for this public repository, restrict
+its organization runner group to this repository and the trusted workflows
+<code class="docutils literal notranslate"><span class="pre">RosettaCommons/tmol/.github/workflows/gpu-ci.yml&#64;refs/heads/main</span></code> and
+<code class="docutils literal notranslate"><span class="pre">RosettaCommons/tmol/.github/workflows/_test_gpu_wheel.yml&#64;refs/heads/main</span></code>.
+Workflow permission checks alone cannot stop a pull request from adding another
+self-hosted job. Keep GPU runners unavailable until this restriction is in place.
+Use a separate registration and work directory when sharing an existing host.</p>
 </section>
 <section id="native-interface">
 <h2>Native interface<a class="headerlink" href="#native-interface" title="Link to this heading">#</a></h2>
