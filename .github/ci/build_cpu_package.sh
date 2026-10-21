@@ -5,7 +5,7 @@ set -euo pipefail
 python -m venv .venv
 source .venv/bin/activate
 
-python -m pip install --upgrade pip uv
+python -m pip install --upgrade "pip>=26.2.2" "uv>=0.13.4"
 if [ "$(uname -s)" = Darwin ]; then
   # PyPI supplies the native Apple Silicon build; the PyTorch CPU index is
   # specific to Linux and Windows.

@@ -212,7 +212,7 @@ jobs:
                 "${PYBIN}" -m venv "${VENV}"
               fi
             fi
-            "${VENV}/bin/pip" install --upgrade pip
+            "${VENV}/bin/pip" install --upgrade "pip>=26.2.2"
             echo "${VENV}" > /tmp/tmol_target_venv
           '
 

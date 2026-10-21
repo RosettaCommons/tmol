@@ -25,10 +25,10 @@ COPY pyproject.toml /opt/tmol_pyproject.toml
 # We use --constraint to respect these versions and avoid conflicts.
 RUN \
     # Upgrade pip
-    python -m pip install --upgrade pip && \
+    python -m pip install --upgrade "pip>=26.2.2" && \
     \
     # Install uv for fast dependency resolution
-    pip install uv && \
+    pip install "uv>=0.13.4" && \
     \
     # Compile dependency list from pyproject.toml (with all extras)
     mv /opt/tmol_pyproject.toml /opt/pyproject.toml && \
@@ -48,6 +48,10 @@ RUN \
     \
     # Install the cleaned requirements
     uv pip install --system --break-system-packages -r /opt/combined_requirements.txt --constraint /etc/pip/constraint.txt && \
+    \
+    # The base image predates the emSign CA removal and its constraint file may pin
+    # an older certifi, so upgrade certifi without the constraint.
+    uv pip install --system --break-system-packages --upgrade "certifi>=2026.10.19" && \
     \
     # Clean up to minimize image size
     uv cache clean && \

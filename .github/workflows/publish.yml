@@ -217,7 +217,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install publication tools
-        run: pip install packaging twine
+        run: |
+          python -m pip install --upgrade "pip>=26.2.2"
+          python -m pip install packaging twine
 
       - name: Download sdist artifact
         uses: actions/download-artifact@v4
@@ -373,7 +375,7 @@ jobs:
               "${DOCS_BASE_URL}/${relative}" --output /tmp/index.html
             cmp "$page" /tmp/index.html
           done
-      - run: python -m pip install twine
+      - run: python -m pip install --upgrade "pip>=26.2.2" && python -m pip install twine
       - name: Upload validated distributions
         env:
           TWINE_USERNAME: __token__
@@ -409,7 +411,7 @@ jobs:
         shell: bash
         run: |
           python -m venv /tmp/tmol-public
-          /tmp/tmol-public/bin/pip install --upgrade pip
+          /tmp/tmol-public/bin/pip install --upgrade "pip>=26.2.2"
           if [ "$RUNNER_OS" = Linux ]; then
             /tmp/tmol-public/bin/pip install 'torch==2.14.*' --index-url https://download.pytorch.org/whl/cpu
           fi

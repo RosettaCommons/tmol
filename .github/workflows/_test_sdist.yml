@@ -35,7 +35,7 @@ jobs:
           run-id: ${{ inputs.candidate-run-id }}
           github-token: ${{ github.token }}
       - name: Install source build tools
-        run: python -m pip install build packaging 'scikit-build-core>=0.10'
+        run: python -m pip install --upgrade "pip>=26.2.2" && python -m pip install build packaging 'scikit-build-core>=0.10'
       - name: Build source distribution without compiling extensions
         if: inputs.candidate-run-id == ''
         run: |
