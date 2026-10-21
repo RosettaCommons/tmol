@@ -62,7 +62,7 @@ def test_complete_tag_candidates_accepted(candidate):
         ("status", "in_progress"),
         ("event", "pull_request"),
         ("head_sha", "other"),
-        ("head_branch", "master"),
+        ("head_branch", "main"),
         ("path", ".github/workflows/ci.yml"),
     ],
 )
