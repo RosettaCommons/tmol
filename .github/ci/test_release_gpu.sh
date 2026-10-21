@@ -9,6 +9,7 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
 bootstrap=$(mktemp -d)
 trap 'rm -rf "$bootstrap"' EXIT
 python3.12 -m venv "$bootstrap/env"
+"$bootstrap/env/bin/python" -m pip install --upgrade "pip>=26.2.2"
 "$bootstrap/env/bin/python" -m pip install packaging
 for backend in cu12 cu13; do
   case "$backend" in

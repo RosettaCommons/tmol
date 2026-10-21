@@ -7,6 +7,7 @@ For an interactive introduction, try the {doc}`score playground <playground>`.
 ## Install and load a protein
 
 ```bash
+python -m pip install --upgrade pip   # pip 26.2.2 or newer
 python -m pip install tmol --only-binary=tmol
 curl -L https://files.rcsb.org/download/1UBQ.pdb -o 1ubq.pdb
 ```

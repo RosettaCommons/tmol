@@ -23,7 +23,7 @@ jobs:
       - name: Install pinned PyTorch dependencies in a fresh environment
         run: |
           python -m venv /tmp/torch-check
-          /tmp/torch-check/bin/python -m pip install --upgrade pip
+          /tmp/torch-check/bin/python -m pip install --upgrade "pip>=26.2.2"
           /tmp/torch-check/bin/python -m pip install 'torch==${{ matrix.torch }}' \
             --index-url 'https://download.pytorch.org/whl/${{ matrix.cuda }}'
       - name: Verify metadata repair, all dependencies and native loading

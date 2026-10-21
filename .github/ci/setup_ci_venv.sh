@@ -32,6 +32,9 @@ if [ ! -d .venv ]; then
   "$PYTHON_BIN" -m venv --system-site-packages .venv
 fi
 source .venv/bin/activate
-pip install pip --upgrade
-pip install uv
+pip install --upgrade "pip>=26.2.2"
+pip install --upgrade "uv>=0.13.4"
+# The venv sees the image's system site-packages; make sure an old certifi
+# there (which still trusts the withdrawn emSign root) is shadowed.
+pip install --upgrade "certifi>=2026.10.19"
 SETUP

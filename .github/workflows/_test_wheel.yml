@@ -59,7 +59,7 @@ jobs:
           path: base-wheel
           run-id: ${{ inputs.candidate-run-id || github.run_id }}
           github-token: ${{ github.token }}
-      - run: python -m pip install packaging
+      - run: python -m pip install --upgrade "pip>=26.2.2" && python -m pip install packaging
       - name: Inspect Linux native dependencies
         if: runner.os == 'Linux'
         run: |
@@ -91,7 +91,7 @@ jobs:
             'quay.io/pypa/manylinux_2_28_${{ inputs.arch }}' \
             bash -euo pipefail -c '
               /opt/python/cp${{ inputs.python-tag }}-cp${{ inputs.python-tag }}/bin/python -m venv /tmp/smoke
-              /tmp/smoke/bin/pip install --upgrade pip
+              /tmp/smoke/bin/pip install --upgrade "pip>=26.2.2"
               /tmp/smoke/bin/pip install "torch==${{ inputs.torch-package-version }}" \
                 --index-url "${{ inputs.torch-index-url }}"
               if compgen -G "/base-wheel/*.whl" >/dev/null; then
