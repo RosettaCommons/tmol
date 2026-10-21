@@ -39,7 +39,7 @@
   <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=18bd87630a240e9c25be" />
 <link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=18bd87630a240e9c25be" />
 
-    <script src="../_static/documentation_options.js?v=a395f30a"></script>
+    <script src="../_static/documentation_options.js?v=938c9ccc"></script>
     <script src="../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script>let toggleHintShow = 'show code';</script>
@@ -60,7 +60,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="color-scheme" content="light dark"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="0.1.64" />
+  <meta name="docsearch:version" content="0.2.0" />
   
     
     <script src="../_static/searchtools.js"></script>
@@ -892,6 +892,8 @@ source dofs, as specified by the provided DOFMetadata entries.</p>
 and the natm x 3 coordinate frame.  Some of this natm x 9 array is unused
 or is redundant but this is not known by the kinematic module.</p>
 <p>See KinDOF for a description of the internal coordinate representation.</p>
+<p>This class should not be altered after construction. Build it and use it and
+throw it away. Do not update.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="tmol.kinematics.PoseStackKinematicsModule.forward">
 <span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dofs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/tmol/kinematics/_script_modules.html#PoseStackKinematicsModule.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#tmol.kinematics.PoseStackKinematicsModule.forward" title="Link to this definition">#</a></dt>
@@ -940,6 +942,12 @@ registered hooks while the latter silently ignores them.</p>
 equal-length sequences; a batch is applied in one kinematic pass. Movement
 follows the fold forest, so which side of each bond stays fixed depends on
 it; <code class="docutils literal notranslate"><span class="pre">reasonable_fold_forest</span></code> roots each chain at its first residue.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="tmol.kinematics.torsion_labels">
+<span class="sig-prename descclassname"><span class="pre">tmol.kinematics.</span></span><span class="sig-name descname"><span class="pre">torsion_labels</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pose_stack</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kin_module</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pose</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/tmol/kinematics/_pose_stack_kinematics.html#torsion_labels"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#tmol.kinematics.torsion_labels" title="Link to this definition">#</a></dt>
+<dd><p>Labels and kinforest nodes for the named torsions of one pose driven by a bond phi_c.</p>
 </dd></dl>
 
 <dl class="py function">
@@ -1057,6 +1065,7 @@ it; <code class="docutils literal notranslate"><span class="pre">reasonable_fold
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tmol.kinematics.construct_kin_module_data_for_pose"><code class="docutils literal notranslate"><span class="pre">construct_kin_module_data_for_pose()</span></code></a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tmol.kinematics.inverseKin"><code class="docutils literal notranslate"><span class="pre">inverseKin()</span></code></a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tmol.kinematics.set_named_torsions"><code class="docutils literal notranslate"><span class="pre">set_named_torsions()</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tmol.kinematics.torsion_labels"><code class="docutils literal notranslate"><span class="pre">torsion_labels()</span></code></a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tmol.kinematics.validate_fold_forest"><code class="docutils literal notranslate"><span class="pre">validate_fold_forest()</span></code></a></li>
 </ul>
   </nav></div>
@@ -1104,7 +1113,7 @@ it; <code class="docutils literal notranslate"><span class="pre">reasonable_fold
         <div class="footer-item">
 
   <p class="sphinx-version">
-    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.0.
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.1.
   </p>
 </div>
       
