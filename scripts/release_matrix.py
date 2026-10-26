@@ -97,6 +97,9 @@ if __name__ == "__main__":
     }
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("matrix", choices=matrices)
+    parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
     matrix = matrices[args.matrix]()
+    if args.smoke:
+        matrix = [row for row in matrix if row["python-version"] == "3.12"]
     print(json.dumps({"include": matrix}))

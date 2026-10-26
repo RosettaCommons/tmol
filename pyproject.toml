@@ -24,8 +24,9 @@ classifiers = [
 version = "0.2.0"
 
 dependencies = [
-    # Framework-neutral host/runtime dependencies. Tensor backends are explicit
-    # extras so shared chemistry and preparation have one package owner.
+    # Core ML framework.
+    # Stable native C ABI; no PyTorch minor-specific wheels.
+    "torch>=2.11",
     "numpy>=1.25",
     "scipy>=1.13.1",
     # Data structures & serialization
@@ -63,15 +64,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-torch = ["torch>=2.11"]
-jax = ["jax>=0.11.2"]
 cu12 = ["tmol-ops-cu12==0.2.0"]
 cu13 = ["tmol-ops-cu13==0.2.0"]
 dev = [
-    # Development and the current canonical frontend exercise Torch APIs.
-    "torch>=2.11",
-    # Build the dormant XLA FFI adapter from JAX's public header bundle.
-    "jax>=0.11.2",
     # Linters & formatters
     # Keep formatter and linter pins in sync with .pre-commit-config.yaml.
     "black==26.10.0",
@@ -131,9 +126,6 @@ Releases = "https://github.com/uw-ipd/tmol/releases"
 requires = [
     "scikit-build-core>=0.10",
     "torch>=2.14",
-    # Headers only: the installed CPU FFI adapter is linked exclusively to the
-    # framework-neutral common library and is loaded lazily by tmol.jax.
-    "jax>=0.11.2",
     "pybind11>=2.12",
     "ninja",
     "packaging",

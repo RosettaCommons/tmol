@@ -26,11 +26,6 @@ def check(*command, cwd, env=None):
     subprocess.run(list(map(str, command)), cwd=cwd, env=env, check=True)
 
 
-def install_requirement(distribution, version, default_torch):
-    extras = "[torch]" if distribution == "tmol" and default_torch else ""
-    return f"{distribution}{extras}=={version}"
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group(required=True)
@@ -96,7 +91,6 @@ def main():
                 "ninja",
                 "packaging",
                 "pybind11>=2.12",
-                "jax>=0.11.2",
                 cwd=work,
             )
         with serve(work) as url:
@@ -120,7 +114,7 @@ def main():
                 *build,
                 "--report",
                 work / "install.json",
-                install_requirement(distribution, version, args.default_torch),
+                f"{distribution}=={version}",
                 cwd=work,
                 env=dict(os.environ, CMAKE_BUILD_PARALLEL_LEVEL="2"),
             )

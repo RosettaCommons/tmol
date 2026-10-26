@@ -130,12 +130,8 @@ void invoke_boxed(
 }
 struct Library {
   stable::detail::StableLibrary definitions, implementations;
-  std::unique_ptr<stable::detail::StableLibrary> autograd_implementations;
   std::vector<std::string> operators;
-  explicit Library(
-      const char* name,
-      const char* implementation_key = "CompositeExplicitAutograd",
-      const char* autograd_key = nullptr)
+  explicit Library(const char* name)
       : definitions(
             stable::detail::StableLibrary::Kind::FRAGMENT,
             name,
@@ -145,19 +141,9 @@ struct Library {
         implementations(
             stable::detail::StableLibrary::Kind::IMPL,
             name,
-            implementation_key,
+            "CompositeExplicitAutograd",
             __FILE__,
-            __LINE__) {
-    if (autograd_key) {
-      autograd_implementations =
-          std::make_unique<stable::detail::StableLibrary>(
-              stable::detail::StableLibrary::Kind::IMPL,
-              name,
-              autograd_key,
-              __FILE__,
-              __LINE__);
-    }
-  }
+            __LINE__) {}
   void def(const char* schema) { definitions.def(schema); }
   template <class Result, class... Args, Result (*fn)(Args...)>
   void def(
@@ -177,44 +163,30 @@ struct Library {
     }
     definitions.def(signature.c_str());
     operators.push_back(name);
-    auto kernel = [](StableIValue* stack, uint64_t, uint64_t) {
-      invoke_boxed<fn>(stack, fn, std::index_sequence_for<Args...>{});
-    };
-    implementations.impl(name.c_str(), kernel);
-    if (autograd_implementations)
-      autograd_implementations->impl(name.c_str(), kernel);
+    implementations.impl(
+        name.c_str(), [](StableIValue* stack, uint64_t, uint64_t) {
+          invoke_boxed<fn>(stack, fn, std::index_sequence_for<Args...>{});
+        });
   }
 };
-struct Registration {
-  const char* name;
-  void (*bind)(Library&);
-  const char* implementation_key;
-  const char* autograd_key;
-};
+using Registration = std::pair<const char*, void (*)(Library&)>;
 inline auto& registrations() {
   static std::vector<Registration> registry;
   return registry;
 }
 struct Register {
-  Register(
-      const char* name,
-      void (*fn)(Library&),
-      const char* implementation_key = "CompositeExplicitAutograd",
-      const char* autograd_key = nullptr) {
-    registrations().push_back({name, fn, implementation_key, autograd_key});
+  Register(const char* name, void (*fn)(Library&)) {
+    registrations().emplace_back(name, fn);
   }
 };
 inline void bind_libraries(py::module_& m) {
   // Registered kernels must outlive every invocation.
   static std::vector<std::unique_ptr<Library>> libraries;
   py::dict operators;
-  for (auto registration : registrations()) {
-    auto library = std::make_unique<Library>(
-        registration.name,
-        registration.implementation_key,
-        registration.autograd_key);
-    registration.bind(*library);
-    operators[py::str(registration.name)] = py::cast(library->operators);
+  for (auto [name, fn] : registrations()) {
+    auto library = std::make_unique<Library>(name);
+    fn(*library);
+    operators[py::str(name)] = py::cast(library->operators);
     libraries.push_back(std::move(library));
   }
   m.attr("_operators") = operators;
@@ -226,13 +198,7 @@ inline void bind_libraries(py::module_& m) {
   static void bind_##NAME(tmol::native::Library&);                   \
   static tmol::native::Register register_##NAME(#NAME, bind_##NAME); \
   static void bind_##NAME(tmol::native::Library& VAR)
-#define TMOL_CPU_AUTOGRAD_LIBRARY(NAME, VAR)       \
-  static void bind_##NAME(tmol::native::Library&); \
-  static tmol::native::Register register_##NAME(   \
-      #NAME, bind_##NAME, "CPU", "AutogradCPU");   \
-  static void bind_##NAME(tmol::native::Library& VAR)
 #else
 #define TMOL_FN(...) __VA_ARGS__
 #define TMOL_LIBRARY TORCH_LIBRARY
-#define TMOL_CPU_AUTOGRAD_LIBRARY TORCH_LIBRARY
 #endif

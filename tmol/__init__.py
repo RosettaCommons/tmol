@@ -1,4 +1,4 @@
-"""TMol shared molecular-modeling runtime with optional tensor backends."""
+"""TMol: GPU-accelerated molecular modeling with PyTorch."""
 
 # flake8: noqa
 
@@ -7,7 +7,6 @@
 # before any compiled module is imported.
 import contextlib
 from importlib import import_module as _import_module
-from importlib.util import find_spec as _find_spec
 from importlib.metadata import PackageNotFoundError, version
 
 
@@ -23,15 +22,13 @@ def include_paths():
     return [os.path.abspath(os.path.dirname(__file__) + "/..")]
 
 
-if _find_spec("torch") is not None:
-    from tmol._cpp_lib import has_cuda
-    from tmol._load_ext import ensure_compiled_or_jit as _ensure_compiled_or_jit
+from tmol._cpp_lib import has_cuda
+from tmol._load_ext import ensure_compiled_or_jit as _ensure_compiled_or_jit
 
-    # Preserve eager native registration for the installed Torch frontend.
-    # Extensions may not be built yet (e.g. during sdist creation).
-    # Individual compiled.py modules will raise a clear error if needed.
-    with contextlib.suppress(Exception):
-        _ensure_compiled_or_jit()
+# Extensions may not be built yet (e.g. during sdist creation).
+# Individual compiled.py modules will raise a clear error if needed.
+with contextlib.suppress(Exception):
+    _ensure_compiled_or_jit()
 
 try:
     __version__ = version("tmol")
@@ -99,7 +96,6 @@ __all__ = [
 
 _LAZY_ATTRS = {}
 for _module, _names in (
-    ("tmol._cpp_lib", ("has_cuda",)),
     ("tmol.chemical", ("one2three", "three2one")),
     ("tmol.database", ("ParameterDatabase",)),
     (
@@ -186,16 +182,7 @@ def __getattr__(name):
     module_name = _LAZY_ATTRS.get(name)
     if module_name is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    try:
-        value = getattr(_import_module(module_name), name)
-    except ModuleNotFoundError as error:
-        if error.name == "torch":
-            raise ModuleNotFoundError(
-                f"tmol.{name} requires the Torch frontend; install "
-                'tmol with the "torch" extra: pip install "tmol[torch]"',
-                name="torch",
-            ) from error
-        raise
+    value = getattr(_import_module(module_name), name)
     globals()[name] = value
     return value
 
