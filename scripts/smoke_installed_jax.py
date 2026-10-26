@@ -54,6 +54,11 @@ def main():
         from tmol.score import beta2016_score_function as torch_score_function
 
         torch_pose = pose_stack_from_file(args.pdb, torch.device("cpu"))
+        # Torch's loader may place polar hydrogens differently, so compare the
+        # two scorers on one set of coordinates.
+        coordinates = np.asarray(torch_pose.coords.detach())
+        assert coordinates.shape == tuple(pose.coords.shape)
+        energy, gradient = score_function.jitted_value_and_grad(pose)(coordinates)
         torch_coords = torch_pose.coords.detach().clone().requires_grad_(True)
         torch_scorer = torch_score_function(
             torch.device("cpu")
