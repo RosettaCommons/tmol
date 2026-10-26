@@ -105,3 +105,49 @@ def test_pdb_parser_uses_first_model():
     )
     records = parse_pdb(text)
     np.testing.assert_array_equal(records["coords"], [[1.0, 2.0, 3.0]])
+
+
+def test_peptide_bond_impropers_match_independent_geometry(tmp_path):
+    """Planarity impropers across each peptide bond follow plane-normal geometry."""
+    import attrs
+    import jax.numpy as jnp
+    from tmol_jax.score import ScoreType
+
+    pose = pose_stack_from_pdb(_tripeptide_pdb(tmp_path))
+    term = next(
+        t
+        for t in beta2016_score_function().terms
+        if type(t).__name__ == "CartBondedEnergyTerm"
+    )
+    state = term.setup_for_pose_stack(pose)
+    # Twist the peptide groups off planarity, where energies vanish anyway.
+    coords = pose.coords + 0.17 * jnp.sin(jnp.arange(pose.coords.size)).reshape(
+        pose.coords.shape
+    ).astype(pose.coords.dtype)
+    intra_only = attrs.evolve(
+        state, inter_improper_mask=jnp.zeros_like(state.inter_improper_mask)
+    )
+    inter = (
+        term(pose, state, coords)[ScoreType.cart_impropers]
+        - term(pose, intra_only, coords)[ScoreType.cart_impropers]
+    )
+
+    pbt = pose.packed_block_types
+    x = np.asarray(coords, dtype=np.float64)[0]
+
+    def xyz(block, name):
+        block_type = pbt.active_block_types[int(pose.block_type_ind[0, block])]
+        return x[int(pose.block_coord_offset[0, block]) + block_type.atom_to_idx[name]]
+
+    def improper(k2, a, b, c, d):
+        first, second = np.cross(b - a, c - b), np.cross(c - b, d - c)
+        cosine = first @ second / np.linalg.norm(first) / np.linalg.norm(second)
+        return 2 * k2 * (1 - cosine**2)
+
+    expected = 0.0
+    for left in (0, 1):
+        c, n = xyz(left, "C"), xyz(left + 1, "N")
+        expected += improper(9.667, xyz(left, "CA"), n, c, xyz(left, "O"))
+        expected += improper(10.458, xyz(left + 1, "CA"), c, n, xyz(left + 1, "H"))
+    assert expected > 0.01
+    np.testing.assert_allclose(inter[0], expected, rtol=2e-4)

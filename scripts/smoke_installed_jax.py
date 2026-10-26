@@ -50,10 +50,10 @@ def main():
 
     if args.also_torch:
         import torch
-        from tmol.io import pose_stack_from_pdb as torch_pose_from_pdb
+        from tmol.io import pose_stack_from_file
         from tmol.score import beta2016_score_function as torch_score_function
 
-        torch_pose = torch_pose_from_pdb(str(args.pdb), torch.device("cpu"))
+        torch_pose = pose_stack_from_file(args.pdb, torch.device("cpu"))
         torch_coords = torch_pose.coords.detach().clone().requires_grad_(True)
         torch_scorer = torch_score_function(
             torch.device("cpu")
@@ -66,6 +66,9 @@ def main():
         assert torch.isfinite(torch_gradient).all()
         np.testing.assert_allclose(
             np.asarray(energy), torch_energy.detach().cpu().numpy(), atol=5e-3
+        )
+        np.testing.assert_allclose(
+            np.asarray(gradient), torch_gradient.cpu().numpy(), atol=0.05
         )
 
     print(

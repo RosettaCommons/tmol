@@ -66,6 +66,7 @@ reveals the specific offending bonds.
 from __future__ import annotations
 
 from itertools import permutations
+import itertools
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import jax
@@ -151,6 +152,11 @@ class CartBondedTermState:
     inter_torsion_atoms: jnp.ndarray  # int32[P, IT, 4]
     inter_torsion_params: jnp.ndarray  # float32[P, IT, 6]
     inter_torsion_mask: jnp.ndarray  # bool[P, IT]
+
+    # Inter-residue impropers centred on a connection atom — 4 atoms, 6 params.
+    inter_improper_atoms: jnp.ndarray  # int32[P, II, 4]
+    inter_improper_params: jnp.ndarray  # float32[P, II, 6]
+    inter_improper_mask: jnp.ndarray  # bool[P, II]
 
 
 # --------------------------------------------------------------------------- #
@@ -521,51 +527,42 @@ def _path_atoms(path: np.ndarray) -> Tuple[int, ...]:
     return tuple(int(a) for a in path if int(a) != -1)
 
 
-def _build_cart_lat_dbs(
-    res: Any,
-) -> Tuple[
-    Dict[Tuple[str, ...], Tuple[float, float]],
-    Dict[Tuple[str, ...], Tuple[float, float]],
-    Dict[Tuple[str, ...], Tuple[float, ...]],
-]:
-    """Build (length, angle, torsion) name-keyed DB dicts from a residue's
-    cart-bonded params (or ``None``).
+_ParamDBs = Tuple[
+    Dict[Tuple[str, ...], Tuple[float, ...]],  # lengths (x0, K)
+    Dict[Tuple[str, ...], Tuple[float, ...]],  # angles (x0, K)
+    Dict[Tuple[str, ...], Tuple[float, ...]],  # torsions, six-wide
+    Dict[Tuple[str, ...], Tuple[float, ...]],  # impropers, six-wide
+]
 
-    Keys are atom-name tuples; both forward and reversed keys are stored
-    so callers get symmetric lookup. Parameter tuples are ``(x0, K)`` for
-    lengths and angles, and the full 6-wide
-    ``(k1, k2, k3, phi1, phi2, phi3)`` vector for torsions.
+
+def _build_cart_lat_dbs(res: Any) -> _ParamDBs:
+    """Build name-keyed (length, angle, torsion, improper) DB dicts from a
+    residue's cart-bonded params (or ``None``).
+
+    Keys are atom-name tuples in their authored orientation; a ``+`` prefix
+    marks an atom of the partner residue across a connection. Parameter
+    tuples are ``(x0, K)`` for lengths and angles, and the full 6-wide
+    ``(k1, k2, k3, phi1, phi2, phi3)`` vector for torsions and impropers.
     """
-    ldb: Dict[Tuple[str, ...], Tuple[float, float]] = {}
-    adb: Dict[Tuple[str, ...], Tuple[float, float]] = {}
-    tdb: Dict[Tuple[str, ...], Tuple[float, ...]] = {}
     if res is None:
-        return ldb, adb, tdb
-    ldb = {_length_key(p): (p.x0, p.K) for p in res.length_parameters}
-    adb = {_angle_key(p): (p.x0, p.K) for p in res.angle_parameters}
-    tdb = {_torsion_key(p): _cos3_vals(p) for p in res.torsion_parameters}
-    return ldb, adb, tdb
+        return {}, {}, {}, {}
+    return (
+        {_length_key(p): (p.x0, p.K) for p in res.length_parameters},
+        {_angle_key(p): (p.x0, p.K) for p in res.angle_parameters},
+        {_torsion_key(p): _cos3_vals(p) for p in res.torsion_parameters},
+        {_torsion_key(p): _cos3_vals(p) for p in res.improper_parameters},
+    )
 
 
-def _build_cart_dbs_for_residue(rt: Any, cart_db: Any) -> Tuple[
-    Dict[Tuple[str, ...], Tuple[float, float]],
-    Dict[Tuple[str, ...], Tuple[float, float]],
-    Dict[Tuple[str, ...], Tuple[float, ...]],
-]:
-    """Per-residue (length, angle, torsion) name-keyed DB dicts.
+def _build_cart_dbs_for_residue(rt: Any, cart_db: Any) -> _ParamDBs:
+    """Per-residue name-keyed DB dicts.
 
     Uses current exact-variant parameter selection.
     """
     return _build_cart_lat_dbs(cart_db.residue_params.get(_parameter_name(rt, cart_db)))
 
 
-def _build_cart_wildcard_dbs(
-    cart_db: Any,
-) -> Tuple[
-    Dict[Tuple[str, ...], Tuple[float, float]],
-    Dict[Tuple[str, ...], Tuple[float, float]],
-    Dict[Tuple[str, ...], Tuple[float, ...]],
-]:
+def _build_cart_wildcard_dbs(cart_db: Any) -> _ParamDBs:
     """``wildcard`` DB dicts (same shape as :func:`_build_cart_dbs_for_residue`)."""
     return _build_cart_lat_dbs(cart_db.residue_params.get("wildcard"))
 
@@ -581,7 +578,7 @@ def _inter_residue_subgraphs_for_pair(
     res_dbs_B,
 ):
     """Match native connection-path traversal and explicit '+' atom ownership."""
-    output = ([], [], [])
+    output = ([], [], [], [])
     # Native scoring visits each directed connection. Parameter keys retain
     # their authored orientation; a '+' marks the partner residue's atoms.
     for reverse in (False, True):
@@ -602,6 +599,32 @@ def _inter_residue_subgraphs_for_pair(
                 atoms = path_a + path_b
                 sides = (reverse,) * len(path_a) + (not reverse,) * len(path_b)
                 output[category].append((atoms, sides, params))
+        # A connection atom with exactly two other substituents is a
+        # planarity centre (peptide N or C): its improper takes those two
+        # atoms and the partner's connection atom in every order.
+        centre = int(first.atom_paths_from_conn[ca, 0][0])
+        partner = int(second.atom_paths_from_conn[cb, 0][0])
+        neighbours = [
+            int(first.atom_paths_from_conn[ca, p][1])
+            for p in (1, 2, 3)
+            if first.atom_paths_from_conn[ca, p][1] != -1
+        ]
+        if centre < 0 or partner < 0 or len(neighbours) != 2:
+            continue
+        items = ((neighbours[0], False), (neighbours[1], False), (partner, True))
+        for order in itertools.permutations(items):
+            slots = (order[0], order[1], (centre, False), order[2])
+            names = tuple(
+                ("+" if across else "") + (second if across else first).atoms[a].name
+                for a, across in slots
+            )
+            params = databases[3].get(names)
+            if params is None:
+                params = wild_dbs[3].get(names)
+            if params is not None:
+                atoms = tuple(atom for atom, _ in slots)
+                sides = tuple(across != reverse for _, across in slots)
+                output[3].append((atoms, sides, params))
     return output
 
 
@@ -757,6 +780,10 @@ class CartBondedEnergyTerm(EnergyTerm):
             Tuple[int, int, int, int],
             List[Tuple[Tuple[int, ...], Tuple[bool, ...], Tuple[float, ...]]],
         ] = {}
+        inter_impropers_by_pair: Dict[
+            Tuple[int, int, int, int],
+            List[Tuple[Tuple[int, ...], Tuple[bool, ...], Tuple[float, ...]]],
+        ] = {}
 
         for bt_A, rt_A in enumerate(pbt.active_block_types):
             n_conn_A = len(rt_A.connections)
@@ -764,15 +791,17 @@ class CartBondedEnergyTerm(EnergyTerm):
                 n_conn_B = len(rt_B.connections)
                 for conn_A in range(n_conn_A):
                     for conn_B in range(n_conn_B):
-                        lengths, angles, torsions = _inter_residue_subgraphs_for_pair(
-                            rt_A,
-                            rt_B,
-                            conn_A,
-                            conn_B,
-                            self.cart_database,
-                            wild_dbs,
-                            res_dbs[bt_A],
-                            res_dbs[bt_B],
+                        lengths, angles, torsions, impropers = (
+                            _inter_residue_subgraphs_for_pair(
+                                rt_A,
+                                rt_B,
+                                conn_A,
+                                conn_B,
+                                self.cart_database,
+                                wild_dbs,
+                                res_dbs[bt_A],
+                                res_dbs[bt_B],
+                            )
                         )
                         pair_key = (bt_A, conn_A, bt_B, conn_B)
                         if lengths:
@@ -781,12 +810,15 @@ class CartBondedEnergyTerm(EnergyTerm):
                             inter_angles_by_pair[pair_key] = angles
                         if torsions:
                             inter_torsions_by_pair[pair_key] = torsions
+                        if impropers:
+                            inter_impropers_by_pair[pair_key] = impropers
 
         tables = {
             **intra_tables,
             "inter_lengths_by_pair": inter_lengths_by_pair,
             "inter_angles_by_pair": inter_angles_by_pair,
             "inter_torsions_by_pair": inter_torsions_by_pair,
+            "inter_impropers_by_pair": inter_impropers_by_pair,
         }
         self._bt_cache[key] = tables
         return tables
@@ -858,6 +890,7 @@ class CartBondedEnergyTerm(EnergyTerm):
         inter_lengths_by_pair = tables["inter_lengths_by_pair"]
         inter_angles_by_pair = tables["inter_angles_by_pair"]
         inter_torsions_by_pair = tables["inter_torsions_by_pair"]
+        inter_impropers_by_pair = tables["inter_impropers_by_pair"]
 
         # Walk each pose's connections, resolve partner blocks, emit
         # one packed list per (category) per pose. Only emit entries
@@ -867,6 +900,7 @@ class CartBondedEnergyTerm(EnergyTerm):
             ("L", inter_lengths_by_pair, 2, 2),
             ("A", inter_angles_by_pair, 3, 2),
             ("T", inter_torsions_by_pair, 4, 6),
+            ("I", inter_impropers_by_pair, 4, 6),
         )
         per_pose: Dict[str, Tuple[List, List]] = {
             cat: ([[] for _ in range(P)], [[] for _ in range(P)])
@@ -927,6 +961,7 @@ class CartBondedEnergyTerm(EnergyTerm):
             ("L", "inter_length", 2, 2),
             ("A", "inter_angle", 3, 2),
             ("T", "inter_torsion", 4, 6),
+            ("I", "inter_improper", 4, 6),
         )
         for cat, prefix, k_atoms, k_params in _INTER_OUT:
             atoms, mask, _ = _pad_atoms(per_pose[cat][0], k_atoms)
@@ -991,7 +1026,7 @@ class CartBondedEnergyTerm(EnergyTerm):
         # proper torsions, impropers, hxl torsions, and inter-residue
         # torsions in upstream ``cbtorsion_V_dV``; only the score-type
         # bucket differs.
-        def _cos3_score(atoms_field, params_field, mask_field):
+        def _cos3_score(atoms_field, params_field, mask_field, axes=(1, 2)):
             xyz = _gather_xyz(atoms_field)
             phi = dihedral_angle(
                 xyz[..., 0, :], xyz[..., 1, :], xyz[..., 2, :], xyz[..., 3, :]
@@ -1005,7 +1040,7 @@ class CartBondedEnergyTerm(EnergyTerm):
                 params_field[..., 4],
                 params_field[..., 5],
             )
-            return jnp.sum(jnp.where(mask_field, E, 0.0), axis=(1, 2))
+            return jnp.sum(jnp.where(mask_field, E, 0.0), axis=axes)
 
         cart_torsions = _cos3_score(
             term_state.torsion_atoms,
@@ -1053,28 +1088,20 @@ class CartBondedEnergyTerm(EnergyTerm):
             ia_E = jnp.where(term_state.inter_angle_mask, ia_E, 0.0)
             cart_angles = cart_angles + jnp.sum(ia_E, axis=1)
 
-        # Inter-residue proper torsions ---------------------------- #
-        ita = term_state.inter_torsion_atoms  # [P, E, 4]
-        if ita.shape[1] > 0:
-            itxyz = _gather_xyz(ita)
-            it_phi = dihedral_angle(
-                itxyz[..., 0, :],
-                itxyz[..., 1, :],
-                itxyz[..., 2, :],
-                itxyz[..., 3, :],
+        # Inter-residue torsions and connection-centred impropers --- #
+        def _inter_cos3(prefix):
+            atoms = getattr(term_state, f"{prefix}_atoms")  # [P, E, 4]
+            if atoms.shape[1] == 0:
+                return 0.0
+            return _cos3_score(
+                atoms,
+                getattr(term_state, f"{prefix}_params"),
+                getattr(term_state, f"{prefix}_mask"),
+                axes=1,
             )
-            itp = term_state.inter_torsion_params
-            it_E = hxltorsion_E(
-                it_phi,
-                itp[..., 0],
-                itp[..., 1],
-                itp[..., 2],
-                itp[..., 3],
-                itp[..., 4],
-                itp[..., 5],
-            )
-            it_E = jnp.where(term_state.inter_torsion_mask, it_E, 0.0)
-            cart_torsions = cart_torsions + jnp.sum(it_E, axis=1)
+
+        cart_torsions = cart_torsions + _inter_cos3("inter_torsion")
+        cart_impropers = cart_impropers + _inter_cos3("inter_improper")
 
         return {
             ScoreType.cart_lengths: cart_lengths,
