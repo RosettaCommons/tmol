@@ -428,18 +428,6 @@ class PackedBlockTypes:
     # ------------------------------------------------------------------ #
     # Lookup helpers                                                      #
     # ------------------------------------------------------------------ #
-    def inds_for_restypes(self, res_types: Sequence[Any]) -> np.ndarray:
-        """Return the index of each ``res_type`` within
-        ``active_block_types``, or ``-1`` when absent.
-
-        Returned as a plain ``numpy`` array -- these are discrete
-        metadata lookups, never something we want to trace through
-        JAX.
-        """
-        name_to_idx = {rt.name: i for i, rt in enumerate(self.active_block_types)}
-        return np.asarray(
-            [name_to_idx.get(rt.name, -1) for rt in res_types], dtype=np.int32
-        )
 
 
 __all__ = ["PackedBlockTypes"]

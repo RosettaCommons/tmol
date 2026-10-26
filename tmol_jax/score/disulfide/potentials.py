@@ -45,18 +45,6 @@ from tmol_jax.types import Array
 _MEST = jnp.exp(jnp.asarray(-20.0))
 
 
-def _polyval(coeffs: Array, x: Array) -> Array:
-    """Evaluate a standard polynomial via Horner's method.
-
-    Re-exports :func:`jax.numpy.polyval` for term-local parity with
-    the upstream polynomial idiom (coefficients in descending-power
-    order). The disulfide potentials use Weibull / von Mises forms, not
-    plain polynomials, but some callers still want a ``jnp.polyval``
-    shortcut keyed by this module.
-    """
-    return jnp.polyval(coeffs, x)
-
-
 def _distance_score(ssdist: Array, p) -> Array:
     """Skew-normal (Weibull-flavoured) log-density at ``ssdist``."""
     z = (ssdist - p["d_location"]) / p["d_scale"]

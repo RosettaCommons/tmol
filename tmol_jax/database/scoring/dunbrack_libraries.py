@@ -30,9 +30,6 @@ class RotamericDataForAA:
     rotamer_alias: np.ndarray
     backbone_is_mirrored: bool = False
 
-    def nrotamers(self) -> int:
-        return int(self.rotamers.shape[0])
-
     def nchi(self) -> int:
         return int(self.rotamers.shape[1])
 

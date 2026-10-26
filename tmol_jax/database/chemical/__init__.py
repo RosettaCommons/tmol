@@ -325,13 +325,6 @@ class ChiSamples:
 
 
 @attr.s(auto_attribs=True, frozen=True, slots=True)
-class SidechainBuilding:
-    """Side-chain construction data for one chi dihedral."""
-
-    chi_samples: ChiSamples
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
 class PolymerProperties:
     """Polymer identity and connectivity metadata for a residue."""
 
@@ -458,13 +451,6 @@ class PolymerPropertiesVariant:
     """Polymer-property changes made by a residue patch."""
 
     polymer_type: str
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class ChemicalPropertiesVariant:
-    """Chemical-property changes made by a residue patch."""
-
-    polymer: Optional[PolymerPropertiesVariant] = None
 
 
 @attr.s(auto_attribs=True, frozen=True, slots=True)

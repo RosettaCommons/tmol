@@ -116,22 +116,6 @@ class PoseStack:
     # Slicing / indexing
     # ---------------------------------------------------------------
 
-    def coords_for_block(self, pose: int, block: int) -> jax.Array:
-        """Return the atoms of a specific ``(pose, block)`` pair.
-
-        Uses ``jax.lax.dynamic_slice`` so this remains tracer-friendly
-        under ``jit`` when ``pose`` / ``block`` are concrete Python ints
-        (the common case).
-        """
-
-        bti = int(self.block_type_ind[pose, block])
-        if bti < 0:
-            # Padding block — empty slice.
-            return jnp.empty((0, 3), dtype=self.coords.dtype)
-        n_atoms = int(self.packed_block_types.n_atoms[bti])
-        start = int(self.block_coord_offset[pose, block])
-        return jax.lax.dynamic_slice(self.coords[pose], (start, 0), (n_atoms, 3))
-
     def __len__(self) -> int:
         return self.n_poses
 
@@ -182,10 +166,6 @@ class PoseStack:
     # Block helpers (mirror the upstream Python-level conveniences)
     # ---------------------------------------------------------------
 
-    def is_real_block(self, pose_ind: int, block_ind: int) -> bool:
-        """True if ``(pose_ind, block_ind)`` is a real block, not padding."""
-        return bool(self.block_type_ind[pose_ind, block_ind] >= 0)
-
     def block_type(self, pose_ind: int, block_ind: int):
         """Look up the ``RefinedResidueType``-equivalent block type.
 
@@ -199,39 +179,6 @@ class PoseStack:
     # ---------------------------------------------------------------
     # Constructors
     # ---------------------------------------------------------------
-
-    @classmethod
-    def from_components(
-        cls,
-        packed_block_types: Any,
-        coords: Any,
-        block_type_ind: Any,
-        inter_residue_connections: Any,
-        inter_block_bondsep: Any,
-        pdb_info: Optional[Any] = None,
-    ) -> "PoseStack":
-        """Build a ``PoseStack`` from its raw components.
-
-        ``block_coord_offset`` is computed from per-block atom counts
-        via :func:`block_coord_offset_from_counts`.
-        """
-
-        coords_j = as_jnp(coords, dtype=jnp.float32)
-        bti = as_jnp(block_type_ind, dtype=jnp.int32)
-        irc = as_jnp(inter_residue_connections, dtype=jnp.int32)
-        ibs = as_jnp(inter_block_bondsep, dtype=jnp.int32)
-
-        bco = block_coord_offset_from_counts(bti, packed_block_types)
-
-        return cls(
-            packed_block_types=packed_block_types,
-            coords=coords_j,
-            block_coord_offset=bco,
-            inter_residue_connections=irc,
-            inter_block_bondsep=ibs,
-            block_type_ind=bti,
-            pdb_info=pdb_info,
-        )
 
 
 __all__ = [

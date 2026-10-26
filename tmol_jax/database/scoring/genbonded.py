@@ -21,8 +21,7 @@ rule (bond specificity dominates atom-type specificity).
 
 from __future__ import annotations
 
-from itertools import permutations
-from typing import Dict, FrozenSet, List, Optional, Tuple
+from typing import Dict, FrozenSet, List, Tuple
 
 import attr
 import yaml
@@ -160,77 +159,6 @@ class GenBondedDatabase:
     # ------------------------------------------------------------------
     def hierarchy_for(self, atom_type: str) -> List[str]:
         return self.atom_hierarchy.get(atom_type, [atom_type])
-
-    def find_torsion_params(
-        self,
-        type1: str,
-        type2: str,
-        type3: str,
-        type4: str,
-        bond_type_int: int = 1,
-        is_ring: bool = False,
-    ) -> Optional[GenBondedTorsionEntry]:
-        """Best-matching proper-torsion entry via Rosetta multiplicity scoring.
-
-        Bond specificity dominates atom-type specificity (bond_bin_count *
-        multi_max**4 + product of atom-type coverage). Both forward and
-        reversed orderings are pre-inserted in the index so a single
-        iteration direction suffices.
-        """
-        btidx = _bond_btidx(bond_type_int, is_ring)
-        index = self._torsion_index
-        h1 = self.hierarchy_for(type1)
-        h2 = self.hierarchy_for(type2)
-        h3 = self.hierarchy_for(type3)
-        h4 = self.hierarchy_for(type4)
-
-        best_entry: Optional[GenBondedTorsionEntry] = None
-        best_mult = float("inf")
-        for e1 in h1:
-            for e2 in h2:
-                for e3 in h3:
-                    for e4 in h4:
-                        bucket = index.get((e1, e2, e3, e4))
-                        if bucket is None:
-                            continue
-                        for mult, covered, entry in bucket:
-                            if mult >= best_mult:
-                                break
-                            if btidx in covered:
-                                best_mult = mult
-                                best_entry = entry
-                                break
-        return best_entry
-
-    def find_improper_params(
-        self, center: str, n1: str, n2: str, n3: str
-    ) -> Optional[GenBondedImproperEntry]:
-        """Best-matching improper entry; tries all 6 permutations of bonded."""
-        hc = self.hierarchy_for(center)
-        h1 = self.hierarchy_for(n1)
-        h2 = self.hierarchy_for(n2)
-        h3 = self.hierarchy_for(n3)
-
-        best_entry: Optional[GenBondedImproperEntry] = None
-        best_score = float("inf")
-        for entry in self.impropers:
-            ec, eb1, eb2, eb3 = entry.atoms
-            try:
-                sc = hc.index(ec)
-            except ValueError:
-                continue
-            for pe1, pe2, pe3 in permutations((eb1, eb2, eb3)):
-                try:
-                    s1 = h1.index(pe1)
-                    s2 = h2.index(pe2)
-                    s3 = h3.index(pe3)
-                except ValueError:
-                    continue
-                score = sc + s1 + s2 + s3
-                if score < best_score:
-                    best_score = score
-                    best_entry = entry
-        return best_entry
 
 
 __all__ = [

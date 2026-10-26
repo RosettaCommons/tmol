@@ -36,7 +36,7 @@ Portable scoring (pure JAX, ``jit``-safe):
 
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 import jax
 import jax.numpy as jnp
@@ -325,21 +325,10 @@ class ElecEnergyTerm(EnergyTerm):
     def class_name(cls) -> str:
         return "Elec"
 
-    @classmethod
-    def score_types(cls) -> Tuple[ScoreType, ...]:
-        return (ScoreType.fa_elec,)
-
     def score_types_provided(self) -> list[ScoreType]:
         return [ScoreType.fa_elec]
 
-    def n_bodies(self) -> int:
-        return 2
-
     # ---- setup ------------------------------------------------------
-
-    def setup_block_type(self, block_type: Any) -> None:  # noqa: D401 - keep
-        """No-op; elec annotations are batched at the PBT level."""
-        return
 
     def setup_packed_block_types(self, packed_block_types: Any) -> None:
         """Annotate the PBT with charges and count-pair path tables.

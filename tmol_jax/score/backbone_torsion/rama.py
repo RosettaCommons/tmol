@@ -282,18 +282,6 @@ class RamaDatabaseAccess:
     def shape(self) -> Tuple[int, int, int]:
         return tuple(self.rama_table.shape)  # type: ignore[return-value]
 
-    def table_index_for_aa3(self, aa3: str) -> int:
-        """Map a three-letter AA code to a row in :attr:`rama_table`.
-
-        Returns ``-1`` when no table applies (pass through to
-        :func:`rama_score` as a mask).
-        """
-        try:
-            canon_idx = canonical_aa_3letter.index(aa3)
-        except ValueError:
-            return -1
-        return int(self.aa_to_table_idx[canon_idx])
-
 
 __all__ = [
     "RamaDatabaseAccess",

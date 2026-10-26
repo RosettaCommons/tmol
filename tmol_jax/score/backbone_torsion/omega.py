@@ -381,13 +381,6 @@ class OmegaBBDepDatabaseAccess:
     def shape(self) -> Tuple[int, int, int]:
         return tuple(self.params.k_table.shape)  # type: ignore[return-value]
 
-    def table_index_for_aa3(self, aa3: str) -> int:
-        try:
-            canon_idx = canonical_aa_3letter.index(aa3)
-        except ValueError:
-            return -1
-        return int(self.aa_to_table_idx[canon_idx])
-
 
 __all__ = [
     "OmegaBBDepDatabaseAccess",
