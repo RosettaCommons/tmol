@@ -6,7 +6,7 @@ description: >
   movement, constraints, large-batch packing memory, and CUDA graph selection.
   Do not use for score-only analysis.
 allowed-tools: Bash, Read, Write, AskUserQuestion
-license: BSD-3-Clause
+license: Apache-2.0
 ---
 
 # TMol packing and relax
