@@ -219,39 +219,6 @@ def _atom_is_real_mask(pose_stack: Any, packed_block_types: Any) -> jax.Array:
     )
 
 
-def elec_pose_score(
-    coords: jax.Array,  # [P, N, 3] float32
-    charges: jax.Array,  # [P, N] float32
-    bonded_path_length: jax.Array,  # [P, N, N] uint8
-    real_atom_mask: jax.Array,  # [P, N] bool
-    global_params: ElecGlobalParams,
-) -> jax.Array:
-    """Whole-pose elec score, ``[P]`` float32.
-
-    All inputs are JAX arrays; this function is ``jit``-safe and
-    differentiable in ``coords``.
-    """
-
-    # Pairwise distances and charges.
-    dist = _pairwise_distance(coords)  # [P, N, N]
-    e_i = charges[:, :, None]  # [P, N, 1]
-    e_j = charges[:, None, :]  # [P, 1, N]
-
-    E_pair = elec_pair(dist, e_i, e_j, bonded_path_length, global_params)
-
-    # Mask: keep only (i < j) with both atoms real. This way each pair
-    # contributes exactly once and padding atoms contribute zero.
-    n = dist.shape[-1]
-    iu = jnp.arange(n)[:, None] < jnp.arange(n)[None, :]
-    realm = real_atom_mask[:, :, None] & real_atom_mask[:, None, :]
-    mask = iu[None, :, :] & realm
-    # Preserve ``E_pair``'s dtype instead of pinning to float32 —
-    # see note in ``__call__`` below about float64 gradchecks.
-    E_pair = jnp.where(mask, E_pair, jnp.asarray(0.0, dtype=E_pair.dtype))
-
-    return jnp.sum(E_pair, axis=(-1, -2))
-
-
 # --------------------------------------------------------------------- #
 # The EnergyTerm-facing class                                            #
 # --------------------------------------------------------------------- #
@@ -436,6 +403,5 @@ class ElecEnergyTerm(EnergyTerm):
 
 __all__ = [
     "ElecEnergyTerm",
-    "elec_pose_score",
     "pair_bonded_path_length",
 ]

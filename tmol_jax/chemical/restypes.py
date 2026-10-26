@@ -468,10 +468,6 @@ class RefinedResidueType(RawResidueType):
 
     # ---- icoors --------------------------------------------------------
 
-    @property
-    def n_icoors(self) -> int:
-        return len(self.icoors)
-
     icoors_index: Mapping[str, IcoorIndex] = attr.ib()
 
     @icoors_index.default
@@ -587,19 +583,6 @@ class ResidueTypeSet:
             restype_map.setdefault(rt.name3, []).append(rt)
         return cls(
             residue_types=residue_types,
-            restype_map=restype_map,
-            chem_db=chemical_db,
-        )
-
-    @classmethod
-    def from_restype_list(
-        cls, chemical_db, restypes: List[RefinedResidueType]
-    ) -> "ResidueTypeSet":
-        restype_map: Dict[ResName3, List[RefinedResidueType]] = {}
-        for rt in restypes:
-            restype_map.setdefault(rt.name3, []).append(rt)
-        return cls(
-            residue_types=restypes,
             restype_map=restype_map,
             chem_db=chemical_db,
         )

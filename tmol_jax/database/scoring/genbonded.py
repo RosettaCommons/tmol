@@ -43,11 +43,6 @@ _BOND_CHAR_BIN_COUNT: Dict[str, int] = {
 }
 
 
-def _bond_btidx(bond_type_int: int, is_ring: bool) -> int:
-    br = 2 if is_ring else 1
-    return ((bond_type_int - 1) << 1) + br
-
-
 @attr.s(auto_attribs=True, slots=True, frozen=True)
 class GenBondedTorsionEntry:
     """One proper-torsion entry; 4 atom types + bond char + 4 k's + offset."""
@@ -157,8 +152,6 @@ class GenBondedDatabase:
         )
 
     # ------------------------------------------------------------------
-    def hierarchy_for(self, atom_type: str) -> List[str]:
-        return self.atom_hierarchy.get(atom_type, [atom_type])
 
 
 __all__ = [

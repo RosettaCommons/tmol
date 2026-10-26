@@ -74,13 +74,6 @@ def as_jnp(x, dtype=None):
     return jnp.asarray(x, dtype=dtype)
 
 
-def as_np(x, dtype=None):
-    """Coerce array-like to a numpy array (for indices / static metadata)."""
-    if dtype is None:
-        return np.asarray(x)
-    return np.asarray(x, dtype=dtype)
-
-
 __all__ = [
     "Array",
     "NDArray",

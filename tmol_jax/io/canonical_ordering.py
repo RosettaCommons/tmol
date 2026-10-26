@@ -109,10 +109,6 @@ class CanonicalOrdering:
     # Properties / lookups                                              #
     # ---------------------------------------------------------------- #
 
-    @property
-    def n_restype_io_equiv_classes(self) -> int:
-        return len(self.restype_io_equiv_classes)
-
     def restype_index(self, name3: str) -> int:
         """Return the integer index of a 3-letter code, or ``-1``."""
         try:

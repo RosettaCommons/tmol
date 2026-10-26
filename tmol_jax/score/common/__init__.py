@@ -12,7 +12,6 @@ from tmol_jax.score.common.count_pair import (
     pairwise_bonded_path_length,
     pose_atom_block_index,
     pose_atom_real_mask,
-    scatter_per_atom,
 )
 from tmol_jax.score.common.cubic_hermite_polynomial import (
     interpolate,
@@ -46,7 +45,6 @@ __all__ = [
     "pairwise_bonded_path_length",
     "pose_atom_block_index",
     "pose_atom_real_mask",
-    "scatter_per_atom",
     "poly_v",
     "pt_interior_angle",
 ]

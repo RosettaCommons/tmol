@@ -149,45 +149,6 @@ def pose_atom_block_index(
     return block_for_atom, local_for_atom, atom_is_real
 
 
-def scatter_per_atom(
-    per_type_table: jax.Array,
-    block_type_ind: jax.Array,
-    block_coord_offset: jax.Array,
-    n_atoms_per_type: jax.Array,
-    max_n_atoms_per_pose: int,
-    default: Any = 0,
-) -> jax.Array:
-    """Scatter a ``[n_types, max_n_atoms_per_block[, ...]]`` palette-level
-    table into ``[P, max_n_atoms_per_pose[, ...]]`` pose-atom layout.
-
-    This is the vectorised replacement for the typical numpy "per-pose,
-    per-block slice-and-copy" loop that every energy term setup used to
-    run. Works for float/int/bool per-atom tables via a single gather
-    along the atom axis.
-
-    ``default`` fills padding slots (non-real atoms). Uses the semantics
-    of ``jnp.where(atom_is_real[..., None..None], gather, default)``.
-    """
-    block_for_atom, local_for_atom, atom_is_real = pose_atom_block_index(
-        block_type_ind,
-        block_coord_offset,
-        n_atoms_per_type,
-        max_n_atoms_per_pose,
-    )  # [P, N], [P, N], [P, N]
-    P = block_type_ind.shape[0]
-    safe_bti = jnp.where(block_type_ind >= 0, block_type_ind, 0)
-    # bti_of_atom[p, i] = block_type_ind[p, block_for_atom[p, i]]
-    bti_of_atom = safe_bti[jnp.arange(P)[:, None], block_for_atom]  # [P, N]
-    # gather per_type_table[bti_of_atom, local_for_atom]
-    vals = per_type_table[bti_of_atom, local_for_atom]
-    # Mask padding
-    default_arr = jnp.asarray(default, dtype=vals.dtype)
-    # Broadcast: vals may have trailing axes (e.g. [P, N, 3] for coords).
-    extra_axes = vals.ndim - atom_is_real.ndim
-    mask = atom_is_real.reshape(atom_is_real.shape + (1,) * extra_axes)
-    return jnp.where(mask, vals, default_arr)
-
-
 # --------------------------------------------------------------------- #
 # Pose-level index cache + bulk scatter                                 #
 # --------------------------------------------------------------------- #
@@ -748,7 +709,6 @@ __all__ = [
     "MAX_COUNTPAIR_SEPARATION",
     "connectivity_weight",
     "pose_atom_block_index",
-    "scatter_per_atom",
     "scatter_many_per_atom",
     "get_pose_atom_index",
     "pose_atom_real_mask",

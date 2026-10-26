@@ -91,14 +91,6 @@ def bonds_and_bond_ranges(
 # --------------------------------------------------------------------- #
 
 
-def _as_np_int(x) -> np.ndarray:
-    """Coerce a JAX / numpy / torch-like array to numpy ``int64``."""
-    arr = np.asarray(x)
-    if arr.dtype.kind not in ("i", "u"):
-        arr = arr.astype(np.int64)
-    return arr
-
-
 __all__ = [
     "bonds_and_bond_ranges",
 ]

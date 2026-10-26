@@ -374,14 +374,6 @@ class MetalSite:
     #    no virtuals); an unfilled one is an open site
     site_connections: Tuple[str, ...] = ()
 
-    @property
-    def n_free_sites(self) -> Optional[int]:
-        """Sites detection may fill; None when the geometry is untemplated."""
-        n_total = GEOMETRY_SITE_COUNT[self.geometry]
-        if n_total is None:
-            return None
-        return n_total - len(self.internal_satisfiers)
-
 
 @attr.s(auto_attribs=True)
 class RawResidueType:
@@ -444,13 +436,6 @@ class IcoorVariant:
     parent: Optional[str] = None
     grand_parent: Optional[str] = None
     great_grand_parent: Optional[str] = None
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class PolymerPropertiesVariant:
-    """Polymer-property changes made by a residue patch."""
-
-    polymer_type: str
 
 
 @attr.s(auto_attribs=True, frozen=True, slots=True)

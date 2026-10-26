@@ -9,35 +9,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_jax.types import as_jnp, pytree_dataclass
-
-
-def block_coord_offset_from_counts(
-    block_type_ind: jax.Array,
-    packed_block_types: Any,
-) -> jax.Array:
-    """Compute ``block_coord_offset`` from block-type indices.
-
-    For each pose, the offset of block ``b`` is the sum of atom counts
-    for blocks ``0..b-1``. Padding blocks (``block_type_ind < 0``)
-    contribute zero atoms.
-
-    Returns ``int32[n_poses, max_n_blocks]``.
-    """
-
-    bti = as_jnp(block_type_ind, dtype=jnp.int32)
-    # Per-block-type atom count, gathered by block_type_ind. Sentinel
-    # -1 positions should contribute 0; we clamp to 0 for the gather
-    # and then zero them out with a mask.
-    n_atoms_per_type = as_jnp(packed_block_types.n_atoms, dtype=jnp.int32)
-    safe_idx = jnp.where(bti >= 0, bti, 0)
-    per_block_counts = n_atoms_per_type[safe_idx]
-    per_block_counts = jnp.where(bti >= 0, per_block_counts, 0)
-
-    # Exclusive cumulative sum along the blocks axis gives start offsets.
-    cumsum = jnp.cumsum(per_block_counts, axis=1)
-    offsets = cumsum - per_block_counts
-    return offsets.astype(jnp.int32)
+from tmol_jax.types import pytree_dataclass
 
 
 @pytree_dataclass
@@ -71,10 +43,6 @@ class PoseStack:
 
     # Upstream alias
     @property
-    def max_n_pose_atoms(self) -> int:
-        return self.max_n_atoms_per_pose
-
-    @property
     def max_n_atoms_per_block(self) -> int:
         """Maximum atom count over all block types in the palette."""
         return int(self.packed_block_types.max_n_atoms)
@@ -83,15 +51,6 @@ class PoseStack:
     @property
     def max_n_atoms(self) -> int:
         return self.max_n_atoms_per_block
-
-    @property
-    def max_n_block_atoms(self) -> int:
-        return self.max_n_atoms_per_block
-
-    @property
-    def n_res_per_pose(self) -> jax.Array:
-        """Per-pose count of non-padding blocks (``block_type_ind >= 0``)."""
-        return jnp.sum(self.block_type_ind >= 0, axis=1).astype(jnp.int32)
 
     @property
     def atom_is_real(self):
@@ -104,13 +63,6 @@ class PoseStack:
     def device(self):
         """Device holding the pose coordinates."""
         return self.coords.device
-
-    @property
-    def expanded_coords(self) -> jax.Array:
-        """4D-ish view of coords. Upstream pads with zeros; here we
-        return the flat ``[n_poses, max_n_atoms_per_pose, 3]`` tensor
-        directly since JAX doesn't benefit from an in-place expand."""
-        return self.coords
 
     # ---------------------------------------------------------------
     # Slicing / indexing
@@ -183,5 +135,4 @@ class PoseStack:
 
 __all__ = [
     "PoseStack",
-    "block_coord_offset_from_counts",
 ]
