@@ -1,21 +1,10 @@
-#include <cuda_runtime_api.h>
-
 #include <cstdint>
 
-#include "xla/ffi/api/ffi.h"
+#include "common.cuh"
 #include <tmol/score/lk_ball/potentials/scalar.hh>
 
-namespace ffi = xla::ffi;
 namespace pot = tmol::score::lk_ball::potentials;
 
-using F32R1 = ffi::BufferR1<ffi::DataType::F32>;
-using F32R2 = ffi::BufferR2<ffi::DataType::F32>;
-using F32R3 = ffi::BufferR3<ffi::DataType::F32>;
-using F32R4 = ffi::BufferR4<ffi::DataType::F32>;
-using S32R2 = ffi::BufferR2<ffi::DataType::S32>;
-using U8R3 = ffi::BufferR3<ffi::DataType::U8>;
-
-constexpr int kTile = 16;
 constexpr int kWaters = 4;
 constexpr int kParams = 9;
 
@@ -171,26 +160,7 @@ __global__ void lkball_pairs(
   }
 
   if constexpr (!Gradient) {
-#pragma unroll
-    for (int score = 0; score < 4; ++score) {
-      energy[score][threadIdx.x] = values[score];
-    }
-    __syncthreads();
-    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-      if (threadIdx.x < stride) {
-#pragma unroll
-        for (int score = 0; score < 4; ++score) {
-          energy[score][threadIdx.x] += energy[score][threadIdx.x + stride];
-        }
-      }
-      __syncthreads();
-    }
-    if (threadIdx.x == 0) {
-#pragma unroll
-      for (int score = 0; score < 4; ++score) {
-        atomicAdd(energies + pose * 4 + score, energy[score][0]);
-      }
-    }
+    block_reduce_add<4>(energy, values, energies + pose * 4);
   }
 }
 

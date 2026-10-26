@@ -7,6 +7,7 @@ import importlib
 from functools import lru_cache
 
 import jax
+import jax.numpy as jnp
 
 ABI_VERSION = 1
 
@@ -56,3 +57,29 @@ def register_ffi_targets(prefix: str, suffixes=("forward", "backward")) -> bool:
         name = f"{prefix}_{suffix}"
         jax.ffi.register_ffi_target(name, jax.ffi.pycapsule(symbol), platform="CUDA")
     return True
+
+
+def pair_sum(prefix, differentiated, constants, channels=None):
+    """Call ``{prefix}_forward`` with a VJP that calls ``{prefix}_backward``.
+
+    ``differentiated`` arrays (the first is coordinates, shape ``[poses, atoms,
+    3]``) receive gradients; ``constants`` are passed through unchanged.
+    ``channels`` is the per-pose output width (``None`` for a scalar per pose).
+    """
+    shape = differentiated[0].shape[:1] + (() if channels is None else (channels,))
+
+    @jax.custom_vjp
+    def call(*arrays):
+        return jax.ffi.ffi_call(
+            f"{prefix}_forward", jax.ShapeDtypeStruct(shape, jnp.float32)
+        )(*arrays, *constants)
+
+    def backward(arrays, cotangent):
+        gradients = jax.ffi.ffi_call(
+            f"{prefix}_backward",
+            tuple(jax.ShapeDtypeStruct(a.shape, jnp.float32) for a in arrays),
+        )(*arrays, *constants, cotangent)
+        return tuple(gradients)
+
+    call.defvjp(lambda *arrays: (call(*arrays), arrays), backward)
+    return call(*differentiated)

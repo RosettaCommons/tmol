@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import jax
 import jax.numpy as jnp
 
-from tmol_jax.score._cuda import register_ffi_targets
+from tmol_jax.score._cuda import pair_sum, register_ffi_targets
 
 _GLOBAL_PARAMETER_COUNT = 11
 _C1 = jnp.float32(322.0637)
@@ -80,38 +79,11 @@ def score(state, coordinates):
     atom_is_real = jnp.asarray(state.atom_is_real, dtype=jnp.bool_)
     global_parameters = state.cuda_global_parameters
 
-    @jax.custom_vjp
-    def call(current_coordinates):
-        return jax.ffi.ffi_call(
-            "tmol_jax_elec_forward",
-            jax.ShapeDtypeStruct((current_coordinates.shape[0],), jnp.float32),
-        )(
-            current_coordinates,
-            charges,
-            bonded_paths,
-            atom_is_real,
-            global_parameters,
-        )
-
-    def forward(current_coordinates):
-        return call(current_coordinates), current_coordinates
-
-    def backward(current_coordinates, cotangent):
-        gradient = jax.ffi.ffi_call(
-            "tmol_jax_elec_backward",
-            jax.ShapeDtypeStruct(current_coordinates.shape, jnp.float32),
-        )(
-            current_coordinates,
-            charges,
-            bonded_paths,
-            atom_is_real,
-            global_parameters,
-            cotangent,
-        )
-        return (gradient,)
-
-    call.defvjp(forward, backward)
-    return call(coordinates)
+    return pair_sum(
+        "tmol_jax_elec",
+        (coordinates,),
+        (charges, bonded_paths, atom_is_real, global_parameters),
+    )
 
 
 __all__ = ["available", "score"]

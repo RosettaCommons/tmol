@@ -1,3 +1,6 @@
+"""Optional native CUDA adapter: loading rules and agreement with portable JAX."""
+
+from pathlib import Path
 from types import SimpleNamespace
 
 import jax
@@ -5,104 +8,71 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from tmol_jax import beta2016_score_function, pose_stack_from_pdb
 from tmol_jax.score import _cuda as cuda_loader
 from tmol_jax.score.elec import cuda as elec_cuda
+from tmol_jax.score.hbond import cuda as hbond_cuda
 from tmol_jax.score.ljlk import cuda
-from tmol_jax.score.ljlk.ljlk_energy_term import LJLKEnergyTerm
-from tmol_jax.score.score_types import ScoreType
+from tmol_jax.score.lk_ball import cuda as lkball_cuda
+
+PDB = Path(__file__).parents[2] / "tmol/tests/data/pdb/1ubq.pdb"
+NATIVE = jax.default_backend() == "gpu" and all(
+    module.available() for module in (cuda, elec_cuda, hbond_cuda, lkball_cuda)
+)
+needs_native = pytest.mark.skipif(not NATIVE, reason="native CUDA adapter unavailable")
 
 
-def _clear_cuda_loader():
-    cuda_loader.load_library.cache_clear()
-
-
-def test_cuda_plugin_is_optional(monkeypatch):
+def test_plugin_is_optional(monkeypatch):
     def missing(_name):
         raise ImportError
 
-    _clear_cuda_loader()
+    cuda_loader.load_library.cache_clear()
     monkeypatch.setattr(cuda_loader.importlib, "import_module", missing)
     assert cuda_loader.load_library() is None
-    _clear_cuda_loader()
+    cuda_loader.load_library.cache_clear()
 
 
-def test_cuda_plugin_abi_mismatch_is_explicit(monkeypatch):
+def test_plugin_abi_mismatch_is_explicit(monkeypatch):
     class Marker:
         def __call__(self):
             return cuda_loader.ABI_VERSION + 1
 
     library = SimpleNamespace(tmol_jax_cuda_abi_version=Marker())
     plugin = SimpleNamespace(library_path=lambda: "/unused/plugin.so")
-    _clear_cuda_loader()
+    cuda_loader.load_library.cache_clear()
     monkeypatch.setattr(cuda_loader.importlib, "import_module", lambda _: plugin)
     monkeypatch.setattr(cuda_loader.ctypes.cdll, "LoadLibrary", lambda _: library)
     with pytest.raises(RuntimeError, match="ABI.*does not match"):
         cuda_loader.load_library()
-    _clear_cuda_loader()
+    cuda_loader.load_library.cache_clear()
 
 
-def test_pack_cuda_parameters():
-    values = jnp.asarray([[1.0, 2.0]], dtype=jnp.float32)
-    parameters = SimpleNamespace(
-        lj_radius=values,
-        lj_wdepth=values * values,
-        lk_dgfree=values,
-        lk_lambda=values,
-        lk_volume=values,
-        is_donor=values > 0,
-        is_hydroxyl=values > 0,
-        is_polarh=values > 0,
-        is_acceptor=values > 0,
-        is_carbon_lk=values > 0,
-    )
-    global_parameters = SimpleNamespace(
-        max_dis=jnp.float32(6),
-        lj_dlin_sigma_factor=jnp.float32(0.6),
-        lj_hbond_dis=jnp.float32(3),
-        lj_hbond_OH_donor_dis=jnp.float32(2.8),
-        lj_hbond_hdis=jnp.float32(1.9),
-    )
-    packed, global_values = cuda._pack_parameters(
-        SimpleNamespace(parameters=parameters, global_parameters=global_parameters)
-    )
-    assert packed.shape == (1, 2, 13)
-    np.testing.assert_array_equal(np.asarray(packed[..., 0]), np.asarray(values))
-    np.testing.assert_array_equal(np.asarray(packed[..., 1]), np.asarray(values))
-    np.testing.assert_array_equal(np.asarray(packed[..., 10]), 0)
-    np.testing.assert_allclose(
-        np.asarray(global_values), [6, 0.6, 3, 2.8, 1.9], rtol=0, atol=1e-7
-    )
+@needs_native
+def test_native_pair_kernels_match_portable_jax(monkeypatch):
+    """Per-channel energies and the weighted gradient agree on a real protein."""
+    pose = pose_stack_from_pdb(PDB)
+
+    def evaluate():
+        sf = beta2016_score_function()
+        channels = sf.render_whole_pose_scoring_module(
+            pose, sum_terms=False, apply_weights=False
+        )
+        total = sf.render_whole_pose_scoring_module(pose)
+        grad = jax.grad(lambda x: total(x).sum())
+        return np.asarray(channels(pose.coords)), np.asarray(grad(pose.coords))
+
+    native_energy, native_gradient = evaluate()
+    cuda_loader.register_ffi_targets.cache_clear()
+    monkeypatch.setattr(cuda_loader, "load_library", lambda: None)
+    portable_energy, portable_gradient = evaluate()
+    monkeypatch.undo()
+    cuda_loader.register_ffi_targets.cache_clear()
+
+    np.testing.assert_allclose(native_energy, portable_energy, rtol=1e-4, atol=1e-3)
+    np.testing.assert_allclose(native_gradient, portable_gradient, rtol=1e-3, atol=2e-2)
 
 
-def test_ljlk_dispatches_to_installed_cuda_plugin(monkeypatch):
-    expected = jnp.asarray([[1.0, 2.0, 3.0]], dtype=jnp.float32)
-    seen = {}
-
-    def score(state, coordinates):
-        seen["arguments"] = state, coordinates
-        return expected
-
-    monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
-    monkeypatch.setattr(cuda, "available", lambda: True)
-    monkeypatch.setattr(cuda, "score", score)
-    coordinates = jnp.zeros((1, 2, 3), dtype=jnp.float32)
-    state = object()
-    term = object.__new__(LJLKEnergyTerm)
-    result = term(SimpleNamespace(coords=coordinates), state)
-
-    assert seen["arguments"][0] is state
-    assert seen["arguments"][1] is coordinates
-    np.testing.assert_array_equal(result[ScoreType.fa_ljatr], expected[:, 0])
-    np.testing.assert_array_equal(result[ScoreType.fa_ljrep], expected[:, 1])
-    np.testing.assert_array_equal(result[ScoreType.fa_lk], expected[:, 2])
-
-
-@pytest.mark.skipif(
-    jax.default_backend() != "gpu"
-    or not cuda.fused_available()
-    or not elec_cuda.available(),
-    reason="optional CUDA fused pair kernel is unavailable",
-)
+@needs_native
 def test_fused_tile_bounds_recompute_after_large_coordinate_move():
     """Tile pruning is rebuilt from every coordinate argument, not frozen."""
     n_atoms = 2048

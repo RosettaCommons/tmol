@@ -1,28 +1,18 @@
-#include <cuda_runtime_api.h>
-
 #include <cmath>
 #include <cstdint>
 
-#include "xla/ffi/api/ffi.h"
+#include "common.cuh"
 
 #include <tmol/score/elec/potentials/potentials.hh>
 #include <tmol/score/ljlk/potentials/lj.hh>
 #include <tmol/score/ljlk/potentials/lk_isotropic.hh>
 
 // The shared scalar headers use constexpr std::min/max from device functions.
-namespace ffi = xla::ffi;
 namespace pot = tmol::score::ljlk::potentials;
 namespace elec_pot = tmol::score::elec::potentials;
 
 extern "C" int tmol_jax_cuda_abi_version() { return 1; }
 
-using F32R1 = ffi::BufferR1<ffi::DataType::F32>;
-using F32R2 = ffi::BufferR2<ffi::DataType::F32>;
-using F32R3 = ffi::BufferR3<ffi::DataType::F32>;
-using U8R3 = ffi::BufferR3<ffi::DataType::U8>;
-using PredR2 = ffi::BufferR2<ffi::DataType::PRED>;
-
-constexpr int kTile = 16;
 constexpr int kParams = 13;
 constexpr int kElecGlobalParams = 11;
 // Large all-pairs launches rebuild compact tile bounds from the current
@@ -95,24 +85,6 @@ __device__ bool aabbs_within_cutoff(
   }
   float conservative_cutoff = cutoff + kAabbMargin;
   return distance2 < conservative_cutoff * conservative_cutoff;
-}
-
-__device__ void tile_pair_from_linear(
-    int index, int n_tiles, int& tile_i, int& tile_j) {
-  int lo = 0;
-  int hi = n_tiles;
-  while (lo + 1 < hi) {
-    int mid = (lo + hi) / 2;
-    int start = mid * n_tiles - mid * (mid - 1) / 2;
-    if (start <= index) {
-      lo = mid;
-    } else {
-      hi = mid;
-    }
-  }
-  tile_i = lo;
-  int start = lo * n_tiles - lo * (lo - 1) / 2;
-  tile_j = lo + index - start;
 }
 
 __device__ pot::LJLKTypeParams<float> load_params(const float* values) {
@@ -241,27 +213,7 @@ __global__ void ljlk_pairs(
   }
 
   if constexpr (!Gradient) {
-#pragma unroll
-    for (int score_type = 0; score_type < 3; ++score_type) {
-      energy[score_type][threadIdx.x] = values[score_type];
-    }
-    __syncthreads();
-    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-      if (threadIdx.x < stride) {
-#pragma unroll
-        for (int score_type = 0; score_type < 3; ++score_type) {
-          energy[score_type][threadIdx.x] +=
-              energy[score_type][threadIdx.x + stride];
-        }
-      }
-      __syncthreads();
-    }
-    if (threadIdx.x == 0) {
-#pragma unroll
-      for (int score_type = 0; score_type < 3; ++score_type) {
-        atomicAdd(energies + pose * 3 + score_type, energy[score_type][0]);
-      }
-    }
+    block_reduce_add<3>(energy, values, energies + pose * 3);
   }
 }
 
@@ -375,27 +327,7 @@ __global__ void ljlk_elec_pairs(
   }
 
   if constexpr (!Gradient) {
-#pragma unroll
-    for (int score_type = 0; score_type < 4; ++score_type) {
-      energy[score_type][threadIdx.x] = values[score_type];
-    }
-    __syncthreads();
-    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-      if (threadIdx.x < stride) {
-#pragma unroll
-        for (int score_type = 0; score_type < 4; ++score_type) {
-          energy[score_type][threadIdx.x] +=
-              energy[score_type][threadIdx.x + stride];
-        }
-      }
-      __syncthreads();
-    }
-    if (threadIdx.x == 0) {
-#pragma unroll
-      for (int score_type = 0; score_type < 4; ++score_type) {
-        atomicAdd(energies + pose * 4 + score_type, energy[score_type][0]);
-      }
-    }
+    block_reduce_add<4>(energy, values, energies + pose * 4);
   }
 }
 
@@ -446,10 +378,7 @@ ffi::Error forward(
       n_atoms,
       output->typed_data(),
       nullptr);
-  if (auto status = cudaPeekAtLastError(); status != cudaSuccess) {
-    return ffi::Error::Internal(cudaGetErrorString(status));
-  }
-  return ffi::Error::Success();
+  return launch_status();
 }
 
 ffi::Error backward(
@@ -486,10 +415,7 @@ ffi::Error backward(
       n_atoms,
       nullptr,
       gradient->typed_data());
-  if (auto status = cudaPeekAtLastError(); status != cudaSuccess) {
-    return ffi::Error::Internal(cudaGetErrorString(status));
-  }
-  return ffi::Error::Success();
+  return launch_status();
 }
 
 ffi::Error validate_fused_shapes(
@@ -561,9 +487,7 @@ ffi::Error fused_forward(
     aabbs = static_cast<float*>(*allocation);
     atom_tile_aabbs<<<n_poses * n_tiles, kTile, 0, stream>>>(
         coords.typed_data(), real.typed_data(), n_atoms, n_tiles, aabbs);
-    if (auto status = cudaPeekAtLastError(); status != cudaSuccess) {
-      return ffi::Error::Internal(cudaGetErrorString(status));
-    }
+    if (auto error = launch_status(); error.failure()) return error;
   }
   ljlk_elec_pairs<false><<<blocks, kTile * kTile, 0, stream>>>(
       coords.typed_data(),
@@ -580,10 +504,7 @@ ffi::Error fused_forward(
       n_atoms,
       output->typed_data(),
       nullptr);
-  if (auto status = cudaPeekAtLastError(); status != cudaSuccess) {
-    return ffi::Error::Internal(cudaGetErrorString(status));
-  }
-  return ffi::Error::Success();
+  return launch_status();
 }
 
 ffi::Error fused_backward(
@@ -632,9 +553,7 @@ ffi::Error fused_backward(
     aabbs = static_cast<float*>(*allocation);
     atom_tile_aabbs<<<n_poses * n_tiles, kTile, 0, stream>>>(
         coords.typed_data(), real.typed_data(), n_atoms, n_tiles, aabbs);
-    if (auto status = cudaPeekAtLastError(); status != cudaSuccess) {
-      return ffi::Error::Internal(cudaGetErrorString(status));
-    }
+    if (auto error = launch_status(); error.failure()) return error;
   }
   ljlk_elec_pairs<true><<<blocks, kTile * kTile, 0, stream>>>(
       coords.typed_data(),
@@ -651,10 +570,7 @@ ffi::Error fused_backward(
       n_atoms,
       nullptr,
       gradient->typed_data());
-  if (auto status = cudaPeekAtLastError(); status != cudaSuccess) {
-    return ffi::Error::Internal(cudaGetErrorString(status));
-  }
-  return ffi::Error::Success();
+  return launch_status();
 }
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(

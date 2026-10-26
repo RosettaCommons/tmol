@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import jax
 import jax.numpy as jnp
 
-from tmol_jax.score._cuda import register_ffi_targets
+from tmol_jax.score._cuda import pair_sum, register_ffi_targets
 
 
 def available() -> bool:
@@ -53,95 +52,20 @@ def _pack_parameters(state):
     return donors, acceptors, pairs, global_values
 
 
-def _forward_ffi(
-    coordinates, donors, acceptors, separations, pairs, polynomial_words, globals_
-):
-    return jax.ffi.ffi_call(
-        "tmol_jax_hbond_forward",
-        jax.ShapeDtypeStruct((coordinates.shape[0],), jnp.float32),
-    )(
-        coordinates,
-        donors,
-        acceptors,
-        separations,
-        pairs,
-        polynomial_words,
-        globals_,
-    )
-
-
-@jax.custom_vjp
-def _call(
-    coordinates, donors, acceptors, separations, pairs, polynomial_words, globals_
-):
-    return _forward_ffi(
-        coordinates,
-        donors,
-        acceptors,
-        separations,
-        pairs,
-        polynomial_words,
-        globals_,
-    )
-
-
-def _call_forward(
-    coordinates, donors, acceptors, separations, pairs, polynomial_words, globals_
-):
-    result = _forward_ffi(
-        coordinates,
-        donors,
-        acceptors,
-        separations,
-        pairs,
-        polynomial_words,
-        globals_,
-    )
-    return result, (
-        coordinates,
-        donors,
-        acceptors,
-        separations,
-        pairs,
-        polynomial_words,
-        globals_,
-    )
-
-
-def _call_backward(residual, cotangent):
-    coordinates, donors, acceptors, separations, pairs, polynomial_words, globals_ = (
-        residual
-    )
-    gradient = jax.ffi.ffi_call(
-        "tmol_jax_hbond_backward",
-        jax.ShapeDtypeStruct(coordinates.shape, jnp.float32),
-    )(
-        coordinates,
-        donors,
-        acceptors,
-        separations,
-        pairs,
-        polynomial_words,
-        globals_,
-        cotangent,
-    )
-    return gradient, None, None, None, None, None, None
-
-
-_call.defvjp(_call_forward, _call_backward)
-
-
 def score(state, coordinates):
     """Evaluate the hydrogen-bond channel with the installed CUDA kernel."""
     donors, acceptors, pairs, global_values = _pack_parameters(state)
-    return _call(
-        coordinates,
-        donors,
-        acceptors,
-        jnp.asarray(state.donor_acceptor_bond_sep, dtype=jnp.int32),
-        pairs,
-        jnp.asarray(state.polynomials.native_poly_words, dtype=jnp.uint32),
-        global_values,
+    return pair_sum(
+        "tmol_jax_hbond",
+        (coordinates,),
+        (
+            donors,
+            acceptors,
+            jnp.asarray(state.donor_acceptor_bond_sep, dtype=jnp.int32),
+            pairs,
+            jnp.asarray(state.polynomials.native_poly_words, dtype=jnp.uint32),
+            global_values,
+        ),
     )
 
 

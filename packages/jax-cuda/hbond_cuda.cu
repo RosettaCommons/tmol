@@ -1,21 +1,11 @@
-#include <cuda_runtime_api.h>
-
 #include <cstdint>
 
-#include "xla/ffi/api/ffi.h"
+#include "common.cuh"
 
 #include <tmol/score/hbond/potentials/potentials.hh>
 
-namespace ffi = xla::ffi;
 namespace pot = tmol::score::hbond::potentials;
 
-using F32R1 = ffi::BufferR1<ffi::DataType::F32>;
-using F32R3 = ffi::BufferR3<ffi::DataType::F32>;
-using S32R2 = ffi::BufferR2<ffi::DataType::S32>;
-using S32R3 = ffi::BufferR3<ffi::DataType::S32>;
-using U32R4 = ffi::BufferR4<ffi::DataType::U32>;
-
-constexpr int kTile = 16;
 constexpr int kPolynomialWords = 30;
 
 __device__ double hbond_load_double(const uint32_t* words) {
@@ -65,7 +55,7 @@ __global__ void hbond_pairs(
     float* energies,
     float* gradients) {
   using Real3 = Eigen::Matrix<float, 3, 1>;
-  __shared__ float energy[kTile * kTile];
+  __shared__ float energy[1][kTile * kTile];
 
   int donor_tiles = (n_donors + kTile - 1) / kTile;
   int acceptor_tiles = (n_acceptors + kTile - 1) / kTile;
@@ -156,15 +146,8 @@ __global__ void hbond_pairs(
   }
 
   if constexpr (!Gradient) {
-    energy[threadIdx.x] = value;
-    __syncthreads();
-    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-      if (threadIdx.x < stride) {
-        energy[threadIdx.x] += energy[threadIdx.x + stride];
-      }
-      __syncthreads();
-    }
-    if (threadIdx.x == 0) atomicAdd(energies + pose, energy[0]);
+    float values[1] = {value};
+    block_reduce_add<1>(energy, values, energies + pose);
   }
 }
 

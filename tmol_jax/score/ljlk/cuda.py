@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import jax
 import jax.numpy as jnp
 
-from tmol_jax.score._cuda import register_ffi_targets
+from tmol_jax.score._cuda import pair_sum, register_ffi_targets
 
 _PARAMETER_COUNT = 13
 
@@ -66,38 +65,12 @@ def score(state, coords):
     bonded_path_length = jnp.asarray(state.bonded_path_length, dtype=jnp.uint8)
     atom_is_real = jnp.asarray(state.atom_is_real, dtype=jnp.bool_)
 
-    @jax.custom_vjp
-    def call(coordinates):
-        return jax.ffi.ffi_call(
-            "tmol_jax_ljlk_forward",
-            jax.ShapeDtypeStruct((coordinates.shape[0], 3), jnp.float32),
-        )(
-            coordinates,
-            parameters,
-            bonded_path_length,
-            atom_is_real,
-            global_parameters,
-        )
-
-    def forward(coordinates):
-        return call(coordinates), coordinates
-
-    def backward(coordinates, cotangent):
-        gradient = jax.ffi.ffi_call(
-            "tmol_jax_ljlk_backward",
-            jax.ShapeDtypeStruct(coordinates.shape, jnp.float32),
-        )(
-            coordinates,
-            parameters,
-            bonded_path_length,
-            atom_is_real,
-            global_parameters,
-            cotangent,
-        )
-        return (gradient,)
-
-    call.defvjp(forward, backward)
-    return call(coords)
+    return pair_sum(
+        "tmol_jax_ljlk",
+        (coords,),
+        (parameters, bonded_path_length, atom_is_real, global_parameters),
+        channels=3,
+    )
 
 
 def score_fused(ljlk_state, elec_state, coords):
@@ -109,13 +82,10 @@ def score_fused(ljlk_state, elec_state, coords):
     atom_is_real = jnp.asarray(ljlk_state.atom_is_real, dtype=jnp.bool_)
     elec_global = elec_state.cuda_global_parameters
 
-    @jax.custom_vjp
-    def call(coordinates):
-        return jax.ffi.ffi_call(
-            "tmol_jax_ljlk_elec_forward",
-            jax.ShapeDtypeStruct((coordinates.shape[0], 4), jnp.float32),
-        )(
-            coordinates,
+    return pair_sum(
+        "tmol_jax_ljlk_elec",
+        (coords,),
+        (
             parameters,
             ljlk_bonded_paths,
             charges,
@@ -123,30 +93,9 @@ def score_fused(ljlk_state, elec_state, coords):
             atom_is_real,
             ljlk_global,
             elec_global,
-        )
-
-    def forward(coordinates):
-        return call(coordinates), coordinates
-
-    def backward(coordinates, cotangent):
-        gradient = jax.ffi.ffi_call(
-            "tmol_jax_ljlk_elec_backward",
-            jax.ShapeDtypeStruct(coordinates.shape, jnp.float32),
-        )(
-            coordinates,
-            parameters,
-            ljlk_bonded_paths,
-            charges,
-            elec_bonded_paths,
-            atom_is_real,
-            ljlk_global,
-            elec_global,
-            cotangent,
-        )
-        return (gradient,)
-
-    call.defvjp(forward, backward)
-    return call(coords)
+        ),
+        channels=4,
+    )
 
 
 __all__ = ["available", "fused_available", "score", "score_fused"]

@@ -5,7 +5,7 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 
-from tmol_jax.score._cuda import register_ffi_targets
+from tmol_jax.score._cuda import pair_sum, register_ffi_targets
 
 _PARAMETER_COUNT = 9
 
@@ -47,65 +47,6 @@ def _pack_parameters(term, state):
     return packed, global_values
 
 
-def _forward_ffi(
-    coordinates, waters, parameters, bonded_paths, polars, occluders, globals_
-):
-    return jax.ffi.ffi_call(
-        "tmol_jax_lkball_forward",
-        jax.ShapeDtypeStruct((coordinates.shape[0], 4), jnp.float32),
-    )(coordinates, waters, parameters, bonded_paths, polars, occluders, globals_)
-
-
-@jax.custom_vjp
-def _call(coordinates, waters, parameters, bonded_paths, polars, occluders, globals_):
-    return _forward_ffi(
-        coordinates, waters, parameters, bonded_paths, polars, occluders, globals_
-    )
-
-
-def _call_forward(
-    coordinates, waters, parameters, bonded_paths, polars, occluders, globals_
-):
-    result = _forward_ffi(
-        coordinates, waters, parameters, bonded_paths, polars, occluders, globals_
-    )
-    return result, (
-        coordinates,
-        waters,
-        parameters,
-        bonded_paths,
-        polars,
-        occluders,
-        globals_,
-    )
-
-
-def _call_backward(residual, cotangent):
-    coordinates, waters, parameters, bonded_paths, polars, occluders, globals_ = (
-        residual
-    )
-    coordinate_gradient, water_gradient = jax.ffi.ffi_call(
-        "tmol_jax_lkball_backward",
-        (
-            jax.ShapeDtypeStruct(coordinates.shape, jnp.float32),
-            jax.ShapeDtypeStruct(waters.shape, jnp.float32),
-        ),
-    )(
-        coordinates,
-        waters,
-        parameters,
-        bonded_paths,
-        polars,
-        occluders,
-        globals_,
-        cotangent,
-    )
-    return coordinate_gradient, water_gradient, None, None, None, None, None
-
-
-_call.defvjp(_call_forward, _call_backward)
-
-
 def score(term, state, coordinates):
     """Evaluate four LK-ball channels with the installed CUDA kernel."""
 
@@ -129,14 +70,17 @@ def score(term, state, coordinates):
         )
 
     parameters, global_values = _pack_parameters(term, state)
-    return _call(
-        coordinates,
-        place(coordinates),
-        parameters,
-        jnp.asarray(state.bonded_path_length, dtype=jnp.uint8),
-        jnp.asarray(state.polar_indices, dtype=jnp.int32),
-        jnp.asarray(state.occluder_indices, dtype=jnp.int32),
-        global_values,
+    return pair_sum(
+        "tmol_jax_lkball",
+        (coordinates, place(coordinates)),
+        (
+            parameters,
+            jnp.asarray(state.bonded_path_length, dtype=jnp.uint8),
+            jnp.asarray(state.polar_indices, dtype=jnp.int32),
+            jnp.asarray(state.occluder_indices, dtype=jnp.int32),
+            global_values,
+        ),
+        channels=4,
     )
 
 

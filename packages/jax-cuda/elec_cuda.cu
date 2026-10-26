@@ -1,40 +1,12 @@
-#include <cuda_runtime_api.h>
-
 #include <cstdint>
 
-#include "xla/ffi/api/ffi.h"
+#include "common.cuh"
 
 #include <tmol/score/elec/potentials/potentials.hh>
 
-namespace ffi = xla::ffi;
 namespace pot = tmol::score::elec::potentials;
 
-using F32R1 = ffi::BufferR1<ffi::DataType::F32>;
-using F32R2 = ffi::BufferR2<ffi::DataType::F32>;
-using F32R3 = ffi::BufferR3<ffi::DataType::F32>;
-using U8R3 = ffi::BufferR3<ffi::DataType::U8>;
-using PredR2 = ffi::BufferR2<ffi::DataType::PRED>;
-
-constexpr int kTile = 16;
 constexpr int kGlobalParams = 11;
-
-__device__ void elec_tile_pair_from_linear(
-    int index, int n_tiles, int& tile_i, int& tile_j) {
-  int lo = 0;
-  int hi = n_tiles;
-  while (lo + 1 < hi) {
-    int mid = (lo + hi) / 2;
-    int start = mid * n_tiles - mid * (mid - 1) / 2;
-    if (start <= index) {
-      lo = mid;
-    } else {
-      hi = mid;
-    }
-  }
-  tile_i = lo;
-  int start = lo * n_tiles - lo * (lo - 1) / 2;
-  tile_j = lo + index - start;
-}
 
 __device__ pot::ElecGlobalParams<float> elec_load_global(const float* values) {
   return {
@@ -65,7 +37,7 @@ __global__ void elec_pairs(
     float* gradients) {
   __shared__ int tile_i;
   __shared__ int tile_j;
-  __shared__ float energy[kTile * kTile];
+  __shared__ float energy[1][kTile * kTile];
 
   int n_tiles = (n_atoms + kTile - 1) / kTile;
   int n_tile_pairs = n_tiles * (n_tiles + 1) / 2;
@@ -73,7 +45,7 @@ __global__ void elec_pairs(
   int tile_pair = blockIdx.x % n_tile_pairs;
   if (pose >= n_poses) return;
   if (threadIdx.x == 0) {
-    elec_tile_pair_from_linear(tile_pair, n_tiles, tile_i, tile_j);
+    tile_pair_from_linear(tile_pair, n_tiles, tile_i, tile_j);
   }
   __syncthreads();
 
@@ -127,15 +99,8 @@ __global__ void elec_pairs(
   }
 
   if constexpr (!Gradient) {
-    energy[threadIdx.x] = value;
-    __syncthreads();
-    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-      if (threadIdx.x < stride) {
-        energy[threadIdx.x] += energy[threadIdx.x + stride];
-      }
-      __syncthreads();
-    }
-    if (threadIdx.x == 0) atomicAdd(energies + pose, energy[0]);
+    float values[1] = {value};
+    block_reduce_add<1>(energy, values, energies + pose);
   }
 }
 
@@ -183,10 +148,7 @@ ffi::Error forward(
       n_atoms,
       output->typed_data(),
       nullptr);
-  if (auto status = cudaPeekAtLastError(); status != cudaSuccess) {
-    return ffi::Error::Internal(cudaGetErrorString(status));
-  }
-  return ffi::Error::Success();
+  return launch_status();
 }
 
 ffi::Error backward(
@@ -219,10 +181,7 @@ ffi::Error backward(
       n_atoms,
       nullptr,
       gradient->typed_data());
-  if (auto status = cudaPeekAtLastError(); status != cudaSuccess) {
-    return ffi::Error::Internal(cudaGetErrorString(status));
-  }
-  return ffi::Error::Success();
+  return launch_status();
 }
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(

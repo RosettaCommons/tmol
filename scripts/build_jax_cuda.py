@@ -31,6 +31,7 @@ def main():
             "lkball_cuda.cu",
             "elec_cuda.cu",
             "hbond_cuda.cu",
+            "common.cuh",
         ):
             shutil.copyfile(package / source, stage / source)
         shutil.copytree(root / "tmol/score/common", stage / "include/tmol/score/common")
