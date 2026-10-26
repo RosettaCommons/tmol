@@ -151,3 +151,14 @@ def test_peptide_bond_impropers_match_independent_geometry(tmp_path):
         expected += improper(10.458, xyz(left + 1, "CA"), c, n, xyz(left + 1, "H"))
     assert expected > 0.01
     np.testing.assert_allclose(inter[0], expected, rtol=2e-4)
+
+
+def test_written_pdb_round_trips_coordinates(tmp_path):
+    from tmol_jax.io import write_pose_stack_pdb
+
+    pose = pose_stack_from_pdb(_tripeptide_pdb(tmp_path))
+    out = tmp_path / "written.pdb"
+    write_pose_stack_pdb(pose, out)
+    again = pose_stack_from_pdb(out)
+    assert again.coords.shape == pose.coords.shape
+    np.testing.assert_allclose(again.coords, pose.coords, atol=1e-3)

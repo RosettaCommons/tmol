@@ -10,10 +10,6 @@ spec:
 
     ATOM  AAAAA NNNN RRR CSSSS   XXXXXXXXYYYYYYYYZZZZZZZZOOOOOOBBBBBB          EE
 
-We only use biotite when it's installed *and* the caller opts in via
-``use_biotite=True``; the default path is a direct string formatter
-because tests don't need biotite and pulling it in lazily would make
-tracebacks harder to read.
 """
 
 from __future__ import annotations
@@ -323,47 +319,6 @@ def _pdb_string_from_records(
 # --------------------------------------------------------------------------- #
 
 
-def _write_with_biotite(records: List[Dict[str, Any]], path_or_file) -> bool:
-    """Try writing via biotite; return True on success, False if not available.
-
-    Biotite's :class:`AtomArray` API is the cleanest public interface
-    for multi-model structures, but it's an optional dependency. We
-    silently fall back to the string formatter when it's missing.
-    """
-    try:
-        import biotite.structure as struc
-        import biotite.structure.io.pdb as pdb
-    except Exception:
-        return False
-
-    if not records:
-        return False
-
-    n = len(records)
-    atoms = struc.AtomArray(n)
-    atoms.coord = np.asarray(
-        [[r["x"], r["y"], r["z"]] for r in records], dtype=np.float32
-    )
-    atoms.chain_id = np.asarray([r["chain"] for r in records])
-    atoms.res_id = np.asarray([r["resi"] for r in records], dtype=np.int32)
-    atoms.res_name = np.asarray([r["resn"] for r in records])
-    atoms.atom_name = np.asarray([r.get("atomn", "") for r in records])
-    atoms.element = np.asarray([r.get("element", "").strip() for r in records])
-    atoms.hetero = np.asarray(
-        [r.get("record_name", "ATOM").strip() == "HETATM" for r in records]
-    )
-
-    writer = pdb.PDBFile()
-    writer.set_structure(atoms)
-
-    if hasattr(path_or_file, "write"):
-        # biotite's PDBFile wants a filename; use the fallback for
-        # file-like objects.
-        return False
-    writer.write(str(path_or_file))
-    return True
-
-
 # --------------------------------------------------------------------------- #
 # Public API                                                                   #
 # --------------------------------------------------------------------------- #
@@ -373,8 +328,6 @@ def write_pose_stack_pdb(
     pose_stack: Any,
     path_or_file: Union[str, Path, TextIO],
     pose_index: Optional[int] = 0,
-    *,
-    use_biotite: bool = False,
 ) -> None:
     """Write a PoseStack (or a single pose of a stack) to a PDB file.
 
@@ -387,18 +340,10 @@ def write_pose_stack_pdb(
     pose_index :
         Pose index to emit. Defaults to ``0`` (first pose). Pass
         ``None`` to emit all poses as separate MODEL records.
-    use_biotite :
-        Opt-in to write via biotite if available. When False (default)
-        or biotite is not installed, a direct string formatter is used.
     """
 
     records = atom_records_from_pose_stack(pose_stack, pose_index=pose_index)
     multi_model = pose_index is None
-
-    if use_biotite:
-        if _write_with_biotite(records, path_or_file):
-            return
-        # fall through to string formatter
 
     pdb_str = _pdb_string_from_records(records, multi_model=multi_model)
     if hasattr(path_or_file, "write"):

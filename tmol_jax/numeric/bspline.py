@@ -1,30 +1,11 @@
-"""B-spline and cubic-Hermite interpolation in pure JAX.
+"""Thevenaz/Blu/Unser B-spline interpolation in pure JAX.
 
-This module provides two complementary tools:
-
-1. **Thevenaz/Blu/Unser B-splines** (:func:`bspline_coefficients`,
-   :func:`bspline_interpolate`, :class:`BSplineInterpolation`) -- a
-   line-for-line port of the C++ header
-   ``tmol/numeric/bspline_compiled/bspline.hh`` used by upstream
-   tmol's Ramachandran and Dunbrack potentials. The same math; the
-   only change is that the causal / anti-causal IIR filters that
-   produce spline coefficients are expressed as :func:`jax.lax.scan`
-   recurrences and vectorised with :func:`jax.vmap` over the remaining
-   axes. Periodic boundary conditions; supports degree-2..5 in
-   2/3/4 spatial dimensions.
-
-2. **Hermite/Catmull-Rom bicubic / tricubic interpolation**
-   (:func:`bicubic_interp`, :func:`tricubic_interp`) -- a lightweight
-   alternative for consumers that do not need to pre-fit spline
-   coefficients. Operates directly on the sample grid with periodic
-   wrap-around. Every operation is differentiable, so
-   ``jax.grad(bicubic_interp, argnums=(1, 2))`` yields the exact
-   analytic gradient in ``(u, v)``.
-
-The upstream ``BSplineInterpolation.from_coordinates`` /
-``.interpolate`` two-step API is preserved unchanged so callers in
-``tmol_jax.score.backbone_torsion`` / ``tmol_jax.score.dunbrack`` can
-mirror their torch counterparts.
+A line-for-line port of ``tmol/numeric/bspline_compiled/bspline.hh`` used by
+upstream tmol's Ramachandran and Dunbrack potentials (:func:`bspline_coefficients`,
+:func:`bspline_interpolate`, :class:`BSplineInterpolation`). The causal /
+anti-causal IIR filters that produce spline coefficients are expressed as
+:func:`jax.lax.scan` recurrences and vectorised with :func:`jax.vmap`. Periodic
+boundary conditions; degree 2..5 in 2/3/4 spatial dimensions.
 
 Reference
 ---------
@@ -395,150 +376,8 @@ class BSplineInterpolation:
         return bspline_interpolate(self.coeffs, X, degree=self.degree)
 
 
-# ---------------------------------------------------------------------------
-# Hermite / Catmull-Rom bicubic & tricubic on raw sample grids
-# ---------------------------------------------------------------------------
-
-
-def catmull_rom_1d(
-    p_m1: jax.Array, p_0: jax.Array, p_1: jax.Array, p_2: jax.Array, t: jax.Array
-) -> jax.Array:
-    """1-D Catmull-Rom cubic interpolation at fractional position ``t in [0, 1]``.
-
-    ``p_m1``, ``p_0``, ``p_1``, ``p_2`` are the four samples surrounding
-    ``t`` (``t == 0`` -> ``p_0``, ``t == 1`` -> ``p_1``). Uses the
-    standard Catmull-Rom tangents
-    ``m_0 = (p_1 - p_m1) / 2`` and ``m_1 = (p_2 - p_0) / 2``; the cubic
-    Hermite polynomial with these tangents interpolates through ``p_0``
-    and ``p_1`` with C^1 continuity.
-    """
-    # Pre-expanded Catmull-Rom polynomial.
-    t2 = t * t
-    t3 = t2 * t
-    return 0.5 * (
-        (2.0 * p_0)
-        + (-p_m1 + p_1) * t
-        + (2.0 * p_m1 - 5.0 * p_0 + 4.0 * p_1 - p_2) * t2
-        + (-p_m1 + 3.0 * p_0 - 3.0 * p_1 + p_2) * t3
-    )
-
-
-def _wrap(idx: jax.Array, N: int) -> jax.Array:
-    """Periodic wrap-around for an integer index (concrete ``N``)."""
-    return jnp.mod(idx, N)
-
-
-def bicubic_interp(grid: jax.Array, u: jax.Array, v: jax.Array) -> jax.Array:
-    """Catmull-Rom bicubic interpolation on a 2-D periodic ``grid``.
-
-    Parameters
-    ----------
-    grid : jax.Array
-        ``[H, W]`` array of samples. Indexing is ``grid[h, w]`` with
-        ``h`` corresponding to coordinate ``u`` and ``w`` to ``v``.
-    u, v : jax.Array (scalar)
-        Fractional grid coordinates. ``u == 0`` samples ``grid[0, :]``;
-        ``u == H`` wraps back to ``grid[0, :]``. Same for ``v`` vs
-        ``W``.
-
-    Returns
-    -------
-    jax.Array
-        Scalar interpolated value. Differentiable in ``u`` / ``v``.
-    """
-
-    H, W = grid.shape
-    u = jnp.asarray(u)
-    v = jnp.asarray(v)
-
-    iu = jnp.floor(u).astype(jnp.int32)
-    iv = jnp.floor(v).astype(jnp.int32)
-    fu = u - iu.astype(u.dtype)
-    fv = v - iv.astype(v.dtype)
-
-    # Four rows (ih = iu-1, iu, iu+1, iu+2) and, for each, four columns.
-    def row_at(du: int) -> jax.Array:
-        ih = _wrap(iu + du, H)
-        iw_m1 = _wrap(iv - 1, W)
-        iw_0 = _wrap(iv, W)
-        iw_1 = _wrap(iv + 1, W)
-        iw_2 = _wrap(iv + 2, W)
-        return catmull_rom_1d(
-            grid[ih, iw_m1], grid[ih, iw_0], grid[ih, iw_1], grid[ih, iw_2], fv
-        )
-
-    r_m1 = row_at(-1)
-    r_0 = row_at(0)
-    r_1 = row_at(1)
-    r_2 = row_at(2)
-    return catmull_rom_1d(r_m1, r_0, r_1, r_2, fu)
-
-
-def tricubic_interp(
-    grid: jax.Array, u: jax.Array, v: jax.Array, w: jax.Array
-) -> jax.Array:
-    """Catmull-Rom tricubic interpolation on a 3-D periodic ``grid``.
-
-    Parameters
-    ----------
-    grid : ``[D, H, W]`` array
-    u, v, w : scalar fractional coordinates (periodic)
-
-    Returns
-    -------
-    Scalar interpolated value, differentiable in ``(u, v, w)``.
-    """
-
-    D, H, W = grid.shape
-    u = jnp.asarray(u)
-    v = jnp.asarray(v)
-    w = jnp.asarray(w)
-
-    iu = jnp.floor(u).astype(jnp.int32)
-    iv = jnp.floor(v).astype(jnp.int32)
-    iw = jnp.floor(w).astype(jnp.int32)
-    fu = u - iu.astype(u.dtype)
-    fv = v - iv.astype(v.dtype)
-    fw = w - iw.astype(w.dtype)
-
-    def slab_at(du: int) -> jax.Array:
-        # Treat the slab at offset ``du`` along the first axis as a 2-D
-        # bicubic over (iv, iw) and reuse bicubic_interp locally.
-        id_ = _wrap(iu + du, D)
-        slab = grid[id_]  # [H, W]
-        # We inline the 2-D routine to avoid re-wrapping iv twice.
-        iv_m1 = _wrap(iv - 1, H)
-        iv_0 = _wrap(iv, H)
-        iv_1 = _wrap(iv + 1, H)
-        iv_2 = _wrap(iv + 2, H)
-        iw_m1 = _wrap(iw - 1, W)
-        iw_0 = _wrap(iw, W)
-        iw_1 = _wrap(iw + 1, W)
-        iw_2 = _wrap(iw + 2, W)
-
-        def row_at(ih):
-            return catmull_rom_1d(
-                slab[ih, iw_m1], slab[ih, iw_0], slab[ih, iw_1], slab[ih, iw_2], fw
-            )
-
-        r_m1 = row_at(iv_m1)
-        r_0 = row_at(iv_0)
-        r_1 = row_at(iv_1)
-        r_2 = row_at(iv_2)
-        return catmull_rom_1d(r_m1, r_0, r_1, r_2, fv)
-
-    s_m1 = slab_at(-1)
-    s_0 = slab_at(0)
-    s_1 = slab_at(1)
-    s_2 = slab_at(2)
-    return catmull_rom_1d(s_m1, s_0, s_1, s_2, fu)
-
-
 __all__ = [
     "BSplineInterpolation",
     "bspline_coefficients",
     "bspline_interpolate",
-    "bicubic_interp",
-    "tricubic_interp",
-    "catmull_rom_1d",
 ]
