@@ -635,7 +635,12 @@ def _reconstruct_pose_atoms(residues, source, present, starts, ends, co):
     return np.concatenate(coordinates)
 
 
-def _chain_segments(indices, chains, disconnected):
+def _chain_segments(indices, chains, disconnected, gaps):
+    """Chain starts/ends (which pick terminal variants) and connected segments.
+
+    A ``gap`` (missing density) disconnects residues but, as in TMol's loader,
+    leaves their block types un-terminated; an explicit break also terminates.
+    """
     changed = chains[indices[1:]] != chains[indices[:-1]]
     broken = (
         changed
@@ -643,9 +648,14 @@ def _chain_segments(indices, chains, disconnected):
         | disconnected[indices[:-1], 1]
         | disconnected[indices[1:], 0]
     )
-    starts = np.r_[True, broken]
-    ends = np.r_[broken, True]
-    return starts, ends, np.cumsum(starts) - 1
+    cut = broken | gaps[indices[:-1], 1] | gaps[indices[1:], 0]
+    return (
+        np.r_[True, broken],
+        np.r_[broken, True],
+        np.r_[True, cut],
+        np.r_[cut, True],
+        np.cumsum(np.r_[True, cut]) - 1,
+    )
 
 
 def pose_stack_from_canonical_form(
@@ -655,7 +665,8 @@ def pose_stack_from_canonical_form(
 
     Coordinates are [poses, residues, canonical atoms, 3]. Missing leaf atoms
     are reconstructed; missing non-leaf atoms and unavailable variants raise.
-    res_not_connected[..., 0/1] breaks the preceding/following polymer bond.
+    res_not_connected[..., 0/1] breaks the preceding/following polymer bond and
+    selects terminal variants; res_gap does the same without terminal variants.
     """
     import attrs
     from tmol_jax.io.canonical_ordering import default_canonical_ordering
@@ -700,6 +711,7 @@ def pose_stack_from_canonical_form(
     )
     if disconnected.shape != shape + (2,):
         raise ValueError("res_not_connected must have shape [poses, residues, 2]")
+    gaps = np.asarray(cf.get("res_gap", np.zeros(shape + (2,), dtype=bool)), dtype=bool)
     known = set(_bt_name3_index(pbt))
     (
         types,
@@ -722,8 +734,8 @@ def pose_stack_from_canonical_form(
             )
         if not len(indices):
             raise ValueError("each pose must contain at least one protein residue")
-        starts, ends, chain_segments = _chain_segments(
-            indices, chains[pose], disconnected[pose]
+        starts, ends, linked_starts, linked_ends, chain_segments = _chain_segments(
+            indices, chains[pose], disconnected[pose], gaps[pose]
         )
         selected, pairs = _choose_residue_types(
             pbt,
@@ -740,8 +752,8 @@ def pose_stack_from_canonical_form(
                 residues,
                 coords[pose, indices],
                 present[pose, indices],
-                starts,
-                ends,
+                linked_starts,
+                linked_ends,
                 co,
             )
         )

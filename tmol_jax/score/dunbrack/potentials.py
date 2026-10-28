@@ -312,20 +312,9 @@ def dunbrack_rotdev_score(
 
         sum_i  (chi_i - mean_i)^2 / (2 * sigma_i^2)
 
-    Upstream (``block_chi_deviation_penalty`` in
-    ``tmol/score/dunbrack/potentials/potentials.hh``) uses an
-    *asymmetric* wrap to keep ``chi_dev`` on the trans branch::
-
-        chi_dev = chi < -120deg ? chi + 2*pi - mean : chi - mean
-
-    This is the exact form we replicate here. A symmetric shortest-arc
-    wrap (``mod(diff + pi, 2pi) - pi``) gives the same numerical answer
-    in the dominant case (chi in the centre of its rotamer well) but
-    differs at the chi=-120deg seam between the trans and g-/g+ bins
-    — and that difference back-propagates non-zero gradient discrepancies
-    on backbone atoms that influence the (phi, psi)-dependent mean and
-    sigma. Using the upstream asymmetric formula brings the
-    ``dunbrack_rotdev`` per-atom gradient diff to float precision.
+    The difference is wrapped to ``[-pi, pi]`` like TMol's
+    ``periodic_chi_difference`` (the means table is pre-shifted at setup so the
+    interpolation never crosses the +-180 degree seam).
 
     Parameters
     ----------
@@ -340,15 +329,9 @@ def dunbrack_rotdev_score(
         zero. Used to handle residues with fewer than ``max_nchi``
         chi angles in a batched setting.
     """
-    # Upstream's asymmetric wrap: shift chi by 2*pi when chi < -120 deg
-    # before subtracting the mean. The means table has already been
-    # pre-shifted at setup time so that "trans" rotamer means live in
-    # roughly [180, 240] deg (see DunbrackEnergyTerm._stack_rotameric_tables
-    # — ``means_deg = where(means_deg < -120, means_deg + 360, means_deg)``).
-    deg120 = jnp.deg2rad(120.0)
     two_pi = 2.0 * jnp.pi
-    chi_shifted = jnp.where(chis < -deg120, chis + two_pi, chis)
-    diff = chi_shifted - chi_means
+    diff = chis - chi_means
+    diff = diff - two_pi * jnp.round(diff / two_pi)
 
     # Clamp sigma to avoid division by zero in padding slots.
     safe_sigma = jnp.where(chi_sigmas > 1e-6, chi_sigmas, 1.0)

@@ -266,7 +266,7 @@ def canonical_form_from_pdb(pdb_text_or_path, canonical_ordering=None):
     """Convert a PDB to canonical protein coordinates, retaining missing atoms.
 
     Noncanonical residues fail explicitly; water is ignored. Chain labels
-    determine polymer connectivity. Coordinate gaps do not create chain breaks.
+    and C-N distances (gaps beyond 2.4 A) determine polymer connectivity.
     """
     from .pdb_parsing import parse_pdb
 
@@ -274,6 +274,25 @@ def canonical_form_from_pdb(pdb_text_or_path, canonical_ordering=None):
         parse_pdb(pdb_text_or_path),
         canonical_ordering or default_canonical_ordering(),
     )
+
+
+_PEPTIDE_GAP = 2.4  # Angstrom; matches tmol's missing_density_distance_threshold
+
+
+def _peptide_gaps(canonical_ordering, res_names, chain_id, coords, present):
+    """Flag polymer bonds whose resolved C and N atoms are farther than a peptide bond."""
+    n_res = chain_id.shape[1]
+    not_connected = np.zeros((1, n_res, 2), dtype=bool)
+    for r in range(n_res - 1):
+        if chain_id[0, r] != chain_id[0, r + 1]:
+            continue
+        c = canonical_ordering.atom_index(res_names[0, r], "C")
+        n = canonical_ordering.atom_index(res_names[0, r + 1], "N")
+        if c < 0 or n < 0 or not (present[0, r, c] and present[0, r + 1, n]):
+            continue
+        if np.linalg.norm(coords[0, r, c] - coords[0, r + 1, n]) > _PEPTIDE_GAP:
+            not_connected[0, r, 1] = not_connected[0, r + 1, 0] = True
+    return not_connected
 
 
 def _canonical_form_from_records(records, canonical_ordering):
@@ -397,6 +416,9 @@ def _canonical_form_from_records(records, canonical_ordering):
         b_factor_arr[0, r, aind] = float(b_factor_raw[i])
 
     return {
+        "res_gap": _peptide_gaps(
+            canonical_ordering, res_name_arr, chain_id, coords, atom_present
+        ),
         "coords": coords,
         "atom_is_present": atom_present,
         "chain_id": chain_id,

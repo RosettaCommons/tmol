@@ -162,3 +162,39 @@ def test_written_pdb_round_trips_coordinates(tmp_path):
     again = pose_stack_from_pdb(out)
     assert again.coords.shape == pose.coords.shape
     np.testing.assert_allclose(again.coords, pose.coords, atol=1e-3)
+
+
+def test_coordinate_gap_disconnects_without_terminal_variants(tmp_path):
+    lines = _tripeptide_pdb(tmp_path).read_text().splitlines()
+    shifted = [
+        (
+            line[:30] + f"{float(line[30:38]) + 6:8.3f}" + line[38:]
+            if line.startswith("ATOM") and int(line[22:26]) == 3
+            else line
+        )
+        for line in lines
+    ]
+    path = tmp_path / "gap.pdb"
+    path.write_text("\n".join(shifted) + "\n")
+    pose = pose_stack_from_pdb(path)
+    names = [pose.block_type(0, i).name for i in range(3)]
+    assert not any("cterm" in name for name in names[:2]), names
+    connections = np.asarray(pose.inter_residue_connections)[0]
+    assert set(connections[1, :, 0]) == {0, -1}
+    assert set(connections[2, :, 0]) == {-1}
+
+
+def test_disulfide_energy_matches_torch_reference():
+    """Unweighted disulfide energy of 3PLC's four bonds, from TMol's Torch scorer."""
+    from tmol_jax.score import ScoreType
+
+    pose = pose_stack_from_pdb(
+        Path(__file__).parents[2] / "tmol/tests/data/pdb/3plc.pdb"
+    )
+    score_function = beta2016_score_function()
+    score = score_function.render_whole_pose_scoring_module(
+        pose, sum_terms=False, apply_weights=False
+    )
+    channel = score_function.active_score_types().index(ScoreType.disulfide)
+    energy = np.asarray(score(pose.coords))[channel, 0]
+    np.testing.assert_allclose(energy, -3.25716, atol=2e-3)
