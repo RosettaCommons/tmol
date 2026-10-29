@@ -6,9 +6,8 @@ Dunbrack terms. It is jit-safe and differentiable via :func:`jax.grad`.
 """
 
 from tmol_jax.numeric.bspline import (
-    BSplineInterpolation,
     bspline_coefficients,
     bspline_interpolate,
 )
 
-__all__ = ["BSplineInterpolation", "bspline_coefficients", "bspline_interpolate"]
+__all__ = ["bspline_coefficients", "bspline_interpolate"]

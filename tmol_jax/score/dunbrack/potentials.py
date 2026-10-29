@@ -102,7 +102,7 @@ def _frac_index(angle: Array, start: Array, step: Array, period: Array) -> Array
 # Port of ``tmol/numeric/bspline_compiled/bspline.hh`` restricted to 2-D,
 # DEGREE=3 (bicubic) with periodic boundary conditions. Upstream uses the
 # same code path for Dunbrack's rot / mean / sdev tables (see ``params.py``
-# in upstream dunbrack, ``BSplineInterpolation.from_coordinates``).
+# in upstream dunbrack, ``bspline_coefficients``).
 #
 # Two pieces:
 #

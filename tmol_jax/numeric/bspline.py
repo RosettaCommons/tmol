@@ -2,7 +2,7 @@
 
 A line-for-line port of ``tmol/numeric/bspline_compiled/bspline.hh`` used by
 upstream tmol's Ramachandran and Dunbrack potentials (:func:`bspline_coefficients`,
-:func:`bspline_interpolate`, :class:`BSplineInterpolation`). The causal /
+:func:`bspline_interpolate`). The causal /
 anti-causal IIR filters that produce spline coefficients are expressed as
 :func:`jax.lax.scan` recurrences and vectorised with :func:`jax.vmap`. Periodic
 boundary conditions; degree 2..5 in 2/3/4 spatial dimensions.
@@ -23,7 +23,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_jax.types import pytree_dataclass
 
 # ---------------------------------------------------------------------------
 # Helpers: poles for B-splines of various degrees
@@ -344,40 +343,7 @@ def bspline_interpolate(coeffs: jax.Array, X: jax.Array, degree: int = 3) -> jax
     return out.reshape(lead)
 
 
-# ---------------------------------------------------------------------------
-# Stateful class: preserves the upstream two-phase API
-# ---------------------------------------------------------------------------
-
-
-@pytree_dataclass
-class BSplineInterpolation:
-    """Container that bundles precomputed spline coefficients.
-
-    Mirrors :class:`tmol.numeric.bspline.BSplineInterpolation`: construct
-    via :meth:`from_coordinates` once, then call :meth:`interpolate`
-    many times.
-
-    The object is a registered JAX pytree so it can be passed through
-    :func:`jax.jit` / :func:`jax.vmap` boundaries, and it is
-    ``@pytree_dataclass``-frozen.
-    """
-
-    coeffs: jax.Array
-    degree: int = 3
-
-    @classmethod
-    def from_coordinates(cls, coords, degree: int = 3) -> "BSplineInterpolation":
-        """Build coefficients from an N-D sample grid."""
-        coeffs = bspline_coefficients(jnp.asarray(coords), degree=degree)
-        return cls(coeffs=coeffs, degree=degree)
-
-    def interpolate(self, X: jax.Array) -> jax.Array:
-        """Interpolate at the given coordinates."""
-        return bspline_interpolate(self.coeffs, X, degree=self.degree)
-
-
 __all__ = [
-    "BSplineInterpolation",
     "bspline_coefficients",
     "bspline_interpolate",
 ]

@@ -225,10 +225,6 @@ class ScoreFunction:
     def jitted(self, pose_stack):
         return jax.jit(self.render_whole_pose_scoring_module(pose_stack))
 
-    def jitted_grad(self, pose_stack):
-        score = self.render_whole_pose_scoring_module(pose_stack)
-        return jax.jit(jax.grad(lambda coords: score(coords).sum()))
-
     def jitted_value_and_grad(self, pose_stack):
         score = self.render_whole_pose_scoring_module(pose_stack)
 

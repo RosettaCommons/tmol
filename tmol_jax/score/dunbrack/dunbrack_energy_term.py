@@ -491,7 +491,7 @@ class DunbrackEnergyTerm(EnergyTerm):
 
             # -log P(rotamer | phi, psi), with zeros clamped to 1e-6.
             # Upstream (``dunbrack/params.py::_compute_rotprob_coeffs``) feeds
-            # this table through ``BSplineInterpolation.from_coordinates``
+            # this table through ``bspline_coefficients``
             # before interpolating, i.e. the tables stored on the term are
             # B-spline *coefficients*, not raw sample values. Mirror that
             # here so our interpolator (bicubic B-spline with periodic BCs)
@@ -513,7 +513,7 @@ class DunbrackEnergyTerm(EnergyTerm):
             sdevs_rad = np.where(sdevs_rad > 1e-6, sdevs_rad, 1.0)
             # Upstream (``dunbrack/params.py::_calculate_rot_mean_coeffs`` +
             # ``_calculate_rot_sdev_coeffs``) feeds each 2-D (N_phi, N_psi)
-            # plane through ``BSplineInterpolation.from_coordinates`` at DB
+            # plane through ``bspline_coefficients`` at DB
             # load time, i.e. the tables on the score term are bicubic
             # B-spline *coefficients*, not raw sample values. Mirror that
             # here by applying the same separable causal / anti-causal
@@ -638,7 +638,7 @@ class DunbrackEnergyTerm(EnergyTerm):
             raw_nlp = -np.log(probs)  # [nrot_sr, N_phi, N_psi, N_chi]
             # Upstream (``dunbrack/params.py::_calc_semirot_coeffs``) feeds
             # each 3-D (N_phi, N_psi, N_chi) slice through
-            # ``BSplineInterpolation.from_coordinates`` at DB load time.
+            # ``bspline_coefficients`` at DB load time.
             # Apply the same tricubic B-spline prefilter here so that a
             # matching tricubic evaluator at score time reproduces the
             # upstream numbers.
