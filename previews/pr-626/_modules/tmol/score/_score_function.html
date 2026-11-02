@@ -429,6 +429,7 @@
                   
   <h1>Source code for tmol.score._score_function</h1><div class="highlight"><pre>
 <span></span><span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">ctypes</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
@@ -562,6 +563,21 @@
     <span class="n">torch</span><span class="o">.</span><span class="n">get_num_threads</span><span class="p">()</span>
     <span class="n">runtime</span> <span class="o">=</span> <span class="n">_openmp_runtime</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">runtime</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">runtime</span><span class="o">.</span><span class="n">omp_set_num_threads</span><span class="p">(</span><span class="n">n_threads</span><span class="p">)</span>
+
+
+<span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_single_openmp_thread</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">"""Run the enclosed ops on this thread alone, without an OpenMP team."""</span>
+    <span class="n">runtime</span> <span class="o">=</span> <span class="n">_openmp_runtime</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">runtime</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">yield</span>
+        <span class="k">return</span>
+    <span class="n">n_threads</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">get_num_threads</span><span class="p">()</span>
+    <span class="n">runtime</span><span class="o">.</span><span class="n">omp_set_num_threads</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">yield</span>
+    <span class="k">finally</span><span class="p">:</span>
         <span class="n">runtime</span><span class="o">.</span><span class="n">omp_set_num_threads</span><span class="p">(</span><span class="n">n_threads</span><span class="p">)</span>
 
 
@@ -765,12 +781,14 @@
                 <span class="n">_score_grad_in_thread</span><span class="p">(</span><span class="o">*</span><span class="n">grad_input</span><span class="p">)</span> <span class="k">for</span> <span class="n">grad_input</span> <span class="ow">in</span> <span class="n">term_grad_inputs</span>
             <span class="p">]</span>
 
+        <span class="c1"># Small adds: a team-wide OpenMP region per add can stall on busy cores.</span>
         <span class="n">grad_coords</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">for</span> <span class="n">term_grad</span> <span class="ow">in</span> <span class="n">term_grads</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">term_grad</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">grad_coords</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="n">term_grad</span> <span class="k">if</span> <span class="n">grad_coords</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">grad_coords</span> <span class="o">+</span> <span class="n">term_grad</span>
-                <span class="p">)</span>
+        <span class="k">with</span> <span class="n">_single_openmp_thread</span><span class="p">():</span>
+            <span class="k">for</span> <span class="n">term_grad</span> <span class="ow">in</span> <span class="n">term_grads</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">term_grad</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">grad_coords</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="n">term_grad</span> <span class="k">if</span> <span class="n">grad_coords</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">grad_coords</span> <span class="o">+</span> <span class="n">term_grad</span>
+                    <span class="p">)</span>
         <span class="k">return</span> <span class="n">grad_coords</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
 
 
