@@ -18,10 +18,29 @@ make -C docs html
 
 Rendered HTML is written to `docs/_build/html`.
 
-The committed notebook thumbnails live under `docs/_static/tutorials/`.
 nbsphinx does not execute notebooks during the Sphinx phase; the smoke command
 above executes them first and writes the plots, tables, and viewer HTML that
 Sphinx consumes. CI performs the same two-step notebook-and-Sphinx build.
+
+### Adding a tutorial notebook
+
+Put it in `docs/tutorial/` as `NN_name.ipynb` and add it to the gallery in
+`docs/examples_index.rst`. CI finds notebooks by that pattern, so nothing else
+needs registering. A tutorial must:
+
+- start with the shared setup cell (copy it from an existing notebook):
+  `from notebook_setup import *` then `device, param_db = setup()`.
+  [`notebook_setup.py`](tutorial/notebook_setup.py) installs TMol on Colab and
+  provides the common TMol names, `data_path()` for the checked-in example
+  structures, and the device and seed. Add new example files to its `FIXTURES`
+  so Colab downloads them;
+- carry an Open In Colab badge linking to itself, and the `accelerator: GPU`
+  notebook metadata. `smoke_tutorial_notebooks.py` rejects a notebook without
+  them;
+- set `"tmol": {"gpu_smoke": true}` in the notebook metadata. Every tutorial
+  runs on CUDA in CI as well as on CPU, because CPU-only runs hide
+  device-mismatch bugs; a test enforces it. Tag cells that need a GPU with
+  `gpu-only`.
 
 ## Writing documentation
 
@@ -32,6 +51,27 @@ Sphinx consumes. CI performs the same two-step notebook-and-Sphinx build.
 - Link to a tutorial or API page when it adds detail; avoid introductory link
   checklists and descriptions of what the page is about to explain.
 - Keep notebook code, fixtures, outputs, and Colab setup consistent.
+
+For tutorials, keep the explanation next to the operation it explains:
+
+- Start with a concrete molecular question, the structure used to answer it,
+  and the result the reader will produce. Give a short roadmap in execution order.
+- Complete that story with a result check before optional extensions. Connect the
+  final table or structure back to the opening question; do not promise a specific
+  stochastic outcome or imply that a short run establishes convergence.
+- Introduce each new object when it first appears. Distinguish residue labels
+  from zero-based block indices, and state what a mask selects.
+- Give each code cell one job: prepare inputs, calculate, or inspect a result.
+  Prefer public APIs over manual edits to internal tensors.
+- After a calculation, say what to look for in its table, plot, or viewer.
+  Explain the reference and sign of a score difference before interpreting it.
+- Keep modeling calls and movement controls visible. Tag lengthy plotting or
+  measurement helpers with `collapse-code`; their outputs should remain open.
+- Put advanced extensions after the first complete example. Keep necessary
+  scientific limits beside the result rather than repeating them in every cell.
+- Keep result tables focused on the comparison: use readable column labels and
+  separate score summaries from geometry checks. State what the reader should
+  compare before showing the table or plot.
 
 ## Pull requests
 

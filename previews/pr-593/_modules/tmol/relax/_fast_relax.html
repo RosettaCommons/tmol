@@ -25,20 +25,20 @@
   </noscript>
   
   <!-- Loaded before other Sphinx assets -->
-  <link href="../../../_static/styles/theme.css?digest=18bd87630a240e9c25be" rel="stylesheet" />
-<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=18bd87630a240e9c25be" rel="stylesheet" />
+  <link href="../../../_static/styles/theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
 
     <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css?v=9c3e77be" />
     <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=adb9cd23" />
   
   <!-- So that users can add custom icons -->
-  <script defer src="../../../_static/scripts/fontawesome.js?digest=18bd87630a240e9c25be"></script>
+  <script defer src="../../../_static/scripts/fontawesome.js?digest=75c7c72ae941e8b558d8"></script>
   <!-- Pre-loaded scripts that we'll load fully later -->
-  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=18bd87630a240e9c25be" />
-<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=18bd87630a240e9c25be" />
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
 
-    <script src="../../../_static/documentation_options.js?v=a395f30a"></script>
+    <script src="../../../_static/documentation_options.js?v=938c9ccc"></script>
     <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script>let toggleHintShow = 'show code';</script>
@@ -49,7 +49,8 @@
     <script>DOCUMENTATION_OPTIONS.pagename = '_modules/tmol/relax/_fast_relax';</script>
     <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
     <script src="../../../_static/tmol-explorers.js?v=089c5f52"></script>
-    <link rel="canonical" href="https://uw-ipd.github.io/tmol/latest/_modules/tmol/relax/_fast_relax.html" />
+    <script async="async" defer="defer" src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+    <link rel="canonical" href="https://rosettacommons.github.io/tmol/latest/_modules/tmol/relax/_fast_relax.html" />
     <link rel="icon" href="../../../_static/favicon.ico"/>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
@@ -57,7 +58,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="color-scheme" content="light dark"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="0.1.64" />
+  <meta name="docsearch:version" content="0.2.0" />
   
     
     <script src="../../../_static/searchtools.js"></script>
@@ -109,7 +110,7 @@
   
     <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
 <div class="bd-header__inner bd-page-width">
-  <button type="button" class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+  <button type="button" class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation" aria-expanded="false" aria-controls="pst-primary-sidebar-modal">
     <span class="fa-solid fa-bars"></span>
   </button>
   
@@ -230,14 +231,14 @@
 
 <div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
   <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
-    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
-    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
-    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
   </button>
   <ul class="dropdown-menu dropdown-menu-end">
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
   </ul>
 </div></div>
       
@@ -252,7 +253,7 @@
           
           
           
-          <a href="https://github.com/uw-ipd/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
         </li>
 </ul></div>
       
@@ -284,7 +285,7 @@
       
         
       
-      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <dialog id="pst-primary-sidebar-modal" tabindex="-1"></dialog>
       <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar hide-on-wide">
         
 
@@ -362,14 +363,14 @@
 
 <div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
   <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
-    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
-    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
-    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
   </button>
   <ul class="dropdown-menu dropdown-menu-end">
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
   </ul>
 </div></div>
         
@@ -384,7 +385,7 @@
           
           
           
-          <a href="https://github.com/uw-ipd/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
         </li>
 </ul></div>
         
@@ -424,14 +425,11 @@
     
     <li class="breadcrumb-item breadcrumb-home">
       <a href="../../../index.html" class="nav-link" aria-label="Home">
-        <i class="fa-solid fa-home"></i>
+        <i class="fa-solid fa-house"></i>
       </a>
     </li>
     
     <li class="breadcrumb-item"><a href="../../index.html" class="nav-link">Module code</a></li>
-    
-    
-    <li class="breadcrumb-item"><a href="../../tmol.html" class="nav-link">tmol</a></li>
     
     <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">tmol.relax._fast_relax</span></li>
   </ul>
@@ -457,34 +455,25 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Protocol</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">attr</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStack</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">ScoreFunction</span><span class="p">,</span>
-    <span class="n">ScoreType</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.kinematics</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">CartesianMoveMap</span><span class="p">,</span>
-    <span class="n">MoveMap</span><span class="p">,</span>
-    <span class="n">FoldForest</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">pack_rotamers</span><span class="p">,</span>
-    <span class="n">PackerPalette</span><span class="p">,</span>
-    <span class="n">PackerTask</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack.rotamer</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">FixedAAChiSampler</span><span class="p">,</span>
-    <span class="n">IncludeCurrentSampler</span><span class="p">,</span>
-    <span class="n">NaChiRotamerSampler</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.optimization</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose._pose_stack</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStack</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score._score_function</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScoreFunction</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score._score_types</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScoreType</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.kinematics._move_map</span><span class="w"> </span><span class="kn">import</span> <span class="n">CartesianMoveMap</span><span class="p">,</span> <span class="n">MoveMap</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.kinematics._fold_forest</span><span class="w"> </span><span class="kn">import</span> <span class="n">FoldForest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack._pack_rotamers</span><span class="w"> </span><span class="kn">import</span> <span class="n">pack_rotamers</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack._packer_task</span><span class="w"> </span><span class="kn">import</span> <span class="n">PackerPalette</span><span class="p">,</span> <span class="n">PackerTask</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack</span><span class="w"> </span><span class="kn">import</span> <span class="n">FixedAAChiSampler</span><span class="p">,</span> <span class="n">IncludeCurrentSampler</span><span class="p">,</span> <span class="n">NaChiRotamerSampler</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.optimization._minimizers</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">CartesianMinimizer</span><span class="p">,</span>
+    <span class="n">KinematicMinimizer</span><span class="p">,</span>
     <span class="n">run_cart_min</span><span class="p">,</span>
+    <span class="n">run_kin_min</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">Tensor</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.utility._device</span><span class="w"> </span><span class="kn">import</span> <span class="n">synchronize_device</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.types._torch</span><span class="w"> </span><span class="kn">import</span> <span class="n">Tensor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.utility._device</span><span class="w"> </span><span class="kn">import</span> <span class="n">_synchronize_device</span>
 
 <span class="n">RelaxScheduleEntry</span> <span class="o">=</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
 <span class="n">PackerTaskOperation</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">PackerTask</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span>
@@ -594,15 +583,20 @@
     <span class="p">)</span>
 
 
-<span class="k">class</span><span class="w"> </span><span class="nc">_DefaultCartesianMinimizer</span><span class="p">:</span>
+<div class="viewcode-block" id="DefaultCartesianMinimizer">
+<a class="viewcode-back" href="../../../api/relax.html#tmol.relax.DefaultCartesianMinimizer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DefaultCartesianMinimizer</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Cartesian minimizer that reuses rendering for unchanged pose topology."""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cuda_graph</span><span class="p">:</span> <span class="nb">bool</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">minimizer</span> <span class="o">=</span> <span class="n">CartesianMinimizer</span><span class="p">(</span><span class="n">cuda_graph</span><span class="o">=</span><span class="n">cuda_graph</span><span class="p">)</span>
 
+<div class="viewcode-block" id="DefaultCartesianMinimizer.release_retained_state">
+<a class="viewcode-back" href="../../../api/relax.html#tmol.relax.DefaultCartesianMinimizer.release_retained_state">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">release_retained_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Release scorer and optimizer storage between relax stages."""</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">minimizer</span><span class="o">.</span><span class="n">release_retained_state</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">minimizer</span><span class="o">.</span><span class="n">release_retained_state</span><span class="p">()</span></div>
+
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -623,7 +617,66 @@
             <span class="n">coord_mask</span><span class="o">=</span><span class="n">coord_mask</span><span class="p">,</span>
             <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
             <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"verbose"</span><span class="p">:</span> <span class="n">verbose</span><span class="p">},</span>
-        <span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_default_kin_min_fn</span><span class="p">(</span>
+    <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+    <span class="n">sfxn</span><span class="p">:</span> <span class="n">ScoreFunction</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">fold_forest</span><span class="p">:</span> <span class="n">FoldForest</span><span class="p">,</span>
+    <span class="n">move_map</span><span class="p">:</span> <span class="n">MoveMap</span> <span class="o">|</span> <span class="n">CartesianMoveMap</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">cuda_graph</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Default minimization function: kinematic (torsion-space) LBFGS."""</span>
+    <span class="k">return</span> <span class="n">run_kin_min</span><span class="p">(</span>
+        <span class="n">pose_stack</span><span class="p">,</span>
+        <span class="n">sfxn</span><span class="p">,</span>
+        <span class="n">fold_forest</span><span class="p">,</span>
+        <span class="n">move_map</span><span class="p">,</span>
+        <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
+        <span class="n">cuda_graph</span><span class="o">=</span><span class="n">cuda_graph</span><span class="p">,</span>
+        <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"verbose"</span><span class="p">:</span> <span class="n">verbose</span><span class="p">},</span>
+    <span class="p">)</span>
+
+
+<div class="viewcode-block" id="DefaultKinematicMinimizer">
+<a class="viewcode-back" href="../../../api/relax.html#tmol.relax.DefaultKinematicMinimizer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DefaultKinematicMinimizer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Kinematic minimizer that reuses rendering for unchanged pose topology."""</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cuda_graph</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cuda_graph</span> <span class="o">=</span> <span class="n">cuda_graph</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">minimizer</span> <span class="o">=</span> <span class="n">KinematicMinimizer</span><span class="p">(</span><span class="n">cuda_graph</span><span class="o">=</span><span class="n">cuda_graph</span><span class="p">)</span>
+
+<div class="viewcode-block" id="DefaultKinematicMinimizer.release_retained_state">
+<a class="viewcode-back" href="../../../api/relax.html#tmol.relax.DefaultKinematicMinimizer.release_retained_state">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">release_retained_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Release scorer and optimizer storage between relax stages."""</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">minimizer</span><span class="o">.</span><span class="n">release_retained_state</span><span class="p">()</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+        <span class="n">sfxn</span><span class="p">:</span> <span class="n">ScoreFunction</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">fold_forest</span><span class="p">:</span> <span class="n">FoldForest</span><span class="p">,</span>
+        <span class="n">move_map</span><span class="p">:</span> <span class="n">MoveMap</span> <span class="o">|</span> <span class="n">CartesianMoveMap</span><span class="p">,</span>
+        <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">minimizer</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="p">,</span>
+            <span class="n">sfxn</span><span class="p">,</span>
+            <span class="n">fold_forest</span><span class="p">,</span>
+            <span class="n">move_map</span><span class="p">,</span>
+            <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
+            <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"verbose"</span><span class="p">:</span> <span class="n">verbose</span><span class="p">},</span>
+        <span class="p">)</span></div>
+
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_cuda_graph_mode</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span> <span class="n">cuda_graph</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
@@ -644,7 +697,7 @@
 
 
 <div class="viewcode-block" id="fast_relax">
-<a class="viewcode-back" href="../../../api/relax.html#tmol.relax.fast_relax">[docs]</a>
+<a class="viewcode-back" href="../../../api/top_level.html#tmol.relax.fast_relax">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">fast_relax</span><span class="p">(</span>  <span class="c1"># noqa: C901</span>
     <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
     <span class="n">sfxn</span><span class="p">:</span> <span class="n">ScoreFunction</span><span class="p">,</span>
@@ -735,10 +788,8 @@
 
     <span class="k">if</span> <span class="n">task_operations</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">torch_device</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack.rotamer.dunbrack</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-            <span class="n">create_dunbrack_sampler_from_database</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack.rotamer._conjugated_groups</span><span class="w"> </span><span class="kn">import</span> <span class="n">add_conjugated_group_sampler</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_dunbrack_sampler_from_database</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack.rotamer._conjugated_groups</span><span class="w"> </span><span class="kn">import</span> <span class="n">_add_conjugated_group_sampler</span>
 
         <span class="n">samplers</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">create_dunbrack_sampler_from_database</span><span class="p">(</span><span class="n">sfxn</span><span class="o">.</span><span class="n">_param_db</span><span class="p">,</span> <span class="n">torch_device</span><span class="p">),</span>
@@ -757,7 +808,7 @@
             <span class="n">task</span><span class="o">.</span><span class="n">restrict_to_repacking</span><span class="p">()</span>
             <span class="k">for</span> <span class="n">sampler</span> <span class="ow">in</span> <span class="n">samplers</span><span class="p">:</span>
                 <span class="n">task</span><span class="o">.</span><span class="n">add_conformer_sampler</span><span class="p">(</span><span class="n">sampler</span><span class="p">)</span>
-            <span class="n">add_conjugated_group_sampler</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">)</span>
+            <span class="n">_add_conjugated_group_sampler</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">)</span>
 
         <span class="n">task_operations</span> <span class="o">=</span> <span class="p">[</span><span class="n">default_op</span><span class="p">]</span>
 
@@ -769,14 +820,14 @@
     <span class="n">best_ps</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">clone_sharing_topology</span><span class="p">()</span>
 
     <span class="k">if</span> <span class="n">min_fn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">min_fn</span> <span class="o">=</span> <span class="n">_DefaultCartesianMinimizer</span><span class="p">(</span>
+        <span class="n">min_fn</span> <span class="o">=</span> <span class="n">DefaultCartesianMinimizer</span><span class="p">(</span>
             <span class="n">_resolve_cuda_graph_mode</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">cuda_graph</span><span class="p">)</span>
         <span class="p">)</span>
 
     <span class="n">ps</span> <span class="o">=</span> <span class="n">pose_stack</span>
     <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_repeats</span><span class="p">):</span>
         <span class="k">for</span> <span class="n">pack_frac</span><span class="p">,</span> <span class="n">min_frac</span><span class="p">,</span> <span class="n">cst_frac</span> <span class="ow">in</span> <span class="n">steps</span><span class="p">:</span>
-            <span class="n">ps</span> <span class="o">=</span> <span class="n">relax_pack_min_step</span><span class="p">(</span>
+            <span class="n">ps</span> <span class="o">=</span> <span class="n">_relax_pack_min_step</span><span class="p">(</span>
                 <span class="n">pose_stack</span><span class="o">=</span><span class="n">ps</span><span class="p">,</span>
                 <span class="n">sfxn</span><span class="o">=</span><span class="n">sfxn</span><span class="p">,</span>
                 <span class="n">fold_forest</span><span class="o">=</span><span class="n">fold_forest</span><span class="p">,</span>
@@ -791,7 +842,7 @@
                 <span class="n">release_between_stages</span><span class="o">=</span><span class="n">release_between_stages</span><span class="p">,</span>
             <span class="p">)</span>
 
-        <span class="n">best_ps</span><span class="p">,</span> <span class="n">best_score</span> <span class="o">=</span> <span class="n">accept_best</span><span class="p">(</span><span class="n">sfxn</span><span class="p">,</span> <span class="n">best_ps</span><span class="p">,</span> <span class="n">best_score</span><span class="p">,</span> <span class="n">ps</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
+        <span class="n">best_ps</span><span class="p">,</span> <span class="n">best_score</span> <span class="o">=</span> <span class="n">_accept_best</span><span class="p">(</span><span class="n">sfxn</span><span class="p">,</span> <span class="n">best_ps</span><span class="p">,</span> <span class="n">best_score</span><span class="p">,</span> <span class="n">ps</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
         <span class="n">ps</span> <span class="o">=</span> <span class="n">best_ps</span><span class="o">.</span><span class="n">clone_sharing_topology</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">use_constraints</span><span class="p">:</span>
         <span class="c1"># Restore original constraint weight to the score function</span>
@@ -800,9 +851,7 @@
 
 
 
-<div class="viewcode-block" id="relax_pack_min_step">
-<a class="viewcode-back" href="../../../api/relax.html#tmol.relax.relax_pack_min_step">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">relax_pack_min_step</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_relax_pack_min_step</span><span class="p">(</span>
     <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
     <span class="n">sfxn</span><span class="p">:</span> <span class="n">ScoreFunction</span><span class="p">,</span>
     <span class="n">fold_forest</span><span class="p">:</span> <span class="n">FoldForest</span><span class="p">,</span>
@@ -836,7 +885,7 @@
 <span class="sd">    """</span>
 
     <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
-        <span class="n">synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
     <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
     <span class="n">task</span> <span class="o">=</span> <span class="n">PackerTask</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">packer_pallete</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">task_operations</span><span class="p">:</span>
@@ -849,7 +898,7 @@
             <span class="sa">f</span><span class="s2">"packing with fa_rep of </span><span class="si">{</span><span class="n">fa_rep_pack_weight</span><span class="si">:</span><span class="s2"> .2f</span><span class="si">}</span><span class="s2"> and constraint weight of </span><span class="si">{</span><span class="n">cst_weight</span><span class="si">:</span><span class="s2"> .2f</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span>
     <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
-        <span class="n">synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
     <span class="n">end_time1</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
     <span class="n">packed_pose_stack</span> <span class="o">=</span> <span class="n">pack_rotamers</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">,</span> <span class="n">task</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
 
@@ -859,7 +908,7 @@
             <span class="sa">f</span><span class="s2">"minimizing with fa_rep of </span><span class="si">{</span><span class="n">fa_rep_min_weight</span><span class="si">:</span><span class="s2"> .2f</span><span class="si">}</span><span class="s2"> and constraint weight of </span><span class="si">{</span><span class="n">cst_weight</span><span class="si">:</span><span class="s2"> .2f</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span>
     <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
-        <span class="n">synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
     <span class="n">end_time2</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
     <span class="n">minimized_pose_stack</span> <span class="o">=</span> <span class="n">min_fn</span><span class="p">(</span>
         <span class="n">packed_pose_stack</span><span class="p">,</span>
@@ -877,7 +926,7 @@
         <span class="k">if</span> <span class="n">release_retained_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">release_retained_state</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
-        <span class="n">synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
     <span class="n">end_time3</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
 
     <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
@@ -886,13 +935,10 @@
             <span class="o">+</span> <span class="sa">f</span><span class="s2">" packing </span><span class="si">{</span><span class="n">end_time2</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">end_time1</span><span class="si">:</span><span class="s2"> .2f</span><span class="si">}</span><span class="s2"> min </span><span class="si">{</span><span class="n">end_time3</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">end_time2</span><span class="si">:</span><span class="s2"> .2f</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span>
 
-    <span class="k">return</span> <span class="n">minimized_pose_stack</span></div>
+    <span class="k">return</span> <span class="n">minimized_pose_stack</span>
 
 
-
-<div class="viewcode-block" id="accept_best">
-<a class="viewcode-back" href="../../../api/relax.html#tmol.relax.accept_best">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">accept_best</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_accept_best</span><span class="p">(</span>
     <span class="n">sfxn</span><span class="p">:</span> <span class="n">ScoreFunction</span><span class="p">,</span>
     <span class="n">best_pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
     <span class="n">best_pose_score</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">][:],</span>
@@ -929,6 +975,16 @@
         <span class="n">new_tensor</span><span class="p">[</span><span class="n">better_mask</span><span class="p">]</span> <span class="o">=</span> <span class="n">candidate</span><span class="p">[</span><span class="n">better_mask</span><span class="p">]</span>
         <span class="k">return</span> <span class="n">new_tensor</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">select_better_atom_info</span><span class="p">(</span><span class="n">field_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">width</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""A per-atom pdb_info field, padded with zeros to the merged atom count."""</span>
+        <span class="n">best</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">best_pose_stack</span><span class="o">.</span><span class="n">pdb_info</span><span class="p">,</span> <span class="n">field_name</span><span class="p">)</span>
+        <span class="n">candidate</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">candidate_pose_stack</span><span class="o">.</span><span class="n">pdb_info</span><span class="p">,</span> <span class="n">field_name</span><span class="p">)</span>
+        <span class="n">better</span> <span class="o">=</span> <span class="n">better_mask</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+        <span class="n">merged</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">best</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">width</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">best</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">merged</span><span class="p">[</span><span class="o">~</span><span class="n">better</span><span class="p">,</span> <span class="p">:</span> <span class="n">best</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span> <span class="o">=</span> <span class="n">best</span><span class="p">[</span><span class="o">~</span><span class="n">better</span><span class="p">]</span>
+        <span class="n">merged</span><span class="p">[</span><span class="n">better</span><span class="p">,</span> <span class="p">:</span> <span class="n">candidate</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span> <span class="o">=</span> <span class="n">candidate</span><span class="p">[</span><span class="n">better</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">merged</span>
+
     <span class="k">if</span> <span class="n">better_mask</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="s2">"accepting new best scores"</span><span class="p">)</span>
@@ -940,9 +996,17 @@
         <span class="n">new_block_coord_offset64</span> <span class="o">=</span> <span class="n">select_better</span><span class="p">(</span><span class="s2">"block_coord_offset64"</span><span class="p">)</span>
         <span class="n">new_block_type_ind</span> <span class="o">=</span> <span class="n">select_better</span><span class="p">(</span><span class="s2">"block_type_ind"</span><span class="p">)</span>
         <span class="n">new_block_type_ind64</span> <span class="o">=</span> <span class="n">select_better</span><span class="p">(</span><span class="s2">"block_type_ind64"</span><span class="p">)</span>
+        <span class="n">new_pdb_info</span> <span class="o">=</span> <span class="n">attr</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span>
+            <span class="n">best_pose_stack</span><span class="o">.</span><span class="n">pdb_info</span><span class="p">,</span>
+            <span class="n">atom_occupancy</span><span class="o">=</span><span class="n">select_better_atom_info</span><span class="p">(</span>
+                <span class="s2">"atom_occupancy"</span><span class="p">,</span> <span class="n">new_coords</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="p">),</span>
+            <span class="n">atom_b_factor</span><span class="o">=</span><span class="n">select_better_atom_info</span><span class="p">(</span><span class="s2">"atom_b_factor"</span><span class="p">,</span> <span class="n">new_coords</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
+        <span class="p">)</span>
         <span class="n">new_best_pose_stack</span> <span class="o">=</span> <span class="n">attr</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span>
             <span class="n">best_pose_stack</span><span class="p">,</span>
             <span class="n">coords</span><span class="o">=</span><span class="n">new_coords</span><span class="p">,</span>
+            <span class="n">pdb_info</span><span class="o">=</span><span class="n">new_pdb_info</span><span class="p">,</span>
             <span class="n">block_coord_offset</span><span class="o">=</span><span class="n">new_block_coord_offset</span><span class="p">,</span>
             <span class="n">block_coord_offset64</span><span class="o">=</span><span class="n">new_block_coord_offset64</span><span class="p">,</span>
             <span class="n">block_type_ind</span><span class="o">=</span><span class="n">new_block_type_ind</span><span class="p">,</span>
@@ -951,8 +1015,7 @@
         <span class="n">new_best_pose_score</span> <span class="o">=</span> <span class="n">best_pose_score</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
         <span class="n">new_best_pose_score</span><span class="p">[</span><span class="n">better_mask</span><span class="p">]</span> <span class="o">=</span> <span class="n">candidate_score</span><span class="p">[</span><span class="n">better_mask</span><span class="p">]</span>
         <span class="k">return</span> <span class="n">new_best_pose_stack</span><span class="p">,</span> <span class="n">new_best_pose_score</span>
-    <span class="k">return</span> <span class="n">best_pose_stack</span><span class="p">,</span> <span class="n">best_pose_score</span></div>
-
+    <span class="k">return</span> <span class="n">best_pose_stack</span><span class="p">,</span> <span class="n">best_pose_score</span>
 </pre></div>
 
                 </article>
@@ -982,8 +1045,8 @@
   </div>
   
   <!-- Scripts loaded after <body> so the DOM is not blocked -->
-  <script defer src="../../../_static/scripts/bootstrap.js?digest=18bd87630a240e9c25be"></script>
-<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=18bd87630a240e9c25be"></script>
+  <script defer src="../../../_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8"></script>
+<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8"></script>
 
   <footer class="bd-footer">
 <div class="bd-footer__inner bd-page-width">
@@ -1003,7 +1066,7 @@
         <div class="footer-item">
 
   <p class="sphinx-version">
-    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.0.
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.1.
   </p>
 </div>
       
@@ -1016,7 +1079,7 @@
         <div class="footer-item">
 <p class="theme-version">
   <!-- # L10n: Setting the PST URL as an argument as this does not need to be localized -->
-  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.23.0.
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.24.0.
 </p></div>
       
     </div>

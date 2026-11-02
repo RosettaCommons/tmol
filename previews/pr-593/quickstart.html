@@ -26,20 +26,20 @@
   </noscript>
   
   <!-- Loaded before other Sphinx assets -->
-  <link href="_static/styles/theme.css?digest=18bd87630a240e9c25be" rel="stylesheet" />
-<link href="_static/styles/pydata-sphinx-theme.css?digest=18bd87630a240e9c25be" rel="stylesheet" />
+  <link href="_static/styles/theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
 
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="_static/togglebutton.css?v=9c3e77be" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=adb9cd23" />
   
   <!-- So that users can add custom icons -->
-  <script defer src="_static/scripts/fontawesome.js?digest=18bd87630a240e9c25be"></script>
+  <script defer src="_static/scripts/fontawesome.js?digest=75c7c72ae941e8b558d8"></script>
   <!-- Pre-loaded scripts that we'll load fully later -->
-  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=18bd87630a240e9c25be" />
-<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=18bd87630a240e9c25be" />
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
 
-    <script src="_static/documentation_options.js?v=a395f30a"></script>
+    <script src="_static/documentation_options.js?v=938c9ccc"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script>let toggleHintShow = 'show code';</script>
@@ -50,7 +50,8 @@
     <script>DOCUMENTATION_OPTIONS.pagename = 'quickstart';</script>
     <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
     <script src="_static/tmol-explorers.js?v=089c5f52"></script>
-    <link rel="canonical" href="https://uw-ipd.github.io/tmol/latest/quickstart.html" />
+    <script async="async" defer="defer" src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+    <link rel="canonical" href="https://rosettacommons.github.io/tmol/latest/quickstart.html" />
     <link rel="icon" href="_static/favicon.ico"/>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -60,7 +61,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="color-scheme" content="light dark"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="0.1.64" />
+  <meta name="docsearch:version" content="0.2.0" />
   
     
     <script src="_static/searchtools.js"></script>
@@ -112,7 +113,7 @@
   
     <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
 <div class="bd-header__inner bd-page-width">
-  <button type="button" class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+  <button type="button" class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation" aria-expanded="false" aria-controls="pst-primary-sidebar-modal">
     <span class="fa-solid fa-bars"></span>
   </button>
   
@@ -233,14 +234,14 @@
 
 <div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
   <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
-    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
-    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
-    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
   </button>
   <ul class="dropdown-menu dropdown-menu-end">
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
   </ul>
 </div></div>
       
@@ -255,7 +256,7 @@
           
           
           
-          <a href="https://github.com/uw-ipd/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
         </li>
 </ul></div>
       
@@ -275,7 +276,7 @@
   
 
   
-    <button type="button" class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+    <button type="button" class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page" aria-expanded="false" aria-controls="pst-secondary-sidebar-modal">
       <span class="fa-solid fa-outdent"></span>
     </button>
   
@@ -289,7 +290,7 @@
       
       
       
-      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <dialog id="pst-primary-sidebar-modal" tabindex="-1"></dialog>
       <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
         
 
@@ -367,14 +368,14 @@
 
 <div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
   <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
-    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
-    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
-    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
   </button>
   <ul class="dropdown-menu dropdown-menu-end">
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
   </ul>
 </div></div>
         
@@ -389,7 +390,7 @@
           
           
           
-          <a href="https://github.com/uw-ipd/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
         </li>
 </ul></div>
         
@@ -476,7 +477,7 @@
     
     <li class="breadcrumb-item breadcrumb-home">
       <a href="index.html" class="nav-link" aria-label="Home">
-        <i class="fa-solid fa-home"></i>
+        <i class="fa-solid fa-house"></i>
       </a>
     </li>
     <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Quickstart</span></li>
@@ -510,11 +511,10 @@ curl<span class="w"> </span>-L<span class="w"> </span>https://files.rcsb.org/dow
 <p>This installs CPU-only TMol. For CUDA, follow <a class="reference internal" href="installation.html"><span class="doc">Installation</span></a> and use
 <code class="docutils literal notranslate"><span class="pre">torch.device(&quot;cuda&quot;)</span></code> below.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">pose_stack_from_pdb</span><span class="p">,</span> <span class="n">write_pose_stack_pdb</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score</span><span class="w"> </span><span class="kn">import</span> <span class="n">beta2016_score_function</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol</span><span class="w"> </span><span class="kn">import</span> <span class="n">file_from_pose_stack</span><span class="p">,</span> <span class="n">pose_stack_from_file</span><span class="p">,</span> <span class="n">beta2016_score_function</span>
 
 <span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">"cpu"</span><span class="p">)</span>
-<span class="n">pose</span> <span class="o">=</span> <span class="n">pose_stack_from_pdb</span><span class="p">(</span><span class="s2">"1ubq.pdb"</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+<span class="n">pose</span> <span class="o">=</span> <span class="n">pose_stack_from_file</span><span class="p">(</span><span class="s2">"1ubq.pdb"</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
 <span class="n">sfxn</span> <span class="o">=</span> <span class="n">beta2016_score_function</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
 <span class="n">scorer</span> <span class="o">=</span> <span class="n">sfxn</span><span class="o">.</span><span class="n">render_whole_pose_scoring_module</span><span class="p">(</span><span class="n">pose</span><span class="p">)</span>
 </pre></div>
@@ -543,12 +543,12 @@ total. See <a class="reference internal" href="terminology.html#glossary-score-f
 </section>
 <section id="minimize-coordinates">
 <h2>Minimize coordinates<a class="headerlink" href="#minimize-coordinates" title="Link to this heading">#</a></h2>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol.optimization</span><span class="w"> </span><span class="kn">import</span> <span class="n">run_cart_min</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol</span><span class="w"> </span><span class="kn">import</span> <span class="n">run_cart_min</span>
 
 <span class="n">minimized</span> <span class="o">=</span> <span class="n">run_cart_min</span><span class="p">(</span><span class="n">pose</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">"Before:"</span><span class="p">,</span> <span class="n">scorer</span><span class="p">(</span><span class="n">pose</span><span class="o">.</span><span class="n">coords</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">"After:"</span><span class="p">,</span> <span class="n">scorer</span><span class="p">(</span><span class="n">minimized</span><span class="o">.</span><span class="n">coords</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
-<span class="n">write_pose_stack_pdb</span><span class="p">(</span><span class="n">minimized</span><span class="p">,</span> <span class="s2">"minimized.pdb"</span><span class="p">)</span>
+<span class="n">file_from_pose_stack</span><span class="p">(</span><span class="n">minimized</span><span class="p">,</span> <span class="s2">"minimized.pdb"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>This optimizes atom positions continuously. Pass <code class="docutils literal notranslate"><span class="pre">coord_mask</span></code> to restrict
@@ -558,10 +558,12 @@ movement to selected atoms; see <a class="reference internal" href="user_guide/o
 <h2>Repack side chains<a class="headerlink" href="#repack-side-chains" title="Link to this heading">#</a></h2>
 <p><a class="reference internal" href="terminology.html#glossary-repacking"><span class="std std-ref">Repacking</span></a> searches side-chain conformations while
 keeping the amino-acid sequence fixed.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack</span><span class="w"> </span><span class="kn">import</span> <span class="n">PackerPalette</span><span class="p">,</span> <span class="n">PackerTask</span><span class="p">,</span> <span class="n">pack_rotamers</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack.rotamer</span><span class="w"> </span><span class="kn">import</span> <span class="n">FixedAAChiSampler</span><span class="p">,</span> <span class="n">IncludeCurrentSampler</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack.rotamer.dunbrack</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_dunbrack_sampler_from_database</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">ParameterDatabase</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol</span><span class="w"> </span><span class="kn">import</span> <span class="n">PackerPalette</span><span class="p">,</span> <span class="n">PackerTask</span><span class="p">,</span> <span class="n">pack_rotamers</span><span class="p">,</span> <span class="n">ParameterDatabase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">FixedAAChiSampler</span><span class="p">,</span>
+    <span class="n">IncludeCurrentSampler</span><span class="p">,</span>
+    <span class="n">create_dunbrack_sampler_from_database</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="n">task</span> <span class="o">=</span> <span class="n">PackerTask</span><span class="p">(</span><span class="n">pose</span><span class="p">,</span> <span class="n">PackerPalette</span><span class="p">())</span>
 <span class="n">task</span><span class="o">.</span><span class="n">restrict_to_repacking</span><span class="p">()</span>
@@ -577,15 +579,14 @@ keeping the amino-acid sequence fixed.</p>
 </pre></div>
 </div>
 <p>Render a new scorer after packing because the output atom layout can change.
-See the <a class="reference internal" href="tutorial/04_packing_and_mutation_scan.html"><span class="doc">packing notebook</span></a> for
+See the <a class="reference internal" href="tutorial/01_tmol_tutorial.html#2.-Scoring-and-Optimization"><span class="std std-ref">scoring and optimization notebook</span></a> for
 fixed residues, mutation scans, and residue-level results.</p>
 </section>
 <section id="combine-packing-and-minimization">
 <h2>Combine packing and minimization<a class="headerlink" href="#combine-packing-and-minimization" title="Link to this heading">#</a></h2>
 <p><a class="reference internal" href="terminology.html#glossary-fastrelax"><span class="std std-ref">FastRelax</span></a> alternates the two operations while
 ramping steric repulsion back to its full weight.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol.kinematics</span><span class="w"> </span><span class="kn">import</span> <span class="n">CartesianMoveMap</span><span class="p">,</span> <span class="n">FoldForest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.relax</span><span class="w"> </span><span class="kn">import</span> <span class="n">fast_relax</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol</span><span class="w"> </span><span class="kn">import</span> <span class="n">CartesianMoveMap</span><span class="p">,</span> <span class="n">FoldForest</span><span class="p">,</span> <span class="n">fast_relax</span>
 
 <span class="n">relaxed</span> <span class="o">=</span> <span class="n">fast_relax</span><span class="p">(</span>
     <span class="n">pose</span><span class="p">,</span>
@@ -596,7 +597,7 @@ ramping steric repulsion back to its full weight.</p>
 <span class="p">)</span>
 <span class="n">relaxed_scorer</span> <span class="o">=</span> <span class="n">sfxn</span><span class="o">.</span><span class="n">render_whole_pose_scoring_module</span><span class="p">(</span><span class="n">relaxed</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">relaxed_scorer</span><span class="p">(</span><span class="n">relaxed</span><span class="o">.</span><span class="n">coords</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
-<span class="n">write_pose_stack_pdb</span><span class="p">(</span><span class="n">relaxed</span><span class="p">,</span> <span class="s2">"relaxed.pdb"</span><span class="p">)</span>
+<span class="n">file_from_pose_stack</span><span class="p">(</span><span class="n">relaxed</span><span class="p">,</span> <span class="s2">"relaxed.pdb"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>This uses Cartesian minimization with all atom coordinates free. For torsion
@@ -605,7 +606,7 @@ or jump control, use a configured <code class="docutils literal notranslate"><sp
 </section>
 <section id="score-a-batch">
 <h2>Score a batch<a class="headerlink" href="#score-a-batch" title="Link to this heading">#</a></h2>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStackBuilder</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStackBuilder</span>
 
 <span class="n">batch</span> <span class="o">=</span> <span class="n">PoseStackBuilder</span><span class="o">.</span><span class="n">from_poses</span><span class="p">([</span><span class="n">pose</span><span class="p">,</span> <span class="n">minimized</span><span class="p">],</span> <span class="n">device</span><span class="p">)</span>
 <span class="n">batch_scorer</span> <span class="o">=</span> <span class="n">sfxn</span><span class="o">.</span><span class="n">render_whole_pose_scoring_module</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
@@ -616,16 +617,16 @@ or jump control, use a configured <code class="docutils literal notranslate"><sp
 </div>
 <p>Group similarly sized systems to reduce padding. The same code runs on CUDA
 when the inputs and score function are on that device.
-See the <a class="reference internal" href="tutorial/02_gpu_batching.html"><span class="doc">batching notebook</span></a> for timing and memory.</p>
+See the <a class="reference internal" href="tutorial/01_tmol_tutorial.html#1.-Basics"><span class="std std-ref">how-to guide</span></a> for timing and memory.</p>
 </section>
 <section id="load-a-proteinligand-complex">
 <h2>Load a protein–ligand complex<a class="headerlink" href="#load-a-proteinligand-complex" title="Link to this heading">#</a></h2>
 <p>Use mmCIF to retain ligand bond information, and score with the extended
 parameter database returned during preparation:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">atom_array_from_file</span><span class="p">,</span> <span class="n">pose_stack_from_biotite</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol</span><span class="w"> </span><span class="kn">import</span> <span class="n">atom_array_from_file</span><span class="p">,</span> <span class="n">pose_stack_from_atom_array</span>
 
 <span class="n">structure</span> <span class="o">=</span> <span class="n">atom_array_from_file</span><span class="p">(</span><span class="s2">"complex.cif"</span><span class="p">)</span>
-<span class="n">complex_pose</span><span class="p">,</span> <span class="n">context</span> <span class="o">=</span> <span class="n">pose_stack_from_biotite</span><span class="p">(</span>
+<span class="n">complex_pose</span><span class="p">,</span> <span class="n">context</span> <span class="o">=</span> <span class="n">pose_stack_from_atom_array</span><span class="p">(</span>
     <span class="n">structure</span><span class="p">,</span>
     <span class="n">device</span><span class="p">,</span>
     <span class="n">prepare_ligands</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -637,8 +638,8 @@ parameter database returned during preparation:</p>
 <span class="nb">print</span><span class="p">(</span><span class="n">complex_scorer</span><span class="p">(</span><span class="n">complex_pose</span><span class="o">.</span><span class="n">coords</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
 </pre></div>
 </div>
-<p>Continue with the <a class="reference internal" href="tutorial/07_ligand_and_params.html"><span class="doc">ligand notebook</span></a> or
-<a class="reference internal" href="tutorial/08_nucleic_acids.html"><span class="doc">DNA/RNA notebook</span></a> for those systems.</p>
+<p>Continue with the <a class="reference internal" href="tutorial/01_tmol_tutorial.html#4.-Ligands-and-NCAAs"><span class="std std-ref">ligands notebook</span></a> or
+<a class="reference internal" href="tutorial/01_tmol_tutorial.html#3.-Metals-and-Nucleic-Acids"><span class="std std-ref">metals and nucleic acids notebook</span></a> for those systems.</p>
 </section>
 <section id="further-workflows">
 <h2>Further workflows<a class="headerlink" href="#further-workflows" title="Link to this heading">#</a></h2>
@@ -685,7 +686,7 @@ interaction scores, constraints, threading, and extension points.</p>
             
             
               
-                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <dialog id="pst-secondary-sidebar-modal" tabindex="-1"></dialog>
                 <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
 
 
@@ -730,8 +731,8 @@ interaction scores, constraints, threading, and extension points.</p>
   </div>
   
   <!-- Scripts loaded after <body> so the DOM is not blocked -->
-  <script defer src="_static/scripts/bootstrap.js?digest=18bd87630a240e9c25be"></script>
-<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=18bd87630a240e9c25be"></script>
+  <script defer src="_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8"></script>
 
   <footer class="bd-footer">
 <div class="bd-footer__inner bd-page-width">
@@ -751,7 +752,7 @@ interaction scores, constraints, threading, and extension points.</p>
         <div class="footer-item">
 
   <p class="sphinx-version">
-    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.0.
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.1.
   </p>
 </div>
       
@@ -764,7 +765,7 @@ interaction scores, constraints, threading, and extension points.</p>
         <div class="footer-item">
 <p class="theme-version">
   <!-- # L10n: Setting the PST URL as an argument as this does not need to be localized -->
-  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.23.0.
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.24.0.
 </p></div>
       
     </div>

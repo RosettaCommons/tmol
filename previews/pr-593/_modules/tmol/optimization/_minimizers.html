@@ -25,20 +25,20 @@
   </noscript>
   
   <!-- Loaded before other Sphinx assets -->
-  <link href="../../../_static/styles/theme.css?digest=18bd87630a240e9c25be" rel="stylesheet" />
-<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=18bd87630a240e9c25be" rel="stylesheet" />
+  <link href="../../../_static/styles/theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
 
     <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css?v=9c3e77be" />
     <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=adb9cd23" />
   
   <!-- So that users can add custom icons -->
-  <script defer src="../../../_static/scripts/fontawesome.js?digest=18bd87630a240e9c25be"></script>
+  <script defer src="../../../_static/scripts/fontawesome.js?digest=75c7c72ae941e8b558d8"></script>
   <!-- Pre-loaded scripts that we'll load fully later -->
-  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=18bd87630a240e9c25be" />
-<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=18bd87630a240e9c25be" />
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
 
-    <script src="../../../_static/documentation_options.js?v=a395f30a"></script>
+    <script src="../../../_static/documentation_options.js?v=938c9ccc"></script>
     <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script>let toggleHintShow = 'show code';</script>
@@ -49,7 +49,8 @@
     <script>DOCUMENTATION_OPTIONS.pagename = '_modules/tmol/optimization/_minimizers';</script>
     <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
     <script src="../../../_static/tmol-explorers.js?v=089c5f52"></script>
-    <link rel="canonical" href="https://uw-ipd.github.io/tmol/latest/_modules/tmol/optimization/_minimizers.html" />
+    <script async="async" defer="defer" src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+    <link rel="canonical" href="https://rosettacommons.github.io/tmol/latest/_modules/tmol/optimization/_minimizers.html" />
     <link rel="icon" href="../../../_static/favicon.ico"/>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
@@ -57,7 +58,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="color-scheme" content="light dark"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="0.1.64" />
+  <meta name="docsearch:version" content="0.2.0" />
   
     
     <script src="../../../_static/searchtools.js"></script>
@@ -109,7 +110,7 @@
   
     <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
 <div class="bd-header__inner bd-page-width">
-  <button type="button" class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+  <button type="button" class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation" aria-expanded="false" aria-controls="pst-primary-sidebar-modal">
     <span class="fa-solid fa-bars"></span>
   </button>
   
@@ -230,14 +231,14 @@
 
 <div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
   <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
-    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
-    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
-    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
   </button>
   <ul class="dropdown-menu dropdown-menu-end">
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
   </ul>
 </div></div>
       
@@ -252,7 +253,7 @@
           
           
           
-          <a href="https://github.com/uw-ipd/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
         </li>
 </ul></div>
       
@@ -284,7 +285,7 @@
       
         
       
-      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <dialog id="pst-primary-sidebar-modal" tabindex="-1"></dialog>
       <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar hide-on-wide">
         
 
@@ -362,14 +363,14 @@
 
 <div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
   <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
-    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
-    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
-    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
   </button>
   <ul class="dropdown-menu dropdown-menu-end">
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
   </ul>
 </div></div>
         
@@ -384,7 +385,7 @@
           
           
           
-          <a href="https://github.com/uw-ipd/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
         </li>
 </ul></div>
         
@@ -424,14 +425,11 @@
     
     <li class="breadcrumb-item breadcrumb-home">
       <a href="../../../index.html" class="nav-link" aria-label="Home">
-        <i class="fa-solid fa-home"></i>
+        <i class="fa-solid fa-house"></i>
       </a>
     </li>
     
     <li class="breadcrumb-item"><a href="../../index.html" class="nav-link">Module code</a></li>
-    
-    
-    <li class="breadcrumb-item"><a href="../../tmol.html" class="nav-link">tmol</a></li>
     
     <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">tmol.optimization._minimizers</span></li>
   </ul>
@@ -458,31 +456,30 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStack</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">Tensor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose._pose_stack</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStack</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.types._torch</span><span class="w"> </span><span class="kn">import</span> <span class="n">Tensor</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.kinematics</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">FoldForest</span><span class="p">,</span>
-    <span class="n">MoveMap</span><span class="p">,</span>
-    <span class="n">MinimizerMap</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScoreFunction</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.kinematics._fold_forest</span><span class="w"> </span><span class="kn">import</span> <span class="n">FoldForest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.kinematics._move_map</span><span class="w"> </span><span class="kn">import</span> <span class="n">MoveMap</span><span class="p">,</span> <span class="n">MinimizerMap</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score._score_function</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScoreFunction</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.optimization</span><span class="w"> </span><span class="kn">import</span> <span class="n">LBFGS_Armijo</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.utility._device</span><span class="w"> </span><span class="kn">import</span> <span class="n">synchronize_device</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.optimization._lbfgs_armijo</span><span class="w"> </span><span class="kn">import</span> <span class="n">LBFGS_Armijo</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.utility._device</span><span class="w"> </span><span class="kn">import</span> <span class="n">_synchronize_device</span>
 
 <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.optimization</span><span class="w"> </span><span class="kn">import</span> <span class="n">CartesianSfxnNetwork</span><span class="p">,</span> <span class="n">KinForestSfxnNetwork</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.optimization._sfxn_modules</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+        <span class="n">CartesianSfxnNetwork</span><span class="p">,</span>
+        <span class="n">KinForestSfxnNetwork</span><span class="p">,</span>
+    <span class="p">)</span>
 
 
-<div class="viewcode-block" id="build_kinforest_network">
-<a class="viewcode-back" href="../../../api/optimization.html#tmol.optimization.build_kinforest_network">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">build_kinforest_network</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_kinforest_network</span><span class="p">(</span>
     <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
     <span class="n">sfxn</span><span class="p">:</span> <span class="n">ScoreFunction</span><span class="p">,</span>
     <span class="n">ff</span><span class="p">:</span> <span class="n">FoldForest</span><span class="p">,</span>
     <span class="n">mm</span><span class="p">:</span> <span class="n">MoveMap</span><span class="p">,</span>
     <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">cuda_graph</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">kin_dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">KinForestSfxnNetwork</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Build a differentiable kinematic scoring network for a pose stack.</span>
@@ -493,33 +490,42 @@
 <span class="sd">        ff: Fold forest defining the kinematic tree.</span>
 <span class="sd">        mm: Internal-coordinate degrees of freedom allowed to move.</span>
 <span class="sd">        verbose: Print synchronized setup timings.</span>
+<span class="sd">        cuda_graph: Capture the fixed-shape CUDA DOF-to-score path; see</span>
+<span class="sd">            :class:`KinForestSfxnNetwork`.</span>
 <span class="sd">        kin_dtype: Floating-point dtype for kinematic degrees of freedom.</span>
 
 <span class="sd">    Returns:</span>
 <span class="sd">        A network mapping movable kinematic degrees of freedom to pose energies.</span>
 <span class="sd">    """</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.kinematics</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStackKinematicsModule</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.optimization</span><span class="w"> </span><span class="kn">import</span> <span class="n">KinForestSfxnNetwork</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.optimization._sfxn_modules</span><span class="w"> </span><span class="kn">import</span> <span class="n">KinForestSfxnNetwork</span>
 
     <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
-        <span class="n">synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
     <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
 
     <span class="n">kin_module</span> <span class="o">=</span> <span class="n">PoseStackKinematicsModule</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">ff</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
-        <span class="n">synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
     <span class="n">end_time1</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
 
     <span class="n">minimizer_map</span> <span class="o">=</span> <span class="n">MinimizerMap</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">kin_module</span><span class="o">.</span><span class="n">kmd</span><span class="p">,</span> <span class="n">mm</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
-        <span class="n">synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
     <span class="n">end_time2</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
 
     <span class="n">kf_network</span> <span class="o">=</span> <span class="n">KinForestSfxnNetwork</span><span class="p">(</span>
-        <span class="n">sfxn</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="n">kin_module</span><span class="p">,</span> <span class="n">minimizer_map</span><span class="o">.</span><span class="n">dof_mask</span><span class="p">,</span> <span class="n">kin_dtype</span><span class="o">=</span><span class="n">kin_dtype</span>
+        <span class="n">sfxn</span><span class="p">,</span>
+        <span class="n">pose_stack</span><span class="p">,</span>
+        <span class="n">kin_module</span><span class="p">,</span>
+        <span class="n">minimizer_map</span><span class="o">.</span><span class="n">dof_mask</span><span class="p">,</span>
+        <span class="n">kin_dtype</span><span class="o">=</span><span class="n">kin_dtype</span><span class="p">,</span>
+        <span class="n">cuda_graph</span><span class="o">=</span><span class="n">cuda_graph</span><span class="p">,</span>
+        <span class="n">fold_forest</span><span class="o">=</span><span class="n">ff</span><span class="p">,</span>
+        <span class="n">move_map</span><span class="o">=</span><span class="n">mm</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
-        <span class="n">synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
     <span class="n">end_time3</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
 
     <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
@@ -529,13 +535,10 @@
             <span class="o">+</span> <span class="sa">f</span><span class="s2">" s3: </span><span class="si">{</span><span class="n">end_time3</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">end_time2</span><span class="si">:</span><span class="s2"> .2f</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span>
 
-    <span class="k">return</span> <span class="n">kf_network</span></div>
+    <span class="k">return</span> <span class="n">kf_network</span>
 
 
-
-<div class="viewcode-block" id="run_min">
-<a class="viewcode-back" href="../../../api/optimization.html#tmol.optimization.run_min">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">run_min</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_run_min</span><span class="p">(</span>
     <span class="n">sfxn_module</span><span class="p">:</span> <span class="n">CartesianSfxnNetwork</span> <span class="o">|</span> <span class="n">KinForestSfxnNetwork</span><span class="p">,</span>
     <span class="n">optimizer_cls</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Optimizer</span><span class="p">]</span> <span class="o">=</span> <span class="n">LBFGS_Armijo</span><span class="p">,</span>
     <span class="n">optimizer_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -553,6 +556,8 @@
 <span class="sd">            any nn.Module with a compatible interface.</span>
 <span class="sd">        optimizer_cls: A torch.optim.Optimizer class. Must support a</span>
 <span class="sd">            closure-based step() call (e.g. LBFGS_Armijo, torch LBFGS).</span>
+<span class="sd">            An optimizer with a truthy ``value_only_line_search`` attribute</span>
+<span class="sd">            is also passed a gradient-free energy closure for its line search.</span>
 <span class="sd">        optimizer_kwargs: Dict of keyword arguments passed to the optimizer</span>
 <span class="sd">            constructor.</span>
 <span class="sd">        verbose: Print timing information.</span>
@@ -569,7 +574,7 @@
 
     <span class="n">timing_device</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">sfxn_module</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span><span class="o">.</span><span class="n">device</span> <span class="k">if</span> <span class="n">verbose</span> <span class="k">else</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="n">timing_device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">synchronize_device</span><span class="p">(</span><span class="n">timing_device</span><span class="p">)</span>
+        <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">timing_device</span><span class="p">)</span>
     <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
 
     <span class="n">segment_ids</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">sfxn_module</span><span class="p">,</span> <span class="s2">"segment_ids"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
@@ -590,17 +595,25 @@
         <span class="n">total</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">E</span> <span class="k">if</span> <span class="n">segmented</span> <span class="k">else</span> <span class="n">total</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">value_only_closure</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="n">E</span> <span class="o">=</span> <span class="n">sfxn_module</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">E</span> <span class="k">if</span> <span class="n">segmented</span> <span class="k">else</span> <span class="n">E</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
     <span class="k">if</span> <span class="n">timing_device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">synchronize_device</span><span class="p">(</span><span class="n">timing_device</span><span class="p">)</span>
+        <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">timing_device</span><span class="p">)</span>
     <span class="n">end_time1</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-    <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">closure</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">optimizer</span><span class="p">,</span> <span class="s2">"value_only_line_search"</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">closure</span><span class="p">,</span> <span class="n">value_only_closure</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">closure</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">timing_device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">synchronize_device</span><span class="p">(</span><span class="n">timing_device</span><span class="p">)</span>
+        <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">timing_device</span><span class="p">)</span>
     <span class="n">end_time2</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
 
     <span class="n">new_pose_stack</span> <span class="o">=</span> <span class="n">sfxn_module</span><span class="o">.</span><span class="n">pose_stack_from_dofs</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">timing_device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">synchronize_device</span><span class="p">(</span><span class="n">timing_device</span><span class="p">)</span>
+        <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">timing_device</span><span class="p">)</span>
     <span class="n">end_time3</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
 
     <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
@@ -609,12 +622,11 @@
             <span class="o">+</span> <span class="sa">f</span><span class="s2">" opt </span><span class="si">{</span><span class="n">end_time2</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">end_time1</span><span class="si">:</span><span class="s2"> .2f</span><span class="si">}</span><span class="s2"> stack-ctor: </span><span class="si">{</span><span class="n">end_time3</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">end_time2</span><span class="si">:</span><span class="s2"> .2f</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span>
 
-    <span class="k">return</span> <span class="n">new_pose_stack</span></div>
-
+    <span class="k">return</span> <span class="n">new_pose_stack</span>
 
 
 <div class="viewcode-block" id="run_kin_min">
-<a class="viewcode-back" href="../../../api/optimization.html#tmol.optimization.run_kin_min">[docs]</a>
+<a class="viewcode-back" href="../../../api/top_level.html#tmol.run_kin_min">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">run_kin_min</span><span class="p">(</span>
     <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
     <span class="n">sfxn</span><span class="p">:</span> <span class="n">ScoreFunction</span><span class="p">,</span>
@@ -623,11 +635,12 @@
     <span class="n">optimizer_cls</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Optimizer</span><span class="p">]</span> <span class="o">=</span> <span class="n">LBFGS_Armijo</span><span class="p">,</span>
     <span class="n">optimizer_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">cuda_graph</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">kin_dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Run minimization on a PoseStack in internal DOF space.</span>
 
-<span class="sd">    Builds a ``KinForestSfxnNetwork`` and delegates to :func:`run_min`.</span>
+<span class="sd">    Builds a ``KinForestSfxnNetwork`` and delegates to :func:`_run_min`.</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        pose_stack: Structures and coordinates to minimize.</span>
@@ -637,21 +650,106 @@
 <span class="sd">        optimizer_cls: Closure-based PyTorch optimizer class.</span>
 <span class="sd">        optimizer_kwargs: Optional optimizer constructor arguments.</span>
 <span class="sd">        verbose: Print synchronized setup and minimization timings.</span>
+<span class="sd">        cuda_graph: Capture the fixed-shape CUDA DOF-to-score forward/backward</span>
+<span class="sd">            path.</span>
 <span class="sd">        kin_dtype: Floating-point dtype for kinematic degrees of freedom.</span>
 
 <span class="sd">    Returns:</span>
 <span class="sd">        A new pose stack containing the minimized coordinates.</span>
 <span class="sd">    """</span>
-    <span class="n">kf_network</span> <span class="o">=</span> <span class="n">build_kinforest_network</span><span class="p">(</span>
-        <span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">,</span> <span class="n">ff</span><span class="p">,</span> <span class="n">mm</span><span class="p">,</span> <span class="n">verbose</span><span class="p">,</span> <span class="n">kin_dtype</span><span class="o">=</span><span class="n">kin_dtype</span>
-    <span class="p">)</span>
-    <span class="k">return</span> <span class="n">run_min</span><span class="p">(</span>
-        <span class="n">kf_network</span><span class="p">,</span>
+    <span class="k">return</span> <span class="n">KinematicMinimizer</span><span class="p">(</span><span class="n">cuda_graph</span><span class="o">=</span><span class="n">cuda_graph</span><span class="p">,</span> <span class="n">kin_dtype</span><span class="o">=</span><span class="n">kin_dtype</span><span class="p">)(</span>
+        <span class="n">pose_stack</span><span class="p">,</span>
+        <span class="n">sfxn</span><span class="p">,</span>
+        <span class="n">ff</span><span class="p">,</span>
+        <span class="n">mm</span><span class="p">,</span>
         <span class="n">optimizer_cls</span><span class="o">=</span><span class="n">optimizer_cls</span><span class="p">,</span>
         <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="n">optimizer_kwargs</span><span class="p">,</span>
         <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
     <span class="p">)</span></div>
 
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">KinematicMinimizer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Reusable Kinematic minimizer for pose stacks with stable topology.</span>
+
+<span class="sd">    Rendering a score function builds topology-dependent tensors and, when</span>
+<span class="sd">    requested, captures a CUDA graph.  Those are setup costs rather than part</span>
+<span class="sd">    of the numerical minimization.  This class retains that rendered network</span>
+<span class="sd">    across calls and resets only its coordinates when the score function,</span>
+<span class="sd">    topology, shape, and coordinate mask remain compatible.</span>
+
+<span class="sd">    Create one instance per reusable workflow.  A topology or score-function</span>
+<span class="sd">    change is detected automatically and safely rebuilds the network.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        cuda_graph: Capture and replay the fixed-shape CUDA forward/backward</span>
+<span class="sd">            DOF-to-score path.  This has a one-time setup and memory cost and</span>
+<span class="sd">            requires CUDA, so it is most useful when the instance will be reused.</span>
+<span class="sd">        kin_dtype: Floating-point dtype for kinematic degrees of freedom.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">cuda_graph</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">kin_dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span>
+    <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cuda_graph</span> <span class="o">=</span> <span class="n">cuda_graph</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kin_dtype</span> <span class="o">=</span> <span class="n">kin_dtype</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">network</span><span class="p">:</span> <span class="n">KinForestSfxnNetwork</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span><span class="p">:</span> <span class="n">LBFGS_Armijo</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_optimizer_reused</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span> <span class="o">=</span> <span class="n">_ReusableLBFGSFactory</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">release_retained_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Release topology-specific scoring and optimizer state.</span>
+
+<span class="sd">        The returned pose from :meth:`__call__` owns its coordinates, so callers</span>
+<span class="sd">        may drop the rendered scorer, CUDA graph pools, gradients, and L-BFGS</span>
+<span class="sd">        history before entering another memory-intensive phase.</span>
+<span class="sd">        """</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">network</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_optimizer_reused</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span><span class="o">.</span><span class="n">optimizer</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span><span class="o">.</span><span class="n">parameter</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span><span class="o">.</span><span class="n">options</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span><span class="o">.</span><span class="n">last_reused</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+        <span class="n">sfxn</span><span class="p">:</span> <span class="n">ScoreFunction</span><span class="p">,</span>
+        <span class="n">fold_forest</span><span class="p">:</span> <span class="n">FoldForest</span><span class="p">,</span>
+        <span class="n">move_map</span><span class="p">:</span> <span class="n">MoveMap</span><span class="p">,</span>
+        <span class="n">optimizer_cls</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Optimizer</span><span class="p">]</span> <span class="o">=</span> <span class="n">LBFGS_Armijo</span><span class="p">,</span>
+        <span class="n">optimizer_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Minimize one pose stack, reusing compatible rendered state."""</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">network</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">_reset</span><span class="p">(</span>
+            <span class="n">sfxn</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="n">fold_forest</span><span class="p">,</span> <span class="n">move_map</span>
+        <span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">network</span> <span class="o">=</span> <span class="n">_build_kinforest_network</span><span class="p">(</span>
+                <span class="n">pose_stack</span><span class="p">,</span>
+                <span class="n">sfxn</span><span class="p">,</span>
+                <span class="n">fold_forest</span><span class="p">,</span>
+                <span class="n">move_map</span><span class="p">,</span>
+                <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
+                <span class="n">cuda_graph</span><span class="o">=</span><span class="s2">"forward_backward"</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cuda_graph</span> <span class="k">else</span> <span class="kc">False</span><span class="p">,</span>
+                <span class="n">kin_dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">kin_dtype</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="n">selected_optimizer</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span> <span class="k">if</span> <span class="n">optimizer_cls</span> <span class="ow">is</span> <span class="n">LBFGS_Armijo</span> <span class="k">else</span> <span class="n">optimizer_cls</span>
+        <span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">_run_min</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">network</span><span class="p">,</span>
+            <span class="n">optimizer_cls</span><span class="o">=</span><span class="n">selected_optimizer</span><span class="p">,</span>
+            <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="n">optimizer_kwargs</span><span class="p">,</span>
+            <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span><span class="o">.</span><span class="n">optimizer</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_optimizer_reused</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span><span class="o">.</span><span class="n">last_reused</span>
+        <span class="k">return</span> <span class="n">result</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">_ReusableLBFGSFactory</span><span class="p">:</span>
@@ -703,8 +801,6 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span>
 
 
-<div class="viewcode-block" id="CartesianMinimizer">
-<a class="viewcode-back" href="../../../api/optimization.html#tmol.optimization.CartesianMinimizer">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">CartesianMinimizer</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Reusable Cartesian minimizer for pose stacks with stable topology.</span>
 
@@ -730,8 +826,6 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">last_optimizer_reused</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span> <span class="o">=</span> <span class="n">_ReusableLBFGSFactory</span><span class="p">()</span>
 
-<div class="viewcode-block" id="CartesianMinimizer.release_retained_state">
-<a class="viewcode-back" href="../../../api/optimization.html#tmol.optimization.CartesianMinimizer.release_retained_state">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">release_retained_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Release topology-specific scoring and optimizer state.</span>
 
@@ -745,8 +839,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span><span class="o">.</span><span class="n">optimizer</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span><span class="o">.</span><span class="n">parameter</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span><span class="o">.</span><span class="n">options</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span><span class="o">.</span><span class="n">last_reused</span> <span class="o">=</span> <span class="kc">False</span></div>
-
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span><span class="o">.</span><span class="n">last_reused</span> <span class="o">=</span> <span class="kc">False</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -758,7 +851,7 @@
         <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Minimize one pose stack, reusing compatible rendered state."""</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.optimization</span><span class="w"> </span><span class="kn">import</span> <span class="n">CartesianSfxnNetwork</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.optimization._sfxn_modules</span><span class="w"> </span><span class="kn">import</span> <span class="n">CartesianSfxnNetwork</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">network</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">_reset</span><span class="p">(</span>
             <span class="n">sfxn</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="n">coord_mask</span>
@@ -772,7 +865,7 @@
         <span class="n">selected_optimizer</span> <span class="o">=</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span> <span class="k">if</span> <span class="n">optimizer_cls</span> <span class="ow">is</span> <span class="n">LBFGS_Armijo</span> <span class="k">else</span> <span class="n">optimizer_cls</span>
         <span class="p">)</span>
-        <span class="n">result</span> <span class="o">=</span> <span class="n">run_min</span><span class="p">(</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">_run_min</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">network</span><span class="p">,</span>
             <span class="n">optimizer_cls</span><span class="o">=</span><span class="n">selected_optimizer</span><span class="p">,</span>
             <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="n">optimizer_kwargs</span><span class="p">,</span>
@@ -780,12 +873,11 @@
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span><span class="o">.</span><span class="n">optimizer</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">last_optimizer_reused</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_factory</span><span class="o">.</span><span class="n">last_reused</span>
-        <span class="k">return</span> <span class="n">result</span></div>
-
+        <span class="k">return</span> <span class="n">result</span>
 
 
 <div class="viewcode-block" id="run_cart_min">
-<a class="viewcode-back" href="../../../api/optimization.html#tmol.optimization.run_cart_min">[docs]</a>
+<a class="viewcode-back" href="../../../api/top_level.html#tmol.run_cart_min">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">run_cart_min</span><span class="p">(</span>
     <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
     <span class="n">sfxn</span><span class="p">:</span> <span class="n">ScoreFunction</span><span class="p">,</span>
@@ -797,7 +889,7 @@
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Run minimization on a PoseStack in Cartesian coordinate space.</span>
 
-<span class="sd">    Builds a ``CartesianSfxnNetwork`` and delegates to :func:`run_min`.</span>
+<span class="sd">    Builds a ``CartesianSfxnNetwork`` and delegates to :func:`_run_min`.</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        pose_stack: Structures and coordinates to minimize.</span>
@@ -849,8 +941,8 @@
   </div>
   
   <!-- Scripts loaded after <body> so the DOM is not blocked -->
-  <script defer src="../../../_static/scripts/bootstrap.js?digest=18bd87630a240e9c25be"></script>
-<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=18bd87630a240e9c25be"></script>
+  <script defer src="../../../_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8"></script>
+<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8"></script>
 
   <footer class="bd-footer">
 <div class="bd-footer__inner bd-page-width">
@@ -870,7 +962,7 @@
         <div class="footer-item">
 
   <p class="sphinx-version">
-    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.0.
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.1.
   </p>
 </div>
       
@@ -883,7 +975,7 @@
         <div class="footer-item">
 <p class="theme-version">
   <!-- # L10n: Setting the PST URL as an argument as this does not need to be localized -->
-  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.23.0.
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.24.0.
 </p></div>
       
     </div>

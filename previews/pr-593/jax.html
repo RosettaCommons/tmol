@@ -26,20 +26,20 @@
   </noscript>
   
   <!-- Loaded before other Sphinx assets -->
-  <link href="_static/styles/theme.css?digest=18bd87630a240e9c25be" rel="stylesheet" />
-<link href="_static/styles/pydata-sphinx-theme.css?digest=18bd87630a240e9c25be" rel="stylesheet" />
+  <link href="_static/styles/theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
 
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="_static/togglebutton.css?v=9c3e77be" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=adb9cd23" />
   
   <!-- So that users can add custom icons -->
-  <script defer src="_static/scripts/fontawesome.js?digest=18bd87630a240e9c25be"></script>
+  <script defer src="_static/scripts/fontawesome.js?digest=75c7c72ae941e8b558d8"></script>
   <!-- Pre-loaded scripts that we'll load fully later -->
-  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=18bd87630a240e9c25be" />
-<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=18bd87630a240e9c25be" />
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
 
-    <script src="_static/documentation_options.js?v=a395f30a"></script>
+    <script src="_static/documentation_options.js?v=938c9ccc"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script>let toggleHintShow = 'show code';</script>
@@ -50,7 +50,8 @@
     <script>DOCUMENTATION_OPTIONS.pagename = 'jax';</script>
     <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
     <script src="_static/tmol-explorers.js?v=089c5f52"></script>
-    <link rel="canonical" href="https://uw-ipd.github.io/tmol/latest/jax.html" />
+    <script async="async" defer="defer" src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+    <link rel="canonical" href="https://rosettacommons.github.io/tmol/latest/jax.html" />
     <link rel="icon" href="_static/favicon.ico"/>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -60,7 +61,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="color-scheme" content="light dark"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="0.1.64" />
+  <meta name="docsearch:version" content="0.2.0" />
   
     
     <script src="_static/searchtools.js"></script>
@@ -112,7 +113,7 @@
   
     <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
 <div class="bd-header__inner bd-page-width">
-  <button type="button" class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+  <button type="button" class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation" aria-expanded="false" aria-controls="pst-primary-sidebar-modal">
     <span class="fa-solid fa-bars"></span>
   </button>
   
@@ -233,14 +234,14 @@
 
 <div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
   <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
-    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
-    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
-    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
   </button>
   <ul class="dropdown-menu dropdown-menu-end">
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
   </ul>
 </div></div>
       
@@ -255,7 +256,7 @@
           
           
           
-          <a href="https://github.com/uw-ipd/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
         </li>
 </ul></div>
       
@@ -275,7 +276,7 @@
   
 
   
-    <button type="button" class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+    <button type="button" class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page" aria-expanded="false" aria-controls="pst-secondary-sidebar-modal">
       <span class="fa-solid fa-outdent"></span>
     </button>
   
@@ -289,7 +290,7 @@
       
       
       
-      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <dialog id="pst-primary-sidebar-modal" tabindex="-1"></dialog>
       <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
         
 
@@ -367,14 +368,14 @@
 
 <div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
   <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
-    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
-    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
-    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
   </button>
   <ul class="dropdown-menu dropdown-menu-end">
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
   </ul>
 </div></div>
         
@@ -389,7 +390,7 @@
           
           
           
-          <a href="https://github.com/uw-ipd/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
         </li>
 </ul></div>
         
@@ -446,7 +447,7 @@
     
     <li class="breadcrumb-item breadcrumb-home">
       <a href="index.html" class="nav-link" aria-label="Home">
-        <i class="fa-solid fa-home"></i>
+        <i class="fa-solid fa-house"></i>
       </a>
     </li>
     <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">JAX frontend (experimental)</span></li>
@@ -468,329 +469,103 @@
                   
   <section id="jax-frontend-experimental">
 <h1>JAX frontend (experimental)<a class="headerlink" href="#jax-frontend-experimental" title="Link to this heading">#</a></h1>
-<p><code class="docutils literal notranslate"><span class="pre">tmol-jax</span></code> is a legacy development prototype maintained alongside TMol’s
-PyTorch implementation. Its runtime imports <code class="docutils literal notranslate"><span class="pre">tmol_jax</span></code> and does not require
-PyTorch, but that distribution and namespace are not the final product
-interface. This implementation is under development: numerical parity,
-performance, relaxation and repacking are not yet release validated.</p>
-<p>The initial score preset implements the protein beta2016 channels. Nucleic-acid
-torsion and metal-coordination terms are not implemented. Noncanonical residues,
-ligands, and their generic bonded terms fail explicitly. The portable
-pair-scoring path uses dense arrays; the optional CUDA wheel uses bounded-memory
-native pair sums. Both recompute distances from the supplied coordinates on
-every call. Cartesian L-BFGS minimization and conservative no-pack Cartesian
-relaxation are available; kinematic minimization and repacking are not yet
-implemented. Do not use this experimental frontend as a replacement for a
-validated production TMol calculation yet.</p>
+<p><code class="docutils literal notranslate"><span class="pre">tmol-jax</span></code> is a separately installable, Torch-free JAX frontend for TMol. Its
+runtime imports <code class="docutils literal notranslate"><span class="pre">tmol_jax</span></code> and never <code class="docutils literal notranslate"><span class="pre">torch</span></code>; the existing PyTorch API, kernels
+and wheels are unchanged. It is experimental: use it for fast beta2016 scoring,
+gradients and Cartesian minimization of canonical proteins, and validate results
+against the PyTorch frontend before relying on them.</p>
+<section id="supported">
+<h2>Supported<a class="headerlink" href="#supported" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p>beta2016 score terms for canonical amino acids, with coordinate gradients
+(<code class="docutils literal notranslate"><span class="pre">jax.grad</span></code>) and <code class="docutils literal notranslate"><span class="pre">jax.jit</span></code>;</p></li>
+<li><p>PDB or Biotite <code class="docutils literal notranslate"><span class="pre">AtomArray</span></code>/<code class="docutils literal notranslate"><span class="pre">AtomArrayStack</span></code> input, same-topology and mixed batches;</p></li>
+<li><p>reusable rendered scorers (<code class="docutils literal notranslate"><span class="pre">ScoreFunction.render_whole_pose_scoring_module</span></code>,
+<code class="docutils literal notranslate"><span class="pre">.jitted</span></code>, <code class="docutils literal notranslate"><span class="pre">.jitted_value_and_grad</span></code>);</p></li>
+<li><p>masked Cartesian L-BFGS minimization (<code class="docutils literal notranslate"><span class="pre">run_cart_min</span></code>);</p></li>
+<li><p>conservative no-pack Cartesian relaxation with an <code class="docutils literal notranslate"><span class="pre">fa_ljrep</span></code> ramp and optional
+mainchain constraints (<code class="docutils literal notranslate"><span class="pre">run_cart_relax</span></code>).</p></li>
+</ul>
+<p>Not supported: nucleic acids, metals, ligands and other noncanonical residues
+(these fail explicitly), kinematic minimization, repacking and FastRelax.</p>
+</section>
 <section id="build-and-install">
 <h2>Build and install<a class="headerlink" href="#build-and-install" title="Link to this heading">#</a></h2>
-<p>The published <code class="docutils literal notranslate"><span class="pre">tmol</span></code> 0.1.64 package is currently the PyTorch frontend; its
-documented install commands remain unchanged. The planned next-release user
-interface is <code class="docutils literal notranslate"><span class="pre">tmol[jax]</span></code> for JAX only and <code class="docutils literal notranslate"><span class="pre">tmol[torch,jax]</span></code> for coexistence.
-Those extras are a staged dependency contract, not a working installation
-claim. The future JAX backend must be exposed under <code class="docutils literal notranslate"><span class="pre">tmol</span></code>; that namespace and
-adapter migration, neutral wheel contents, and clean-install validation are
-still incomplete.</p>
-<p>Installing the future bare <code class="docutils literal notranslate"><span class="pre">tmol</span></code> base will install neither framework. The
-<code class="docutils literal notranslate"><span class="pre">tmol[jax]</span></code> extra directly selects the supported JAX runtime and must not
-install or import PyTorch. The current disjoint <code class="docutils literal notranslate"><span class="pre">tmol_jax</span></code> and <code class="docutils literal notranslate"><span class="pre">tmol_jax_cuda</span></code>
-packages remain unpublished prototype artifacts used only for development
-validation; they do not satisfy the final namespace contract.</p>
-<section id="dormant-shared-cpu-disulfide-contract">
-<h3>Dormant shared CPU disulfide contract<a class="headerlink" href="#dormant-shared-cpu-disulfide-contract" title="Link to this heading">#</a></h3>
-<p>The <code class="docutils literal notranslate"><span class="pre">tmol.jax</span></code> namespace now reserves a Python-only wrapper contract for a
-future shared CPU disulfide implementation. No native XLA FFI handler is
-installed or registered yet, so calling this wrapper fails explicitly and
-executable energy or gradient parity has not been established. The static
-<code class="docutils literal notranslate"><span class="pre">recompute_backward</span></code> choice must be a concrete Python <code class="docutils literal notranslate"><span class="pre">bool</span></code>; its default keeps
-pair derivatives for the backward pass, while recompute mode keeps
-coordinates, pairs, and parameters.
-Autodiff is defined only for coordinates. Pairs and parameters are treated as
-nondifferentiable constants, and the backward rule returns <code class="docutils literal notranslate"><span class="pre">None</span></code> for both; this
-contract does not claim parameter differentiability.</p>
-<p>Native wiring must register these CPU targets with the following contracts:</p>
-<div class="pst-scrollable-table-container"><table class="table">
-<thead>
-<tr class="row-odd"><th class="head"><p>target</p></th>
-<th class="head"><p>inputs</p></th>
-<th class="head"><p>outputs</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tmol_disulfide_cpu_ffi_forward</span></code></p></td>
-<td><p>coordinates <code class="docutils literal notranslate"><span class="pre">[n_atoms,</span> <span class="pre">3]</span></code>, pairs <code class="docutils literal notranslate"><span class="pre">int32</span> <span class="pre">[n_pairs,</span> <span class="pre">8]</span></code>, parameters <code class="docutils literal notranslate"><span class="pre">[n_params,</span> <span class="pre">33]</span></code></p></td>
-<td><p>energies <code class="docutils literal notranslate"><span class="pre">[n_pairs]</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">tmol_disulfide_cpu_ffi_forward_tracked</span></code></p></td>
-<td><p>coordinates, pairs, parameters</p></td>
-<td><p>energies <code class="docutils literal notranslate"><span class="pre">[n_pairs]</span></code>, pair derivatives <code class="docutils literal notranslate"><span class="pre">[n_pairs,</span> <span class="pre">6,</span> <span class="pre">3]</span></code></p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tmol_disulfide_cpu_ffi_vjp</span></code></p></td>
-<td><p>pairs, pair derivatives, cotangents <code class="docutils literal notranslate"><span class="pre">[n_pairs]</span></code></p></td>
-<td><p>coordinate gradient <code class="docutils literal notranslate"><span class="pre">[n_atoms,</span> <span class="pre">3]</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">tmol_disulfide_cpu_ffi_recompute_vjp</span></code></p></td>
-<td><p>coordinates, pairs, parameters, cotangents</p></td>
-<td><p>coordinate gradient <code class="docutils literal notranslate"><span class="pre">[n_atoms,</span> <span class="pre">3]</span></code></p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p>Coordinates and parameters must share <code class="docutils literal notranslate"><span class="pre">float32</span></code> or <code class="docutils literal notranslate"><span class="pre">float64</span></code> dtype. The wrapper
-dispatches only through <code class="docutils literal notranslate"><span class="pre">jax.ffi.ffi_call</span></code>; it does not copy coordinates to the
-host or use a Python callback. The future recompute handler must obtain
-temporary storage through XLA FFI caller/scratch allocation and must never call
-<code class="docutils literal notranslate"><span class="pre">malloc</span></code> or round-trip coordinates through the host in its hot path.</p>
-<p>From a TMol developer environment with <code class="docutils literal notranslate"><span class="pre">tmol</span></code>, <code class="docutils literal notranslate"><span class="pre">numpy</span></code> and <code class="docutils literal notranslate"><span class="pre">build</span></code> installed:</p>
+<p>From a TMol developer environment (<code class="docutils literal notranslate"><span class="pre">tmol</span></code>, <code class="docutils literal notranslate"><span class="pre">numpy</span></code> and <code class="docutils literal notranslate"><span class="pre">build</span></code> installed):</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>scripts/build_jax.py<span class="w"> </span>--outdir<span class="w"> </span>dist/jax
 pip<span class="w"> </span>install<span class="w"> </span>dist/jax/tmol_jax-*.whl
 </pre></div>
 </div>
-<p>The builder takes the version from the repository’s root <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code> and
-converts the canonical parameter tables to NumPy archives. It creates both a
-wheel and a standalone sdist; rebuilding that sdist needs no PyTorch. No
-parameter database is copied into a second source directory.</p>
-<p>The default JAX installation runs on CPU. For NVIDIA GPUs, install the matching
-JAX runtime, for example <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">'jax[cuda13]&gt;=0.11.2'</span></code>. The JAX distribution
-also declares <code class="docutils literal notranslate"><span class="pre">cu12</span></code> and <code class="docutils literal notranslate"><span class="pre">cu13</span></code> extras. Current development validation uses
-Python 3.12 and JAX 0.11.2; broader version support has not yet been tested.</p>
-<p>An optional CUDA kernel wheel accelerates float32 LJ/LK, electrostatics, LK-ball,
-and hydrogen-bond scoring while leaving the default wheel and sdist pure JAX:</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>scripts/build_jax_cuda.py<span class="w"> </span>--outdir<span class="w"> </span>dist/jax-cuda
+<p>The builder takes the version from the root <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code> and converts the
+canonical parameter tables to NumPy archives; Torch is used only for that
+conversion. The wheel and standalone sdist need no Torch, and the sdist rebuilds
+without it. For GPUs also install a matching JAX runtime, for example
+<code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">'jax[cuda13]&gt;=0.11.2'</span></code> (the wheel declares <code class="docutils literal notranslate"><span class="pre">cu12</span></code>/<code class="docutils literal notranslate"><span class="pre">cu13</span></code> extras).
+Validation uses Python 3.12 and JAX 0.11.2.</p>
+<p>The optional <code class="docutils literal notranslate"><span class="pre">tmol-jax-cuda</span></code> wheel replaces the dense float32 pair sums for LJ/LK,
+electrostatics, LK-ball and hydrogen bonds with thin JAX FFI adapters around
+TMol’s Torch-independent scalar headers (it needs <code class="docutils literal notranslate"><span class="pre">nvcc</span></code>):</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>scripts/build_jax_cuda.py<span class="w"> </span>--outdir<span class="w"> </span>dist/jax-cuda<span class="w"> </span>--cuda-architectures<span class="w"> </span><span class="s2">"80;90"</span>
 pip<span class="w"> </span>install<span class="w"> </span>dist/jax-cuda/tmol_jax_cuda-*.whl
 </pre></div>
 </div>
-<p>Building this local platform wheel requires <code class="docutils literal notranslate"><span class="pre">nvcc</span></code>; it compiles against the
-canonical TMol scalar LJ/LK, electrostatics, LK-ball, and hydrogen-bond headers
-and the installed JAX FFI headers. Set
-<code class="docutils literal notranslate"><span class="pre">--cuda-architectures</span></code> to a semicolon-separated SM list when the wheel must run
-on GPUs other than the build host. The wheel is version-pinned to the matching
-<code class="docutils literal notranslate"><span class="pre">tmol-jax</span></code> package. It contains only the compiled adapter, not a second copy of
-the parameter database or TMol native sources.</p>
-<p>If the optional wheel is absent or cannot load, scoring uses the pure-JAX path.
-The CUDA path currently supports float32 only. LJ/LK and electrostatics use
-exact count-pair-qualified atom pairs. For arrays of at least 2,048 atoms, their
-fused adapter rebuilds conservative 16-atom tile bounds from the current
-coordinates and skips only tile pairs whose bounds exceed the largest cutoff;
-smaller arrays traverse every tile pair. There is no fixed-capacity pair list or
-frozen coordinate state. LK-ball reevaluates its exact topology-selected polar x
-heavy-atom pairs, and hydrogen bonding reevaluates the rendered donor x acceptor
-pairs with their exact bond-separation rule and current distance cutoff. All use
-the current coordinates on every call, including during minimization.</p>
+<p>Without the adapter (or if it fails to load) the exact pure-JAX path is used. Its
+ABI marker is checked before any handler is registered, so mismatched wheels fail
+loudly. The adapter evaluates exact count-pair-qualified pairs from the current
+coordinates on every call: there is no frozen neighbor list. Arrays of at least
+2,048 atoms use conservative 16-atom tile bounds that skip only tile pairs beyond
+the largest cutoff. For source development export the tables with
+<code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">scripts/build_jax.py</span> <span class="pre">--export-data</span> <span class="pre">DIR</span></code> and set <code class="docutils literal notranslate"><span class="pre">TMOL_JAX_DATABASE=DIR</span></code>.</p>
 </section>
-</section>
-<section id="score-and-differentiate">
-<h2>Score and differentiate<a class="headerlink" href="#score-and-differentiate" title="Link to this heading">#</a></h2>
+<section id="use">
+<h2>Use<a class="headerlink" href="#use" title="Link to this heading">#</a></h2>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">jax</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol_jax</span><span class="w"> </span><span class="kn">import</span> <span class="n">pose_stack_from_pdb</span><span class="p">,</span> <span class="n">beta2016_score_function</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol_jax</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">beta2016_score_function</span><span class="p">,</span> <span class="n">pose_stack_from_pdb</span><span class="p">,</span> <span class="n">run_cart_min</span><span class="p">,</span> <span class="n">run_cart_relax</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="n">pose</span> <span class="o">=</span> <span class="n">pose_stack_from_pdb</span><span class="p">(</span><span class="s2">"input.pdb"</span><span class="p">)</span>
 <span class="n">score_function</span> <span class="o">=</span> <span class="n">beta2016_score_function</span><span class="p">()</span>
 <span class="n">score</span> <span class="o">=</span> <span class="n">score_function</span><span class="o">.</span><span class="n">render_whole_pose_scoring_module</span><span class="p">(</span><span class="n">pose</span><span class="p">)</span>
 <span class="n">energies</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">(</span><span class="n">score</span><span class="p">)(</span><span class="n">pose</span><span class="o">.</span><span class="n">coords</span><span class="p">)</span>
-<span class="n">gradient</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">grad</span><span class="p">(</span><span class="k">lambda</span> <span class="n">coordinates</span><span class="p">:</span> <span class="n">score</span><span class="p">(</span><span class="n">coordinates</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()))(</span><span class="n">pose</span><span class="o">.</span><span class="n">coords</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>A rendered scorer snapshots its weights, term options and topology. Reuse it
-for coordinate changes; render again after changing weights, types, connectivity
-or batch layout. Use <code class="docutils literal notranslate"><span class="pre">sum_terms=False</span></code> to return channels in <code class="docutils literal notranslate"><span class="pre">ScoreType</span></code> order,
-and <code class="docutils literal notranslate"><span class="pre">apply_weights=False</span></code> to inspect their unweighted energies.</p>
-</section>
-<section id="minimize-cartesian-coordinates">
-<h2>Minimize Cartesian coordinates<a class="headerlink" href="#minimize-cartesian-coordinates" title="Link to this heading">#</a></h2>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol_jax</span><span class="w"> </span><span class="kn">import</span> <span class="n">run_cart_min</span>
+<span class="n">gradient</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">grad</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">score</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()))(</span><span class="n">pose</span><span class="o">.</span><span class="n">coords</span><span class="p">)</span>
 
-<span class="n">move_atoms</span> <span class="o">=</span> <span class="n">pose</span><span class="o">.</span><span class="n">atom_is_real</span>  <span class="c1"># or a stricter [poses, atoms] boolean mask</span>
 <span class="n">minimized</span><span class="p">,</span> <span class="n">result</span> <span class="o">=</span> <span class="n">run_cart_min</span><span class="p">(</span>
-    <span class="n">pose</span><span class="p">,</span> <span class="n">score_function</span><span class="p">,</span> <span class="n">move_atoms</span><span class="p">,</span> <span class="n">max_iter</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">return_result</span><span class="o">=</span><span class="kc">True</span>
+    <span class="n">pose</span><span class="p">,</span> <span class="n">score_function</span><span class="p">,</span> <span class="n">pose</span><span class="o">.</span><span class="n">atom_is_real</span><span class="p">,</span> <span class="n">max_iter</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">return_result</span><span class="o">=</span><span class="kc">True</span>
 <span class="p">)</span>
-</pre></div>
-</div>
-<p>The minimizer renders the scorer once and keeps topology fixed. A movement
-mask may select whole atoms or individual xyz components; padding is always
-frozen. For a pose batch, it minimizes the sum of the per-pose scores. The
-input pose is unchanged. Inspect <code class="docutils literal notranslate"><span class="pre">result[&quot;converged&quot;]</span></code> and
-<code class="docutils literal notranslate"><span class="pre">result[&quot;status&quot;]</span></code>, and validate the final structure and energy for the intended
-workflow. This is Cartesian coordinate minimization, not FastRelax or repacking.</p>
-<p>For a conservative repulsive ramp without packing, use <code class="docutils literal notranslate"><span class="pre">run_cart_relax</span></code>. It
-minimizes at increasing <code class="docutils literal notranslate"><span class="pre">fa_ljrep</span></code> weights and returns the best structure
-observed under the full-weight score:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol_jax</span><span class="w"> </span><span class="kn">import</span> <span class="n">run_cart_relax</span>
-
 <span class="n">relaxed</span><span class="p">,</span> <span class="n">diagnostics</span> <span class="o">=</span> <span class="n">run_cart_relax</span><span class="p">(</span>
-    <span class="n">pose</span><span class="p">,</span>
-    <span class="n">score_function</span><span class="p">,</span>
-    <span class="n">move_mask</span><span class="o">=</span><span class="n">pose</span><span class="o">.</span><span class="n">atom_is_real</span><span class="p">,</span>
-    <span class="n">constrain_mainchain</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-    <span class="n">n_cycles</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-    <span class="n">return_result</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">pose</span><span class="p">,</span> <span class="n">score_function</span><span class="p">,</span> <span class="n">move_mask</span><span class="o">=</span><span class="n">pose</span><span class="o">.</span><span class="n">atom_is_real</span><span class="p">,</span>
+    <span class="n">constrain_mainchain</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">n_cycles</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">return_result</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span>
 </pre></div>
 </div>
-<p>This Cartesian workflow does not repack sidechains and is not FastRelax. The
-input score configuration is unchanged. Optional mainchain constraints tether
-N, CA, and C atoms to their input coordinates within the local relax objective.</p>
-<p>The frontend does not alter global JAX precision settings. Synchronize returned
-arrays with <code class="docutils literal notranslate"><span class="pre">block_until_ready()</span></code> when timing work. Record compilation and setup
-separately from repeated scoring, and include setup in end-to-end comparisons.</p>
-<p>For source development, prepare tables with
-<code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">scripts/build_jax.py</span> <span class="pre">--export-data</span> <span class="pre">.jax-work/data</span></code>, then set
-<code class="docutils literal notranslate"><span class="pre">TMOL_JAX_DATABASE</span></code> to that absolute directory and import <code class="docutils literal notranslate"><span class="pre">tmol_jax</span></code> from the
-repository. Temporary tables and benchmark artifacts belong outside commits.</p>
-<p>The initial JAX implementation is adapted from
-<a class="reference external" href="https://github.com/tudorcotet/jtmol">tudorcotet/jtmol</a>, under Apache-2.0;
-see <code class="docutils literal notranslate"><span class="pre">tmol_jax/NOTICE</span></code> for the source revision.</p>
+<p>A rendered scorer snapshots its weights, term options and topology; reuse it for
+coordinate changes and render again after changing weights, types, connectivity
+or batch layout. <code class="docutils literal notranslate"><span class="pre">sum_terms=False</span></code> returns channels in <code class="docutils literal notranslate"><span class="pre">ScoreType</span></code> order and
+<code class="docutils literal notranslate"><span class="pre">apply_weights=False</span></code> the unweighted energies. <code class="docutils literal notranslate"><span class="pre">run_cart_min</span></code> renders once, keeps
+topology fixed, accepts atom or xyz movement masks (padding is always frozen), and
+returns a new pose; inspect <code class="docutils literal notranslate"><span class="pre">result[&quot;converged&quot;]</span></code> and <code class="docutils literal notranslate"><span class="pre">result[&quot;status&quot;]</span></code>.
+<code class="docutils literal notranslate"><span class="pre">run_cart_relax</span></code> returns the best structure seen under the full-weight score and
+tethers N, CA and C to their input coordinates when <code class="docutils literal notranslate"><span class="pre">constrain_mainchain=True</span></code>.
+The frontend does not change global JAX precision settings; call
+<code class="docutils literal notranslate"><span class="pre">block_until_ready()</span></code> when timing, and count compilation and setup separately.</p>
 </section>
-<section id="current-validation-and-limitations">
-<h2>Current validation and limitations<a class="headerlink" href="#current-validation-and-limitations" title="Link to this heading">#</a></h2>
-<p>Development checks cover CPU and CUDA scoring/gradients, all canonical hydrogen
-bond polynomial tables, isolated installation without Torch, and small protein
-I/O. A three-residue fragment and 1UBQ reconstruct exactly the same coordinates
-as current Torch TMol. Their weighted float32 energies agree to about 1e-4 score
-units. This is limited evidence, not full biochemical parity.</p>
-<p>Torsions use an atan2 angle rather than the native acos angle. Near planar
-torsions, native float32 gradients can lose precision: the tested fragment has
-a maximum raw Cartesian-torsion gradient difference of 0.026. Both float64
-implementations agree within 1e-10 there, and centered finite differences agree
-with the JAX result.</p>
-<p>The default pair scoring path uses dense arrays, although LK-ball selects only
-polar × heavy atoms from fixed topology. A matched H200/float32 ABBA comparison used the
-same coordinates, topology, weights, and one CPU thread, with five warmup calls
-and 30 synchronized samples. Ranges below span two passes; times are JAX / final
-Torch medians and GPU residency is the process value reported by <code class="docutils literal notranslate"><span class="pre">nvidia-smi</span></code>:</p>
-<div class="pst-scrollable-table-container"><table class="table">
-<thead>
-<tr class="row-odd"><th class="head"><p>workload</p></th>
-<th class="head text-right"><p>atoms</p></th>
-<th class="head text-right"><p>inference (ms)</p></th>
-<th class="head text-right"><p>value + gradient (ms)</p></th>
-<th class="head text-right"><p>resident MiB (inference / gradient)</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>1UBQ</p></td>
-<td class="text-right"><p>1 × 1,231</p></td>
-<td class="text-right"><p>0.248–0.254 / 0.415–0.424</p></td>
-<td class="text-right"><p>0.878–0.881 / 0.854–0.899</p></td>
-<td class="text-right"><p>1,196 / 1,322 vs 702 / 702</p></td>
-</tr>
-<tr class="row-odd"><td><p>homogeneous 1UBQ</p></td>
-<td class="text-right"><p>4 × 1,231</p></td>
-<td class="text-right"><p>0.542–0.546 / 0.406–0.411</p></td>
-<td class="text-right"><p>1.896–1.901 / 0.866–0.872</p></td>
-<td class="text-right"><p>1,256 / 1,952 vs 702 / 704</p></td>
-</tr>
-<tr class="row-even"><td><p>mixed proteins</p></td>
-<td class="text-right"><p>4 × up to 1,615</p></td>
-<td class="text-right"><p>0.765–0.766 / 0.428–0.440</p></td>
-<td class="text-right"><p>5.999–6.000 / 0.888–0.913</p></td>
-<td class="text-right"><p>1,308 / 2,054 vs 702 / 704</p></td>
-</tr>
-<tr class="row-odd"><td><p>488-residue protein</p></td>
-<td class="text-right"><p>1 × 7,561</p></td>
-<td class="text-right"><p>3.002–3.004 / 0.641–0.648</p></td>
-<td class="text-right"><p>11.501–11.512 / 0.858–0.861</p></td>
-<td class="text-right"><p>3,246 / 7,908 vs 784 / 786</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p>JAX wins only the small single-pose inference case. It is slower and uses more
-memory on the other measured workloads, substantially so for the large protein.
-JAX setup plus rendering took 35–38 seconds per fresh process and compilation
-added 6–26 seconds for inference and 11–30 seconds for value-and-gradient. The
-corresponding Torch setup plus rendering took 11–14 seconds.</p>
-<p>The optional CUDA wheel replaces the LJ/LK, electrostatics, LK-ball, and
-hydrogen-bond pair sums with thin JAX FFI adapters to shared, Torch-independent
-TMol scalar equations. When LJ/LK and electrostatics are both active, one
-adapter shares their exact current-coordinate pair traversal while retaining
-their distinct count-pair matrices and four independent score channels.
-Installed-wheel runs under the same protocol measured:</p>
-<div class="pst-scrollable-table-container"><table class="table">
-<thead>
-<tr class="row-odd"><th class="head"><p>workload</p></th>
-<th class="head text-right"><p>inference (ms)</p></th>
-<th class="head text-right"><p>value + gradient (ms)</p></th>
-<th class="head text-right"><p>resident MiB (inference / gradient)</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>1UBQ</p></td>
-<td class="text-right"><p>0.202–0.209 / 0.404–0.423</p></td>
-<td class="text-right"><p>0.434–0.437 / 0.848–0.851</p></td>
-<td class="text-right"><p>1,180 / 1,288 vs 702 / 702</p></td>
-</tr>
-<tr class="row-odd"><td><p>homogeneous 1UBQ</p></td>
-<td class="text-right"><p>0.270–0.271 / 0.399–0.401</p></td>
-<td class="text-right"><p>0.580–0.581 / 0.837–0.838</p></td>
-<td class="text-right"><p>938 / 1,060 vs 702 / 704</p></td>
-</tr>
-<tr class="row-even"><td><p>mixed proteins</p></td>
-<td class="text-right"><p>0.351–0.354 / 0.424–0.460</p></td>
-<td class="text-right"><p>0.735–0.738 / 0.869–0.928</p></td>
-<td class="text-right"><p>950 / 1,084 vs 702 / 704</p></td>
-</tr>
-<tr class="row-odd"><td><p>488-residue protein</p></td>
-<td class="text-right"><p>0.688–0.690 / 0.649–0.664</p></td>
-<td class="text-right"><p>1.589 / 0.856–0.871</p></td>
-<td class="text-right"><p>1,444 / 1,680 vs 784 / 786</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p>This preserves the small-system wins and materially improves the large workload.
-Rebuilding conservative current-coordinate tile bounds reduces the large score
-from 1.172–1.177 to 0.688–0.690 ms for inference and from 2.169–2.182 to
-1.589 ms for value-and-gradient. Small, homogeneous, and mixed workloads beat
-Torch for both measured operations, although their process residency is still
-higher. Large inference is close to Torch, while its value-and-gradient remains
-about 1.8–1.9x slower. The AABB path does not reduce process residency.</p>
-<p>An isolated fused-versus-separate pair comparison used arbitrary cotangents for
-all four channels. Maximum/RMS Cartesian-gradient deltas were 9.54e-6/2.54e-7
-on 1UBQ and 7.63e-6/2.04e-7 on the large protein. Maximum raw channel energy
-deltas were 0.000153 and 0.00146, respectively, from float32 parallel reduction
-order. Conservative tile pruning reduced isolated large forward time from 0.953
-to 0.395 ms and value-and-gradient from 1.422 to 0.688 ms. A stress check that
-translated every third atom tile by 18 A retained the same contributing pairs
-within the same reduction-order tolerances, confirming that bounds rebuild
-after movement.</p>
-<p>An isolated large-protein electrostatics comparison found identical float32
-energies and a 1.46e-5 / 1.18e-6 maximum / RMS gradient delta between the
-portable and CUDA paths. Forward time was neutral at 0.311 ms, while
-value-and-gradient fell from 1.132 ms to 0.583 ms and its XLA temporary estimate
-fell from 743.2 MB to 7.6 KB.</p>
-<p>An isolated hydrogen-bond comparison produced identical float32 energies for
-both 1UBQ and the large protein. Maximum/RMS gradient deltas between the
-portable and CUDA paths were 1.91e-5/8.70e-7 and 2.20e-4/3.32e-6,
-respectively. Large hydrogen-bond forward time was neutral at 0.119 ms, while
-value-and-gradient fell from 0.948 ms to 0.123 ms and its XLA temporary estimate
-fell from 198.4 MB to zero.</p>
-<p>For 1UBQ, the full-score Cartesian-gradient maximum/RMS error against Torch is
-0.0129 / 0.00104. For the large protein it is 0.0317 / 0.00193. The previous
-large raw LK-ball discrepancies of about 0.23 and 0.13 score units fall to
-0.0034 and 0.0011 with the shared scalar kernel. The adapter evaluates the same
-topology-selected pairs and potentials. Different native implementations and
-parallel float32 atomic accumulation are not bitwise reproducible across
-processes.</p>
-<p>With all four optional pair adapters, XLA temporary-buffer estimates range from
-0.1 MB to 0.8 MB for inference and 0.7 MB to 5.4 MB for value-and-gradient;
-these compiler estimates are not device peaks. Exact canonical count-pair
-separations are clamped to 0–6 and stored as <code class="docutils literal notranslate"><span class="pre">uint8</span></code>, instead of <code class="docutils literal notranslate"><span class="pre">int32</span></code>, in the
-persistent dense matrices and CUDA adapter inputs. On the 7,561-atom workload
-this reduces each matrix from 228.7 MB to 57.2 MB and lowers process residency
-from 2,222 / 2,786 MiB to 1,446 / 1,682 MiB for inference / gradient. This
-remains above Torch’s 784 / 786 MiB. Torch per-operation allocator increments
-are also not comparable to total process residency. Setup-time periodic
-Dunbrack coefficient generation uses SciPy’s cubic <code class="docutils literal notranslate"><span class="pre">grid-wrap</span></code> prefilter,
-which matches the previous recursion within float32 precision without compiling
-hundreds of tiny JAX scans. In the same four-workload run, fresh-process JAX
-setup plus rendering took 12.0–13.6 seconds, down from 35–38 seconds and close to
-the measured Torch range of 10.6–13.4 seconds. Broader chemistry validation,
-kinematic workflows, and repacking remain unfinished.</p>
-<p>PDB loading uses the first model and Biotite’s first alternate conformation.
-The Biotite frontend also accepts an AtomArrayStack for same-topology batches.
-Polymer connectivity follows chain labels; coordinate gaps do not automatically
-create chain breaks. Prepare chain boundaries explicitly in the input.</p>
+<section id="validation-and-limitations">
+<h2>Validation and limitations<a class="headerlink" href="#validation-and-limitations" title="Link to this heading">#</a></h2>
+<p>CPU and CUDA scoring and gradients, every canonical hydrogen-bond table, isolated
+Torch-free installation and small protein I/O are tested. Weighted float32 energies
+agree with the PyTorch frontend to about 1e-4 per structure; full-score Cartesian
+gradient differences are small (max 0.013 on 1UBQ) but not bitwise reproducible,
+because the native kernels accumulate in float32 with atomics. Torsions use <code class="docutils literal notranslate"><span class="pre">atan2</span></code>
+rather than native <code class="docutils literal notranslate"><span class="pre">acos</span></code>, so near-planar float32 gradients can differ slightly
+(the float64 implementations agree to 1e-10). Large-protein value-and-gradient on
+GPU is slower than PyTorch and uses more device memory, and JAX compilation adds
+a first-call cost; small and batched workloads are faster. PDB loading uses the
+first model and the first alternate location, and chain breaks must be explicit
+in the input.</p>
+<p>The initial implementation is adapted from
+<a class="reference external" href="https://github.com/tudorcotet/jtmol">tudorcotet/jtmol</a> under Apache-2.0; see
+<code class="docutils literal notranslate"><span class="pre">tmol_jax/NOTICE</span></code>.</p>
 </section>
 </section>
 
@@ -829,7 +604,7 @@ create chain breaks. Prepare chain boundaries explicitly in the input.</p>
             
             
               
-                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <dialog id="pst-secondary-sidebar-modal" tabindex="-1"></dialog>
                 <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
 
 
@@ -841,13 +616,10 @@ create chain breaks. Prepare chain boundaries explicitly in the input.</p>
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build-and-install">Build and install</a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#dormant-shared-cpu-disulfide-contract">Dormant shared CPU disulfide contract</a></li>
-</ul>
-</li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#score-and-differentiate">Score and differentiate</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#minimize-cartesian-coordinates">Minimize Cartesian coordinates</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#current-validation-and-limitations">Current validation and limitations</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#supported">Supported</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build-and-install">Build and install</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#use">Use</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#validation-and-limitations">Validation and limitations</a></li>
 </ul>
   </nav></div>
 
@@ -873,8 +645,8 @@ create chain breaks. Prepare chain boundaries explicitly in the input.</p>
   </div>
   
   <!-- Scripts loaded after <body> so the DOM is not blocked -->
-  <script defer src="_static/scripts/bootstrap.js?digest=18bd87630a240e9c25be"></script>
-<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=18bd87630a240e9c25be"></script>
+  <script defer src="_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8"></script>
 
   <footer class="bd-footer">
 <div class="bd-footer__inner bd-page-width">
@@ -894,7 +666,7 @@ create chain breaks. Prepare chain boundaries explicitly in the input.</p>
         <div class="footer-item">
 
   <p class="sphinx-version">
-    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.0.
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.1.
   </p>
 </div>
       
@@ -907,7 +679,7 @@ create chain breaks. Prepare chain boundaries explicitly in the input.</p>
         <div class="footer-item">
 <p class="theme-version">
   <!-- # L10n: Setting the PST URL as an argument as this does not need to be localized -->
-  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.23.0.
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.24.0.
 </p></div>
       
     </div>

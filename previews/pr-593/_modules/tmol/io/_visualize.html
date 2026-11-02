@@ -25,20 +25,20 @@
   </noscript>
   
   <!-- Loaded before other Sphinx assets -->
-  <link href="../../../_static/styles/theme.css?digest=18bd87630a240e9c25be" rel="stylesheet" />
-<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=18bd87630a240e9c25be" rel="stylesheet" />
+  <link href="../../../_static/styles/theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
 
     <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css?v=9c3e77be" />
     <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=adb9cd23" />
   
   <!-- So that users can add custom icons -->
-  <script defer src="../../../_static/scripts/fontawesome.js?digest=18bd87630a240e9c25be"></script>
+  <script defer src="../../../_static/scripts/fontawesome.js?digest=75c7c72ae941e8b558d8"></script>
   <!-- Pre-loaded scripts that we'll load fully later -->
-  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=18bd87630a240e9c25be" />
-<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=18bd87630a240e9c25be" />
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
 
-    <script src="../../../_static/documentation_options.js?v=a395f30a"></script>
+    <script src="../../../_static/documentation_options.js?v=938c9ccc"></script>
     <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script>let toggleHintShow = 'show code';</script>
@@ -49,7 +49,8 @@
     <script>DOCUMENTATION_OPTIONS.pagename = '_modules/tmol/io/_visualize';</script>
     <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
     <script src="../../../_static/tmol-explorers.js?v=089c5f52"></script>
-    <link rel="canonical" href="https://uw-ipd.github.io/tmol/latest/_modules/tmol/io/_visualize.html" />
+    <script async="async" defer="defer" src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+    <link rel="canonical" href="https://rosettacommons.github.io/tmol/latest/_modules/tmol/io/_visualize.html" />
     <link rel="icon" href="../../../_static/favicon.ico"/>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
@@ -57,7 +58,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="color-scheme" content="light dark"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="0.1.64" />
+  <meta name="docsearch:version" content="0.2.0" />
   
     
     <script src="../../../_static/searchtools.js"></script>
@@ -109,7 +110,7 @@
   
     <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
 <div class="bd-header__inner bd-page-width">
-  <button type="button" class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+  <button type="button" class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation" aria-expanded="false" aria-controls="pst-primary-sidebar-modal">
     <span class="fa-solid fa-bars"></span>
   </button>
   
@@ -230,14 +231,14 @@
 
 <div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
   <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
-    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
-    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
-    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
   </button>
   <ul class="dropdown-menu dropdown-menu-end">
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
   </ul>
 </div></div>
       
@@ -252,7 +253,7 @@
           
           
           
-          <a href="https://github.com/uw-ipd/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
         </li>
 </ul></div>
       
@@ -284,7 +285,7 @@
       
         
       
-      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <dialog id="pst-primary-sidebar-modal" tabindex="-1"></dialog>
       <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar hide-on-wide">
         
 
@@ -362,14 +363,14 @@
 
 <div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
   <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
-    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
-    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
-    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
   </button>
   <ul class="dropdown-menu dropdown-menu-end">
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
-    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
   </ul>
 </div></div>
         
@@ -384,7 +385,7 @@
           
           
           
-          <a href="https://github.com/uw-ipd/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
         </li>
 </ul></div>
         
@@ -424,17 +425,11 @@
     
     <li class="breadcrumb-item breadcrumb-home">
       <a href="../../../index.html" class="nav-link" aria-label="Home">
-        <i class="fa-solid fa-home"></i>
+        <i class="fa-solid fa-house"></i>
       </a>
     </li>
     
     <li class="breadcrumb-item"><a href="../../index.html" class="nav-link">Module code</a></li>
-    
-    
-    <li class="breadcrumb-item"><a href="../../tmol.html" class="nav-link">tmol</a></li>
-    
-    
-    <li class="breadcrumb-item"><a href="../io.html" class="nav-link">tmol.io</a></li>
     
     <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">tmol.io._visualize</span></li>
   </ul>
@@ -465,7 +460,6 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">html</span><span class="w"> </span><span class="kn">import</span> <span class="n">escape</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">io</span><span class="w"> </span><span class="kn">import</span> <span class="n">StringIO</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="kn">import</span> <span class="n">PathLike</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">Mapping</span>
@@ -473,7 +467,7 @@
 
 <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">biotite.structure</span><span class="w"> </span><span class="kn">import</span> <span class="n">AtomArray</span><span class="p">,</span> <span class="n">AtomArrayStack</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStack</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose._pose_stack</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStack</span>
 
     <span class="n">StructureInput</span> <span class="o">=</span> <span class="n">PoseStack</span> <span class="o">|</span> <span class="n">AtomArray</span> <span class="o">|</span> <span class="n">AtomArrayStack</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">PathLike</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
 <span class="k">else</span><span class="p">:</span>
@@ -481,17 +475,6 @@
     <span class="n">AtomArrayStack</span> <span class="o">=</span> <span class="n">Any</span>
     <span class="n">PoseStack</span> <span class="o">=</span> <span class="n">Any</span>
     <span class="n">StructureInput</span> <span class="o">=</span> <span class="n">Any</span>
-
-
-<div class="viewcode-block" id="pose_stack_to_pdb_string">
-<a class="viewcode-back" href="../../../api/io.html#tmol.io.pose_stack_to_pdb_string">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">pose_stack_to_pdb_string</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Convert a ``PoseStack`` into PDB text suitable for molecular viewers."""</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_pdb</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">atom_records_from_pose_stack</span>
-
-    <span class="k">return</span> <span class="n">to_pdb</span><span class="p">(</span><span class="n">atom_records_from_pose_stack</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">))</span></div>
-
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_is_biotite_structure</span><span class="p">(</span><span class="n">model</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
@@ -511,25 +494,21 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_biotite_to_pdb_string</span><span class="p">(</span><span class="n">model</span><span class="p">:</span> <span class="n">AtomArray</span> <span class="o">|</span> <span class="n">AtomArrayStack</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Serialize a Biotite structure with Biotite's PDB writer."""</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">biotite.structure.io.pdb</span><span class="w"> </span><span class="kn">import</span> <span class="n">PDBFile</span>
-    <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span><span class="s2">"Viewing a Biotite structure requires biotite."</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+<span class="w">    </span><span class="sd">"""Serialize a Biotite structure as PDB text."""</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io._structure_io</span><span class="w"> </span><span class="kn">import</span> <span class="n">file_from_atom_array</span>
 
-    <span class="n">pdb_file</span> <span class="o">=</span> <span class="n">PDBFile</span><span class="p">()</span>
-    <span class="c1"># Biotite warns when PDB's fixed-width compatibility format cannot carry</span>
-    <span class="c1"># every annotation. The viewer only consumes coordinates and connectivity,</span>
-    <span class="c1"># so these warnings are expected and would otherwise become alarming red</span>
-    <span class="c1"># stderr boxes in rendered notebooks.</span>
+    <span class="c1"># PDB's fixed columns cannot carry every annotation; the viewer only needs</span>
+    <span class="c1"># coordinates and connectivity, so the writer's warnings are noise here.</span>
     <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">():</span>
         <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s2">"ignore"</span><span class="p">,</span> <span class="ne">UserWarning</span><span class="p">)</span>
-        <span class="n">pdb_file</span><span class="o">.</span><span class="n">set_structure</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-    <span class="n">output</span> <span class="o">=</span> <span class="n">StringIO</span><span class="p">()</span>
-    <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">():</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s2">"ignore"</span><span class="p">,</span> <span class="ne">UserWarning</span><span class="p">)</span>
-        <span class="n">pdb_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">output</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">file_from_atom_array</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"pdb"</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_pose_stack_to_pdb_string</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Serialize a PoseStack as PDB text."""</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io._pose_stack_from_biotite</span><span class="w"> </span><span class="kn">import</span> <span class="n">atom_array_from_pose_stack</span>
+
+    <span class="k">return</span> <span class="n">_biotite_to_pdb_string</span><span class="p">(</span><span class="n">atom_array_from_pose_stack</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">))</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_pdb_text</span><span class="p">(</span><span class="n">model</span><span class="p">:</span> <span class="n">StructureInput</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
@@ -547,10 +526,10 @@
 
     <span class="c1"># Keep the PoseStack import lazy: importing this module should not load</span>
     <span class="c1"># compiled TMol code merely to render PDB text or a Biotite AtomArray.</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStack</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose._pose_stack</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStack</span>
 
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">PoseStack</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">pose_stack_to_pdb_string</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_pose_stack_to_pdb_string</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 
     <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
         <span class="s2">"Expected a PoseStack, Biotite AtomArray/AtomArrayStack, PDB text, "</span>
@@ -650,7 +629,7 @@
 
 
 <div class="viewcode-block" id="view">
-<a class="viewcode-back" href="../../../api/io.html#tmol.io.view">[docs]</a>
+<a class="viewcode-back" href="../../../api/top_level.html#tmol.view">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span>  <span class="c1"># noqa: C901</span>
     <span class="n">model</span><span class="p">:</span> <span class="n">StructureInput</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
@@ -735,7 +714,7 @@
 
 
 <div class="viewcode-block" id="switchable_view">
-<a class="viewcode-back" href="../../../api/io.html#tmol.io.switchable_view">[docs]</a>
+<a class="viewcode-back" href="../../../api/top_level.html#tmol.switchable_view">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">switchable_view</span><span class="p">(</span>
     <span class="n">structures</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">StructureInput</span><span class="p">],</span>
     <span class="o">*</span><span class="p">,</span>
@@ -796,6 +775,140 @@
 
 
 
+<div class="viewcode-block" id="overlay_view">
+<a class="viewcode-back" href="../../../api/top_level.html#tmol.overlay_view">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">overlay_view</span><span class="p">(</span>
+    <span class="n">structures</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">StructureInput</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">notes</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">colors</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">default</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"both"</span><span class="p">,</span>
+    <span class="n">width</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">720</span><span class="p">,</span>
+    <span class="n">height</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">420</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Compare two or more structures, with the option to overlay them all.</span>
+
+<span class="sd">    A selector shows any one structure alone (as :func:`view` would render</span>
+<span class="sd">    it), or all of them at once in a single shared viewer, each colored</span>
+<span class="sd">    distinctly.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        structures: Two or more labeled structures, each accepted by :func:`view`.</span>
+<span class="sd">        notes: Optional mapping of structure labels to short explanatory text,</span>
+<span class="sd">            shown under each individual (non-overlay) panel.</span>
+<span class="sd">        colors: Optional mapping of structure labels to a color used for that</span>
+<span class="sd">            structure in the overlay panel. Unlisted labels draw from a</span>
+<span class="sd">            default categorical palette, cycling if there are more structures</span>
+<span class="sd">            than colors in it.</span>
+<span class="sd">        default: Which panel is visible initially: ``"both"`` (the overlay,</span>
+<span class="sd">            the default) or one of the structure labels.</span>
+<span class="sd">        width: Viewer width in pixels.</span>
+<span class="sd">        height: Viewer height in pixels.</span>
+<span class="sd">    """</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">py3Dmol</span>
+    <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+            <span class="s2">"tmol.overlay_view() requires py3Dmol. Install it with "</span>
+            <span class="s2">"`python -m pip install py3Dmol` or `python -m pip install -e '.[docs]'`."</span>
+        <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
+    <span class="n">labels</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">structures</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"overlay_view compares two or more structures"</span><span class="p">)</span>
+
+    <span class="n">notes</span> <span class="o">=</span> <span class="n">notes</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">default_palette</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"#2563eb"</span><span class="p">,</span> <span class="s2">"#f97316"</span><span class="p">,</span> <span class="s2">"#16a34a"</span><span class="p">,</span> <span class="s2">"#9333ea"</span><span class="p">,</span> <span class="s2">"#dc2626"</span><span class="p">,</span> <span class="s2">"#0891b2"</span><span class="p">]</span>
+    <span class="n">colors</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">label</span><span class="p">:</span> <span class="p">(</span><span class="n">colors</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">label</span><span class="p">,</span> <span class="n">default_palette</span><span class="p">[</span><span class="n">i</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">default_palette</span><span class="p">)])</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">label</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="n">root_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"tmol-overlay-</span><span class="si">{</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">hex</span><span class="si">}</span><span class="s2">"</span>
+    <span class="n">select_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">root_id</span><span class="si">}</span><span class="s2">-select"</span>
+
+    <span class="n">panels</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">options</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">label</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">labels</span><span class="p">):</span>
+        <span class="n">viewer</span> <span class="o">=</span> <span class="n">view</span><span class="p">(</span><span class="n">structures</span><span class="p">[</span><span class="n">label</span><span class="p">],</span> <span class="n">width</span><span class="o">=</span><span class="n">width</span><span class="p">,</span> <span class="n">height</span><span class="o">=</span><span class="n">height</span><span class="p">)</span>
+        <span class="n">note</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">notes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">label</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+        <span class="n">options</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">index</span><span class="p">,</span> <span class="n">label</span><span class="p">))</span>
+        <span class="n">panels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"""</span>
+<span class="s2">&lt;section class="tmol-switch-panel" style="position:absolute;inset:0;visibility:hidden"&gt;</span>
+<span class="s2">  &lt;div class="tmol-viewer-note"&gt;</span><span class="si">{</span><span class="n">escape</span><span class="p">(</span><span class="n">note</span><span class="p">)</span><span class="si">}</span><span class="s2">&lt;/div&gt;</span>
+<span class="s2">  </span><span class="si">{</span><span class="n">_viewer_html</span><span class="p">(</span><span class="n">viewer</span><span class="p">)</span><span class="si">}</span>
+<span class="s2">&lt;/section&gt;"""</span><span class="p">)</span>
+
+    <span class="n">overlay_viewer</span> <span class="o">=</span> <span class="n">py3Dmol</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="n">width</span><span class="p">,</span> <span class="n">height</span><span class="o">=</span><span class="n">height</span><span class="p">)</span>
+    <span class="n">overlay_viewer</span><span class="o">.</span><span class="n">setBackgroundColor</span><span class="p">(</span><span class="s2">"white"</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">label</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">labels</span><span class="p">):</span>
+        <span class="n">pdb_text</span> <span class="o">=</span> <span class="n">_pdb_text</span><span class="p">(</span><span class="n">structures</span><span class="p">[</span><span class="n">label</span><span class="p">])</span>
+        <span class="n">color</span> <span class="o">=</span> <span class="n">colors</span><span class="p">[</span><span class="n">label</span><span class="p">]</span>
+        <span class="n">overlay_viewer</span><span class="o">.</span><span class="n">addModel</span><span class="p">(</span><span class="n">pdb_text</span><span class="p">,</span> <span class="s2">"pdb"</span><span class="p">)</span>
+        <span class="n">overlay_viewer</span><span class="o">.</span><span class="n">setStyle</span><span class="p">({</span><span class="s2">"model"</span><span class="p">:</span> <span class="n">index</span><span class="p">},</span> <span class="p">{</span><span class="s2">"cartoon"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"color"</span><span class="p">:</span> <span class="n">color</span><span class="p">}})</span>
+        <span class="n">overlay_viewer</span><span class="o">.</span><span class="n">addStyle</span><span class="p">(</span>
+            <span class="p">{</span><span class="s2">"model"</span><span class="p">:</span> <span class="n">index</span><span class="p">,</span> <span class="s2">"not"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"hetflag"</span><span class="p">:</span> <span class="kc">True</span><span class="p">}},</span>
+            <span class="p">{</span><span class="s2">"stick"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"color"</span><span class="p">:</span> <span class="n">color</span><span class="p">,</span> <span class="s2">"radius"</span><span class="p">:</span> <span class="mf">0.08</span><span class="p">,</span> <span class="s2">"opacity"</span><span class="p">:</span> <span class="mf">0.6</span><span class="p">}},</span>
+        <span class="p">)</span>
+        <span class="n">overlay_viewer</span><span class="o">.</span><span class="n">setStyle</span><span class="p">(</span>
+            <span class="p">{</span><span class="s2">"model"</span><span class="p">:</span> <span class="n">index</span><span class="p">,</span> <span class="s2">"hetflag"</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+            <span class="p">{</span><span class="s2">"stick"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"color"</span><span class="p">:</span> <span class="n">color</span><span class="p">,</span> <span class="s2">"radius"</span><span class="p">:</span> <span class="mf">0.22</span><span class="p">}},</span>
+        <span class="p">)</span>
+    <span class="n">_add_hover_labels</span><span class="p">(</span><span class="n">overlay_viewer</span><span class="p">)</span>
+    <span class="n">overlay_viewer</span><span class="o">.</span><span class="n">zoomTo</span><span class="p">()</span>
+
+    <span class="n">overlay_index</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span>
+    <span class="n">overlay_note</span> <span class="o">=</span> <span class="s2">" vs. "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s1">'&lt;span style="color:</span><span class="si">{</span><span class="n">colors</span><span class="p">[</span><span class="n">label</span><span class="p">]</span><span class="si">}</span><span class="s1">"&gt;</span><span class="si">{</span><span class="n">escape</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">label</span><span class="p">))</span><span class="si">}</span><span class="s1">&lt;/span&gt;'</span>
+        <span class="k">for</span> <span class="n">label</span> <span class="ow">in</span> <span class="n">labels</span>
+    <span class="p">)</span>
+    <span class="n">panels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"""</span>
+<span class="s2">&lt;section class="tmol-switch-panel" style="position:absolute;inset:0;visibility:hidden"&gt;</span>
+<span class="s2">  &lt;div class="tmol-viewer-note"&gt;</span><span class="si">{</span><span class="n">overlay_note</span><span class="si">}</span><span class="s2">&lt;/div&gt;</span>
+<span class="s2">  </span><span class="si">{</span><span class="n">_viewer_html</span><span class="p">(</span><span class="n">overlay_viewer</span><span class="p">)</span><span class="si">}</span>
+<span class="s2">&lt;/section&gt;"""</span><span class="p">)</span>
+    <span class="n">options</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">overlay_index</span><span class="p">,</span> <span class="s2">"Both"</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span> <span class="k">else</span> <span class="s2">"All"</span><span class="p">))</span>
+
+    <span class="k">if</span> <span class="n">default</span> <span class="o">==</span> <span class="s2">"both"</span><span class="p">:</span>
+        <span class="n">default_index</span> <span class="o">=</span> <span class="n">overlay_index</span>
+    <span class="k">elif</span> <span class="n">default</span> <span class="ow">in</span> <span class="n">labels</span><span class="p">:</span>
+        <span class="n">default_index</span> <span class="o">=</span> <span class="n">labels</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">default</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"default must be 'both' or one of </span><span class="si">{</span><span class="n">labels</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="n">option_html</span> <span class="o">=</span> <span class="s2">""</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s1">'&lt;option value="</span><span class="si">{</span><span class="n">index</span><span class="si">}</span><span class="s1">"'</span>
+        <span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="s2">" selected"</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">index</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">default_index</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s2">""</span><span class="si">}</span><span class="s1">&gt;'</span>
+        <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">escape</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">label</span><span class="p">))</span><span class="si">}</span><span class="s2">&lt;/option&gt;"</span>
+        <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">label</span> <span class="ow">in</span> <span class="n">options</span>
+    <span class="p">)</span>
+    <span class="n">html</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"""</span>
+<span class="s2">&lt;div class="tmol-switchable-view" id="</span><span class="si">{</span><span class="n">root_id</span><span class="si">}</span><span class="s2">" style="max-width:</span><span class="si">{</span><span class="n">width</span><span class="si">}</span><span class="s2">px"&gt;</span>
+<span class="s2">  &lt;label&gt;Show: &lt;select id="</span><span class="si">{</span><span class="n">select_id</span><span class="si">}</span><span class="s2">"&gt;</span><span class="si">{</span><span class="n">option_html</span><span class="si">}</span><span class="s2">&lt;/select&gt;&lt;/label&gt;</span>
+<span class="s2">  &lt;div style="position:relative;width:100%;height:</span><span class="si">{</span><span class="n">height</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">32</span><span class="si">}</span><span class="s2">px"&gt;</span>
+<span class="s2">    </span><span class="si">{</span><span class="s1">''</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">panels</span><span class="p">)</span><span class="si">}</span>
+<span class="s2">  &lt;/div&gt;</span>
+<span class="s2">&lt;/div&gt;</span>
+<span class="s2">&lt;script&gt;</span>
+<span class="s2">(() =&gt; </span><span class="se">{{</span>
+<span class="s2">  const root = document.getElementById(</span><span class="si">{</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">root_id</span><span class="p">)</span><span class="si">}</span><span class="s2">);</span>
+<span class="s2">  const select = document.getElementById(</span><span class="si">{</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">select_id</span><span class="p">)</span><span class="si">}</span><span class="s2">);</span>
+<span class="s2">  const panels = root.querySelectorAll('.tmol-switch-panel');</span>
+<span class="s2">  const show = (index) =&gt; </span><span class="se">{{</span>
+<span class="s2">    panels.forEach((panel, i) =&gt; </span><span class="se">{{</span>
+<span class="s2">      panel.style.visibility = i === index ? 'visible' : 'hidden';</span>
+<span class="s2">    </span><span class="se">}}</span><span class="s2">);</span>
+<span class="s2">    window.dispatchEvent(new Event('resize'));</span>
+<span class="s2">  </span><span class="se">}}</span><span class="s2">;</span>
+<span class="s2">  select.addEventListener('change', () =&gt; show(Number(select.value)));</span>
+<span class="s2">  show(</span><span class="si">{</span><span class="n">default_index</span><span class="si">}</span><span class="s2">);</span>
+<span class="se">}}</span><span class="s2">)();</span>
+<span class="s2">&lt;/script&gt;</span>
+<span class="s2">"""</span>
+    <span class="k">return</span> <span class="n">_display_html</span><span class="p">(</span><span class="n">html</span><span class="p">)</span></div>
+
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_selection_mask</span><span class="p">(</span><span class="n">atom_array</span><span class="p">:</span> <span class="n">AtomArray</span><span class="p">,</span> <span class="n">selection</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">selection</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
         <span class="n">query</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">atom_array</span><span class="p">,</span> <span class="s2">"mask"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
@@ -809,7 +922,7 @@
 
 
 <div class="viewcode-block" id="selection_gallery">
-<a class="viewcode-back" href="../../../api/io.html#tmol.io.selection_gallery">[docs]</a>
+<a class="viewcode-back" href="../../../api/top_level.html#tmol.selection_gallery">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">selection_gallery</span><span class="p">(</span>
     <span class="n">atom_array</span><span class="p">:</span> <span class="n">AtomArray</span><span class="p">,</span>
     <span class="n">selections</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">],</span>
@@ -1025,8 +1138,8 @@
   </div>
   
   <!-- Scripts loaded after <body> so the DOM is not blocked -->
-  <script defer src="../../../_static/scripts/bootstrap.js?digest=18bd87630a240e9c25be"></script>
-<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=18bd87630a240e9c25be"></script>
+  <script defer src="../../../_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8"></script>
+<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8"></script>
 
   <footer class="bd-footer">
 <div class="bd-footer__inner bd-page-width">
@@ -1046,7 +1159,7 @@
         <div class="footer-item">
 
   <p class="sphinx-version">
-    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.0.
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.1.
   </p>
 </div>
       
@@ -1059,7 +1172,7 @@
         <div class="footer-item">
 <p class="theme-version">
   <!-- # L10n: Setting the PST URL as an argument as this does not need to be localized -->
-  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.23.0.
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.24.0.
 </p></div>
       
     </div>
