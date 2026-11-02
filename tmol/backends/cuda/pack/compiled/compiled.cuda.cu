@@ -526,15 +526,15 @@ struct Annealer {
 
     // SA hyperparameters
     int const n_hitemp_simA_traj = 500;
-    double const inner_iter_mult_hitemp = 1.5;
-    double const inner_iter_mult_lotemp = 0.5;
+    double const inner_iter_mult_hitemp = 0.4;
+    double const inner_iter_mult_lotemp = 0.15;
     // Temperature schedule
     float const high_temp_initial = 30.0f;
     float const low_temp_initial = 0.3f;
     float const high_temp_later = 0.2f;
     float const low_temp_later = 0.1f;
-    int const n_outer_iterations_hitemp = 10;
-    int const n_outer_iterations_lotemp = 10;
+    int const n_outer_iterations_hitemp = 5;
+    int const n_outer_iterations_lotemp = 5;
 
     int const n_hitemp_simA_threads = 32 * n_poses * n_hitemp_simA_traj;
     // Each top hitemp trajectory seeds n_lotemp_expansions lotemp trajectories
@@ -678,7 +678,8 @@ struct Annealer {
       // Full SA run with geometric cooling
       // Match the CPU annealer's per-pose work: a large neighbor in a jagged
       // batch must not inflate this pose's trajectory length.
-      int const pose_inner_iterations = n_rotamers + n_rotamers / 2;
+      int const pose_inner_iterations =
+          int(n_rotamers * inner_iter_mult_hitemp);
       warp_wide_sim_annealing<
           ChunkSize,
           false,
@@ -767,7 +768,8 @@ struct Annealer {
       }
 
       // Low-temperature cooling trajectory
-      int const pose_inner_iterations = n_rotamers / 2;
+      int const pose_inner_iterations =
+          int(n_rotamers * inner_iter_mult_lotemp);
       warp_wide_sim_annealing<
           ChunkSize,
           false,

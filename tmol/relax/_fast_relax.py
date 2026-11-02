@@ -39,17 +39,39 @@ class RelaxMinimizer(Protocol):
         fold_forest: FoldForest,
         move_map: MoveMap | CartesianMoveMap,
         verbose: bool,
+        rtol: float | None = None,
     ) -> PoseStack:
         """Minimize and return the updated poses."""
 
 
 # Jack Maguire's tuned MonomerRelax2019 schedule. Fractions scale the score
-# function's initial fa_rep and constraint weights at each pack-minimize stage.
+# function's initial fa_rep and constraint weights at each pack-minimize stage;
+# min_rtol is the stage's minimizer relative tolerance.
 DEFAULT_RELAX_SCHEDULE = [
-    {"fa_rep_pack_frac": 0.040, "fa_rep_min_frac": 0.051, "cst_frac": 1.0},
-    {"fa_rep_pack_frac": 0.265, "fa_rep_min_frac": 0.280, "cst_frac": 0.5},
-    {"fa_rep_pack_frac": 0.559, "fa_rep_min_frac": 0.581, "cst_frac": 0.0},
-    {"fa_rep_pack_frac": 1.000, "fa_rep_min_frac": 1.000, "cst_frac": 0.0},
+    {
+        "fa_rep_pack_frac": 0.040,
+        "fa_rep_min_frac": 0.051,
+        "cst_frac": 1.0,
+        "min_rtol": 0.01,
+    },
+    {
+        "fa_rep_pack_frac": 0.265,
+        "fa_rep_min_frac": 0.280,
+        "cst_frac": 0.5,
+        "min_rtol": 0.01,
+    },
+    {
+        "fa_rep_pack_frac": 0.559,
+        "fa_rep_min_frac": 0.581,
+        "cst_frac": 0.0,
+        "min_rtol": 0.01,
+    },
+    {
+        "fa_rep_pack_frac": 1.000,
+        "fa_rep_min_frac": 1.000,
+        "cst_frac": 0.0,
+        "min_rtol": 5e-4,
+    },
 ]
 
 
@@ -57,17 +79,19 @@ def _normalize_schedule(
     schedule: Sequence[RelaxScheduleEntry],
     constrain: bool = False,
     ramp_constraints: bool = False,
-) -> list[tuple[float, float, float]]:
+) -> list[tuple[float, float, float, float | None]]:
     """Normalize user schedule entries into pack, minimize, and constraint weights.
 
     Args:
         schedule: Numbers, used for both fa_rep stages, or dictionaries with
-            ``fa_rep_pack_frac``, ``fa_rep_min_frac``, and optional ``cst_frac``.
+            ``fa_rep_pack_frac``, ``fa_rep_min_frac``, and optional
+            ``cst_frac`` and ``min_rtol``.
         constrain: Whether the score function has an active constraint term.
         ramp_constraints: Whether to ramp its weight to zero.
 
     Returns:
-        ``(pack_fraction, minimize_fraction, constraint_fraction)`` per step.
+        ``(pack_fraction, minimize_fraction, constraint_fraction, min_rtol)``
+        per step.
 
     Raises:
         ValueError: If an entry is neither a float/int nor a dict with the
@@ -93,7 +117,7 @@ def _normalize_schedule(
     for i, entry in enumerate(schedule):
         if isinstance(entry, (int, float)):
             constraint = constraint_fraction(i)
-            normalized.append((float(entry), float(entry), constraint))
+            normalized.append((float(entry), float(entry), constraint, None))
         elif isinstance(entry, dict):
             pack_frac = float(entry["fa_rep_pack_frac"])
             min_frac = float(entry["fa_rep_min_frac"])
@@ -102,11 +126,14 @@ def _normalize_schedule(
                 if "cst_frac" not in entry
                 else float(entry["cst_frac"])
             )
-            normalized.append((pack_frac, min_frac, constraint))
+            min_rtol = entry.get("min_rtol")
+            min_rtol = None if min_rtol is None else float(min_rtol)
+            normalized.append((pack_frac, min_frac, constraint, min_rtol))
         else:
             raise ValueError(
                 f"Schedule entry must be a number or a dict with keys"
-                f" 'fa_rep_pack_frac', 'fa_rep_min_frac', and optionally 'cst_frac', got {type(entry)}"
+                f" 'fa_rep_pack_frac', 'fa_rep_min_frac', and optionally 'cst_frac'"
+                f" and 'min_rtol', got {type(entry)}"
             )
     return normalized
 
@@ -132,6 +159,16 @@ def _default_cart_min_fn(
     )
 
 
+# Kinematic relax convergence: one small relative step at max |gradient| below
+# 1 kcal/mol per degree (expressed per radian); rtol is overridden per stage.
+KINEMATIC_RELAX_LBFGS_OPTIONS = {
+    "rtol": 0.01,
+    "atol": None,
+    "patience": 1,
+    "gradtol": 180.0 / numpy.pi,
+}
+
+
 class DefaultCartesianMinimizer:
     """Cartesian minimizer that reuses rendering for unchanged pose topology."""
 
@@ -150,8 +187,10 @@ class DefaultCartesianMinimizer:
         fold_forest: FoldForest,
         move_map: MoveMap | CartesianMoveMap,
         verbose: bool,
+        rtol: float | None = None,
     ) -> PoseStack:
-        del fold_forest
+        # Cartesian relax keeps the LBFGS default convergence
+        del fold_forest, rtol
         coord_mask = (
             move_map.coord_mask if isinstance(move_map, CartesianMoveMap) else None
         )
@@ -204,15 +243,18 @@ class DefaultKinematicMinimizer:
         fold_forest: FoldForest,
         move_map: MoveMap | CartesianMoveMap,
         verbose: bool,
+        rtol: float | None = None,
     ) -> PoseStack:
-
+        options = dict(KINEMATIC_RELAX_LBFGS_OPTIONS, verbose=verbose)
+        if rtol is not None:
+            options["rtol"] = rtol
         return self.minimizer(
             pose_stack,
             sfxn,
             fold_forest,
             move_map,
             verbose=verbose,
-            optimizer_kwargs={"verbose": verbose},
+            optimizer_kwargs=options,
         )
 
 
@@ -268,8 +310,8 @@ def fast_relax(  # noqa: C901
         ramp_constraints: Ramp an active constraint weight to zero. Defaults
             to true; the input weight is restored after relaxation.
         schedule: Numeric fa_rep fractions or dictionaries with separate pack,
-            minimize, and optional constraint fractions. Defaults to
-            ``DEFAULT_RELAX_SCHEDULE``.
+            minimize, and optional constraint fractions and ``min_rtol``.
+            Defaults to ``DEFAULT_RELAX_SCHEDULE``.
         min_fn: Minimizer called with the pose, score function, fold forest,
             move map, and verbosity. If it provides ``release_retained_state()``,
             FastRelax calls that hook after extracting each minimized pose so
@@ -361,7 +403,7 @@ def fast_relax(  # noqa: C901
 
     ps = pose_stack
     for _ in range(num_repeats):
-        for pack_frac, min_frac, cst_frac in steps:
+        for pack_frac, min_frac, cst_frac, min_rtol in steps:
             ps = _relax_pack_min_step(
                 pose_stack=ps,
                 sfxn=sfxn,
@@ -375,6 +417,7 @@ def fast_relax(  # noqa: C901
                 min_fn=min_fn,
                 verbose=verbose,
                 release_between_stages=release_between_stages,
+                min_rtol=min_rtol,
             )
 
         best_ps, best_score = _accept_best(sfxn, best_ps, best_score, ps, verbose)
@@ -398,6 +441,7 @@ def _relax_pack_min_step(
     min_fn: RelaxMinimizer,
     verbose: bool,
     release_between_stages: bool = True,
+    min_rtol: float | None = None,
 ) -> PoseStack:
     """Execute one weighted packing and minimization stage.
 
@@ -413,6 +457,7 @@ def _relax_pack_min_step(
         task_operations: In-place task configuration callbacks.
         min_fn: Minimization callable.
         verbose: Print synchronized stage timings.
+        min_rtol: Minimizer relative tolerance (None: minimizer default).
 
     Returns:
         The minimized pose stack.
@@ -444,12 +489,14 @@ def _relax_pack_min_step(
     if verbose:
         _synchronize_device(pose_stack.device)
     end_time2 = time.perf_counter()
+    stage_kwargs = {} if min_rtol is None else {"rtol": min_rtol}
     minimized_pose_stack = min_fn(
         packed_pose_stack,
         sfxn,
         fold_forest=fold_forest,
         move_map=move_map,
         verbose=verbose,
+        **stage_kwargs,
     )
     # Releasing costs a network construction and, with cuda_graph, a capture at
     # every stage; retaining costs the scorer and L-BFGS history through the
