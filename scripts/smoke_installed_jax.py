@@ -50,7 +50,7 @@ def main():
 
     if args.also_torch:
         import torch
-        from tmol.io import pose_stack_from_file
+        from tmol import pose_stack_from_file
         from tmol.score import beta2016_score_function as torch_score_function
 
         torch_pose = pose_stack_from_file(args.pdb, torch.device("cpu"))

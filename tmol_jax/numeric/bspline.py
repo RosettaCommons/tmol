@@ -23,7 +23,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Helpers: poles for B-splines of various degrees
 # ---------------------------------------------------------------------------

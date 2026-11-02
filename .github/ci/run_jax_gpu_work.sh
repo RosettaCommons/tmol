@@ -32,7 +32,7 @@ esac
 
 mkdir -p "${work}/source/tests" "${work}/source/tmol/tests/data/pdb"
 cp -R tests/jax "${work}/source/tests/jax"
-cp tmol/tests/data/pdb/1ubq.pdb "${work}/source/tmol/tests/data/pdb/1ubq.pdb"
+cp tmol/tests/data/pdb/{1ubq,3plc}.pdb "${work}/source/tmol/tests/data/pdb/"
 mkdir -p "${work}/source/tmol/database/default/scoring"
 cp tmol/database/default/scoring/hbond.yaml \
   "${work}/source/tmol/database/default/scoring/hbond.yaml"
