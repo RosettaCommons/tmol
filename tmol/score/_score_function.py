@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+import contextlib
 import ctypes
 import functools
 from functools import partial
@@ -141,6 +142,21 @@ def _share_cpu_threads_with_pool(n_threads: int) -> None:
     torch.get_num_threads()
     runtime = _openmp_runtime()
     if runtime is not None:
+        runtime.omp_set_num_threads(n_threads)
+
+
+@contextlib.contextmanager
+def _single_openmp_thread():
+    """Run the enclosed ops on this thread alone, without an OpenMP team."""
+    runtime = _openmp_runtime()
+    if runtime is None:
+        yield
+        return
+    n_threads = torch.get_num_threads()
+    runtime.omp_set_num_threads(1)
+    try:
+        yield
+    finally:
         runtime.omp_set_num_threads(n_threads)
 
 
@@ -344,12 +360,14 @@ class _ParallelScoreTerms(torch.autograd.Function):
                 _score_grad_in_thread(*grad_input) for grad_input in term_grad_inputs
             ]
 
+        # Small adds: a team-wide OpenMP region per add can stall on busy cores.
         grad_coords = None
-        for term_grad in term_grads:
-            if term_grad is not None:
-                grad_coords = (
-                    term_grad if grad_coords is None else grad_coords + term_grad
-                )
+        with _single_openmp_thread():
+            for term_grad in term_grads:
+                if term_grad is not None:
+                    grad_coords = (
+                        term_grad if grad_coords is None else grad_coords + term_grad
+                    )
         return grad_coords, None, None, None, None, None, None
 
 
