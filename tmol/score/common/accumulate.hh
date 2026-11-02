@@ -17,7 +17,7 @@ namespace tmol {
 namespace score {
 namespace common {
 
-#define def auto TMOL_HD
+#define def auto TMOL_HOST_DEVICE_FUNC
 
 template <tmol::Device D, typename T, class Enable = void>
 struct accumulate {};

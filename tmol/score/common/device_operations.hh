@@ -28,9 +28,11 @@ struct DeviceOperations {
       ContextManager& mgr, int n_groups, int items_per_group, Func f);
 
   /// Store a value that concurrent callbacks may write identically.
-  static TMOL_HD void store_idempotent(int32_t& target, int32_t value);
-  static TMOL_HD void store_idempotent(int64_t& target, int64_t value);
-  static TMOL_HD void bitwise_or(int32_t& target, int32_t value);
+  static TMOL_HOST_DEVICE_FUNC void store_idempotent(
+      int32_t& target, int32_t value);
+  static TMOL_HOST_DEVICE_FUNC void store_idempotent(
+      int64_t& target, int64_t value);
+  static TMOL_HOST_DEVICE_FUNC void bitwise_or(int32_t& target, int32_t value);
 
   template <typename Int, typename Func>
   static void foreach_combination_triple(

@@ -35,7 +35,7 @@ template <
     typename Int,
     typename launch_t,
     typename Ctx>
-TMOL_HD void compute_block_spheres_body(
+TMOL_HOST_DEVICE_FUNC void compute_block_spheres_body(
     TMOL_THREAD Ctx const& ctx, int cta, WorkgroupLane<D> lane = {}) {
   CTA_LAUNCH_T_PARAMS;
 
@@ -119,7 +119,7 @@ TMOL_HD void compute_block_spheres_body(
 // Whether two blocks are close enough that any of their atom pairs can
 // contribute. One thread per candidate pair.
 template <tmol::Device D, typename Real, typename Int, typename Ctx>
-TMOL_HD void detect_block_neighbors_body(
+TMOL_HOST_DEVICE_FUNC void detect_block_neighbors_body(
     TMOL_THREAD Ctx const& ctx, int index) {
   int const pose_ind = index / ctx.block_pairs_per_pose;
   int const pair = index % ctx.block_pairs_per_pose;
@@ -179,7 +179,7 @@ TMOL_HD void detect_block_neighbors_body(
 // Largest value the dispatch index type can hold, without <limits>, which
 // Metal has no standard library for.
 template <typename Int>
-TMOL_HD Int sphere_overlap_int_max() {
+TMOL_HOST_DEVICE_FUNC Int sphere_overlap_int_max() {
   return Int(~(Int(1) << (sizeof(Int) * 8 - 1)));
 }
 
@@ -192,7 +192,7 @@ template <
     typename Int,
     typename launch_t,
     typename Ctx>
-TMOL_HD void compute_rot_spheres_body(
+TMOL_HOST_DEVICE_FUNC void compute_rot_spheres_body(
     TMOL_THREAD Ctx const& ctx, int cta, WorkgroupLane<D> lane = {}) {
   CTA_LAUNCH_T_PARAMS;
 
@@ -275,7 +275,7 @@ TMOL_HD void compute_rot_spheres_body(
 // keeps this free of the write races compute_block_spheres would have when
 // launched per rotamer.
 template <tmol::Device D, typename Real, typename Int, typename Ctx>
-TMOL_HD void compute_block_spheres_from_rot_body(
+TMOL_HOST_DEVICE_FUNC void compute_block_spheres_from_rot_body(
     TMOL_THREAD Ctx const& ctx, int index) {
   int const pose = index / ctx.max_n_blocks;
   int const block = index % ctx.max_n_blocks;
@@ -312,7 +312,7 @@ TMOL_HD void compute_block_spheres_from_rot_body(
 
 // Whether two rotamers' bounding spheres reach each other.
 template <typename RotSpheresView, typename Real>
-TMOL_HD bool rot_spheres_overlap_view(
+TMOL_HOST_DEVICE_FUNC bool rot_spheres_overlap_view(
     TMOL_THREAD RotSpheresView const& rot_spheres,
     int rot1,
     int rot2,
@@ -328,7 +328,7 @@ TMOL_HD bool rot_spheres_overlap_view(
 // index into the pose and the two blocks of a packed upper-triangle pair, and
 // read the per-block rotamer ranges. Returns false when the candidate is dead.
 template <tmol::Device D, typename Real, typename Int, typename Ctx>
-TMOL_HD bool rot_pair_candidate_blocks(
+TMOL_HOST_DEVICE_FUNC bool rot_pair_candidate_blocks(
     TMOL_THREAD Ctx const& ctx,
     int candidate,
     TMOL_THREAD int& pose,
@@ -348,7 +348,8 @@ TMOL_HD bool rot_pair_candidate_blocks(
 // Diagonal pairs contribute self-pairs only; blocks in one lockstep group
 // contribute matching rotamer indices; otherwise the overlapping spheres.
 template <tmol::Device D, typename Real, typename Int, typename Ctx>
-TMOL_HD void rot_pair_counts_body(TMOL_THREAD Ctx const& ctx, int candidate) {
+TMOL_HOST_DEVICE_FUNC void rot_pair_counts_body(
+    TMOL_THREAD Ctx const& ctx, int candidate) {
   int pose, b1, b2;
   if (!rot_pair_candidate_blocks<D, Real, Int>(ctx, candidate, pose, b1, b2)) {
     return;
@@ -397,7 +398,8 @@ TMOL_HD void rot_pair_counts_body(TMOL_THREAD Ctx const& ctx, int candidate) {
 // Pass 2: write the (pose, rot1, rot2) triples, starting where the exclusive
 // scan of the counts says this candidate's run begins.
 template <tmol::Device D, typename Real, typename Int, typename Ctx>
-TMOL_HD void rot_pair_fill_body(TMOL_THREAD Ctx const& ctx, int candidate) {
+TMOL_HOST_DEVICE_FUNC void rot_pair_fill_body(
+    TMOL_THREAD Ctx const& ctx, int candidate) {
   if (ctx.pair_counts[candidate] == 0) return;
   int pose, b1, b2;
   // The count pass already rejected dead candidates by leaving the count at

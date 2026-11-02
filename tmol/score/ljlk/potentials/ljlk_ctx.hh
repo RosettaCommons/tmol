@@ -83,7 +83,7 @@ struct LJLKCtxT {
   // views. See the comment in elec_ctx.hh for why the list lives in exactly
   // one place.
   template <typename F>
-  TMOL_HD void visit_views(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_views(F f) {
     f(rot_coords);
     f(rot_coord_offset);
     f(block_ind_for_rot);
@@ -113,7 +113,7 @@ struct LJLKCtxT {
 
   // Launch scalars in the order the host writes and the shader reads.
   template <typename F>
-  TMOL_HD void visit_scalars(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_scalars(F f) {
     f(max_n_blocks);
     f(max_n_upper_triangle_inds);
     f(output_block_pair_energies);

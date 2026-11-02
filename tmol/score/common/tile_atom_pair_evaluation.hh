@@ -31,12 +31,12 @@ template <template <typename T> typename InterPairData, typename T>
 class AllAtomPairSelector {
  public:
   template <int TILE>
-  static TMOL_HD int n_remain1(
+  static TMOL_HOST_DEVICE_FUNC int n_remain1(
       TMOL_THREAD InterPairData<T> const& inter_data, int start_atom1) {
     return min(int(TILE), int(inter_data.r1.n_atoms - start_atom1));
   }
   template <int TILE>
-  static TMOL_HD int n_remain2(
+  static TMOL_HOST_DEVICE_FUNC int n_remain2(
       TMOL_THREAD InterPairData<T> const& inter_data, int start_atom2) {
     return min(int(TILE), int(inter_data.r2.n_atoms - start_atom2));
   }
@@ -46,12 +46,12 @@ template <template <typename T> typename InterPairData, typename T>
 class HeavyAtomPairSelector {
  public:
   template <int TILE>
-  static TMOL_HD int n_remain1(
+  static TMOL_HOST_DEVICE_FUNC int n_remain1(
       TMOL_THREAD InterPairData<T> const& inter_data, int /*start_atom1*/) {
     return inter_data.r1.n_heavy;
   }
   template <int TILE>
-  static TMOL_HD int n_remain2(
+  static TMOL_HOST_DEVICE_FUNC int n_remain2(
       TMOL_THREAD InterPairData<T> const& inter_data, int /*start_atom2*/) {
     return inter_data.r2.n_heavy;
   }

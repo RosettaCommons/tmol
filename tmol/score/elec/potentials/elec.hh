@@ -77,7 +77,7 @@ struct ElecBlockPairSharedData {
 // the Metal toolchain, which cannot see the torch tensor layer that the
 // dispatch entry points reach.
 template <int TILE, template <typename> typename InterEnergyData, typename Real>
-TMOL_HD int interres_count_pair_separation(
+TMOL_HOST_DEVICE_FUNC int interres_count_pair_separation(
     TMOL_THREAD InterEnergyData<Real> const& inter_dat,
     int atom_tile_ind1,
     int atom_tile_ind2,

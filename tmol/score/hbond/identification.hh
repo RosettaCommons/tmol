@@ -10,7 +10,7 @@ namespace tmol {
 namespace score {
 namespace hbond {
 
-#define def auto TMOL_HD
+#define def auto TMOL_HOST_DEVICE_FUNC
 
 // Enumerators, not `static constexpr int` members: Metal requires every
 // program-scope variable to live in the `constant` address space, and a

@@ -5,8 +5,11 @@
 // tmol's scalar math is compiled by three different toolchains: the host C++
 // compiler, nvcc, and (for the MPS backend) Apple's Metal compiler. Headers
 // that are shared by all three may not use Eigen, the C++ standard library, or
-// any CUDA-specific attribute, so they qualify their functions with TMOL_HD
-// rather than EIGEN_DEVICE_FUNC.
+// any CUDA-specific attribute, so they qualify their functions with
+// TMOL_HOST_DEVICE_FUNC rather than EIGEN_DEVICE_FUNC.
+//
+// This is distinct from TMOL_DEVICE_FUNC (score/common/diamond_macros.hh),
+// which is a bare __device__ for lambdas handed to DeviceOperations.
 
 #if defined(__METAL_VERSION__)
 #define TMOL_PORTABLE_METAL 1
@@ -17,9 +20,9 @@
 #if defined(__CUDACC__)
 // Match EIGEN_DEVICE_FUNC + EIGEN_STRONG_INLINE so that migrated call sites
 // keep the inlining behavior they had under Eigen.
-#define TMOL_HD __host__ __device__ __forceinline__
+#define TMOL_HOST_DEVICE_FUNC __host__ __device__ __forceinline__
 #else
-#define TMOL_HD inline
+#define TMOL_HOST_DEVICE_FUNC inline
 #endif
 
 // Explicit thread-address-space qualifier.

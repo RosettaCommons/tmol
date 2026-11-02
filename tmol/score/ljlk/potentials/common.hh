@@ -8,7 +8,7 @@ namespace score {
 namespace ljlk {
 namespace potentials {
 
-#define def auto TMOL_HD
+#define def auto TMOL_HOST_DEVICE_FUNC
 
 template <typename Real, typename Int>
 def connectivity_weight(Int bonded_path_length) -> Real {

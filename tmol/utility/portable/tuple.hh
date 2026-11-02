@@ -45,7 +45,7 @@ struct tuple;
 
 template <>
 struct tuple<> {
-  TMOL_HD tuple() {}
+  TMOL_HOST_DEVICE_FUNC tuple() {}
 };
 
 template <typename T, typename... Ts>
@@ -53,7 +53,7 @@ struct tuple<T, Ts...> {
   T head;
   tuple<Ts...> tail;
 
-  TMOL_HD tuple() : head(), tail() {}
+  TMOL_HOST_DEVICE_FUNC tuple() : head(), tail() {}
 
   // Element-wise converting constructor. Potentials routinely build a tuple
   // from expressions of a wider type (a double-precision polynomial feeding a
@@ -63,13 +63,15 @@ struct tuple<T, Ts...> {
       typename U,
       typename... Us,
       typename = typename enable_if<sizeof...(Us) == sizeof...(Ts)>::type>
-  TMOL_HD tuple(TMOL_THREAD U const& h, TMOL_THREAD Us const&... t)
+  TMOL_HOST_DEVICE_FUNC tuple(
+      TMOL_THREAD U const& h, TMOL_THREAD Us const&... t)
       : head(T(h)), tail(t...) {}
 
   // Cross-type assignment is what makes `tie(a, b) = f()` unpack: the left
   // side is a tuple of references and the right side a tuple of values.
   template <typename... Us>
-  TMOL_HD TMOL_THREAD tuple& operator=(TMOL_THREAD tuple<Us...> const& o) {
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD tuple& operator=(
+      TMOL_THREAD tuple<Us...> const& o) {
     head = o.head;
     tail = o.tail;
     return *this;
@@ -84,10 +86,11 @@ struct tuple_at;
 template <typename T, typename... Ts>
 struct tuple_at<0, tuple<T, Ts...>> {
   typedef T type;
-  TMOL_HD static TMOL_THREAD T& get(TMOL_THREAD tuple<T, Ts...>& t) {
+  TMOL_HOST_DEVICE_FUNC static TMOL_THREAD T& get(
+      TMOL_THREAD tuple<T, Ts...>& t) {
     return t.head;
   }
-  TMOL_HD static TMOL_THREAD T const& get(
+  TMOL_HOST_DEVICE_FUNC static TMOL_THREAD T const& get(
       TMOL_THREAD tuple<T, Ts...> const& t) {
     return t.head;
   }
@@ -96,10 +99,11 @@ struct tuple_at<0, tuple<T, Ts...>> {
 template <int I, typename T, typename... Ts>
 struct tuple_at<I, tuple<T, Ts...>> {
   typedef typename tuple_at<I - 1, tuple<Ts...>>::type type;
-  TMOL_HD static TMOL_THREAD type& get(TMOL_THREAD tuple<T, Ts...>& t) {
+  TMOL_HOST_DEVICE_FUNC static TMOL_THREAD type& get(
+      TMOL_THREAD tuple<T, Ts...>& t) {
     return tuple_at<I - 1, tuple<Ts...>>::get(t.tail);
   }
-  TMOL_HD static TMOL_THREAD type const& get(
+  TMOL_HOST_DEVICE_FUNC static TMOL_THREAD type const& get(
       TMOL_THREAD tuple<T, Ts...> const& t) {
     return tuple_at<I - 1, tuple<Ts...>>::get(t.tail);
   }
@@ -108,14 +112,16 @@ struct tuple_at<I, tuple<T, Ts...>> {
 }  // namespace detail
 
 template <int I, typename... Ts>
-TMOL_HD TMOL_THREAD typename detail::tuple_at<I, tuple<Ts...>>::type& get(
-    TMOL_THREAD tuple<Ts...>& t) {
+TMOL_HOST_DEVICE_FUNC TMOL_THREAD
+    typename detail::tuple_at<I, tuple<Ts...>>::type&
+    get(TMOL_THREAD tuple<Ts...>& t) {
   return detail::tuple_at<I, tuple<Ts...>>::get(t);
 }
 
 template <int I, typename... Ts>
-TMOL_HD TMOL_THREAD typename detail::tuple_at<I, tuple<Ts...>>::type const& get(
-    TMOL_THREAD tuple<Ts...> const& t) {
+TMOL_HOST_DEVICE_FUNC TMOL_THREAD
+    typename detail::tuple_at<I, tuple<Ts...>>::type const&
+    get(TMOL_THREAD tuple<Ts...> const& t) {
   return detail::tuple_at<I, tuple<Ts...>>::get(t);
 }
 
@@ -128,7 +134,7 @@ struct tuple_size<tuple<Ts...>> {
   enum { value = sizeof...(Ts) };
 };
 
-TMOL_HD tuple<> make_tuple() { return tuple<>(); }
+TMOL_HOST_DEVICE_FUNC tuple<> make_tuple() { return tuple<>(); }
 
 // Taken by value rather than by const reference: Metal folds the address space
 // into a type deduced from a reference parameter, so `T const&` binding a
@@ -136,7 +142,7 @@ TMOL_HD tuple<> make_tuple() { return tuple<>(); }
 // address-space qualified. Deducing from a by-value parameter yields the plain
 // type. make_tuple copies its arguments either way.
 template <typename T, typename... Ts>
-TMOL_HD tuple<T, Ts...> make_tuple(T v, Ts... vs) {
+TMOL_HOST_DEVICE_FUNC tuple<T, Ts...> make_tuple(T v, Ts... vs) {
   return tuple<T, Ts...>(v, vs...);
 }
 
@@ -154,7 +160,7 @@ struct ref_tuple;
 template <>
 struct ref_tuple<> {
   template <typename Tup>
-  TMOL_HD void assign(TMOL_THREAD Tup const&) const {}
+  TMOL_HOST_DEVICE_FUNC void assign(TMOL_THREAD Tup const&) const {}
 };
 
 template <typename P, typename... Ps>
@@ -163,13 +169,14 @@ struct ref_tuple<P, Ps...> {
   ref_tuple<Ps...> tail;
 
   template <typename U, typename... Us>
-  TMOL_HD void assign(TMOL_THREAD tuple<U, Us...> const& t) const {
+  TMOL_HOST_DEVICE_FUNC void assign(
+      TMOL_THREAD tuple<U, Us...> const& t) const {
     *head = t.head;
     tail.assign(t.tail);
   }
 
   template <typename Tup>
-  TMOL_HD void operator=(TMOL_THREAD Tup const& t) const {
+  TMOL_HOST_DEVICE_FUNC void operator=(TMOL_THREAD Tup const& t) const {
     assign(t);
   }
 };
@@ -181,14 +188,15 @@ struct ref_tuple_at;
 
 template <typename P, typename... Ps>
 struct ref_tuple_at<0, ref_tuple<P, Ps...>> {
-  TMOL_HD static P ptr(TMOL_THREAD ref_tuple<P, Ps...> const& t) {
+  TMOL_HOST_DEVICE_FUNC static P ptr(TMOL_THREAD ref_tuple<P, Ps...> const& t) {
     return t.head;
   }
 };
 
 template <int I, typename P, typename... Ps>
 struct ref_tuple_at<I, ref_tuple<P, Ps...>> {
-  TMOL_HD static auto ptr(TMOL_THREAD ref_tuple<P, Ps...> const& t)
+  TMOL_HOST_DEVICE_FUNC static auto ptr(
+      TMOL_THREAD ref_tuple<P, Ps...> const& t)
       -> decltype(ref_tuple_at<I - 1, ref_tuple<Ps...>>::ptr(t.tail)) {
     return ref_tuple_at<I - 1, ref_tuple<Ps...>>::ptr(t.tail);
   }
@@ -199,7 +207,7 @@ struct ref_tuple_at<I, ref_tuple<P, Ps...>> {
 // get<I> on a tie() bundle yields the tied variable itself, so that generic
 // code can treat it the same way it treats a tuple element.
 template <int I, typename... Ps>
-TMOL_HD auto get(TMOL_THREAD ref_tuple<Ps...> const& t)
+TMOL_HOST_DEVICE_FUNC auto get(TMOL_THREAD ref_tuple<Ps...> const& t)
     -> decltype(*detail::ref_tuple_at<I, ref_tuple<Ps...>>::ptr(t)) {
   return *detail::ref_tuple_at<I, ref_tuple<Ps...>>::ptr(t);
 }
@@ -209,10 +217,10 @@ struct tuple_size<ref_tuple<Ps...>> {
   enum { value = sizeof...(Ps) };
 };
 
-TMOL_HD ref_tuple<> tie() { return ref_tuple<>(); }
+TMOL_HOST_DEVICE_FUNC ref_tuple<> tie() { return ref_tuple<>(); }
 
 template <typename T, typename... Ts>
-TMOL_HD auto tie(TMOL_THREAD T& v, TMOL_THREAD Ts&... vs)
+TMOL_HOST_DEVICE_FUNC auto tie(TMOL_THREAD T& v, TMOL_THREAD Ts&... vs)
     -> ref_tuple<decltype(&v), decltype(&vs)...> {
   return {&v, {&vs...}};
 }

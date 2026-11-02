@@ -58,7 +58,7 @@ using tmol::score::common::accumulate;
 // more than that in wall time.
 template <bool B>
 struct deriv_tag {
-  TMOL_HD constexpr operator bool() const { return B; }
+  TMOL_HOST_DEVICE_FUNC constexpr operator bool() const { return B; }
 };
 
 // Shared-memory block for one hbond workgroup.
@@ -490,7 +490,7 @@ template <
     typename Ctx,
     typename Shared,
     typename DerivTag>
-TMOL_HD void hbond_pose_eval_energies(
+TMOL_HOST_DEVICE_FUNC void hbond_pose_eval_energies(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
@@ -622,7 +622,7 @@ template <
     typename launch_t,
     typename Ctx,
     typename Shared>
-TMOL_HD void hbond_pose_eval_derivs(
+TMOL_HOST_DEVICE_FUNC void hbond_pose_eval_derivs(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
@@ -785,7 +785,7 @@ template <
     bool AccumulateDerivs,
     typename Ctx,
     typename Shared>
-TMOL_HD void hbond_rotamer_eval_energies(
+TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_energies(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,

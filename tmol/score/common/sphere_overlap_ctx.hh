@@ -36,7 +36,7 @@ struct BlockSpheresCtxT {
   View<Real, 3> block_spheres;
 
   template <typename F>
-  TMOL_HD void visit_views(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_views(F f) {
     f(rot_coords);
     f(rot_coord_offset);
     f(block_ind_for_rot);
@@ -47,7 +47,7 @@ struct BlockSpheresCtxT {
   }
 
   template <typename F>
-  TMOL_HD void visit_scalars(F) {}
+  TMOL_HOST_DEVICE_FUNC void visit_scalars(F) {}
 
   enum { n_views = 7 };
 };
@@ -65,7 +65,7 @@ struct BlockNeighborsCtxT {
   Real reach = {};
 
   template <typename F>
-  TMOL_HD void visit_views(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_views(F f) {
     f(pose_stack_block_type);
     f(block_spheres);
     f(block_neighbors);
@@ -75,7 +75,7 @@ struct BlockNeighborsCtxT {
 
   // Launch scalars in the order the host writes and the shader reads.
   template <typename F>
-  TMOL_HD void visit_scalars(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_scalars(F f) {
     f(max_n_blocks);
     f(block_pairs_per_pose);
     f(reach);
@@ -99,7 +99,7 @@ struct RotSpheresCtxT {
   View<Real, 2> rot_spheres;
 
   template <typename F>
-  TMOL_HD void visit_views(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_views(F f) {
     f(rot_coords);
     f(rot_coord_offset);
     f(block_type_ind_for_rot);
@@ -109,7 +109,7 @@ struct RotSpheresCtxT {
 
   enum { n_views = 5 };
   template <typename F>
-  TMOL_HD void visit_scalars(F) {}
+  TMOL_HOST_DEVICE_FUNC void visit_scalars(F) {}
 };
 
 // A block's sphere from the spheres of its rotamers: one thread per block.
@@ -121,7 +121,7 @@ struct BlockSpheresFromRotCtxT {
   View<Real, 3> block_spheres;
 
   template <typename F>
-  TMOL_HD void visit_views(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_views(F f) {
     f(rot_spheres);
     f(n_rots_for_block);
     f(rot_offset_for_block);
@@ -131,7 +131,7 @@ struct BlockSpheresFromRotCtxT {
   enum { n_views = 4 };
   // Launch scalars in the order the host writes and the shader reads.
   template <typename F>
-  TMOL_HD void visit_scalars(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_scalars(F f) {
     f(max_n_blocks);
   }
 
@@ -157,7 +157,7 @@ struct RotPairListCtxT {
   View<int64_t, 1> pair_count_overflow;
 
   template <typename F>
-  TMOL_HD void visit_views(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_views(F f) {
     f(pose_stack_block_type);
     f(block_spheres);
     f(n_rots_for_block);
@@ -173,7 +173,7 @@ struct RotPairListCtxT {
   enum { n_views = 10 };
   // Launch scalars in the order the host writes and the shader reads.
   template <typename F>
-  TMOL_HD void visit_scalars(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_scalars(F f) {
     f(max_n_blocks);
     f(block_pairs_per_pose);
     f(candidate_begin);

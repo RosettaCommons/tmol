@@ -719,7 +719,7 @@ void TMOL_DEVICE_FUNC hbond_load_intrares_data_from_shared(
 // the Metal toolchain, which cannot see the torch tensor layer that the
 // dispatch entry points reach.
 template <int TILE, typename InterEnergyData>
-TMOL_HD int interres_count_pair_separation(
+TMOL_HOST_DEVICE_FUNC int interres_count_pair_separation(
     TMOL_THREAD InterEnergyData const& inter_dat,
     int atom_tile_ind1,
     int atom_tile_ind2) {

@@ -22,12 +22,12 @@ struct select_leaf_ancestors {
     Real theta;
     Real phi;
 
-    static anc_and_geom TMOL_HD empty() {
+    static anc_and_geom TMOL_HOST_DEVICE_FUNC empty() {
       return {Int(-1), Int(-1), Int(-1), Real(0), Real(0), Real(0)};
     }
   };
 
-  static auto TMOL_HD find_ancestors(
+  static auto TMOL_HOST_DEVICE_FUNC find_ancestors(
       int pose_ind,
       int block_ind,
       int atom_ind,

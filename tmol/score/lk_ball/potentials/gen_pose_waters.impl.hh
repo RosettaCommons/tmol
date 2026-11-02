@@ -40,7 +40,7 @@ using WaterGenDerivCtx = WaterGenDerivCtxT<
     Real,
     Int>;
 
-#define def auto TMOL_HD
+#define def auto TMOL_HOST_DEVICE_FUNC
 
 template <
     template <tmol::Device> class DeviceOps,

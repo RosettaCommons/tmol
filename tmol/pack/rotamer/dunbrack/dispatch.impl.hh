@@ -34,7 +34,7 @@ template <
     typename Real,
     typename Int>
 struct DunbrackChiSampler {
-  static TMOL_HD void backbone_lookup_coordinate(
+  static TMOL_HOST_DEVICE_FUNC void backbone_lookup_coordinate(
       Real dihedral,
       Real start,
       Real source_start,
@@ -75,7 +75,7 @@ struct DunbrackChiSampler {
   }
 
   // Negative values mark invalid/overflowed counts and survive every later sum.
-  static TMOL_HD Int checked_count_product(Int a, Int b) {
+  static TMOL_HOST_DEVICE_FUNC Int checked_count_product(Int a, Int b) {
     if (a < 0 || b < 0) return -1;
     if constexpr (sizeof(Int) < sizeof(int64_t)) {
       int64_t const product = int64_t(a) * int64_t(b);

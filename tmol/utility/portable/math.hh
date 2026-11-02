@@ -22,22 +22,22 @@ namespace math {
 #define TMOL_MATH_NS ::std
 #endif
 
-#define TMOL_MATH_UNARY(name)     \
-  template <typename T>           \
-  TMOL_HD T name(T x) {           \
-    return TMOL_MATH_NS::name(x); \
+#define TMOL_MATH_UNARY(name)         \
+  template <typename T>               \
+  TMOL_HOST_DEVICE_FUNC T name(T x) { \
+    return TMOL_MATH_NS::name(x);     \
   }
 
-#define TMOL_MATH_BINARY(name)       \
-  template <typename T>              \
-  TMOL_HD T name(T x, T y) {         \
-    return TMOL_MATH_NS::name(x, y); \
+#define TMOL_MATH_BINARY(name)             \
+  template <typename T>                    \
+  TMOL_HOST_DEVICE_FUNC T name(T x, T y) { \
+    return TMOL_MATH_NS::name(x, y);       \
   }
 
-#define TMOL_MATH_TERNARY(name)         \
-  template <typename T>                 \
-  TMOL_HD T name(T x, T y, T z) {       \
-    return TMOL_MATH_NS::name(x, y, z); \
+#define TMOL_MATH_TERNARY(name)                 \
+  template <typename T>                         \
+  TMOL_HOST_DEVICE_FUNC T name(T x, T y, T z) { \
+    return TMOL_MATH_NS::name(x, y, z);         \
   }
 
 TMOL_MATH_UNARY(sqrt)
@@ -65,7 +65,7 @@ TMOL_MATH_UNARY(sqrt)
 
 #define TMOL_MATH_FAST_UNARY(exported, name) \
   template <typename T>                      \
-  TMOL_HD T exported(T x) {                  \
+  TMOL_HOST_DEVICE_FUNC T exported(T x) {    \
     return TMOL_MATH_FAST_NS::name(x);       \
   }
 
@@ -102,13 +102,13 @@ TMOL_MATH_TERNARY(fma)
 // Replaces EIGEN_PI. Metal has no double, so the literal degrades to float
 // there, which is all that backend can represent anyway.
 template <typename T>
-TMOL_HD T pi() {
+TMOL_HOST_DEVICE_FUNC T pi() {
   return T(3.14159265358979323846);
 }
 
 // abs() is spelled fabs() for floating point in <cmath>; Metal names it abs().
 template <typename T>
-TMOL_HD T abs(T x) {
+TMOL_HOST_DEVICE_FUNC T abs(T x) {
 #if TMOL_PORTABLE_METAL
   return ::metal::fabs(x);
 #else
@@ -123,13 +123,13 @@ TMOL_HD T abs(T x) {
 // absent waters with NaN and relies on the test, so it is done on the bits,
 // which no float-contraction rule can elide. Host and CUDA keep <cmath>.
 #if TMOL_PORTABLE_METAL
-TMOL_HD bool isnan(float x) {
+TMOL_HOST_DEVICE_FUNC bool isnan(float x) {
   uint const bits = as_type<uint>(x);
   return (bits & 0x7f800000u) == 0x7f800000u && (bits & 0x007fffffu) != 0u;
 }
 #else
 template <typename T>
-TMOL_HD bool isnan(T x) {
+TMOL_HOST_DEVICE_FUNC bool isnan(T x) {
   return ::std::isnan(x);
 }
 #endif

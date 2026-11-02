@@ -25,10 +25,11 @@ template <
     typename Real,
     typename Int>
 struct ndspline {
-  static auto TMOL_HD square(Real v) -> Real { return v * v; }
-  static auto TMOL_HD cube(Real v) -> Real { return v * v * v; }
+  static auto TMOL_HOST_DEVICE_FUNC square(Real v) -> Real { return v * v; }
+  static auto TMOL_HOST_DEVICE_FUNC cube(Real v) -> Real { return v * v * v; }
 
-  static auto TMOL_HD _get_weights(tmol::portable::Vec<Real, NDIM> frac)
+  static auto TMOL_HOST_DEVICE_FUNC
+  _get_weights(tmol::portable::Vec<Real, NDIM> frac)
       -> tmol::portable::Mat<Real, NDIM, DEGREE + 1> {
     static_assert(DEGREE >= 2 && DEGREE <= 5, "Invalid spline degree.");
     tmol::portable::Mat<Real, NDIM, DEGREE + 1> wts =
@@ -82,7 +83,8 @@ struct ndspline {
     return wts;
   }
 
-  static auto TMOL_HD _get_dweights(tmol::portable::Vec<Real, NDIM> frac)
+  static auto TMOL_HOST_DEVICE_FUNC
+  _get_dweights(tmol::portable::Vec<Real, NDIM> frac)
       -> tmol::portable::Mat<Real, NDIM, DEGREE + 1> {
     static_assert(DEGREE >= 2 && DEGREE <= 5, "Invalid spline degree.");
     tmol::portable::Mat<Real, NDIM, DEGREE + 1> dwts =
@@ -138,7 +140,7 @@ struct ndspline {
     return dwts;
   }
 
-  static auto TMOL_HD interpolate_tv(
+  static auto TMOL_HOST_DEVICE_FUNC interpolate_tv(
       TView<Real, NDIM, D> coeffs,
       TView<tmol::portable::Vec<Real, NDIM>, 1, D> Xs) -> tmol::score::common::
       tuple<TPack<Real, 1, D>, TPack<tmol::portable::Vec<Real, NDIM>, 1, D> > {
@@ -147,7 +149,7 @@ struct ndspline {
         TensorAccessor<tmol::portable::Vec<Real, NDIM>, 1, D>(Xs));
   }
 
-  static auto TMOL_HD interpolate(
+  static auto TMOL_HOST_DEVICE_FUNC interpolate(
       TensorAccessor<Real, NDIM, D> coeffs,
       TensorAccessor<tmol::portable::Vec<Real, NDIM>, 1, D> Xs)
       -> tmol::score::common::tuple<
@@ -167,7 +169,7 @@ struct ndspline {
     return {Vs_t, dV_dIs_t};
   }
 
-  static auto TMOL_HD interpolate_V(
+  static auto TMOL_HOST_DEVICE_FUNC interpolate_V(
       TensorAccessor<Real, NDIM, D> coeffs, tmol::portable::Vec<Real, NDIM> X)
       -> Real {
     typedef tmol::portable::Vec<Real, NDIM> RealN;
@@ -206,7 +208,7 @@ struct ndspline {
     return interp;
   }
 
-  static auto TMOL_HD interpolate(
+  static auto TMOL_HOST_DEVICE_FUNC interpolate(
       TensorAccessor<Real, NDIM, D> coeffs, tmol::portable::Vec<Real, NDIM> X)
       -> tmol::score::common::tuple<Real, tmol::portable::Vec<Real, NDIM> > {
     typedef tmol::portable::Vec<Real, NDIM> RealN;

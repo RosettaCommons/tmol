@@ -14,7 +14,7 @@ namespace potentials {
 
 using namespace tmol::score::common;
 
-#define def auto TMOL_HD
+#define def auto TMOL_HOST_DEVICE_FUNC
 
 using tmol::portable::Vec;
 #define Real3 Vec<Real, 3>

@@ -11,7 +11,7 @@ namespace tmol {
 namespace score {
 namespace common {
 
-#define def auto TMOL_HD
+#define def auto TMOL_HOST_DEVICE_FUNC
 
 using tmol::portable::Vec;
 // Found by unqualified lookup from the Horner loops below alongside the
@@ -30,7 +30,7 @@ using tmol::portable::horner_step;
 // specialized, so partial ordering picks them over this one whenever the
 // accumulator or the coefficient is a hi/lo pair.
 template <typename EvalReal, typename Real, typename CoeffReal>
-TMOL_HD EvalReal horner_step(EvalReal v, Real x, CoeffReal c) {
+TMOL_HOST_DEVICE_FUNC EvalReal horner_step(EvalReal v, Real x, CoeffReal c) {
   return v * x + c;
 }
 

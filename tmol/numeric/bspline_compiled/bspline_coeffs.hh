@@ -26,7 +26,7 @@ template <
     typename Int>
 struct ndspline_coeffs {
   // 1D stripe setter
-  static auto TMOL_HD _put_line(
+  static auto TMOL_HOST_DEVICE_FUNC _put_line(
       TensorAccessor<Real, NDIM, D> coeffs,
       Eigen::Matrix<Real, Eigen::Dynamic, 1> line,
       Int start,
@@ -39,7 +39,7 @@ struct ndspline_coeffs {
   }
 
   // 1D stripe getter
-  static auto TMOL_HD _get_line(
+  static auto TMOL_HOST_DEVICE_FUNC _get_line(
       TensorAccessor<Real, NDIM, D> coeffs,
       Eigen::Matrix<Real, Eigen::Dynamic, 1>& line,
       Int start,
@@ -51,7 +51,7 @@ struct ndspline_coeffs {
     }
   }
 
-  static auto TMOL_HD
+  static auto TMOL_HOST_DEVICE_FUNC
   _init_causal_coeff(Eigen::Matrix<Real, Eigen::Dynamic, 1>& line, Real pole) {
     // inplace calculation of "cell 0" coefficient
     // ** currently, initialization corresponds to periodic boundaries
@@ -76,7 +76,7 @@ struct ndspline_coeffs {
     }
   }
 
-  static auto TMOL_HD _init_anticausal_coeff(
+  static auto TMOL_HOST_DEVICE_FUNC _init_anticausal_coeff(
       Eigen::Matrix<Real, Eigen::Dynamic, 1>& line, Real pole) {
     // inplace calculation of "cell (N-1)" coefficient
     // ** currently, initialization corresponds to periodic boundaries
@@ -102,7 +102,7 @@ struct ndspline_coeffs {
     }
   }
 
-  static auto TMOL_HD _convert_interp_coeffs(
+  static auto TMOL_HOST_DEVICE_FUNC _convert_interp_coeffs(
       Eigen::Matrix<Real, Eigen::Dynamic, 1>& line,
       Eigen::Matrix<Real, DEGREE / 2, 1> poles) {
     // interpolation coefficients along one line (in place)
@@ -135,7 +135,8 @@ struct ndspline_coeffs {
     }
   }
 
-  static auto TMOL_HD _get_poles() -> Eigen::Matrix<Real, DEGREE / 2, 1> {
+  static auto TMOL_HOST_DEVICE_FUNC _get_poles()
+      -> Eigen::Matrix<Real, DEGREE / 2, 1> {
     static_assert(DEGREE >= 2 && DEGREE <= 5, "Invalid spline degree.");
     Eigen::Matrix<Real, DEGREE / 2, 1> poles;
     if (DEGREE == 2) {
@@ -157,7 +158,7 @@ struct ndspline_coeffs {
   }
 
   // compute coefficients (in-place)
-  static auto TMOL_HD computeCoeffs(TView<Real, NDIM, D> values) {
+  static auto TMOL_HOST_DEVICE_FUNC computeCoeffs(TView<Real, NDIM, D> values) {
     // 'values' must be C-contiguous.
     //   -> this is currently guaranteed by TensorAccessor
     auto poles = _get_poles();

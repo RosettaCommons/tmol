@@ -13,7 +13,7 @@ namespace tmol {
 namespace score {
 namespace bonded_atom {
 
-#define def auto TMOL_HD
+#define def auto TMOL_HOST_DEVICE_FUNC
 
 using tmol::portable::Vec;
 
@@ -54,7 +54,7 @@ struct IndexedBonds {
     }
   };
 
-  TMOL_HD BoundAtomRange bound_to(Int i) const {
+  TMOL_HOST_DEVICE_FUNC BoundAtomRange bound_to(Int i) const {
     return BoundAtomRange{i, *this};
   }
 };
@@ -67,12 +67,12 @@ struct BlockCentricAtom {
   Int block_type;
   Int atom;
 
-  TMOL_HD bool operator==(
+  TMOL_HOST_DEVICE_FUNC bool operator==(
       TMOL_THREAD BlockCentricAtom<Int> const& other) const {
     return block == other.block && block_type == other.block_type
            && atom == other.atom;
   }
-  TMOL_HD bool operator!=(
+  TMOL_HOST_DEVICE_FUNC bool operator!=(
       TMOL_THREAD BlockCentricAtom<Int> const& other) const {
     return !(*this == other);
   }
@@ -164,7 +164,8 @@ struct BlockCentricIndexedBonds {
     }
   };
 
-  TMOL_HD BondAtomRange bound_to(BlockCentricAtom<Int> bcat) const {
+  TMOL_HOST_DEVICE_FUNC BondAtomRange
+  bound_to(BlockCentricAtom<Int> bcat) const {
     return BondAtomRange{bcat, *this};
   }
 };
@@ -293,7 +294,8 @@ struct RotamerCentricIndexedBonds {
     }
   };
 
-  TMOL_HD BondAtomRange bound_to(BlockCentricAtom<Int> bcat) const {
+  TMOL_HOST_DEVICE_FUNC BondAtomRange
+  bound_to(BlockCentricAtom<Int> bcat) const {
     return BondAtomRange{bcat, *this};
   }
 };

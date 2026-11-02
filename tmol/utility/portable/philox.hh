@@ -36,11 +36,12 @@ class Philox4x32_10 {
     uint32_t x, y, z, w;
   };
 
-  TMOL_HD Philox4x32_10()
+  TMOL_HOST_DEVICE_FUNC Philox4x32_10()
       : key0_(0), key1_(0), c0_(0), c1_(0), c2_(0), c3_(0) {}
 
   // One stream per (seed, stream_id). counter_start lets a caller skip ahead.
-  TMOL_HD Philox4x32_10(uint64_t seed, uint64_t stream_id, uint64_t counter = 0)
+  TMOL_HOST_DEVICE_FUNC Philox4x32_10(
+      uint64_t seed, uint64_t stream_id, uint64_t counter = 0)
       : key0_(uint32_t(seed & 0xFFFFFFFFu)),
         key1_(uint32_t(seed >> 32)),
         c0_(uint32_t(counter & 0xFFFFFFFFu)),
@@ -49,7 +50,7 @@ class Philox4x32_10 {
         c3_(uint32_t(stream_id >> 32)) {}
 
   // Four fresh 32-bit words, then advance the counter.
-  TMOL_HD uint4 next4() {
+  TMOL_HOST_DEVICE_FUNC uint4 next4() {
     uint32_t k0 = key0_, k1 = key1_;
     uint32_t c0 = c0_, c1 = c1_, c2 = c2_, c3 = c3_;
     for (int round = 0; round < 10; ++round) {
@@ -79,7 +80,7 @@ class Philox4x32_10 {
   }
 
   // A single word, buffering the other three.
-  TMOL_HD uint32_t next() {
+  TMOL_HOST_DEVICE_FUNC uint32_t next() {
     if (have_ == 0) {
       buf_ = next4();
       have_ = 4;
@@ -94,18 +95,20 @@ class Philox4x32_10 {
   // In (0, 1], matching curand_uniform's conversion so the CUDA (cuRAND) and
   // Metal (Philox) annealers can be compared draw for draw if that is ever
   // wanted.
-  TMOL_HD float next_uniform() {
+  TMOL_HOST_DEVICE_FUNC float next_uniform() {
     return float(next()) * 2.3283064365386963e-10f + 1.1641532182693481e-10f;
   }
 
   // Uniform on [0, n), via the modulo the CUDA annealer uses (random_below).
-  TMOL_HD int next_below(int n) { return int(next() % uint32_t(n)); }
+  TMOL_HOST_DEVICE_FUNC int next_below(int n) {
+    return int(next() % uint32_t(n));
+  }
 
  private:
   // The high half of a 32x32 product, without a 64-bit multiply: Apple GPUs
   // emulate 64-bit integer arithmetic, and this runs once per round per
   // draw. Each backend has a single instruction for it.
-  TMOL_HD static uint32_t mul_high(uint32_t a, uint32_t b) {
+  TMOL_HOST_DEVICE_FUNC static uint32_t mul_high(uint32_t a, uint32_t b) {
 #if TMOL_PORTABLE_METAL
     return ::metal::mulhi(a, b);
 #elif defined(__CUDA_ARCH__)
@@ -115,7 +118,7 @@ class Philox4x32_10 {
 #endif
   }
 
-  TMOL_HD static void mulhilo(
+  TMOL_HOST_DEVICE_FUNC static void mulhilo(
       uint32_t a,
       uint32_t b,
       TMOL_THREAD uint32_t& hi,
@@ -124,7 +127,7 @@ class Philox4x32_10 {
     lo = a * b;  // wraps mod 2^32, which is what the algorithm wants
   }
 
-  TMOL_HD void bump() {
+  TMOL_HOST_DEVICE_FUNC void bump() {
     if (++c0_ == 0)
       if (++c1_ == 0)
         if (++c2_ == 0) ++c3_;

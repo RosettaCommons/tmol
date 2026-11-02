@@ -64,15 +64,17 @@ struct DeviceOperations<tmol::Device::CPU> {
     });
   }
 
-  static TMOL_HD void store_idempotent(int32_t& target, int32_t value) {
+  static TMOL_HOST_DEVICE_FUNC void store_idempotent(
+      int32_t& target, int32_t value) {
     __atomic_store_n(&target, value, __ATOMIC_RELAXED);
   }
 
-  static TMOL_HD void store_idempotent(int64_t& target, int64_t value) {
+  static TMOL_HOST_DEVICE_FUNC void store_idempotent(
+      int64_t& target, int64_t value) {
     __atomic_store_n(&target, value, __ATOMIC_RELAXED);
   }
 
-  static TMOL_HD void bitwise_or(int32_t& target, int32_t value) {
+  static TMOL_HOST_DEVICE_FUNC void bitwise_or(int32_t& target, int32_t value) {
     __atomic_fetch_or(&target, value, __ATOMIC_RELAXED);
   }
 

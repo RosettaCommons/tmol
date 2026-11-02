@@ -4,7 +4,7 @@
 
 #include <tmol/utility/portable/qualifiers.hh>
 
-#define def auto TMOL_HD
+#define def auto TMOL_HOST_DEVICE_FUNC
 
 namespace tmol {
 namespace score {

@@ -16,22 +16,22 @@ namespace portable {
 
 template <typename T>
 struct plus_t {
-  TMOL_HD T operator()(T a, T b) const { return a + b; }
+  TMOL_HOST_DEVICE_FUNC T operator()(T a, T b) const { return a + b; }
 };
 
 template <typename T>
 struct maximum_t {
-  TMOL_HD T operator()(T a, T b) const { return a > b ? a : b; }
+  TMOL_HOST_DEVICE_FUNC T operator()(T a, T b) const { return a > b ? a : b; }
 };
 
 template <typename T>
 struct minimum_t {
-  TMOL_HD T operator()(T a, T b) const { return a < b ? a : b; }
+  TMOL_HOST_DEVICE_FUNC T operator()(T a, T b) const { return a < b ? a : b; }
 };
 
 template <typename T>
 struct less_t {
-  TMOL_HD bool operator()(T a, T b) const { return a < b; }
+  TMOL_HOST_DEVICE_FUNC bool operator()(T a, T b) const { return a < b; }
 };
 
 enum class scan_type { exclusive, inclusive };

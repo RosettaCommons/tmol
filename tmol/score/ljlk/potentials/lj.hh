@@ -13,7 +13,7 @@ namespace score {
 namespace ljlk {
 namespace potentials {
 
-#define def auto TMOL_HD
+#define def auto TMOL_HOST_DEVICE_FUNC
 
 using namespace tmol::score::common;
 

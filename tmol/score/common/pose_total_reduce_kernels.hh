@@ -35,7 +35,7 @@ template <
     int N_T,
     typename Ctx,
     typename Shared>
-TMOL_HD void pose_total_reduce_body(
+TMOL_HOST_DEVICE_FUNC void pose_total_reduce_body(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,

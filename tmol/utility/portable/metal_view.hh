@@ -58,11 +58,11 @@ struct MetalView {
   TMOL_DEVICE_PTR(const int64_t) sizes_;
   TMOL_DEVICE_PTR(const int64_t) strides_;
 
-  TMOL_HD int64_t size(int i) const { return sizes_[i]; }
-  TMOL_HD int64_t stride(int i) const { return strides_[i]; }
+  TMOL_HOST_DEVICE_FUNC int64_t size(int i) const { return sizes_[i]; }
+  TMOL_HOST_DEVICE_FUNC int64_t stride(int i) const { return strides_[i]; }
 
   // Indexing a rank-N view yields a rank-(N-1) view; rank 1 yields the element.
-  TMOL_HD MetalView<T, N - 1> operator[](int64_t i) const {
+  TMOL_HOST_DEVICE_FUNC MetalView<T, N - 1> operator[](int64_t i) const {
     return MetalView<T, N - 1>{
         data_ + strides_[0] * i, sizes_ + 1, strides_ + 1};
   }
@@ -74,15 +74,17 @@ struct MetalView<T, 1> {
   TMOL_DEVICE_PTR(const int64_t) sizes_;
   TMOL_DEVICE_PTR(const int64_t) strides_;
 
-  TMOL_HD int64_t size(int i) const { return sizes_[i]; }
-  TMOL_HD int64_t stride(int i) const { return strides_[i]; }
+  TMOL_HOST_DEVICE_FUNC int64_t size(int i) const { return sizes_[i]; }
+  TMOL_HOST_DEVICE_FUNC int64_t stride(int i) const { return strides_[i]; }
 
 #if TMOL_PORTABLE_METAL
-  TMOL_HD device T& operator[](int64_t i) const {
+  TMOL_HOST_DEVICE_FUNC device T& operator[](int64_t i) const {
     return data_[strides_[0] * i];
   }
 #else
-  TMOL_HD T& operator[](int64_t i) const { return data_[strides_[0] * i]; }
+  TMOL_HOST_DEVICE_FUNC T& operator[](int64_t i) const {
+    return data_[strides_[0] * i];
+  }
 #endif
 };
 

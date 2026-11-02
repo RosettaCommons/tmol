@@ -55,7 +55,7 @@ struct InteractionGraphEntryCtxT {
   int max_n_molten_blocks = {};
 
   template <typename F>
-  TMOL_HD void visit_views(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_views(F f) {
     f(sparse_inds);
     f(sparse_energies);
     f(block_ind_for_rot);
@@ -79,7 +79,7 @@ struct InteractionGraphEntryCtxT {
   enum { n_views = 18 };
   // Launch scalars in the order the host writes and the shader reads.
   template <typename F>
-  TMOL_HD void visit_scalars(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_scalars(F f) {
     f(chunk_size);
     f(max_n_molten_blocks);
   }
@@ -87,7 +87,7 @@ struct InteractionGraphEntryCtxT {
 
 // The CSR position of the edge block -> neighbor; the edge must exist.
 template <typename Ctx>
-TMOL_HD int64_t ig_find_neighbor_edge(
+TMOL_HOST_DEVICE_FUNC int64_t ig_find_neighbor_edge(
     TMOL_THREAD Ctx const& ctx, int pose, int block, int neighbor) {
   int const row = pose * ctx.max_n_molten_blocks + block;
   int64_t lower = ctx.neighbor_row_offsets[row];
@@ -108,7 +108,8 @@ template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
     typename Ctx>
-TMOL_HD void ig_note_block_pair(TMOL_THREAD Ctx const& ctx, int index) {
+TMOL_HOST_DEVICE_FUNC void ig_note_block_pair(
+    TMOL_THREAD Ctx const& ctx, int index) {
   int const pose = ctx.sparse_inds[0][index];
   int const rot1 = ctx.sparse_inds[1][index];
   int const rot2 = ctx.sparse_inds[2][index];
@@ -135,7 +136,8 @@ template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
     typename Ctx>
-TMOL_HD void ig_note_chunk_pair(TMOL_THREAD Ctx const& ctx, int index) {
+TMOL_HOST_DEVICE_FUNC void ig_note_chunk_pair(
+    TMOL_THREAD Ctx const& ctx, int index) {
   int const pose = ctx.sparse_inds[0][index];
   int const rot1 = ctx.sparse_inds[1][index];
   int const rot2 = ctx.sparse_inds[2][index];
@@ -176,7 +178,8 @@ TMOL_HD void ig_note_chunk_pair(TMOL_THREAD Ctx const& ctx, int index) {
 // Pass three: add this entry's energy where it belongs -- the background
 // constant, a one-body energy, or both directions of a two-body energy.
 template <tmol::Device D, typename Real, typename Ctx>
-TMOL_HD void ig_accumulate_entry(TMOL_THREAD Ctx const& ctx, int index) {
+TMOL_HOST_DEVICE_FUNC void ig_accumulate_entry(
+    TMOL_THREAD Ctx const& ctx, int index) {
   using score::common::accumulate;
   int const pose = ctx.sparse_inds[0][index];
   int const rot1 = ctx.sparse_inds[1][index];

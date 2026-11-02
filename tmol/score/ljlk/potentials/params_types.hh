@@ -62,7 +62,7 @@ struct LJLKTypeParams {
   // cannot be called on a threadgroup object. They are the same code; only
   // the object's address space differs. See matrix.hh for the same pattern on
   // Mat's accessors.
-  LJTypeParams<Real> TMOL_HD lj_params() const {
+  LJTypeParams<Real> TMOL_HOST_DEVICE_FUNC lj_params() const {
     return LJTypeParams<Real>(
         {lj_radius,
          lj_sqrt_wdepth,
@@ -73,7 +73,7 @@ struct LJLKTypeParams {
   }
 
 #if TMOL_PORTABLE_METAL
-  LJTypeParams<Real> TMOL_HD lj_params() const threadgroup {
+  LJTypeParams<Real> TMOL_HOST_DEVICE_FUNC lj_params() const threadgroup {
     return LJTypeParams<Real>(
         {lj_radius,
          lj_sqrt_wdepth,
@@ -84,7 +84,7 @@ struct LJLKTypeParams {
   }
 #endif
 
-  LKTypeParams<Real> TMOL_HD lk_params() const {
+  LKTypeParams<Real> TMOL_HOST_DEVICE_FUNC lk_params() const {
     return LKTypeParams<Real>(
         {lj_radius,
          lk_dgfree,
@@ -100,7 +100,7 @@ struct LJLKTypeParams {
   }
 
 #if TMOL_PORTABLE_METAL
-  LKTypeParams<Real> TMOL_HD lk_params() const threadgroup {
+  LKTypeParams<Real> TMOL_HOST_DEVICE_FUNC lk_params() const threadgroup {
     return LKTypeParams<Real>(
         {lj_radius,
          lk_dgfree,

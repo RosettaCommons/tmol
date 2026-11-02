@@ -8,7 +8,7 @@ namespace tmol {
 namespace score {
 namespace common {
 
-#define def auto TMOL_HD
+#define def auto TMOL_HOST_DEVICE_FUNC
 
 using tmol::portable::col_ref;
 using tmol::portable::Mat;

@@ -16,9 +16,11 @@ template <typename T, int N>
 struct array {
   T elems[N];
 
-  TMOL_HD TMOL_THREAD T& operator[](int i) { return elems[i]; }
-  TMOL_HD TMOL_THREAD T const& operator[](int i) const { return elems[i]; }
-  TMOL_HD static constexpr int size() { return N; }
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD T& operator[](int i) { return elems[i]; }
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD T const& operator[](int i) const {
+    return elems[i];
+  }
+  TMOL_HOST_DEVICE_FUNC static constexpr int size() { return N; }
 };
 
 // Zero-length arrays appear where a tile evaluator is instantiated with its
@@ -26,16 +28,17 @@ struct array {
 // case is spelled separately.
 template <typename T>
 struct array<T, 0> {
-  TMOL_HD static constexpr int size() { return 0; }
+  TMOL_HOST_DEVICE_FUNC static constexpr int size() { return 0; }
 };
 
 template <int I, typename T, int N>
-TMOL_HD TMOL_THREAD T& get(TMOL_THREAD array<T, N>& a) {
+TMOL_HOST_DEVICE_FUNC TMOL_THREAD T& get(TMOL_THREAD array<T, N>& a) {
   return a.elems[I];
 }
 
 template <int I, typename T, int N>
-TMOL_HD TMOL_THREAD T const& get(TMOL_THREAD array<T, N> const& a) {
+TMOL_HOST_DEVICE_FUNC TMOL_THREAD T const& get(
+    TMOL_THREAD array<T, N> const& a) {
   return a.elems[I];
 }
 

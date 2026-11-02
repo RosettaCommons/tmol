@@ -26,7 +26,7 @@
 #endif
 
 // Macro for the declaration of all device lambdas;
-// NOTE: TMOL_HD declares functions
+// NOTE: TMOL_HOST_DEVICE_FUNC declares functions
 // __host__ __device__
 // which is unfortunate if you want to put a lambda inside
 // a lambda, which we do.

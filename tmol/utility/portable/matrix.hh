@@ -34,12 +34,16 @@ template <typename Real, int R, int C>
 struct Mat {
   Real v[R * C];
 
-  TMOL_HD TMOL_THREAD Real& operator()(int i, int j) { return v[i + j * R]; }
-  TMOL_HD Real operator()(int i, int j) const { return v[i + j * R]; }
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD Real& operator()(int i, int j) {
+    return v[i + j * R];
+  }
+  TMOL_HOST_DEVICE_FUNC Real operator()(int i, int j) const {
+    return v[i + j * R];
+  }
 
   // Vector-style access. Valid for any shape, but meaningful for R x 1.
-  TMOL_HD TMOL_THREAD Real& operator[](int i) { return v[i]; }
-  TMOL_HD Real operator[](int i) const { return v[i]; }
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD Real& operator[](int i) { return v[i]; }
+  TMOL_HOST_DEVICE_FUNC Real operator[](int i) const { return v[i]; }
 
 #if TMOL_PORTABLE_METAL
   // In MSL the address space is part of the implicit `this` pointer's type, so
@@ -48,33 +52,45 @@ struct Mat {
   // does -- cannot be indexed through them. These overloads cover the other
   // address spaces tmol actually stores matrices in. They exist nowhere else;
   // on the host and under nvcc there is only one address space to name.
-  TMOL_HD device Real& operator()(int i, int j) device { return v[i + j * R]; }
-  TMOL_HD Real operator()(int i, int j) const device { return v[i + j * R]; }
-  TMOL_HD device Real& operator[](int i) device { return v[i]; }
-  TMOL_HD Real operator[](int i) const device { return v[i]; }
-  TMOL_HD device Real& operator()(int i) device { return v[i]; }
-  TMOL_HD Real operator()(int i) const device { return v[i]; }
+  TMOL_HOST_DEVICE_FUNC device Real& operator()(int i, int j) device {
+    return v[i + j * R];
+  }
+  TMOL_HOST_DEVICE_FUNC Real operator()(int i, int j) const device {
+    return v[i + j * R];
+  }
+  TMOL_HOST_DEVICE_FUNC device Real& operator[](int i) device { return v[i]; }
+  TMOL_HOST_DEVICE_FUNC Real operator[](int i) const device { return v[i]; }
+  TMOL_HOST_DEVICE_FUNC device Real& operator()(int i) device { return v[i]; }
+  TMOL_HOST_DEVICE_FUNC Real operator()(int i) const device { return v[i]; }
 
-  TMOL_HD threadgroup Real& operator()(int i, int j) threadgroup {
+  TMOL_HOST_DEVICE_FUNC threadgroup Real& operator()(int i, int j) threadgroup {
     return v[i + j * R];
   }
-  TMOL_HD Real operator()(int i, int j) const threadgroup {
+  TMOL_HOST_DEVICE_FUNC Real operator()(int i, int j) const threadgroup {
     return v[i + j * R];
   }
-  TMOL_HD threadgroup Real& operator[](int i) threadgroup { return v[i]; }
-  TMOL_HD Real operator[](int i) const threadgroup { return v[i]; }
-  TMOL_HD threadgroup Real& operator()(int i) threadgroup { return v[i]; }
-  TMOL_HD Real operator()(int i) const threadgroup { return v[i]; }
+  TMOL_HOST_DEVICE_FUNC threadgroup Real& operator[](int i) threadgroup {
+    return v[i];
+  }
+  TMOL_HOST_DEVICE_FUNC Real operator[](int i) const threadgroup {
+    return v[i];
+  }
+  TMOL_HOST_DEVICE_FUNC threadgroup Real& operator()(int i) threadgroup {
+    return v[i];
+  }
+  TMOL_HOST_DEVICE_FUNC Real operator()(int i) const threadgroup {
+    return v[i];
+  }
 #endif
 
   // Eigen spells single-index access with operator() as well as operator[].
-  TMOL_HD TMOL_THREAD Real& operator()(int i) { return v[i]; }
-  TMOL_HD Real operator()(int i) const { return v[i]; }
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD Real& operator()(int i) { return v[i]; }
+  TMOL_HOST_DEVICE_FUNC Real operator()(int i) const { return v[i]; }
 
-  TMOL_HD TMOL_THREAD Real* data() { return v; }
-  TMOL_HD TMOL_THREAD Real const* data() const { return v; }
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD Real* data() { return v; }
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD Real const* data() const { return v; }
 
-  TMOL_HD bool isZero() const {
+  TMOL_HOST_DEVICE_FUNC bool isZero() const {
     for (int i = 0; i < R * C; ++i) {
       if (v[i] != Real(0)) {
         return false;
@@ -83,7 +99,7 @@ struct Mat {
     return true;
   }
 
-  TMOL_HD static Mat Constant(Real value) {
+  TMOL_HOST_DEVICE_FUNC static Mat Constant(Real value) {
     Mat r{};
     for (int i = 0; i < R * C; ++i) {
       r.v[i] = value;
@@ -91,7 +107,7 @@ struct Mat {
     return r;
   }
 
-  TMOL_HD void reverseInPlace() {
+  TMOL_HOST_DEVICE_FUNC void reverseInPlace() {
     static_assert(C == 1, "reverseInPlace() requires an R x 1 vector");
     for (int i = 0; i < R / 2; ++i) {
       Real const t = v[i];
@@ -100,15 +116,15 @@ struct Mat {
     }
   }
 
-  TMOL_HD void setZero() {
+  TMOL_HOST_DEVICE_FUNC void setZero() {
     for (int i = 0; i < R * C; ++i) {
       v[i] = Real(0);
     }
   }
 
-  TMOL_HD static Mat Zero() { return Mat{}; }
+  TMOL_HOST_DEVICE_FUNC static Mat Zero() { return Mat{}; }
 
-  TMOL_HD static Mat Identity() {
+  TMOL_HOST_DEVICE_FUNC static Mat Identity() {
     Mat r{};
     int const n = (R < C) ? R : C;
     for (int i = 0; i < n; ++i) {
@@ -119,7 +135,7 @@ struct Mat {
 
   // Leading/trailing sub-vector, for R x 1 only; N is a compile-time size.
   template <int N>
-  TMOL_HD Mat<Real, N, 1> head() const {
+  TMOL_HOST_DEVICE_FUNC Mat<Real, N, 1> head() const {
     static_assert(C == 1 && N <= R, "head<N>() requires an R x 1 vector");
     Mat<Real, N, 1> r{};
     for (int i = 0; i < N; ++i) {
@@ -129,7 +145,7 @@ struct Mat {
   }
 
   template <int N>
-  TMOL_HD Mat<Real, N, 1> tail() const {
+  TMOL_HOST_DEVICE_FUNC Mat<Real, N, 1> tail() const {
     static_assert(C == 1 && N <= R, "tail<N>() requires an R x 1 vector");
     Mat<Real, N, 1> r{};
     for (int i = 0; i < N; ++i) {
@@ -138,11 +154,11 @@ struct Mat {
     return r;
   }
 
-  TMOL_HD static int rows() { return R; }
-  TMOL_HD static int cols() { return C; }
-  TMOL_HD static int size() { return R * C; }
+  TMOL_HOST_DEVICE_FUNC static int rows() { return R; }
+  TMOL_HOST_DEVICE_FUNC static int cols() { return C; }
+  TMOL_HOST_DEVICE_FUNC static int size() { return R * C; }
 
-  TMOL_HD Real squaredNorm() const {
+  TMOL_HOST_DEVICE_FUNC Real squaredNorm() const {
     Real acc = Real(0);
     for (int i = 0; i < R * C; ++i) {
       acc += v[i] * v[i];
@@ -150,9 +166,9 @@ struct Mat {
     return acc;
   }
 
-  TMOL_HD Real norm() const { return math::sqrt(squaredNorm()); }
+  TMOL_HOST_DEVICE_FUNC Real norm() const { return math::sqrt(squaredNorm()); }
 
-  TMOL_HD Real dot(TMOL_THREAD Mat const& o) const {
+  TMOL_HOST_DEVICE_FUNC Real dot(TMOL_THREAD Mat const& o) const {
     Real acc = Real(0);
     for (int i = 0; i < R * C; ++i) {
       acc += v[i] * o.v[i];
@@ -160,7 +176,7 @@ struct Mat {
     return acc;
   }
 
-  TMOL_HD Mat normalized() const {
+  TMOL_HOST_DEVICE_FUNC Mat normalized() const {
     // Eigen leaves a zero vector unchanged rather than producing NaNs.
     Real const n2 = squaredNorm();
     if (n2 == Real(0)) {
@@ -174,7 +190,7 @@ struct Mat {
     return r;
   }
 
-  TMOL_HD Mat cross(TMOL_THREAD Mat const& o) const {
+  TMOL_HOST_DEVICE_FUNC Mat cross(TMOL_THREAD Mat const& o) const {
     static_assert(R == 3 && C == 1, "cross product requires a 3-vector");
     Mat r{};
     r.v[0] = v[1] * o.v[2] - v[2] * o.v[1];
@@ -183,7 +199,7 @@ struct Mat {
     return r;
   }
 
-  TMOL_HD Mat<Real, C, R> transpose() const {
+  TMOL_HOST_DEVICE_FUNC Mat<Real, C, R> transpose() const {
     Mat<Real, C, R> r{};
     for (int i = 0; i < R; ++i) {
       for (int j = 0; j < C; ++j) {
@@ -195,7 +211,7 @@ struct Mat {
 
   // const-qualified return: assigning to the result is a compile error, so a
   // missed `m.row(i) = v` cannot silently write to a temporary. Use row_ref().
-  TMOL_HD const Mat<Real, C, 1> row(int i) const {
+  TMOL_HOST_DEVICE_FUNC const Mat<Real, C, 1> row(int i) const {
     Mat<Real, C, 1> r{};
     for (int j = 0; j < C; ++j) {
       r[j] = (*this)(i, j);
@@ -203,7 +219,7 @@ struct Mat {
     return r;
   }
 
-  TMOL_HD const Mat<Real, R, 1> col(int j) const {
+  TMOL_HOST_DEVICE_FUNC const Mat<Real, R, 1> col(int j) const {
     Mat<Real, R, 1> r{};
     for (int i = 0; i < R; ++i) {
       r[i] = (*this)(i, j);
@@ -211,28 +227,28 @@ struct Mat {
     return r;
   }
 
-  TMOL_HD TMOL_THREAD Mat& operator+=(TMOL_THREAD Mat const& o) {
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD Mat& operator+=(TMOL_THREAD Mat const& o) {
     for (int i = 0; i < R * C; ++i) {
       v[i] += o.v[i];
     }
     return *this;
   }
 
-  TMOL_HD TMOL_THREAD Mat& operator-=(TMOL_THREAD Mat const& o) {
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD Mat& operator-=(TMOL_THREAD Mat const& o) {
     for (int i = 0; i < R * C; ++i) {
       v[i] -= o.v[i];
     }
     return *this;
   }
 
-  TMOL_HD TMOL_THREAD Mat& operator*=(identity_t<Real> s) {
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD Mat& operator*=(identity_t<Real> s) {
     for (int i = 0; i < R * C; ++i) {
       v[i] *= s;
     }
     return *this;
   }
 
-  TMOL_HD TMOL_THREAD Mat& operator/=(identity_t<Real> s) {
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD Mat& operator/=(identity_t<Real> s) {
     for (int i = 0; i < R * C; ++i) {
       v[i] /= s;
     }
@@ -246,7 +262,7 @@ using Vec = Mat<Real, N, 1>;
 // Copies a fixed-size raw array into a vector. Replaces Eigen::Map at call
 // sites that only read the mapped data.
 template <typename Real, int N>
-TMOL_HD Vec<Real, N> vec_from(TMOL_THREAD Real const* p) {
+TMOL_HOST_DEVICE_FUNC Vec<Real, N> vec_from(TMOL_THREAD Real const* p) {
   Vec<Real, N> r{};
   for (int i = 0; i < N; ++i) {
     r.v[i] = p[i];
@@ -254,23 +270,24 @@ TMOL_HD Vec<Real, N> vec_from(TMOL_THREAD Real const* p) {
   return r;
 }
 
-#define TMOL_MAT_BINOP(op)                    \
-  template <typename Real, int R, int C>      \
-  TMOL_HD Mat<Real, R, C> operator op(        \
-      TMOL_THREAD Mat<Real, R, C> const& a,   \
-      TMOL_THREAD Mat<Real, R, C> const& b) { \
-    Mat<Real, R, C> r{};                      \
-    for (int i = 0; i < R * C; ++i) {         \
-      r.v[i] = a.v[i] op b.v[i];              \
-    }                                         \
-    return r;                                 \
+#define TMOL_MAT_BINOP(op)                           \
+  template <typename Real, int R, int C>             \
+  TMOL_HOST_DEVICE_FUNC Mat<Real, R, C> operator op( \
+      TMOL_THREAD Mat<Real, R, C> const& a,          \
+      TMOL_THREAD Mat<Real, R, C> const& b) {        \
+    Mat<Real, R, C> r{};                             \
+    for (int i = 0; i < R * C; ++i) {                \
+      r.v[i] = a.v[i] op b.v[i];                     \
+    }                                                \
+    return r;                                        \
   }
 TMOL_MAT_BINOP(+)
 TMOL_MAT_BINOP(-)
 #undef TMOL_MAT_BINOP
 
 template <typename Real, int R, int C>
-TMOL_HD Mat<Real, R, C> operator-(TMOL_THREAD Mat<Real, R, C> const& a) {
+TMOL_HOST_DEVICE_FUNC Mat<Real, R, C> operator-(
+    TMOL_THREAD Mat<Real, R, C> const& a) {
   Mat<Real, R, C> r{};
   for (int i = 0; i < R * C; ++i) {
     r.v[i] = -a.v[i];
@@ -279,7 +296,7 @@ TMOL_HD Mat<Real, R, C> operator-(TMOL_THREAD Mat<Real, R, C> const& a) {
 }
 
 template <typename Real, int R, int C>
-TMOL_HD Mat<Real, R, C> operator*(
+TMOL_HOST_DEVICE_FUNC Mat<Real, R, C> operator*(
     TMOL_THREAD Mat<Real, R, C> const& a, identity_t<Real> s) {
   Mat<Real, R, C> r{};
   for (int i = 0; i < R * C; ++i) {
@@ -289,13 +306,13 @@ TMOL_HD Mat<Real, R, C> operator*(
 }
 
 template <typename Real, int R, int C>
-TMOL_HD Mat<Real, R, C> operator*(
+TMOL_HOST_DEVICE_FUNC Mat<Real, R, C> operator*(
     identity_t<Real> s, TMOL_THREAD Mat<Real, R, C> const& a) {
   return a * s;
 }
 
 template <typename Real, int R, int C>
-TMOL_HD Mat<Real, R, C> operator/(
+TMOL_HOST_DEVICE_FUNC Mat<Real, R, C> operator/(
     TMOL_THREAD Mat<Real, R, C> const& a, identity_t<Real> s) {
   Mat<Real, R, C> r{};
   for (int i = 0; i < R * C; ++i) {
@@ -307,7 +324,7 @@ TMOL_HD Mat<Real, R, C> operator/(
 // Matrix product. Accumulation runs down the inner index in the same order
 // Eigen's small-matrix product uses.
 template <typename Real, int R, int K, int C>
-TMOL_HD Mat<Real, R, C> operator*(
+TMOL_HOST_DEVICE_FUNC Mat<Real, R, C> operator*(
     TMOL_THREAD Mat<Real, R, K> const& a,
     TMOL_THREAD Mat<Real, K, C> const& b) {
   Mat<Real, R, C> r{};
@@ -331,7 +348,7 @@ struct RowRef {
   TMOL_THREAD Mat<Real, R, C>* m;
   int i;
 
-  TMOL_HD TMOL_THREAD RowRef& operator=(
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD RowRef& operator=(
       TMOL_THREAD Mat<Real, C, 1> const& src) {
     for (int j = 0; j < C; ++j) {
       (*m)(i, j) = src[j];
@@ -339,7 +356,7 @@ struct RowRef {
     return *this;
   }
 
-  TMOL_HD TMOL_THREAD RowRef& operator+=(
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD RowRef& operator+=(
       TMOL_THREAD Mat<Real, C, 1> const& src) {
     for (int j = 0; j < C; ++j) {
       (*m)(i, j) += src[j];
@@ -347,7 +364,7 @@ struct RowRef {
     return *this;
   }
 
-  TMOL_HD TMOL_THREAD RowRef& operator-=(
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD RowRef& operator-=(
       TMOL_THREAD Mat<Real, C, 1> const& src) {
     for (int k = 0; k < C; ++k) {
       (*m)(i, k) -= src[k];
@@ -355,21 +372,21 @@ struct RowRef {
     return *this;
   }
 
-  TMOL_HD TMOL_THREAD RowRef& operator*=(identity_t<Real> s) {
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD RowRef& operator*=(identity_t<Real> s) {
     for (int k = 0; k < C; ++k) {
       (*m)(i, k) *= s;
     }
     return *this;
   }
 
-  TMOL_HD TMOL_THREAD RowRef& operator/=(identity_t<Real> s) {
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD RowRef& operator/=(identity_t<Real> s) {
     for (int k = 0; k < C; ++k) {
       (*m)(i, k) /= s;
     }
     return *this;
   }
 
-  TMOL_HD operator Mat<Real, C, 1>() const { return m->row(i); }
+  TMOL_HOST_DEVICE_FUNC operator Mat<Real, C, 1>() const { return m->row(i); }
 };
 
 template <typename Real, int R, int C>
@@ -377,7 +394,7 @@ struct ColRef {
   TMOL_THREAD Mat<Real, R, C>* m;
   int j;
 
-  TMOL_HD TMOL_THREAD ColRef& operator=(
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD ColRef& operator=(
       TMOL_THREAD Mat<Real, R, 1> const& src) {
     for (int i = 0; i < R; ++i) {
       (*m)(i, j) = src[i];
@@ -385,7 +402,7 @@ struct ColRef {
     return *this;
   }
 
-  TMOL_HD TMOL_THREAD ColRef& operator+=(
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD ColRef& operator+=(
       TMOL_THREAD Mat<Real, R, 1> const& src) {
     for (int i = 0; i < R; ++i) {
       (*m)(i, j) += src[i];
@@ -393,7 +410,7 @@ struct ColRef {
     return *this;
   }
 
-  TMOL_HD TMOL_THREAD ColRef& operator-=(
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD ColRef& operator-=(
       TMOL_THREAD Mat<Real, R, 1> const& src) {
     for (int k = 0; k < R; ++k) {
       (*m)(k, j) -= src[k];
@@ -401,30 +418,32 @@ struct ColRef {
     return *this;
   }
 
-  TMOL_HD TMOL_THREAD ColRef& operator*=(identity_t<Real> s) {
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD ColRef& operator*=(identity_t<Real> s) {
     for (int k = 0; k < R; ++k) {
       (*m)(k, j) *= s;
     }
     return *this;
   }
 
-  TMOL_HD TMOL_THREAD ColRef& operator/=(identity_t<Real> s) {
+  TMOL_HOST_DEVICE_FUNC TMOL_THREAD ColRef& operator/=(identity_t<Real> s) {
     for (int k = 0; k < R; ++k) {
       (*m)(k, j) /= s;
     }
     return *this;
   }
 
-  TMOL_HD operator Mat<Real, R, 1>() const { return m->col(j); }
+  TMOL_HOST_DEVICE_FUNC operator Mat<Real, R, 1>() const { return m->col(j); }
 };
 
 template <typename Real, int R, int C>
-TMOL_HD RowRef<Real, R, C> row_ref(TMOL_THREAD Mat<Real, R, C>& m, int i) {
+TMOL_HOST_DEVICE_FUNC RowRef<Real, R, C> row_ref(
+    TMOL_THREAD Mat<Real, R, C>& m, int i) {
   return RowRef<Real, R, C>{&m, i};
 }
 
 template <typename Real, int R, int C>
-TMOL_HD ColRef<Real, R, C> col_ref(TMOL_THREAD Mat<Real, R, C>& m, int j) {
+TMOL_HOST_DEVICE_FUNC ColRef<Real, R, C> col_ref(
+    TMOL_THREAD Mat<Real, R, C>& m, int j) {
   return ColRef<Real, R, C>{&m, j};
 }
 

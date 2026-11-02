@@ -76,7 +76,7 @@ union LKBallSharedMem {
 // without the torch tensor layer. The CPU and CUDA dispatches call it through
 // the same header.
 template <common::TilePairMode Mode>
-TMOL_HD common::tuple<int, int, int> lk_ball_pose_pair_indices(
+TMOL_HOST_DEVICE_FUNC common::tuple<int, int, int> lk_ball_pose_pair_indices(
     int cta, int max_n_blocks, int n_pairs_with_diagonal) {
   if constexpr (Mode == common::TilePairMode::Inter) {
     int const n_pairs = n_pairs_with_diagonal - max_n_blocks;
@@ -98,7 +98,7 @@ TMOL_HD common::tuple<int, int, int> lk_ball_pose_pair_indices(
 
 // TO DO: standardize tiled inter-block count pair
 template <int TILE, typename InterEnergyData>
-TMOL_HD int interres_count_pair_separation(
+TMOL_HOST_DEVICE_FUNC int interres_count_pair_separation(
     TMOL_THREAD InterEnergyData const& inter_dat,
     int atom_tile_ind1,
     int atom_tile_ind2) {
@@ -445,7 +445,7 @@ template <
     // ends, which never split -- unchanged.
     common::TilePairMode PairMode = common::TilePairMode::InterAndIntra,
     common::TilePairMode IndexMode = PairMode>
-TMOL_HD void lk_ball_eval_energies_by_block(
+TMOL_HOST_DEVICE_FUNC void lk_ball_eval_energies_by_block(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
@@ -637,7 +637,7 @@ template <
     // way, so it takes the same two modes.
     common::TilePairMode PairMode = common::TilePairMode::InterAndIntra,
     common::TilePairMode IndexMode = PairMode>
-TMOL_HD void lk_ball_eval_derivs(
+TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
@@ -871,7 +871,7 @@ template <
     typename launch_t,
     typename Ctx,
     typename Shared>
-TMOL_HD void lk_ball_eval_rotamer_energies_by_block(
+TMOL_HOST_DEVICE_FUNC void lk_ball_eval_rotamer_energies_by_block(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,

@@ -77,7 +77,7 @@ struct AnnealerCtxT {
   View<int32_t, 2> seed_ranking;
 
   template <typename F>
-  TMOL_HD void visit_views(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_views(F f) {
     f(pose_n_res);
     f(pose_n_rotamers);
     f(pose_rotamer_offset);
@@ -104,7 +104,7 @@ struct AnnealerCtxT {
   // launcher and the Metal entry never repeat a bare index.
   // Launch scalars in the order the host writes and the shader reads.
   template <typename F>
-  TMOL_HD void visit_scalars(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_scalars(F f) {
     f(chunk_size);
     f(max_n_res);
     f(n_traj);
@@ -123,7 +123,7 @@ struct AnnealerCtxT {
   // The two-body energy for (ires, irot) against (jres, jrot), or 0 when the
   // chunk pair carries no support. Factored out because the total energy and
   // the per-move delta both need exactly this lookup.
-  TMOL_HD Real two_body(
+  TMOL_HOST_DEVICE_FUNC Real two_body(
       int pose, int ires, int irot_local, int64_t edge, int j, int jrot_local)
       const {
     int const irot_chunk = irot_local / chunk_size;
@@ -159,7 +159,7 @@ struct AnnealerCtxT {
   // of a global view, both of which index with operator[], and Metal folds
   // the address space into a pointer type so one spelling cannot serve both.
   template <typename Assignment>
-  TMOL_HD Real partial_energy(
+  TMOL_HOST_DEVICE_FUNC Real partial_energy(
       int pose,
       TMOL_THREAD Assignment const& assignment,
       int lane,
@@ -195,7 +195,7 @@ struct AnnealerCtxT {
   // entries share one sparse offset, so the irregular global read is done
   // once rather than per neighbour.
   template <typename Assignment>
-  TMOL_HD Real partial_delta_energy(
+  TMOL_HOST_DEVICE_FUNC Real partial_delta_energy(
       int pose,
       TMOL_THREAD Assignment const& assignment,
       int res,

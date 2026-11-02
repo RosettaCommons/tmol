@@ -65,14 +65,14 @@ template <
     tmol::Device D,
     int nt,
     typename Real>
-TMOL_HD Real anneal_sum_bcast(Real val, WorkgroupLane<D> lane) {
+TMOL_HOST_DEVICE_FUNC Real anneal_sum_bcast(Real val, WorkgroupLane<D> lane) {
   return DeviceDispatch<D>::template shuffle_reduce_and_broadcast_in_workgroup<
       nt>(val, tmol::portable::plus_t<Real>(), lane);
 }
 
 // Largest stride < n that is coprime with n, for the quench sweep. n is a
 // rotamer count, so this loop runs a handful of times at most.
-TMOL_HD inline int anneal_coprime_stride(int n, int start) {
+TMOL_HOST_DEVICE_FUNC inline int anneal_coprime_stride(int n, int start) {
   if (n <= 2) return 1;
   for (int s = start; s > 1; --s) {
     int a = s, b = n;
@@ -94,7 +94,7 @@ template <
     typename Int,
     int nt,
     typename Ctx>
-TMOL_HD void annealer_run_trajectory(
+TMOL_HOST_DEVICE_FUNC void annealer_run_trajectory(
     TMOL_THREAD Ctx const& ctx, int unit, WorkgroupLane<Dev> lane = {}) {
   int const pose = unit / ctx.n_traj;
   int const traj = unit - pose * ctx.n_traj;

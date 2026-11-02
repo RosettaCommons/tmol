@@ -32,9 +32,9 @@ struct CompensatedSum {
   T total;
   T correction;
 
-  TMOL_HD CompensatedSum() : total(T(0)), correction(T(0)) {}
+  TMOL_HOST_DEVICE_FUNC CompensatedSum() : total(T(0)), correction(T(0)) {}
 
-  TMOL_HD void add(T x) {
+  TMOL_HOST_DEVICE_FUNC void add(T x) {
     T const t = total + x;
     // Whichever operand is larger in magnitude keeps its low bits; the
     // other's are what rounding dropped.
@@ -47,10 +47,10 @@ struct CompensatedSum {
   }
 
   // Fold the carried low bits in. Call once, at the end.
-  TMOL_HD T value() const { return total + correction; }
+  TMOL_HOST_DEVICE_FUNC T value() const { return total + correction; }
 
   // Merge another partial sum, keeping both correction terms.
-  TMOL_HD void merge(TMOL_THREAD CompensatedSum<T> const& other) {
+  TMOL_HOST_DEVICE_FUNC void merge(TMOL_THREAD CompensatedSum<T> const& other) {
     add(other.total);
     correction += other.correction;
   }

@@ -558,7 +558,7 @@ template <
     typename Ctx,
     typename Shared,
     typename PoseAccum>
-TMOL_HD void ljlk_eval_energies_by_block(
+TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
@@ -709,7 +709,7 @@ template <
     typename Ctx,
     typename Shared,
     typename PoseAccum>
-TMOL_HD void ljlk_eval_rotamer_energies_by_block(
+TMOL_HOST_DEVICE_FUNC void ljlk_eval_rotamer_energies_by_block(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
@@ -833,7 +833,7 @@ template <
     typename Ctx,
     typename Shared,
     typename PoseAccum>
-TMOL_HD void ljlk_eval_energies(
+TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,

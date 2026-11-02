@@ -16,7 +16,8 @@ namespace count_pair {
 // Slot of block2 in a near-block row, else of an empty slot whose separations
 // are the cap (see InterBlockBondsep).
 template <typename NearBlockRow>
-TMOL_HD int near_block_slot(NearBlockRow near_blocks, int block2) {
+TMOL_HOST_DEVICE_FUNC int near_block_slot(
+    NearBlockRow near_blocks, int block2) {
   int const last = int(near_blocks.size(0)) - 1;
   int slot = 0;
   while (slot < last && near_blocks[slot][0] != block2
@@ -30,7 +31,7 @@ TMOL_HD int near_block_slot(NearBlockRow near_blocks, int block2) {
 // Templated on the number of atoms in the tile and the datatype
 // of the integer-typed T that
 template <int N, class T>
-static TMOL_HD int shared_mem_inter_block_separation(
+static TMOL_HOST_DEVICE_FUNC int shared_mem_inter_block_separation(
     int const max_important_bond_separation,
     int atom_ind_1,
     int atom_ind_2,

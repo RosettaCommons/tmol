@@ -12,7 +12,8 @@ namespace tmol {
 namespace portable {
 
 template <typename Real, int R, int C>
-TMOL_HD Mat<Real, R, C> from_eigen(Eigen::Matrix<Real, R, C> const& e) {
+TMOL_HOST_DEVICE_FUNC Mat<Real, R, C> from_eigen(
+    Eigen::Matrix<Real, R, C> const& e) {
   Mat<Real, R, C> r{};
   for (int i = 0; i < R; ++i) {
     for (int j = 0; j < C; ++j) {

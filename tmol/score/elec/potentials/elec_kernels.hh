@@ -448,7 +448,7 @@ template <
     typename launch_t,
     typename Ctx,
     typename Shared>
-TMOL_HD void elec_eval_energies_by_block_2(
+TMOL_HOST_DEVICE_FUNC void elec_eval_energies_by_block_2(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
@@ -590,7 +590,7 @@ template <
     typename launch_t,
     typename Ctx,
     typename Shared>
-TMOL_HD void elec_eval_energies(
+TMOL_HOST_DEVICE_FUNC void elec_eval_energies(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
@@ -737,7 +737,7 @@ template <
     typename launch_t,
     typename Ctx,
     typename Shared>
-TMOL_HD void elec_eval_derivs_2(
+TMOL_HOST_DEVICE_FUNC void elec_eval_derivs_2(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
@@ -880,7 +880,7 @@ template <
     typename launch_t,
     typename Ctx,
     typename Shared>
-TMOL_HD void elec_eval_energies_by_block(
+TMOL_HOST_DEVICE_FUNC void elec_eval_energies_by_block(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
@@ -1001,7 +1001,7 @@ template <
     typename launch_t,
     typename Ctx,
     typename Shared>
-TMOL_HD void elec_eval_derivs(
+TMOL_HOST_DEVICE_FUNC void elec_eval_derivs(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,

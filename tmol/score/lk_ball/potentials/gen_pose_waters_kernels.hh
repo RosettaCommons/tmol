@@ -43,7 +43,7 @@ template <
     typename launch_t,
     template <typename, int> class View,
     typename Shared>
-TMOL_HD void water_gen_build_waters_for_rot(
+TMOL_HOST_DEVICE_FUNC void water_gen_build_waters_for_rot(
     TMOL_THREAD WaterGenCtxT<View, Real, Int> const& ctx,
     TMOL_SHARED_REF(Shared) shared_m,
     int rot_ind,
@@ -167,12 +167,14 @@ template <typename RowView>
 struct WaterTorsRow {
   RowView row;
   int n;
-  TMOL_HD int size(int) const { return n; }
-  TMOL_HD auto operator[](int i) const -> decltype(row[i]) { return row[i]; }
+  TMOL_HOST_DEVICE_FUNC int size(int) const { return n; }
+  TMOL_HOST_DEVICE_FUNC auto operator[](int i) const -> decltype(row[i]) {
+    return row[i];
+  }
 };
 
 template <typename TableView>
-TMOL_HD auto water_tors_row(
+TMOL_HOST_DEVICE_FUNC auto water_tors_row(
     TMOL_THREAD TableView const& table, int which, int n)
     -> WaterTorsRow<decltype(table[which])> {
   return WaterTorsRow<decltype(table[which])>{table[which], n};
@@ -189,7 +191,7 @@ template <
     typename launch_t,
     template <typename, int> class View,
     typename Shared>
-TMOL_HD void water_gen_build_water_derivs_for_rot(
+TMOL_HOST_DEVICE_FUNC void water_gen_build_water_derivs_for_rot(
     TMOL_THREAD WaterGenDerivCtxT<View, Real, Int> const& ctx,
     TMOL_SHARED_REF(Shared) shared_m,
     int rot_ind,

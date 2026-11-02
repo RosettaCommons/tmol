@@ -258,7 +258,7 @@ template <
     typename launch_t,
     typename Ctx,
     typename Shared>
-TMOL_HD void hbond_bases_gen(
+TMOL_HOST_DEVICE_FUNC void hbond_bases_gen(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared_m,
     int rot_ind,

@@ -9,7 +9,7 @@ namespace common {
 
 #define def                \
   template <typename Real> \
-  auto TMOL_HD
+  auto TMOL_HOST_DEVICE_FUNC
 
 def interpolate_t(Real t, Real p0, Real dp0, Real p1, Real dp1) -> Real {
   // Cubic interpolation of p on t in [0, 1].

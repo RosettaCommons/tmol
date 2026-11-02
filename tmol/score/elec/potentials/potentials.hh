@@ -19,7 +19,7 @@ namespace potentials {
 
 #define def                \
   template <typename Real> \
-  auto TMOL_HD
+  auto TMOL_HOST_DEVICE_FUNC
 
 using namespace tmol::score::common;
 

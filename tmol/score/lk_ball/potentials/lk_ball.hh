@@ -32,7 +32,7 @@ enum lk_ball_score_type {
   n_lk_ball_score_types  // keep this last
 };
 
-#define def auto TMOL_HD
+#define def auto TMOL_HOST_DEVICE_FUNC
 
 // fd  these could be exposed as global parameters
 //
@@ -44,12 +44,12 @@ enum lk_ball_score_type {
 // enumerators, which only works for integral types.
 template <typename Real>
 struct lkball_globals {
-  static TMOL_HD Real overlap_gap_A2() { return Real(0.5); }
-  static TMOL_HD Real overlap_width_A2() { return Real(2.6); }
-  static TMOL_HD Real angle_overlap_A2() {
+  static TMOL_HOST_DEVICE_FUNC Real overlap_gap_A2() { return Real(0.5); }
+  static TMOL_HOST_DEVICE_FUNC Real overlap_width_A2() { return Real(2.6); }
+  static TMOL_HOST_DEVICE_FUNC Real angle_overlap_A2() {
     return Real(2.8) * overlap_width_A2();
   }
-  static TMOL_HD Real ramp_width_A2() { return Real(3.709); }
+  static TMOL_HOST_DEVICE_FUNC Real ramp_width_A2() { return Real(3.709); }
 };
 
 template <typename Real, int MAX_WATER>
@@ -71,7 +71,7 @@ struct lk_fraction {
     dV_t dV;
   };
 
-  static TMOL_HD Real ramp_width_A2() {
+  static TMOL_HOST_DEVICE_FUNC Real ramp_width_A2() {
     return lkball_globals<Real>::ramp_width_A2();
   }
 
@@ -171,16 +171,16 @@ struct lk_bridge_fraction {
     dV_t dV;
   };
 
-  static TMOL_HD Real ramp_width_A2() {
+  static TMOL_HOST_DEVICE_FUNC Real ramp_width_A2() {
     return lkball_globals<Real>::ramp_width_A2();
   }
-  static TMOL_HD Real overlap_gap_A2() {
+  static TMOL_HOST_DEVICE_FUNC Real overlap_gap_A2() {
     return lkball_globals<Real>::overlap_gap_A2();
   }
-  static TMOL_HD Real overlap_width_A2() {
+  static TMOL_HOST_DEVICE_FUNC Real overlap_width_A2() {
     return lkball_globals<Real>::overlap_width_A2();
   }
-  static TMOL_HD Real angle_overlap_A2() {
+  static TMOL_HOST_DEVICE_FUNC Real angle_overlap_A2() {
     return lkball_globals<Real>::angle_overlap_A2();
   }
 

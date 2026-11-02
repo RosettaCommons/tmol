@@ -102,7 +102,7 @@ union LJLKElecSharedMem {
 
 // Count-pair separation across two blocks, by either term's bond-path table.
 template <int TILE, typename Real>
-TMOL_HD int ljlk_elec_inter_separation(
+TMOL_HOST_DEVICE_FUNC int ljlk_elec_inter_separation(
     TMOL_THREAD LJLKElecScoringData<Real> const& data,
     int atom1,
     int atom2,
@@ -128,7 +128,7 @@ TMOL_HD int ljlk_elec_inter_separation(
 // The weighted LJ/LK + elec energy of one atom pair whose squared distance
 // is already known to lie inside the larger of the two cutoffs.
 template <typename Real, typename TypeParamsView>
-TMOL_HD Real ljlk_elec_weighted_pair_energy(
+TMOL_HOST_DEVICE_FUNC Real ljlk_elec_weighted_pair_energy(
     int atom1,
     int atom2,
     TMOL_THREAD LJLKElecScoringData<Real> const& data,
@@ -185,7 +185,7 @@ template <
     typename launch_t,
     typename Ctx,
     typename Shared>
-TMOL_HD void ljlk_elec_eval_weighted_rotamer_energies(
+TMOL_HOST_DEVICE_FUNC void ljlk_elec_eval_weighted_rotamer_energies(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,

@@ -11,7 +11,7 @@ namespace common {
 
 using tmol::portable::Vec;
 
-#define def auto TMOL_HD
+#define def auto TMOL_HOST_DEVICE_FUNC
 
 #define Real3 Vec<Real, 3>
 

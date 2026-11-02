@@ -76,7 +76,7 @@ struct WaterGenCtxT {
   // One ordering, two uses: the host binds buffers in this order, the Metal
   // entry rebuilds the views in the same order. See elec_ctx.hh.
   template <typename F>
-  TMOL_HD void visit_views(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_views(F f) {
     f(rot_coords);
     f(rot_coord_offset);
     f(pose_ind_for_rot);
@@ -117,7 +117,7 @@ struct WaterGenCtxT {
 
   // Launch scalars in the order the host writes and the shader reads.
   template <typename F>
-  TMOL_HD void visit_scalars(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_scalars(F f) {
     f(n_rots_total);
   }
 
@@ -174,7 +174,7 @@ struct WaterGenDerivCtxT {
   View<Vec<Real, 3>, 1> dE_d_pose_coords;
 
   template <typename F>
-  TMOL_HD void visit_views(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_views(F f) {
     f(rot_coords);
     f(rot_coord_offset);
     f(pose_ind_for_rot);
@@ -214,7 +214,7 @@ struct WaterGenDerivCtxT {
 
   // Launch scalars in the order the host writes and the shader reads.
   template <typename F>
-  TMOL_HD void visit_scalars(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_scalars(F f) {
     f(n_sp2_water_tors);
     f(n_sp3_water_tors);
     f(n_ring_water_tors);

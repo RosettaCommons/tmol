@@ -19,7 +19,7 @@ struct PoseTotalReduceCtxT {
   View<Real, 4> totals;
 
   template <typename F>
-  TMOL_HD void visit_views(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_views(F f) {
     f(cells);
     f(totals);
   }
@@ -27,7 +27,7 @@ struct PoseTotalReduceCtxT {
   enum { n_views = 2 };
   // Launch scalars in the order the host writes and the shader reads.
   template <typename F>
-  TMOL_HD void visit_scalars(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_scalars(F f) {
     f(n_cells);
   }
 

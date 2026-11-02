@@ -68,7 +68,7 @@ struct HBondBasesCtxT {
   // views. Written exactly once, here, because two hand-maintained lists that
   // drift produce wrong coordinates rather than a build error.
   template <typename F>
-  TMOL_HD void visit_views(F f) {
+  TMOL_HOST_DEVICE_FUNC void visit_views(F f) {
     f(rot_coords);
     f(rot_coord_offset);
     f(first_rot_for_block);
@@ -98,7 +98,7 @@ struct HBondBasesCtxT {
   // This kernel's launch shape is just the rotamer count, which the dispatch
   // grid already carries, so there are no scalar slots.
   template <typename F>
-  TMOL_HD void visit_scalars(F) {}
+  TMOL_HOST_DEVICE_FUNC void visit_scalars(F) {}
 };
 
 }  // namespace potentials
