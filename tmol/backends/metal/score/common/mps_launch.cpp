@@ -1,4 +1,4 @@
-#include <tmol/score/common/mps_launch.hh>
+#include <tmol/backends/metal/score/common/mps_launch.hh>
 
 #include <torch/csrc/inductor/aoti_torch/c/shim_mps.h>
 #include <torch/csrc/stable/ops.h>

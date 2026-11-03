@@ -29,9 +29,9 @@
 #include <tmol/score/lk_ball/potentials/lk_ball_ctx.hh>
 #include <tmol/score/common/tview_binder.hh>
 #include <tmol/score/lk_ball/potentials/lk_ball_kernels.hh>
-#include <tmol/score/common/mps_launch.hh>
+#include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
-#include <tmol/score/lk_ball/potentials/lk_ball_mps_kernels_source.h>
+#include <tmol/backends/metal/score/lk_ball/potentials/lk_ball_mps_kernels_source.h>
 #endif
 #include <tmol/score/lk_ball/potentials/params.hh>
 

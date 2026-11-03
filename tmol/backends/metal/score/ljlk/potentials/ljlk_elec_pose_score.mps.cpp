@@ -6,7 +6,7 @@
 // Metal does not have, and are never reached by an MPS tensor. Only float:
 // the dispatch macro rejects a float64 tensor before it gets here.
 
-#include <tmol/score/common/device_operations.mps.host.impl.hh>
+#include <tmol/backends/metal/score/common/device_operations.mps.host.impl.hh>
 #include <tmol/score/ljlk/potentials/ljlk_elec_pose_score.impl.hh>
 
 namespace tmol {

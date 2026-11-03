@@ -6,7 +6,7 @@
 // need more than float32 precision and carry it as a hi/lo float32 pair; see
 // params_types.hh.
 
-#include <tmol/score/common/device_operations.mps.host.impl.hh>
+#include <tmol/backends/metal/score/common/device_operations.mps.host.impl.hh>
 #include <tmol/score/hbond/potentials/hbond_pose_score.impl.hh>
 
 namespace tmol {

@@ -18,9 +18,9 @@
 #include <tmol/score/common/sphere_overlap_ctx.hh>
 #include <tmol/score/common/sphere_overlap_kernels.hh>
 #include <tmol/score/common/tview_binder.hh>
-#include <tmol/score/common/mps_launch.hh>
+#include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
-#include <tmol/score/common/sphere_overlap_mps_kernels_source.h>
+#include <tmol/backends/metal/score/common/sphere_overlap_mps_kernels_source.h>
 #endif
 #include <tmol/score/common/upper_triangle_indices.hh>
 

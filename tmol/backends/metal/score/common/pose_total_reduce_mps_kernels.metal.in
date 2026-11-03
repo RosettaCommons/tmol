@@ -5,11 +5,11 @@
 // pose_total_reduce_kernels.hh, compiled here from the same source the CPU and
 // CUDA backends use.
 
-#include <tmol/score/common/mps_entry.hh>
-#include <tmol/score/common/device_operations.mps.impl.hh>
+#include <tmol/backends/metal/score/common/mps_entry.hh>
+#include <tmol/backends/metal/score/common/device_operations.mps.impl.hh>
 #include <tmol/score/common/launch_box_macros.hh>
 #include <tmol/score/common/pose_total_reduce_ctx.hh>
-#include <tmol/score/common/mps_ctx_builder.hh>
+#include <tmol/backends/metal/score/common/mps_ctx_builder.hh>
 #include <tmol/utility/portable/metal_view.hh>
 #include <tmol/score/common/pose_total_reduce_kernels.hh>
 

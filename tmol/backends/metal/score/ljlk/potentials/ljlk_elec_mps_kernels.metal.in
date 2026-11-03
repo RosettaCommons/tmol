@@ -11,10 +11,10 @@
 // LJLKElecRotCtxT::visit_views assigns them to fields in this order, and the
 // host binds them in that same order.
 
-#include <tmol/score/common/mps_entry.hh>
-#include <tmol/score/common/device_operations.mps.impl.hh>
+#include <tmol/backends/metal/score/common/mps_entry.hh>
+#include <tmol/backends/metal/score/common/device_operations.mps.impl.hh>
 #include <tmol/score/common/launch_box_macros.hh>
-#include <tmol/score/common/mps_ctx_builder.hh>
+#include <tmol/backends/metal/score/common/mps_ctx_builder.hh>
 #include <tmol/score/ljlk/potentials/ljlk_elec_kernels.hh>
 
 using tmol::score::common::DeviceOperations;

@@ -18,9 +18,9 @@
 #include <tmol/pack/compiled/annealer_ctx.hh>
 #include <tmol/score/common/tview_binder.hh>
 #include <tmol/pack/compiled/annealer_kernels.hh>
-#include <tmol/score/common/mps_launch.hh>
+#include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
-#include <tmol/pack/compiled/annealer_mps_kernels_source.h>
+#include <tmol/backends/metal/pack/compiled/annealer_mps_kernels_source.h>
 #endif
 #include <tmol/utility/tensor/TensorPack.h>
 #include <tmol/utility/tensor/native.hh>

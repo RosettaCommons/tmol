@@ -17,7 +17,7 @@
 // Deliberately not device_operations.hh: it reaches the torch tensor layer,
 // which a Metal translation unit cannot include. The context is pure data
 // plus accessors; the workgroup primitives live in the kernel body.
-#include <tmol/score/common/mps_layout.hh>
+#include <tmol/backends/metal/score/common/mps_layout.hh>
 #include <tmol/utility/portable/device.hh>
 #include <tmol/utility/portable/metal_view.hh>
 

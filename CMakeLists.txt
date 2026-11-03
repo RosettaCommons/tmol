@@ -462,17 +462,17 @@ if(TMOL_ENABLE_MPS)
 
   # <dir>/<stem> of each .metal.in, and the symbol its source is embedded as.
   set(_TMOL_SHADERS
-    "tmol/score/elec/potentials/elec_mps_kernels|kElecMetalShaderSource"
-    "tmol/score/ljlk/potentials/ljlk_mps_kernels|kLJLKMetalShaderSource"
-    "tmol/score/ljlk/potentials/ljlk_elec_mps_kernels|kLJLKElecMetalShaderSource"
-    "tmol/pack/compiled/streaming_interaction_graph_mps_kernels|kStreamingInteractionGraphMetalShaderSource"
-    "tmol/score/lk_ball/potentials/lk_ball_mps_kernels|kLKBallMetalShaderSource"
-    "tmol/score/lk_ball/potentials/gen_pose_waters_mps_kernels|kWaterGenMetalShaderSource"
-    "tmol/score/hbond/potentials/hbond_mps_kernels|kHBondMetalShaderSource"
-    "tmol/score/hbond/potentials/gen_hbond_bases_mps_kernels|kHBondBasesMetalShaderSource"
-    "tmol/score/common/pose_total_reduce_mps_kernels|kPoseTotalReduceMetalShaderSource"
-    "tmol/pack/compiled/annealer_mps_kernels|kAnnealerMetalShaderSource"
-    "tmol/score/common/sphere_overlap_mps_kernels|kSphereOverlapMetalShaderSource"
+    "tmol/backends/metal/score/elec/potentials/elec_mps_kernels|kElecMetalShaderSource"
+    "tmol/backends/metal/score/ljlk/potentials/ljlk_mps_kernels|kLJLKMetalShaderSource"
+    "tmol/backends/metal/score/ljlk/potentials/ljlk_elec_mps_kernels|kLJLKElecMetalShaderSource"
+    "tmol/backends/metal/pack/compiled/streaming_interaction_graph_mps_kernels|kStreamingInteractionGraphMetalShaderSource"
+    "tmol/backends/metal/score/lk_ball/potentials/lk_ball_mps_kernels|kLKBallMetalShaderSource"
+    "tmol/backends/metal/score/lk_ball/potentials/gen_pose_waters_mps_kernels|kWaterGenMetalShaderSource"
+    "tmol/backends/metal/score/hbond/potentials/hbond_mps_kernels|kHBondMetalShaderSource"
+    "tmol/backends/metal/score/hbond/potentials/gen_hbond_bases_mps_kernels|kHBondBasesMetalShaderSource"
+    "tmol/backends/metal/score/common/pose_total_reduce_mps_kernels|kPoseTotalReduceMetalShaderSource"
+    "tmol/backends/metal/pack/compiled/annealer_mps_kernels|kAnnealerMetalShaderSource"
+    "tmol/backends/metal/score/common/sphere_overlap_mps_kernels|kSphereOverlapMetalShaderSource"
   )
   foreach(_entry IN LISTS _TMOL_SHADERS)
     string(REPLACE "|" ";" _entry "${_entry}")
@@ -487,15 +487,15 @@ if(TMOL_ENABLE_MPS)
   endforeach()
 
   list(APPEND _C_SOURCES
-    tmol/score/common/mps_launch.cpp
-    tmol/score/elec/potentials/elec_pose_score.mps.cpp
-    tmol/score/ljlk/potentials/ljlk_pose_score.mps.cpp
-    tmol/score/ljlk/potentials/ljlk_elec_pose_score.mps.cpp
-    tmol/pack/compiled/streaming_interaction_graph.mps.cpp
-    tmol/score/lk_ball/potentials/lk_ball_pose_score.mps.cpp
-    tmol/score/lk_ball/potentials/gen_pose_waters.mps.cpp
-    tmol/score/hbond/potentials/hbond_pose_score.mps.cpp
-    tmol/score/hbond/potentials/gen_hbond_bases.mps.cpp
+    tmol/backends/metal/score/common/mps_launch.cpp
+    tmol/backends/metal/score/elec/potentials/elec_pose_score.mps.cpp
+    tmol/backends/metal/score/ljlk/potentials/ljlk_pose_score.mps.cpp
+    tmol/backends/metal/score/ljlk/potentials/ljlk_elec_pose_score.mps.cpp
+    tmol/backends/metal/pack/compiled/streaming_interaction_graph.mps.cpp
+    tmol/backends/metal/score/lk_ball/potentials/lk_ball_pose_score.mps.cpp
+    tmol/backends/metal/score/lk_ball/potentials/gen_pose_waters.mps.cpp
+    tmol/backends/metal/score/hbond/potentials/hbond_pose_score.mps.cpp
+    tmol/backends/metal/score/hbond/potentials/gen_hbond_bases.mps.cpp
   )
 endif()
 

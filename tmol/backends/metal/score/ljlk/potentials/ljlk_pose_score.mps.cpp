@@ -4,7 +4,7 @@
 // be scored on the GPU and is rejected by the dispatch macro's type switch
 // before reaching here.
 
-#include <tmol/score/common/device_operations.mps.host.impl.hh>
+#include <tmol/backends/metal/score/common/device_operations.mps.host.impl.hh>
 #include <tmol/score/ljlk/potentials/ljlk_pose_score.impl.hh>
 
 namespace tmol {
