@@ -89,17 +89,31 @@ The frontend does not change global JAX precision settings; call
 
 ## Validation and limitations
 
-CPU and CUDA scoring and gradients, every canonical hydrogen-bond table, isolated
-Torch-free installation and small protein I/O are tested. Weighted float32 energies
-agree with the PyTorch frontend to about 1e-4 per structure; full-score Cartesian
-gradient differences are small (max 0.013 on 1UBQ) but not bitwise reproducible,
-because the native kernels accumulate in float32 with atomics. Torsions use `atan2`
-rather than native `acos`, so near-planar float32 gradients can differ slightly
-(the float64 implementations agree to 1e-10). Large-protein value-and-gradient on
-GPU is slower than PyTorch and uses more device memory, and JAX compilation adds
-a first-call cost; small and batched workloads are faster. PDB loading uses the
-first model and the first alternate location, and chain breaks must be explicit
-in the input.
+The test suite covers CPU and native CUDA scoring and gradients, canonical
+hydrogen-bond tables, Torch-free installation and small-protein I/O. Float32
+energies and gradients are not bitwise reproducible across frontends: native
+kernels use atomic accumulation, and the JAX torsion implementation uses `atan2`
+where the native implementation uses `acos`. Compare results with tolerances
+appropriate to the structure, precision and score terms in use.
+
+The loaders can produce different missing-atom coordinates and residue
+orientations. A comparison on independently loaded coordinates includes those
+preparation differences. Before comparing scorer energies or coordinate
+gradients, verify residue and atom identities and use the same coordinates.
+PDB loading uses the first model and first alternate location; chain breaks
+must be explicit in the input.
+
+Cartesian minimization uses a separate JAX L-BFGS implementation with a
+strong-Wolfe line search. Its default iteration limit differs from the PyTorch
+minimizer, so matching input coordinates does not imply matching trajectories,
+termination or endpoints. Inspect the returned convergence diagnostics and
+cross-score resulting coordinates when assessing agreement. The no-pack
+repulsive-ramp relaxation is not a substitute for PyTorch FastRelax.
+
+Performance depends on structure size, batch shape, device, compilation and
+whether the native CUDA adapter is installed. Measure setup and compilation
+separately from repeated scoring, and synchronize device work when timing.
+Scoring performance does not establish minimization or relaxation performance.
 
 The initial implementation is adapted from
 [tudorcotet/jtmol](https://github.com/tudorcotet/jtmol) under Apache-2.0; see

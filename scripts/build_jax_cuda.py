@@ -21,6 +21,7 @@ def main():
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     package = root / "packages/jax-cuda"
+    backend = root / "tmol/backends/jax"
     with tempfile.TemporaryDirectory(prefix="tmol-jax-cuda-build-") as temporary:
         stage = Path(temporary)
         shutil.copyfile(package / "pyproject.toml", stage / "pyproject.toml")
@@ -33,7 +34,7 @@ def main():
             "hbond_cuda.cu",
             "common.cuh",
         ):
-            shutil.copyfile(package / source, stage / source)
+            shutil.copyfile(backend / source, stage / source)
         shutil.copytree(root / "tmol/score/common", stage / "include/tmol/score/common")
         shutil.copytree(
             root / "tmol/score/ljlk/potentials",
