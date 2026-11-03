@@ -288,6 +288,72 @@ def _sidechain_end_local_atoms(
     return torch.tensor(sorted(downstream), dtype=torch.int64, device=device)
 
 
+def _ligand_controller_preserves_components(
+    block_type, forest, ligand_nodes, torsion_atoms, raw_atom, dof_type
+):
+    """Require a rigid chemical component on either side of the central bond.
+
+    A kinematic subtree can cut through a closed ring. Matching a named
+    dihedral's sign alone does not make that subtree a valid torsion control.
+    The two axis atoms may belong to either mask because rotation leaves
+    their coordinates unchanged.
+    """
+    _, atom_b, atom_c, _ = torsion_atoms
+    component = _sidechain_end_local_atoms(
+        block_type, torsion_atoms, ligand_nodes.device
+    )
+    if component.numel() == 0:
+        return False
+    local_atoms = torch.arange(block_type.n_atoms, device=ligand_nodes.device)
+    off_axis = (local_atoms != atom_b) & (local_atoms != atom_c)
+    expected = torch.isin(local_atoms, component)
+    affected = _raw_dof_affected_nodes(
+        forest, ligand_nodes[raw_atom], ligand_nodes, dof_type
+    )
+    return bool(
+        torch.all((affected == expected) | ~off_axis)
+        or torch.all((affected != expected) | ~off_axis)
+    )
+
+
+def _resolve_ligand_ring_controllers(
+    block_type,
+    kmd,
+    ligand_nodes,
+    torsion_atoms_host,
+    raw_atoms,
+    child_central,
+    use_reversed,
+):
+    # Keep the established controller when it rotates a whole chemical
+    # component. An opposite outer atom inside a ring may instead tear that
+    # ring; the child-central phi_p can rotate the intact opposite component.
+    for torsion_index in torch.nonzero(use_reversed).flatten().cpu().tolist():
+        atoms = torsion_atoms_host[torsion_index]
+        raw_atom = int(raw_atoms[torsion_index])
+        if _ligand_controller_preserves_components(
+            block_type, kmd.forest, ligand_nodes[0], atoms, raw_atom, BondDOFTypes.phi_p
+        ):
+            continue
+        alternative = int(child_central[torsion_index])
+        alternative_nodes = ligand_nodes[:, alternative]
+        if bool(
+            torch.any(kmd.keep_atom_fixed[alternative_nodes, int(BondDOFTypes.phi_p)])
+        ) or not _ligand_controller_preserves_components(
+            block_type,
+            kmd.forest,
+            ligand_nodes[0],
+            atoms,
+            alternative,
+            BondDOFTypes.phi_p,
+        ):
+            raise ValueError(
+                "no ligand torsion controller preserves chemical components"
+            )
+        raw_atoms[torsion_index] = alternative
+    return raw_atoms
+
+
 def _validate_sidechain_controller(
     forest,
     block: int,
@@ -826,7 +892,9 @@ def build_ligand_docking_dofs(
     DOFs are enabled on that root jump.  Each named ligand torsion first tries
     the normal child-central ``phi_c`` controller.  If the jump stub fixes that
     controller, the resolver reverses the dihedral and enables ``phi_p`` on the
-    opposite outer atom, matching Rosetta's bidirectional torsion lookup.
+    opposite outer atom, matching Rosetta's bidirectional torsion lookup. If
+    that subtree cuts a chemical ring, it tries the child-central ``phi_p``;
+    either controller must rotate a whole component of the chemical graph.
 
     The affine sign between the selected raw DOF and the declared four-atom
     dihedral is measured by small, one-at-a-time perturbations through the
@@ -908,6 +976,15 @@ def build_ligand_docking_dofs(
         use_reversed,
         int(BondDOFTypes.phi_p),
         int(BondDOFTypes.phi_c),
+    )
+    raw_atoms = _resolve_ligand_ring_controllers(
+        block_type,
+        kmd,
+        ligand_nodes,
+        torsion_atoms_host,
+        raw_atoms,
+        child_central,
+        use_reversed,
     )
     raw_nodes = ligand_nodes[:, raw_atoms]
 
