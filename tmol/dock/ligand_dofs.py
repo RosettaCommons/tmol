@@ -325,6 +325,8 @@ def _resolve_ligand_ring_controllers(
     child_central,
     use_reversed,
 ):
+    original = raw_atoms
+    raw_atoms = raw_atoms.clone()
     # Keep the established controller when it rotates a whole chemical
     # component. An opposite outer atom inside a ring may instead tear that
     # ring; the child-central phi_p can rotate the intact opposite component.
@@ -351,6 +353,8 @@ def _resolve_ligand_ring_controllers(
                 "no ligand torsion controller preserves chemical components"
             )
         raw_atoms[torsion_index] = alternative
+    if torch.equal(raw_atoms, original):
+        raise ValueError("no ring-cutting ligand controller could be replaced")
     return raw_atoms
 
 
@@ -893,8 +897,9 @@ def build_ligand_docking_dofs(
     the normal child-central ``phi_c`` controller.  If the jump stub fixes that
     controller, the resolver reverses the dihedral and enables ``phi_p`` on the
     opposite outer atom, matching Rosetta's bidirectional torsion lookup. If
-    that subtree cuts a chemical ring, it tries the child-central ``phi_p``;
-    either controller must rotate a whole component of the chemical graph.
+    that controller fails the empirical isolation check and its subtree cuts
+    a chemical ring, it tries a child-central ``phi_p`` that rotates a whole
+    component of the chemical graph. Accepted mappings remain unchanged.
 
     The affine sign between the selected raw DOF and the declared four-atom
     dihedral is measured by small, one-at-a-time perturbations through the
@@ -977,15 +982,6 @@ def build_ligand_docking_dofs(
         int(BondDOFTypes.phi_p),
         int(BondDOFTypes.phi_c),
     )
-    raw_atoms = _resolve_ligand_ring_controllers(
-        block_type,
-        kmd,
-        ligand_nodes,
-        torsion_atoms_host,
-        raw_atoms,
-        child_central,
-        use_reversed,
-    )
     raw_nodes = ligand_nodes[:, raw_atoms]
 
     reversed_nodes = raw_nodes[:, use_reversed]
@@ -999,18 +995,36 @@ def build_ligand_docking_dofs(
     if bool(torch.any(kmd.keep_atom_fixed[reversed_nodes, int(BondDOFTypes.phi_p)])):
         raise ValueError("both ends of a ligand torsion are fixed by the fold forest")
 
+    try:
+        signs = _empirical_torsion_signs(
+            kin_module,
+            raw_dofs,
+            ligand_nodes,
+            torsion_atoms,
+            raw_nodes,
+            dof_types,
+        )
+    except ValueError:
+        # Preserve accepted mappings exactly. Only repair a rejected controller,
+        # and retain the same empirical guard for its replacement.
+        repaired = _resolve_ligand_ring_controllers(
+            block_type,
+            kmd,
+            ligand_nodes,
+            torsion_atoms_host,
+            raw_atoms,
+            child_central,
+            use_reversed,
+        )
+        raw_atoms = repaired
+        raw_nodes = ligand_nodes[:, raw_atoms]
+        signs = _empirical_torsion_signs(
+            kin_module, raw_dofs, ligand_nodes, torsion_atoms, raw_nodes, dof_types
+        )
+
     raw_keys = raw_atoms * raw_dofs.shape[1] + dof_types
     if torch.unique(raw_keys).numel() != raw_keys.numel():
         raise ValueError("two ligand torsions share the same raw DOF")
-
-    signs = _empirical_torsion_signs(
-        kin_module,
-        raw_dofs,
-        ligand_nodes,
-        torsion_atoms,
-        raw_nodes,
-        dof_types,
-    )
 
     pose_indices = torch.arange(
         pose_stack.n_poses, dtype=torch.int64, device=pose_stack.device
