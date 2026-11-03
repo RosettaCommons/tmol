@@ -1,14 +1,14 @@
 #pragma once
 
-#include <Eigen/src/Core/util/Macros.h>
-#include "scalar_params.hh"
+#include <tmol/utility/portable/math.hh>
+#include "params_types.hh"
 
 namespace tmol {
 namespace score {
 namespace ljlk {
 namespace potentials {
 
-#define def auto EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
+#define def auto TMOL_HOST_DEVICE_FUNC
 
 template <typename Real, typename Int>
 def connectivity_weight(Int bonded_path_length) -> Real {

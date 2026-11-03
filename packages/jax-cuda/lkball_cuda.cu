@@ -1,7 +1,7 @@
 #include <cstdint>
 
 #include "common.cuh"
-#include <tmol/score/lk_ball/potentials/scalar.hh>
+#include <tmol/score/lk_ball/potentials/lk_ball.hh>
 
 namespace pot = tmol::score::lk_ball::potentials;
 
@@ -67,8 +67,8 @@ __global__ void lkball_pairs(
     float* energies,
     float* coord_gradients,
     float* water_gradients) {
-  using Real3 = Eigen::Matrix<float, 3, 1>;
-  using Waters = Eigen::Matrix<float, kWaters, 3>;
+  using Real3 = tmol::portable::Vec<float, 3>;
+  using Waters = tmol::portable::Mat<float, kWaters, 3>;
   __shared__ float energy[4][kTile * kTile];
 
   int n_polar_tiles = (n_polar + kTile - 1) / kTile;
@@ -118,12 +118,16 @@ __global__ void lkball_pairs(
     pi = load_lkball_params(params + (atom_base + polar) * kParams);
     pj = load_lkball_params(params + (atom_base + occluder) * kParams);
     global = load_lkball_global(global_values);
-    float dist2 = (I - J).squaredNorm();
+    float dist2 = 0;
+#pragma unroll
+    for (int d = 0; d < 3; ++d) {
+      dist2 += (I[d] - J[d]) * (I[d] - J[d]);
+    }
     active = dist2 < global.distance_threshold * global.distance_threshold;
   }
   if (active) {
     if constexpr (Gradient) {
-      Eigen::Matrix<float, 4, 1> weights;
+      tmol::portable::Vec<float, 4> weights;
 #pragma unroll
       for (int score = 0; score < 4; ++score) {
         weights[score] = cotangent[pose * 4 + score];

@@ -33,6 +33,7 @@ class CudaBuildExt(build_ext):
             "-std=c++17",
             "-O3",
             "--expt-relaxed-constexpr",
+            "--extended-lambda",
             "-shared",
             "-Xcompiler",
             "-fPIC",

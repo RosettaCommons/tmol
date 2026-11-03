@@ -1,9 +1,8 @@
-#include <tmol/utility/tensor/native.hh>
 #pragma once
 
+#include <tmol/utility/tensor/native.hh>
 #include <tmol/utility/tensor/TensorPack.h>
-
-#include "scalar_params.hh"
+#include "params_types.hh"
 
 namespace tmol {
 

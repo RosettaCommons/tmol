@@ -1,9 +1,9 @@
-#include <tmol/utility/tensor/native.hh>
 #pragma once
 
+#include <tmol/utility/tensor/native.hh>
 #include <tmol/utility/tensor/TensorAccessor.h>
 #include <tmol/utility/tensor/TensorUtil.h>
-#include <tmol/score/elec/potentials/scalar_params.hh>
+#include "params_types.hh"
 
 namespace tmol {
 

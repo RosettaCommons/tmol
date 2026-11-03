@@ -47,13 +47,19 @@ def main():
             root / "tmol/score/elec/potentials",
             stage / "include/tmol/score/elec/potentials",
         )
-        hbond_include = stage / "include/tmol/score/hbond/potentials"
-        hbond_include.mkdir(parents=True)
-        for header in ("potentials.hh", "scalar_params.hh"):
-            shutil.copyfile(
-                root / "tmol/score/hbond/potentials" / header,
-                hbond_include / header,
-            )
+        shutil.copytree(
+            root / "tmol/score/hbond/potentials",
+            stage / "include/tmol/score/hbond/potentials",
+        )
+        shutil.copytree(
+            root / "tmol/utility/portable",
+            stage / "include/tmol/utility/portable",
+        )
+        shutil.copytree(
+            root / "tmol/numeric",
+            stage / "include/tmol/numeric",
+            ignore=shutil.ignore_patterns("*.py", "*.cpp", "*.cu", "__pycache__"),
+        )
         shutil.copytree(root / "tmol/extern/Eigen", stage / "include/tmol/extern/Eigen")
         shutil.copytree(
             root / "tmol/extern/moderngpu",

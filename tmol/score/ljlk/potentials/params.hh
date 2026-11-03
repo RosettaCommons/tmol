@@ -1,16 +1,95 @@
-#include <tmol/utility/tensor/native.hh>
 #pragma once
 
+#include <tmol/utility/tensor/native.hh>
 #include <cmath>
-
 #include <tmol/utility/tensor/TensorAccessor.h>
 #include <tmol/utility/tensor/TensorUtil.h>
-#include "scalar_params.hh"
+#include "params_types.hh"
+
+namespace tmol {
+
+template <typename Real>
+struct enable_tensor_view<score::ljlk::potentials::LJTypeParams<Real>> {
+  static const bool enabled = enable_tensor_view<Real>::enabled;
+  static const tmol::native::ScalarType scalar_type() {
+    return enable_tensor_view<Real>::scalar_type();
+  }
+
+  static const int nconsumed_dims = 1;
+  static const int consumed_dims(int i) {
+    return (i == 0) ? sizeof(score::ljlk::potentials::LJTypeParams<Real>)
+                          / sizeof(Real)
+                    : 0;
+  }
+
+  typedef typename enable_tensor_view<Real>::PrimitiveType PrimitiveType;
+};
+
+template <typename Real>
+struct enable_tensor_view<score::ljlk::potentials::LKTypeParams<Real>> {
+  static const bool enabled = enable_tensor_view<Real>::enabled;
+  static const tmol::native::ScalarType scalar_type() {
+    return enable_tensor_view<Real>::scalar_type();
+  }
+
+  static const int nconsumed_dims = 1;
+  static const int consumed_dims(int i) {
+    return (i == 0) ? sizeof(score::ljlk::potentials::LKTypeParams<Real>)
+                          / sizeof(Real)
+                    : 0;
+  }
+
+  typedef typename enable_tensor_view<Real>::PrimitiveType PrimitiveType;
+};
+
+template <typename Real>
+struct enable_tensor_view<score::ljlk::potentials::LJLKTypeParams<Real>> {
+  static const bool enabled = enable_tensor_view<Real>::enabled;
+  static const tmol::native::ScalarType scalar_type() {
+    return enable_tensor_view<Real>::scalar_type();
+  }
+
+  static const int nconsumed_dims = 1;
+  static const int consumed_dims(int i) {
+    return (i == 0) ? sizeof(score::ljlk::potentials::LJLKTypeParams<Real>)
+                          / sizeof(Real)
+                    : 0;
+  }
+
+  typedef typename enable_tensor_view<Real>::PrimitiveType PrimitiveType;
+};
+
+template <typename Real>
+struct enable_tensor_view<score::ljlk::potentials::LJGlobalParams<Real>> {
+  static const bool enabled = enable_tensor_view<Real>::enabled;
+  static const tmol::native::ScalarType scalar_type() {
+    return enable_tensor_view<Real>::scalar_type();
+  }
+
+  static const int nconsumed_dims = 1;
+  static const int consumed_dims(int i) {
+    return (i == 0) ? sizeof(score::ljlk::potentials::LJGlobalParams<Real>)
+                          / sizeof(Real)
+                    : 0;
+  }
+
+  typedef typename enable_tensor_view<Real>::PrimitiveType PrimitiveType;
+};
+
+}  // namespace tmol
 
 namespace tmol {
 namespace score {
 namespace ljlk {
 namespace potentials {
+
+// Views over the per-type parameter tables.
+//
+// These live here rather than beside the POD parameter structs in
+// params_types.hh because they hold TViews, and params_types.hh is included
+// by device code that the Metal toolchain compiles -- which cannot see the
+// torch tensor layer at all. The kernels read the POD structs; only the host
+// builds these.
 
 template <typename Real, tmol::Device D>
 struct LJTypeParamTensors {
@@ -84,76 +163,4 @@ struct LJGlobalParamTensors {
 }  // namespace potentials
 }  // namespace ljlk
 }  // namespace score
-}  // namespace tmol
-
-namespace tmol {
-
-template <typename Real>
-struct enable_tensor_view<score::ljlk::potentials::LJTypeParams<Real>> {
-  static const bool enabled = enable_tensor_view<Real>::enabled;
-  static const tmol::native::ScalarType scalar_type() {
-    return enable_tensor_view<Real>::scalar_type();
-  }
-
-  static const int nconsumed_dims = 1;
-  static const int consumed_dims(int i) {
-    return (i == 0) ? sizeof(score::ljlk::potentials::LJTypeParams<Real>)
-                          / sizeof(Real)
-                    : 0;
-  }
-
-  typedef typename enable_tensor_view<Real>::PrimitiveType PrimitiveType;
-};
-
-template <typename Real>
-struct enable_tensor_view<score::ljlk::potentials::LKTypeParams<Real>> {
-  static const bool enabled = enable_tensor_view<Real>::enabled;
-  static const tmol::native::ScalarType scalar_type() {
-    return enable_tensor_view<Real>::scalar_type();
-  }
-
-  static const int nconsumed_dims = 1;
-  static const int consumed_dims(int i) {
-    return (i == 0) ? sizeof(score::ljlk::potentials::LKTypeParams<Real>)
-                          / sizeof(Real)
-                    : 0;
-  }
-
-  typedef typename enable_tensor_view<Real>::PrimitiveType PrimitiveType;
-};
-
-template <typename Real>
-struct enable_tensor_view<score::ljlk::potentials::LJLKTypeParams<Real>> {
-  static const bool enabled = enable_tensor_view<Real>::enabled;
-  static const tmol::native::ScalarType scalar_type() {
-    return enable_tensor_view<Real>::scalar_type();
-  }
-
-  static const int nconsumed_dims = 1;
-  static const int consumed_dims(int i) {
-    return (i == 0) ? sizeof(score::ljlk::potentials::LJLKTypeParams<Real>)
-                          / sizeof(Real)
-                    : 0;
-  }
-
-  typedef typename enable_tensor_view<Real>::PrimitiveType PrimitiveType;
-};
-
-template <typename Real>
-struct enable_tensor_view<score::ljlk::potentials::LJGlobalParams<Real>> {
-  static const bool enabled = enable_tensor_view<Real>::enabled;
-  static const tmol::native::ScalarType scalar_type() {
-    return enable_tensor_view<Real>::scalar_type();
-  }
-
-  static const int nconsumed_dims = 1;
-  static const int consumed_dims(int i) {
-    return (i == 0) ? sizeof(score::ljlk::potentials::LJGlobalParams<Real>)
-                          / sizeof(Real)
-                    : 0;
-  }
-
-  typedef typename enable_tensor_view<Real>::PrimitiveType PrimitiveType;
-};
-
 }  // namespace tmol
