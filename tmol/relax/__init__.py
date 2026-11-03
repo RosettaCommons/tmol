@@ -2,12 +2,14 @@
 
 from ._fast_relax import (  # noqa: F401
     DEFAULT_RELAX_SCHEDULE,
-    DefaultCartesianMinimizer,
-    DefaultKinematicMinimizer,
+    CartesianRelaxMinimizer,
+    KinematicRelaxMinimizer,
+    RelaxMinimizer,
 )
 
 __all__ = [
     "DEFAULT_RELAX_SCHEDULE",
-    "DefaultCartesianMinimizer",
-    "DefaultKinematicMinimizer",
+    "CartesianRelaxMinimizer",
+    "KinematicRelaxMinimizer",
+    "RelaxMinimizer",
 ]

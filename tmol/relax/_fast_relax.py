@@ -15,12 +15,7 @@ from tmol.kinematics._fold_forest import FoldForest
 from tmol.pack._pack_rotamers import pack_rotamers
 from tmol.pack._packer_task import PackerPalette, PackerTask
 from tmol.pack import FixedAAChiSampler, IncludeCurrentSampler, NaChiRotamerSampler
-from tmol.optimization._minimizers import (
-    CartesianMinimizer,
-    KinematicMinimizer,
-    run_cart_min,
-    run_kin_min,
-)
+from tmol.optimization._minimizers import CartesianMinimizer, KinematicMinimizer
 from tmol.types._torch import Tensor
 from tmol.utility._device import _synchronize_device
 
@@ -36,8 +31,6 @@ class RelaxMinimizer(Protocol):
         pose_stack: PoseStack,
         sfxn: ScoreFunction,
         *,
-        fold_forest: FoldForest,
-        move_map: MoveMap | CartesianMoveMap,
         verbose: bool,
         rtol: float | None = None,
     ) -> PoseStack:
@@ -138,25 +131,9 @@ def _normalize_schedule(
     return normalized
 
 
-def _default_cart_min_fn(
-    pose_stack: PoseStack,
-    sfxn: ScoreFunction,
-    *,
-    fold_forest: FoldForest,
-    move_map: MoveMap | CartesianMoveMap,
-    verbose: bool,
-    cuda_graph: bool = False,
-) -> PoseStack:
-    """Run Cartesian LBFGS using a Cartesian move map's coordinate mask."""
-    coord_mask = move_map.coord_mask if isinstance(move_map, CartesianMoveMap) else None
-    return run_cart_min(
-        pose_stack,
-        sfxn,
-        coord_mask=coord_mask,
-        verbose=verbose,
-        cuda_graph=cuda_graph,
-        optimizer_kwargs={"verbose": verbose},
-    )
+def _graph_mode(cuda_graph: bool | None, pose_stack: PoseStack) -> bool:
+    """Resolve a minimizer's graph setting; None replays graphs on CUDA."""
+    return pose_stack.device.type == "cuda" if cuda_graph is None else cuda_graph
 
 
 # Kinematic relax convergence: one small relative step at max |gradient| below
@@ -169,11 +146,33 @@ KINEMATIC_RELAX_LBFGS_OPTIONS = {
 }
 
 
-class DefaultCartesianMinimizer:
-    """Cartesian minimizer that reuses rendering for unchanged pose topology."""
+class CartesianRelaxMinimizer:
+    """FastRelax minimization of atom coordinates.
 
-    def __init__(self, cuda_graph: bool):
-        self.minimizer = CartesianMinimizer(cuda_graph=cuda_graph)
+    Reuses the rendered scorer while the pose topology is unchanged.
+
+    Args:
+        move_map: Atoms free to move; None frees every atom.
+        cuda_graph: Capture and replay the CUDA forward/backward scoring path.
+            None turns it on for CUDA poses and off on CPU.
+    """
+
+    def __init__(
+        self,
+        move_map: CartesianMoveMap | None = None,
+        *,
+        cuda_graph: bool | None = None,
+    ):
+        if move_map is None:
+            move_map = CartesianMoveMap()
+        if not isinstance(move_map, CartesianMoveMap):
+            raise TypeError(
+                f"CartesianRelaxMinimizer needs a CartesianMoveMap, got "
+                f"{type(move_map).__name__}; use KinematicRelaxMinimizer for a MoveMap"
+            )
+        self.move_map = move_map
+        self.cuda_graph = cuda_graph
+        self.minimizer = CartesianMinimizer()
 
     def release_retained_state(self) -> None:
         """Release scorer and optimizer storage between relax stages."""
@@ -184,52 +183,52 @@ class DefaultCartesianMinimizer:
         pose_stack: PoseStack,
         sfxn: ScoreFunction,
         *,
-        fold_forest: FoldForest,
-        move_map: MoveMap | CartesianMoveMap,
-        verbose: bool,
+        verbose: bool = False,
         rtol: float | None = None,
     ) -> PoseStack:
         # Cartesian relax keeps the LBFGS default convergence
-        del fold_forest, rtol
-        coord_mask = (
-            move_map.coord_mask if isinstance(move_map, CartesianMoveMap) else None
-        )
+        del rtol
+        self.minimizer.cuda_graph = _graph_mode(self.cuda_graph, pose_stack)
         return self.minimizer(
             pose_stack,
             sfxn,
-            coord_mask=coord_mask,
+            coord_mask=self.move_map.coord_mask,
             verbose=verbose,
             optimizer_kwargs={"verbose": verbose},
         )
 
 
-def _default_kin_min_fn(
-    pose_stack: PoseStack,
-    sfxn: ScoreFunction,
-    *,
-    fold_forest: FoldForest,
-    move_map: MoveMap | CartesianMoveMap,
-    verbose: bool,
-    cuda_graph: bool = False,
-) -> PoseStack:
-    """Default minimization function: kinematic (torsion-space) LBFGS."""
-    return run_kin_min(
-        pose_stack,
-        sfxn,
-        fold_forest,
-        move_map,
-        verbose=verbose,
-        cuda_graph=cuda_graph,
-        optimizer_kwargs={"verbose": verbose},
-    )
+class KinematicRelaxMinimizer:
+    """FastRelax minimization of kinematic DOFs (torsions and jumps).
 
+    Reuses the rendered scorer while the pose topology is unchanged.
 
-class DefaultKinematicMinimizer:
-    """Kinematic minimizer that reuses rendering for unchanged pose topology."""
+    Args:
+        move_map: Torsions and jumps free to move; None frees every mainchain
+            and sidechain torsion and every jump of each minimized pose stack.
+        fold_forest: Kinematic tree; None uses
+            FoldForest.reasonable_fold_forest of each minimized pose stack.
+        cuda_graph: Capture and replay the CUDA forward/backward scoring path.
+            None turns it on for CUDA poses and off on CPU.
+    """
 
-    def __init__(self, cuda_graph: bool | str = False):
+    def __init__(
+        self,
+        move_map: MoveMap | None = None,
+        fold_forest: FoldForest | None = None,
+        *,
+        cuda_graph: bool | None = None,
+    ):
+        if move_map is not None and not isinstance(move_map, MoveMap):
+            raise TypeError(
+                f"KinematicRelaxMinimizer needs a MoveMap, got "
+                f"{type(move_map).__name__}; use CartesianRelaxMinimizer for a "
+                "CartesianMoveMap"
+            )
+        self.move_map = move_map
+        self.fold_forest = fold_forest
         self.cuda_graph = cuda_graph
-        self.minimizer = KinematicMinimizer(cuda_graph=cuda_graph)
+        self.minimizer = KinematicMinimizer()
 
     def release_retained_state(self) -> None:
         """Release scorer and optimizer storage between relax stages."""
@@ -240,11 +239,19 @@ class DefaultKinematicMinimizer:
         pose_stack: PoseStack,
         sfxn: ScoreFunction,
         *,
-        fold_forest: FoldForest,
-        move_map: MoveMap | CartesianMoveMap,
-        verbose: bool,
+        verbose: bool = False,
         rtol: float | None = None,
     ) -> PoseStack:
+        move_map = self.move_map
+        if move_map is None:
+            move_map = MoveMap.from_pose_stack(pose_stack)
+            move_map.move_all_mc = True
+            move_map.move_all_sc = True
+            move_map.move_all_jumps = True
+        fold_forest = self.fold_forest
+        if fold_forest is None:
+            fold_forest = FoldForest.reasonable_fold_forest(pose_stack)
+        self.minimizer.cuda_graph = _graph_mode(self.cuda_graph, pose_stack)
         options = dict(KINEMATIC_RELAX_LBFGS_OPTIONS, verbose=verbose)
         if rtol is not None:
             options["rtol"] = rtol
@@ -258,36 +265,16 @@ class DefaultKinematicMinimizer:
         )
 
 
-def _resolve_cuda_graph_mode(pose_stack: PoseStack, cuda_graph: bool | None) -> bool:
-    """Choose graph replay automatically where launch overhead dominates."""
-    if cuda_graph is not None:
-        return cuda_graph
-    if pose_stack.device.type != "cuda":
-        return False
-
-    used_block_types = torch.unique(pose_stack.block_type_ind).tolist()
-    active_block_types = pose_stack.packed_block_types.active_block_types
-    return any(
-        block_type_ind >= 0
-        and active_block_types[block_type_ind].properties.polymer.backbone_type
-        in ("dna", "rna")
-        for block_type_ind in used_block_types
-    )
-
-
 def fast_relax(  # noqa: C901
     pose_stack: PoseStack,
     sfxn: ScoreFunction,
-    packer_pallete: PackerPalette,
-    move_map: MoveMap | CartesianMoveMap,
-    fold_forest: FoldForest,
     *,
+    minimizer: RelaxMinimizer | None = None,
+    packer_palette: PackerPalette | None = None,
     task_operations: Sequence[PackerTaskOperation] | None = None,
     num_repeats: int = 2,
     ramp_constraints: bool | None = None,  # default True
     schedule: Sequence[RelaxScheduleEntry] | None = None,
-    min_fn: RelaxMinimizer | None = None,
-    cuda_graph: bool | None = None,
     release_between_stages: bool = True,
     verbose: bool = False,
 ) -> PoseStack:
@@ -300,9 +287,16 @@ def fast_relax(  # noqa: C901
         pose_stack: Input poses to relax.
         sfxn: Packing and minimization score function. Constraints are active
             only when its constraint weight is nonzero.
-        packer_pallete: Residue types available to the packer.
-        move_map: Specifies which DOFs are free to move during minimization.
-        fold_forest: Fold forest defining the kinematic connectivity.
+        minimizer: The minimization mode and its settings: a
+            ``CartesianRelaxMinimizer`` (atom coordinates) or a
+            ``KinematicRelaxMinimizer`` (torsions and jumps along a fold
+            forest), or any callable following ``RelaxMinimizer``. If it
+            provides ``release_retained_state()``, FastRelax calls that hook
+            after extracting each minimized pose so packing does not overlap
+            retained scorer or optimizer storage. Defaults to a
+            ``CartesianRelaxMinimizer`` with every atom free.
+        packer_palette: Residue types available to the packer. Defaults to
+            ``PackerPalette()``.
         task_operations: In-place task configuration callbacks. By default,
             restrict to repacking with the scoring database’s Dunbrack, fixed-AA,
             current and nucleic-acid rotamers, sampling covalent groups jointly.
@@ -312,11 +306,6 @@ def fast_relax(  # noqa: C901
         schedule: Numeric fa_rep fractions or dictionaries with separate pack,
             minimize, and optional constraint fractions and ``min_rtol``.
             Defaults to ``DEFAULT_RELAX_SCHEDULE``.
-        min_fn: Minimizer called with the pose, score function, fold forest,
-            move map, and verbosity. If it provides ``release_retained_state()``,
-            FastRelax calls that hook after extracting each minimized pose so
-            packing does not overlap retained scorer or optimizer storage.
-            Defaults to Cartesian minimization.
         release_between_stages: Drop the rendered scorer, CUDA graph and L-BFGS
             history after each stage's minimization. On by default: a large
             system is bound by that retained state through the next packing
@@ -324,19 +313,11 @@ def fast_relax(  # noqa: C901
             cost dominates instead -- a small pose on the default four-stage
             schedule otherwise pays four network constructions, and four graph
             captures, where one would do.
-        cuda_graph: Capture the default Cartesian minimizer's repeated CUDA
-            scoring path. By default, enable it automatically for CUDA poses
-            containing DNA or RNA, where replay savings exceed capture setup.
-            Pass ``True`` for repeated protein workloads where steady-state
-            throughput matters more than first-call latency, or ``False`` to
-            disable it. It cannot be combined with a custom ``min_fn``.
         verbose: Print timing information for each step.
 
     Returns:
         Best-scoring relaxed poses across all repeats.
     """
-    if min_fn is not None and cuda_graph is True:
-        raise ValueError("cuda_graph cannot be combined with a custom min_fn")
     if schedule is None:
         schedule = DEFAULT_RELAX_SCHEDULE
 
@@ -396,10 +377,10 @@ def fast_relax(  # noqa: C901
     del wpsm
     best_ps = pose_stack.clone_sharing_topology()
 
-    if min_fn is None:
-        min_fn = DefaultCartesianMinimizer(
-            _resolve_cuda_graph_mode(pose_stack, cuda_graph)
-        )
+    if minimizer is None:
+        minimizer = CartesianRelaxMinimizer()
+    if packer_palette is None:
+        packer_palette = PackerPalette()
 
     ps = pose_stack
     for _ in range(num_repeats):
@@ -407,14 +388,12 @@ def fast_relax(  # noqa: C901
             ps = _relax_pack_min_step(
                 pose_stack=ps,
                 sfxn=sfxn,
-                fold_forest=fold_forest,
-                move_map=move_map,
-                packer_pallete=packer_pallete,
+                packer_palette=packer_palette,
                 fa_rep_pack_weight=pack_frac * fa_rep_start,
                 fa_rep_min_weight=min_frac * fa_rep_start,
                 cst_weight=cst_frac * constraint_weight_start,
                 task_operations=task_operations,
-                min_fn=min_fn,
+                minimizer=minimizer,
                 verbose=verbose,
                 release_between_stages=release_between_stages,
                 min_rtol=min_rtol,
@@ -431,14 +410,12 @@ def fast_relax(  # noqa: C901
 def _relax_pack_min_step(
     pose_stack: PoseStack,
     sfxn: ScoreFunction,
-    fold_forest: FoldForest,
-    move_map: MoveMap | CartesianMoveMap,
-    packer_pallete: PackerPalette,
+    packer_palette: PackerPalette,
     fa_rep_pack_weight: float,
     fa_rep_min_weight: float,
     cst_weight: float,
     task_operations: Sequence[PackerTaskOperation],
-    min_fn: RelaxMinimizer,
+    minimizer: RelaxMinimizer,
     verbose: bool,
     release_between_stages: bool = True,
     min_rtol: float | None = None,
@@ -448,14 +425,12 @@ def _relax_pack_min_step(
     Args:
         pose_stack: Current poses.
         sfxn: Score function whose repulsive and constraint weights are updated.
-        fold_forest: Connectivity passed to the minimizer.
-        move_map: Movable degrees of freedom passed to the minimizer.
-        packer_pallete: Residue types available during packing.
+        packer_palette: Residue types available during packing.
         fa_rep_pack_weight: Repulsive weight for packing.
         fa_rep_min_weight: Repulsive weight for minimization.
         cst_weight: Constraint weight for both operations.
         task_operations: In-place task configuration callbacks.
-        min_fn: Minimization callable.
+        minimizer: Minimization callable.
         verbose: Print synchronized stage timings.
         min_rtol: Minimizer relative tolerance (None: minimizer default).
 
@@ -466,7 +441,7 @@ def _relax_pack_min_step(
     if verbose:
         _synchronize_device(pose_stack.device)
     start_time = time.perf_counter()
-    task = PackerTask(pose_stack, packer_pallete)
+    task = PackerTask(pose_stack, packer_palette)
     for op in task_operations:
         op(task)
 
@@ -490,11 +465,9 @@ def _relax_pack_min_step(
         _synchronize_device(pose_stack.device)
     end_time2 = time.perf_counter()
     stage_kwargs = {} if min_rtol is None else {"rtol": min_rtol}
-    minimized_pose_stack = min_fn(
+    minimized_pose_stack = minimizer(
         packed_pose_stack,
         sfxn,
-        fold_forest=fold_forest,
-        move_map=move_map,
         verbose=verbose,
         **stage_kwargs,
     )
@@ -503,7 +476,7 @@ def _relax_pack_min_step(
     # next packing phase. Large systems are bound by the second -- it is why
     # this release exists -- and small ones by the first.
     if release_between_stages:
-        release_retained_state = getattr(min_fn, "release_retained_state", None)
+        release_retained_state = getattr(minimizer, "release_retained_state", None)
         if release_retained_state is not None:
             release_retained_state()
     if verbose:
