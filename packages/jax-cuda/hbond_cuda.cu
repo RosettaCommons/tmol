@@ -54,7 +54,7 @@ __global__ void hbond_pairs(
     int n_acceptor_types,
     float* energies,
     float* gradients) {
-  using Real3 = Eigen::Matrix<float, 3, 1>;
+  using Real3 = tmol::portable::Vec<float, 3>;
   __shared__ float energy[1][kTile * kTile];
 
   int donor_tiles = (n_donors + kTile - 1) / kTile;
