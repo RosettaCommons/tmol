@@ -76,7 +76,6 @@ std::vector<std::vector<Neighbor>> pose_neighbors(
 // Phases and rules follow the CUDA annealer; lengths follow the MPS one.
 struct FunnelSchedule {
   static constexpr int min_threads = 8;
-  static constexpr int hitemp_traj = 128;
   static constexpr int lotemp_expansions = 10;
   static constexpr float round1_cut = 0.25f;
   static constexpr float round2_cut = 0.25f;
@@ -261,11 +260,10 @@ std::vector<std::vector<int>> rank_trajectories(
 // High-temperature trajectories, the best seeding low-temperature ones, the
 // best of those fully quenched; trajectories run in parallel.
 template <tmol::Device D>
-auto run_funnel(FunnelAnnealer<D> const& a, int n_poses)
+auto run_funnel(FunnelAnnealer<D> const& a, int n_poses, int n_hi)
     -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D>> {
   using S = FunnelSchedule;
   int const max_n_res = a.max_n_res;
-  int const n_hi = S::hitemp_traj;
   int const n_lo = int(n_hi * S::lotemp_expansions * S::round1_cut);
   int const n_fq = int(n_lo * S::round2_cut);
 
@@ -418,8 +416,8 @@ auto AnnealerDispatch<D>::forward(
     TView<int64_t, 1, D> neighbor_chunk_offset_offsets,
     TView<int64_t, 1, D> chunk_offsets,  // n-chunks-on-interacting-res
     TView<float, 1, D> energy1b,
-    TView<float, 1, D> energy2b)
-    -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D>> {
+    TView<float, 1, D> energy2b,
+    int n_hitemp_traj) -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D>> {
   int const n_poses = pose_n_res.size(0);
   int const max_n_res = n_rotamers_for_res.size(1);
   int const n_rotamers = res_for_rot.size(0);
@@ -450,7 +448,7 @@ auto AnnealerDispatch<D>::forward(
           neighbor_blocks,
           neighbor_chunk_offset_offsets));
     }
-    return run_funnel(annealer, n_poses);
+    return run_funnel(annealer, n_poses, n_hitemp_traj);
   }
 
   int n_traj = 1;
