@@ -239,7 +239,22 @@ def _relpaths(src_path, paths):
     if isinstance(paths, str | bytes):
         paths = [paths]
 
-    return [str(pathlib.Path(src_path).parent / s) for s in paths]
+    parent = pathlib.Path(src_path).parent
+    return [str(_source_path(parent, s)) for s in paths]
+
+
+def _source_path(parent, name):
+    """Resolve a source beside its module, or in ``tmol/backends/<kind>/``.
+
+    ``*.cpu.cpp`` and ``*.cuda.cu`` files live under ``tmol/backends`` at the
+    path mirroring their module's directory.
+    """
+    for suffix, backend in ((".cpu.cpp", "cpu"), (".cuda.cu", "cuda")):
+        if name.endswith(suffix):
+            root = pathlib.Path(__file__).resolve().parents[1]
+            rel = parent.resolve().relative_to(root)
+            return root / "backends" / backend / rel / name
+    return parent / name
 
 
 def _modulename(src_name):

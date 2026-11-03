@@ -1,5 +1,5 @@
 #include <tmol/score/bonded_atom.hh>
-#include <tmol/score/common/device_operations.cpu.impl.hh>
+#include <tmol/backends/cpu/score/common/device_operations.cpu.impl.hh>
 
 #include <tmol/tests/score/bonded_atom/test.impl.hh>
 

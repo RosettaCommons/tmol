@@ -1,5 +1,5 @@
 #include <tmol/pack/rotamer/dunbrack/dispatch.impl.hh>
-#include <tmol/score/common/device_operations.cuda.impl.cuh>
+#include <tmol/backends/cuda/score/common/device_operations.cuda.impl.cuh>
 #include "test.impl.hh"
 
 namespace tmol {

@@ -21,7 +21,7 @@
 // does: the MPS code path branches to the Metal launcher before reaching
 // them.
 
-#include <tmol/score/common/device_operations.cpu.impl.hh>
+#include <tmol/backends/cpu/score/common/device_operations.cpu.impl.hh>
 
 namespace tmol {
 namespace score {
