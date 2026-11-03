@@ -482,16 +482,23 @@
         <span class="c1"># Cache of parameter tables converted to whichever coord dtype is used</span>
         <span class="c1"># in scoring. Avoids a per-forward .to(coords_dtype) on three tensors.</span>
         <span class="c1"># Keyed by dtype; stored value is a (pair_param, pair_poly, global_param) tuple.</span>
-        <span class="c1"># pair_poly_table is always kept at float64 — the C++ kernel templates</span>
+        <span class="c1"># pair_poly_table is kept at float64 — the C++ kernel templates</span>
         <span class="c1"># HBondPolynomials on double independently of the Real coord dtype.</span>
+        <span class="c1"># MPS is the exception: it has no float64 at either the tensor or the</span>
+        <span class="c1"># shader level, so _params.py has already packed the same coefficients</span>
+        <span class="c1"># as unevaluated hi + lo float32 pairs, and converting here would both</span>
+        <span class="c1"># fail and undo that. See params_types.hh.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_param_tables_by_dtype</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_param_tables</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">coords_dtype</span><span class="p">):</span>
         <span class="n">tables</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_param_tables_by_dtype</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">coords_dtype</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">tables</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">poly</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hb_param_db</span><span class="o">.</span><span class="n">pair_poly_table</span>
+            <span class="k">if</span> <span class="n">poly</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">"mps"</span><span class="p">:</span>
+                <span class="n">poly</span> <span class="o">=</span> <span class="n">poly</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
             <span class="n">tables</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">hb_param_db</span><span class="o">.</span><span class="n">pair_param_table</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">coords_dtype</span><span class="p">),</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">hb_param_db</span><span class="o">.</span><span class="n">pair_poly_table</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">float64</span><span class="p">),</span>
+                <span class="n">poly</span><span class="p">,</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">hb_param_db</span><span class="o">.</span><span class="n">global_param_table</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">coords_dtype</span><span class="p">),</span>
             <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_param_tables_by_dtype</span><span class="p">[</span><span class="n">coords_dtype</span><span class="p">]</span> <span class="o">=</span> <span class="n">tables</span>
