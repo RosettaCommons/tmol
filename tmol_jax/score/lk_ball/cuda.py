@@ -50,29 +50,23 @@ def _pack_parameters(term, state):
 def score(term, state, coordinates):
     """Evaluate four LK-ball channels with the installed CUDA kernel."""
 
-    def place_one(x, donor, acceptor, polar, base, base0, hybrid, hydrogens, mask, n):
-        return term._place_all_waters(
-            x, donor, acceptor, polar, base, base0, hybrid, hydrogens, mask, n
-        )
-
-    def place(x):
-        return jax.vmap(place_one)(
-            x,
-            state.is_donor,
-            state.is_acceptor,
-            state.is_polar,
-            state.B_idx,
-            state.B0_idx,
-            state.acc_hybridization,
-            state.attached_H_idx,
-            state.attached_H_mask,
-            state.n_attached_H,
-        )
+    waters = jax.vmap(term._place_all_waters)(
+        coordinates,
+        state.is_donor,
+        state.is_acceptor,
+        state.is_polar,
+        state.B_idx,
+        state.B0_idx,
+        state.acc_hybridization,
+        state.attached_H_idx,
+        state.attached_H_mask,
+        state.n_attached_H,
+    )
 
     parameters, global_values = _pack_parameters(term, state)
     return pair_sum(
         "tmol_jax_lkball",
-        (coordinates, place(coordinates)),
+        (coordinates, waters),
         (
             parameters,
             jnp.asarray(state.bonded_path_length, dtype=jnp.uint8),

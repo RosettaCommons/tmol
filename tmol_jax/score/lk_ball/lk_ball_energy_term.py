@@ -508,18 +508,6 @@ class LKBallEnergyTerm(EnergyTerm):
         type_names = [p.name for p in type_params]
         name_to_idx = {n: i for i, n in enumerate(type_names)}
 
-        lj_radius_table = np.asarray(
-            [p.lj_radius for p in type_params], dtype=np.float32
-        )
-        lk_dgfree_table = np.asarray(
-            [p.lk_dgfree for p in type_params], dtype=np.float32
-        )
-        lk_lambda_table = np.asarray(
-            [p.lk_lambda for p in type_params], dtype=np.float32
-        )
-        lk_volume_table = np.asarray(
-            [p.lk_volume for p in type_params], dtype=np.float32
-        )
         is_carbon_lk_table = np.asarray(
             [p.name in {"CH1", "CH2", "CH3", "Caro"} for p in type_params],
             dtype=bool,
@@ -541,10 +529,11 @@ class LKBallEnergyTerm(EnergyTerm):
             out = tab[safe_idx]
             return np.where(ljlk_idx_np >= 0, out, 0.0).astype(np.float32)
 
-        setattr(pbt, "lkball_bt_lj_radius", jnp.asarray(_gather(lj_radius_table)))
-        setattr(pbt, "lkball_bt_lk_dgfree", jnp.asarray(_gather(lk_dgfree_table)))
-        setattr(pbt, "lkball_bt_lk_lambda", jnp.asarray(_gather(lk_lambda_table)))
-        setattr(pbt, "lkball_bt_lk_volume", jnp.asarray(_gather(lk_volume_table)))
+        for name in ("lj_radius", "lk_dgfree", "lk_lambda", "lk_volume"):
+            table = np.asarray(
+                [getattr(p, name) for p in type_params], dtype=np.float32
+            )
+            setattr(pbt, f"lkball_bt_{name}", jnp.asarray(_gather(table)))
         setattr(
             pbt,
             "lkball_bt_is_carbon_lk",
