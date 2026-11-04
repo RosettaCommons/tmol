@@ -289,31 +289,28 @@ def _sidechain_end_local_atoms(
 
 
 def _ligand_controller_preserves_components(
-    block_type, forest, ligand_nodes, torsion_atoms, raw_atom, dof_type
+    block_type, local_parents, torsion_atoms, raw_atom, dof_type
 ):
-    """Require a rigid chemical component on either side of the central bond.
-
-    A kinematic subtree can cut through a closed ring. Matching a named
-    dihedral's sign alone does not make that subtree a valid torsion control.
-    The two axis atoms may belong to either mask because rotation leaves
-    their coordinates unchanged.
-    """
+    """Check whole chemical components using the repair's shared host topology."""
     _, atom_b, atom_c, _ = torsion_atoms
-    component = _sidechain_end_local_atoms(
-        block_type, torsion_atoms, ligand_nodes.device
+    component = set(
+        _sidechain_end_local_atoms(
+            block_type, torsion_atoms, torch.device("cpu")
+        ).tolist()
     )
-    if component.numel() == 0:
+    if not component:
         return False
-    local_atoms = torch.arange(block_type.n_atoms, device=ligand_nodes.device)
-    off_axis = (local_atoms != atom_b) & (local_atoms != atom_c)
-    expected = torch.isin(local_atoms, component)
-    affected = _raw_dof_affected_nodes(
-        forest, ligand_nodes[raw_atom], ligand_nodes, dof_type
-    )
-    return bool(
-        torch.all((affected == expected) | ~off_axis)
-        or torch.all((affected != expected) | ~off_axis)
-    )
+    affected = set()
+    for atom in range(block_type.n_atoms):
+        ancestor = atom if dof_type == BondDOFTypes.phi_p else local_parents[atom]
+        while ancestor != -1:
+            if ancestor == raw_atom:
+                affected.add(atom)
+                break
+            ancestor = local_parents[ancestor]
+    # Axis atoms are unchanged by rotation and may belong to either component.
+    off_axis = set(range(block_type.n_atoms)) - {atom_b, atom_c}
+    return (affected & off_axis) in (component & off_axis, off_axis - component)
 
 
 def _resolve_ligand_ring_controllers(
@@ -327,6 +324,12 @@ def _resolve_ligand_ring_controllers(
 ):
     original = raw_atoms
     raw_atoms = raw_atoms.clone()
+    # Copy only the first pose's ligand nodes/parents once per repair. This is
+    # discrete topology; repeated device ancestry walks add synchronization.
+    nodes = ligand_nodes[0]
+    ids, parents = torch.stack((nodes, kmd.forest.parent[nodes].long())).cpu().tolist()
+    by_id = {node: atom for atom, node in enumerate(ids)}
+    local_parents = [by_id.get(parent, -1) for parent in parents]
     # Keep the established controller when it rotates a whole chemical
     # component. An opposite outer atom inside a ring may instead tear that
     # ring; the child-central phi_p can rotate the intact opposite component.
@@ -334,7 +337,7 @@ def _resolve_ligand_ring_controllers(
         atoms = torsion_atoms_host[torsion_index]
         raw_atom = int(raw_atoms[torsion_index])
         if _ligand_controller_preserves_components(
-            block_type, kmd.forest, ligand_nodes[0], atoms, raw_atom, BondDOFTypes.phi_p
+            block_type, local_parents, atoms, raw_atom, BondDOFTypes.phi_p
         ):
             continue
         alternative = int(child_central[torsion_index])
@@ -343,8 +346,7 @@ def _resolve_ligand_ring_controllers(
             torch.any(kmd.keep_atom_fixed[alternative_nodes, int(BondDOFTypes.phi_p)])
         ) or not _ligand_controller_preserves_components(
             block_type,
-            kmd.forest,
-            ligand_nodes[0],
+            local_parents,
             atoms,
             alternative,
             BondDOFTypes.phi_p,
@@ -601,6 +603,17 @@ def _sidechain_logical_torsions_from_coords(
     ).to(dtype=pose_stack.coords.dtype)
 
 
+class _TorsionResponseError(ValueError):
+    """Format the measured matrix only if a failed repair needs diagnostics."""
+
+    def __init__(self, message, values):
+        super().__init__(message)
+        self.values = values.detach()
+
+    def __str__(self):
+        return super().__str__() + str(self.values.cpu().tolist())
+
+
 def _empirical_torsion_signs(
     kin_module: PoseStackKinematicsModule,
     raw_dofs: torch.Tensor,
@@ -640,9 +653,10 @@ def _empirical_torsion_signs(
     self_slopes = torch.diagonal(responses, dim1=1, dim2=2)
 
     if not bool(torch.all(torch.isfinite(responses))):
-        raise ValueError(
+        raise _TorsionResponseError(
             "ligand torsion raw-DOF perturbation must have finite declared-"
-            f"dihedral responses; measured {responses.detach().cpu().tolist()}"
+            "dihedral responses; measured ",
+            responses,
         )
 
     # Require UNIT magnitude, not merely non-degeneracy. The gene<->raw affine
@@ -655,10 +669,10 @@ def _empirical_torsion_signs(
     # logical chi and must be rejected.
     unit_tolerance = 5.0e-3
     if not bool(torch.all(torch.abs(torch.abs(self_slopes) - 1.0) <= unit_tolerance)):
-        raise ValueError(
+        raise _TorsionResponseError(
             "ligand torsion raw-DOF perturbation must change its declared "
-            f"dihedral with unit magnitude (tol {unit_tolerance}); measured "
-            f"{self_slopes.detach().cpu().tolist()}"
+            f"dihedral with unit magnitude (tol {unit_tolerance}); measured ",
+            self_slopes,
         )
 
     isolation_tolerance = 1.0e-2
@@ -666,17 +680,18 @@ def _empirical_torsion_signs(
         responses.shape[1], dtype=torch.bool, device=responses.device
     )
     if bool(torch.any(torch.abs(responses[:, off_diagonal]) > isolation_tolerance)):
-        raise ValueError(
+        raise _TorsionResponseError(
             "ligand torsion raw-DOF perturbation changes another declared "
             f"dihedral by more than {isolation_tolerance} rad/rad; measured "
-            f"response matrices {responses.detach().cpu().tolist()}"
+            "response matrices ",
+            responses,
         )
 
     positive = self_slopes > 0
     if bool(torch.any(positive != positive[0:1])):
-        raise ValueError(
-            "ligand torsion raw-DOF slope has inconsistent signs across poses: "
-            f"{self_slopes.detach().cpu().tolist()}"
+        raise _TorsionResponseError(
+            "ligand torsion raw-DOF slope has inconsistent signs across poses: ",
+            self_slopes,
         )
     return torch.where(positive[0], 1, -1)
 

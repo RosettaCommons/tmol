@@ -1210,8 +1210,9 @@ def run_docking(
 
     Without ``finalize`` the result holds the grid-ranked pool. With
     ``finalize=True`` the ``top_k`` candidates are promoted to full complexes,
-    exact-refined, and ranked by binding free energy (``dG``); ``best_pose_stack``
-    and the energies then come from that refinement, while ``best_genes`` /
+    exact-refined, and ranked by exact complex energy. ``best_pose_stack``
+    follows that ranking; the returned energies are the corresponding ``dG``
+    estimates in the same order. ``best_genes`` /
     ``ranked_genes`` stay the grid-GA genes (Cartesian refinement changes bond
     lengths that torsion genes cannot represent). The grid-GA output is always
     available as ``ga_result``.

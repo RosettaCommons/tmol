@@ -107,8 +107,7 @@ def _genes_from_raw_kinforest_dofs(
 class ScoringBackend(ABC):
     """The scoring contract used by the docking loop.
 
-    A future ``GridBackend`` must implement these same two methods. ``score``
-    returns one total beta16-compatible energy per pose, with shape
+    ``score`` returns one search-objective energy per pose, with shape
     ``[n_poses]``. ``minimize`` performs one batched local minimization over
     exactly the freedoms described by ``docking_dofs`` and returns a
     :class:`MinimizationResult`. A grid implementation may use a different

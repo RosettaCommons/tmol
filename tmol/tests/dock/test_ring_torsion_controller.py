@@ -1,5 +1,6 @@
 """A torsion adjacent to a ring must rotate an intact chemical component."""
 
+import pytest
 import torch
 
 from tmol import pose_stack_from_atom_array
@@ -10,9 +11,11 @@ from tmol.ligand import (
     prepare_ligand_from_mol2,
 )
 from tmol.tests.data import data_path
+from tmol.pose import repeat_pose_stack
 
 
-def test_ring_adjacent_torsions_preserve_geometry(torch_device):
+@pytest.mark.parametrize("n_poses", [1, 4])
+def test_ring_adjacent_torsions_preserve_geometry(torch_device, n_poses):
     # Ligand-only 1nav geometry reproduces the jump-stub/ring interaction;
     # regenerating its conformer changes the chosen root and hides the failure.
     path = data_path("protein_ligand_test/dock_ring_ether.mol2")
@@ -22,6 +25,7 @@ def test_ring_adjacent_torsions_preserve_geometry(torch_device):
         info.atom_array, torch_device, param_db=database, no_optH=True
     )
     pose.coords = pose.coords.double()
+    pose = repeat_pose_stack(pose, n_poses)
     docking = ld.build_ligand_docking_dofs(pose, 0)
     kin = PoseStackKinematicsModule(pose, docking.fold_forest)
     raw = ld._inverse_dofs(pose, kin)
@@ -48,14 +52,14 @@ def test_ring_adjacent_torsions_preserve_geometry(torch_device):
     ]
 
     def geometry(coords):
-        xyz = coords[nodes[0]]
+        xyz = coords[nodes]
         lengths = torch.stack(
-            [torch.linalg.vector_norm(xyz[a] - xyz[b]) for a, b in bonds]
+            [torch.linalg.vector_norm(xyz[:, a] - xyz[:, b], dim=-1) for a, b in bonds]
         )
         cosines = torch.stack(
             [
                 torch.nn.functional.cosine_similarity(
-                    xyz[a] - xyz[b], xyz[c] - xyz[b], dim=0
+                    xyz[:, a] - xyz[:, b], xyz[:, c] - xyz[:, b], dim=-1
                 )
                 for a, b, c in angles
             ]
@@ -66,7 +70,7 @@ def test_ring_adjacent_torsions_preserve_geometry(torch_device):
     for index, mapping in enumerate(docking.torsions):
         for delta in (0.5, -1.2):
             changed = raw.clone()
-            changed[nodes[0, mapping.raw_atom], int(mapping.dof_type)] += delta
+            changed[nodes[:, mapping.raw_atom], int(mapping.dof_type)] += delta
             coords = kin(changed)
             for actual, expected in zip(geometry(coords), original_geometry):
                 torch.testing.assert_close(actual, expected, rtol=0, atol=1e-8)
@@ -76,3 +80,23 @@ def test_ring_adjacent_torsions_preserve_geometry(torch_device):
             expected = torch.zeros_like(response)
             expected[:, index] = mapping.sign * delta
             torch.testing.assert_close(response, expected, rtol=0, atol=1e-8)
+
+    # Distinct simultaneous torsions in each pose also preserve the ring and
+    # the logical-chi contract when the affected chemical components overlap.
+    changed = raw.clone()
+    deltas = (
+        torch.linspace(-1.2, 0.8, n_poses * len(docking.torsions), device=torch_device)
+        .double()
+        .reshape(n_poses, -1)
+    )
+    expected = torch.empty_like(deltas)
+    for index, mapping in enumerate(docking.torsions):
+        changed[nodes[:, mapping.raw_atom], int(mapping.dof_type)] += deltas[:, index]
+        expected[:, index] = mapping.sign * deltas[:, index]
+    coords = kin(changed)
+    for actual, original_value in zip(geometry(coords), original_geometry):
+        torch.testing.assert_close(actual, original_value, rtol=0, atol=1e-8)
+    response = ld._wrap_angle(
+        ld._batched_coord_dihedrals(coords, atom_nodes) - original_chis
+    )
+    torch.testing.assert_close(response, expected, rtol=0, atol=1e-8)
