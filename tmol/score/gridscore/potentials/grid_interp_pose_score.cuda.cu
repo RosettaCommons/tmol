@@ -1,4 +1,4 @@
-#include <tmol/score/common/device_operations.cuda.impl.cuh>
+#include <tmol/backends/cuda/score/common/device_operations.cuda.impl.cuh>
 #include <tmol/score/gridscore/potentials/grid_interp_pose_score.impl.hh>
 
 namespace tmol {

@@ -1,4 +1,4 @@
-#include <tmol/score/common/device_operations.cuda.impl.cuh>
+#include <tmol/backends/cuda/score/common/device_operations.cuda.impl.cuh>
 #include <tmol/score/gridscore/potentials/live_lk_ball.impl.hh>
 
 namespace tmol {
