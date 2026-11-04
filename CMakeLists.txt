@@ -423,6 +423,7 @@ if(TMOL_HAS_CUDA)
   list(APPEND _C_SOURCES
     tmol/backends/cuda/score/common/whole_pose_scoring.cuda.cu
     tmol/backends/cuda/optimization/armijo_compiled.cuda.cu
+    tmol/dock/lbfgs_compiled.cuda.cu
     tmol/backends/cuda/io/details/compiled/gen_pose_leaf_atoms.cuda.cu
     tmol/backends/cuda/io/details/compiled/resolve_his_taut.cuda.cu
     tmol/backends/cuda/kinematics/compiled/compiled.cuda.cu
@@ -430,6 +431,11 @@ if(TMOL_HAS_CUDA)
     tmol/backends/cuda/pack/rotamer/dunbrack/compiled.cuda.cu
     tmol/backends/cuda/score/backbone_torsion/potentials/backbone_torsion_pose_score.cuda.cu
     tmol/backends/cuda/score/cartbonded/potentials/cartbonded_pose_score.cuda.cu
+    tmol/score/gridscore/potentials/grid_interp_pose_score.cuda.cu
+    tmol/score/gridscore/potentials/live_hbond.cuda.cu
+    tmol/score/gridscore/potentials/live_lk_ball.cuda.cu
+    tmol/score/gridscore/potentials/grid_score.cuda.cu
+    tmol/score/gridscore/potentials/grid_build.cuda.cu
     tmol/backends/cuda/score/genbonded/potentials/genbonded_pose_score.cuda.cu
     tmol/backends/cuda/score/constraint/potentials/constraint_score.cuda.cu
     tmol/backends/cuda/score/disulfide/potentials/disulfide_pose_score.cuda.cu
@@ -443,12 +449,6 @@ if(TMOL_HAS_CUDA)
     tmol/backends/cuda/score/lk_ball/potentials/gen_pose_waters.cuda.cu
     tmol/backends/cuda/score/metal/potentials/metal_coordination_pose_score.cuda.cu
     tmol/backends/cuda/score/na_torsion/potentials/na_torsion_pose_score.cuda.cu
-    tmol/dock/lbfgs_compiled.cuda.cu
-    tmol/score/gridscore/potentials/grid_interp_pose_score.cuda.cu
-    tmol/score/gridscore/potentials/live_hbond.cuda.cu
-    tmol/score/gridscore/potentials/live_lk_ball.cuda.cu
-    tmol/score/gridscore/potentials/grid_score.cuda.cu
-    tmol/score/gridscore/potentials/grid_build.cuda.cu
   )
   # Approximate CUDA math is accurate for the pairwise nonbonded terms and
   # materially improves their throughput. Keep every other term exact:
