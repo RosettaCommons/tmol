@@ -2,7 +2,7 @@
 
 #include <tuple>
 
-#include <Eigen/Core>
+#include <tmol/utility/portable/matrix.hh>
 
 #include <tmol/utility/tensor/TensorAccessor.h>
 #include <tmol/utility/tensor/TensorPack.h>
@@ -14,7 +14,7 @@ namespace gridscore {
 namespace potentials {
 
 template <typename Real, int N>
-using GridVec = Eigen::Matrix<Real, N, 1>;
+using GridVec = tmol::portable::Vec<Real, N>;
 
 // Receptor-grid scoring of ligand poses.
 template <

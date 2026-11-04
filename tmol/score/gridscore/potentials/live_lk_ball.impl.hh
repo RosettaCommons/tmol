@@ -47,7 +47,7 @@ auto LiveLKBallDispatch<DeviceOps, D, Real, Int>::forward(
   using lk_ball::potentials::build_don_water;
   using lk_ball::potentials::lk_ball_score;
   using lk_ball::potentials::LKBallTypeParams;
-  using Waters = Eigen::Matrix<Real, 4, 3>;
+  using Waters = tmol::portable::Mat<Real, 4, 3>;
   using Real3 = LKBVec<Real, 3>;
   using common::accumulate;
 
@@ -98,14 +98,15 @@ auto LiveLKBallDispatch<DeviceOps, D, Real, Int>::forward(
             ligand_coords[pose][ligand_water_atoms[polar_site][water][1]];
         Real3 const parameters = ligand_water_params[polar_site][water];
         if (kind == 1) {
-          WL.row(water) = build_don_water<Real>::V(xyz0, xyz1, parameters[0]);
+          tmol::portable::row_ref(WL, water) =
+              build_don_water<Real>::V(xyz0, xyz1, parameters[0]);
           continue;
         }
         Real3 const xyz2 =
             ligand_coords[pose][ligand_water_atoms[polar_site][water][2]];
         if (ligand_water_is_ring[polar_site][water])
           xyz1 = (xyz1 + xyz2) / Real(2);
-        WL.row(water) = common::build_coordinate<Real>::V(
+        tmol::portable::row_ref(WL, water) = common::build_coordinate<Real>::V(
             xyz0, xyz1, xyz2, parameters[0], parameters[1], parameters[2]);
       }
     }
@@ -143,7 +144,7 @@ auto LiveLKBallDispatch<DeviceOps, D, Real, Int>::forward(
 
     // Pair contributions are summed locally; the chain rule through the waters
     // is linear, so one propagation and one atomic flush per work item suffice.
-    Eigen::Matrix<Real, 4, 1> energy = Eigen::Matrix<Real, 4, 1>::Zero();
+    tmol::portable::Vec<Real, 4> energy = tmol::portable::Vec<Real, 4>::Zero();
     lk_ball::potentials::lk_ball_dV_dReal3<Real> d_direct =
         lk_ball::potentials::lk_ball_dV_dReal3<Real>::Zero();
     lk_ball::potentials::lk_ball_dV_dWater<Real, 4> d_water =
@@ -154,7 +155,8 @@ auto LiveLKBallDispatch<DeviceOps, D, Real, Int>::forward(
       if ((L - R).norm() >= cutoff) return;
       Waters WR;
       for (int water = 0; water < 4; ++water) {
-        WR.row(water) = receptor_waters[receptor_atom][water];
+        tmol::portable::row_ref(WR, water) =
+            receptor_waters[receptor_atom][water];
       }
       // lk_ball_score is asymmetric: I is the desolvated atom, J the occluder.
       auto const& lig = ligand_atom_params[atom];
@@ -201,12 +203,10 @@ auto LiveLKBallDispatch<DeviceOps, D, Real, Int>::forward(
       add_gradient(3, atom, d_direct.d_lkbridge_uncpl);
       if (polar_site < 0) return;
       for (int water = 0; water < 4; ++water) {
-        add_water_gradient(
-            water, 0, d_water.d_lkball_iso.row(water).transpose());
-        add_water_gradient(water, 1, d_water.d_lkball.row(water).transpose());
-        add_water_gradient(water, 2, d_water.d_lkbridge.row(water).transpose());
-        add_water_gradient(
-            water, 3, d_water.d_lkbridge_uncpl.row(water).transpose());
+        add_water_gradient(water, 0, d_water.d_lkball_iso.row(water));
+        add_water_gradient(water, 1, d_water.d_lkball.row(water));
+        add_water_gradient(water, 2, d_water.d_lkbridge.row(water));
+        add_water_gradient(water, 3, d_water.d_lkbridge_uncpl.row(water));
       }
     };
     if (!use_cell_list) {

@@ -21,7 +21,7 @@ namespace grid_score_detail {
 
 // Position of one LK-ball water from the current ligand coordinates.
 template <tmol::Device D, typename Real, typename Int>
-EIGEN_DEVICE_FUNC GridVec<Real, 3> water_position(
+TMOL_HOST_DEVICE_FUNC GridVec<Real, 3> water_position(
     TView<GridVec<Real, 3>, 2, D> const& coords,
     int pose,
     Int kind,
@@ -50,7 +50,7 @@ EIGEN_DEVICE_FUNC GridVec<Real, 3> water_position(
 
 // Adds dE/d(water position) to the gradient of the atoms that built the water.
 template <tmol::Device D, typename Real, typename Int>
-EIGEN_DEVICE_FUNC void propagate_water_gradient(
+TMOL_HOST_DEVICE_FUNC void propagate_water_gradient(
     TView<GridVec<Real, 3>, 2, D> const& coords,
     TView<GridVec<Real, 3>, 2, D> gradient,
     int pose,

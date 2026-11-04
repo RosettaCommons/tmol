@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <tuple>
 
-#include <Eigen/Core>
+#include <tmol/utility/portable/matrix.hh>
 
 #include <tmol/utility/tensor/TensorAccessor.h>
 #include <tmol/utility/tensor/TensorPack.h>
@@ -15,7 +15,7 @@ namespace gridscore {
 namespace potentials {
 
 template <typename Real, int N>
-using Vec = Eigen::Matrix<Real, N, 1>;
+using Vec = tmol::portable::Vec<Real, N>;
 
 template <
     template <tmol::Device> class DeviceOps,
