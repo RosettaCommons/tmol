@@ -552,7 +552,7 @@ class GridBackend(ScoringBackend):
         self.cuda_graph = cuda_graph
         self._minimizers: dict = {}  # shared with ``for_ligand_block`` views
         self._scorers: dict[tuple[torch.device, torch.dtype], GridScorer] = {}
-        self._atom_index_cache: dict[tuple, torch.Tensor] = {}
+        self._atom_index_cache: dict = {}
 
     def search_view(
         self, pose_stack: PoseStack
@@ -832,9 +832,26 @@ class GridBackend(ScoringBackend):
             ligand_block,
             id(pose_stack.packed_block_types),
         )
+        layout = (
+            pose_stack.packed_block_types,
+            pose_stack.block_coord_offset64,
+            pose_stack.block_type_ind64,
+        )
+        # Retain and check the actual layout owners, including in-place edits.
+        # Inference tensors have no mutation counter and are not cached.
+        versions = (
+            None
+            if any(t.is_inference() for t in layout[1:])
+            else tuple(t._version for t in layout[1:])
+        )
         cached = self._atom_index_cache.get(cache_key)
-        if cached is not None:
-            return cached
+        if (
+            versions is not None
+            and cached is not None
+            and all(a is b for a, b in zip(layout, cached[0]))
+            and versions == cached[1]
+        ):
+            return cached[2]
 
         block_types = pose_stack.block_type_ind64[:, ligand_block]
         if bool(torch.any(block_types < 0)):
@@ -852,7 +869,8 @@ class GridBackend(ScoringBackend):
             block_type.n_atoms, dtype=torch.int64, device=pose_stack.device
         )
         atom_indices = offsets + local_atoms[None, :]
-        self._atom_index_cache[cache_key] = atom_indices
+        if versions is not None:
+            self._atom_index_cache[cache_key] = (layout, versions, atom_indices)
         return atom_indices
 
     def _movable_atom_indices(
@@ -961,6 +979,17 @@ class GridBackend(ScoringBackend):
             kin_dtype,
             id(pose_stack.packed_block_types),
         )
+        layout = (
+            pose_stack.block_type_ind64,
+            pose_stack.block_coord_offset64,
+            pose_stack.inter_residue_connections64,
+            pose_stack.chain_id64,
+        )
+        if any(t.is_inference() for t in layout):
+            return _PopulationMinimizer(self, pose_stack, docking_dofs, kin_dtype)
+        # Captured kinematics must follow this layout. Tensor keys retain their
+        # owners; mutation counters invalidate an edited layout without a sync.
+        key += tuple((t, t._version) for t in layout)
         if key not in self._minimizers:
             self._minimizers.clear()
             self._minimizers[key] = _PopulationMinimizer(
