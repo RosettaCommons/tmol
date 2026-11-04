@@ -86,7 +86,7 @@ class PoseStack:
             inter_residue_connections=_take(self.inter_residue_connections),
             inter_block_bondsep=_take(self.inter_block_bondsep),
             block_type_ind=_take(self.block_type_ind),
-            pdb_info=None if self.pdb_info is None else self.pdb_info[indices],
+            pdb_info=None if self.pdb_info is None else self.pdb_info.take(indices),
         )
 
     # Copy semantics

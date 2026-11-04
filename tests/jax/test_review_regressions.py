@@ -187,3 +187,17 @@ def test_cubic_line_search_quadratic():
     assert len(calls) == 2
     assert float(value) < 1e-12
     np.testing.assert_allclose(gradient, 0, atol=1e-6)
+
+
+@pytest.mark.parametrize(
+    "field", ["chain_id", "res_num", "res_name", "atom_record_type"]
+)
+def test_pose_slice_preserves_missing_metadata_fields(heterogeneous_pose, field):
+    pose = heterogeneous_pose.replace(
+        pdb_info=attrs.evolve(heterogeneous_pose.pdb_info, **{field: None})
+    )
+    assert getattr(pose[-1].pdb_info, field) is None
+    blank = attrs.evolve(
+        pose.pdb_info, chain_id=None, res_num=None, res_name=None, atom_record_type=None
+    )
+    assert pose.replace(pdb_info=blank)[-1].n_poses == 1

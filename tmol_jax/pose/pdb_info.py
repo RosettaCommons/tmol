@@ -31,11 +31,21 @@ class PDBInfo:
     # Shape helpers
     @property
     def n_poses(self) -> int:
-        return int(self.res_num.shape[0]) if self.res_num.ndim == 2 else 0
+        for values in (
+            self.res_num,
+            self.chain_id,
+            self.res_name,
+            self.atom_record_type,
+        ):
+            if values is not None and len(values):
+                return len(values)
+        return 0
 
     @property
     def max_n_blocks(self) -> int:
-        return int(self.res_num.shape[1]) if self.res_num.ndim == 2 else 0
+        if self.res_num is not None and self.res_num.ndim == 2:
+            return int(self.res_num.shape[1])
+        return 0
 
     # Slicing
     def __getitem__(self, index) -> "PDBInfo":
@@ -43,13 +53,24 @@ class PDBInfo:
         indices = np.atleast_1d(np.arange(self.n_poses)[index])
         if indices.ndim != 1:
             raise IndexError("pose selection must be one dimensional")
+        return self.take(indices)
+
+    def take(self, indices) -> "PDBInfo":
+        """Select normalized pose indices, preserving missing metadata fields."""
+
+        def rows(values):
+            return None if values is None else [list(values[i]) for i in indices]
+
+        records = self.atom_record_type
         return PDBInfo(
-            chain_id=[list(self.chain_id[i]) for i in indices],
-            res_num=self.res_num[indices].copy(),
-            res_name=[list(self.res_name[i]) for i in indices],
-            atom_record_type=[
-                [list(atoms) for atoms in self.atom_record_type[i]] for i in indices
-            ],
+            chain_id=rows(self.chain_id),
+            res_num=None if self.res_num is None else self.res_num[indices].copy(),
+            res_name=rows(self.res_name),
+            atom_record_type=(
+                None
+                if records is None
+                else [[list(atoms) for atoms in records[i]] for i in indices]
+            ),
         )
 
     # Factories
