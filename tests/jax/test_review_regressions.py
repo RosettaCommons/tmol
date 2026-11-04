@@ -201,3 +201,20 @@ def test_pose_slice_preserves_missing_metadata_fields(heterogeneous_pose, field)
         pose.pdb_info, chain_id=None, res_num=None, res_name=None, atom_record_type=None
     )
     assert pose.replace(pdb_info=blank)[-1].n_poses == 1
+
+
+def test_elec_adapter_preserves_restype_overrides_and_compound_patches():
+    from types import SimpleNamespace
+
+    from tmol_jax.score.elec.params import _charges_for_block_type
+
+    block = SimpleNamespace(name="LIG:nterm:conj_x:other", atoms=("N", "H", "V"))
+    table = {
+        "LIG": {
+            "N": {"": 1.0, "nterm:conj_x": 2.0, "nterm:conj_x:other": 3.0},
+            "H": {"": 4.0},
+        }
+    }
+    np.testing.assert_array_equal(_charges_for_block_type(block, table), [3, 4, 0])
+    block.elec_partial_charges = {"N": -0.5, "H": 0.5}
+    np.testing.assert_array_equal(_charges_for_block_type(block, table), [-0.5, 0.5, 0])

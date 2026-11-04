@@ -14,8 +14,12 @@ import jax.numpy as jnp
 import numpy as np
 
 from tmol_jax.types import pytree_dataclass
-
-# Global parameters                                                      #
+from tmol_core.scoring.elec import (
+    partial_charge_table as _partial_charges_dict,
+    count_pair_table as _cp_reps_dict,  # noqa: F401 (legacy preparation import)
+    partial_charges_for_block,
+    representative_mapping_for_block as representative_mapping_for_block_type,
+)
 
 
 @pytree_dataclass
@@ -51,37 +55,14 @@ def elec_global_params_from_database(elec_db: Any) -> ElecGlobalParams:
     )
 
 
-# Partial-charge lookup                                                  #
-
-
-def _partial_charges_dict(elec_db: Any) -> Dict[str, Dict[str, Dict[str, float]]]:
-    """Turn ``elec_db.atom_charge_parameters`` into a nested dict
-    ``{res: {atom_name: {patch: charge}}}`` where ``patch == ''`` means
-    "unpatched".
-    """
-
-    out: Dict[str, Dict[str, Dict[str, float]]] = {}
-    for row in elec_db.atom_charge_parameters:
-        tag = row.res.split(":")
-        assert len(tag) <= 2, (
-            "Each atom charge can only be specialized by one patch: " + row.res
-        )
-        if len(tag) == 1:
-            base, patch = tag[0], ""
-        else:
-            base, patch = tag[0], tag[1]
-        out.setdefault(base, {}).setdefault(row.atom, {})[patch] = float(row.charge)
-    return out
-
-
 def _charges_for_block_type(
     block_type: Any,
     partial_charges: Dict[str, Dict[str, Dict[str, float]]],
 ) -> np.ndarray:
     """Per-atom partial charges for one block type, as ``float32[n_atoms]``.
 
-    Atoms absent from the DB return 0.0 (silently). That matches the
-    upstream treatment of virtual atoms.
+    Preserve the JAX zero-fill policy for absent charges; the shared lookup
+    otherwise follows canonical compound-patch precedence and validation.
     """
 
     atoms = tuple(block_type.atoms)
@@ -100,26 +81,7 @@ def _charges_for_block_type(
                 out[i] = np.float32(restype_charges[atm_name])
         return out
 
-    name = str(block_type.name)
-    res, *patches = name.split(":")
-    # Unpatched last — see upstream `get_partial_charges_for_block`.
-    patches.append("")
-
-    res_table = partial_charges.get(res)
-    if res_table is None:
-        return out
-
-    for i, atm in enumerate(atoms):
-        atm_name = getattr(atm, "name", atm)
-        atom_table = res_table.get(atm_name)
-        if atom_table is None:
-            # Atom not in DB: upstream raises; we silently zero.
-            continue
-        for variant in patches:
-            if variant in atom_table:
-                out[i] = np.float32(atom_table[variant])
-                break
-    return out
+    return partial_charges_for_block(block_type, partial_charges, missing=0.0)
 
 
 def _per_block_type_charges(
@@ -167,86 +129,6 @@ def atom_charges_for_pose_stack(
         (per_type_charges,), pose_stack, packed_block_types, defaults=(0.0,)
     )
     return charges
-
-
-# Count-pair representative mapping                                      #
-
-
-def _cp_reps_dict(elec_db: Any) -> Dict[str, Dict[str, Dict[str, str]]]:
-    """Parse ``atom_cp_reps_parameters`` into
-    ``{res: {outer_atom: {patch: inner_atom}}}``.
-
-    See the upstream comment in :mod:`tmol.score.elec.params` for the
-    subtle "last-write-wins" semantics of overlapping entries; we keep
-    that behaviour by iterating in declared order and simply
-    overwriting.
-    """
-
-    out: Dict[str, Dict[str, Dict[str, str]]] = {}
-    for row in elec_db.atom_cp_reps_parameters:
-        tag = row.res.split(":")
-        assert len(tag) <= 2, (
-            "Each cp-rep mapping can only be specialized by one patch: " + row.res
-        )
-        if len(tag) == 1:
-            base, patch = tag[0], ""
-        else:
-            base, patch = tag[0], tag[1]
-        out.setdefault(base, {}).setdefault(row.atm_outer, {})[patch] = row.atm_inner
-    return out
-
-
-def representative_mapping_for_block_type(
-    block_type: Any, cp_reps: Dict[str, Dict[str, Dict[str, str]]]
-) -> np.ndarray:
-    """``int32[n_atoms]`` remap ``atom -> representative_atom`` for one BT.
-
-    An atom with no remap points at itself. This is the count-pair
-    representative logic: pretend a closer atom is actually at the
-    position of a specific further-out atom, so short-range
-    interactions get correctly scaled.
-    """
-
-    n = len(block_type.atoms)
-    mapping = np.arange(n, dtype=np.int32)
-
-    name = str(block_type.name)
-    res, *patches = name.split(":")
-    patches.append("")
-
-    res_table = cp_reps.get(res)
-    if res_table is None:
-        return mapping
-
-    atom_to_idx = getattr(block_type, "atom_to_idx", None)
-    if atom_to_idx is None:
-        atom_to_idx = {a.name: i for i, a in enumerate(block_type.atoms)}
-
-    for outer_name in atom_to_idx.keys():
-        patch_table = res_table.get(outer_name)
-        if patch_table is None:
-            continue
-
-        inner_name = None
-        for v in patches:
-            if v in patch_table:
-                inner_name = patch_table[v]
-                break
-        if inner_name is None:
-            continue
-        if inner_name not in atom_to_idx:
-            raise KeyError(
-                "Invalid elec cp mapping: "
-                + res
-                + " "
-                + outer_name
-                + "->"
-                + str(inner_name)
-            )
-        # "inner" is really the far atom used as outer's representative
-        mapping[atom_to_idx[inner_name]] = atom_to_idx[outer_name]
-
-    return mapping
 
 
 __all__ = [
