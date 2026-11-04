@@ -11,6 +11,20 @@ import tempfile
 import tomllib
 
 
+def stage_licenses(root, stage):
+    """Preserve notices in wheel metadata, outside the compiled package."""
+    shutil.copyfile(root / "LICENSE", stage / "LICENSE")
+    shutil.copyfile(root / "packages/jax-cuda/NOTICE", stage / "NOTICE")
+    licenses = stage / "licenses"
+    eigen = licenses / "Eigen"
+    eigen.mkdir(parents=True)
+    for source in sorted((root / "tmol/extern/Eigen").glob("COPYING.*")):
+        shutil.copyfile(source, eigen / source.name)
+    shutil.copyfile(
+        root / "tmol/extern/moderngpu/LICENSE.md", licenses / "moderngpu-LICENSE.md"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--outdir", type=Path, default=Path("dist/jax-cuda"))
@@ -66,7 +80,7 @@ def main():
             root / "tmol/extern/moderngpu",
             stage / "include/tmol/extern/moderngpu",
         )
-        shutil.copyfile(root / "LICENSE", stage / "LICENSE")
+        stage_licenses(root, stage)
         metadata = tomllib.loads((root / "pyproject.toml").read_text())
         (stage / "VERSION").write_text(metadata["project"]["version"] + "\n")
         environment = os.environ.copy()

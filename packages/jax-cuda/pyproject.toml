@@ -6,12 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "tmol-jax-cuda"
 dynamic = ["version", "dependencies"]
 description = "Optional CUDA pair-scoring kernels for tmol-jax"
-license = "Apache-2.0"
+license = "BSD-3-Clause AND Apache-2.0 AND MPL-2.0 AND BSD-2-Clause AND 0BSD"
+license-files = ["LICENSE", "NOTICE", "licenses/Eigen/*", "licenses/moderngpu-LICENSE.md"]
 requires-python = ">=3.12"
 
 [project.urls]
-Repository = "https://github.com/uw-ipd/tmol"
-Documentation = "https://uw-ipd.github.io/tmol/"
+Repository = "https://github.com/RosettaCommons/tmol"
+Documentation = "https://rosettacommons.github.io/tmol/"
 
 [tool.setuptools.dynamic]
 version = {file = "VERSION"}
