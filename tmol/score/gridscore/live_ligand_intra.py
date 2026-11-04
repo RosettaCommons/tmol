@@ -324,7 +324,7 @@ def _weighted_movable_block_pairs(
         }
         for score_type, weight in softened.items():
             if score_type in score_types:
-                diagonal_weights[score_types.index(score_type)] = weight
+                diagonal_weights[score_types.index(score_type)].fill_(weight)
 
     n_blocks = unweighted.shape[2]
     diagonal = torch.eye(n_blocks, dtype=torch.bool, device=ligand_coords.device)[
@@ -341,7 +341,7 @@ def _weighted_movable_block_pairs(
         context_diagonal = torch.zeros(
             (n_blocks, n_blocks), dtype=torch.bool, device=ligand_coords.device
         )
-        context_diagonal[context, context] = True
+        context_diagonal.diagonal().index_fill_(0, context, True)
         weighted = torch.where(
             context_diagonal[None, None], torch.zeros_like(weighted), weighted
         )
