@@ -23,7 +23,8 @@ TMOL_HOST_DEVICE_FUNC Int mirror_grid_index(Int index, Int size) {
 }
 
 template <typename Real>
-TMOL_HOST_DEVICE_FUNC void cubic_bspline_weights(Real fraction, Real weights[4]) {
+TMOL_HOST_DEVICE_FUNC void cubic_bspline_weights(
+    Real fraction, Real weights[4]) {
   weights[3] = fraction * fraction * fraction / Real(6);
   weights[0] = Real(1) / Real(6) + fraction * (fraction - Real(1)) / Real(2)
                - weights[3];

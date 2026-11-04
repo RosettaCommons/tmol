@@ -155,7 +155,8 @@ auto LiveLKBallDispatch<DeviceOps, D, Real, Int>::forward(
       if ((L - R).norm() >= cutoff) return;
       Waters WR;
       for (int water = 0; water < 4; ++water) {
-        tmol::portable::row_ref(WR, water) = receptor_waters[receptor_atom][water];
+        tmol::portable::row_ref(WR, water) =
+            receptor_waters[receptor_atom][water];
       }
       // lk_ball_score is asymmetric: I is the desolvated atom, J the occluder.
       auto const& lig = ligand_atom_params[atom];
