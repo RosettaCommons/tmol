@@ -23,7 +23,7 @@ using tmol::score::ljlk::potentials::LJLKTypeParams;
 // Grid type rows carry the raw well depth and no LK factors; the shared pair
 // potentials consume the derived form.
 template <tmol::Device D, typename Real>
-EIGEN_DEVICE_FUNC LJLKTypeParams<Real> type_row(
+TMOL_HOST_DEVICE_FUNC LJLKTypeParams<Real> type_row(
     TView<Real, 2, D> const& rows, int64_t type) {
   return LJLKTypeParams<Real>{
       rows[type][0],
@@ -42,7 +42,7 @@ EIGEN_DEVICE_FUNC LJLKTypeParams<Real> type_row(
 }
 
 template <typename Real>
-EIGEN_DEVICE_FUNC Real ramp_fraction(Real delta, Real width) {
+TMOL_HOST_DEVICE_FUNC Real ramp_fraction(Real delta, Real width) {
   if (delta < 0) return 1;
   if (delta >= width) return 0;
   Real const scaled = delta / width;
@@ -51,7 +51,7 @@ EIGEN_DEVICE_FUNC Real ramp_fraction(Real delta, Real width) {
 }
 
 template <tmol::Device D, typename Real>
-EIGEN_DEVICE_FUNC bool finite_water(
+TMOL_HOST_DEVICE_FUNC bool finite_water(
     TView<Real, 3, D> const& waters, int64_t atom, int water) {
   return std::isfinite(waters[atom][water][0])
          && std::isfinite(waters[atom][water][1])
@@ -59,7 +59,7 @@ EIGEN_DEVICE_FUNC bool finite_water(
 }
 
 template <tmol::Device D, typename Real>
-EIGEN_DEVICE_FUNC bool has_water(
+TMOL_HOST_DEVICE_FUNC bool has_water(
     TView<Real, 3, D> const& waters, int64_t atom) {
   for (int water = 0; water < 4; ++water) {
     if (finite_water<D, Real>(waters, atom, water)) return true;
@@ -69,7 +69,7 @@ EIGEN_DEVICE_FUNC bool has_water(
 
 // Smallest (squared distance to a finite water of `atom`) - offset, capped.
 template <tmol::Device D, typename Real>
-EIGEN_DEVICE_FUNC Real min_water_delta(
+TMOL_HOST_DEVICE_FUNC Real min_water_delta(
     TView<Real, 3, D> const& waters,
     int64_t atom,
     Real x,
@@ -89,7 +89,7 @@ EIGEN_DEVICE_FUNC Real min_water_delta(
 }
 
 template <typename Real>
-EIGEN_DEVICE_FUNC Real directional_lk(
+TMOL_HOST_DEVICE_FUNC Real directional_lk(
     Real distance,
     LJLKTypeParams<Real> const& desolvated,
     LJLKTypeParams<Real> const& occluding,
@@ -114,7 +114,7 @@ struct PairSums {
 };
 
 template <tmol::Device D, typename Real, typename Int>
-EIGEN_DEVICE_FUNC void voxel_xyz(
+TMOL_HOST_DEVICE_FUNC void voxel_xyz(
     TView<Real, 1, D> const& origin,
     Real spacing,
     Int n_y,
@@ -128,7 +128,7 @@ EIGEN_DEVICE_FUNC void voxel_xyz(
 
 // Calls visit(atom) for every receptor atom in the 27 cells around (x, y, z).
 template <tmol::Device D, typename Real, typename Int, typename Visit>
-EIGEN_DEVICE_FUNC void for_neighbors(
+TMOL_HOST_DEVICE_FUNC void for_neighbors(
     Real x,
     Real y,
     Real z,

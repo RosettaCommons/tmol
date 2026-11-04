@@ -2,7 +2,7 @@
 
 #include <tuple>
 
-#include <Eigen/Core>
+#include <tmol/utility/portable/matrix.hh>
 
 #include <tmol/score/hbond/potentials/params.hh>
 #include <tmol/utility/tensor/TensorAccessor.h>
@@ -15,7 +15,7 @@ namespace gridscore {
 namespace potentials {
 
 template <typename Real, int N>
-using HBVec = Eigen::Matrix<Real, N, 1>;
+using HBVec = tmol::portable::Vec<Real, N>;
 
 template <
     template <tmol::Device> class DeviceOps,

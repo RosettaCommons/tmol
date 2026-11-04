@@ -3,7 +3,7 @@
 #include <cmath>
 #include <limits>
 
-#include <Eigen/Core>
+#include <tmol/utility/portable/matrix.hh>
 
 #include <tmol/score/common/diamond_macros.hh>
 #include <tmol/utility/tensor/TensorAccessor.h>
@@ -14,7 +14,7 @@ namespace gridscore {
 namespace potentials {
 
 template <typename Int>
-EIGEN_DEVICE_FUNC Int mirror_grid_index(Int index, Int size) {
+TMOL_HOST_DEVICE_FUNC Int mirror_grid_index(Int index, Int size) {
   if (size <= 1) return 0;
   Int const period = 2 * size - 2;
   index %= period;
@@ -23,7 +23,7 @@ EIGEN_DEVICE_FUNC Int mirror_grid_index(Int index, Int size) {
 }
 
 template <typename Real>
-EIGEN_DEVICE_FUNC void cubic_bspline_weights(Real fraction, Real weights[4]) {
+TMOL_HOST_DEVICE_FUNC void cubic_bspline_weights(Real fraction, Real weights[4]) {
   weights[3] = fraction * fraction * fraction / Real(6);
   weights[0] = Real(1) / Real(6) + fraction * (fraction - Real(1)) / Real(2)
                - weights[3];
@@ -32,7 +32,7 @@ EIGEN_DEVICE_FUNC void cubic_bspline_weights(Real fraction, Real weights[4]) {
 }
 
 template <typename Real>
-EIGEN_DEVICE_FUNC void cubic_bspline_weights_and_derivatives(
+TMOL_HOST_DEVICE_FUNC void cubic_bspline_weights_and_derivatives(
     Real fraction, Real weights[4], Real derivatives[4]) {
   cubic_bspline_weights(fraction, weights);
   derivatives[3] = fraction * fraction / Real(2);
@@ -56,7 +56,7 @@ struct GridStencil {
 };
 
 template <typename Real>
-EIGEN_DEVICE_FUNC GridStencil<Real> make_grid_stencil(
+TMOL_HOST_DEVICE_FUNC GridStencil<Real> make_grid_stencil(
     Real const position[3], int const dims[3], Real out_of_bounds_penalty) {
   GridStencil<Real> stencil;
   Real const max_index = Real(1 << 30);
@@ -97,7 +97,7 @@ EIGEN_DEVICE_FUNC GridStencil<Real> make_grid_stencil(
 
 // Value and index-space gradient of one coefficient grid at a stencil.
 template <tmol::Device D, typename Real>
-EIGEN_DEVICE_FUNC void contract_grid(
+TMOL_HOST_DEVICE_FUNC void contract_grid(
     TView<Real, 4, D> const& coefficients,
     int grid,
     GridStencil<Real> const& s,
