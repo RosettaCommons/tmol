@@ -16,6 +16,7 @@ from importlib.util import find_spec
 assert find_spec("jax") is None, "Torch-only CI unexpectedly contains JAX"
 PY
 
+TMOL_TEST_BACKENDS="${TMOL_TEST_BACKENDS:-torch-cpu,torch-mps}" \
 CUDA_VISIBLE_DEVICES="" COVERAGE_FILE="${GITHUB_WORKSPACE}/.coverage.cpu" \
   pytest -p no:rerunfailures -ra --durations=25 \
   -n "${CPU_PYTEST_WORKERS}" --dist=worksteal \

@@ -16,6 +16,8 @@ import tomllib
 
 import numpy as np
 
+from build_core import build_core
+
 
 def export_parameters(source, destination):
     from tmol.database.scoring import (
@@ -92,12 +94,14 @@ def main():
         type=Path,
         help="Only prepare canonical NumPy/YAML tables for source development",
     )
+    parser.add_argument("--no-isolation", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     source = root / "tmol/database/default"
     if args.export_data is not None:
         export_parameters(source, args.export_data.resolve())
         return
+    build_core(args.outdir, no_isolation=args.no_isolation)
     with tempfile.TemporaryDirectory(prefix="tmol-jax-build-") as temporary:
         stage = Path(temporary)
         shutil.copytree(
@@ -116,6 +120,7 @@ def main():
                 sys.executable,
                 "-m",
                 "build",
+                *(["--no-isolation"] if args.no_isolation else []),
                 "--outdir",
                 str(args.outdir.resolve()),
                 str(stage),

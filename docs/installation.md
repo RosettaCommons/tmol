@@ -9,7 +9,10 @@ backend matching your PyTorch installation:
 | GPU with CUDA 12-enabled PyTorch | `python -m pip install "tmol[cu12]"` |
 | GPU with CUDA 13-enabled PyTorch | `python -m pip install "tmol[cu13]"` |
 
-`tmol` contains the Python API, data, and CPU kernels. The GPU extras add
+`tmol` contains the Python API, scoring data, and CPU kernels. Its matching
+`tmol-core` dependency supplies shared host chemistry. See
+[shared core development](shared_core.md) for source builds and Torch-free JAX
+artifacts. The GPU extras add
 `tmol-ops-cu12` or `tmol-ops-cu13` at the **same version** as the base package.
 GPU installations also support CPU execution. You do not need a separate TMol
 wheel for each PyTorch minor version or CUDA minor version.

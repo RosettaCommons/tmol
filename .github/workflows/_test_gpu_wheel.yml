@@ -39,6 +39,16 @@ jobs:
           path: base-wheel
           run-id: ${{ inputs.candidate-run-id || github.run_id }}
           github-token: ${{ github.token }}
+      - name: Inspect shared-core dependency
+        id: core
+        run: python scripts/package_requirements.py --github-output "$GITHUB_OUTPUT" wheels/*.whl base-wheel/*.whl
+      - uses: actions/download-artifact@v4
+        if: steps.core.outputs.required == 'true'
+        with:
+          name: tmol-core
+          path: core-dist
+          run-id: ${{ inputs.candidate-run-id || github.run_id }}
+          github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
         if: inputs.test-jax
         with:
