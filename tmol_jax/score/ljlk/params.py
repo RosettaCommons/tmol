@@ -151,18 +151,7 @@ class LJTypeParams:
         ``idx >= 0`` if they care about padding.
         """
         safe = jnp.where(idx >= 0, idx, 0)
-        return LJTypeParams(
-            lj_radius=self.lj_radius[safe],
-            lj_wdepth=self.lj_wdepth[safe],
-            is_donor=self.is_donor[safe],
-            is_acceptor=self.is_acceptor[safe],
-            is_hydroxyl=self.is_hydroxyl[safe],
-            is_polarh=self.is_polarh[safe],
-            is_carbon_lk=self.is_carbon_lk[safe],
-            lk_volume=self.lk_volume[safe],
-            lk_dgfree=self.lk_dgfree[safe],
-            lk_lambda=self.lk_lambda[safe],
-        )
+        return jax.tree.map(lambda field: field[safe], self)
 
 
 @pytree_dataclass
