@@ -34,6 +34,7 @@ from tmol.pose._pose_stack import PoseStack
 from tmol.pose import repeat_pose_stack
 from tmol.score import beta2016_score_function
 from tmol.score.gridscore import GridScorer, GridSet, build_grid
+from tmol.score.gridscore.grid import _setup_scoring_parameters
 from tmol.score.gridscore.live_hbond import LiveHBondData, build_live_hbond_data
 from tmol.score.gridscore.live_ligand_intra import (
     LiveLigandIntraData,
@@ -604,7 +605,7 @@ class GridBackend(ScoringBackend):
         """
         block = resolve_ligand_block(pose_stack, ligand)
         flexible = validated_sidechain_blocks(
-            pose_stack, block, flexible_residues or ()
+            pose_stack, block, () if flexible_residues is None else flexible_residues
         )
         if atom_types is None:
             block_type = pose_stack.block_type(0, block)
@@ -677,7 +678,9 @@ class GridBackend(ScoringBackend):
         block_type_index = int(reference_pose_stack.block_type_ind64[0, ligand_block])
         block_type = pbt.active_block_types[block_type_index]
         sidechain_blocks = validated_sidechain_blocks(
-            reference_pose_stack, ligand_block, flexible_residues or ()
+            reference_pose_stack,
+            ligand_block,
+            () if flexible_residues is None else flexible_residues,
         )
         context_blocks = sidechain_context_blocks(
             reference_pose_stack, ligand_block, sidechain_blocks
@@ -739,10 +742,12 @@ class GridBackend(ScoringBackend):
                 bbox_padding=bbox_padding,
                 lk_ball_grid=lk_ball_grid,
             )
+        else:
+            # Reused grids may have been built with a different palette.
+            _setup_scoring_parameters(reference_pose_stack, param_db)
         missing = set(ligand_atom_types) - set(grids.atom_type_names)
         if missing:
             raise ValueError(f"grids lack the ligand atom types {sorted(missing)}")
-        # Grid construction initializes the packed ljlk/elec parameters (charges).
         ligand_charges = torch.cat(
             [
                 pbt.elec_partial_charge[index, : pbt.active_block_types[index].n_atoms]

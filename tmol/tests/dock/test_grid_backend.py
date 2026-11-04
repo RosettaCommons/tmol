@@ -570,10 +570,13 @@ def test_shared_pocket_grids_match_per_ligand_grids():
     pocket = GridBackend.pocket_grids(
         reference, block, param_db, atom_types=("CH1", "OH", *alone.ligand_atom_types)
     )
-    shared = GridBackend.from_pose_stack(reference, block, param_db, grids=pocket)
+    fresh, fresh_db = _load_cdk2_pose()
+    assert fresh.packed_block_types is not reference.packed_block_types
+    assert not hasattr(fresh.packed_block_types, "elec_partial_charge")
+    shared = GridBackend.from_pose_stack(fresh, block, fresh_db, grids=pocket)
     assert set(alone.grids.atom_type_names) < set(pocket.atom_type_names)
     torch.testing.assert_close(
-        shared.score(reference), alone.score(reference), rtol=1e-10, atol=1e-10
+        shared.score(fresh), alone.score(reference), rtol=1e-10, atol=1e-10
     )
     # Backends sharing grids share one device copy of them.
     assert shared._scorer("cpu", torch.float64).grids is pocket.on("cpu", torch.float64)
