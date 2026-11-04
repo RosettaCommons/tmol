@@ -64,9 +64,7 @@ class DisulfideEnergyTerm(EnergyTerm):
         self._params_cache = params
         return params
 
-    # ------------------------------------------------------------------ #
     # Setup                                                              #
-    # ------------------------------------------------------------------ #
     def setup_for_pose_stack(self, pose_stack: Any, pbt: Any = None) -> dict[str, Any]:
         """Index the CA, CB and SG atoms of every disulfide-bonded cystine pair.
 

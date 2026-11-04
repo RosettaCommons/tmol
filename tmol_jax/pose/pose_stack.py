@@ -24,9 +24,7 @@ class PoseStack:
     block_type_ind: jax.Array  # int32[n_poses, max_n_blocks]
     pdb_info: Optional[Any] = None  # PDBInfo; aux.
 
-    # ---------------------------------------------------------------
     # Properties
-    # ---------------------------------------------------------------
 
     @property
     def n_poses(self) -> int:
@@ -64,9 +62,7 @@ class PoseStack:
         """Device holding the pose coordinates."""
         return self.coords.device
 
-    # ---------------------------------------------------------------
     # Slicing / indexing
-    # ---------------------------------------------------------------
 
     def __len__(self) -> int:
         return self.n_poses
@@ -93,9 +89,7 @@ class PoseStack:
             pdb_info=None if self.pdb_info is None else self.pdb_info[indices],
         )
 
-    # ---------------------------------------------------------------
     # Copy semantics
-    # ---------------------------------------------------------------
 
     def to(self, device) -> "PoseStack":
         """Move pose and packed-block arrays to a JAX device."""
@@ -113,9 +107,7 @@ class PoseStack:
         """Functional field update helper."""
         return attr.evolve(self, **updates)
 
-    # ---------------------------------------------------------------
     # Block helpers (mirror the upstream Python-level conveniences)
-    # ---------------------------------------------------------------
 
     def block_type(self, pose_ind: int, block_ind: int):
         """Look up the ``RefinedResidueType``-equivalent block type.
@@ -127,9 +119,7 @@ class PoseStack:
             int(self.block_type_ind[pose_ind, block_ind])
         ]
 
-    # ---------------------------------------------------------------
     # Constructors
-    # ---------------------------------------------------------------
 
 
 __all__ = [

@@ -29,9 +29,7 @@ import jax.numpy as jnp
 
 from tmol_jax.types import Array
 
-# ---------------------------------------------------------------------------#
 # Safe primitives
-# ---------------------------------------------------------------------------#
 #
 # The ``eps`` values below are chosen so that ``sq > eps`` separates
 # "exact zero" (padded / degenerate slots) from any physically
@@ -93,9 +91,7 @@ def _safe_atan2(y: Array, x: Array, eps: float = _EPS_ATAN2) -> Array:
     return jnp.where(degenerate, jnp.zeros_like(y_safe), jnp.arctan2(y_safe, x_safe))
 
 
-# ---------------------------------------------------------------------------#
 # Public API
-# ---------------------------------------------------------------------------#
 
 
 def distance(a: Array, b: Array) -> Array:

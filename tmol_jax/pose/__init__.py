@@ -1,17 +1,4 @@
-"""``tmol_jax.pose`` -- PoseStack, PackedBlockTypes, and builders (JAX port).
-
-Top-level re-exports for the pose package. Imports are lazy via
-``__getattr__`` so a transient bug in one submodule does not prevent
-``import tmol_jax.pose`` from succeeding.
-
-Public names
-------------
-- :class:`PoseStack` -- the batched molecular system container.
-- :class:`PackedBlockTypes` -- the residue-type palette attached to a
-  ``PoseStack``.
-- :class:`PoseStackBuilder` -- convenience constructors for ``PoseStack``.
-- :class:`PDBInfo` -- per-atom / per-residue PDB metadata.
-"""
+"""``tmol_jax.pose`` -- PoseStack, PackedBlockTypes, and builders (JAX port)."""
 
 from __future__ import annotations
 

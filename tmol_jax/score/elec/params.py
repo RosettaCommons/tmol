@@ -1,32 +1,9 @@
-"""Electrostatics parameter containers and per-atom charge assignment.
+"""Electrostatic globals, partial charges and count-pair representatives.
 
-Port of :mod:`tmol.score.elec.params` to JAX.
-
-This module exposes
-
-* :class:`ElecGlobalParams` — a pytree holding the five sigmoidal-
-  dielectric / cutoff scalars (``D``, ``D0``, ``S``, ``min_dis``,
-  ``max_dis``), loaded from :class:`tmol_jax.database.scoring.elec.ElecDatabase`.
-* :func:`elec_global_params_from_database` — builds the above from a
-  database object.
-* :func:`atom_charges_for_pose_stack` — produces a
-  ``float32[n_poses, max_n_atoms_per_pose]`` array of per-atom partial
-  charges, with 0 for atoms missing from the database.
-
-The database stores partial charges keyed by ``(residue_name,
-atom_name)``, with optional patch specialisation (e.g.
-``ALA:cterm``). The resolution rule mirrors upstream:
-
-1. Parse ``block_type.name`` into ``base:patch1[:patch2]``; the
-   unpatched basename is always tried last.
-2. If the base residue is missing from the DB, all atoms get charge 0.
-3. Otherwise, for each atom walk the patch list in order and return
-   the first hit; if no patch hit, fall back to the unpatched entry.
-
-Everything happens in numpy on the host -- charges are static per
-block type so we do not need (and would gain nothing from) a JAX
-scan.
-"""
+Setup resolves residue/patch-specific charge rows and representative atoms,
+then gathers the resulting host tables onto the JAX pose layout. Custom
+restype-carried charges take precedence. Cached tables must retain their
+parameter and topology ownership."""
 
 from __future__ import annotations
 
@@ -38,9 +15,7 @@ import numpy as np
 
 from tmol_jax.types import pytree_dataclass
 
-# --------------------------------------------------------------------- #
 # Global parameters                                                      #
-# --------------------------------------------------------------------- #
 
 
 @pytree_dataclass
@@ -76,9 +51,7 @@ def elec_global_params_from_database(elec_db: Any) -> ElecGlobalParams:
     )
 
 
-# --------------------------------------------------------------------- #
 # Partial-charge lookup                                                  #
-# --------------------------------------------------------------------- #
 
 
 def _partial_charges_dict(elec_db: Any) -> Dict[str, Dict[str, Dict[str, float]]]:
@@ -169,27 +142,10 @@ def atom_charges_for_pose_stack(
     packed_block_types: Any,
     elec_db: Any,
 ) -> jax.Array:
-    """Assign a partial charge to every atom slot of a ``PoseStack``.
+    """Gather float32 charges [poses, atoms], zeroing padding.
 
-    Parameters
-    ----------
-    pose_stack:
-        A :class:`~tmol_jax.pose.pose_stack.PoseStack` -- we use
-        ``block_type_ind``, ``block_coord_offset``, and the shape of
-        ``coords``.
-    packed_block_types:
-        The matching ``PackedBlockTypes`` palette. Must match the one
-        stored on ``pose_stack``.
-    elec_db:
-        An ``ElecDatabase`` (or anything with ``atom_charge_parameters``
-        of the same shape).
-
-    Returns
-    -------
-    ``float32[n_poses, max_n_atoms_per_pose]``
-        Row-major, with zero padding for non-real atom slots and for
-        atoms missing from the charge DB.
-    """
+    Reuse a palette annotation only for the same database/topology owners;
+    otherwise resolve charges from elec_db. Restype-carried charges take precedence."""
     # Reuse only charges annotated for this exact parameter/topology pair.
     owners = getattr(packed_block_types, "_elec_owners", ())
     if (
@@ -213,9 +169,7 @@ def atom_charges_for_pose_stack(
     return charges
 
 
-# --------------------------------------------------------------------- #
 # Count-pair representative mapping                                      #
-# --------------------------------------------------------------------- #
 
 
 def _cp_reps_dict(elec_db: Any) -> Dict[str, Dict[str, Dict[str, str]]]:

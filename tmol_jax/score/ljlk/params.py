@@ -1,25 +1,7 @@
-"""LJ / LK parameter containers.
+"""JAX pytrees for canonical Lennard-Jones/Lazaridis-Karplus parameters.
 
-Upstream reference: :mod:`tmol.score.ljlk.params` and the C++
-``LJTypeParams`` / ``LJLKTypeParams`` / ``LJGlobalParams`` in
-``tmol/score/ljlk/potentials/params.hh``.
-
-The C++ side defines three overlapping structs (``LJTypeParams``,
-``LKTypeParams``, ``LJLKTypeParams``) that all carry the five numeric
-parameters plus four H-bond flags. The JAX port merges them into a
-single :class:`LJTypeParams` dataclass — JAX broadcasts cleanly so the
-split into "LJ" / "LK" sub-params adds no value here. The container is
-registered as a pytree so it flows through ``jit``/``vmap``.
-
-Loading:
-
-    from tmol_jax.database.scoring.ljlk import LJLKDatabase
-    from tmol_jax.database.chemical import ChemicalDatabase
-    db = LJLKDatabase.from_file("ljlk.yaml")
-    chem = ChemicalDatabase.get_default()
-    type_params = LJTypeParams.from_database(db, chem)
-    global_params = LJLKGlobal.from_database(db)
-"""
+Atom-type arrays are gathered into pose order during setup. Boolean chemical
+flags determine hydrogen-bond sigma overrides; missing/padded types are masked."""
 
 from __future__ import annotations
 
@@ -31,9 +13,7 @@ import numpy as np
 
 from tmol_jax.types import as_jnp, pytree_dataclass
 
-# --------------------------------------------------------------------------- #
 # Containers                                                                   #
-# --------------------------------------------------------------------------- #
 
 
 @pytree_dataclass
@@ -80,9 +60,7 @@ class LJTypeParams:
     lk_dgfree: jax.Array
     lk_lambda: jax.Array
 
-    # ------------------------------------------------------------------ #
     # Constructors                                                       #
-    # ------------------------------------------------------------------ #
     @classmethod
     def from_database(cls, ljlk_db: Any, chem_db: Any) -> "LJTypeParams":
         """Build packed per-atom-type parameters indexed against
@@ -139,9 +117,7 @@ class LJTypeParams:
             lk_lambda=jnp.asarray(lk_lambda),
         )
 
-    # ------------------------------------------------------------------ #
     # Gather                                                             #
-    # ------------------------------------------------------------------ #
     def gather(self, idx: jax.Array) -> "LJTypeParams":
         """Gather per-atom-type parameters along the 0-th axis.
 

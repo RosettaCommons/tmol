@@ -11,36 +11,11 @@ import jax.numpy as jnp
 
 from tmol_jax.types import Array
 
-# --------------------------------------------------------------------------- #
 # Angle wrapping                                                              #
-# --------------------------------------------------------------------------- #
 
 
 def _wrap_angle(angle: Array, start: Array, period: Array) -> Array:
-    """Wrap ``angle`` (radians) into ``[start, start + period)``.
-
-    A pure-functional equivalent of the ``while`` loops in
-    ``potentials.hh``::
-
-        while (d < 0)        d += period;
-        while (d > period)   d -= period;
-
-    We use ``jnp.mod`` which works for any real input and is
-    ``jit``-friendly. Because ``jnp.mod`` returns a non-negative
-    result when ``period > 0``, the output is guaranteed to live in
-    ``[0, period)`` after subtracting the start offset.
-
-    Parameters
-    ----------
-    angle
-        Input angle in radians. Any shape; broadcast-compatible with
-        ``start`` and ``period``.
-    start
-        Lower bound of the target interval (e.g. ``-pi`` for the
-        rotameric phi/psi grids).
-    period
-        Width of the target interval (e.g. ``2 * pi`` for full rotation).
-    """
+    """Wrap radians to [start, start + period), broadcasting all arguments."""
     return start + jnp.mod(angle - start, period)
 
 
@@ -63,9 +38,7 @@ def _frac_index(angle: Array, start: Array, step: Array, period: Array) -> Array
     return (wrapped - start) / step
 
 
-# --------------------------------------------------------------------------- #
 # Cubic B-spline (periodic) — coefficient precomputation + 2-D interpolation  #
-# --------------------------------------------------------------------------- #
 #
 # Port of ``tmol/numeric/bspline_compiled/bspline.hh`` restricted to 2-D,
 # DEGREE=3 (bicubic) with periodic boundary conditions. Upstream uses the
@@ -172,9 +145,7 @@ def _bicubic_bspline_interpolate(
     return result
 
 
-# --------------------------------------------------------------------------- #
 # Bilinear / trilinear interpolation on a periodic grid                       #
-# --------------------------------------------------------------------------- #
 
 
 def _bilinear_interpolate(
@@ -235,33 +206,11 @@ def dunbrack_rot_score(
     bb_step: Array,
     bb_period: Array,
 ) -> Array:
-    """Rotamer log-probability penalty at ``(phi, psi)``.
+    """Bilinearly interpolate a sample-grid rotamer -log probability.
 
-    Looks up a single rotamer's ``-log P`` value on the tabulated
-    (phi, psi) grid via bilinear interpolation. Upstream uses a cubic
-    b-spline; we use bilinear, which is both smooth enough for the
-    simplified scoring and ``grad``-safe.
-
-    Parameters
-    ----------
-    phi, psi
-        Backbone dihedrals in radians. Scalar or arbitrary shape
-        (broadcast together inside the function).
-    neglnprob_table
-        ``[N_phi, N_psi]`` array of ``-log P(rotamer | phi, psi)``
-        values for one specific rotamer. Already sliced by the caller
-        to the rotamer assigned to this residue.
-    bb_start
-        2-vector ``(phi_start, psi_start)`` in radians marking the lower
-        bound of the grid (upstream stores this in the rotlib as
-        ``backbone_dihedral_start`` * pi/180).
-    bb_step
-        2-vector ``(phi_step, psi_step)`` in radians — the tabulation
-        spacing.
-    bb_period
-        2-vector ``(phi_period, psi_period)`` in radians — usually
-        ``(2pi, 2pi)``.
-    """
+    phi/psi and the two-element bb_start, bb_step and bb_period are radians.
+    This standalone sample-grid helper retains its bilinear API; the full energy
+    term uses prefiltered cubic B-spline tables."""
     fi = _frac_index(phi, bb_start[0], bb_step[0], bb_period[0])
     fj = _frac_index(psi, bb_start[1], bb_step[1], bb_period[1])
     return _bilinear_interpolate(neglnprob_table, fi, fj)
@@ -273,30 +222,11 @@ def dunbrack_rotdev_score(
     chi_sigmas: Array,
     chi_mask: Array | None = None,
 ) -> Array:
-    """Summed Gaussian deviation penalty over the chi angles of a residue.
+    """Sum wrapped chi-deviation penalties over the final chi axis.
 
-    Implements the standard rotamer-deviation term used by the Dunbrack
-    library::
-
-        sum_i  (chi_i - mean_i)^2 / (2 * sigma_i^2)
-
-    The difference is wrapped to ``[-pi, pi]`` like TMol's
-    ``periodic_chi_difference`` (the means table is pre-shifted at setup so the
-    interpolation never crosses the +-180 degree seam).
-
-    Parameters
-    ----------
-    chis
-        ``[..., n_chi]`` chi values in radians.
-    chi_means, chi_sigmas
-        ``[..., n_chi]`` means and sigmas (radians) from the library,
-        typically produced by bilinearly interpolating the mean /
-        sigma tables at ``(phi, psi)``.
-    chi_mask
-        Optional ``[..., n_chi]`` bool mask. ``False`` entries contribute
-        zero. Used to handle residues with fewer than ``max_nchi``
-        chi angles in a batched setting.
-    """
+    chis, chi_means and chi_sigmas are radians with shape [..., n_chi]. Differences
+    wrap to [-pi, pi]; each contribution is diff**2/(2*sigma**2). Nonpositive/tiny
+    sigmas and false chi_mask entries contribute zero."""
     two_pi = 2.0 * jnp.pi
     diff = chis - chi_means
     diff = diff - two_pi * jnp.round(diff / two_pi)
@@ -355,9 +285,7 @@ def dunbrack_semirot_score(
     return bspline_interpolate(semirot_table, X, degree=3)
 
 
-# --------------------------------------------------------------------------- #
 # Rotamer bin classification (utility used by the energy term)                #
-# --------------------------------------------------------------------------- #
 
 
 def classify_rotamer_bin(chis: Array, n_rotameric_chi: int) -> Array:

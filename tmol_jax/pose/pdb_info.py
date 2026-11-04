@@ -28,9 +28,7 @@ class PDBInfo:
     res_name: List[List[str]]
     atom_record_type: List[List[List[str]]]
 
-    # ---------------------------------------------------------------
     # Shape helpers
-    # ---------------------------------------------------------------
     @property
     def n_poses(self) -> int:
         return int(self.res_num.shape[0]) if self.res_num.ndim == 2 else 0
@@ -39,9 +37,7 @@ class PDBInfo:
     def max_n_blocks(self) -> int:
         return int(self.res_num.shape[1]) if self.res_num.ndim == 2 else 0
 
-    # ---------------------------------------------------------------
     # Slicing
-    # ---------------------------------------------------------------
     def __getitem__(self, index) -> "PDBInfo":
         """Select poses with the same integer, slice or array indexing as a pose."""
         indices = np.atleast_1d(np.arange(self.n_poses)[index])
@@ -56,9 +52,7 @@ class PDBInfo:
             ],
         )
 
-    # ---------------------------------------------------------------
     # Factories
-    # ---------------------------------------------------------------
     @classmethod
     def empty(cls, n_poses: int, max_n_blocks: int) -> "PDBInfo":
         """An all-zero/empty ``PDBInfo`` with no per-atom records yet.

@@ -34,9 +34,7 @@ _HYB_NAME_TO_INT = {
 }
 
 
-# --------------------------------------------------------------------------- #
 # Fused palette-level per-pose scatter                                        #
-# --------------------------------------------------------------------------- #
 
 
 @_partial(jax.jit, static_argnames=("max_n_atoms_per_pose",))
@@ -145,9 +143,7 @@ def _lkball_pose_palette_jit(
     )
 
 
-# --------------------------------------------------------------------------- #
 # Term state                                                                   #
-# --------------------------------------------------------------------------- #
 
 
 @pytree_dataclass
@@ -177,7 +173,6 @@ class LKBallTermState:
     # Atom realness mask (for padding).
     is_real: jax.Array
 
-    # ---- Upstream-faithful water-placement metadata --------------------- #
     # Per-polar-atom acceptor base (B) and base-of-base (B0) atom indices
     # (pose-level). ``-1`` when the atom is not an acceptor. Shape
     # ``[n_poses, max_n_atoms_per_pose]``.
@@ -197,7 +192,6 @@ class LKBallTermState:
     # acceptor waters.
     n_attached_H: jax.Array
 
-    # ---- Count-pair (intra-residue) bonded path distance --------------- #
     # Pairwise shortest-path distance along bonds, clamped at ``>6``
     # (``cp_clamp``). Shape ``[n_poses, max_n_atoms_per_pose,
     # max_n_atoms_per_pose]`` int32. Only intra-block distances are
@@ -219,9 +213,7 @@ class LKBallEnergyTerm(EnergyTerm):
         self.n_waters = int(n_waters)
         self.max_H_per_donor = int(max_H_per_donor)
 
-    # ------------------------------------------------------------------ #
     # Metadata                                                            #
-    # ------------------------------------------------------------------ #
 
     def score_types_provided(self) -> List[ScoreType]:
         return [
@@ -231,9 +223,7 @@ class LKBallEnergyTerm(EnergyTerm):
             ScoreType.lk_bridge_uncpl,
         ]
 
-    # ------------------------------------------------------------------ #
     # Setup                                                               #
-    # ------------------------------------------------------------------ #
 
     def setup_for_pose_stack(self, pose_stack, pbt=None):
         """Build coordinate-independent solvation metadata."""
@@ -293,9 +283,7 @@ class LKBallEnergyTerm(EnergyTerm):
             occluder_indices=compact(is_occluder_2d & is_real_2d),
         )
 
-    # ------------------------------------------------------------------ #
     # Hot path                                                            #
-    # ------------------------------------------------------------------ #
 
     def __call__(
         self,
@@ -497,9 +485,7 @@ class LKBallEnergyTerm(EnergyTerm):
         per_pair = jax.vmap(jax.vmap(pair))(ii, jj)  # [polar atoms, heavy atoms, 4]
         return jnp.sum(per_pair, axis=(0, 1))  # [4]
 
-    # ------------------------------------------------------------------ #
     # Palette metadata extraction                                         #
-    # ------------------------------------------------------------------ #
 
     def _annotate_pbt_ljlk_tables(self, pbt: Any) -> None:
         """Cache per-BT LJLK palette tables on ``pbt`` once.
@@ -716,9 +702,7 @@ class LKBallEnergyTerm(EnergyTerm):
         )
 
 
-# --------------------------------------------------------------------------- #
 # Internal helpers                                                             #
-# --------------------------------------------------------------------------- #
 
 
 __all__ = [

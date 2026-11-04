@@ -1,36 +1,9 @@
-"""Backbone-dependent omega scoring in pure JAX.
+"""Backbone-dependent omega with periodic cubic interpolation of mu and sigma.
 
-Upstream tmol's omega term evaluates a Gaussian log-probability on
-``omega`` centered at a backbone-dependent mean ``mu(phi, psi)`` with
-standard deviation ``sigma(phi, psi)`` — both evaluated with a
-degree-3 periodic B-spline over 2-D tables indexed by residue type.
-Per-residue the energy is
-
-    V = log(sigma / 6) + offset^2 / (2 * sigma^2),
-
-where ``offset = omega_deg - mu`` (wrapped to ``[-180, 180]``) and
-both ``mu`` and ``sigma`` are stored in degrees. All arithmetic is
-performed *after* interpolation, so the two B-splined channels are the
-raw ``mu`` / ``sigma`` grids, not any composite like
-``1 / (2 * sigma^2)`` — that keeps the result bit-for-bit compatible
-with the upstream kernel.
-
-The cis branch: upstream falls back to a simple non-bb-dep harmonic
-``K * omega_rad^2`` with ``K = 32.8 kcal/mol/rad^2`` whenever
-``|omega| < pi/2``. We follow the same convention.
-
-We expose:
-
-* :func:`omega_score` — scalar evaluator that accepts a packed
-  parameter pytree.
-* :class:`OmegaBBDepDatabaseAccess` — helper that wraps
-  :class:`~tmol_jax.database.scoring.omega_bbdep.OmegaBBDepDatabase` and
-  produces the pre-filtered coefficient tables.
-
-The packed ``OmegaParams`` object is the single argument
-:func:`omega_score` expects; this keeps its signature compatible with
-per-residue :func:`jax.vmap` dispatch in the whole-pose energy term.
-"""
+The trans energy is log(sigma/6) + offset**2/(2*sigma**2), with the interpolated
+mu and sigma in degrees and offset wrapped to [-180, 180]. For |omega| < pi/2,
+the canonical cis branch uses 32.8 * omega_rad**2. Interpolate the raw mean and
+standard deviation before constructing the potential, not a composite stiffness."""
 
 from __future__ import annotations
 
@@ -369,9 +342,7 @@ class OmegaBBDepDatabaseAccess:
         self.aa_to_table_idx_2 = aa_to_table_idx_2
         self._source_uniq_id = omega_database.uniq_id
 
-    # --------------------------------------------------------------- #
     # Convenience                                                     #
-    # --------------------------------------------------------------- #
 
     @property
     def n_aa(self) -> int:

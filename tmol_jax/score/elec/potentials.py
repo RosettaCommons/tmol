@@ -47,9 +47,7 @@ from tmol_jax.types import Array
 _C1: float = 322.0637
 
 
-# --------------------------------------------------------------------- #
 # Dielectric function and its derivative                                 #
-# --------------------------------------------------------------------- #
 
 
 def eps(dist: Array, D: Array, D0: Array, S: Array) -> Array:
@@ -73,9 +71,7 @@ def deps_ddist(dist: Array, D: Array, D0: Array, S: Array) -> Array:
     return 0.5 * (D - D0) * dist * dist * (S * S * S) * jnp.exp(-dist * S)
 
 
-# --------------------------------------------------------------------- #
 # Pairwise elec energy                                                   #
-# --------------------------------------------------------------------- #
 
 
 def elec_pair(
@@ -140,7 +136,6 @@ def elec_pair(
 
     eiej = e_i * e_j
 
-    # ----- Region 1 & 2 seam: value/derivative of the Coulombic piece
     # at ``low_poly_end`` (seam between short-range fade and Coulomb).
     eps_low_end = eps(low_poly_end, D, D0, S)
     deps_low_end = deps_ddist(low_poly_end, D, D0, S)
@@ -173,7 +168,6 @@ def elec_pair(
         dmax_elec_ddist,
     )
 
-    # ----- Region 3: "true" Coulombic.
     # ``dist`` can be 0 on the non-matching branches of the where
     # cascade; safeguard against /0 there so autograd doesn't get NaNs
     # flowing back up.
@@ -183,7 +177,6 @@ def elec_pair(
     eps_d = eps(safe_dist, D, D0, S)
     coulombic_E = eiej * (C1 / (safe_dist * eps_d) - C2)
 
-    # ----- Region 4: long-range cubic fade to zero.
     eps_hi_start = eps(hi_poly_start, D, D0, S)
     deps_hi_start = deps_ddist(hi_poly_start, D, D0, S)
     dmin_elec = eiej * (C1 / (hi_poly_start * eps_hi_start) - C2)
@@ -197,7 +190,6 @@ def elec_pair(
         dist, hi_poly_start, dmin_elec, dmin_elec_ddist, hi_poly_end
     )
 
-    # ----- Dispatch: choose the right region per element.
     #
     # Order matters: we walk from the far field in, so the inner-most
     # region wins. Region 5 (dist >= max_dis) is the "else" branch of

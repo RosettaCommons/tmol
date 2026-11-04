@@ -83,9 +83,7 @@ def connectivity_weight(bonded_path_length: Array) -> Array:
     return w
 
 
-# --------------------------------------------------------------------- #
 # JIT-able pose-level pair lookups                                       #
-# --------------------------------------------------------------------- #
 
 
 @partial(jax.jit, static_argnames=("max_n_atoms_per_pose",))
@@ -138,9 +136,7 @@ def pose_atom_block_index(
     return block_for_atom, local_for_atom, atom_is_real
 
 
-# --------------------------------------------------------------------- #
 # Pose-level index cache + bulk scatter                                 #
-# --------------------------------------------------------------------- #
 #
 # Per-pose-stack cache of the (block_for_atom, local_for_atom,
 # atom_is_real, bti_of_atom) tuple. Every energy term computes this
@@ -255,9 +251,7 @@ def pose_atom_real_mask(
     return atom_is_real
 
 
-# --------------------------------------------------------------------- #
 # Pairwise bonded-path-length matrix                                     #
-# --------------------------------------------------------------------- #
 
 
 def _extract_static(pose_stack: Any, packed_block_types: Any) -> tuple:
@@ -309,7 +303,6 @@ def _pairwise_bpl_jit(
     valid_conn = conn_atoms_pose >= 0
     safe_ca = jnp.where(valid_conn, conn_atoms_pose, 0)
 
-    # ---- Intra-block conn-conn edges ---- #
     pd_blocks = per_type_pair_table[safe_t]  # [P, B, M, M]
     pd_intra_conn = pd_blocks[
         jnp.arange(P)[:, None, None, None],
@@ -320,7 +313,6 @@ def _pairwise_bpl_jit(
     valid_intra = valid_conn[:, :, :, None] & valid_conn[:, :, None, :]
     pd_intra_conn = jnp.where(valid_intra, pd_intra_conn, BIG)
 
-    # ---- Inter-block conn-conn edges ---- #
     ibs = inter_block_bondsep  # [P, B, B, C, C]
     valid_ba = valid_conn[:, :, None, :, None]
     valid_bb = valid_conn[:, None, :, None, :]
@@ -340,7 +332,6 @@ def _pairwise_bpl_jit(
     diag_idx = jnp.arange(Nn)
     D = D.at[:, diag_idx, diag_idx].set(0)
 
-    # ---- Floyd-Warshall ---- #
     def fw_step(k, D):
         Dk_row = jax.lax.dynamic_slice_in_dim(D, k, 1, axis=1)
         Dk_col = jax.lax.dynamic_slice_in_dim(D, k, 1, axis=2)

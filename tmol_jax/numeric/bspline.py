@@ -23,9 +23,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-# ---------------------------------------------------------------------------
 # Helpers: poles for B-splines of various degrees
-# ---------------------------------------------------------------------------
 
 
 def _get_poles(degree: int) -> Tuple[float, ...]:
@@ -54,9 +52,7 @@ def _get_poles(degree: int) -> Tuple[float, ...]:
     raise ValueError(f"B-spline degree must be in 2..5 (got {degree}).")
 
 
-# ---------------------------------------------------------------------------
 # 1D causal / anti-causal coefficient conversion (Thevenaz eqns 2-3)
-# ---------------------------------------------------------------------------
 
 
 def _init_causal_coeff(line: jax.Array, pole: float) -> jax.Array:
@@ -167,32 +163,14 @@ def _apply_along_axis(
     return jnp.moveaxis(out, 0, axis)
 
 
-# ---------------------------------------------------------------------------
 # Public: coefficient precomputation
-# ---------------------------------------------------------------------------
 
 
 def bspline_coefficients(samples: jax.Array, degree: int = 3) -> jax.Array:
-    """Convert an N-dim tensor of samples to B-spline coefficients.
+    """Prefilter float samples on all axes of a 2-D to 4-D periodic grid.
 
-    The output has the same shape as ``samples`` (B-splines do not
-    expand the grid). Periodic boundary conditions are applied along
-    every axis.
-
-    Parameters
-    ----------
-    samples : jax.Array
-        Tensor of shape ``[N_0, N_1, ..., N_{D-1}]`` with ``D in 2..4``
-        spatial dimensions. ``float32`` or ``float64``.
-    degree : int, default 3
-        B-spline order (2, 3, 4, or 5). Degree 3 matches the upstream
-        default and is the canonical choice for Rama/Dunbrack.
-
-    Returns
-    -------
-    jax.Array
-        Coefficient tensor, same shape as ``samples``.
-    """
+    The output shape matches samples. Degrees 2-5 are supported; degree 3 is the
+    canonical Rama/Dunbrack choice."""
 
     coeffs = jnp.asarray(samples)
     if coeffs.ndim < 2 or coeffs.ndim > 4:
@@ -206,9 +184,7 @@ def bspline_coefficients(samples: jax.Array, degree: int = 3) -> jax.Array:
     return coeffs
 
 
-# ---------------------------------------------------------------------------
 # Weights and derivatives for interpolation
-# ---------------------------------------------------------------------------
 
 
 def _weights_1d(frac: jax.Array, degree: int) -> jax.Array:
@@ -260,9 +236,7 @@ def _weights_1d(frac: jax.Array, degree: int) -> jax.Array:
     raise ValueError(f"Unsupported B-spline degree {degree}.")
 
 
-# ---------------------------------------------------------------------------
 # Interpolation
-# ---------------------------------------------------------------------------
 
 
 def _interpolate_single(coeffs: jax.Array, X: jax.Array, degree: int) -> jax.Array:
@@ -310,25 +284,10 @@ def _interpolate_single(coeffs: jax.Array, X: jax.Array, degree: int) -> jax.Arr
 
 
 def bspline_interpolate(coeffs: jax.Array, X: jax.Array, degree: int = 3) -> jax.Array:
-    """Interpolate (pre-computed) B-spline coefficients at points.
+    """Evaluate a periodic coefficient grid at fractional grid coordinates.
 
-    Parameters
-    ----------
-    coeffs : jax.Array
-        Coefficient tensor produced by :func:`bspline_coefficients`.
-        Shape ``[N_0, ..., N_{D-1}]`` with ``D = coeffs.ndim``.
-    X : jax.Array
-        Query coordinates. Either a single point of shape ``[D]`` or a
-        batch of shape ``[..., D]``. Each coordinate is in grid-cell
-        units (periodic): ``X[..., d] in R`` with integer values
-        aligning on grid nodes.
-    degree : int, default 3
-
-    Returns
-    -------
-    jax.Array
-        Interpolated values with shape ``X.shape[:-1]``.
-    """
+    X has shape [..., grid.ndim]; the output has shape X.shape[:-1]. Coefficients
+    must be prefiltered at the same degree. Coordinate gradients flow through JAX."""
     X = jnp.asarray(X)
     if X.ndim == 1:
         return _interpolate_single(coeffs, X, degree)

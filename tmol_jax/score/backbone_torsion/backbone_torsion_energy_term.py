@@ -1,33 +1,8 @@
-"""BackboneTorsionEnergyTerm — Rama + bb-dependent omega in pure JAX.
+"""Rama and backbone-dependent omega scores for connected residues.
 
-This is the JAX port of
-``tmol/score/backbone_torsion/bb_torsion_energy_term.py``. The
-evaluation matches the three torsions defined by Rosetta:
-
-* ``phi_i``   = dihedral(C_{i-1}, N_i,     CA_i,    C_i)
-* ``psi_i``   = dihedral(N_i,     CA_i,    C_i,     N_{i+1})
-* ``omega_i`` = dihedral(CA_i,    C_i,     N_{i+1}, CA_{i+1})
-
-For each residue we bilinearly interpolate the 2-D ``(phi, psi)``
-Ramachandran energy grid (``ScoreType.rama``) and the bb-dependent
-harmonic omega penalty (``ScoreType.omega``). Residues lacking a
-previous (``down`` connection) or next (``up`` connection) neighbour
-are masked out — their contributions are simply 0.
-
-The term lives inside the standard :class:`tmol_jax.score.EnergyTerm`
-contract:
-
-* :meth:`setup_for_pose_stack` runs once per PoseStack and returns a
-  pytree of per-residue "backbone-atom pointers" plus the packed
-  parameter tables.
-* :meth:`__call__` runs inside jit/grad and is fully vectorised with
-  :func:`jax.vmap` over residues and poses.
-
-If the Rama or omega bb-dep zip payload cannot be loaded (e.g. because
-``torch`` isn't installed), the packed tables are empty and both score
-channels return a vector of zeros — so the term remains safe to include
-in a score function even without the binary data.
-"""
+Setup resolves backbone torsion atoms through residue connections and selects
+ordinary/prepro tables. Evaluation uses periodic cubic splines and masks
+unavailable torsions and padding before reduction."""
 
 from __future__ import annotations
 
@@ -56,9 +31,7 @@ from tmol_jax.types import pytree_dataclass
 _NO_ATOM = np.int32(-1)
 
 
-# --------------------------------------------------------------------------- #
 # Per-pose setup container                                                    #
-# --------------------------------------------------------------------------- #
 
 
 @pytree_dataclass
@@ -100,9 +73,7 @@ class BackboneTorsionTermState:
     omega_params: OmegaParams
 
 
-# --------------------------------------------------------------------------- #
 # Helpers — CPU-side setup                                                    #
-# --------------------------------------------------------------------------- #
 
 
 def _find_atom_idx(block_type: Any, name: str) -> int:
@@ -158,7 +129,6 @@ def _resolve_torsion_atoms(
     ca_g = np.where(has_ncac, block_coord_offset + ca_local, -1)
     c_g = np.where(has_ncac, block_coord_offset + c_local, -1)
 
-    # --- Previous residue via "down" connection --- #
     # Gather inter_conn at (p, b, down_cind) -> [P, B, 2].
     P_ar = np.arange(n_poses)[:, None]
     B_ar = np.arange(max_n_blocks)[None, :]
@@ -178,7 +148,6 @@ def _resolve_torsion_atoms(
         -1,
     )
 
-    # --- Next residue via "up" connection --- #
     safe_up = np.where(has_ncac & (up_cind >= 0), up_cind, 0)
     next_entry = inter_conn[P_ar, B_ar, safe_up]
     next_b = next_entry[..., 0]
@@ -221,9 +190,7 @@ def _resolve_torsion_atoms(
     return phi, psi, omega
 
 
-# --------------------------------------------------------------------------- #
 # Vectorised per-residue evaluation                                           #
-# --------------------------------------------------------------------------- #
 
 
 def _gather_coords(coords_pose: jax.Array, atom_idx: jax.Array) -> jax.Array:
@@ -306,9 +273,7 @@ def _residue_energies(
     return rama_e, omega_e
 
 
-# --------------------------------------------------------------------------- #
 # EnergyTerm                                                                  #
-# --------------------------------------------------------------------------- #
 
 
 class BackboneTorsionEnergyTerm(EnergyTerm):
@@ -328,16 +293,12 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
         self.rama_access = RamaDatabaseAccess(param_db.scoring.rama)
         self.omega_access = OmegaBBDepDatabaseAccess(param_db.scoring.omega_bbdep)
 
-    # ------------------------------------------------------------------ #
     # Metadata                                                           #
-    # ------------------------------------------------------------------ #
 
     def score_types_provided(self) -> list[ScoreType]:
         return [ScoreType.rama, ScoreType.omega]
 
-    # ------------------------------------------------------------------ #
     # Helpers                                                            #
-    # ------------------------------------------------------------------ #
 
     @staticmethod
     def _resolve_idx_with_prepro(
@@ -386,9 +347,7 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
         ).astype(np.int32)
         return out
 
-    # ------------------------------------------------------------------ #
     # Setup                                                              #
-    # ------------------------------------------------------------------ #
 
     def setup_for_pose_stack(
         self, pose_stack: Any, pbt: Any = None
@@ -472,9 +431,7 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
             omega_params=self.omega_access.params,
         )
 
-    # ------------------------------------------------------------------ #
     # Evaluation                                                         #
-    # ------------------------------------------------------------------ #
 
     def __call__(
         self,

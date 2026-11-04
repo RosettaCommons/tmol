@@ -14,9 +14,7 @@ import numpy as np
 
 from tmol_jax.types import pytree_dataclass
 
-# --------------------------------------------------------------------------- #
 # Helpers                                                                      #
-# --------------------------------------------------------------------------- #
 
 
 def _element_index_map(chem_db: Any) -> dict:
@@ -78,9 +76,7 @@ def _path_distance_within_residue(
     return dist
 
 
-# --------------------------------------------------------------------------- #
 # PackedBlockTypes                                                             #
-# --------------------------------------------------------------------------- #
 
 
 @pytree_dataclass
@@ -100,7 +96,6 @@ class PackedBlockTypes:
     ``atom_names``, the ``max_*`` / ``n_types`` ints) are pytree aux.
     """
 
-    # --- aux / metadata ------------------------------------------------ #
     chem_db: Any
     active_block_types: Tuple[Any, ...]
     atom_names: Tuple[Tuple[str, ...], ...]
@@ -110,7 +105,6 @@ class PackedBlockTypes:
     max_n_bonds: int
     max_n_conn: int
 
-    # --- packed per-type arrays (pytree leaves) ------------------------ #
     n_atoms: jnp.ndarray  # [n_types] int32
     atom_is_real: jnp.ndarray  # [n_types, max_n_atoms] bool
     atom_elements: jnp.ndarray  # [n_types, max_n_atoms] int32
@@ -129,9 +123,7 @@ class PackedBlockTypes:
     intrares_path_distance: jnp.ndarray
     # [n_types, max_n_atoms, max_n_atoms] int32
 
-    # ------------------------------------------------------------------ #
     # Core builder                                                        #
-    # ------------------------------------------------------------------ #
     @classmethod
     def from_restypes(
         cls,
@@ -157,9 +149,7 @@ class PackedBlockTypes:
         atom_type_index = _atom_type_index_map(chem_db)
         atom_element = _atom_element_map(chem_db)
 
-        # -------------------------------------------------------------- #
         # Dimensions                                                      #
-        # -------------------------------------------------------------- #
         if n_types == 0:
             max_n_atoms = 0
             max_n_bonds = 0
@@ -172,9 +162,7 @@ class PackedBlockTypes:
             )
             max_n_conn = max(2, max(len(rt.connections) for rt in active_types))
 
-        # -------------------------------------------------------------- #
         # Per-type scalar counts                                          #
-        # -------------------------------------------------------------- #
         n_atoms_np = np.asarray([len(rt.atoms) for rt in active_types], dtype=np.int32)
         n_bonds_np = np.asarray(
             [
@@ -187,9 +175,7 @@ class PackedBlockTypes:
             [len(rt.connections) for rt in active_types], dtype=np.int32
         )
 
-        # -------------------------------------------------------------- #
         # Per-atom packed arrays                                          #
-        # -------------------------------------------------------------- #
         atom_is_real_np = np.zeros((n_types, max_n_atoms), dtype=bool)
         atom_elements_np = np.zeros((n_types, max_n_atoms), dtype=np.int32)
         atom_types_np = np.zeros((n_types, max_n_atoms), dtype=np.int32)
@@ -227,18 +213,14 @@ class PackedBlockTypes:
                 names.append("")
             atom_names_list.append(tuple(names))
 
-        # -------------------------------------------------------------- #
         # Bond edges                                                      #
-        # -------------------------------------------------------------- #
         bond_indices_np = np.zeros((n_types, max_n_bonds, 2), dtype=np.int32)
         for i, rt in enumerate(active_types):
             bi = rt.bond_indices
             if bi is not None and bi.shape[0] > 0:
                 bond_indices_np[i, : bi.shape[0]] = bi.astype(np.int32)
 
-        # -------------------------------------------------------------- #
         # Connections: atom index each connection exits through           #
-        # -------------------------------------------------------------- #
         conn_atoms_np = np.full((n_types, max_n_conn), -1, dtype=np.int32)
         for i, rt in enumerate(active_types):
             oc = getattr(rt, "ordered_connection_atoms", None)
@@ -249,17 +231,13 @@ class PackedBlockTypes:
                 for k, conn in enumerate(rt.connections):
                     conn_atoms_np[i, k] = rt.atom_to_idx[conn.atom]
 
-        # -------------------------------------------------------------- #
         # Ideal coords                                                    #
-        # -------------------------------------------------------------- #
         ideal_coords_np = np.zeros((n_types, max_n_atoms, 3), dtype=np.float32)
         for i, rt in enumerate(active_types):
             coords = build_ideal_coords(rt)
             ideal_coords_np[i, : len(rt.atoms)] = coords[rt.at_to_icoor_ind]
 
-        # -------------------------------------------------------------- #
         # Intra-residue path distances                                    #
-        # -------------------------------------------------------------- #
         intrares_pd_np = np.zeros((n_types, max_n_atoms, max_n_atoms), dtype=np.int32)
         for i, rt in enumerate(active_types):
             n = len(rt.atoms)
@@ -275,9 +253,7 @@ class PackedBlockTypes:
                 pd = _path_distance_within_residue(n, bi)
             intrares_pd_np[i, :n, :n] = pd[:n, :n].astype(np.int32)
 
-        # -------------------------------------------------------------- #
         # Build the instance                                              #
-        # -------------------------------------------------------------- #
         return cls(
             chem_db=chem_db,
             active_block_types=active_types,
@@ -300,35 +276,13 @@ class PackedBlockTypes:
             intrares_path_distance=jnp.asarray(intrares_pd_np),
         )
 
-    # ------------------------------------------------------------------ #
     # Convenience constructors                                            #
-    # ------------------------------------------------------------------ #
     @classmethod
     def default(cls, chem_db: Any | None = None) -> "PackedBlockTypes":
-        """Build a ``PackedBlockTypes`` from the default patched chem-db
-        including the 20 canonical amino acids **plus their termini
-        variants** (``:nterm``, ``:cterm``, ``:cterm:nterm``).
+        """Build the default patched protein residue palette.
 
-        Upstream tmol's ``PoseStack`` construction detects chain termini
-        and assigns the appropriate variant (e.g. first residue of a
-        chain becomes ``MET:nterm``, last becomes ``GLY:cterm``). That
-        changes atom counts (N-term gains H1/H2/H3 / loses H; C-term
-        gains OXT) and charges (N-term NH3+, C-term COO-), which shift
-        fa_elec, fa_lj*, fa_lk, hbond scores by ~2-5%. To match that
-        behaviour, the default palette includes every reachable
-        variant combination for the 20 canonical AAs -- 4 variants per
-        AA (base / :nterm / :cterm / :cterm:nterm) for a total of ~80
-        block types.
-
-        If ``chem_db`` is not supplied, the default
-        ``PatchedChemicalDatabase`` is loaded via
-        ``tmol_jax.chemical.patched_chemdb.default_patched_chemdb()``.
-
-        The palette ordering is: ALA, ALA:nterm, ALA:cterm,
-        ALA:cterm:nterm, CYS, ... -- base-first then variants, so that
-        callers which only rely on ``name3`` lookups of the 20 bases
-        (legacy path) still find them as the first representative.
-        """
+        JAX's current device context determines array placement. Chemistry and
+        residue identities remain host metadata."""
         # Lazy imports (see module docstring for why).
         if chem_db is None:
             from tmol_jax.chemical.patched_chemdb import (
@@ -402,9 +356,7 @@ class PackedBlockTypes:
 
         return cls.from_restypes(chem_db, selected)
 
-    # ------------------------------------------------------------------ #
     # Lookup helpers                                                      #
-    # ------------------------------------------------------------------ #
 
 
 __all__ = ["PackedBlockTypes"]

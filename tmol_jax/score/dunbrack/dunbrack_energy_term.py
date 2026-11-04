@@ -76,9 +76,7 @@ def _fill_missing_rotamer_wells(
             mapping[well] = most_common
 
 
-# --------------------------------------------------------------------------- #
 # Pytree container for the per-pose_stack static state                        #
-# --------------------------------------------------------------------------- #
 
 
 @pytree_dataclass
@@ -89,13 +87,11 @@ class DunbrackTermState:
     ``vmap``; Python ints / bools are aux metadata.
     """
 
-    # --- empty-library flag -------------------------------------------- #
     # When ``True`` the score returns zeros for every pose and never
     # touches the table leaves. Aux (non-array) so we can branch on it
     # with a Python ``if`` at trace time.
     empty: bool
 
-    # --- per-block-type palette ---------------------------------------- #
     # dihedral_uaids[i, d, a, 3] = (atom_idx, conn_id, n_bonds_from_conn)
     # for block-type ``i``, dihedral ``d`` in 0..5 (phi, psi, chi1..4),
     # atom ``a`` in 0..3. Sentinel -1 / invalid rows are filled with -1.
@@ -107,7 +103,6 @@ class DunbrackTermState:
     n_rotameric_chi_per_type: jnp.ndarray  # int32 [n_types]
     is_semirotameric_per_type: jnp.ndarray  # bool  [n_types]
 
-    # --- library tables ----------------------------------------------- #
     # All libraries resampled onto a common phi/psi grid shape
     # (36 x 36 per upstream) so we can stack. If the tables are empty,
     # the shapes are (0, ...); guard with ``empty`` before use.
@@ -131,9 +126,7 @@ class DunbrackTermState:
     semirot_period: jnp.ndarray  # float32 [n_sr, 3]
 
 
-# --------------------------------------------------------------------------- #
 # Energy term                                                                 #
-# --------------------------------------------------------------------------- #
 
 
 class DunbrackEnergyTerm(EnergyTerm):
@@ -162,9 +155,7 @@ class DunbrackEnergyTerm(EnergyTerm):
             ScoreType.dunbrack_semirot,
         ]
 
-    # ------------------------------------------------------------------ #
     # Setup                                                              #
-    # ------------------------------------------------------------------ #
 
     def _get_lib_cache(self) -> dict:
         """Lazy-initialise the library-level (per-AA) B-spline cache.
@@ -370,8 +361,6 @@ class DunbrackEnergyTerm(EnergyTerm):
             semirot_step=cache["sr_step"],
             semirot_period=cache["sr_period"],
         )
-
-    # ---- table stacking helpers (CPU, one-shot) ---------------------- #
 
     @staticmethod
     def _stack_rotameric_tables(
@@ -622,9 +611,7 @@ class DunbrackEnergyTerm(EnergyTerm):
 
         return sr_table, sr_index, sr_ri2ti, sr_start, sr_step, sr_period
 
-    # ------------------------------------------------------------------ #
     # Score (hot path; runs inside jit)                                   #
-    # ------------------------------------------------------------------ #
 
     def __call__(
         self,
@@ -678,9 +665,7 @@ class DunbrackEnergyTerm(EnergyTerm):
             ScoreType.dunbrack_semirot: jnp.sum(semirot_per_res, axis=1),
         }
 
-    # ------------------------------------------------------------------ #
     # Dihedral resolution                                                 #
-    # ------------------------------------------------------------------ #
 
     @staticmethod
     def _compute_all_dihedrals(
@@ -911,9 +896,7 @@ def _resolve_uaids_to_atom_indices(
     return resolved, valid
 
 
-# --------------------------------------------------------------------------- #
 # Per-residue scoring kernel                                                  #
-# --------------------------------------------------------------------------- #
 
 
 def _score_single_residue(
@@ -928,7 +911,6 @@ def _score_single_residue(
     have been lifted into static metadata on ``state``; the only traced
     branching is a few ``jnp.where`` masks to zero out padding.
     """
-    # --- fetch static block-type metadata (gather). -------------------- #
     safe_bti = jnp.where(block_type_ind >= 0, block_type_ind, 0)
     aa = state.aa_table_ind[safe_bti]
     n_chi = state.n_chi_per_type[safe_bti]
@@ -937,7 +919,6 @@ def _score_single_residue(
 
     valid = (block_type_ind >= 0) & (aa >= 0)
 
-    # --- fetch per-AA library rows. ----------------------------------- #
     safe_aa = jnp.where(aa >= 0, aa, 0)
 
     bb_start = state.bb_start[safe_aa]
@@ -957,7 +938,6 @@ def _score_single_residue(
     chi_mask = jnp.arange(_MAX_N_CHI) < n_rot_chi
     chi_mask = chi_mask & chi_valid
 
-    # --- rotamer-bin classification ----------------------------------- #
     # Upstream's base-3 encoding. We compute it for the maximum #rot chi
     # and then mask/truncate via n_rot_chi.
     rot_bin = _classify_rot_bin_masked(chis, n_rot_chi)
@@ -969,7 +949,6 @@ def _score_single_residue(
     rot_row_valid = rot_row >= 0
     safe_rot_row = jnp.where(rot_row_valid, rot_row, 0)
 
-    # --- dunbrack_rot: bilinear interp of -log P table ---------------- #
     # Upstream (``dunbrack_pose_score.impl.hh`` line 272) skips the rot
     # energy entirely for semirotameric residues -- their
     # ``block_rotameric_index`` is -1, gating the whole
@@ -986,7 +965,6 @@ def _score_single_residue(
     rot_score = _bicubic_bspline_interpolate(nlp_table, fi, fj)
     rot_score = jnp.where(valid & rot_row_valid & ~is_sr, rot_score, 0.0)
 
-    # --- dunbrack_rotdev: Gaussian chi penalty ------------------------ #
     # Upstream stores chi mean/sdev as prefiltered 2-D bicubic B-spline
     # *coefficients* (see ``_stack_rotameric_tables`` and
     # ``dunbrack/params.py::_calculate_rot_mean_coeffs``). Match that with
@@ -1008,7 +986,6 @@ def _score_single_residue(
     )
     rotdev_score = jnp.where(valid & rot_row_valid, rotdev_score, 0.0)
 
-    # --- dunbrack_semirot: trilinear interp ---------------------------- #
     sr_ind = state.semirot_index_for_aa[safe_aa]
     sr_valid = is_sr & (sr_ind >= 0)
     safe_sr_ind = jnp.where(sr_valid, sr_ind, 0)

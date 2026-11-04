@@ -1,37 +1,9 @@
-"""Ramachandran (rama) scoring in pure JAX.
+"""Periodic cubic Ramachandran interpolation and host table preparation.
 
-This module exposes two things:
-
-* :func:`rama_score` — a small, jit-safe scalar evaluator that
-  evaluates a bicubic B-spline on a pre-filtered energy-coefficient
-  grid at the given ``(phi, psi)``. It accepts a packed
-  ``[n_aa, n_phi, n_psi]`` coefficient grid indexed by an integer
-  amino-acid code.
-* :class:`RamaDatabaseAccess` — a helper that wraps
-  :class:`~tmol_jax.database.scoring.rama.RamaDatabase`, pre-filters
-  every per-AA energy grid into B-spline coefficients (via
-  :func:`tmol_jax.numeric.bspline.bspline_coefficients`) and exposes
-  the packed coefficient array plus per-AA ``bbstart``/``bbstep``
-  tensors suitable for use with :func:`rama_score`.
-
-The AA axis of the packed table includes **both** the canonical
-non-prepro table and the separate "prepro" (upper neighbour == PRO)
-table for every residue. The upstream tmol kernel selects between
-them via ``block_type_rama_table[bt][upper_nbr_is_pro]``; the
-per-pose helper in
-:mod:`~tmol_jax.score.backbone_torsion.backbone_torsion_energy_term`
-walks ``inter_residue_connections`` and flips to column 1 when the
-next residue is proline. Non-tabulated residues receive an all-zero
-grid, which makes :func:`rama_score` return 0 for them even if the
-caller forgets to mask.
-
-The underlying tables ship as ``rama.zip`` (a torch pickle). If
-``torch`` is not available or the zip is missing, the database loads
-with ``rama_tables=()`` and this helper falls back to an empty
-``[0, 36, 36]`` table — downstream callers must therefore check
-:attr:`RamaDatabaseAccess.has_tables` before expecting meaningful
-energies.
-"""
+Packed tables include ordinary and prepro variants; pose connectivity selects
+the latter when the next residue is proline. Untabulated residue types receive
+zero grids. Required parameters come from Torch-free archives; has_tables
+reports whether a custom database supplies Rama tables."""
 
 from __future__ import annotations
 
@@ -269,9 +241,7 @@ class RamaDatabaseAccess:
         self.aa_to_table_idx_2 = aa_to_table_idx_2
         self._source_uniq_id = rama_database.uniq_id
 
-    # --------------------------------------------------------------- #
     # Convenience                                                     #
-    # --------------------------------------------------------------- #
 
     @property
     def n_aa(self) -> int:

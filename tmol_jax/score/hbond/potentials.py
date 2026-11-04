@@ -27,9 +27,7 @@ from tmol_jax.score.hbond.params import (
     HYBRIDIZATION_SP2,
 )
 
-# --------------------------------------------------------------------- #
 # Packed poly helpers                                                    #
-# --------------------------------------------------------------------- #
 
 
 def _eval_packed_poly(x, poly):
@@ -51,9 +49,7 @@ def _eval_packed_poly(x, poly):
     return jnp.where(valid, value, 0)
 
 
-# --------------------------------------------------------------------- #
 # Individual components                                                  #
-# --------------------------------------------------------------------- #
 
 
 def AH_dist_V(A, H, poly):
@@ -175,9 +171,7 @@ def chi_angle_V(D, H, A, B, B0, hybridization, global_params):
     return jnp.where(hybridization == HYBRIDIZATION_SP2, E_sp2, jnp.zeros_like(E_sp2))
 
 
-# --------------------------------------------------------------------- #
 # Fade near zero                                                         #
-# --------------------------------------------------------------------- #
 
 
 def _fade_near_zero(E):
@@ -195,9 +189,7 @@ def _fade_near_zero(E):
     return jnp.where(E > 0.1, jnp.zeros_like(E), E2)
 
 
-# --------------------------------------------------------------------- #
 # Top-level pair energy                                                  #
-# --------------------------------------------------------------------- #
 
 
 def hbond_pair_V(

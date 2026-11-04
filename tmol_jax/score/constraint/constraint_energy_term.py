@@ -1,34 +1,9 @@
-"""Constraint energy term (pure JAX).
+"""Flat-bottom Cartesian coordinate constraints.
 
-Upstream reference: :mod:`tmol.score.constraint.constraint_energy_term`.
-The torch version dispatches between several constraint functional forms
-(``harmonic``, ``harmonic_coordinate``, ``bounded``, ``circularharmonic``)
-and tracks rotamer-aware atom bookkeeping (block indices, per-block
-rotamer expansion, sparse per-block-pair output).
-
-For the JAX port we take the simplest path that covers the use case
-:func:`FastRelax` cares about: **coordinate constraints** that tether
-specific (pose, atom) locations back to target 3-D coordinates with a
-linear-above-tolerance harmonic penalty.
-
-A single :class:`ConstraintSet` pytree carries everything the term
-needs:
-
-* ``target_coords``  ``float32[n_constraints, 3]``
-* ``atom_indices``   ``int32[n_constraints, 2]`` -- ``(pose_ind, atom_ind)``
-* ``k``              ``float32[n_constraints]``  -- spring constant
-* ``tol``            ``float32[n_constraints]``  -- flat-bottom tolerance
-
-The penalty for constraint ``i`` is::
-
-    penalty_i = 0.5 * k_i * max(0, |coords[pose_i, atom_i] - target_i| - tol_i) ** 2
-
-Energies are summed per-pose and returned under
-``ScoreType.constraint``. The term is jit / grad safe: no Python
-branching on traced values, all gathers use standard ``jnp`` indexing,
-and the empty-constraint case (``n_constraints == 0``) produces a zero
-vector of the right shape automatically.
-"""
+For each (pose, atom), the energy is 0.5*k*max(0, distance_to_target-tol)**2.
+ConstraintSet stores targets [constraints, 3], indices [constraints, 2], and
+per-constraint k and tol. Empty sets contribute zero. Other native constraint
+forms and packing are not exposed by this JAX term."""
 
 from __future__ import annotations
 
@@ -42,9 +17,7 @@ from tmol_jax.score.energy_term import EnergyTerm
 from tmol_jax.score.score_types import ScoreType
 from tmol_jax.types import pytree_dataclass
 
-# --------------------------------------------------------------------- #
 # ConstraintSet pytree                                                  #
-# --------------------------------------------------------------------- #
 
 
 @pytree_dataclass
@@ -76,9 +49,7 @@ class ConstraintSet:
     k: jax.Array
     tol: jax.Array
 
-    # ------------------------------------------------------------- #
     # Convenience constructors                                      #
-    # ------------------------------------------------------------- #
 
     @classmethod
     def empty(cls) -> "ConstraintSet":
@@ -95,9 +66,7 @@ class ConstraintSet:
         return int(self.atom_indices.shape[0])
 
 
-# --------------------------------------------------------------------- #
 # ConstraintEnergyTerm                                                  #
-# --------------------------------------------------------------------- #
 
 
 class ConstraintEnergyTerm(EnergyTerm):
@@ -114,12 +83,8 @@ class ConstraintEnergyTerm(EnergyTerm):
     def __init__(self, param_db: Any = None):
         super().__init__(param_db=param_db)
 
-    # ---- metadata ------------------------------------------------- #
-
     def score_types_provided(self) -> list[ScoreType]:
         return [ScoreType.constraint]
-
-    # ---- setup ---------------------------------------------------- #
 
     def setup_for_pose_stack(
         self,
@@ -172,8 +137,6 @@ class ConstraintEnergyTerm(EnergyTerm):
             ):
                 raise ValueError("constraint atom index is outside the pose")
         return cs
-
-    # ---- evaluation (jit-friendly hot path) ----------------------- #
 
     def __call__(
         self,

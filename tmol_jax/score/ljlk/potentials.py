@@ -34,9 +34,7 @@ import jax.numpy as jnp
 
 from tmol_jax.score.common import connectivity_weight, interpolate, interpolate_to_zero
 
-# --------------------------------------------------------------------------- #
 # Constants                                                                    #
-# --------------------------------------------------------------------------- #
 
 # Far / near cutoff geometry derives from ``global_params.max_dis``
 # (upstream commit 1d7e18c). The "spline start" is ``max_dis - 1.5``;
@@ -54,9 +52,7 @@ _FAR_FADE_WIDTH: float = 1.5
 _PI_POW_1P5: float = 5.56832799683
 
 
-# --------------------------------------------------------------------------- #
 # lj_sigma                                                                     #
-# --------------------------------------------------------------------------- #
 
 
 def lj_sigma(i_params: Any, j_params: Any, global_params: Any) -> jax.Array:
@@ -101,9 +97,7 @@ def lj_sigma(i_params: Any, j_params: Any, global_params: Any) -> jax.Array:
     return sigma
 
 
-# --------------------------------------------------------------------------- #
 # Bare Lennard-Jones (no shift / fade)                                         #
-# --------------------------------------------------------------------------- #
 
 
 def vdw(dist: jax.Array, sigma: jax.Array, epsilon: jax.Array) -> jax.Array:
@@ -165,9 +159,7 @@ def vdw_and_deriv(
     return V, dV_ddist
 
 
-# --------------------------------------------------------------------------- #
 # LJ (shift + fade)                                                            #
-# --------------------------------------------------------------------------- #
 
 
 def lj_atr_rep(
@@ -226,7 +218,6 @@ def lj_atr_rep(
     in_fade = (dist > cpoly_dmin) & (~above_cutoff)
     in_vdw = (dist > d_lin) & (~in_fade) & (~above_cutoff)
 
-    # --- fade branch ---------------------------------------------------
     # Evaluate vdw at cpoly_dmin for every pair (may produce garbage in
     # non-fade pairs but masked out below).
     V_at_dmin, dV_at_dmin = vdw_and_deriv(cpoly_dmin, sigma, epsilon)
@@ -235,10 +226,8 @@ def lj_atr_rep(
     # which is strictly less than cpoly_dmax).
     V_fade = interpolate_to_zero(dist, cpoly_dmin, V_at_dmin, dV_at_dmin, cpoly_dmax)
 
-    # --- bare vdw branch -----------------------------------------------
     V_bare = vdw(dist, sigma, epsilon)
 
-    # --- linear branch -------------------------------------------------
     V_at_dlin, dV_at_dlin = vdw_and_deriv(d_lin, sigma, epsilon)
     V_lin = V_at_dlin + dV_at_dlin * (dist - d_lin)
 
@@ -277,9 +266,7 @@ def lj_atr_rep(
     return w * Vatr, w * Vrep
 
 
-# --------------------------------------------------------------------------- #
 # LK isotropic desolvation                                                     #
-# --------------------------------------------------------------------------- #
 
 
 def _f_desolv(
@@ -397,7 +384,6 @@ def _lk_one_sided_with_fade(
     cpoly_close_dmin = jnp.sqrt(jnp.maximum(0, n - 29) / 20)
     cpoly_close_dmax = jnp.sqrt(jnp.minimum(n + 21, 405) / 20)
 
-    # --- Far fade ------------------------------------------------------
     V_far_min, dV_far_min = _f_desolv_and_deriv(
         cpoly_far_dmin, lj_radius_i, lk_dgfree_i, lk_lambda_i, lk_volume_j
     )
@@ -405,7 +391,6 @@ def _lk_one_sided_with_fade(
         dist, cpoly_far_dmin, V_far_min, dV_far_min, cpoly_far_dmax
     )
 
-    # --- Close plateau & close fade -----------------------------------
     # f_desolv at d_min (used as the plateau value and as the low
     # endpoint of the close fade).
     V_at_dmin = _f_desolv(d_min, lj_radius_i, lk_dgfree_i, lk_lambda_i, lk_volume_j)
@@ -426,7 +411,6 @@ def _lk_one_sided_with_fade(
         dV_close_max,
     )
 
-    # --- Bare f_desolv ------------------------------------------------
     V_bare = _f_desolv(dist, lj_radius_i, lk_dgfree_i, lk_lambda_i, lk_volume_j)
 
     # Nested ``where`` mirroring upstream's if/else-if cascade, evaluated

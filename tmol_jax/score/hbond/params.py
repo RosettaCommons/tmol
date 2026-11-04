@@ -1,38 +1,11 @@
-"""Hydrogen-bond parameter containers and resolvers.
+"""Hydrogen-bond topology, type weights and polynomial preparation.
 
-Port of :mod:`tmol.score.hbond.params` (torch / pandas) to pure JAX.
-This module owns three separable concerns:
-
-* **Global knobs.** A handful of scalars that control the analytic
-  shape of the hbond potential (sp2 chi penalty geometry, sp3 softmax
-  fade temperature, the A-H cutoff distance).
-* **Per-donor-type / per-acceptor-type weights.** Paired as a 2-D
-  ``[n_donor_types, n_acceptor_types]`` "pair" table. The upstream code
-  factors these into ``donor_weight * acceptor_weight`` and we preserve
-  that factorization here for clarity, then multiply into a single pair
-  weight ready for use.
-* **Polynomial tables.** Four polynomial fits per (donor_type,
-  acceptor_type) pair: AH distance, cos(AHD) (actually angle-not-cos,
-  see ``potentials.py``), cos(BAH), and the sp2 chi penalty (often
-  referred to as ``cosBAH_chi`` in the upstream code — a misnomer
-  preserved for compatibility).
-
-Polynomial layout matches the C++ ``HBondPoly`` struct: 11 coefficients
-in descending-power order (``numpy.polyval`` convention), plus an
-``(x_lo, x_hi)`` active range and an ``(y_lo, y_hi)`` clamp value for
-samples outside that range.
-
-The ``hbond_params_for_pose_stack`` entry point materialises everything
-a downstream scoring pass needs given a PoseStack + its PackedBlockTypes
-+ the raw hbond YAML-backed database:
-
-* per-pose ``donor_H_atom`` / ``donor_heavy_atom`` index arrays
-* per-pose ``acceptor_atom`` / ``acceptor_base`` / ``acceptor_base0``
-  / ``acceptor_hybridization`` index arrays
-* a (donor_type, acceptor_type) indexed ``HBondPolynomials`` +
-  ``HBondPairParams`` structure for efficient gather during pair
-  evaluation
-"""
+Each donor/acceptor pair has distance, AHD-angle and cos(BAH) polynomials;
+the sp2 chi penalty is analytic. Polynomial rows contain 11 coefficients in
+descending-power order, two input bounds and two clamped output values.
+Native rows retain the original double-precision coefficients as uint32 words.
+Host preparation identifies donor H/heavy atoms and acceptor/base atoms across
+residue connections, then materializes JAX arrays for coordinate evaluation."""
 
 from __future__ import annotations
 
@@ -44,9 +17,7 @@ import numpy as np
 from tmol_jax.score.common.acceptor import acceptor_bases
 from tmol_jax.types import pytree_dataclass
 
-# --------------------------------------------------------------------- #
 # Hybridization enum (values match tmol's C++ AcceptorHybridization)     #
-# --------------------------------------------------------------------- #
 
 HYBRIDIZATION_NONE = 0
 HYBRIDIZATION_SP2 = 1
@@ -61,9 +32,7 @@ _HYB_NAME_TO_INT = {
 }
 
 
-# --------------------------------------------------------------------- #
 # Parameter pytrees                                                      #
-# --------------------------------------------------------------------- #
 
 
 @pytree_dataclass
@@ -150,9 +119,7 @@ class HBondPolynomials:
     native_poly_words: jnp.ndarray  # uint32[n_don, n_acc, 3, 30]
 
 
-# --------------------------------------------------------------------- #
 # Per-pose donor/acceptor identification                                 #
-# --------------------------------------------------------------------- #
 
 
 @pytree_dataclass
@@ -215,9 +182,7 @@ class HBondParams:
     donor_acceptor_bond_sep: jnp.ndarray  # int32[P, D, A]
 
 
-# --------------------------------------------------------------------- #
 # Builders                                                               #
-# --------------------------------------------------------------------- #
 
 
 def _poly_to_array(poly_entry: Any) -> np.ndarray:
@@ -733,7 +698,6 @@ def _identify_donors_acceptors_for_pose(
     bti = np.asarray(pose_stack.block_type_ind)[pose_ind]
     bco = np.asarray(pose_stack.block_coord_offset)[pose_ind]
 
-    # --- Pure-numpy scatter: per-pose donor / acceptor globals --- #
     # Each bti entry says which BT occupies this block; we look up its
     # per-BT table of (local_H, local_D, donor_type) and add the block's
     # coord offset. Padding blocks (bti < 0) get skipped via the mask.

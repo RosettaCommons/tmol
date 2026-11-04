@@ -65,42 +65,12 @@ def strong_wolfe_line_search(
     c2: float = 0.9,
     max_iter: int = 25,
 ) -> Tuple[float, jnp.ndarray, jnp.ndarray]:
-    """Strong-Wolfe line search over a scalar-output objective.
+    """Return (step, value, gradient) along direction from x.
 
-    Parameters
-    ----------
-    f_and_grad
-        Callable returning ``(f(y), grad_f(y))`` for a given flat-vector
-        argument ``y``. The gradient must have the same shape as ``y``.
-    x
-        Current iterate (flat ``jax.Array``).
-    direction
-        Descent direction (flat, same shape as ``x``). The caller guarantees
-        that ``<g0, direction>`` is negative on entry.
-    f0, g0
-        Pre-computed function value and gradient at ``x``; saves one
-        evaluation of ``f_and_grad`` on entry.
-    alpha0
-        Initial step length. L-BFGS callers pass ``1.0`` after the first
-        iteration and the previous ``alpha`` times ``min(1, 1/||grad||)``
-        on the first iteration.
-    c1, c2
-        Strong-Wolfe constants. Defaults match Nocedal & Wright's typical
-        choices (``c1=1e-4`` for Armijo, ``c2=0.9`` for the curvature
-        condition when paired with quasi-Newton methods).
-    max_iter
-        Hard budget on total function evaluations. On exhaustion we
-        return the best point seen so far.
-
-    Returns
-    -------
-    alpha, f_new, g_new
-        Accepted step length plus the function value and gradient at
-        ``x + alpha * direction``. If the search fails to find a
-        Wolfe-acceptable step, returns ``alpha=0`` with the input
-        ``(f0, g0)`` so the outer optimizer can fall back to a safer
-        direction (e.g., steepest descent).
-    """
+    f0 and g0 are the initial value and gradient. Bracketing and safeguarded zoom
+    seek sufficient decrease (c1) and strong curvature (c2), bounded by max_iter.
+    The callable evaluates value and gradient together; this routine controls the
+    search on the host and accepts JAX arrays."""
     # Directional derivative at the start.
     dphi0 = float(jnp.sum(g0 * direction))
     phi0 = float(f0)
@@ -129,7 +99,6 @@ def strong_wolfe_line_search(
             return float("inf"), f_y, g_y, float("nan")
         return float(f_y), f_y, g_y, float(jnp.sum(g_y * direction))
 
-    # -------------------- Bracketing phase --------------------------
     bracket_lo = None
     bracket_hi = None
     bracket_phi_lo = 0.0
@@ -178,7 +147,6 @@ def strong_wolfe_line_search(
             return best_alpha, best_f, best_g
         return 0.0, f0, g0
 
-    # -------------------- Zoom phase --------------------------------
     # Invariants:
     #   phi_lo is the best Armijo-satisfying point on the bracket;
     #   dphi_lo * (hi - lo) < 0 (minimizer is bracketed).

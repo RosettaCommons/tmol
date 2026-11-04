@@ -1,37 +1,7 @@
-"""Reference-energy term — JAX port of :mod:`tmol.score.ref.ref_energy_term`.
+"""Sum database reference energies over real residues in each pose.
 
-Upstream tmol's torch version is a 170-line ``nn.Module`` with a three
-stage setup (``setup_block_type`` stashes ``ref_weight`` on every
-``RefinedResidueType``, ``setup_packed_block_types`` packs those
-per-type weights into a tensor on the ``PackedBlockTypes``, and
-``setup_poses`` is a no-op) plus two evaluation entry points
-(``eval_ref_energy_for_pose`` / ``eval_ref_energy_for_rotamers``).
-
-The JAX port collapses all of that into the two-method
-:class:`~tmol_jax.score.energy_term.EnergyTerm` contract:
-
-* :meth:`setup_for_pose_stack` gathers a ``float32[n_types]`` array of
-  ref values indexed by ``PackedBlockTypes`` block-type index. Same as
-  upstream's ``packed_block_types.ref_weights`` — we just return it as
-  the term state instead of hanging it off the palette. One build per
-  palette is enough because every pose stack sharing that palette
-  reuses the same index space.
-
-* :meth:`__call__` is a single gather-and-sum: look up the weight for
-  every ``(pose, block)`` slot, mask out padding blocks
-  (``block_type_ind < 0``) with ``jnp.where``, and sum over blocks to
-  produce the ``float32[n_poses]`` channel. No rotamer entry point —
-  packing/rotamer evaluation will be handled by the packer (future
-  work) calling into this same machinery on a flattened pose stack.
-
-The term is a 1-body energy: there is no cross-block interaction, no
-count-pair filter, no gradient flow (``jax.grad`` through ``__call__``
-w.r.t. coords returns zero), and no parameter fit — the values come
-straight from ``ref.yaml`` and are treated as frozen constants.
-
-No torch, no CUDA kernels, no autograd hook juggling. Just a gather and
-a sum, ready for ``jit``/``vmap``/``scan``.
-"""
+Parameters come from ref.yaml. This one-body term is independent of coordinates,
+so its coordinate gradient is zero. JAX packing is not implemented."""
 
 from __future__ import annotations
 
@@ -62,16 +32,12 @@ class RefEnergyTerm(EnergyTerm):
         # Stored by reference; used in ``setup_for_pose_stack``.
         self._ref_weights: dict[str, float] = dict(param_db.scoring.ref.weights)
 
-    # ------------------------------------------------------------------ #
     # Metadata.                                                          #
-    # ------------------------------------------------------------------ #
 
     def score_types_provided(self) -> list[ScoreType]:
         return [ScoreType.ref]
 
-    # ------------------------------------------------------------------ #
     # Setup.                                                             #
-    # ------------------------------------------------------------------ #
 
     def setup_for_pose_stack(
         self, pose_stack: Any, pbt: Any = None
@@ -96,9 +62,7 @@ class RefEnergyTerm(EnergyTerm):
 
         return {"ref_values": jnp.asarray(weights_np, dtype=jnp.float32)}
 
-    # ------------------------------------------------------------------ #
     # Evaluation (hot path).                                             #
-    # ------------------------------------------------------------------ #
 
     def __call__(
         self,

@@ -1,35 +1,8 @@
-"""Hydrogen-bond energy term for tmol_jax.
+"""Donor/acceptor hydrogen-bond scoring with fixed topology.
 
-Port of :class:`tmol.score.hbond.hbond_energy_term.HBondEnergyTerm` with
-a pure-JAX, vectorised inner kernel. The upstream implementation is a
-thin wrapper around a compiled CUDA / CPU tile-scoring kernel; here we
-evaluate every donor-acceptor pair in parallel using broadcasting and
-let XLA handle the blocking on-device.
-
-The evaluation strategy:
-
-1. Build :class:`HBondParams` once per ``PoseStack`` via
-   :func:`tmol_jax.score.hbond.params.hbond_params_for_pose_stack`.
-2. For each pose, the donor atoms live in a ``[P, D]`` index array and
-   the acceptor atoms in a ``[P, A]`` index array.
-3. The pair energies form a ``[P, D, A]`` grid. We gather all 5 atom
-   coordinates (D, H, A, B, B0) per (pose, donor, acceptor) slot,
-   gather the matching polynomial / weight params by (donor_type,
-   acceptor_type), and call :func:`hbond_pair_V` once on the full grid.
-4. Mask out "padding" pairs (either the donor index or the acceptor
-   index is -1) and pairs whose A-H distance exceeds ``max_ah_dist``,
-   then sum.
-
-The :class:`HBondEnergyTerm` class itself implements the
-:class:`tmol_jax.score.energy_term.EnergyTerm` contract:
-
-* :meth:`setup_for_pose_stack` returns an :class:`HBondParams` pytree.
-* :meth:`__call__` runs the pair grid under ``jit``/``grad`` and
-  accepts a ``coords_override`` so the minimizer can differentiate
-  through the coordinate array directly.
-
-Returns ``{ScoreType.hbond: [n_poses]}``.
-"""
+The portable route broadcasts over donor-acceptor pairs. The optional CUDA
+adapter evaluates the same canonical scalar potential. Acceptor geometry and
+count-pair exclusions are prepared once per rendered pose."""
 
 from __future__ import annotations
 
@@ -44,9 +17,7 @@ from tmol_jax.score.hbond.params import HBondParams, hbond_params_for_pose_stack
 from tmol_jax.score.hbond.potentials import hbond_pair_V
 from tmol_jax.score.score_types import ScoreType
 
-# ---------------------------------------------------------------------- #
 # Gather helpers                                                         #
-# ---------------------------------------------------------------------- #
 
 
 def _gather_xyz(coords_P: jnp.ndarray, atom_idx: jnp.ndarray) -> jnp.ndarray:
@@ -78,9 +49,7 @@ def _pair_gather(
     return table[D_b, A_b]
 
 
-# ---------------------------------------------------------------------- #
 # Per-pose scoring                                                       #
-# ---------------------------------------------------------------------- #
 
 
 def hbond_pose_scores(coords: jnp.ndarray, params: HBondParams) -> jnp.ndarray:
@@ -169,9 +138,7 @@ def hbond_pose_scores(coords: jnp.ndarray, params: HBondParams) -> jnp.ndarray:
     return jnp.sum(E_grid, axis=(1, 2))
 
 
-# ---------------------------------------------------------------------- #
 # EnergyTerm subclass                                                    #
-# ---------------------------------------------------------------------- #
 
 
 class HBondEnergyTerm(EnergyTerm):
@@ -182,16 +149,12 @@ class HBondEnergyTerm(EnergyTerm):
         self.hbond_db = param_db.scoring.hbond
         self.chemical_db = param_db.chemical
 
-    # ------------------------------------------------------------------ #
     # Metadata.                                                          #
-    # ------------------------------------------------------------------ #
 
     def score_types_provided(self) -> list[ScoreType]:
         return [ScoreType.hbond]
 
-    # ------------------------------------------------------------------ #
     # Setup.                                                             #
-    # ------------------------------------------------------------------ #
 
     def setup_for_pose_stack(
         self, pose_stack: Any, pbt: Optional[Any] = None
@@ -211,9 +174,7 @@ class HBondEnergyTerm(EnergyTerm):
             self.chemical_db,
         )
 
-    # ------------------------------------------------------------------ #
     # Evaluation (hot path).                                             #
-    # ------------------------------------------------------------------ #
 
     def __call__(
         self,

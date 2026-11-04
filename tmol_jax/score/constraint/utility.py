@@ -1,33 +1,7 @@
-"""Constraint-building helpers.
+"""Build Cartesian mainchain constraints on N, CA and C atoms.
 
-Upstream reference: :mod:`tmol.score.constraint.utility`. The torch
-version offers two helpers:
-
-* ``constrain_all_ca`` -- tether every CA to its current coordinate.
-* ``create_mainchain_coordinate_constraints`` -- tether every mainchain
-  atom (N, CA, C for canonical residues) to its current coordinate. This
-  is what ``FastRelax`` uses when it wants to freeze the backbone and
-  only repack / minimise sidechains.
-
-This port focuses on the FastRelax use case: given a
-:class:`~tmol_jax.pose.pose_stack.PoseStack`, walk the palette to find
-each residue's mainchain atom indices, gather the current coordinates,
-and pack everything into a :class:`ConstraintSet`.
-
-Because the JAX port of :class:`PackedBlockTypes` does not precompute a
-``mainchain_atom_indices`` attribute (the upstream field), we recover
-the indices from the per-block-type ``atom_names`` tuple. The default
-mainchain atoms for the canonical amino acids are ``N``, ``CA``, ``C``;
-an optional ``atom_names`` argument lets callers pick a different set
-(e.g. include ``O`` or restrict to ``CA`` only). This keeps the helper
-self-contained -- no mutation of the packed block types, no hidden
-side-effects.
-
-All heavy lifting runs once on CPU / numpy (the lookup is
-conformation-independent and happens outside the jit boundary). Only
-the final coordinate gather sits on a JAX array, which keeps the
-resulting :class:`ConstraintSet` a proper pytree.
-"""
+Targets come from the input pose coordinates. Movement masks and residue
+selection determine which real atoms are constrained; padding is excluded."""
 
 from __future__ import annotations
 

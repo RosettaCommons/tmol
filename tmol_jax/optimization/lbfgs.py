@@ -74,51 +74,12 @@ def lbfgs_minimize(  # noqa: C901
     verbose: bool = False,
     value_and_grad: Optional[Callable[[jnp.ndarray], Any]] = None,
 ) -> Dict[str, Any]:
-    """Minimize ``fn(x)`` with L-BFGS + strong-Wolfe line search.
+    """Minimize a flat scalar objective using L-BFGS and strong-Wolfe steps.
 
-    Parameters
-    ----------
-    fn
-        Scalar-output callable taking a flat ``jax.Array`` and returning
-        a scalar. The function is differentiated via ``jax.grad``; the
-        returned ``value_and_grad`` variant is wrapped in ``jax.jit``
-        internally to avoid recompilation across iterations.
-    x0
-        Initial flat iterate.
-    max_iter
-        Maximum outer iterations.
-    history
-        L-BFGS memory depth (number of ``(s, y)`` pairs kept).
-    gtol
-        Convergence tolerance on the infinity norm of the gradient.
-    ftol
-        Relative function-value change tolerance (``|df| <= ftol *
-        (|f| + |f_prev| + 1e-10)``).
-    grad_mask
-        Optional ``bool`` or ``float`` mask of the same shape as ``x0``.
-        Gradients are multiplied by the mask before every step and the
-        resulting search direction is masked too — equivalent to
-        restricting optimization to the coordinates where ``mask=True``.
-    line_search_max_iter, c1, c2
-        Passed through to :func:`strong_wolfe_line_search`.
-    verbose
-        If ``True``, print a one-line progress report per iteration.
-    value_and_grad
-        Optional pre-jitted ``x -> (value, grad)`` callable. When
-        supplied, the internal ``jax.jit(jax.value_and_grad(fn))``
-        wrapper is bypassed; ``fn`` is only used for display and is not
-        re-differentiated. This lets callers (e.g.
-        :func:`~tmol_jax.optimization.minimizers.run_cart_min`) reuse a
-        score-function-level jit cache instead of paying a per-call
-        compilation cost.
-
-    Returns
-    -------
-    dict
-        ``{"x", "fun", "grad", "n_iter", "converged", "status"}``.
-        ``status`` is a short human-readable string describing why the
-        loop terminated.
-    """
+    An optional same-shape grad_mask freezes coordinates by zeroing gradients.
+    value_and_grad may supply a compiled evaluator; otherwise one is built from fn.
+    Nonfinite initial values/gradients fail explicitly. Return x, initial_fun, fun,
+    grad, n_iter, converged and status; reaching max_iter is not convergence."""
     if max_iter < 0:
         raise ValueError("max_iter must be nonnegative")
     if history < 1:
@@ -295,9 +256,7 @@ def lbfgs_minimize(  # noqa: C901
         # (the quasi-Newton natural unit step).
         alpha0 = 1.0
 
-        # ------------------------------------------------------------
         # Convergence checks (gradient, relative f-change).
-        # ------------------------------------------------------------
         max_grad = float(jnp.max(jnp.abs(grad)))
         if max_grad <= gtol:
             converged = True

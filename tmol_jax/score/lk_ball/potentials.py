@@ -1,30 +1,10 @@
-"""LK-ball potential primitives in pure JAX.
+"""Anisotropic LK desolvation, water placement and bridge fractions.
 
-Upstream references:
-
-* ``tmol/score/lk_ball/potentials/lk_ball.hh`` — ``lk_fraction``,
-  ``lk_bridge_fraction``, and the main ``lk_ball_score::V`` driver.
-* ``tmol/score/lk_ball/potentials/water.hh`` — water placement from
-  donor/acceptor geometry.
-* ``tmol/score/ljlk/potentials/lk_isotropic.hh`` — ``f_desolv`` (the
-  isotropic LK gaussian in distance), reused verbatim as the LK-ball
-  magnitude.
-
-The upstream code distinguishes donor-water placement (``build_don_water``:
-a water along the D-H axis at a fixed distance) from acceptor-water
-placement (``build_water_for_acc``: a coordinate built with a fixed
-bond-angle and one of several canonical torsions relative to the
-acceptor's hybridization — sp2 / sp3 / ring). Both are implemented
-here via :func:`place_waters_for_polar_atom`, dispatching on
-``(is_donor, is_acceptor, hybridization)``. The main
-:func:`lk_ball_pair` routine is independent of how the waters got
-placed and is a faithful port of the upstream algorithm.
-
-All functions are pure JAX, shape-polymorphic, and safe to use under
-``jit``, ``vmap``, and ``grad``. Downstream in
-:mod:`.lk_ball_energy_term` they are composed via ``vmap`` across the
-atom / pose axes.
-"""
+Donor waters lie along D-H axes. Acceptor waters use hybridization-specific
+base geometry, angles and torsions. NaN water slots denote absent waters and
+must be masked before differentiable geometry. Pair magnitudes use the LJ/LK
+sigma rule and isotropic Gaussian. Native references are lk_ball.hh, water.hh
+and ljlk/potentials/lk_isotropic.hh under tmol/score."""
 
 from __future__ import annotations
 
@@ -35,9 +15,7 @@ import jax.numpy as jnp
 
 from tmol_jax.types import Array
 
-# --------------------------------------------------------------------------- #
 # NaN-safe primitives                                                         #
-# --------------------------------------------------------------------------- #
 #
 # When this module is composed under ``jax.vmap`` across all atom pairs in a
 # pose stack, many inputs land in "padded" or "virtual" slots where the two
@@ -77,9 +55,7 @@ def safe_normalize(v: Array, axis: int = -1, eps: float = 1e-8) -> Array:
     return jnp.where(nz, v / jnp.where(nz, n, 1.0), 0.0)
 
 
-# --------------------------------------------------------------------------- #
 # Constants (upstream ``lkball_globals``, ``LJLKGlobalParams``)               #
-# --------------------------------------------------------------------------- #
 #
 # These are the upstream-hard-coded lk-ball tolerances; upstream marks them
 # "could be exposed as global parameters" but they are fixed in every
@@ -121,9 +97,7 @@ class LKBallDefaults(NamedTuple):
 LK_BALL_DEFAULTS = LKBallDefaults()
 
 
-# --------------------------------------------------------------------------- #
 # f_desolv (shared with LJLK)                                                 #
-# --------------------------------------------------------------------------- #
 #
 # Upstream ``tmol/score/ljlk/potentials/lk_isotropic.hh::f_desolv`` is the
 # "gaussian desolvation" primitive that sits at the heart of *every* LK
@@ -239,9 +213,7 @@ def lk_isotropic_pair_simplified(
     )
 
 
-# --------------------------------------------------------------------------- #
 # Water placement                                                             #
-# --------------------------------------------------------------------------- #
 #
 # Upstream tmol places waters per-polar-atom with two distinct geometries:
 #
@@ -550,7 +522,6 @@ def place_waters_for_polar_atom(
     coord = jnp.asarray(coord)
     max_H = H_coords.shape[0]
 
-    # ---- donor waters (one per polar H, in the first slots) ----
     # Pad/truncate to ``n_waters``.
     don_waters_raw = place_donor_waters(
         coord, H_coords, H_mask, water_dist=water_dist
@@ -561,7 +532,6 @@ def place_waters_for_polar_atom(
         pad = jnp.full((n_waters - max_H, 3), jnp.nan)
         don_waters = jnp.concatenate([don_waters_raw, pad], axis=0)
 
-    # ---- acceptor waters (at offset ``n_attached_H``) ----
     acc_waters = place_acceptor_waters(
         coord, B_xyz, B0_xyz, hybridization, n_waters, water_dist=water_dist
     )  # [n_waters, 3]
@@ -591,9 +561,7 @@ def place_waters_for_polar_atom(
     return out
 
 
-# --------------------------------------------------------------------------- #
 # lk_fraction / lk_bridge_fraction (verbatim ports)                           #
-# --------------------------------------------------------------------------- #
 
 
 def lk_fraction(
@@ -707,7 +675,6 @@ def lk_bridge_fraction(
     overlapfrac = jnp.square(1 - jnp.square(-jnp.log(bounded) / overlap_width_A2))
     overlapfrac = jnp.where(total <= jnp.exp(-overlap_width_A2), 0, overlapfrac)
 
-    # ---- angle (base-length) fraction ------------------------------------
     target_len2 = (8.0 / 3.0) * (lkb_water_dist**2)
     base_delta = jnp.sum((coord_i - coord_j) ** 2) - target_len2
 
@@ -720,9 +687,7 @@ def lk_bridge_fraction(
     return overlapfrac * anglefrac
 
 
-# --------------------------------------------------------------------------- #
 # lj_sigma (upstream: tmol/score/ljlk/potentials/common.hh)                   #
-# --------------------------------------------------------------------------- #
 
 
 def lj_sigma(
@@ -764,9 +729,7 @@ def lj_sigma(
     )
 
 
-# --------------------------------------------------------------------------- #
 # Main pair routine                                                            #
-# --------------------------------------------------------------------------- #
 
 
 class LKBallPairResult(NamedTuple):
@@ -850,7 +813,6 @@ def lk_ball_pair(
     safe_waters_i = jnp.where(jnp.isnan(waters_i), 0.0, waters_i)
     safe_waters_j = jnp.where(jnp.isnan(waters_j), 0.0, waters_j)
 
-    # --- LJ sigma ---------------------------------------------------------
     sigma = lj_sigma(
         lj_radius_i=params["i_lj_radius"],
         lj_radius_j=params["j_lj_radius"],
@@ -873,10 +835,8 @@ def lk_ball_pair(
     # double-where trick.
     dist = safe_norm(coord_i - coord_j, axis=-1)
 
-    # --- Distance cutoff --------------------------------------------------
     within_cutoff = dist < defaults.distance_threshold
 
-    # --- LK isotropic (upstream uses the pair-direction only) -------------
     lk_iso = lk_isotropic_pair_simplified(
         dist=dist,
         lj_sigma_ij=sigma,
@@ -887,7 +847,6 @@ def lk_ball_pair(
         bonded_path_length=bonded_path_length,
     )
 
-    # --- Water desolvation fraction ---------------------------------------
     frac_desolv = lk_fraction(
         waters_i=safe_waters_i,
         coord_j=coord_j,
@@ -896,7 +855,6 @@ def lk_ball_pair(
         waters_i_mask=waters_i_mask,
     )
 
-    # --- Bridging fraction (only if J is donor or acceptor) ---------------
     j_is_polar = jnp.logical_or(
         jnp.asarray(params.get("j_is_donor", 0.0)) > 0.5,
         jnp.asarray(params.get("j_is_acceptor", 0.0)) > 0.5,
@@ -918,7 +876,6 @@ def lk_ball_pair(
         jnp.zeros((), dtype=lk_iso.dtype),
     )
 
-    # --- Assemble the four channels ---------------------------------------
     # Upstream ``lk_ball_atom_energy_full`` gates *all four* channels
     # when ``cp_separation <= 3`` (1-2 / 1-3 bonded pairs never contribute
     # to any lk-ball channel). The ``lk_iso`` channel already has the

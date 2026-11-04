@@ -38,37 +38,15 @@ from tmol_jax.types import pytree_dataclass
 _MAX_COUNTPAIR_SEPARATION: int = 6
 
 
-# --------------------------------------------------------------------- #
 # Host-side packed-block-type setup                                      #
-# --------------------------------------------------------------------- #
 
 
 def _annotate_packed_block_types(packed_block_types: Any, elec_db: Any) -> None:
-    """Attach the four elec-specific arrays to ``packed_block_types``.
+    """Attach charge and representative-distance arrays for this database.
 
-    Reuse only annotations for the same parameter database and topology.
-    The arrays are ``jnp`` so that later scoring can use them directly
-    without host->device transfers.
-
-    Attached attributes:
-
-    ``elec_partial_charge``
-        ``float32[n_types, max_n_atoms]``. Zero for non-real atom
-        slots and for atoms missing from the DB.
-
-    ``elec_inter_repr_path_distance``
-        ``int32[n_types, max_n_atoms, max_n_atoms]``. For a given
-        block type ``t``, position ``[a, b]`` holds the number of
-        chemical bonds between atom ``a`` on ``t`` and the count-pair
-        representative of atom ``b`` on ``t``. Used to compute the
-        inter-block count-pair separation by summing through
-        connection atoms on each side.
-
-    ``elec_intra_repr_path_distance``
-        ``int32[n_types, max_n_atoms, max_n_atoms]``. Holds
-        ``path_distance[repr[a], repr[b]]``; used directly as the
-        path length for atom pairs on the same block.
-    """
+    For T types and M atom slots: charges[T,M], inter[T,M,M] = path[a,rep[b]],
+    and intra[T,M,M] = path[rep[a],rep[b]]. Replacing annotations preserves arrays
+    already captured by rendered scorers. Reuse requires the same live owners."""
 
     owners = (elec_db, packed_block_types.active_block_types)
     cached_owners = getattr(packed_block_types, "_elec_owners", ())
@@ -92,13 +70,11 @@ def _annotate_packed_block_types(packed_block_types: Any, elec_db: Any) -> None:
     packed_pd = np.asarray(packed_block_types.intrares_path_distance)
 
     for i, bt in enumerate(packed_block_types.active_block_types):
-        # --- charges
         from tmol_jax.score.elec.params import _charges_for_block_type
 
         rc = _charges_for_block_type(bt, partial_charges)
         charges[i, : rc.shape[0]] = rc
 
-        # --- representative mapping and path-distance tables
         rep = representative_mapping_for_block_type(bt, cp_reps)
         n = rep.shape[0]
 
@@ -126,9 +102,7 @@ def _annotate_packed_block_types(packed_block_types: Any, elec_db: Any) -> None:
     packed_block_types._elec_owners = owners
 
 
-# --------------------------------------------------------------------- #
 # Per-atom-pair scoring                                                  #
-# --------------------------------------------------------------------- #
 
 
 def pair_bonded_path_length(pose_stack: Any, packed_block_types: Any) -> jax.Array:
@@ -151,9 +125,7 @@ def pair_bonded_path_length(pose_stack: Any, packed_block_types: Any) -> jax.Arr
     )
 
 
-# --------------------------------------------------------------------- #
 # Pairwise energy (JAX, ``jit``-safe)                                    #
-# --------------------------------------------------------------------- #
 
 
 def _pairwise_distance(coords: jax.Array) -> jax.Array:
@@ -192,9 +164,7 @@ def _atom_is_real_mask(pose_stack: Any, packed_block_types: Any) -> jax.Array:
     )
 
 
-# --------------------------------------------------------------------- #
 # The EnergyTerm-facing class                                            #
-# --------------------------------------------------------------------- #
 
 
 @pytree_dataclass
@@ -259,16 +229,12 @@ class ElecEnergyTerm(EnergyTerm):
             self.elec_db
         )
 
-    # ---- class-level metadata ---------------------------------------
-
     @classmethod
     def class_name(cls) -> str:
         return "Elec"
 
     def score_types_provided(self) -> list[ScoreType]:
         return [ScoreType.fa_elec]
-
-    # ---- setup ------------------------------------------------------
 
     def setup_packed_block_types(self, packed_block_types: Any) -> None:
         """Annotate the PBT with charges and count-pair path tables.
@@ -316,8 +282,6 @@ class ElecEnergyTerm(EnergyTerm):
             max_dis=jnp.asarray(gp.max_dis, dtype=jnp.float32),
             cuda_global_parameters=cuda._pack_global_parameters(gp),
         )
-
-    # ---- scoring ----------------------------------------------------
 
     def __call__(
         self,
