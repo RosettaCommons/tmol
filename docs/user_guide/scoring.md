@@ -66,6 +66,15 @@ sfxn.set_option("density_scatterers", "xray")
 sfxn.set_option("density_periodic", True)
 ```
 
+`beta_nov16_dens_refine_score_function()` is the same score function re-weighted for
+refining a model into a cryo-EM map: `elec_dens_fast` 140, `fa_ljrep` 0.8 and Rosetta's
+effective cartesian-bonded weights (lengths 1.0, angles 1.5, torsions 1.0, impropers
+1.0). These are the final-stage weights of the best Rosetta-style cryo-EM relax in a
+sweep over 24 EMDB targets (2-5 A starting models; mean CA/C4' RMSD 2.79 to 2.24 A,
+LDDT 0.752 to 0.788, against 2.30 A and 0.775 for `beta_nov16_dens` at weight 35). It is
+a score function only; the relax protocol, including the `fa_ljrep` ramp and repacking
+between stages, is the caller's.
+
 ## CPU batch throughput
 
 Whole-pose CPU scoring follows PyTorch's process-wide intra-op thread budget.

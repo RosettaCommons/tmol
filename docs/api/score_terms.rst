@@ -40,7 +40,8 @@ Score-type map
      - :class:`~tmol.score.density.DensityEnergyTerm`
      - Rosetta-style fit of every heavy atom to a cryo-EM or crystallographic
        map attached to the pose stack (``PoseStack.density_map``); use
-       :func:`tmol.score.beta_nov16_dens_score_function`.
+       :func:`tmol.score.beta_nov16_dens_score_function`, or
+       :func:`tmol.score.beta_nov16_dens_refine_score_function` for refinement weights.
    * - ``disulfide``
      - :class:`~tmol.score.disulfide.DisulfideEnergyTerm`
      - Geometry of disulfide-linked cysteine pairs.

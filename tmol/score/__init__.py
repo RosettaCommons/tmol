@@ -115,6 +115,28 @@ def beta_nov16_dens_score_function(
     return _load_score_function("beta_nov16_dens.sfxn", device, param_db)
 
 
+def beta_nov16_dens_refine_score_function(
+    device: torch.device, param_db: Optional[ParameterDatabase] = None
+) -> "ScoreFunction":
+    """Return beta_nov16_dens weighted for refining a model into a cryo-EM map.
+
+    The weights are the final-stage weights of the Rosetta-style cryo-EM relax that
+    performed best in a sweep over 24 EMDB targets: ``elec_dens_fast`` 140,
+    ``fa_ljrep`` 0.8, and Rosetta's effective ``cart_*`` weights (lengths 1.0,
+    angles 1.5, torsions 1.0, impropers 1.0). Every other weight is the
+    beta2016 value. This is a score function only: the relax protocol (the
+    FastRelax ``fa_ljrep`` ramp, repack between stages) is the caller's.
+
+    Args:
+        device: Target torch device.
+        param_db: Optional parameter database; the process default is used when omitted.
+
+    Returns:
+        A new ScoreFunction.
+    """
+    return _load_score_function("beta_nov16_dens_refine.sfxn", device, param_db)
+
+
 __all__ = [
     "AcceptorHybridization",
     "AtomTypeParamResolver",
@@ -128,6 +150,7 @@ __all__ = [
     "ScoreType",
     "WholePoseScoringModule",
     "beta2016_score_function",
+    "beta_nov16_dens_refine_score_function",
     "beta_nov16_dens_score_function",
     "calculate_fragment_interactions",
 ]

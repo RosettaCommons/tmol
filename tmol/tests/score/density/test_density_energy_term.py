@@ -9,6 +9,7 @@ from tmol.pose import PoseStackBuilder
 from tmol.score import (
     ScoreType,
     beta2016_score_function,
+    beta_nov16_dens_refine_score_function,
     beta_nov16_dens_score_function,
 )
 from tmol.score.density import (
@@ -377,3 +378,36 @@ def test_beta_nov16_dens_differs_from_beta2016_only_by_the_density_term(
         total - without_density, 35.0 * unit_density, rtol=1e-4, atol=1e-3
     )
     assert float(unit_density) < 0
+
+
+def test_beta_nov16_dens_refine_reweights_only_the_refinement_terms(torch_device):
+    base = beta_nov16_dens_score_function(torch_device)
+    refine = beta_nov16_dens_refine_score_function(torch_device)
+    changed = {
+        ScoreType.elec_dens_fast: 140.0,
+        ScoreType.fa_ljrep: 0.8,
+        ScoreType.cart_lengths: 1.0,
+        ScoreType.cart_angles: 1.5,
+        ScoreType.cart_torsions: 1.0,
+        ScoreType.cart_impropers: 1.0,
+    }
+    for score_type in ScoreType:
+        if score_type is ScoreType.n_score_types:
+            continue
+        expected = changed.get(score_type, float(base.get_weight(score_type)))
+        assert float(refine.get_weight(score_type)) == pytest.approx(
+            expected
+        ), score_type
+
+
+def test_beta_nov16_dens_refine_scores_with_the_density_map(xtal_map, torch_device):
+    pose_stack = model_pose(
+        XTAL_MODEL, torch_device, first=1, last=20, density_map=xtal_map
+    )
+    coords = pose_stack.coords.detach().requires_grad_(True)
+    total = beta_nov16_dens_refine_score_function(
+        torch_device
+    ).render_whole_pose_scoring_module(pose_stack)(coords)
+    total.sum().backward()
+    assert torch.isfinite(total).all()
+    assert torch.isfinite(coords.grad).all()
