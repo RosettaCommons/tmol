@@ -13,6 +13,8 @@ on:
       - pyproject.toml
       - packages/**
       - tmol/**
+      - tmol_core/**
+      - tmol_jax/**
       - scripts/**
       - .github/workflows/**
       - .github/ci/**
@@ -80,7 +82,7 @@ jobs:
 
   test:
     name: "${{ matrix.label }} / Torch ${{ matrix.torch-package-version }}"
-    needs: [matrix, build, build-macos]
+    needs: [matrix, build, build-macos, test-sdist]
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.matrix.outputs.test) }}
@@ -96,7 +98,7 @@ jobs:
       portability: ${{ matrix.portability }}
 
   test-default-pypi:
-    needs: [build, jax-artifacts]
+    needs: [build, jax-artifacts, test-sdist]
     uses: ./.github/workflows/_test_wheel.yml
     with:
       runs-on: ubuntu-22.04
@@ -109,7 +111,7 @@ jobs:
       test-jax: true
 
   test-gpu:
-    needs: [build, jax-artifacts]
+    needs: [build, jax-artifacts, test-sdist]
     uses: ./.github/workflows/_test_gpu_wheel.yml
     with:
       test-jax: true

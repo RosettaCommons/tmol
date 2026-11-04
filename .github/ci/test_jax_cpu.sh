@@ -10,10 +10,14 @@ trap 'rm -rf "${work}"' EXIT
 python -m venv "${work}/env"
 "${work}/env/bin/python" -m pip install --upgrade pip
 "${work}/env/bin/python" -m pip install pytest "${JAX_SPEC:-jax>=0.11.2}"
-"${work}/env/bin/python" -m pip install "${JAX_DIST}"/tmol_jax-*.whl
+"${work}/env/bin/python" -m pip install "${JAX_DIST}"/tmol_core-*.whl "${JAX_DIST}"/tmol_jax-*.whl
 
 mkdir -p "${work}/source/tests" "${work}/source/tmol/tests/data/pdb"
 cp -R tests/jax "${work}/source/tests/jax"
+cp -R tests/core "${work}/source/tests/core"
+if [ -d tests/scientific ]; then
+  cp -R tests/scientific "${work}/source/tests/scientific"
+fi
 cp tmol/tests/data/pdb/{1ubq,3plc}.pdb "${work}/source/tmol/tests/data/pdb/"
 mkdir -p "${work}/source/tmol/database/default/scoring"
 cp tmol/database/default/scoring/hbond.yaml \
@@ -23,7 +27,7 @@ version=$("${work}/env/bin/python" -I -c \
   'from importlib.metadata import version; print(version("tmol-jax"))')
 (
   cd "${work}/source"
-  JAX_PLATFORMS=cpu "${work}/env/bin/python" -I -m pytest -ra tests/jax
+  TMOL_TEST_BACKENDS=jax-cpu JAX_PLATFORMS=cpu "${work}/env/bin/python" -I -m pytest -ra tests
   JAX_PLATFORMS=cpu "${work}/env/bin/python" -I \
     "${GITHUB_WORKSPACE}/scripts/smoke_installed_jax.py" \
     --pdb tmol/tests/data/pdb/1ubq.pdb --version "${version}" \

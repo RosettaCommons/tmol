@@ -140,7 +140,7 @@ jobs:
 
   test_wheels:
     name: "pip cp${{ matrix.python-tag }} ${{ matrix.local-tag }} ${{ matrix.arch }}"
-    needs: [verify_release_version, build_wheels, build_cpu_wheel, build_macos_cpu_wheel]
+    needs: [verify_release_version, build_wheels, build_cpu_wheel, build_macos_cpu_wheel, build_sdist]
     if: >-
       ${{ !cancelled() && needs.verify_release_version.result == 'success' &&
           (needs.verify_release_version.outputs.candidate_run_id != '' ||
@@ -164,7 +164,7 @@ jobs:
 
   test_default_pypi:
     name: Plain pip with default PyPI dependencies
-    needs: [verify_release_version, build_cpu_wheel]
+    needs: [verify_release_version, build_cpu_wheel, build_sdist]
     if: >-
       ${{ !cancelled() && needs.verify_release_version.result == 'success' &&
           (needs.verify_release_version.outputs.candidate_run_id != '' || needs.build_cpu_wheel.result == 'success') }}
@@ -181,7 +181,7 @@ jobs:
 
   test_gpu_runtime:
     name: Release wheel scoring on CUDA
-    needs: [verify_release_version, build_wheels, build_cpu_wheel]
+    needs: [verify_release_version, build_wheels, build_cpu_wheel, build_sdist]
     if: >-
       ${{ !cancelled() && needs.verify_release_version.result == 'success' &&
           (needs.verify_release_version.outputs.candidate_run_id != '' ||
@@ -234,6 +234,19 @@ jobs:
           github-token: ${{ github.token }}
           merge-multiple: true
 
+      - name: Inspect shared-core dependency
+        id: core
+        run: python scripts/package_requirements.py --github-output "$GITHUB_OUTPUT" wheels/*.whl
+
+      - name: Download shared core artifacts
+        if: steps.core.outputs.required == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: tmol-core
+          path: core-dist/
+          run-id: ${{ needs.verify_release_version.outputs.candidate_run_id || github.run_id }}
+          github-token: ${{ github.token }}
+
       - name: List all packages
         run: |
           echo "=== sdist ==="
@@ -253,7 +266,7 @@ jobs:
           from pathlib import Path
           from packaging.utils import parse_sdist_filename, parse_wheel_filename
           version = os.environ["RELEASE_VERSION"]
-          for path in Path("wheels").glob("*.whl"):
+          for path in [*Path("wheels").glob("*.whl"), *Path("core-dist").glob("*.whl")]:
               assert parse_wheel_filename(path.name)[1].public == version, path
           sdists = list(Path("dist").glob("*.tar.gz"))
           assert len(sdists) == 1, sdists
@@ -267,7 +280,11 @@ jobs:
 
       - name: Prepare PyPI packages and versioned wheel indexes
         run: |
-          python scripts/release_artifacts.py --wheels wheels --sdist dist/*.tar.gz --output prepared
+          args=()
+          if [ "${{ steps.core.outputs.required }}" = true ]; then
+            args+=(--core-wheel core-dist/tmol_core-*.whl --core-sdist core-dist/tmol_core-*.tar.gz)
+          fi
+          python scripts/release_artifacts.py --wheels wheels --sdist dist/*.tar.gz "${args[@]}" --output prepared
           python -m twine check --strict prepared/pypi/*
 
       - uses: actions/upload-artifact@v4
@@ -302,6 +319,7 @@ jobs:
           files: |
             dist/*.tar.gz
             wheels/*.whl
+            core-dist/*
             scripts/repair_cuda13_arm64_metadata.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -377,6 +395,9 @@ jobs:
         run: |
           # Publish optional backends before exposing base-package extras.
           # Missing access to either new project must not publish a partial base release.
+          if compgen -G "prepared/pypi/tmol_core-*" >/dev/null; then
+            python -m twine upload --skip-existing prepared/pypi/tmol_core-*
+          fi
           python -m twine upload --skip-existing prepared/pypi/tmol_ops_*.whl
           python -m twine upload --skip-existing prepared/pypi/tmol-*.whl prepared/pypi/tmol-*.tar.gz
 

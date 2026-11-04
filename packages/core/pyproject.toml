@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tmol-core"
+dynamic = ["version"]
+description = "Framework-independent chemistry and host preparation for TMol"
+readme = "README.md"
+license = "BSD-3-Clause AND Apache-2.0"
+requires-python = ">=3.11"
+dependencies = ["attrs>=21", "cattrs>=22", "pint>=0.23,<1", "pyyaml>=6", "networkx>=3"]
+
+[project.urls]
+Repository = "https://github.com/RosettaCommons/tmol"
+Documentation = "https://rosettacommons.github.io/tmol/"
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
+
+[tool.setuptools.packages.find]
+include = ["tmol_core*"]
+
+[tool.setuptools.package-data]
+tmol_core = ["NOTICE", "default/chemical/*.yaml", "extern/pysmiles/LICENSE.md"]

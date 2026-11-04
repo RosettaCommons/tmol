@@ -7,11 +7,11 @@ name = "tmol-jax"
 dynamic = ["version"]
 description = "JAX molecular scoring frontend for TMol"
 readme = "README.md"
-license = "Apache-2.0"
+license = "Apache-2.0 AND BSD-3-Clause"
 requires-python = ">=3.12"
 dependencies = [
     # Independent JAX frontend: do not add tmol or torch as runtime dependencies.
-    "jax>=0.11.2", "numpy>=1.25", "scipy>=1.13.1", "attrs>=21",
+    "tmol-core==0.2.0", "jax>=0.11.2", "numpy>=1.25", "scipy>=1.13.1", "attrs>=21",
     "pyyaml>=6", "networkx>=3", "pandas>=2.2,<4", "biotite>=1.6,<2",
 ]
 
@@ -21,8 +21,8 @@ cu13 = ["jax[cuda13]>=0.11.2"]
 native-cuda = ["tmol-jax-cuda"]
 
 [project.urls]
-Repository = "https://github.com/uw-ipd/tmol"
-Documentation = "https://uw-ipd.github.io/tmol/"
+Repository = "https://github.com/RosettaCommons/tmol"
+Documentation = "https://rosettacommons.github.io/tmol/"
 
 [tool.setuptools.dynamic]
 version = {file = "VERSION"}

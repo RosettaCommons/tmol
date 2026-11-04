@@ -62,6 +62,16 @@ jobs:
           path: base-wheel
           run-id: ${{ inputs.candidate-run-id || github.run_id }}
           github-token: ${{ github.token }}
+      - name: Inspect shared-core dependency
+        id: core
+        run: python scripts/package_requirements.py --github-output "$GITHUB_OUTPUT" wheels/*.whl base-wheel/*.whl
+      - uses: actions/download-artifact@v4
+        if: steps.core.outputs.required == 'true'
+        with:
+          name: tmol-core
+          path: core-dist
+          run-id: ${{ inputs.candidate-run-id || github.run_id }}
+          github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
         if: inputs.test-jax
         with:
@@ -81,6 +91,9 @@ jobs:
         shell: bash
         run: |
           args=()
+          if [ "${{ steps.core.outputs.required }}" = true ]; then
+            args+=(--core-wheel core-dist/tmol_core-*.whl)
+          fi
           if [ "$DEFAULT_TORCH" = true ]; then
             args+=(--default-torch)
           fi
@@ -100,6 +113,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD/wheels:/wheels:ro" \
             -v "$PWD/base-wheel:/base-wheel:ro" \
+            -v "$PWD/core-dist:/core-dist:ro" \
             -v "$PWD/scripts/repair_cuda13_arm64_metadata.py:/repair_metadata.py:ro" \
             'quay.io/pypa/manylinux_2_28_${{ inputs.arch }}' \
             bash -euo pipefail -c '
@@ -107,6 +121,9 @@ jobs:
               /tmp/smoke/bin/pip install --upgrade pip
               /tmp/smoke/bin/pip install "torch==${{ inputs.torch-package-version }}" \
                 --index-url "${{ inputs.torch-index-url }}"
+              if compgen -G "/core-dist/*.whl" >/dev/null; then
+                /tmp/smoke/bin/pip install /core-dist/*.whl
+              fi
               if compgen -G "/base-wheel/*.whl" >/dev/null; then
                 /tmp/smoke/bin/pip install /base-wheel/*.whl
               fi

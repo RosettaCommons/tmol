@@ -17,6 +17,7 @@ from packaging.utils import (
 )
 from release_artifacts import validate_wheel, write_index
 from staging_index import serve
+from package_requirements import requires_core
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -41,6 +42,7 @@ def main():
         type=Path,
         help="Also install and smoke the matching pure JAX frontend wheel",
     )
+    parser.add_argument("--core-wheel", type=Path)
     parser.add_argument("--torch-version", required=True)
     parser.add_argument("--torch-index", default="https://pypi.org/simple")
     parser.add_argument("--default-torch", action="store_true")
@@ -53,6 +55,10 @@ def main():
         candidates = [args.wheel or args.sdist]
         if args.base_wheel:
             candidates.append(args.base_wheel)
+        if any(requires_core(p) for p in candidates) and args.core_wheel is None:
+            parser.error("this candidate requires --core-wheel from the same release")
+        if args.core_wheel:
+            candidates.append(args.core_wheel)
         packages = {}
         for candidate in candidates:
             if candidate.suffix == ".whl":

@@ -1,0 +1,6 @@
+TMol core is Copyright (c) 2026, Institute for Protein Design,
+University of Washington. See the distribution's BSD-3-Clause LICENSE.
+
+The vendored PySMILES implementation is Copyright 2018 Peter C Kroon,
+licensed under Apache-2.0. See extern/pysmiles/LICENSE.md and the notices
+in the individual source files.

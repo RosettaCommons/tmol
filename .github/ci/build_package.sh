@@ -32,12 +32,15 @@ retry() {
 
 BUILD_DEPS_TMP=$(mktemp -d)
 trap 'rm -rf "${BUILD_DEPS_TMP}"' EXIT
+retry uv pip install build
+python scripts/build_core.py --outdir "${BUILD_DEPS_TMP}/core"
 # CUDA extras are separate runtime distributions; build this checkout directly.
 retry uv pip compile --quiet pyproject.toml --extra dev --extra docs \
+  --find-links "${BUILD_DEPS_TMP}/core" \
   --output-file "${BUILD_DEPS_TMP}/requirements.txt"
 grep -vE "^(torch(|vision|audio)|numpy|cuda-.*|nvidia-.*|triton|tensorrt|pynvml|pandas|scipy)==" \
   "${BUILD_DEPS_TMP}/requirements.txt" > "${BUILD_DEPS_TMP}/to_install.txt"
-retry uv pip install -r "${BUILD_DEPS_TMP}/to_install.txt"
+retry uv pip install --find-links "${BUILD_DEPS_TMP}/core" -r "${BUILD_DEPS_TMP}/to_install.txt"
 NVCC_VER=$(nvcc --version | sed -n 's/.*release \([0-9.]*\).*/\1/p' | head -1)
 NVCC_MAJOR=${NVCC_VER%%.*}
 case "${NVCC_MAJOR}" in

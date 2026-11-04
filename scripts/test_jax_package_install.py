@@ -30,9 +30,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wheel", type=Path, required=True)
     parser.add_argument("--native-wheel", type=Path, required=True)
+    parser.add_argument("--core-wheel", type=Path, required=True)
     parser.add_argument("--backend", choices=("cu12", "cu13"), required=True)
     args = parser.parse_args()
 
+    core_owned = owned_packages(args.core_wheel)
+    assert core_owned == {"tmol_core"}, core_owned
     pure_owned = owned_packages(args.wheel)
     native_owned = owned_packages(args.native_wheel)
     assert pure_owned == {"tmol_jax"}, pure_owned
@@ -48,7 +51,9 @@ def main():
         extra = "cuda12" if args.backend == "cu12" else "cuda13"
         check(*pip, "install", "--upgrade", "pip", cwd=work)
         check(*pip, "install", f"jax[{extra}]==0.11.2", cwd=work)
-        check(*pip, "install", args.wheel.resolve(), cwd=work)
+        check(
+            *pip, "install", args.core_wheel.resolve(), args.wheel.resolve(), cwd=work
+        )
         check(
             *pip,
             "install",

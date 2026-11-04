@@ -32,6 +32,8 @@ jobs:
             typing_inspect build
           PYTHONPATH="$PWD" .jax-export/bin/python scripts/build_jax.py \
             --outdir jax-dist
+          .jax-export/bin/python scripts/check_core_artifacts.py \
+            jax-dist/tmol_core-*.whl jax-dist/tmol_core-*.tar.gz
           .jax-export/bin/python scripts/check_jax_artifacts.py \
             jax-dist/tmol_jax-*.whl jax-dist/tmol_jax-*.tar.gz
       - name: Rebuild standalone sdist without Torch
@@ -39,15 +41,20 @@ jobs:
           python -m venv .jax-sdist
           .jax-sdist/bin/python -m pip install --upgrade pip
           .jax-sdist/bin/python -m pip wheel --no-deps \
-            --wheel-dir jax-rebuilt jax-dist/tmol_jax-*.tar.gz
+            --wheel-dir jax-rebuilt jax-dist/tmol_core-*.tar.gz jax-dist/tmol_jax-*.tar.gz
+          .jax-sdist/bin/python -m pip install jax-rebuilt/tmol_core-*.whl
           .jax-sdist/bin/python -I - <<'PY'
           from importlib.util import find_spec
 
           assert find_spec("torch") is None
+          assert find_spec("jax") is None
+          from tmol_core.chemical import ChemicalDatabase
+          from tmol_core.chemical.patching import PatchedChemicalDatabase
+          assert PatchedChemicalDatabase.from_chem_db(ChemicalDatabase.get_default()).residues
           PY
           .jax-export/bin/python scripts/check_jax_artifacts.py \
             jax-rebuilt/tmol_jax-*.whl jax-dist/tmol_jax-*.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: tmol-jax-pure
-          path: jax-dist/tmol_jax-*
+          path: jax-dist/*

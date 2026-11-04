@@ -35,7 +35,14 @@ def main():
             name for name in names if name.endswith(".dist-info/METADATA")
         )
         metadata = BytesParser().parsebytes(archive.read(metadata_name))
-        assert "torch" not in requirements(metadata)
+        assert not {"torch", "tmol"} & set(requirements(metadata))
+        core = [
+            Requirement(r)
+            for r in metadata.get_all("Requires-Dist", [])
+            if Requirement(r).name == "tmol-core"
+        ]
+        assert len(core) == 1 and str(core[0].specifier) == f"=={wheel_version}"
+        assert not any(name.startswith(("tmol/", "tmol_core/")) for name in names)
         assert any(
             name.endswith("database/default/scoring/dunbrack.npz") for name in names
         )

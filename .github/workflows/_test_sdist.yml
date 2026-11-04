@@ -40,14 +40,44 @@ jobs:
         if: inputs.candidate-run-id == ''
         run: |
           python -m build --sdist --no-isolation --skip-dependency-check --outdir dist
+      - name: Inspect shared-core dependency
+        id: core
+        shell: bash
+        run: |
+          if [ -f scripts/package_requirements.py ]; then
+            python scripts/package_requirements.py --github-output "$GITHUB_OUTPUT" dist/*.tar.gz
+          else
+            echo "required=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build shared core wheel and sdist
+        if: inputs.candidate-run-id == '' && steps.core.outputs.required == 'true'
+        run: |
+          python scripts/build_core.py --outdir core-dist
+          python scripts/check_core_artifacts.py core-dist/tmol_core-*.whl core-dist/tmol_core-*.tar.gz
+      - uses: actions/download-artifact@v4
+        if: inputs.candidate-run-id != '' && steps.core.outputs.required == 'true'
+        with:
+          name: tmol-core
+          path: core-dist
+          run-id: ${{ inputs.candidate-run-id }}
+          github-token: ${{ github.token }}
       - name: Validate source metadata
         run: python scripts/validate_pypi_sdist.py dist/*.tar.gz
       - name: Resolve, build, install and score from the source index
         run: |
+          args=()
+          if [ "${{ steps.core.outputs.required }}" = true ]; then
+            args+=(--core-wheel core-dist/tmol_core-*.whl)
+          fi
           python scripts/test_package_install.py --sdist dist/*.tar.gz \
-            --torch-version '2.14.1'
+            "${args[@]}" --torch-version '2.14.1'
       - uses: actions/upload-artifact@v4
         if: inputs.candidate-run-id == ''
         with:
           name: sdist
           path: dist/*.tar.gz
+      - uses: actions/upload-artifact@v4
+        if: inputs.candidate-run-id == '' && steps.core.outputs.required == 'true'
+        with:
+          name: tmol-core
+          path: core-dist/*
