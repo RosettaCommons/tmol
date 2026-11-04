@@ -1,5 +1,7 @@
 """Rendered scorers must not silently retain stale weights or scoring state."""
 
+from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 import sys
 
@@ -8,10 +10,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-_INITIAL_X64 = jax.config.x64_enabled
-
-from tmol_jax.score import score_function as scoring  # noqa: E402
-from tmol_jax.score import ScoreFunction, ScoreType  # noqa: E402
+from tmol_jax.score import score_function as scoring
+from tmol_jax.score import ScoreFunction, ScoreType
 
 
 class QuadraticTerm:
@@ -83,8 +83,25 @@ def test_zero_weight_and_shape_validation(scorer):
 
 
 def test_import_does_not_load_torch_or_enable_global_x64():
-    assert "torch" not in sys.modules
-    assert jax.config.x64_enabled == _INITIAL_X64
+    import tmol_jax
+
+    # Other shared tests legitimately import Torch in the parent process.
+    code = """
+import sys
+import jax
+initial_x64 = jax.config.x64_enabled
+sys.path.insert(0, sys.argv[1])
+import tmol_jax
+from tmol_jax.score import ScoreFunction
+assert "torch" not in sys.modules
+assert jax.config.x64_enabled == initial_x64
+"""
+    subprocess.run(
+        [sys.executable, "-c", code, str(Path(tmol_jax.__file__).parents[1])],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_setup_cache_checks_owners_and_releases_dead_poses():
