@@ -246,9 +246,13 @@ def _relpaths(src_path, paths):
 def _source_path(parent, name):
     """Resolve a source beside its module, or in ``tmol/backends/<kind>/``.
 
-    ``*.cpu.cpp`` and ``*.cuda.cu`` files live under ``tmol/backends`` at the
-    path mirroring their module's directory.
+    Moved ``*.cpu.cpp`` and ``*.cuda.cu`` files live under ``tmol/backends``
+    at the path mirroring their module's directory. Existing local sources
+    (including test extensions) take precedence.
     """
+    local = parent / name
+    if local.is_file():
+        return local
     for suffix, backend in ((".cpu.cpp", "cpu"), (".cuda.cu", "cuda")):
         if name.endswith(suffix):
             root = pathlib.Path(__file__).resolve().parents[1]

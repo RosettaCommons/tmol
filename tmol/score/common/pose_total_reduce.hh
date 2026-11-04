@@ -11,9 +11,9 @@
 #include <tmol/score/common/device_operations.hh>
 #include <tmol/score/common/launch_box_macros.hh>
 #include <tmol/score/common/pose_total_reduce_kernels.hh>
-#include <tmol/score/common/mps_launch.hh>
+#include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
-#include <tmol/score/common/pose_total_reduce_mps_kernels_source.h>
+#include <tmol/backends/metal/score/common/pose_total_reduce_mps_kernels_source.h>
 #endif
 #include <tmol/score/common/pose_total_reduce_ctx.hh>
 #include <tmol/score/common/tview_binder.hh>

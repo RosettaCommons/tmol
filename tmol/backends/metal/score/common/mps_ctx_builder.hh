@@ -7,8 +7,8 @@
 // the metadata buffer -- which is why neither side ever repeats the field
 // list.
 
-#include <tmol/score/common/mps_float_scalar.hh>
-#include <tmol/score/common/mps_layout.hh>
+#include <tmol/backends/metal/score/common/mps_float_scalar.hh>
+#include <tmol/backends/metal/score/common/mps_layout.hh>
 #include <tmol/utility/portable/metal_view.hh>
 
 #if !TMOL_PORTABLE_METAL

@@ -32,9 +32,9 @@
 #include <tmol/score/ljlk/potentials/ljlk_ctx.hh>
 #include <tmol/score/common/tview_binder.hh>
 #include <tmol/score/ljlk/potentials/ljlk_kernels.hh>
-#include <tmol/score/common/mps_launch.hh>
+#include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
-#include <tmol/score/ljlk/potentials/ljlk_mps_kernels_source.h>
+#include <tmol/backends/metal/score/ljlk/potentials/ljlk_mps_kernels_source.h>
 #endif
 #include <tmol/score/ljlk/potentials/ljlk_pose_score.hh>
 #include <tmol/score/ljlk/potentials/lk_isotropic.hh>

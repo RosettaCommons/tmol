@@ -8,7 +8,7 @@
 // run on the host, so the op layer does not dispatch them to MPS. Only float:
 // Metal has no double.
 
-#include <tmol/score/common/device_operations.mps.host.impl.hh>
+#include <tmol/backends/metal/score/common/device_operations.mps.host.impl.hh>
 #include <tmol/pack/compiled/streaming_interaction_graph.impl.hh>
 
 namespace tmol {

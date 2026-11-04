@@ -14,8 +14,8 @@
 // way tmol ships. The stable shim does the buffer extraction and the stream
 // ordering itself.
 
-#include <tmol/score/common/mps_float_scalar.hh>
-#include <tmol/score/common/mps_layout.hh>
+#include <tmol/backends/metal/score/common/mps_float_scalar.hh>
+#include <tmol/backends/metal/score/common/mps_layout.hh>
 #include <tmol/score/common/workgroup_lane.hh>
 #include <tmol/utility/tensor/TensorAccessor.h>
 #include <tmol/utility/tensor/native.hh>

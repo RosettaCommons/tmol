@@ -1,7 +1,7 @@
 #pragma once
-#include <tmol/score/common/mps_launch.hh>
+#include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
-#include <tmol/score/elec/potentials/elec_mps_kernels_source.h>
+#include <tmol/backends/metal/score/elec/potentials/elec_mps_kernels_source.h>
 #endif
 #include <tmol/utility/portable/reduce_ops.hh>
 #include <tmol/utility/portable/math.hh>

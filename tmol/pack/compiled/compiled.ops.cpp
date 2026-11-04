@@ -10,7 +10,7 @@
 
 #include "annealer.hh"
 #ifdef WITH_MPS
-#include "annealer.mps.impl.hh"
+#include <tmol/backends/metal/pack/compiled/annealer.mps.impl.hh>
 #endif
 #include "simulated_annealing.hh"
 #include "streaming_interaction_graph.hh"

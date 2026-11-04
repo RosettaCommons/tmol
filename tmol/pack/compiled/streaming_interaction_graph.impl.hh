@@ -9,9 +9,9 @@
 
 #include "streaming_interaction_graph.hh"
 #include "streaming_interaction_graph_kernels.hh"
-#include <tmol/score/common/mps_launch.hh>
+#include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
-#include <tmol/pack/compiled/streaming_interaction_graph_mps_kernels_source.h>
+#include <tmol/backends/metal/pack/compiled/streaming_interaction_graph_mps_kernels_source.h>
 #endif
 
 namespace tmol {

@@ -29,9 +29,9 @@
 #include <tmol/score/hbond/potentials/hbond.hh>
 #include <tmol/score/hbond/potentials/hbond_ctx_tensor.hh>
 #include <tmol/score/hbond/potentials/hbond_kernels.hh>
-#include <tmol/score/common/mps_launch.hh>
+#include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
-#include <tmol/score/hbond/potentials/hbond_mps_kernels_source.h>
+#include <tmol/backends/metal/score/hbond/potentials/hbond_mps_kernels_source.h>
 #endif
 #include <tmol/score/hbond/potentials/params.hh>
 #include <tmol/score/hbond/potentials/hbond_pose_score.hh>
