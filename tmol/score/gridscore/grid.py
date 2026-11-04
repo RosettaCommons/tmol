@@ -32,6 +32,10 @@ _SERIALIZATION_VERSION = 3
 OUT_OF_BOUNDS_PENALTY = 50.0
 GRID_LK_BALL_WATER_DISTANCE = 2.65
 GRID_LK_BALL_FADE = 1.0
+# Receptor metal ions carry a full ionic charge but almost no LJ repulsion, so at the
+# standard 1.6 A elec floor a ligand atom inside the ion's first coordination shell
+# earns a large fa_elec bonus; the metal ions' elec grid plateaus at this distance.
+GRID_METAL_ELEC_MIN_DIS = 2.2
 
 
 def xform_rep(rep: torch.Tensor) -> torch.Tensor:
@@ -560,6 +564,30 @@ def compute_receptor_grids(
     return [grid.view(shape) for grid, shape in zip(grids, shapes)]
 
 
+def _floor_metal_elec(
+    fa_elec: torch.Tensor,
+    metal: torch.Tensor,
+    receptor_coords: torch.Tensor,
+    receptor_types: torch.Tensor,
+    receptor_charges: torch.Tensor,
+    grid_args: tuple,
+    elec_global_params: torch.Tensor,
+    device: torch.device,
+) -> torch.Tensor:
+    """Swap the receptor metal ions' share of ``fa_elec`` for one whose distance
+    floor is ``GRID_METAL_ELEC_MIN_DIS``; ``metal`` masks the receptor atoms."""
+    if not bool(metal.any()):
+        return fa_elec
+    floored_params = elec_global_params.clone()
+    floored_params[3] = max(float(elec_global_params[3]), GRID_METAL_ELEC_MIN_DIS)
+    ions = (receptor_coords[metal], receptor_types[metal], receptor_charges[metal])
+    standard, floored = (
+        compute_receptor_grids(*ions, *grid_args, params, device=device)[3]
+        for params in (elec_global_params, floored_params)
+    )
+    return fa_elec - standard + floored
+
+
 def build_grid(
     pose_stack: PoseStack,
     probe_atom_types: Sequence[str],
@@ -662,6 +690,25 @@ def build_grid(
         device=device,
     )
     lk_ball, lk_ball_water, lk_bridge = lk if build_lk_ball else (None,) * 3
+    metal_types = {t.name for t in param_db.chemical.atom_types if t.is_metal}
+    is_metal = torch.tensor([n in metal_types for n in ljlk_term.atom_type_index])
+    fa_elec = _floor_metal_elec(
+        fa_elec,
+        is_metal[receptor_types],
+        receptor_coords,
+        receptor_types,
+        receptor_charges,
+        (
+            probe_atom_type_indices[:1],
+            geometry.origin,
+            geometry.dims,
+            geometry.voxel_spacing,
+            ljlk_type_params,
+            ljlk_global_params,
+        ),
+        elec_global_params,
+        device,
+    )
     lk_ball_enabled = build_lk_ball and bool(torch.any(lk_ball_weights != 0))
     lk_bridge_enabled = build_lk_ball and bool(torch.any(lk_ball_weights[2:] != 0))
     on = lambda t: t.contiguous().to(device)  # noqa: E731
