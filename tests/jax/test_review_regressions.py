@@ -67,12 +67,22 @@ def test_elec_database_switch_preserves_rendered_scorers():
         return jax.jit(sf.render_whole_pose_scoring_module(pose))
 
     standard = render(db)
+    charges = pose.packed_block_types.elec_partial_charge
+    expected_charges = np.asarray(charges).copy()
     expected = np.asarray(standard(pose.coords))
     assert np.any(expected != 0)
     zero = render(zero_db)
+    np.testing.assert_array_equal(pose.packed_block_types.elec_partial_charge, 0.0)
+    np.testing.assert_array_equal(charges, expected_charges)
     np.testing.assert_array_equal(zero(pose.coords), 0.0)
-    np.testing.assert_array_equal(standard(pose.coords), expected)
-    np.testing.assert_array_equal(render(db)(pose.coords), expected)
+    # Native float32 tile sums use unordered atomic adds (three ULPs observed
+    # over 600 repeated evaluations). Check cache data exactly above; allow
+    # only reduction roundoff in scores, well below the zero-charge change.
+    np.testing.assert_allclose(standard(pose.coords), expected, rtol=1e-6, atol=0)
+    np.testing.assert_allclose(render(db)(pose.coords), expected, rtol=1e-6, atol=0)
+    np.testing.assert_array_equal(
+        pose.packed_block_types.elec_partial_charge, expected_charges
+    )
     np.testing.assert_array_equal(zero(pose.coords), 0.0)
 
 
