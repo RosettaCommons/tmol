@@ -14,9 +14,9 @@ import jax.numpy as jnp
 import numpy as np
 
 from tmol_jax.types import pytree_dataclass
+from tmol_core.scoring.elec import count_pair_table as _cp_reps_dict  # noqa: F401
 from tmol_core.scoring.elec import (
     partial_charge_table as _partial_charges_dict,
-    count_pair_table as _cp_reps_dict,  # noqa: F401 (legacy preparation import)
     partial_charges_for_block,
     representative_mapping_for_block as representative_mapping_for_block_type,
 )
