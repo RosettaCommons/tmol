@@ -37,6 +37,19 @@ def _resolver(tensor):
     return Resolver(NestedTensors({"table": (tensor,)}))
 
 
+@pytest.fixture
+def cuda_waits(monkeypatch):
+    waits = []
+    wait_event = torch.cuda.Stream.wait_event
+
+    def record_wait(stream, event):
+        waits.append((stream, event))
+        return wait_event(stream, event)
+
+    monkeypatch.setattr(torch.cuda.Stream, "wait_event", record_wait)
+    return waits
+
+
 def test_cpu_values_preserve_hit_and_none_semantics():
     cache = WeakIdentityLRU()
     owner = Owner("cpu")
@@ -49,7 +62,7 @@ def test_cpu_values_preserve_hit_and_none_semantics():
 
 
 @requires_cuda
-def test_cuda_hit_waits_for_nested_value_producer_stream():
+def test_cuda_hit_waits_for_nested_value_producer_stream(cuda_waits):
     cache = WeakIdentityLRU()
     owner = Owner("cuda")
     producer = torch.cuda.Stream()
@@ -68,13 +81,16 @@ def test_cuda_hit_waits_for_nested_value_producer_stream():
         consumed.record(consumer)
 
     assert cached is value
-    assert not consumed.query()
     consumed.synchronize()
+    # Host scheduling can outlast the GPU sleep. Verify the stream dependency
+    # itself, even when the event has already completed by assertion time.
+    readiness = next(event for stream, event in cuda_waits if stream == producer)
+    assert (consumer, readiness) in cuda_waits
     assert observed.item() == 17
 
 
 @requires_cuda
-def test_simultaneous_cuda_miss_loser_waits_for_winner_value():
+def test_simultaneous_cuda_miss_loser_waits_for_winner_value(cuda_waits):
     cache = WeakIdentityLRU()
     owner = Owner("shared")
     streams = [torch.cuda.Stream(), torch.cuda.Stream()]
@@ -109,6 +125,7 @@ def test_simultaneous_cuda_miss_loser_waits_for_winner_value():
         loser, observed, consumed = futures[1].result(timeout=10)
 
     assert loser is winner
-    assert not consumed.query()
     consumed.synchronize()
+    readiness = next(event for stream, event in cuda_waits if stream == streams[0])
+    assert (streams[1], readiness) in cuda_waits
     assert observed.item() == 29
