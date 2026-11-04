@@ -1249,24 +1249,34 @@ def test_rotamer_weighted_reduction_preserves_layout_values_and_gradients(
     torch.testing.assert_close(actual_grads[1].reshape(-1), reference_grads[1])
 
 
-def test_weighted_score_sum_has_output_sized_cuda_peak(
+def test_weighted_score_sum_has_output_sized_cuda_peak_growth(
     torch_device: torch.device,
 ) -> None:
     if torch_device.type != "cuda":
         pytest.skip("CUDA allocation accounting test")
 
-    scores = torch.ones((4, 4 * 1024 * 1024), device=torch_device)
     weights = torch.tensor([0.0, 2.0, -1.0, 0.5], device=torch_device)
-    torch.cuda.synchronize()
-    torch.cuda.reset_peak_memory_stats()
-    baseline = torch.cuda.memory_allocated()
+    measurements = []
+    for n_entries in (1024 * 1024, 4 * 1024 * 1024):
+        scores = torch.ones((4, n_entries), device=torch_device)
+        # Exclude lazy setup; uncached BLAS workspace can still be allocated
+        # on every call, independently of the number of score entries.
+        score_function_module._weighted_score_sum(weights, scores)
+        torch.cuda.synchronize(torch_device)
+        torch.cuda.reset_peak_memory_stats(torch_device)
+        baseline = torch.cuda.memory_allocated(torch_device)
 
-    result = score_function_module._weighted_score_sum(weights, scores)
-    torch.cuda.synchronize()
-    peak_delta = torch.cuda.max_memory_allocated() - baseline
+        result = score_function_module._weighted_score_sum(weights, scores)
+        torch.cuda.synchronize(torch_device)
+        peak_delta = torch.cuda.max_memory_allocated(torch_device) - baseline
+        measurements.append((peak_delta, result.nbytes))
+        torch.testing.assert_close(result, torch.full_like(result, 1.5))
+        del result, scores
 
-    torch.testing.assert_close(result, torch.full_like(result, 1.5))
-    assert peak_delta <= result.nbytes + 8 * 1024 * 1024
+    # Fixed workspace cancels; a materialized four-lane product does not.
+    peak_growth = measurements[1][0] - measurements[0][0]
+    output_growth = measurements[1][1] - measurements[0][1]
+    assert peak_growth <= output_growth + 8 * 1024 * 1024
 
 
 def test_rotamer_scorer_raw_entries_keep_int32_and_uncoalesced_duplicates() -> None:
