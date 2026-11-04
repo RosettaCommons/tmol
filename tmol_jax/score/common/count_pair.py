@@ -1,20 +1,9 @@
-"""Count-pair connectivity weight function and bonded-path-length helper.
+"""Exact bonded-path preparation and nonbonded count-pair weights.
 
-Short-range non-bonded energies are damped (or zeroed) for atom pairs
-that are close along the bonded graph. Rosetta's convention:
-
-    path_length  > 4  -> weight 1.0  (full interaction)
-    path_length == 4  -> weight 0.2  (1-4 interaction, scaled)
-    path_length  < 4  -> weight 0.0  (1-1, 1-2, 1-3: excluded)
-
-:func:`connectivity_weight` operates elementwise on arrays and is safe
-under ``jit``/``vmap``. :func:`pairwise_bonded_path_length` is the
-per-pose-stack setup helper that builds the full ``[P, N, N]``
-bond-distance matrix for a ``PoseStack`` by threading through
-inter-residue connections. It is implemented as a pure-JAX jit-able
-function that lives on-device, so repeated setup calls for equivalently
-shaped ``PoseStack``s amortise the first-call XLA compilation cost.
-"""
+Pairs separated by fewer than four bonds are excluded; four bonds receive
+weight 0.2 and larger separations weight 1. Ordinary terms use atom graph
+distances, while electrostatics remaps to count-pair representatives. Setup
+caches verify live topology/parameter owners and have bounded capacity."""
 
 from __future__ import annotations
 

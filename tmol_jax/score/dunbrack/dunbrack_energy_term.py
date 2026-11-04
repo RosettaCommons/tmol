@@ -1,64 +1,9 @@
-"""Dunbrack rotamer library energy term -- JAX port.
+"""Dunbrack rotamer probabilities, chi deviations and semirotameric energies.
 
-Upstream: :mod:`tmol.score.dunbrack.dunbrack_energy_term`. The upstream
-term is a thin wrapper around a C++ CUDA kernel that (per residue):
-
-* measures phi / psi / chi torsions,
-* classifies the chi angles into a rotamer bin,
-* looks up the rotamer's ``-log P`` on a (phi, psi) b-spline grid,
-* adds a Gaussian (chi - mean(phi,psi))^2 / (2 sigma(phi,psi)^2)
-  penalty for each chi, and
-* for semirotameric residues (aromatics with a continuous last chi),
-  adds a 3-D (phi, psi, chi_last) ``-log P`` contribution.
-
-This JAX port keeps exactly that three-channel split
-(``dunbrack_rot`` / ``dunbrack_rotdev`` / ``dunbrack_semirot``) but
-drops the cubic b-spline in favour of bi/trilinear interpolation on
-the *already-evaluated* probability grids shipped in
-``dunbrack.bin``. See :mod:`.potentials` for the math.
-
-Gotchas & design decisions
---------------------------
-1. **Graceful degradation.** The upstream library tables live in
-   ``dunbrack.bin`` -- a ``torch.save`` pickle that we can only
-   deserialise when ``torch`` is importable
-   (:mod:`tmol_jax.database.scoring.dunbrack_libraries`). If the
-   tables are absent (empty ``rotameric_libraries`` /
-   ``semi_rotameric_libraries``) we still expose the term, but all
-   three score channels return zero for every pose. This lets the
-   score function stay wired up in environments without ``torch``.
-
-2. **Per-residue torsion atom indices.** Setup walks every block type
-   in the ``PackedBlockTypes`` palette, pulls out the ``phi``,
-   ``psi``, and ``chi1..chi4`` torsions (via
-   ``RefinedResidueType.torsion_to_uaids``), and packs their unresolved
-   atom IDs (``(atom_idx, conn_id, n_bonds_from_conn)``) into a
-   ``[n_types, 6, 4, 3]`` numpy array with ``-1`` padding for missing
-   torsions. The score path resolves these at runtime against
-   ``inter_residue_connections`` + ``conn_atoms`` so phi on residue
-   ``i`` correctly picks up the ``C`` atom of residue ``i-1``.
-
-3. **Rotamer / table dispatch.** A per-block-type mapping
-   ``aa_table_ind -> (rot_neglnprob_table, rotmean_table, rotsdev_table,
-   semirot_table, is_semirotameric, n_rotameric_chi, nchi,
-   bb_start, bb_step, bb_period, semirot_start, semirot_step,
-   semirot_period, rotind2tableind)`` is built at setup time by
-   collapsing the Dunbrack library's `rotameric_libraries` +
-   `semi_rotameric_libraries` into flat ``[n_aa, ...]`` arrays. At
-   score time the term simply ``jnp.take``s by AA and interpolates.
-
-4. **Only canonical 20.** Residues that have no Dunbrack entry (ALA,
-   GLY, plus any non-canonical types) get a ``-1`` ``aa_table_ind``
-   and contribute zero to every channel.
-
-5. **Non-real blocks.** Padding blocks (``block_type_ind == -1``) also
-   contribute zero; they are masked out explicitly so that padding
-   never produces NaNs under ``jit``.
-
-The term is ``jit`` / ``grad`` safe: all traced computation is done with
-``jnp``; Python-level branching happens only at setup time where it
-produces static metadata.
-"""
+Setup resolves torsion atoms and prefilters the canonical probability, mean
+and deviation tables. Evaluation uses periodic cubic B-splines with the native
+angle conventions. Missing residue entries and padding contribute zero; the
+required library data are loaded from the Torch-free parameter archives."""
 
 from __future__ import annotations
 

@@ -1,39 +1,9 @@
-"""Limited-memory BFGS minimizer — pure JAX port.
+"""Masked Cartesian L-BFGS with a host-controlled strong-Wolfe line search.
 
-Upstream reference: ``tmol/optimization/lbfgs_armijo.py`` (the
-``LBFGS_Armijo`` class). Algorithmically we follow the standard
-Nocedal two-loop recursion (``Numerical Optimization``, Algorithm 7.4):
-given the past ``history`` pairs of ``(s_i, y_i) = (x_i+1 - x_i,
-g_i+1 - g_i)``, compute the quasi-Newton step as
-``d = -H_k * g_k`` where ``H_k`` is the implicit inverse Hessian.
-
-Design notes for the JAX port
-----------------------------
-* We evaluate gradients through ``jax.value_and_grad(fn)`` so callers
-  only supply the scalar-output energy function. The caller is free
-  to ``jit`` the returned ``f_and_grad`` themselves, or to pass a
-  pre-jitted version — :func:`lbfgs_minimize` wraps the closure with
-  ``jax.jit`` internally as a convenience and caches it across
-  iterations.
-* The convergence loop is a plain Python ``while`` (not
-  ``lax.while_loop``). Termination is *dynamic* (driven by gradient
-  norms, energy changes, line-search failure, etc.) and trying to
-  staticize it would force us to unroll the iteration budget —
-  defeating the point of early stopping.
-* The history is stored as two fixed-size ring buffers of shape
-  ``(history, n)``. We only ever read the valid prefix, so later
-  unused rows are harmless. This mirrors the upstream circular-buffer
-  design and keeps every ``lbfgs_minimize`` call reusing the same
-  compile cache (shapes don't change after the first iteration).
-* The line search is strong-Wolfe (see :mod:`~.line_search`); we
-  prefer it over the Armijo / Rosetta-style increment-or-halve rule
-  because the curvature condition keeps ``y.s > 0``, which is what
-  the Hessian approximation needs for positive definiteness.
-* The gradient mask (``grad_mask``) lets the caller freeze a subset
-  of coordinates/DOFs by zeroing out their gradient before stepping.
-  When provided, every direction is also masked — equivalent to
-  restricting the quasi-Newton step to the movable subspace.
-"""
+The objective and gradient are evaluated together through JAX. History buffers
+store the limited-memory inverse-Hessian update; an explicit movement mask
+zeros fixed-coordinate gradients. Results include initial/final values, final
+gradient, iteration count and convergence status."""
 
 from __future__ import annotations
 

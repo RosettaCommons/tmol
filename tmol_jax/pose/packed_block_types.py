@@ -1,31 +1,8 @@
-"""JAX port of ``tmol.pose.packed_block_types``.
+"""JAX palette of residue atom, bond, connection and ideal-coordinate arrays.
 
-``PackedBlockTypes`` is the "palette" of residue types used in a
-``PoseStack``. It flattens the per-residue-type arrays (atom types,
-ideal coords, bonds, connections, intra-residue path distances) into
-packed, block-wise arrays indexed by block-type-index.
-
-The upstream class is an ``attr.s`` class that stores ``torch.Tensor``s
-plus some auxiliary Python objects (``chem_db``, ``restype_set``,
-``pandas.Index`` of names). This port swaps:
-
-  * ``torch`` → ``jax.numpy``;
-  * ``attr.s`` → the tmol_jax ``@pytree_dataclass`` wrapper so the whole
-    object flows through ``jit``/``vmap``/``grad`` naturally as a
-    pytree, with array fields as leaves and Python containers /
-    ``RefinedResidueType``s as aux data.
-
-Only the subset of fields that do *not* depend on torsion / polymeric
-connection bookkeeping (``ordered_torsions`` etc.) is populated here;
-those are handled by other specialised pytrees elsewhere in the port.
-The fields we expose match the "palette" as used by scoring-term
-setup and by ``PoseStack``'s block-wise lookups.
-
-Imports of the chemical-side classes (``RefinedResidueType``,
-``PatchedChemicalDatabase``) are done *lazily* inside methods so this
-module can be imported before the chemical subpackage is fully ported
-without triggering circular imports.
-"""
+Array fields are pytree leaves; chemistry and residue identities are host
+metadata. Connection axes reserve at least two slots, with -1 for absent atoms.
+Torsion-specific annotations are prepared by the scoring terms."""
 
 from __future__ import annotations
 

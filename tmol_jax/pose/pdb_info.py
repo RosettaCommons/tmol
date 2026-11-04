@@ -1,47 +1,9 @@
-"""Per-atom / per-residue PDB metadata for a PoseStack.
+"""Host-only PDB labels, indexed along the same pose axis as PoseStack.
 
-This is the JAX-port counterpart of ``tmol.pose.pdb_info.PDBInfo``. The
-upstream PyTorch implementation stored everything in numpy arrays of
-``object`` dtype, alongside integer residue labels and float occupancy /
-B-factor arrays. In the JAX port we trim this down to the information
-actually consumed by the PDB writer and keep it as plain Python lists of
-strings (for the per-atom / per-chain / per-residue labels) and a single
-numpy integer array for residue numbers.
-
-Crucially this class is NOT a pytree. The data it holds has no impact on
-any structural computation (energies, gradients, etc.) — it only exists to
-preserve author-supplied labels across a round-trip to/from a PDB file. It
-therefore lives outside the jitted/traced world as plain Python metadata
-attached to a ``PoseStack`` object.
-
-Layout
-------
-- ``chain_id``:           ``list[list[str]]``  length ``n_poses``; each
-  inner list has length ``n_blocks_this_pose`` and holds the chain
-  label (e.g. ``"A"``, ``"B"``) for each residue.
-- ``res_num``:            ``numpy.ndarray`` of shape
-  ``(n_poses, max_n_blocks)`` and dtype ``int32`` — the integer residue
-  number for each residue (``-1`` for padding slots beyond a pose's
-  real residue count).
-- ``res_name``:           ``list[list[str]]``  length ``n_poses``; each
-  inner list has length ``n_blocks_this_pose`` and holds the 3-letter
-  residue name (e.g. ``"ALA"``, ``"HIS"``) for each residue.
-- ``atom_record_type``:   ``list[list[list[str]]]``  length ``n_poses``;
-  each pose holds a list per block, each block holds a list per atom,
-  and each entry is one of ``"ATOM"`` / ``"HETATM"``.
-
-Shape invariants
-----------------
-- ``len(chain_id) == len(res_name) == len(atom_record_type) == n_poses``.
-- ``res_num.shape == (n_poses, max_n_blocks)``.
-- For each pose ``p``:
-    - ``len(chain_id[p]) == len(res_name[p]) == len(atom_record_type[p])``
-      which equals the number of real residues in pose ``p``.
-    - ``len(atom_record_type[p][b]) == n_atoms(block_type[p, b])``.
-
-The constructor is permissive: it does not enforce those invariants so
-that callers can build up a ``PDBInfo`` incrementally.
-"""
+chain_id and res_name contain one list per pose, one label per real residue.
+res_num is int32[poses, max_blocks], with -1 padding. atom_record_type contains
+one ATOM/HETATM label per atom, nested by pose and residue. These labels are
+metadata, not differentiable pytree leaves."""
 
 from __future__ import annotations
 

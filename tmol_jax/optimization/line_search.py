@@ -1,40 +1,8 @@
-"""Strong-Wolfe line search — pure JAX port.
+"""Strong-Wolfe line search with safeguarded cubic interpolation.
 
-Upstream reference: ``tmol/optimization/lbfgs_armijo.py`` (the
-``armijo_linesearch`` helper), plus the classic
-strong-Wolfe algorithm from Nocedal & Wright, *Numerical
-Optimization* (2nd ed.), Algorithm 3.5 / 3.6.
-
-The line search returns a step length ``alpha`` satisfying the
-strong-Wolfe conditions for a smooth scalar-output objective ``f``:
-
-    1. Sufficient decrease  (Armijo):
-         f(x + alpha d) <= f(x) + c1 * alpha * <g(x), d>
-    2. Curvature condition  (strong-Wolfe):
-         |<g(x + alpha d), d>| <= c2 * |<g(x), d>|
-
-Both conditions rely on a **descent direction**, i.e. the directional
-derivative ``g0.dot(direction)`` must be negative. The caller is
-responsible for providing such a direction; :func:`strong_wolfe_line_search`
-falls back gracefully (returns ``alpha=0`` with the initial ``f0, g0``)
-if the search fails to bracket an acceptable step.
-
-The implementation uses a standard two-phase structure:
-
-* **Bracketing phase** (``_bracket``): expand ``alpha`` until it either
-  violates Armijo, produces a non-descending derivative at the trial
-  point, or directly satisfies both Wolfe conditions. On violation of
-  the first two we have bracketed a minimizer in ``[alpha_prev, alpha]``.
-* **Zoom phase** (``_zoom``): shrink the bracket using safeguarded cubic
-  (fallback bisection) interpolation until the strong-Wolfe conditions
-  are satisfied or the bracket collapses below numerical resolution.
-
-Because the convergence checks are dynamic and the search terminates in
-a small bounded number of iterations, we stick with plain Python ``while``
-loops and rely on ``jax.jit`` at the outer minimizer level rather than
-trying to express the whole thing with ``lax.while_loop`` (which would
-force us to staticize the termination structure).
-"""
+The host loop brackets and zooms a step along a fixed direction. Values and
+gradients may come from a compiled JAX callable. A finite iteration budget
+returns the best accepted trial; optimizer diagnostics determine convergence."""
 
 from __future__ import annotations
 

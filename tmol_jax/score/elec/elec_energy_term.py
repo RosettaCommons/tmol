@@ -1,38 +1,10 @@
-"""Whole-pose electrostatics scoring term.
+"""Electrostatic pair scoring with database-owned charges and count-pair tables.
 
-Port of :mod:`tmol.score.elec.elec_energy_term` to JAX. The portable path
-uses a dense ``[max_n_atoms, max_n_atoms]`` reduction and remains available
-on CPU or without the optional CUDA package. Float32 GPU installations may
-dispatch the pair sum to a bounded-memory adapter around TMol's canonical,
-Torch-independent scalar potential.
-
-The term produces one score channel --
-:attr:`tmol_jax.score.score_types.ScoreType.fa_elec` -- and stores all
-per-type setup on the packed-block-types instance so repeated
-evaluation of the same pose does no extra work.
-
-Setup pipeline (done once on the host, using numpy):
-
-1. Build :class:`ElecGlobalParams` from the database.
-2. Per block type: compute partial charges (length ``n_atoms``) and
-   the count-pair representative remapping ``repr[j]``.
-3. Per block type: ``inter_repr_path_distance[a, b] =
-   path_distance[a, repr[b]]`` and
-   ``intra_repr_path_distance[a, b] = path_distance[repr[a],
-   repr[b]]``. These mirror upstream's
-   ``elec_{inter,intra}_repr_path_distance``.
-4. Stack those per-type arrays over the packed-block-types palette.
-
-Portable scoring (pure JAX, ``jit``-safe):
-
-1. Gather per-atom charges ``[P, N]`` from ``pbt.elec_partial_charge``.
-2. Compute a ``[P, N, N]`` pair distance matrix from coords.
-3. Compute a ``[P, N, N]`` chemical-bond path-length matrix by
-   combining the intra-residue path distances and the inter-residue
-   ``inter_block_bondsep`` -- see :func:`pair_bonded_path_length`.
-4. Call :func:`elec_pair` element-wise, mask the diagonal and the
-   lower triangle (so each pair contributes once), and sum per pose.
-"""
+Setup maps atoms to partial charges and count-pair representatives. Inter-block
+distances combine path[connection, representative] with the pose's connection
+distances; intra-block distances use path[representative, representative].
+Portable evaluation uses dense pair arrays. Optional float32 CUDA evaluation
+uses TMol's canonical scalar potential through the JAX FFI adapter."""
 
 from __future__ import annotations
 

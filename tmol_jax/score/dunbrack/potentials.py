@@ -1,41 +1,9 @@
-"""Dunbrack scoring primitives in pure JAX.
+"""Periodic rotamer-library interpolation and chi-deviation penalties.
 
-The upstream Dunbrack scoring (``tmol/score/dunbrack/potentials/*.hh``) is a
-big C++ template library that does three things per rotameric residue:
-
-* ``rot``   -- look up ``-ln P(rotamer | phi, psi)`` (a 2-D b-spline over
-  the (phi, psi) grid with a b-spline coefficient table per rotamer).
-* ``rotdev`` -- for every chi of a residue, add a Gaussian penalty
-  ``(chi - mean(phi,psi))^2 / (2 * sigma(phi,psi)^2)`` where the mean
-  and sigma are themselves 2-D (phi, psi) b-splines.
-* ``semirot`` -- for aromatic residues that have a continuous last chi
-  (PHE, TYR, HIS, ASN, ASP, GLN, GLU, TRP), add a 3-D (phi, psi, chi_last)
-  b-spline ``-ln P(chi_last | rotamer, phi, psi)``.
-
-This port takes the *simplified but structurally correct* interpretation
-requested by the spec: bilinear / trilinear interpolation (instead of
-cubic b-splines) on the *already-evaluated* probability grids. The grids
-themselves come straight out of the library tables (``rotamer_probabilities``
-etc.) and the wrap / scale rules are identical to upstream (angles are
-stored in radians and wrapped into ``[bb_start, bb_start + period)``
-before being divided by ``bb_step``).
-
-All functions are ``jit`` / ``vmap`` / ``grad``-safe: they rely only on
-``jax.numpy`` primitives, take static axes via broadcasting, and use
-no Python control flow keyed on traced values.
-
-The three public entry points are:
-
-* :func:`dunbrack_rot_score` -- ``-log P(rotamer | phi, psi)`` for a
-  single rotamer assignment on a single residue.
-* :func:`dunbrack_rotdev_score` -- summed Gaussian chi-deviation penalty
-  over a residue's chis, given per-chi means and sigmas.
-* :func:`dunbrack_semirot_score` -- 3-D interpolation of the semirotameric
-  ``-log P`` table at ``(phi, psi, chi_last)``.
-
-Each is written to operate on a *single table* already sliced to the
-correct rotamer/amino acid; the energy term above does the dispatch.
-"""
+The energy term uses cubic B-spline coefficient grids for rotamer, mean,
+deviation and semirotameric tables. The standalone dunbrack_rot_score helper
+retains its bilinear sample-grid API. Angles are radians; table starts, steps
+and periods determine wrapping. Native reference: tmol/score/dunbrack/potentials."""
 
 from __future__ import annotations
 
