@@ -212,3 +212,29 @@ def test_renderer_uses_optional_fused_pair_kernel(monkeypatch, platform):
     )
     expected = [[1], [2], [3], [4]] if platform == "cuda" else [[5], [6], [7], [8]]
     np.testing.assert_array_equal(score(pose.coords), expected)
+
+
+def test_count_pair_matches_explicit_atom_graph():
+    from tmol_jax.score.common.count_pair import _pairwise_bpl_jit
+
+    # Three two-atom blocks form a six-atom chain; block 3 is padding.
+    # Supply only direct inter-block edges so closure is required.
+    cutoff = 6
+    types = np.array([[0, 0, 0, -1]], dtype=np.int32)
+    offsets = np.array([[0, 2, 4, 6]], dtype=np.int32)
+    connections = np.full((1, 4, 4, 2, 2), cutoff, dtype=np.int32)
+    for block in range(2):
+        connections[0, block, block + 1, 1, 0] = 1
+        connections[0, block + 1, block, 0, 1] = 1
+    actual = _pairwise_bpl_jit(
+        jnp.asarray(types),
+        jnp.asarray(offsets),
+        jnp.asarray(connections),
+        jnp.asarray([2], dtype=jnp.int32),
+        jnp.asarray([[0, 1]], dtype=jnp.int32),
+        jnp.asarray([[[0, 1], [1, 0]]], dtype=jnp.int32),
+        8,
+    )
+    expected = np.full((1, 8, 8), cutoff, dtype=np.uint8)
+    expected[0, :6, :6] = np.abs(np.arange(6)[:, None] - np.arange(6)[None, :])
+    np.testing.assert_array_equal(actual, expected)

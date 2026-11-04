@@ -291,20 +291,11 @@ def _pairwise_bpl_jit(
     max_n_atoms_per_pose: int,
     max_sep: int = MAX_COUNTPAIR_SEPARATION,
 ) -> jax.Array:
-    """JIT-friendly core. Builds ``[P, N, N]`` pair BPL using Floyd-Warshall
-    across residue-connection points.
+    """Close the residue-connection graph, then gather atom-pair distances.
 
-    ``per_type_pair_table`` is the per-BT *intra-block* pair path-length
-    table used for both the (atom -> conn) and (conn -> conn) intra-block
-    edges. For the standard LJLK / HBond / LK-ball path this is
-    ``intrares_path_distance`` from the PBT; for the elec path (which uses
-    representative atom remapping) the caller should supply the
-    ``intra_repr_path_distance`` table.
-
-    Floyd-Warshall runs on the ``[B * C, B * C]`` connection-point graph
-    per pose. For proteins of ≲1500 atoms (``B * C`` on the order of 2-300)
-    this is a ≪10 ms ``lax.fori_loop``.
-    """
+    Ordinary intra-residue distances describe an undirected atom graph. The
+    Floyd-Warshall closure also supports callers supplying direct connection
+    edges instead of the builder's already-closed distances."""
     P, B = block_type_ind.shape
     C = conn_atoms.shape[1]
     Nn = B * C
@@ -358,68 +349,20 @@ def _pairwise_bpl_jit(
     D = jax.lax.fori_loop(0, Nn, fw_step, D)
     D = jnp.minimum(D, max_sep)  # [P, Nn, Nn]
 
-    # ---- Map every (p, i) to (block, local) ---- #
-    block_for_atom, local_for_atom, atom_real = pose_atom_block_index(
-        block_type_ind, block_coord_offset, n_atoms_per_type, max_n_atoms_per_pose
+    # Both routes share the atom/connection gather. Ordinary undirected
+    # path distances need no representative remapping.
+    closed_connections = D.reshape(P, B, C, B, C).transpose(0, 1, 3, 2, 4)
+    return _pairwise_bpl_direct_jit(
+        block_type_ind,
+        block_coord_offset,
+        closed_connections,
+        n_atoms_per_type,
+        conn_atoms,
+        per_type_pair_table,
+        per_type_pair_table,
+        max_n_atoms_per_pose,
+        max_sep,
     )
-    bti_of_atom = safe_t[jnp.arange(P)[:, None], block_for_atom]  # [P, N]
-
-    # ---- Intra-block atom pair BPL ---- #
-    # intra_bpl[p, i, j] = per_type_pair_table[bti_i, local_i, local_j]
-    # only valid when block_for_atom[i] == block_for_atom[j].
-    intra_bpl = per_type_pair_table[
-        bti_of_atom[:, :, None],
-        local_for_atom[:, :, None],
-        local_for_atom[:, None, :],
-    ]  # [P, N, N]
-
-    # ---- Inter-block atom pair BPL ---- #
-    # For each atom i, we need the intra-block distance from its local
-    # position to each connection atom on its block.
-    conn_atom_i = conn_atoms_pose[jnp.arange(P)[:, None], block_for_atom, :]
-    valid_conn_i = valid_conn[jnp.arange(P)[:, None], block_for_atom, :]
-    safe_conn_i = jnp.where(valid_conn_i, conn_atom_i, 0)
-
-    # da[p, i, ca] = path inside i's block from local_i to the conn atom
-    da = per_type_pair_table[
-        bti_of_atom[:, :, None],
-        local_for_atom[:, :, None],
-        safe_conn_i,
-    ]  # [P, N, C]
-    da = jnp.where(valid_conn_i, da, BIG)
-
-    # db[p, j, cb] = path inside j's block from the conn atom to local_j
-    db = per_type_pair_table[
-        bti_of_atom[:, :, None],
-        safe_conn_i,
-        local_for_atom[:, :, None],
-    ]  # [P, N, C]
-    db = jnp.where(valid_conn_i, db, BIG)
-
-    # Gather the connection-graph distance.
-    node_i = block_for_atom[:, :, None] * C + jnp.arange(C)[None, None, :]
-    node_j = block_for_atom[:, :, None] * C + jnp.arange(C)[None, None, :]
-
-    Dg = D[
-        jnp.arange(P)[:, None, None, None, None],
-        node_i[:, :, None, :, None],
-        node_j[:, None, :, None, :],
-    ]  # [P, N, N, C, C]
-
-    combined = da[:, :, None, :, None] + Dg + db[:, None, :, None, :]
-    inter_bpl = jnp.min(combined, axis=(-1, -2))
-    inter_bpl = jnp.minimum(inter_bpl, max_sep)
-
-    same_block = block_for_atom[:, :, None] == block_for_atom[:, None, :]
-    intra_bpl_clamped = jnp.minimum(intra_bpl, max_sep)
-    bpl = jnp.where(same_block, intra_bpl_clamped, inter_bpl)
-
-    real_pair = atom_real[:, :, None] & atom_real[:, None, :]
-    bpl = jnp.where(real_pair, bpl, max_sep)
-    # The canonical clamp is 6, so retain the persistent O(N^2) table in
-    # one byte. Keep unusual public callers with a larger clamp lossless.
-    dtype = jnp.uint8 if max_sep <= 255 else jnp.int32
-    return bpl.astype(dtype)
 
 
 # Per-pose-stack cache for the APSP bonded-path-length matrix. Keyed by
@@ -434,64 +377,15 @@ def pairwise_bonded_path_length(
     packed_block_types: Any = None,
     max_sep: int = MAX_COUNTPAIR_SEPARATION,
 ) -> jnp.ndarray:
-    """Build the exact ``[P, N, N]`` bonded-path-length matrix.
+    """Return exact clamped bonded-path lengths [poses, atoms, atoms].
 
-    For intra-residue pairs the value is
-    ``packed_block_types.intrares_path_distance[bt, a, b]``.
+    Intra-residue pairs use the palette's undirected atom distances. Cross-residue
+    pairs minimize atom-to-connection + connection-graph + connection-to-atom
+    distances, including paths through intermediate residues. Padding receives
+    max_sep. Cached values require identical live topology owners.
 
-    For cross-residue pairs we first run an APSP (all-pairs shortest
-    paths) over the residue-connection-point graph, so that the
-    shortest path between any two connection points in the pose is
-    known, threading through any number of intermediate residues. We
-    then combine each atom's intra-block distance to a connection
-    point with the inter-connection APSP distance:
-
-        out[A, B] = min over (ca on A's block, cb on B's block) of:
-            intra_path(A, conn_atom_ca) + conn_apsp[(ba, ca), (bb, cb)]
-            + intra_path(conn_atom_cb, B)
-
-    Values are clipped above by ``max_sep`` (the weight function
-    returns 1.0 for anything ``> 4`` so the clip is only for integer
-    bookkeeping).
-
-    This mirrors the ``CountPair::inter_block_separation`` logic and
-    the APSP-based ``min_block_bondsep`` tensor built by
-    ``PoseStackBuilder._find_inter_block_separation_*`` in upstream.
-    The direct ``inter_block_bondsep`` connection distance alone (1 for
-    peptide-bonded pairs, max_sep otherwise) is correct for adjacent
-    residues but misses multi-residue paths -- e.g. res_i:C -> res_{i+2}:N
-    is 4 bonds, which must receive the 0.2 "1-4 interaction" weight rather
-    than the full weight that ``max_sep`` implies. The APSP relaxation
-    below recovers those paths.
-
-    Implemented as a ``jax.jit``'d routine; the Floyd-Warshall relaxation
-    over residue-connection points runs via ``lax.fori_loop`` and the
-    atom-level combine uses broadcasted gather. For a 1ubq-class pose
-    (~1200 atoms, ~70 blocks) this returns in ~10 ms once the XLA graph
-    has been cached for this shape.
-
-    Parameters
-    ----------
-    pose_stack
-        A :class:`~tmol_jax.pose.pose_stack.PoseStack`. We use
-        ``block_type_ind``, ``block_coord_offset``,
-        ``inter_block_bondsep``, and ``coords.shape[1]``.
-    packed_block_types
-        The matching :class:`~tmol_jax.pose.packed_block_types.PackedBlockTypes`.
-        Defaults to ``pose_stack.packed_block_types``.
-    max_sep
-        Upper clamp on the integer path length. Defaults to
-        :data:`MAX_COUNTPAIR_SEPARATION`.
-
-    Returns
-    -------
-    ``jnp.uint8[n_poses, max_n_atoms_per_pose, max_n_atoms_per_pose]``
-        Every pair (including ``i == j`` which reads 0 from
-        ``intrares_path_distance``) gets a chemical-bond path length.
-        Cross-residue pairs for which no connection pair can reach
-        within ``max_sep`` bonds are left at ``max_sep``. A noncanonical
-        ``max_sep > 255`` returns ``int32`` instead.
-    """
+    Storage is uint8 for max_sep <= 255, otherwise int32. The canonical clamp is
+    6: separations greater than 4 have full nonbonded weight."""
     if packed_block_types is None:
         packed_block_types = pose_stack.packed_block_types
 
@@ -542,16 +436,12 @@ def _pairwise_bpl_direct_jit(
     max_n_atoms_per_pose: int,
     max_sep: int = MAX_COUNTPAIR_SEPARATION,
 ) -> jax.Array:
-    """Direct (no-APSP) variant — uses ``inter_block_bondsep`` only for
-    1-hop cross-residue connections. Matches upstream's elec
-    ``inter_block_separation`` semantics: intra-block uses
-    ``intra_repr_path_distance`` (= ``path[rep[a], rep[b]]``), cross-block
-    uses ``inter_repr_path_distance`` (= ``path[conn_atom, rep[.]]``) plus
-    ``inter_block_bondsep``.
+    """Gather atom-pair distances through a supplied connection-distance table.
 
-    Does NOT run Floyd-Warshall because the elec path-length convention
-    only follows one connection hop.
-    """
+    Within blocks, use per_type_intra_rpd[a, b]. Across blocks, minimize
+    per_type_inter_rpd[connection_a, a] + inter_block_bondsep +
+    per_type_inter_rpd[connection_b, b]. The caller supplies any required graph
+    closure. Electrostatic tables remap atoms to count-pair representatives."""
     P, B = block_type_ind.shape
     C = conn_atoms.shape[1]
 
@@ -590,11 +480,7 @@ def _pairwise_bpl_direct_jit(
     ]
     da = jnp.where(valid_conn_i, da, max_sep + 1)
 
-    # db[p, j, cb] = per_type_inter_rpd[bti_j, cb_atom, local_j]
-    db = per_type_inter_rpd[
-        bti_of_atom[:, :, None], safe_conn_i, local_for_atom[:, :, None]
-    ]
-    db = jnp.where(valid_conn_i, db, max_sep + 1)
+    db = da
 
     # Gather inter_block_bondsep entries into [P, N, N, C, C].
     # ibs[p, ba, bb, ca, cb]. ba = block_for_atom[p, i], bb = block_for_atom[p, j].
@@ -636,13 +522,10 @@ def pair_bonded_path_length_direct(
     per_type_inter_rpd: jax.Array,
     max_sep: int = MAX_COUNTPAIR_SEPARATION,
 ) -> jax.Array:
-    """Elec-style pair BPL: uses rep-remapped tables + direct inter-bondsep
-    (no APSP over connection points).
+    """Prepare electrostatic pair distances with representative-remapped tables.
 
-    Memoised per ``(id(pose_stack), id(intra_rpd), id(inter_rpd),
-    max_sep)`` so repeated setup calls of the elec term amortise the
-    jit compilation + gather work.
-    """
+    Reuse requires the same live pose, palette, representative arrays and clamp.
+    The pose connection distances already include paths through other residues."""
     cache_key = (
         id(pose_stack),
         id(per_type_intra_rpd),
