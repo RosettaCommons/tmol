@@ -229,6 +229,10 @@ def _max_poses_per_packing_chunk(pose_stack: PoseStack) -> int:
 
     if pose_stack.device.type == "cuda":
         free_bytes, _ = torch.cuda.mem_get_info(pose_stack.device)
+        # Blocks cached but unused by torch's allocator are free to the packer too.
+        free_bytes += torch.cuda.memory_reserved(
+            pose_stack.device
+        ) - torch.cuda.memory_allocated(pose_stack.device)
         memory_budget = int(free_bytes * _PACKING_FREE_MEMORY_FRACTION)
         estimated_bytes_per_pose = (
             max(1, max_n_blocks) * _ESTIMATED_PACKING_BYTES_PER_BLOCK
