@@ -370,17 +370,9 @@ def _pairwise_bpl_jit(
     D = jnp.minimum(D, max_sep)  # [P, Nn, Nn]
 
     # ---- Map every (p, i) to (block, local) ---- #
-    n_atoms_b = jnp.where(real_block, n_atoms_per_type[safe_t], 0)
-    end_offsets = block_coord_offset + n_atoms_b
-    atom_idx = jnp.arange(max_n_atoms_per_pose)
-    in_block = (atom_idx[None, None, :] >= block_coord_offset[:, :, None]) & (
-        atom_idx[None, None, :] < end_offsets[:, :, None]
-    )  # [P, B, N]
-    atom_real = in_block.any(axis=1)  # [P, N]
-    block_for_atom = jnp.argmax(in_block.astype(jnp.int32), axis=1).astype(jnp.int32)
-    local_for_atom = (
-        atom_idx[None, :] - block_coord_offset[jnp.arange(P)[:, None], block_for_atom]
-    ).astype(jnp.int32)
+    block_for_atom, local_for_atom, atom_real = pose_atom_block_index(
+        block_type_ind, block_coord_offset, n_atoms_per_type, max_n_atoms_per_pose
+    )
     bti_of_atom = safe_t[jnp.arange(P)[:, None], block_for_atom]  # [P, N]
 
     # ---- Intra-block atom pair BPL ---- #
@@ -576,23 +568,14 @@ def _pairwise_bpl_direct_jit(
 
     real_block = block_type_ind >= 0
     safe_t = jnp.where(real_block, block_type_ind, 0)
-    n_atoms_b = jnp.where(real_block, n_atoms_per_type[safe_t], 0)
 
     conn_atoms_pose = conn_atoms[safe_t]
     conn_atoms_pose = jnp.where(real_block[:, :, None], conn_atoms_pose, -1)
     valid_conn = conn_atoms_pose >= 0
 
-    # Map every (p, i) to (block, local).
-    end_offsets = block_coord_offset + n_atoms_b
-    atom_idx = jnp.arange(max_n_atoms_per_pose)
-    in_block = (atom_idx[None, None, :] >= block_coord_offset[:, :, None]) & (
-        atom_idx[None, None, :] < end_offsets[:, :, None]
+    block_for_atom, local_for_atom, atom_real = pose_atom_block_index(
+        block_type_ind, block_coord_offset, n_atoms_per_type, max_n_atoms_per_pose
     )
-    atom_real = in_block.any(axis=1)
-    block_for_atom = jnp.argmax(in_block.astype(jnp.int32), axis=1).astype(jnp.int32)
-    local_for_atom = (
-        atom_idx[None, :] - block_coord_offset[jnp.arange(P)[:, None], block_for_atom]
-    ).astype(jnp.int32)
     bti_of_atom = safe_t[jnp.arange(P)[:, None], block_for_atom]  # [P, N]
 
     # Intra-block pair BPL: per_type_intra_rpd[bti_i, local_i, local_j]
