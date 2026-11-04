@@ -7,7 +7,7 @@ from typing import Tuple
 
 import attr
 import numpy as np
-import yaml
+from tmol_core._yaml import _load_yaml
 
 from ._structure import structure
 
@@ -63,8 +63,7 @@ class RamaDatabase:
 
     @classmethod
     def from_file(cls, path):
-        with open(path) as stream:
-            rows = structure(yaml.safe_load(stream), _RamaLookupRaw)
+        rows = structure(_load_yaml(path), _RamaLookupRaw)
         stem = os.path.splitext(path)[0]
         tables = cls.load_tables_from_npz(stem + ".npz")
         return cls(os.path.abspath(path), rows.rama_lookup, tables)

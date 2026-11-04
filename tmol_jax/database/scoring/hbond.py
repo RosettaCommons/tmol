@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Dict, Tuple
 
 import attr
-import yaml
+from tmol_core._yaml import _load_yaml
 
 from ._structure import structure
 
@@ -108,8 +108,7 @@ class HBondDatabase:
 
     @classmethod
     def from_file(cls, path: str) -> "HBondDatabase":
-        with open(path, "r") as infile:
-            raw = yaml.safe_load(infile)
+        raw = _load_yaml(path)
         rawdb = structure(raw, _HBondDatabaseRaw)
         return cls(
             global_parameters=rawdb.global_parameters,

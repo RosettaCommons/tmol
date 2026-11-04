@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Tuple
 
 import attr
-import yaml
+from tmol_core._yaml import _load_yaml
 
 from ._structure import Angle, structure
 
@@ -54,8 +54,7 @@ class LJLKDatabase:
 
     @classmethod
     def from_file(cls, path: str) -> "LJLKDatabase":
-        with open(path, "r") as infile:
-            raw = yaml.safe_load(infile)
+        raw = _load_yaml(path)
         return structure(raw, cls)
 
 
