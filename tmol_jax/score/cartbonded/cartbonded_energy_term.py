@@ -1,67 +1,10 @@
-"""Cartesian-bonded energy term (pure JAX).
+"""Cartesian bonded lengths, angles, torsions, impropers and hydroxyl torsions.
 
-Upstream reference: :mod:`tmol.score.cartbonded.cartbonded_energy_term`.
-
-The Rosetta ``cart_bonded`` family imposes harmonic (lengths, angles)
-and periodic (torsions, impropers, hxltorsions) penalties on bond
-lengths, bond angles, proper torsions, improper torsions, and hydroxyl
-torsions. Parameters come from ``cartbonded.yaml`` via
-:class:`tmol_jax.database.scoring.cartbonded.CartBondedDatabase`.
-
-This JAX port restricts itself to *intra-residue* subgraphs: every bond,
-angle, torsion, improper, and hxl-torsion whose atoms all live in the
-same block. Inter-residue geometry (the peptide-bond ``C-N`` length,
-flanking :math:`\\phi` / :math:`\\psi` torsions, ...) is omitted. The
-upstream CUDA kernel handles that by walking ``inter_residue_connections``
-and ``atom_paths_from_conn``; porting that full machinery is left as
-future work. The omission matters for absolute energies but not for
-local minimization of side chains or rigid-backbone CartBonded scoring.
-
-Both impropers and proper torsions share the same sum-of-three-cosines
-form in upstream ``cbtorsion_V_dV``; only the score-type bucket differs.
-We store impropers with the same 6-wide ``(k1, k2, k3, phi1, phi2, phi3)``
-parameter vector and reuse ``hxltorsion_E``.
-
-Setup proceeds in two phases:
-
-1. **Per-block-type enumeration.** For each active residue type we walk
-   its bond graph (``RefinedResidueType.bond_indices``) to enumerate
-   every intra-residue 2- / 3- / 4-atom subgraph. We then look up
-   parameters in the database keyed by atom names (matching the upstream
-   behaviour, including the ``CYD`` -> ``CYS`` base-name hack). Subgraphs
-   without a parameter entry are silently dropped (mirrors the upstream
-   hash-lookup miss).
-
-2. **Padded flattening across block types.** Each category gets a padded
-   ``[n_block_types, max_per_type, k, ...]`` int / float array. At score
-   time, ``setup_for_pose_stack`` gathers the active block types for the
-   pose stack, shifts local atom indices to global by adding
-   ``block_coord_offset``, and writes masks for real (vs padding) entries.
-   Subgraphs that reference "phantom" atoms (coord exactly zero or
-   non-finite — typically the backbone ``H`` on an N-terminal residue
-   when the palette lacks termini patches) are also masked out.
-
-The hot path (``__call__``) takes the precomputed global atom indices
-and parameter tables, gathers coordinates with ``jnp.take_along_axis`` /
-fancy indexing, applies the geom + potential, and reduces per-pose with
-``jnp.sum``. The five outputs map one-to-one to
-``ScoreType.cart_lengths`` / ``cart_angles`` / ``cart_torsions`` /
-``cart_impropers`` / ``cart_hxltorsions``.
-
-Precision note
---------------
-On 1UBQ against the upstream tmol baseline, four of the five cart
-outputs match bit-exactly (delta < 2e-5 absolute). ``cart_lengths``
-shows a +0.0014 kcal/mol residual (0.004% relative) distributed
-across many small-magnitude bond terms; it is below upstream's own
-``atol=1e-4`` per-bond tolerance by two orders of magnitude at the
-sum level but accumulates noticeably over the ~1230 bonds in the
-protein. Float64 evaluation gives the same answer, so the source is
-algorithmic (e.g. minor ordering differences in summation or subtle
-disparities in the bond-by-bond parameter dispatch) rather than
-float32 roundoff. Left as-is until a bit-exact upstream reference
-reveals the specific offending bonds.
-"""
+Setup enumerates intra-residue and connection-spanning subgraphs, resolves
+cartbonded.yaml parameters and maps atoms to pose indices. Masks follow
+chemical topology, independent of coordinates. Torsions and impropers share
+the canonical three-cosine potential with (k1, k2, k3, phi1, phi2, phi3)
+parameters. Unparameterized subgraphs contribute zero, as in the native lookup."""
 
 from __future__ import annotations
 
@@ -88,9 +31,7 @@ from tmol_jax.score.cartbonded.potentials import (
     hxltorsion_E,
 )
 
-# --------------------------------------------------------------------------- #
 # Precomputed per-pose-stack state (pytree)                                    #
-# --------------------------------------------------------------------------- #
 
 
 @pytree_dataclass
@@ -159,9 +100,7 @@ class CartBondedTermState:
     inter_improper_mask: jnp.ndarray  # bool[P, II]
 
 
-# --------------------------------------------------------------------------- #
 # Database lookup helpers                                                      #
-# --------------------------------------------------------------------------- #
 
 
 def _bond_atom_map(bond_indices: np.ndarray, n_atoms: int) -> Dict[int, List[int]]:
@@ -262,9 +201,7 @@ def _parameter_name(rt, cart_db):
     return rt.base_name
 
 
-# --------------------------------------------------------------------------- #
 # Parameter keying                                                             #
-# --------------------------------------------------------------------------- #
 
 
 def _length_key(p: Any) -> Tuple[str, ...]:
@@ -308,9 +245,7 @@ def _fill_sym_db(
         db[_reverse(k)] = v
 
 
-# --------------------------------------------------------------------------- #
 # Per-block-type subgraph build                                                #
-# --------------------------------------------------------------------------- #
 
 
 def _subgraphs_for_block_type(rt: Any, cart_db: Any, improper_roots: set) -> Tuple[
@@ -448,9 +383,7 @@ def _subgraphs_for_block_type(rt: Any, cart_db: Any, improper_roots: set) -> Tup
     return lengths_out, angles_out, torsions_out, impropers_out, hxl_out
 
 
-# --------------------------------------------------------------------------- #
 # Inter-residue subgraph enumeration                                           #
-# --------------------------------------------------------------------------- #
 #
 # Mirrors the logic in ``tmol/score/common/connection.hh``:
 #
@@ -628,9 +561,7 @@ def _inter_residue_subgraphs_for_pair(
     return output
 
 
-# --------------------------------------------------------------------------- #
 # Padded table construction                                                    #
-# --------------------------------------------------------------------------- #
 
 
 def _pad_atoms(
@@ -665,9 +596,7 @@ def _pad_params(per_type: Sequence[Sequence[Sequence[float]]], k: int) -> np.nda
     return params
 
 
-# --------------------------------------------------------------------------- #
 # Energy term                                                                  #
-# --------------------------------------------------------------------------- #
 
 
 class CartBondedEnergyTerm(EnergyTerm):
@@ -694,9 +623,7 @@ class CartBondedEnergyTerm(EnergyTerm):
         # One retained palette/parameter owner bounds memory and prevents id reuse.
         self._bt_cache = None
 
-    # --------------------------------------------------------------- #
     # Metadata                                                         #
-    # --------------------------------------------------------------- #
 
     def score_types_provided(self) -> List[ScoreType]:
         return [
@@ -707,9 +634,7 @@ class CartBondedEnergyTerm(EnergyTerm):
             ScoreType.cart_hxltorsions,
         ]
 
-    # --------------------------------------------------------------- #
     # Setup                                                            #
-    # --------------------------------------------------------------- #
 
     def _build_pbt_tables(self, pbt: Any) -> Dict[str, Any]:
         """Reuse tables only for the same live topology and parameter owners."""
@@ -745,7 +670,6 @@ class CartBondedEnergyTerm(EnergyTerm):
             intra_tables[f"{name}_params"] = _pad_params(params_l, k_params)
             intra_tables[f"{name}_mask"] = m
 
-        # --------- Inter-residue subgraph tables -------------------- #
         # We enumerate every ordered (block_type_A, conn_A, block_type_B,
         # conn_B) pair in the palette. For each such pair we build a
         # list of (local_atoms, is_on_B, params) triples per category
@@ -878,7 +802,6 @@ class CartBondedEnergyTerm(EnergyTerm):
             state_fields[f"{cat}_params"] = jnp.asarray(params)
             state_fields[f"{cat}_mask"] = jnp.asarray(mask)
 
-        # ---------- Inter-residue materialization ------------------- #
         irc = np.asarray(pose_stack.inter_residue_connections)  # [P, B, C, 2]
         inter_lengths_by_pair = tables["inter_lengths_by_pair"]
         inter_angles_by_pair = tables["inter_angles_by_pair"]
@@ -966,9 +889,7 @@ class CartBondedEnergyTerm(EnergyTerm):
 
         return CartBondedTermState(**state_fields)
 
-    # --------------------------------------------------------------- #
     # Evaluation                                                       #
-    # --------------------------------------------------------------- #
 
     def __call__(
         self,
@@ -995,114 +916,35 @@ class CartBondedEnergyTerm(EnergyTerm):
             gathered = jnp.take_along_axis(coords, idx, axis=1)  # [P, M, 3]
             return gathered.reshape(*orig_shape, 3)
 
-        # Lengths --------------------------------------------------- #
-        la = term_state.length_atoms  # [P, B, L, 2]
-        lxyz = _gather_xyz(la)  # [P, B, L, 2, 3]
-        l_d0 = term_state.length_params[..., 0]
-        l_K = term_state.length_params[..., 1]
-        l_d = distance(lxyz[..., 0, :], lxyz[..., 1, :])
-        l_E = bond_length_E(l_d, l_d0, l_K)
-        l_E = jnp.where(term_state.length_mask, l_E, 0.0)
-        cart_lengths = jnp.sum(l_E, axis=(1, 2))  # [P]
-
-        # Angles ---------------------------------------------------- #
-        aa = term_state.angle_atoms  # [P, B, A, 3]
-        axyz = _gather_xyz(aa)
-        a_x0 = term_state.angle_params[..., 0]
-        a_K = term_state.angle_params[..., 1]
-        a_theta = pt_interior_angle(axyz[..., 0, :], axyz[..., 1, :], axyz[..., 2, :])
-        a_E = bond_angle_E(a_theta, a_x0, a_K)
-        a_E = jnp.where(term_state.angle_mask, a_E, 0.0)
-        cart_angles = jnp.sum(a_E, axis=(1, 2))
-
-        # Sum-of-three-cosines torsion: ``hxltorsion_E`` form is shared by
-        # proper torsions, impropers, hxl torsions, and inter-residue
-        # torsions in upstream ``cbtorsion_V_dV``; only the score-type
-        # bucket differs.
-        def _cos3_score(atoms_field, params_field, mask_field, axes=(1, 2)):
-            xyz = _gather_xyz(atoms_field)
-            phi = dihedral_angle(
-                xyz[..., 0, :], xyz[..., 1, :], xyz[..., 2, :], xyz[..., 3, :]
+        def score_subgraphs(prefix, geometry, potential):
+            atoms = getattr(term_state, f"{prefix}_atoms")
+            params = getattr(term_state, f"{prefix}_params")
+            mask = getattr(term_state, f"{prefix}_mask")
+            xyz = _gather_xyz(atoms)
+            measure = geometry(*(xyz[..., i, :] for i in range(atoms.shape[-1])))
+            energy = potential(
+                measure, *(params[..., i] for i in range(params.shape[-1]))
             )
-            E = hxltorsion_E(
-                phi,
-                params_field[..., 0],
-                params_field[..., 1],
-                params_field[..., 2],
-                params_field[..., 3],
-                params_field[..., 4],
-                params_field[..., 5],
-            )
-            return jnp.sum(jnp.where(mask_field, E, 0.0), axis=axes)
+            return jnp.where(mask, energy, 0.0).sum(axis=tuple(range(1, mask.ndim)))
 
-        cart_torsions = _cos3_score(
-            term_state.torsion_atoms,
-            term_state.torsion_params,
-            term_state.torsion_mask,
+        # Intra- and inter-residue graphs use identical potentials; only
+        # their batch axes and score channel differ. Empty graphs sum to zero.
+        categories = (
+            ("length", ScoreType.cart_lengths, distance, bond_length_E),
+            ("angle", ScoreType.cart_angles, pt_interior_angle, bond_angle_E),
+            ("torsion", ScoreType.cart_torsions, dihedral_angle, hxltorsion_E),
+            ("improper", ScoreType.cart_impropers, dihedral_angle, hxltorsion_E),
+            ("hxltorsion", ScoreType.cart_hxltorsions, dihedral_angle, hxltorsion_E),
         )
-        cart_impropers = _cos3_score(
-            term_state.improper_atoms,
-            term_state.improper_params,
-            term_state.improper_mask,
-        )
-        cart_hxltorsions = _cos3_score(
-            term_state.hxltorsion_atoms,
-            term_state.hxltorsion_params,
-            term_state.hxltorsion_mask,
-        )
-
-        # ---------- Inter-residue contributions --------------------- #
-        # Inter-residue arrays are stored as ``[P, E, k]`` (one entry
-        # per pose per connection-spanning subgraph) rather than
-        # ``[P, B, K, k]``. ``_gather_xyz`` handles both shapes; the
-        # output here is ``[P, E, k, 3]`` and we reduce over E.
-
-        # Inter-residue bond lengths ------------------------------- #
-        ila = term_state.inter_length_atoms  # [P, E, 2]
-        if ila.shape[1] > 0:
-            ilxyz = _gather_xyz(ila)  # [P, E, 2, 3]
-            il_d0 = term_state.inter_length_params[..., 0]
-            il_K = term_state.inter_length_params[..., 1]
-            il_d = distance(ilxyz[..., 0, :], ilxyz[..., 1, :])
-            il_E = bond_length_E(il_d, il_d0, il_K)
-            il_E = jnp.where(term_state.inter_length_mask, il_E, 0.0)
-            cart_lengths = cart_lengths + jnp.sum(il_E, axis=1)
-
-        # Inter-residue bond angles -------------------------------- #
-        iaa = term_state.inter_angle_atoms  # [P, E, 3]
-        if iaa.shape[1] > 0:
-            iaxyz = _gather_xyz(iaa)
-            ia_x0 = term_state.inter_angle_params[..., 0]
-            ia_K = term_state.inter_angle_params[..., 1]
-            ia_theta = pt_interior_angle(
-                iaxyz[..., 0, :], iaxyz[..., 1, :], iaxyz[..., 2, :]
-            )
-            ia_E = bond_angle_E(ia_theta, ia_x0, ia_K)
-            ia_E = jnp.where(term_state.inter_angle_mask, ia_E, 0.0)
-            cart_angles = cart_angles + jnp.sum(ia_E, axis=1)
-
-        # Inter-residue torsions and connection-centred impropers --- #
-        def _inter_cos3(prefix):
-            atoms = getattr(term_state, f"{prefix}_atoms")  # [P, E, 4]
-            if atoms.shape[1] == 0:
-                return 0.0
-            return _cos3_score(
-                atoms,
-                getattr(term_state, f"{prefix}_params"),
-                getattr(term_state, f"{prefix}_mask"),
-                axes=1,
-            )
-
-        cart_torsions = cart_torsions + _inter_cos3("inter_torsion")
-        cart_impropers = cart_impropers + _inter_cos3("inter_improper")
-
-        return {
-            ScoreType.cart_lengths: cart_lengths,
-            ScoreType.cart_angles: cart_angles,
-            ScoreType.cart_torsions: cart_torsions,
-            ScoreType.cart_impropers: cart_impropers,
-            ScoreType.cart_hxltorsions: cart_hxltorsions,
+        result = {
+            channel: score_subgraphs(prefix, geometry, potential)
+            for prefix, channel, geometry, potential in categories
         }
+        for prefix, channel, geometry, potential in categories[:-1]:
+            result[channel] = result[channel] + score_subgraphs(
+                f"inter_{prefix}", geometry, potential
+            )
+        return result
 
 
 __all__ = ["CartBondedEnergyTerm", "CartBondedTermState"]
