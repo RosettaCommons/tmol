@@ -10,6 +10,7 @@ from tmol.score import beta2016_score_function
 from tmol.score.gridscore.live_ligand_intra import (
     build_live_ligand_intra_data,
     score_ligand_intra,
+    score_ligand_intra_with_gradients,
 )
 from tmol.tests.ligand.test_ligand_receptor_perterm_baseline import (
     _GOLDEN_PER_TERM,
@@ -22,6 +23,7 @@ from tmol.tests.score.gridscore.test_live_terms import (
     _ligand_coords,
 )
 from tmol.pose import repeat_pose_stack
+from tmol.tests.dock.test_finalization import _flexible_sidechains
 
 _BASE_INTRA_TERMS = (
     "fa_ljatr",
@@ -37,6 +39,38 @@ _CART_INTRA_TERMS = (
     "cart_impropers",
     "cart_hxltorsions",
 )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a CUDA device")
+def test_flexible_context_intra_cuda_graph_replays_values_and_gradients():
+    reference, param_db = _load_target_pose("cdk2")
+    ligand_block = _ligand_block(reference)
+    data = build_live_ligand_intra_data(
+        reference,
+        ligand_block,
+        param_db,
+        weight_profile="search",
+        sidechain_blocks=_flexible_sidechains(reference, ligand_block),
+    ).to("cuda", torch.float32)
+    assert data.context_block_indices
+    coords = data.ligand_pose_stack.coords.repeat(2, 1, 1)
+    stream = torch.cuda.Stream()
+    stream.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(stream):
+        for _ in range(3):
+            score_ligand_intra_with_gradients(data, coords)
+    torch.cuda.current_stream().wait_stream(stream)
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph, stream=stream):
+        energy, gradient = score_ligand_intra_with_gradients(data, coords)
+    for displacement in (0.0, 0.01):
+        coords[:, 0, 0].add_(displacement)
+        expected = score_ligand_intra_with_gradients(data, coords)
+        graph.replay()
+        torch.cuda.synchronize()
+        assert torch.isfinite(energy).all() and torch.isfinite(gradient).all()
+        torch.testing.assert_close(energy, expected[0])
+        torch.testing.assert_close(gradient, expected[1])
 
 
 def _perturbed_ligand_coords(pose_stack, ligand_block: int) -> torch.Tensor:
