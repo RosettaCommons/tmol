@@ -547,14 +547,30 @@
     <span class="p">)</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_loaded_library_paths</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Paths of the shared libraries loaded into this process, where knowable."""</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"/proc/self/maps"</span><span class="p">)</span> <span class="k">as</span> <span class="n">maps</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{</span><span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">maps</span> <span class="k">if</span> <span class="s2">".so"</span> <span class="ow">in</span> <span class="n">line</span><span class="p">}</span>
+    <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span> <span class="o">==</span> <span class="s2">"darwin"</span><span class="p">:</span>
+        <span class="c1"># No /proc on macOS; dyld lists its loaded images instead.</span>
+        <span class="n">libc</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+        <span class="n">libc</span><span class="o">.</span><span class="n">_dyld_image_count</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_uint32</span>
+        <span class="n">libc</span><span class="o">.</span><span class="n">_dyld_get_image_name</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">ctypes</span><span class="o">.</span><span class="n">c_uint32</span><span class="p">]</span>
+        <span class="n">libc</span><span class="o">.</span><span class="n">_dyld_get_image_name</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_char_p</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">fsdecode</span><span class="p">(</span><span class="n">libc</span><span class="o">.</span><span class="n">_dyld_get_image_name</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">libc</span><span class="o">.</span><span class="n">_dyld_image_count</span><span class="p">())</span>
+        <span class="p">}</span>
+    <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>
+
+
 <span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">_openmp_runtime</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""The OpenMP runtime torch already loaded, or None if there is none."""</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"/proc/self/maps"</span><span class="p">)</span> <span class="k">as</span> <span class="n">maps</span><span class="p">:</span>
-            <span class="n">paths</span> <span class="o">=</span> <span class="p">{</span><span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">maps</span> <span class="k">if</span> <span class="s2">".so"</span> <span class="ow">in</span> <span class="n">line</span><span class="p">}</span>
-    <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
-        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">paths</span> <span class="o">=</span> <span class="n">_loaded_library_paths</span><span class="p">()</span>
     <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">paths</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">startswith</span><span class="p">((</span><span class="s2">"libgomp"</span><span class="p">,</span> <span class="s2">"libiomp"</span><span class="p">,</span> <span class="s2">"libomp"</span><span class="p">)):</span>
             <span class="k">return</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">RTLD_NOLOAD</span><span class="p">)</span>
