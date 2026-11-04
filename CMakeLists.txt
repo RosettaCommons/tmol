@@ -353,6 +353,9 @@ endfunction()
 
 set(_C_SOURCES
   tmol/native.cpp
+  # dock
+  tmol/dock/lbfgs_compiled.ops.cpp
+  tmol/dock/lbfgs_compiled.cpu.cpp
   # optimization
   tmol/optimization/armijo_compiled.ops.cpp
   tmol/backends/cpu/optimization/armijo_compiled.cpu.cpp
@@ -378,6 +381,13 @@ set(_C_SOURCES
   # score/genbonded
   tmol/score/genbonded/potentials/compiled.ops.cpp
   tmol/backends/cpu/score/genbonded/potentials/genbonded_pose_score.cpu.cpp
+  # score/gridscore
+  tmol/score/gridscore/potentials/compiled.ops.cpp
+  tmol/score/gridscore/potentials/grid_interp_pose_score.cpu.cpp
+  tmol/score/gridscore/potentials/live_hbond.cpu.cpp
+  tmol/score/gridscore/potentials/live_lk_ball.cpu.cpp
+  tmol/score/gridscore/potentials/grid_score.cpu.cpp
+  tmol/score/gridscore/potentials/grid_build.cpu.cpp
   # score/constraint
   tmol/score/constraint/potentials/compiled.ops.cpp
   tmol/backends/cpu/score/constraint/potentials/constraint_score.cpu.cpp
@@ -433,6 +443,12 @@ if(TMOL_HAS_CUDA)
     tmol/backends/cuda/score/lk_ball/potentials/gen_pose_waters.cuda.cu
     tmol/backends/cuda/score/metal/potentials/metal_coordination_pose_score.cuda.cu
     tmol/backends/cuda/score/na_torsion/potentials/na_torsion_pose_score.cuda.cu
+    tmol/dock/lbfgs_compiled.cuda.cu
+    tmol/score/gridscore/potentials/grid_interp_pose_score.cuda.cu
+    tmol/score/gridscore/potentials/live_hbond.cuda.cu
+    tmol/score/gridscore/potentials/live_lk_ball.cuda.cu
+    tmol/score/gridscore/potentials/grid_score.cuda.cu
+    tmol/score/gridscore/potentials/grid_build.cuda.cu
   )
   # Approximate CUDA math is accurate for the pairwise nonbonded terms and
   # materially improves their throughput. Keep every other term exact:
