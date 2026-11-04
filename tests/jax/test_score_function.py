@@ -132,7 +132,8 @@ def test_count_pair_storage_is_compact_and_large_clamps_remain_lossless():
     )
 
 
-def test_renderer_uses_optional_fused_pair_kernel(monkeypatch):
+@pytest.mark.parametrize("platform", ["cpu", "cuda"])
+def test_renderer_uses_optional_fused_pair_kernel(monkeypatch, platform):
     class LJLKTerm:
         def __init__(self, database):
             pass
@@ -144,7 +145,11 @@ def test_renderer_uses_optional_fused_pair_kernel(monkeypatch):
             return "ljlk"
 
         def __call__(self, *args, **kwargs):
-            raise AssertionError("separate LJ/LK path should be skipped")
+            assert platform == "cpu"
+            return {
+                key: jnp.asarray([value], dtype=jnp.float32)
+                for key, value in zip(self.score_types_provided(), (5, 6, 7))
+            }
 
     class ElecTerm:
         def __init__(self, database):
@@ -157,7 +162,8 @@ def test_renderer_uses_optional_fused_pair_kernel(monkeypatch):
             return "elec"
 
         def __call__(self, *args, **kwargs):
-            raise AssertionError("separate electrostatics path should be skipped")
+            assert platform == "cpu"
+            return {ScoreType.fa_elec: jnp.asarray([8.0], dtype=jnp.float32)}
 
     modules = {
         "tmol_jax.score.fake_ljlk.fake_ljlk_energy_term": SimpleNamespace(
@@ -183,7 +189,10 @@ def test_renderer_uses_optional_fused_pair_kernel(monkeypatch):
 
     from tmol_jax.score.ljlk import cuda
 
-    monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
+    def choose_platform(*args, default, **branches):
+        return branches.get(platform, default)(*args)
+
+    monkeypatch.setattr(jax.lax, "platform_dependent", choose_platform)
     monkeypatch.setattr(cuda, "fused_available", lambda: True)
 
     def score_fused(ljlk_state, elec_state, coordinates):
@@ -201,4 +210,5 @@ def test_renderer_uses_optional_fused_pair_kernel(monkeypatch):
     score = score_function.render_whole_pose_scoring_module(
         pose, sum_terms=False, apply_weights=False
     )
-    np.testing.assert_array_equal(score(pose.coords), [[1], [2], [3], [4]])
+    expected = [[1], [2], [3], [4]] if platform == "cuda" else [[5], [6], [7], [8]]
+    np.testing.assert_array_equal(score(pose.coords), expected)

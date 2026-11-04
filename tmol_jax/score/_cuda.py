@@ -68,24 +68,31 @@ def pair_sum(prefix, differentiated, constants, channels=None):
     """
     shape = differentiated[0].shape[:1] + (() if channels is None else (channels,))
 
+    n_differentiated = len(differentiated)
+
     @jax.custom_vjp
     def call(*arrays):
         return jax.ffi.ffi_call(
             f"{prefix}_forward",
             jax.ShapeDtypeStruct(shape, jnp.float32),
             vmap_method="sequential",
-        )(*arrays, *constants)
+        )(*arrays)
 
     def backward(arrays, cotangent):
         gradients = jax.ffi.ffi_call(
             f"{prefix}_backward",
-            tuple(jax.ShapeDtypeStruct(a.shape, jnp.float32) for a in arrays),
+            tuple(
+                jax.ShapeDtypeStruct(a.shape, jnp.float32)
+                for a in arrays[:n_differentiated]
+            ),
             vmap_method="sequential",
-        )(*arrays, *constants, cotangent)
-        return tuple(gradients)
+        )(*arrays, cotangent)
+        return tuple(gradients) + (None,) * (len(arrays) - n_differentiated)
 
     call.defvjp(lambda *arrays: (call(*arrays), arrays), backward)
-    return call(*differentiated)
+    # Explicit operands keep parameters inside the traced computation when
+    # platform selection or batching transforms this custom derivative.
+    return call(*differentiated, *constants)
 
 
 @partial(jax.jit, static_argnames=("portable", "native"))
