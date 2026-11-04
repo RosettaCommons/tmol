@@ -612,7 +612,8 @@ def test_grid_minimize_lowers_every_energy_and_returns_consistent_genes(
 
 def test_grid_backend_reuse_after_block_reordering(cpu_grid_case, torch_device):
     import attr
-    from tmol.pose import select_blocks, PoseStackBuilder
+    from tmol import PoseStackBuilder
+    from tmol.pose import select_blocks
 
     case = cpu_grid_case
     pose = select_blocks(case.reference, [0, case.ligand_block, 2])
