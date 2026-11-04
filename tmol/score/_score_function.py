@@ -117,14 +117,30 @@ def _rotamer_dispatch_cutoff_compatible(
     )
 
 
+def _loaded_library_paths() -> set[str]:
+    """Paths of the shared libraries loaded into this process, where knowable."""
+    try:
+        with open("/proc/self/maps") as maps:
+            return {line.split()[-1] for line in maps if ".so" in line}
+    except OSError:
+        pass
+    if sys.platform == "darwin":
+        # No /proc on macOS; dyld lists its loaded images instead.
+        libc = ctypes.CDLL(None)
+        libc._dyld_image_count.restype = ctypes.c_uint32
+        libc._dyld_get_image_name.argtypes = [ctypes.c_uint32]
+        libc._dyld_get_image_name.restype = ctypes.c_char_p
+        return {
+            os.fsdecode(libc._dyld_get_image_name(i))
+            for i in range(libc._dyld_image_count())
+        }
+    return set()
+
+
 @functools.cache
 def _openmp_runtime() -> ctypes.CDLL | None:
     """The OpenMP runtime torch already loaded, or None if there is none."""
-    try:
-        with open("/proc/self/maps") as maps:
-            paths = {line.split()[-1] for line in maps if ".so" in line}
-    except OSError:
-        return None
+    paths = _loaded_library_paths()
     for path in sorted(paths):
         if os.path.basename(path).startswith(("libgomp", "libiomp", "libomp")):
             return ctypes.CDLL(path, mode=os.RTLD_NOLOAD)

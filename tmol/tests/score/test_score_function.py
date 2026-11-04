@@ -557,8 +557,9 @@ def test_cpu_sharding_covers_every_pair_list_term(
 
 
 def test_cpu_score_workers_share_the_thread_budget():
-    if score_function_module._openmp_runtime() is None:
+    if "parallel backend: OpenMP" not in torch.__config__.parallel_info():
         pytest.skip("torch is not using an OpenMP runtime")
+    assert score_function_module._openmp_runtime() is not None
     budget = torch.get_num_threads()
     try:
         torch.set_num_threads(4)
