@@ -741,32 +741,25 @@ def lj_sigma(
     lj_hbond_hdis: float = LK_BALL_DEFAULTS.lj_hbond_hdis,
 ) -> Array:
     """Effective LJ sigma for a pair (upstream: ``lj_sigma`` in common.hh)."""
-    ij_donor_acc = jnp.logical_and(
-        jnp.logical_and(is_donor_i, jnp.logical_not(is_hydroxyl_i)), is_acceptor_j
-    )
-    ji_donor_acc = jnp.logical_and(
-        jnp.logical_and(is_donor_j, jnp.logical_not(is_hydroxyl_j)), is_acceptor_i
-    )
-    donor_acc = jnp.logical_or(ij_donor_acc, ji_donor_acc)
+    from types import SimpleNamespace
+    from tmol_jax.score.ljlk.potentials import lj_sigma as shared_sigma
 
-    ij_oh = jnp.logical_and(jnp.logical_and(is_donor_i, is_hydroxyl_i), is_acceptor_j)
-    ji_oh = jnp.logical_and(jnp.logical_and(is_donor_j, is_hydroxyl_j), is_acceptor_i)
-    oh_acc = jnp.logical_or(ij_oh, ji_oh)
+    def atom(radius, donor, hydroxyl, polarh, acceptor):
+        return SimpleNamespace(
+            lj_radius=radius,
+            is_donor=jnp.asarray(donor, dtype=bool),
+            is_hydroxyl=jnp.asarray(hydroxyl, dtype=bool),
+            is_polarh=jnp.asarray(polarh, dtype=bool),
+            is_acceptor=jnp.asarray(acceptor, dtype=bool),
+        )
 
-    polh_acc = jnp.logical_or(
-        jnp.logical_and(is_polarh_i, is_acceptor_j),
-        jnp.logical_and(is_polarh_j, is_acceptor_i),
-    )
-
-    plain = lj_radius_i + lj_radius_j
-
-    return jnp.where(
-        donor_acc,
-        lj_hbond_dis,
-        jnp.where(
-            oh_acc,
-            lj_hbond_OH_donor_dis,
-            jnp.where(polh_acc, lj_hbond_hdis, plain),
+    return shared_sigma(
+        atom(lj_radius_i, is_donor_i, is_hydroxyl_i, is_polarh_i, is_acceptor_i),
+        atom(lj_radius_j, is_donor_j, is_hydroxyl_j, is_polarh_j, is_acceptor_j),
+        SimpleNamespace(
+            lj_hbond_dis=lj_hbond_dis,
+            lj_hbond_OH_donor_dis=lj_hbond_OH_donor_dis,
+            lj_hbond_hdis=lj_hbond_hdis,
         ),
     )
 

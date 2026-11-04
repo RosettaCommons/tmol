@@ -74,15 +74,14 @@ class PoseStack:
     def __getitem__(self, i) -> "PoseStack":
         """Slice along the pose axis. Single-index returns a 1-pose stack."""
 
-        if isinstance(i, (int, np.integer)):
-            sl = slice(int(i), int(i) + 1)
-        elif isinstance(i, slice):
-            sl = i
-        else:  # fancy indexing — delegate to jnp
-            sl = i
+        # Host indexing keeps metadata and arrays aligned, including bounds,
+        # negative indices, boolean masks, and repeated/reordered selections.
+        indices = np.atleast_1d(np.arange(self.n_poses)[i])
+        if indices.ndim != 1:
+            raise IndexError("pose selection must be one dimensional")
 
         def _take(x):
-            return x[sl]
+            return x[jnp.asarray(indices)]
 
         return PoseStack(
             packed_block_types=self.packed_block_types,
@@ -91,7 +90,7 @@ class PoseStack:
             inter_residue_connections=_take(self.inter_residue_connections),
             inter_block_bondsep=_take(self.inter_block_bondsep),
             block_type_ind=_take(self.block_type_ind),
-            pdb_info=self.pdb_info,
+            pdb_info=None if self.pdb_info is None else self.pdb_info[indices],
         )
 
     # ---------------------------------------------------------------

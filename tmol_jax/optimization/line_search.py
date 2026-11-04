@@ -67,7 +67,7 @@ def _cubic_interp(
         return 0.5 * (a_lo + a_hi)
     d2 = jnp.sqrt(disc)
     d2 = float(d2) if jnp.isfinite(d2) else 0.0
-    if a_lo < a_hi:
+    if a_hi < a_lo:
         d2 = -d2
     denom = g_hi - g_lo + 2.0 * d2
     if denom == 0.0:

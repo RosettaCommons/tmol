@@ -191,6 +191,7 @@ def lbfgs_minimize(  # noqa: C901
 
     # Initial evaluation. ``f_and_grad`` masks the gradient internally.
     f_val, grad = f_and_grad(x)
+    initial_fun = f_val
     if not bool(jnp.isfinite(f_val)) or not bool(jnp.isfinite(grad).all()):
         raise FloatingPointError("initial objective value and gradient must be finite")
 
@@ -209,6 +210,7 @@ def lbfgs_minimize(  # noqa: C901
         return {
             "x": x,
             "fun": f_val,
+            "initial_fun": initial_fun,
             "grad": grad,
             "n_iter": 0,
             "converged": True,
@@ -342,6 +344,7 @@ def lbfgs_minimize(  # noqa: C901
     return {
         "x": x,
         "fun": f_val,
+        "initial_fun": initial_fun,
         "grad": grad,
         "n_iter": n_iter,
         "converged": converged,

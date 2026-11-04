@@ -94,7 +94,7 @@ def _init_anticausal_coeff(line: jax.Array, pole: float) -> jax.Array:
         new_last = (line[N - 1] + jnp.sum(contributions)) * (-pole)
         return line.at[N - 1].set(new_last)
     else:
-        i = jnp.arange(0, N)
+        i = jnp.arange(0, N - 1)
         zn = pole ** (i + 1)
         zn_N = pole**N
         contributions = zn * line[i]

@@ -83,7 +83,6 @@ def run_cart_min(
         return scorer(x_flat.reshape(shape)).sum()
 
     value_and_grad = jax.jit(jax.value_and_grad(energy))
-    initial_energy = float(energy(x0))
     result = lbfgs_minimize(
         energy,
         x0,
@@ -96,6 +95,7 @@ def run_cart_min(
         verbose=verbose,
         value_and_grad=value_and_grad,
     )
+    initial_energy = float(result["initial_fun"])
     final_coords = result["x"].reshape(shape).astype(coords.dtype)
     final_coords = jnp.where(mask, final_coords, coords)
     if not bool(jnp.isfinite(final_coords).all()) or not bool(

@@ -74,7 +74,7 @@ _MAX_COUNTPAIR_SEPARATION: int = 6
 def _annotate_packed_block_types(packed_block_types: Any, elec_db: Any) -> None:
     """Attach the four elec-specific arrays to ``packed_block_types``.
 
-    Idempotent: if the attributes are already present we short-circuit.
+    Reuse only annotations for the same parameter database and topology.
     The arrays are ``jnp`` so that later scoring can use them directly
     without host->device transfers.
 
@@ -98,10 +98,10 @@ def _annotate_packed_block_types(packed_block_types: Any, elec_db: Any) -> None:
         path length for atom pairs on the same block.
     """
 
-    if (
-        hasattr(packed_block_types, "elec_partial_charge")
-        and hasattr(packed_block_types, "elec_inter_repr_path_distance")
-        and hasattr(packed_block_types, "elec_intra_repr_path_distance")
+    owners = (elec_db, packed_block_types.active_block_types)
+    cached_owners = getattr(packed_block_types, "_elec_owners", ())
+    if len(cached_owners) == len(owners) and all(
+        old is new for old, new in zip(cached_owners, owners)
     ):
         return
 
@@ -151,6 +151,7 @@ def _annotate_packed_block_types(packed_block_types: Any, elec_db: Any) -> None:
         "elec_intra_repr_path_distance",
         jnp.asarray(intra_rpd),
     )
+    packed_block_types._elec_owners = owners
 
 
 # --------------------------------------------------------------------- #
@@ -318,8 +319,7 @@ class ElecEnergyTerm(EnergyTerm):
         """
         if pbt is None:
             pbt = pose_stack.packed_block_types
-        if not hasattr(pbt, "elec_partial_charge"):
-            self.setup_packed_block_types(pbt)
+        self.setup_packed_block_types(pbt)
 
         charges = atom_charges_for_pose_stack(pose_stack, pbt, self.elec_db)
         bpl = pair_bonded_path_length(pose_stack, pbt)
@@ -363,12 +363,24 @@ class ElecEnergyTerm(EnergyTerm):
 
         coords = coords_override if coords_override is not None else pose_stack.coords
 
-        if coords.dtype == jnp.float32 and jax.default_backend() == "gpu":
-            from tmol_jax.score.elec import cuda
+        from tmol_jax.score.elec import cuda
+        from tmol_jax.score._cuda import platform_score
 
-            if cuda.available():
-                return {ScoreType.fa_elec: cuda.score(term_state, coords)}
+        if coords.dtype == jnp.float32 and cuda.available():
+            return platform_score(
+                term_state,
+                coords,
+                portable=self._score_portable,
+                native=self._score_native,
+            )
+        return self._score_portable(term_state, coords)
 
+    def _score_native(self, state, coords):
+        from tmol_jax.score.elec import cuda
+
+        return {ScoreType.fa_elec: cuda.score(state, coords)}
+
+    def _score_portable(self, term_state, coords):
         # NaN-safe pairwise distances (double-where on the inside of sqrt).
         dist = _pairwise_distance(coords)  # [P, N, N]
 

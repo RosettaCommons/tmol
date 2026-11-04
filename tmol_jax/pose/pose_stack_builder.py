@@ -21,7 +21,7 @@ def _connect(connections, pose, left, right, left_conn, right_conn):
 
 def _connections(pbt, block_types, chains, disulfides):
     poses, blocks = block_types.shape
-    connections = np.full((poses, blocks, max(pbt.max_n_conn, 2), 2), -1, np.int32)
+    connections = np.full((poses, blocks, pbt.max_n_conn, 2), -1, np.int32)
     for pose, row in enumerate(block_types):
         for left in range(len(chains[pose]) - 1):
             right = left + 1

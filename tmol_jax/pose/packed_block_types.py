@@ -186,14 +186,14 @@ class PackedBlockTypes:
         if n_types == 0:
             max_n_atoms = 0
             max_n_bonds = 0
-            max_n_conn = 0
+            max_n_conn = 2
         else:
             max_n_atoms = max(len(rt.atoms) for rt in active_types)
             max_n_bonds = max(
                 (rt.bond_indices.shape[0] if rt.bond_indices is not None else 0)
                 for rt in active_types
             )
-            max_n_conn = max(len(rt.connections) for rt in active_types)
+            max_n_conn = max(2, max(len(rt.connections) for rt in active_types))
 
         # -------------------------------------------------------------- #
         # Per-type scalar counts                                          #

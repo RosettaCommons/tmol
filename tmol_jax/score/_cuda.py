@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import importlib
-from functools import lru_cache
+from functools import lru_cache, partial
 
 import jax
 import jax.numpy as jnp
@@ -71,15 +71,24 @@ def pair_sum(prefix, differentiated, constants, channels=None):
     @jax.custom_vjp
     def call(*arrays):
         return jax.ffi.ffi_call(
-            f"{prefix}_forward", jax.ShapeDtypeStruct(shape, jnp.float32)
+            f"{prefix}_forward",
+            jax.ShapeDtypeStruct(shape, jnp.float32),
+            vmap_method="sequential",
         )(*arrays, *constants)
 
     def backward(arrays, cotangent):
         gradients = jax.ffi.ffi_call(
             f"{prefix}_backward",
             tuple(jax.ShapeDtypeStruct(a.shape, jnp.float32) for a in arrays),
+            vmap_method="sequential",
         )(*arrays, *constants, cotangent)
         return tuple(gradients)
 
     call.defvjp(lambda *arrays: (call(*arrays), arrays), backward)
     return call(*differentiated)
+
+
+@partial(jax.jit, static_argnames=("portable", "native"))
+def platform_score(state, coords, *, portable, native):
+    """Select at lowering, including eager calls with explicitly placed arrays."""
+    return jax.lax.platform_dependent(state, coords, default=portable, cuda=native)

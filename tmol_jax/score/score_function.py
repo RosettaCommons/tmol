@@ -191,19 +191,16 @@ class ScoreFunction:
             fused_entries = None
         shape = pose_stack.coords.shape
 
-        def score(coords):
-            if coords.shape != shape or not jnp.issubdtype(coords.dtype, jnp.floating):
-                raise ValueError(f"expected floating coordinates with shape {shape}")
+        def evaluate(coords, fused=False):
             energies = {}
             skip_entries = ()
-            if coords.dtype == jnp.float32 and jax.default_backend() == "gpu":
+            if fused:
                 from tmol_jax.score.ljlk import cuda
 
-                if fused_entries is not None and cuda.fused_available():
-                    (ljlk_index, ljlk_state), (elec_index, elec_state) = fused_entries
-                    fused_values = cuda.score_fused(ljlk_state, elec_state, coords)
-                    energies.update(dict(zip(_FUSED_PAIR_TYPES, fused_values.T)))
-                    skip_entries = (ljlk_index, elec_index)
+                (ljlk_index, ljlk_state), (elec_index, elec_state) = fused_entries
+                fused_values = cuda.score_fused(ljlk_state, elec_state, coords)
+                energies.update(dict(zip(_FUSED_PAIR_TYPES, fused_values.T)))
+                skip_entries = (ljlk_index, elec_index)
             for index, (term, term_state) in enumerate(entries):
                 if index in skip_entries:
                     continue
@@ -219,6 +216,25 @@ class ScoreFunction:
                 ]
             )
             return values.sum(axis=0) if sum_terms else values
+
+        @jax.jit
+        def platform_evaluate(coords):
+            return jax.lax.platform_dependent(
+                coords, default=evaluate, cuda=lambda x: evaluate(x, fused=True)
+            )
+
+        def score(coords):
+            if coords.shape != shape or not jnp.issubdtype(coords.dtype, jnp.floating):
+                raise ValueError(f"expected floating coordinates with shape {shape}")
+            from tmol_jax.score.ljlk import cuda
+
+            if (
+                fused_entries is not None
+                and coords.dtype == jnp.float32
+                and cuda.fused_available()
+            ):
+                return platform_evaluate(coords)
+            return evaluate(coords)
 
         return score
 

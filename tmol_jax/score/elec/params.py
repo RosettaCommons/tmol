@@ -190,11 +190,15 @@ def atom_charges_for_pose_stack(
         Row-major, with zero padding for non-real atom slots and for
         atoms missing from the charge DB.
     """
-    # Per-BT charges depend only on the palette; reuse the table cached
-    # on ``packed_block_types`` by :func:`_annotate_packed_block_types`
-    # if present, otherwise build it once here.
-    per_type_charges = getattr(packed_block_types, "elec_partial_charge", None)
-    if per_type_charges is None:
+    # Reuse only charges annotated for this exact parameter/topology pair.
+    owners = getattr(packed_block_types, "_elec_owners", ())
+    if (
+        len(owners) == 2
+        and owners[0] is elec_db
+        and owners[1] is packed_block_types.active_block_types
+    ):
+        per_type_charges = packed_block_types.elec_partial_charge
+    else:
         partial_charges = _partial_charges_dict(elec_db)
         per_type_charges = _per_block_type_charges(packed_block_types, partial_charges)
     per_type_charges = jnp.asarray(per_type_charges, dtype=jnp.float32)

@@ -49,12 +49,25 @@ class LJLKEnergyTerm(EnergyTerm):
 
     def __call__(self, pose_stack, term_state, coords_override=None):
         coords = pose_stack.coords if coords_override is None else coords_override
-        if coords.dtype == jnp.float32 and jax.default_backend() == "gpu":
-            from tmol_jax.score.ljlk import cuda
+        from tmol_jax.score.ljlk import cuda
+        from tmol_jax.score._cuda import platform_score
 
-            if cuda.available():
-                values = cuda.score(term_state, coords)
-                return dict(zip(self.score_types_provided(), values.T))
+        if coords.dtype == jnp.float32 and cuda.available():
+            return platform_score(
+                term_state,
+                coords,
+                portable=self._score_portable,
+                native=self._score_native,
+            )
+        return self._score_portable(term_state, coords)
+
+    def _score_native(self, state, coords):
+        from tmol_jax.score.ljlk import cuda
+
+        values = cuda.score(state, coords)
+        return dict(zip(self.score_types_provided(), values.T))
+
+    def _score_portable(self, term_state, coords):
         diff = coords[:, :, None, :] - coords[:, None, :, :]
         distance_squared = jnp.sum(diff * diff, axis=-1)
         nonzero = distance_squared > 0

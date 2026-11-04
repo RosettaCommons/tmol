@@ -80,32 +80,18 @@ class PDBInfo:
     # ---------------------------------------------------------------
     # Slicing
     # ---------------------------------------------------------------
-    def __getitem__(self, i: int) -> "PDBInfo":
-        """Return a single-pose ``PDBInfo`` view.
-
-        The result is always a ``PDBInfo`` with ``n_poses == 1``. Nested
-        lists are shallow-copied; ``res_num`` is sliced with ``i:i+1`` so
-        the resulting array is still 2D.
-        """
-        if not isinstance(i, int):
-            raise TypeError(
-                f"PDBInfo only supports integer single-pose indexing, got {type(i).__name__}"
-            )
-        n = self.n_poses
-        if n > 0 and not (-n <= i < n):
-            raise IndexError(
-                f"pose index {i} out of range for PDBInfo with n_poses={n}"
-            )
-        j = i % n if n > 0 else 0
+    def __getitem__(self, index) -> "PDBInfo":
+        """Select poses with the same integer, slice or array indexing as a pose."""
+        indices = np.atleast_1d(np.arange(self.n_poses)[index])
+        if indices.ndim != 1:
+            raise IndexError("pose selection must be one dimensional")
         return PDBInfo(
-            chain_id=[list(self.chain_id[j])] if self.chain_id else [[]],
-            res_num=np.asarray(self.res_num[j : j + 1]).copy(),
-            res_name=[list(self.res_name[j])] if self.res_name else [[]],
-            atom_record_type=(
-                [[list(a) for a in self.atom_record_type[j]]]
-                if self.atom_record_type
-                else [[]]
-            ),
+            chain_id=[list(self.chain_id[i]) for i in indices],
+            res_num=self.res_num[indices].copy(),
+            res_name=[list(self.res_name[i]) for i in indices],
+            atom_record_type=[
+                [list(atoms) for atoms in self.atom_record_type[i]] for i in indices
+            ],
         )
 
     # ---------------------------------------------------------------

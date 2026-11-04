@@ -230,12 +230,24 @@ class HBondEnergyTerm(EnergyTerm):
         without reconstructing the :class:`PoseStack` pytree.
         """
         coords = coords_override if coords_override is not None else pose_stack.coords
-        if coords.dtype == jnp.float32 and jax.default_backend() == "gpu":
-            from tmol_jax.score.hbond import cuda
+        from tmol_jax.score.hbond import cuda
+        from tmol_jax.score._cuda import platform_score
 
-            if cuda.available():
-                return {ScoreType.hbond: cuda.score(term_state, coords)}
+        if coords.dtype == jnp.float32 and cuda.available():
+            return platform_score(
+                term_state,
+                coords,
+                portable=self._score_portable,
+                native=self._score_native,
+            )
+        return self._score_portable(term_state, coords)
 
+    def _score_native(self, state, coords):
+        from tmol_jax.score.hbond import cuda
+
+        return {ScoreType.hbond: cuda.score(state, coords)}
+
+    def _score_portable(self, term_state, coords):
         energies = hbond_pose_scores(coords, term_state)
         return {ScoreType.hbond: energies}
 

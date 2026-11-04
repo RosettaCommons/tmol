@@ -311,13 +311,22 @@ class LKBallEnergyTerm(EnergyTerm):
     def _eval_full(self, coords: jax.Array, state: LKBallTermState) -> dict:
         """Full (upstream-faithful) lk-ball over all atom pairs."""
 
-        if coords.dtype == jnp.float32 and jax.default_backend() == "gpu":
-            from tmol_jax.score.lk_ball import cuda
+        from tmol_jax.score.lk_ball import cuda
+        from tmol_jax.score._cuda import platform_score
 
-            if cuda.available():
-                values = cuda.score(self, state, coords)
-                return dict(zip(self.score_types_provided(), values.T))
+        if coords.dtype == jnp.float32 and cuda.available():
+            return platform_score(
+                state, coords, portable=self._score_portable, native=self._score_native
+            )
+        return self._score_portable(state, coords)
 
+    def _score_native(self, state, coords):
+        from tmol_jax.score.lk_ball import cuda
+
+        values = cuda.score(self, state, coords)
+        return dict(zip(self.score_types_provided(), values.T))
+
+    def _score_portable(self, state, coords):
         def eval_one_pose(pose_coords, pose_state):
             waters = self._place_all_waters(
                 pose_coords,

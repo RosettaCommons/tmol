@@ -691,11 +691,8 @@ class CartBondedEnergyTerm(EnergyTerm):
         self.cart_database = param_db.scoring.cartbonded
         self.improper_roots = _improper_root_atom_names(self.cart_database)
 
-        # Lazy cache: block-type-index -> (length, angle, torsion,
-        # improper, hxltorsion) intra-residue subgraphs with params. We
-        # index caches by ``id(active_block_types)`` so back-to-back
-        # scores of the same pose stack reuse the work.
-        self._bt_cache: Dict[int, Tuple] = {}
+        # One retained palette/parameter owner bounds memory and prevents id reuse.
+        self._bt_cache = None
 
     # --------------------------------------------------------------- #
     # Metadata                                                         #
@@ -715,16 +712,12 @@ class CartBondedEnergyTerm(EnergyTerm):
     # --------------------------------------------------------------- #
 
     def _build_pbt_tables(self, pbt: Any) -> Dict[str, Any]:
-        """Per-block-type subgraph tables for a PackedBlockTypes palette.
-
-        Returns a dict of numpy arrays keyed by category. Cached by
-        ``id(pbt.active_block_types)`` so repeat scoring of the same
-        palette is O(1).
-        """
-        key = id(pbt.active_block_types)
-        cached = self._bt_cache.get(key)
-        if cached is not None:
-            return cached
+        """Reuse tables only for the same live topology and parameter owners."""
+        owners = (pbt.active_block_types, self.cart_database)
+        if self._bt_cache is not None:
+            cached_owners, tables = self._bt_cache
+            if all(old is new for old, new in zip(cached_owners, owners)):
+                return tables
 
         # (output prefix, atoms_arity, params_arity).
         _CATEGORIES = (
@@ -820,7 +813,7 @@ class CartBondedEnergyTerm(EnergyTerm):
             "inter_torsions_by_pair": inter_torsions_by_pair,
             "inter_impropers_by_pair": inter_impropers_by_pair,
         }
-        self._bt_cache[key] = tables
+        self._bt_cache = (owners, tables)
         return tables
 
     def setup_for_pose_stack(
