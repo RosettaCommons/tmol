@@ -195,7 +195,7 @@ def test_flexible_grid_atom_partition_and_score_decomposition_fp64(
         ligand_block,
         param_db,
         kin_dtype=torch.float64,
-        flexible_residues=sidechain_blocks,
+        flexible_residues=torch.tensor(sidechain_blocks),
     )
     movable, docking_dofs, layout = _movable_layout(
         reference, ligand_block, sidechain_blocks

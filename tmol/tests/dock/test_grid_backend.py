@@ -570,10 +570,13 @@ def test_shared_pocket_grids_match_per_ligand_grids():
     pocket = GridBackend.pocket_grids(
         reference, block, param_db, atom_types=("CH1", "OH", *alone.ligand_atom_types)
     )
-    shared = GridBackend.from_pose_stack(reference, block, param_db, grids=pocket)
+    fresh, fresh_db = _load_cdk2_pose()
+    assert fresh.packed_block_types is not reference.packed_block_types
+    assert not hasattr(fresh.packed_block_types, "elec_partial_charge")
+    shared = GridBackend.from_pose_stack(fresh, block, fresh_db, grids=pocket)
     assert set(alone.grids.atom_type_names) < set(pocket.atom_type_names)
     torch.testing.assert_close(
-        shared.score(reference), alone.score(reference), rtol=1e-10, atol=1e-10
+        shared.score(fresh), alone.score(reference), rtol=1e-10, atol=1e-10
     )
     # Backends sharing grids share one device copy of them.
     assert shared._scorer("cpu", torch.float64).grids is pocket.on("cpu", torch.float64)
@@ -605,3 +608,33 @@ def test_grid_minimize_lowers_every_energy_and_returns_consistent_genes(
     torch.testing.assert_close(
         rebuilt.coords, result.pose_stack.coords, rtol=0.0, atol=1.0e-9
     )
+
+
+def test_grid_backend_reuse_after_block_reordering(cpu_grid_case, torch_device):
+    import attr
+    from tmol import PoseStackBuilder
+    from tmol.pose import select_blocks
+
+    case = cpu_grid_case
+    pose = select_blocks(case.reference, [0, case.ligand_block, 2])
+    chains = torch.arange(3)[None, :]
+    pose = attr.evolve(pose, chain_id=chains.int(), chain_id64=chains)
+    pose = PoseStackBuilder.from_poses([pose], torch_device)
+    backend = case.backend.for_ligand_block(1)
+    expected = backend.score(pose)
+    reordered = select_blocks(pose, [2, 1, 0])
+    assert reordered.packed_block_types is pose.packed_block_types
+    assert reordered.coords.shape == pose.coords.shape
+    assert reordered.block_coord_offset64[0, 1] != pose.block_coord_offset64[0, 1]
+    torch.testing.assert_close(backend.score(reordered), expected, rtol=0, atol=1e-10)
+
+    old_dofs = build_ligand_docking_dofs(pose, 1)
+    new_dofs = build_ligand_docking_dofs(reordered, 1)
+    backend.minimize(pose, old_dofs, maxiter=1)
+    reused = backend.minimize(reordered, new_dofs, maxiter=1)
+    backend._minimizers.clear()
+    fresh = backend.minimize(reordered, new_dofs, maxiter=1)
+    torch.testing.assert_close(
+        reused.pose_stack.coords, fresh.pose_stack.coords, rtol=0, atol=1e-10
+    )
+    torch.testing.assert_close(reused.energies, fresh.energies, rtol=0, atol=1e-10)

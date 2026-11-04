@@ -555,3 +555,40 @@ def test_cdk2_flexible_grid_docking_exact_finalization_e2e():
         bad_bonds,
     )
     assert bad_bonds == 0
+
+
+@pytest.mark.parametrize("explicit_database", [False, True])
+def test_free_state_constraints_do_not_modify_exact_weights(
+    ubq_pdb, monkeypatch, explicit_database
+):
+    import attr
+    from tmol import pose_stack_from_file, ScoreType
+
+    # Two disconnected standard residues exercise the optional default database.
+    pdb = "\n".join(
+        line[:21] + ("A" if int(line[22:26]) == 1 else "B") + line[22:]
+        for line in ubq_pdb.splitlines()
+        if line.startswith("ATOM") and int(line[22:26]) in (1, 2)
+    )
+    pose = pose_stack_from_file(pdb, torch.device("cpu"), no_optH=True)
+    database = ParameterDatabase.get_default() if explicit_database else None
+    exact = beta2016_score_function(pose.device, param_db=database)
+    original_weight = exact.get_weight(ScoreType.constraint).clone()
+
+    # Deterministic displacement leaves a nonzero restraint energy to exclude
+    # from the free-state score, without depending on minimizer convergence.
+    def move(pose, *args, **kwargs):
+        return attr.evolve(pose, coords=pose.coords + 0.1)
+
+    monkeypatch.setattr(finalization_module, "run_cart_min", move)
+    try:
+        ligand_energy, _ = finalization_module._free_state_energies(
+            pose, pose, exact, database, 1, ()
+        )
+        torch.testing.assert_close(
+            exact.get_weight(ScoreType.constraint), original_weight
+        )
+        expected = _score_pose_stack(move(movable_pose_stack(pose, 1)), exact)
+        torch.testing.assert_close(ligand_energy, expected)
+    finally:
+        exact.set_weight(ScoreType.constraint, original_weight)

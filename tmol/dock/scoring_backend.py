@@ -34,6 +34,7 @@ from tmol.pose._pose_stack import PoseStack
 from tmol.pose import repeat_pose_stack
 from tmol.score import beta2016_score_function
 from tmol.score.gridscore import GridScorer, GridSet, build_grid
+from tmol.score.gridscore.grid import _setup_scoring_parameters
 from tmol.score.gridscore.live_hbond import LiveHBondData, build_live_hbond_data
 from tmol.score.gridscore.live_ligand_intra import (
     LiveLigandIntraData,
@@ -106,8 +107,7 @@ def _genes_from_raw_kinforest_dofs(
 class ScoringBackend(ABC):
     """The scoring contract used by the docking loop.
 
-    A future ``GridBackend`` must implement these same two methods. ``score``
-    returns one total beta16-compatible energy per pose, with shape
+    ``score`` returns one search-objective energy per pose, with shape
     ``[n_poses]``. ``minimize`` performs one batched local minimization over
     exactly the freedoms described by ``docking_dofs`` and returns a
     :class:`MinimizationResult`. A grid implementation may use a different
@@ -552,7 +552,7 @@ class GridBackend(ScoringBackend):
         self.cuda_graph = cuda_graph
         self._minimizers: dict = {}  # shared with ``for_ligand_block`` views
         self._scorers: dict[tuple[torch.device, torch.dtype], GridScorer] = {}
-        self._atom_index_cache: dict[tuple, torch.Tensor] = {}
+        self._atom_index_cache: dict = {}
 
     def search_view(
         self, pose_stack: PoseStack
@@ -604,7 +604,7 @@ class GridBackend(ScoringBackend):
         """
         block = resolve_ligand_block(pose_stack, ligand)
         flexible = validated_sidechain_blocks(
-            pose_stack, block, flexible_residues or ()
+            pose_stack, block, () if flexible_residues is None else flexible_residues
         )
         if atom_types is None:
             block_type = pose_stack.block_type(0, block)
@@ -677,7 +677,9 @@ class GridBackend(ScoringBackend):
         block_type_index = int(reference_pose_stack.block_type_ind64[0, ligand_block])
         block_type = pbt.active_block_types[block_type_index]
         sidechain_blocks = validated_sidechain_blocks(
-            reference_pose_stack, ligand_block, flexible_residues or ()
+            reference_pose_stack,
+            ligand_block,
+            () if flexible_residues is None else flexible_residues,
         )
         context_blocks = sidechain_context_blocks(
             reference_pose_stack, ligand_block, sidechain_blocks
@@ -739,10 +741,12 @@ class GridBackend(ScoringBackend):
                 bbox_padding=bbox_padding,
                 lk_ball_grid=lk_ball_grid,
             )
+        else:
+            # Reused grids may have been built with a different palette.
+            _setup_scoring_parameters(reference_pose_stack, param_db)
         missing = set(ligand_atom_types) - set(grids.atom_type_names)
         if missing:
             raise ValueError(f"grids lack the ligand atom types {sorted(missing)}")
-        # Grid construction initializes the packed ljlk/elec parameters (charges).
         ligand_charges = torch.cat(
             [
                 pbt.elec_partial_charge[index, : pbt.active_block_types[index].n_atoms]
@@ -828,9 +832,26 @@ class GridBackend(ScoringBackend):
             ligand_block,
             id(pose_stack.packed_block_types),
         )
+        layout = (
+            pose_stack.packed_block_types,
+            pose_stack.block_coord_offset64,
+            pose_stack.block_type_ind64,
+        )
+        # Retain and check the actual layout owners, including in-place edits.
+        # Inference tensors have no mutation counter and are not cached.
+        versions = (
+            None
+            if any(t.is_inference() for t in layout[1:])
+            else tuple(t._version for t in layout[1:])
+        )
         cached = self._atom_index_cache.get(cache_key)
-        if cached is not None:
-            return cached
+        if (
+            versions is not None
+            and cached is not None
+            and all(a is b for a, b in zip(layout, cached[0]))
+            and versions == cached[1]
+        ):
+            return cached[2]
 
         block_types = pose_stack.block_type_ind64[:, ligand_block]
         if bool(torch.any(block_types < 0)):
@@ -848,7 +869,8 @@ class GridBackend(ScoringBackend):
             block_type.n_atoms, dtype=torch.int64, device=pose_stack.device
         )
         atom_indices = offsets + local_atoms[None, :]
-        self._atom_index_cache[cache_key] = atom_indices
+        if versions is not None:
+            self._atom_index_cache[cache_key] = (layout, versions, atom_indices)
         return atom_indices
 
     def _movable_atom_indices(
@@ -957,6 +979,17 @@ class GridBackend(ScoringBackend):
             kin_dtype,
             id(pose_stack.packed_block_types),
         )
+        layout = (
+            pose_stack.block_type_ind64,
+            pose_stack.block_coord_offset64,
+            pose_stack.inter_residue_connections64,
+            pose_stack.chain_id64,
+        )
+        if any(t.is_inference() for t in layout):
+            return _PopulationMinimizer(self, pose_stack, docking_dofs, kin_dtype)
+        # Captured kinematics must follow this layout. Tensor keys retain their
+        # owners; mutation counters invalidate an edited layout without a sync.
+        key += tuple((t, t._version) for t in layout)
         if key not in self._minimizers:
             self._minimizers.clear()
             self._minimizers[key] = _PopulationMinimizer(

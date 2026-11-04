@@ -288,6 +288,78 @@ def _sidechain_end_local_atoms(
     return torch.tensor(sorted(downstream), dtype=torch.int64, device=device)
 
 
+def _ligand_controller_preserves_components(
+    block_type, local_parents, torsion_atoms, raw_atom, dof_type
+):
+    """Check whole chemical components using the repair's shared host topology."""
+    _, atom_b, atom_c, _ = torsion_atoms
+    component = set(
+        _sidechain_end_local_atoms(
+            block_type, torsion_atoms, torch.device("cpu")
+        ).tolist()
+    )
+    if not component:
+        return False
+    affected = set()
+    for atom in range(block_type.n_atoms):
+        ancestor = atom if dof_type == BondDOFTypes.phi_p else local_parents[atom]
+        while ancestor != -1:
+            if ancestor == raw_atom:
+                affected.add(atom)
+                break
+            ancestor = local_parents[ancestor]
+    # Axis atoms are unchanged by rotation and may belong to either component.
+    off_axis = set(range(block_type.n_atoms)) - {atom_b, atom_c}
+    return (affected & off_axis) in (component & off_axis, off_axis - component)
+
+
+def _resolve_ligand_ring_controllers(
+    block_type,
+    kmd,
+    ligand_nodes,
+    torsion_atoms_host,
+    raw_atoms,
+    child_central,
+    use_reversed,
+):
+    original = raw_atoms
+    raw_atoms = raw_atoms.clone()
+    # Copy only the first pose's ligand nodes/parents once per repair. This is
+    # discrete topology; repeated device ancestry walks add synchronization.
+    nodes = ligand_nodes[0]
+    ids, parents = torch.stack((nodes, kmd.forest.parent[nodes].long())).cpu().tolist()
+    by_id = {node: atom for atom, node in enumerate(ids)}
+    local_parents = [by_id.get(parent, -1) for parent in parents]
+    # Keep the established controller when it rotates a whole chemical
+    # component. An opposite outer atom inside a ring may instead tear that
+    # ring; the child-central phi_p can rotate the intact opposite component.
+    for torsion_index in torch.nonzero(use_reversed).flatten().cpu().tolist():
+        atoms = torsion_atoms_host[torsion_index]
+        raw_atom = int(raw_atoms[torsion_index])
+        if _ligand_controller_preserves_components(
+            block_type, local_parents, atoms, raw_atom, BondDOFTypes.phi_p
+        ):
+            continue
+        alternative = int(child_central[torsion_index])
+        alternative_nodes = ligand_nodes[:, alternative]
+        if bool(
+            torch.any(kmd.keep_atom_fixed[alternative_nodes, int(BondDOFTypes.phi_p)])
+        ) or not _ligand_controller_preserves_components(
+            block_type,
+            local_parents,
+            atoms,
+            alternative,
+            BondDOFTypes.phi_p,
+        ):
+            raise ValueError(
+                "no ligand torsion controller preserves chemical components"
+            )
+        raw_atoms[torsion_index] = alternative
+    if torch.equal(raw_atoms, original):
+        raise ValueError("no ring-cutting ligand controller could be replaced")
+    return raw_atoms
+
+
 def _validate_sidechain_controller(
     forest,
     block: int,
@@ -531,6 +603,17 @@ def _sidechain_logical_torsions_from_coords(
     ).to(dtype=pose_stack.coords.dtype)
 
 
+class _TorsionResponseError(ValueError):
+    """Format the measured matrix only if a failed repair needs diagnostics."""
+
+    def __init__(self, message, values):
+        super().__init__(message)
+        self.values = values.detach()
+
+    def __str__(self):
+        return super().__str__() + str(self.values.cpu().tolist())
+
+
 def _empirical_torsion_signs(
     kin_module: PoseStackKinematicsModule,
     raw_dofs: torch.Tensor,
@@ -570,9 +653,10 @@ def _empirical_torsion_signs(
     self_slopes = torch.diagonal(responses, dim1=1, dim2=2)
 
     if not bool(torch.all(torch.isfinite(responses))):
-        raise ValueError(
+        raise _TorsionResponseError(
             "ligand torsion raw-DOF perturbation must have finite declared-"
-            f"dihedral responses; measured {responses.detach().cpu().tolist()}"
+            "dihedral responses; measured ",
+            responses,
         )
 
     # Require UNIT magnitude, not merely non-degeneracy. The gene<->raw affine
@@ -585,10 +669,10 @@ def _empirical_torsion_signs(
     # logical chi and must be rejected.
     unit_tolerance = 5.0e-3
     if not bool(torch.all(torch.abs(torch.abs(self_slopes) - 1.0) <= unit_tolerance)):
-        raise ValueError(
+        raise _TorsionResponseError(
             "ligand torsion raw-DOF perturbation must change its declared "
-            f"dihedral with unit magnitude (tol {unit_tolerance}); measured "
-            f"{self_slopes.detach().cpu().tolist()}"
+            f"dihedral with unit magnitude (tol {unit_tolerance}); measured ",
+            self_slopes,
         )
 
     isolation_tolerance = 1.0e-2
@@ -596,17 +680,18 @@ def _empirical_torsion_signs(
         responses.shape[1], dtype=torch.bool, device=responses.device
     )
     if bool(torch.any(torch.abs(responses[:, off_diagonal]) > isolation_tolerance)):
-        raise ValueError(
+        raise _TorsionResponseError(
             "ligand torsion raw-DOF perturbation changes another declared "
             f"dihedral by more than {isolation_tolerance} rad/rad; measured "
-            f"response matrices {responses.detach().cpu().tolist()}"
+            "response matrices ",
+            responses,
         )
 
     positive = self_slopes > 0
     if bool(torch.any(positive != positive[0:1])):
-        raise ValueError(
-            "ligand torsion raw-DOF slope has inconsistent signs across poses: "
-            f"{self_slopes.detach().cpu().tolist()}"
+        raise _TorsionResponseError(
+            "ligand torsion raw-DOF slope has inconsistent signs across poses: ",
+            self_slopes,
         )
     return torch.where(positive[0], 1, -1)
 
@@ -826,7 +911,10 @@ def build_ligand_docking_dofs(
     DOFs are enabled on that root jump.  Each named ligand torsion first tries
     the normal child-central ``phi_c`` controller.  If the jump stub fixes that
     controller, the resolver reverses the dihedral and enables ``phi_p`` on the
-    opposite outer atom, matching Rosetta's bidirectional torsion lookup.
+    opposite outer atom, matching Rosetta's bidirectional torsion lookup. If
+    that controller fails the empirical isolation check and its subtree cuts
+    a chemical ring, it tries a child-central ``phi_p`` that rotates a whole
+    component of the chemical graph. Accepted mappings remain unchanged.
 
     The affine sign between the selected raw DOF and the declared four-atom
     dihedral is measured by small, one-at-a-time perturbations through the
@@ -922,18 +1010,36 @@ def build_ligand_docking_dofs(
     if bool(torch.any(kmd.keep_atom_fixed[reversed_nodes, int(BondDOFTypes.phi_p)])):
         raise ValueError("both ends of a ligand torsion are fixed by the fold forest")
 
+    try:
+        signs = _empirical_torsion_signs(
+            kin_module,
+            raw_dofs,
+            ligand_nodes,
+            torsion_atoms,
+            raw_nodes,
+            dof_types,
+        )
+    except ValueError:
+        # Preserve accepted mappings exactly. Only repair a rejected controller,
+        # and retain the same empirical guard for its replacement.
+        repaired = _resolve_ligand_ring_controllers(
+            block_type,
+            kmd,
+            ligand_nodes,
+            torsion_atoms_host,
+            raw_atoms,
+            child_central,
+            use_reversed,
+        )
+        raw_atoms = repaired
+        raw_nodes = ligand_nodes[:, raw_atoms]
+        signs = _empirical_torsion_signs(
+            kin_module, raw_dofs, ligand_nodes, torsion_atoms, raw_nodes, dof_types
+        )
+
     raw_keys = raw_atoms * raw_dofs.shape[1] + dof_types
     if torch.unique(raw_keys).numel() != raw_keys.numel():
         raise ValueError("two ligand torsions share the same raw DOF")
-
-    signs = _empirical_torsion_signs(
-        kin_module,
-        raw_dofs,
-        ligand_nodes,
-        torsion_atoms,
-        raw_nodes,
-        dof_types,
-    )
 
     pose_indices = torch.arange(
         pose_stack.n_poses, dtype=torch.int64, device=pose_stack.device

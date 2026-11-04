@@ -168,6 +168,7 @@ class LiveLigandIntraData:
     weight_profile: LigandIntraWeightProfile
     include_cart_bonded: bool
     context_block_indices: tuple[int, ...] = ()
+    _context_indices: torch.Tensor = field(init=False, compare=False, repr=False)
     _scorer_cache: dict[int, tuple[PoseStack, object]] = field(
         default_factory=dict, compare=False, repr=False
     )
@@ -191,6 +192,14 @@ class LiveLigandIntraData:
             for block in self.context_block_indices
         ):
             raise ValueError("context block index is out of range")
+        # Prepare host topology before scoring, including CUDA graph capture.
+        object.__setattr__(
+            self,
+            "_context_indices",
+            torch.tensor(
+                self.context_block_indices, dtype=torch.int64, device=pose_stack.device
+            ),
+        )
 
     @property
     def n_ligand_atoms(self) -> int:
@@ -315,7 +324,7 @@ def _weighted_movable_block_pairs(
         }
         for score_type, weight in softened.items():
             if score_type in score_types:
-                diagonal_weights[score_types.index(score_type)] = weight
+                diagonal_weights[score_types.index(score_type)].fill_(weight)
 
     n_blocks = unweighted.shape[2]
     diagonal = torch.eye(n_blocks, dtype=torch.bool, device=ligand_coords.device)[
@@ -328,15 +337,11 @@ def _weighted_movable_block_pairs(
     )
     weighted = unweighted * pair_weights
     if data.context_block_indices:
-        context = torch.tensor(
-            data.context_block_indices,
-            dtype=torch.int64,
-            device=ligand_coords.device,
-        )
+        context = data._context_indices
         context_diagonal = torch.zeros(
             (n_blocks, n_blocks), dtype=torch.bool, device=ligand_coords.device
         )
-        context_diagonal[context, context] = True
+        context_diagonal.diagonal().index_fill_(0, context, True)
         weighted = torch.where(
             context_diagonal[None, None], torch.zeros_like(weighted), weighted
         )

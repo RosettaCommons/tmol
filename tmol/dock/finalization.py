@@ -422,6 +422,9 @@ def _free_state_energies(
     refined, reference, exact_sfxn, param_db, ligand_block, block_local_atoms
 ):
     """Energies of the relaxed free ligand and of the (flex-relaxed) receptor."""
+    # Constraint weights belong to the minimizer, not the memoized exact scorer.
+    if param_db is None:
+        param_db = ParameterDatabase.get_default()
     constrained_sfxn = beta2016_score_function(refined.device, param_db=param_db)
     constrained_sfxn.set_weight(ScoreType.constraint, 1.0)
     relaxed_ligand = run_cart_min(
