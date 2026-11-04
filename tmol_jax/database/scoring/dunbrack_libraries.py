@@ -7,7 +7,7 @@ from typing import Tuple
 
 import attr
 import numpy as np
-import yaml
+from tmol_core._yaml import _load_yaml
 
 from ._structure import structure
 
@@ -137,8 +137,7 @@ class DunbrackRotamerLibrary:
 
     @classmethod
     def from_file(cls, path):
-        with open(path) as stream:
-            rows = structure(yaml.safe_load(stream), _DunbrackLookupRaw)
+        rows = structure(_load_yaml(path), _DunbrackLookupRaw)
         stem = os.path.splitext(path)[0]
         rot, semi = cls.load_libraries_from_npz(stem + ".npz")
         return cls(rows.dunbrack_lookup, rot, semi)

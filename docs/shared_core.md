@@ -1,8 +1,9 @@
 # Shared chemistry and execution boundaries
 
 `tmol-core` owns the framework-independent `tmol_core` namespace: chemical
-records, YAML and unit parsing, residue patching and validation, and the vendored
-PySMILES reader/writer. Torch and JAX consume this same implementation. Existing
+records, YAML and unit parsing, residue patching and validation, electrostatic/
+reference/disulfide parameter records and loaders, and the vendored PySMILES
+reader/writer. Torch and JAX consume this same implementation. Existing
 imports under `tmol.database.chemical`, `tmol.database._patched_chemdb`, and
 `tmol_jax.database.chemical` remain available. JAX's patched database additionally
 refines the shared raw records into its host topology arrays.

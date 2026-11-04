@@ -1,9 +1,7 @@
 """Generic-bonded torsion parameter database.
 
 Port of upstream :mod:`tmol.database.scoring.genbonded`. Same attrs
-classes and YAML schema as upstream; uses plain ``yaml.safe_load``
-(no cattrs) — the upstream module already did this so the port is
-essentially verbatim.
+classes and YAML schema as upstream; uses the shared safe YAML loader.
 
 Energy form (proper torsion, per `potentials.hh`):
 
@@ -24,7 +22,7 @@ from __future__ import annotations
 from typing import Dict, FrozenSet, List, Tuple
 
 import attr
-import yaml
+from tmol_core._yaml import _load_yaml
 
 # Which Rosetta bond bins each database bond-char covers (for btidx 1-8).
 # btidx = ((BondName - 1) << 1) + (2 if in_ring else 1)
@@ -102,8 +100,7 @@ class GenBondedDatabase:
     # ------------------------------------------------------------------
     @classmethod
     def from_file(cls, path: str) -> "GenBondedDatabase":
-        with open(path, "r") as fh:
-            raw = yaml.safe_load(fh)
+        raw = _load_yaml(path)
 
         atom_hierarchy: Dict[str, List[str]] = {}
         for atom_type, fallbacks in raw.get("atoms", {}).items():
