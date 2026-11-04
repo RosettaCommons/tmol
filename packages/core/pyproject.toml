@@ -9,7 +9,7 @@ description = "Framework-independent chemistry and host preparation for TMol"
 readme = "README.md"
 license = "BSD-3-Clause AND Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["attrs>=21", "cattrs>=22", "pint>=0.23,<1", "pyyaml>=6", "networkx>=3"]
+dependencies = ["numpy>=1.25", "attrs>=21", "cattrs>=22", "pint>=0.23,<1", "pyyaml>=6", "networkx>=3"]
 
 [project.urls]
 Repository = "https://github.com/RosettaCommons/tmol"

@@ -13,6 +13,13 @@ migration without improving this dependency boundary; `import tmol` is unchanged
 `tmol-jax` owns JAX arrays, tracing, differentiation and execution. Neither it nor
 `tmol-core` requires Torch at runtime. Each namespace has one distribution owner.
 
+`tmol_core.scoring.elec` resolves per-residue charges and count-pair
+representatives on the host. Its lookup order is exact variant, terminal
+conjugation, individual patches, then base residue. Missing charges raise by
+default; a frontend preserving zero filling requests it explicitly. Returned
+NumPy arrays belong to the caller; device materialization and cache lifetime
+remain frontend responsibilities.
+
 Native JAX CUDA adapters compile the existing canonical scalar potentials using
 XLA FFI headers. Portable JAX potentials remain separate implementations needed
 for CPU execution and JAX transformations; this extraction does not make all
