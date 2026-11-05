@@ -1,5 +1,11 @@
 from tmol_core.scoring.count_pair import packed_ljlk_distances
 import numpy
+from tmol_core.scoring.ljlk import (
+    LJLK_NATIVE_TYPE_FIELDS,
+    LJLK_NATIVE_GLOBAL_FIELDS,
+    native_ljlk_type_parameters,
+    native_ljlk_global_parameters,
+)
 import torch
 
 from .._annotation_cache import AnnotationKey, _cached_annotation, _store_annotation
@@ -185,46 +191,20 @@ class LJLKEnergyTerm(AtomTypeDependentTerm, BondDependentTerm):
     def get_score_term_attributes(self, pose_stack):
         annotation = self.setup_packed_block_types(pose_stack.packed_block_types)
 
-        def _t(ts):
-            return tuple(map(lambda t: t.to(torch.float), ts))
+        def host_fields(record, fields):
+            return {name: getattr(record, name).numpy(force=True) for name in fields}
 
-        type_params = torch.stack(
-            _t(
-                [
-                    self.type_params.lj_radius,
-                    torch.sqrt(self.type_params.lj_wdepth),
-                    self.type_params.lk_dgfree,
-                    self.type_params.lk_lambda,
-                    self.type_params.lk_volume,
-                    self.type_params.is_donor,
-                    self.type_params.is_hydroxyl,
-                    self.type_params.is_polarh,
-                    self.type_params.is_acceptor,
-                    self.type_params.is_carbon_lk,
-                    self.type_params.is_hydrogen,
-                    -self.type_params.lk_dgfree
-                    / (2 * 5.56832799683 * self.type_params.lk_lambda),
-                    1 / (self.type_params.lk_lambda * self.type_params.lk_lambda),
-                ]
-            ),
-            dim=1,
-        )
-        global_params = torch.stack(
-            _t(
-                [
-                    self.global_params.max_dis,
-                    (
-                        self.global_params.lj_dlin_sigma_factor_soft
-                        if self.soft_repulsive
-                        else self.global_params.lj_dlin_sigma_factor
-                    ),
-                    self.global_params.lj_hbond_dis,
-                    self.global_params.lj_hbond_OH_donor_dis,
-                    self.global_params.lj_hbond_hdis,
-                ]
-            ),
-            dim=1,
-        )
+        type_params = torch.from_numpy(
+            native_ljlk_type_parameters(
+                host_fields(self.type_params, LJLK_NATIVE_TYPE_FIELDS)
+            )
+        ).to(self.device)
+        global_params = torch.from_numpy(
+            native_ljlk_global_parameters(
+                host_fields(self.global_params, LJLK_NATIVE_GLOBAL_FIELDS),
+                self.soft_repulsive,
+            )
+        ).to(self.device)
         return [
             pose_stack.inter_block_bondsep.near_blocks,
             pose_stack.inter_block_bondsep.bondsep,

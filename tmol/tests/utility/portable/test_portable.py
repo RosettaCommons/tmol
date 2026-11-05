@@ -200,3 +200,11 @@ def test_fused_nonbonded_needs_no_framework(tmp_path):
 def test_whole_pose_dunbrack_needs_no_framework(tmp_path):
     proc = _compile(HERE / "native_dunbrack.cc", tmp_path / "dunbrack", run=True)
     assert proc.returncode == 0, proc.stderr
+
+
+@requires_cxx
+def test_native_neighbors_follow_coordinate_changes(tmp_path):
+    proc = _compile(HERE / "native_neighbors.cc", tmp_path / "neighbors", run=True)
+    assert proc.returncode == 0, proc.stderr
+    result = subprocess.run([str(tmp_path / "neighbors")], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr

@@ -1,10 +1,28 @@
 """Ordered LJ/LK host parameters and validation of the active chemistry."""
 
 from dataclasses import dataclass
+from collections.abc import Mapping
 
 import numpy as np
 
 LJLK_FIELDS = ("lj_radius", "lj_wdepth", "lk_dgfree", "lk_lambda", "lk_volume")
+
+LJLK_NATIVE_TYPE_FIELDS = LJLK_FIELDS + (
+    "is_donor",
+    "is_hydroxyl",
+    "is_polarh",
+    "is_acceptor",
+    "is_carbon_lk",
+    "is_hydrogen",
+)
+LJLK_NATIVE_GLOBAL_FIELDS = (
+    "max_dis",
+    "lj_dlin_sigma_factor",
+    "lj_dlin_sigma_factor_soft",
+    "lj_hbond_dis",
+    "lj_hbond_OH_donor_dis",
+    "lj_hbond_hdis",
+)
 
 
 @dataclass
@@ -13,6 +31,12 @@ class LJLKTypeData:
     values: np.ndarray
     is_carbon_lk: np.ndarray
     invalid_type_parameters: dict
+
+    def native_parameters(self, atom_type_flags):
+        values = dict(zip(LJLK_FIELDS, self.values.T))
+        values.update(atom_type_flags)
+        values["is_carbon_lk"] = self.is_carbon_lk
+        return native_ljlk_type_parameters(values)
 
     def validate_block_type(self, block_type):
         validate_block_type(block_type, self.invalid_type_parameters)
@@ -57,4 +81,50 @@ def ljlk_type_parameters(names, database):
         values,
         np.asarray([name in ("CH1", "CH2", "CH3", "Caro") for name in names]),
         invalid,
+    )
+
+
+def native_ljlk_type_parameters(parameters):
+    """Pack the canonical 13-scalar native record from NumPy field arrays."""
+    p = {
+        name: np.asarray(value, dtype=np.float32) for name, value in parameters.items()
+    }
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.stack(
+            [
+                p["lj_radius"],
+                np.sqrt(p["lj_wdepth"]),
+                p["lk_dgfree"],
+                p["lk_lambda"],
+                p["lk_volume"],
+                p["is_donor"],
+                p["is_hydroxyl"],
+                p["is_polarh"],
+                p["is_acceptor"],
+                p["is_carbon_lk"],
+                p["is_hydrogen"],
+                -p["lk_dgfree"] / (2 * 5.56832799683 * p["lk_lambda"]),
+                1 / (p["lk_lambda"] * p["lk_lambda"]),
+            ],
+            axis=1,
+        )
+
+
+def native_ljlk_global_parameters(parameters, soft_repulsive=False):
+    """Pack the five-scalar native LJ record, including the soft-repulsive mode."""
+    get = (
+        parameters.__getitem__
+        if isinstance(parameters, Mapping)
+        else lambda name: getattr(parameters, name)
+    )
+    fields = (
+        "max_dis",
+        "lj_dlin_sigma_factor_soft" if soft_repulsive else "lj_dlin_sigma_factor",
+        "lj_hbond_dis",
+        "lj_hbond_OH_donor_dis",
+        "lj_hbond_hdis",
+    )
+    return np.stack(
+        [np.atleast_1d(np.asarray(get(name), dtype=np.float32)) for name in fields],
+        axis=1,
     )
