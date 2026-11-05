@@ -120,9 +120,8 @@ struct NonbondedKernel {
         work.neighbors, {int64_t(work.neighbor_capacity)});
     ContextManager context;
     if (blocks == 1) {
-      score::common::sphere_overlap::
-          single_block_neighbor_candidates_native<Ops, D, I>(
-              context, poses, neighbors);
+      // The shared kernel represents the unconditional self pair implicitly.
+      neighbors = contiguous_view<I, 1, D>(nullptr, {0});
     } else {
       score::common::sphere_overlap::
           compute_block_spheres_native<Ops, D, Real, I>(

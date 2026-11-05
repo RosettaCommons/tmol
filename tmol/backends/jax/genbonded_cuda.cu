@@ -127,7 +127,10 @@ struct DunbrackCudaOps : CudaOps<D> {
   static void forall_grouped(ContextManager&, int poses, int groups, F f) {
     int count = score::common::checked_dispatch_product(
         poses, groups, "JAX CUDA Dunbrack");
-    int threads = count <= 256 ? 1 : 128;
+    // Retain enough workgroups for sparse molecular batches; increase active
+    // lanes only when at least 256 workgroups remain after grouping.
+    int threads = 1;
+    while (threads < 128 && count / (2 * threads) >= 256) threads *= 2;
     if (count)
       independent_work<<<
           (count + threads - 1) / threads,
