@@ -22,8 +22,6 @@ namespace potentials {
 
 using tmol::portable::Vec;
 
-constexpr int GB_MAX_HIER_DEPTH = 5;
-
 // ---------------------------------------------------------------------------
 // Pose-level scoring dispatch
 //
