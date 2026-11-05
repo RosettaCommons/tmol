@@ -1,13 +1,12 @@
 #pragma once
 
+#include <tuple>
+
 #include <tmol/utility/portable/matrix.hh>
 
 #include <tmol/utility/tensor/TensorAccessor.h>
-#include <tmol/utility/tensor/TensorPack.h>
-#include <tmol/utility/tensor/TensorStruct.h>
-#include <tmol/utility/tensor/TensorUtil.h>
 
-#include <tmol/score/unresolved_atom.hh>
+#include <tmol/score/unresolved_atom_types.hh>
 #include <tmol/score/common/diamond_macros.hh>
 
 namespace tmol {
