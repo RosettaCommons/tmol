@@ -2,6 +2,7 @@
 // kernel.
 #include "cartbonded_ffi.hh"
 #include "backbone_torsion_ffi.hh"
+#include "metal_ffi.hh"
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
@@ -182,3 +183,12 @@ extern "C" int tmol_bspline_coefficients(
     return 1;
   }
 }
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_metal_coordination,
+    tmol::jax::run<tmol::jax::MetalCoordinationKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets());

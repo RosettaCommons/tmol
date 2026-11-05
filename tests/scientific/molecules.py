@@ -74,15 +74,19 @@ class MolecularCase:
 
     def connections(self):
         result = []
-        for lengths in self.chain_lengths:
+        for lengths, extra in zip(self.chain_lengths, self.extra_connections()):
             edges, begin = [], 0
             for length in lengths:
                 edges.extend(
                     (i, "up", i + 1, "down") for i in range(begin, begin + length - 1)
                 )
                 begin += length
+            edges.extend(extra)
             result.append(edges)
         return result
+
+    def extra_connections(self):
+        return [() for _ in self.sequences]
 
 
 CASES = {

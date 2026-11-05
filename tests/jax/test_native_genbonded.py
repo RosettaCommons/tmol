@@ -9,6 +9,7 @@ import pytest
 
 from tests.scientific.execution import Execution
 from tests.scientific.molecules import CASES, BACKBONE_CASES
+from tests.scientific.metal_molecules import METAL_CASES
 from tmol_jax import ScoreFunction, ScoreType
 
 
@@ -28,6 +29,7 @@ def backend_name(request):
     [
         ("gen_torsions",),
         ("rama", "omega"),
+        ("metal_coordination",),
         (
             "cart_lengths",
             "cart_angles",
@@ -36,11 +38,20 @@ def backend_name(request):
             "cart_hxltorsions",
         ),
     ],
+    ids=lambda terms: "+".join(terms),
 )
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_native_coordinate_transforms_and_pose_independence(dtype, backend_name, terms):
     with jax.enable_x64(dtype == np.float64):
-        case = BACKBONE_CASES["mixed"] if "rama" in terms else CASES["mixed_batch"]
+        case = (
+            BACKBONE_CASES["mixed"]
+            if "rama" in terms
+            else (
+                METAL_CASES["mixed_batch"]
+                if "metal_coordination" in terms
+                else CASES["mixed_batch"]
+            )
+        )
         backend = Execution(backend_name).molecule(case, terms=terms)
         pose = backend.pose
         score = backend.score_function.render_whole_pose_scoring_module(pose)
@@ -138,11 +149,18 @@ def test_native_mixed_molecule_minimization_preserves_frozen_atoms(backend_name)
     assert np.linalg.norm(after[mask] - before[mask]) > 1e-3
 
 
-@pytest.mark.parametrize("term", ["gen_torsions", "cart_lengths", "rama"])
+@pytest.mark.parametrize(
+    "term", ["gen_torsions", "cart_lengths", "rama", "metal_coordination"]
+)
 def test_empty_native_pose_batch_preserves_value_and_gradient_shapes(
     backend_name, term
 ):
-    backend = Execution(backend_name).molecule(BACKBONE_CASES["mixed"], terms=(term,))
+    case = (
+        METAL_CASES["mixed_batch"]
+        if term == "metal_coordination"
+        else BACKBONE_CASES["mixed"]
+    )
+    backend = Execution(backend_name).molecule(case, terms=(term,))
     pose = backend.pose[:0]
     score = backend.score_function.render_whole_pose_scoring_module(pose)
     values = jax.jit(score)(pose.coords)

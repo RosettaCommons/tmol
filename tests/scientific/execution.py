@@ -89,7 +89,7 @@ class Execution:
     def coords(self):
         return self.numpy(self.pose.coords)
 
-    def molecule(self, case, terms=("gen_torsions",)):
+    def molecule(self, case, terms=("gen_torsions",), parameter_database=None):
         if self.framework == "torch":
             from tmol import (
                 ParameterDatabase,
@@ -100,16 +100,25 @@ class Execution:
             )
             from tmol.chemical._restypes import ResidueTypeSet
 
-            db = case.database(ParameterDatabase.get_default())
+            db = (
+                parameter_database
+                if parameter_database is not None
+                else case.database(ParameterDatabase.get_default())
+            )
             restypes = ResidueTypeSet.from_database(db.chemical)
             by_name = {rt.name: rt for rt in restypes.residue_types}
             names = dict.fromkeys(name for row in case.sequences for name in row)
             pbt = PackedBlockTypes.from_restype_list(
                 db.chemical, restypes, [by_name[name] for name in names], self.device
             )
+            sequences = [list(row) for row in case.sequences]
+            for row, edges in zip(sequences, case.extra_connections()):
+                for index, (left, left_port, right, right_port) in enumerate(edges):
+                    row[left] += f"--{left_port}-edge{index}"
+                    row[right] += f"--{right_port}-edge{index}"
             self.pose = PoseStackBuilder.from_block_type_names(
                 pbt,
-                [list(row) for row in case.sequences],
+                sequences,
                 [list(row) for row in case.chain_lengths],
             )
             coordinates = np.zeros(self.pose.coords.shape, np.float32)
@@ -127,7 +136,11 @@ class Execution:
                 ScoreType,
             )
 
-            db = case.database(ParameterDatabase.get_default())
+            db = (
+                parameter_database
+                if parameter_database is not None
+                else case.database(ParameterDatabase.get_default())
+            )
             with self.module.default_device(self.device):
                 self.pose = pose_stack_from_residue_blocks(
                     [[ResidueBlock(*b) for b in row] for row in case.blocks(db)],

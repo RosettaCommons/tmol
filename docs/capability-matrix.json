@@ -71,9 +71,10 @@
       "jax": "partial_scoring",
       "repro_fixture": [
         "tests/scientific/test_cartbonded.py",
-        "tests/scientific/test_molecular_nonbonded.py"
+        "tests/scientific/test_molecular_nonbonded.py",
+        "tests/scientific/test_metal_coordination.py"
       ],
-      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. Full scoring remains gated. Coordination remains unimplemented; zero-depth ions have exactly zero LJ energy."
+      "implementation_status": "Shared native coordination on zinc, irregular calcium, bridging donors, iron-sulfur cluster bridges and mixed batches: fresh Torch/JAX CPU energies and full gradients match exactly. Custom widths/depths scale both by the independent expected factor. Metal CUDA validation pending; complete multi-term scoring remains gated."
     },
     {
       "domain": "disconnected_components",
@@ -313,8 +314,8 @@
     },
     "metal_coordination": {
       "torch": "implemented",
-      "jax": "declared_channel_active_science_unimplemented",
-      "noncanonical_validation": "Complete preset retains weight. Active eligible chemistry rejects before tracing; shared chemistry may prove an empty interaction set."
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "Five nonzero metal fixtures: exact fresh Torch/JAX CPU energies and full gradients; independent directional derivatives and custom width/depth scaling. CUDA validation pending."
     }
   },
   "validation": "Exact310a0fa376: clean installed core/JAX/native wheels and standalone sdists,28float64CPU scientific cases in Torch-free runtime; matching-source Torch/JAX backbone per-channel values/full gradients exact on6cases. NativeCPU/CUDA artifacts:48H200tests passed including first-order transforms, empty batches and periodic spline invariants. Final all-domain/API/performance acceptance remains incomplete."

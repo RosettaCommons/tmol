@@ -109,24 +109,13 @@ void execute_genbonded(
   auto g = contiguous_view<Vec<Real, 3>, 2, D>(
       gradient ? gradient->untyped_data() : nullptr,
       {1, gradient ? poses * atoms : 0});
-  TView<I, 1, D> unused1;
-  TView<I, 2, D> unused2;
   ContextManager context;
   score::genbonded::potentials::genbonded_pose_forward<Ops, D, Real, I>(
       context,
       xyz,
       buffer_view<I, 1, D>(a[1]),
-      unused1,
       buffer_view<I, 2, D>(a[2]),
       buffer_view<I, 2, D>(a[3]),
-      unused1,
-      unused1,
-      unused1,
-      unused1,
-      unused1,
-      unused2,
-      unused2,
-      I(a[3].dimensions()[1]),
       buffer_view<Vec<I, 2>, 3, D>(a[4]),
       buffer_view<Vec<I, 3>, 3, D>(a[5]),
       buffer_view<Vec<I, 5>, 1, D>(a[6]),

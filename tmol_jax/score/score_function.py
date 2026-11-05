@@ -48,6 +48,7 @@ _TERM_TYPES = {
     ),
     "ref": ("RefEnergyTerm", ("ref",)),
     "genbonded": ("GenBondedEnergyTerm", ("gen_torsions",)),
+    "metal": ("MetalCoordinationEnergyTerm", ("metal_coordination",)),
 }
 _TERM_FOR_TYPE = {
     ScoreType[name]: (module, class_name)
@@ -65,7 +66,6 @@ _UNIMPLEMENTED_TYPES = frozenset(
     (
         ScoreType.na_torsion,
         ScoreType.na_torsion_well,
-        ScoreType.metal_coordination,
     )
 )
 
@@ -162,10 +162,6 @@ class ScoreFunction:
             ]
             if eligible:
                 active.update({st.name: eligible for st in na})
-        if ScoreType.metal_coordination in pending:
-            eligible = [bt.name for bt in used if bt.metal_sites]
-            if eligible:
-                active["metal_coordination"] = eligible
         if active:
             details = "; ".join(
                 f"{name}: {', '.join(types)}" for name, types in sorted(active.items())
@@ -200,6 +196,7 @@ class ScoreFunction:
                 ScoreType.gen_torsions,
                 ScoreType.rama,
                 ScoreType.omega,
+                ScoreType.metal_coordination,
                 ScoreType.ref,
                 ScoreType.constraint,
             }

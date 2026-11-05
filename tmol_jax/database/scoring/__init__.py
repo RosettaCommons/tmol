@@ -35,6 +35,8 @@ from tmol_core.database.generated import (
     GENERATED_REF_FILES,
 )
 
+from tmol_core.database.metal_coordination import MetalCoordinationDatabase
+
 from .cartbonded import CartBondedDatabase
 from .disulfide import DisulfideDatabase
 from .genbonded import GenBondedDatabase
@@ -61,6 +63,7 @@ class ScoringDatabase:
     dunbrack: DunbrackRotamerLibrary
     disulfide: DisulfideDatabase
     omega_bbdep: OmegaBBDepDatabase
+    metal_coordination: MetalCoordinationDatabase
 
     @classmethod
     def from_file(cls, path: Optional[str] = None) -> "ScoringDatabase":
@@ -76,6 +79,9 @@ class ScoringDatabase:
         path = os.path.abspath(path)
 
         return cls(
+            metal_coordination=MetalCoordinationDatabase.from_file(
+                os.path.join(path, "metal_coordination.yaml")
+            ),
             ljlk=LJLKDatabase.from_file(os.path.join(path, "ljlk.yaml")),
             elec=ElecDatabase.from_file(
                 os.path.join(path, "elec.yaml"),
@@ -111,6 +117,7 @@ __all__ = [
     "ElecDatabase",
     "HBondDatabase",
     "LJLKDatabase",
+    "MetalCoordinationDatabase",
     "OmegaBBDepDatabase",
     "RamaDatabase",
     "RefDatabase",

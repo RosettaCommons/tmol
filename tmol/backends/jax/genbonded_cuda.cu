@@ -3,6 +3,7 @@
 #include <moderngpu/cta_reduce.hxx>
 #include "cartbonded_ffi.hh"
 #include "backbone_torsion_ffi.hh"
+#include "metal_ffi.hh"
 
 namespace tmol::jax {
 namespace {
@@ -118,6 +119,15 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_backbone_torsion,
     tmol::jax::run<tmol::jax::BackboneTorsionKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets());
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_metal_coordination,
+    tmol::jax::run<tmol::jax::MetalCoordinationKernel>,
     xla::ffi::Ffi::Bind()
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()

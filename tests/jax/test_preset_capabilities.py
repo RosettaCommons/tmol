@@ -26,7 +26,6 @@ def test_preset_keeps_every_declared_weight():
     [
         ("dna", "na_torsion"),
         ("rna", "na_torsion_well"),
-        ("metal_mixed", "metal_coordination"),
     ],
 )
 def test_unsupported_active_science_rejects_before_tracing(name, term):
