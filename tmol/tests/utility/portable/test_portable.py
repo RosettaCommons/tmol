@@ -214,3 +214,9 @@ def test_native_neighbors_follow_coordinate_changes(tmp_path):
 def test_whole_pose_lkball_needs_no_framework(tmp_path):
     proc = _compile(HERE / "native_lkball.cc", tmp_path / "lkball", run=True)
     assert proc.returncode == 0, proc.stderr
+
+
+@requires_cxx
+def test_independent_nonbonded_needs_no_framework(tmp_path):
+    proc = _compile(HERE / "native_independent_nonbonded.cc", tmp_path / "nonbonded", run=True)
+    assert proc.returncode == 0, proc.stderr

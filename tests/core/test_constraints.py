@@ -57,3 +57,22 @@ def test_constraint_input_indices_reject_wraparound_and_invalid_poses(indices, n
 def test_constraint_pose_count_is_a_nonnegative_int32(n_poses):
     with pytest.raises(ValueError, match="n_poses"):
         ConstraintTopology.empty(n_poses)
+
+
+def test_shared_flatbottom_coordinate_translation_and_zero_region():
+    from tmol_core.scoring.constraints import ConstraintOps, coordinate_flatbottom
+
+    ops = ConstraintOps(
+        lambda v: np.linalg.norm(v, axis=-1), np.where, np.trunc, np.sign, None
+    )
+    atoms = np.array([[[0.0, 0.0, 0.0]], [[3.0, 4.0, 0.0]]])
+    params = np.array([[0.0, 0.0, 0.0, 2.0, 1.0]] * 2)
+    np.testing.assert_array_equal(
+        coordinate_flatbottom(atoms, params, ops), [0.0, 16.0]
+    )
+    shift = np.array([100.0, -37.0, 82.0])
+    translated = params.copy()
+    translated[:, :3] += shift
+    np.testing.assert_array_equal(
+        coordinate_flatbottom(atoms + shift, translated, ops), [0.0, 16.0]
+    )

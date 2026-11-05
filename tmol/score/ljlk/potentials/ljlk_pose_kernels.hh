@@ -1,0 +1,101 @@
+#pragma once
+#include <tmol/utility/tensor/TensorAccessor.h>
+#include <tmol/utility/tensor/context_manager.hh>
+#include <tmol/score/common/tview_binder.hh>
+#include <tmol/score/common/sphere_overlap_dispatch.hh>
+#include <tmol/score/ljlk/potentials/ljlk_kernels.hh>
+
+// Independent LJ/LK scoring shares the complete native physics without
+// requiring electrostatic parameters. Bindings supply zeroed
+// outputs/derivatives and, on CPU, zeroed double scratch of size [n_poses, 3]
+// for reproducible accumulation.
+namespace tmol {
+namespace score {
+namespace ljlk {
+namespace potentials {
+template <typename Real, typename Int, tmol::Device D, int OutRank = 4>
+using LJLKCtx = LJLKCtxT<
+    tmol::score::common::TViewBinder<D>::template View,
+    Real,
+    Int,
+    OutRank>;
+
+template <
+    bool Grad,
+    template <tmol::Device> class Ops,
+    tmol::Device D,
+    typename Real,
+    typename Int,
+    typename Launch>
+struct LJLKPoseEvaluator {
+  LJLKCtx<Real, Int, D> ctx;
+  double* cpu_pose_accum;
+  TMOL_DEVICE_FUNC void operator()(int cta) const {
+    SHARED_MEMORY LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, Launch>
+        shared;
+    if constexpr (Grad)
+      ljlk_eval_energies<Ops, D, Real, Int, Launch>(
+          ctx, shared, cta, cpu_pose_accum);
+    else
+      ljlk_eval_energies_by_block<Ops, D, Real, Int, Launch>(
+          ctx, shared, cta, cpu_pose_accum);
+  }
+};
+
+template <
+    template <tmol::Device> class Ops,
+    tmol::Device D,
+    typename Real,
+    typename Int>
+void ljlk_pose_forward_native(
+    ContextManager& mgr,
+    LJLKCtx<Real, Int, D> ctx,
+    TView<Int, 1, D> neighbors,
+    int n_poses,
+    double* cpu_pose_accum) {
+  LAUNCH_BOX_32;
+  LAUNCH_BOX_32_OCC_AS(launch_high, 32);
+  LJLKPoseEvaluator<false, Ops, D, Real, Int, launch_t> energy{
+      ctx, cpu_pose_accum};
+  LJLKPoseEvaluator<true, Ops, D, Real, Int, launch_t> deriv{
+      ctx, cpu_pose_accum};
+  bool const gradients =
+      ctx.require_gradient && !ctx.output_block_pair_energies;
+  if (neighbors.size(0) && !ctx.output_block_pair_energies) {
+    if (gradients)
+      common::sphere_overlap::
+          launch_precomputed_block_neighbors<Ops, D, launch_high, Int>(
+              mgr, neighbors, n_poses, ctx.max_n_blocks, deriv);
+    else
+      common::sphere_overlap::
+          launch_precomputed_block_neighbors<Ops, D, launch_high, Int>(
+              mgr, neighbors, n_poses, ctx.max_n_blocks, energy);
+  } else {
+    int const candidates = common::checked_dispatch_product(
+        n_poses, ctx.max_n_upper_triangle_inds, "LJ/LK block-pair dispatch");
+    bool const high =
+        !ctx.output_block_pair_energies && candidates >= (1 << 14);
+    if (gradients && high)
+      Ops<D>::template foreach_pose_workgroup<launch_high>(
+          mgr, n_poses, ctx.max_n_upper_triangle_inds, deriv);
+    else if (gradients)
+      Ops<D>::template foreach_pose_workgroup<launch_t>(
+          mgr, n_poses, ctx.max_n_upper_triangle_inds, deriv);
+    else if (high)
+      Ops<D>::template foreach_pose_workgroup<launch_high>(
+          mgr, n_poses, ctx.max_n_upper_triangle_inds, energy);
+    else
+      Ops<D>::template foreach_pose_workgroup<launch_t>(
+          mgr, n_poses, ctx.max_n_upper_triangle_inds, energy);
+  }
+  if constexpr (D == tmol::Device::CPU) {
+    if (!ctx.output_block_pair_energies)
+      for (int p = 0; p < n_poses; ++p)
+        for (int term = 0; term < 3; ++term)
+          ctx.output[term][p][0][0] = cpu_pose_accum[3 * p + term];
+  }
+}
+}  // namespace potentials
+}  // namespace ljlk
+}  // namespace score
+}  // namespace tmol

@@ -32,13 +32,12 @@
 #include <tmol/utility/portable/device.hh>
 #include <tmol/utility/portable/metal_view.hh>
 
-#define MAX_N_CONN 12
-#define TILE_SIZE 32
-
 namespace tmol {
 namespace score {
 namespace ljlk {
 namespace potentials {
+
+enum { ljlk_tile_size = 32, ljlk_max_n_conn = 12 };
 
 using tmol::portable::Vec;
 using tmol::score::common::WorkgroupLane;
@@ -67,7 +66,7 @@ union LJLKSharedMem {
       int atom_tile_ind1,                                               \
       int atom_tile_ind2,                                               \
       TMOL_THREAD LJLKScoringData<Real> const& inter_dat) {             \
-    int separation = interres_count_pair_separation<TILE_SIZE>(         \
+    int separation = interres_count_pair_separation<ljlk_tile_size>(    \
         inter_dat,                                                      \
         atom_tile_ind1,                                                 \
         atom_tile_ind2,                                                 \
@@ -147,26 +146,32 @@ union LJLKSharedMem {
 //    ctx.block_type_atom_types (TView<Int, 2, D>)
 //    ctx.type_params (TView<LJLKTypeParams<Real>, 1, D>)
 //    ctx.block_type_path_distance (TView<Int, 3, D>)
-#define LOAD_BLOCK_INTO_SHARED                                                \
-  TMOL_DEVICE_FUNC(                                                           \
-      int pose_ind,                                                           \
-      TMOL_THREAD LJLKSingleResData<Real>& r_dat,                             \
-      int n_atoms_to_load,                                                    \
-      int start_atom,                                                         \
-      bool count_pair_striking_dist,                                          \
-      TMOL_SHARED_PTR(unsigned char) conn_ats) {                              \
-    ljlk_load_block_into_shared<DeviceDispatch, D, nt, TILE_SIZE, Real, Int>( \
-        ctx.rot_coords,                                                       \
-        ctx.block_type_atom_types,                                            \
-        ctx.type_params,                                                      \
-        ctx.block_type_path_distance,                                         \
-        pose_ind,                                                             \
-        r_dat,                                                                \
-        n_atoms_to_load,                                                      \
-        start_atom,                                                           \
-        count_pair_striking_dist,                                             \
-        conn_ats,                                                             \
-        lane);                                                                \
+#define LOAD_BLOCK_INTO_SHARED                    \
+  TMOL_DEVICE_FUNC(                               \
+      int pose_ind,                               \
+      TMOL_THREAD LJLKSingleResData<Real>& r_dat, \
+      int n_atoms_to_load,                        \
+      int start_atom,                             \
+      bool count_pair_striking_dist,              \
+      TMOL_SHARED_PTR(unsigned char) conn_ats) {  \
+    ljlk_load_block_into_shared<                  \
+        DeviceDispatch,                           \
+        D,                                        \
+        nt,                                       \
+        ljlk_tile_size,                           \
+        Real,                                     \
+        Int>(                                     \
+        ctx.rot_coords,                           \
+        ctx.block_type_atom_types,                \
+        ctx.type_params,                          \
+        ctx.block_type_path_distance,             \
+        pose_ind,                                 \
+        r_dat,                                    \
+        n_atoms_to_load,                          \
+        start_atom,                               \
+        count_pair_striking_dist,                 \
+        conn_ats,                                 \
+        lane);                                    \
   }
 
 // LOAD_TILE_INVARIANT_INTERRES_DATA
@@ -230,8 +235,8 @@ union LJLKSharedMem {
         DeviceDispatch,                             \
         D,                                          \
         nt,                                         \
-        TILE_SIZE,                                  \
-        MAX_N_CONN,                                 \
+        ljlk_tile_size,                             \
+        ljlk_max_n_conn,                            \
         Real,                                       \
         Int>(                                       \
         ctx.rot_coords,                             \
@@ -264,8 +269,8 @@ union LJLKSharedMem {
         DeviceDispatch,                             \
         D,                                          \
         nt,                                         \
-        TILE_SIZE,                                  \
-        MAX_N_CONN,                                 \
+        ljlk_tile_size,                             \
+        ljlk_max_n_conn,                            \
         Real,                                       \
         Int>(                                       \
         ctx.rot_coords,                             \
@@ -302,7 +307,7 @@ union LJLKSharedMem {
           LJLKScoringData,                                      \
           AllAtomPairSelector,                                  \
           D,                                                    \
-          TILE_SIZE,                                            \
+          ljlk_tile_size,                                       \
           nt,                                                   \
           3,                                                    \
           Real,                                                 \
@@ -459,8 +464,8 @@ union LJLKSharedMem {
         DeviceDispatch,                             \
         D,                                          \
         nt,                                         \
-        TILE_SIZE,                                  \
-        MAX_N_CONN,                                 \
+        ljlk_tile_size,                             \
+        ljlk_max_n_conn,                            \
         Real,                                       \
         Int>(                                       \
         ctx.rot_coords,                             \
@@ -491,8 +496,8 @@ union LJLKSharedMem {
         DeviceDispatch,                             \
         D,                                          \
         nt,                                         \
-        TILE_SIZE,                                  \
-        MAX_N_CONN,                                 \
+        ljlk_tile_size,                             \
+        ljlk_max_n_conn,                            \
         Real,                                       \
         Int>(                                       \
         ctx.rot_coords,                             \
@@ -529,7 +534,7 @@ union LJLKSharedMem {
           LJLKScoringData,                                      \
           AllAtomPairSelector,                                  \
           D,                                                    \
-          TILE_SIZE,                                            \
+          ljlk_tile_size,                                       \
           nt,                                                   \
           3,                                                    \
           Real,                                                 \
@@ -565,7 +570,8 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
     PoseAccum cpu_pose_accum,
     WorkgroupLane<D> lane = {}) {
   CTA_LAUNCH_T_PARAMS;
-  typedef LJLKSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t> shared_mem_union;
+  typedef LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, launch_t>
+      shared_mem_union;
   auto atom_pair_ljlk_fn =
       ([=] TMOL_DEVICE_FUNC(
            int atom_tile_ind1,
@@ -665,12 +671,12 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
       ([=] EVAL_INTRARES_ATOM_PAIR_SCORES_FUSED);
 
   tmol::score::common::tile_evaluate_rot_pair<
-      DeviceOperations,
+      DeviceDispatch,
       D,
       LJLKScoringData<Real>,
       LJLKScoringData<Real>,
       Real,
-      TILE_SIZE>(
+      ljlk_tile_size>(
       shared,
       pose_ind,
       rot_ind1,
@@ -716,7 +722,8 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_rotamer_energies_by_block(
     PoseAccum cpu_pose_accum,
     WorkgroupLane<D> lane = {}) {
   CTA_LAUNCH_T_PARAMS;
-  typedef LJLKSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t> shared_mem_union;
+  typedef LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, launch_t>
+      shared_mem_union;
   auto atom_pair_ljlk_fn =
       ([=] TMOL_DEVICE_FUNC(
            int atom_tile_ind1,
@@ -798,7 +805,7 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_rotamer_energies_by_block(
       LJLKScoringData<Real>,
       LJLKScoringData<Real>,
       Real,
-      TILE_SIZE>(
+      ljlk_tile_size>(
       shared,
       pose_ind,
       rot_ind1,
@@ -840,7 +847,8 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies(
     PoseAccum cpu_pose_accum,
     WorkgroupLane<D> lane = {}) {
   CTA_LAUNCH_T_PARAMS;
-  typedef LJLKSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t> shared_mem_union;
+  typedef LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, launch_t>
+      shared_mem_union;
   auto atom_pair_ljlk_fn =
       ([=] TMOL_DEVICE_FUNC(
            int atom_tile_ind1,
@@ -937,12 +945,12 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies(
       ([=] EVAL_INTRARES_ATOM_PAIR_SCORES_FUSED);
 
   tmol::score::common::tile_evaluate_rot_pair<
-      DeviceOperations,
+      DeviceDispatch,
       D,
       LJLKScoringData<Real>,
       LJLKScoringData<Real>,
       Real,
-      TILE_SIZE>(
+      ljlk_tile_size>(
       shared,
       pose_ind,
       rot_ind1,
