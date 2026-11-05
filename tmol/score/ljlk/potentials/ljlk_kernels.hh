@@ -576,12 +576,60 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
   CTA_LAUNCH_T_PARAMS;
   typedef LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, launch_t>
       shared_mem_union;
-  // Pair arithmetic needs only these three views. Keeping the full launch
-  // context out of this frequently copied closure avoids copying topology
+  int const max_important_bond_separation = 4;
+
+  int pose_ind, block_ind1, block_ind2, rot_ind1, rot_ind2;
+  if constexpr (Rotamer) {
+    pose_ind = ctx.dispatch_indices[0][cta];
+    rot_ind1 = ctx.dispatch_indices[1][cta];
+    rot_ind2 = ctx.dispatch_indices[2][cta];
+    if (rot_ind1 < 0 || rot_ind2 < 0) return;
+    block_ind1 = ctx.block_ind_for_rot[rot_ind1];
+    block_ind2 = ctx.block_ind_for_rot[rot_ind2];
+  } else {
+    pose_ind = cta / ctx.max_n_upper_triangle_inds;
+    auto pair = common::upper_triangle_inds_from_linear_index(
+        cta % ctx.max_n_upper_triangle_inds, ctx.max_n_blocks + 1);
+    block_ind1 = common::get<0>(pair);
+    block_ind2 = common::get<1>(pair) - 1;
+    if (!ctx.use_shared_compact_block_neighbors
+        && ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0)
+      return;
+    if constexpr (Mode == LJLKMode::Backward) {
+      if (ctx.dTdV[0][pose_ind][block_ind1][block_ind2] == 0
+          && ctx.dTdV[1][pose_ind][block_ind1][block_ind2] == 0
+          && ctx.dTdV[2][pose_ind][block_ind1][block_ind2] == 0)
+        return;
+    }
+    rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
+    rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
+    if (rot_ind1 < 0 || rot_ind2 < 0) return;
+  }
+
+  int const block_type1 = ctx.block_type_ind_for_rot[rot_ind1];
+  int const block_type2 = ctx.block_type_ind_for_rot[rot_ind2];
+
+  if (block_type1 < 0 || block_type2 < 0) {
+    return;
+  }
+
+  int const n_atoms1 = ctx.block_type_n_atoms[block_type1];
+  int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
+
+  // Pair arithmetic captures only its views and per-pair weights. Keeping the
+  // launch context out of this frequently copied closure avoids copying topology
   // metadata for every tile while preserving the same native operations.
   auto const type_params = ctx.type_params;
   auto const coordinate_derivatives = ctx.dV_dcoords;
-  auto const upstream_weights = ctx.dTdV;
+  tmol::portable::array<Real, 3> weights{0, 0, 0};
+  if constexpr (Mode == LJLKMode::Backward) {
+    for (int term = 0; term < 3; ++term) {
+      if constexpr (Rotamer)
+        weights[term] = ctx.dTdV[term][cta];
+      else
+        weights[term] = ctx.dTdV[term][pose_ind][block_ind1][block_ind2];
+    }
+  }
   // Backward accumulates one weighted gradient lane. Resolve its subview
   // once per pair workgroup, not once for every atom pair.
   auto weighted_derivatives = decltype(ctx.dV_dcoords[0]){};
@@ -597,21 +645,12 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
            int cp_separation) {
         (void)type_params;
         (void)coordinate_derivatives;
-        (void)upstream_weights;
+        (void)weights;
         (void)weighted_derivatives;
         (void)cta;  // NVCC captures outside constexpr branches.
         // Each mode calls the same mature scalar physics and shares all
         // topology, tile loading, count-pair exclusions and atom traversal.
         if constexpr (Mode == LJLKMode::Backward) {
-          Real weights[3];
-          for (int term = 0; term < 3; ++term) {
-            if constexpr (Rotamer)
-              weights[term] = upstream_weights[term][cta];
-            else
-              weights[term] =
-                  upstream_weights[term][score_dat.pose_ind]
-                                  [score_dat.block_ind1][score_dat.block_ind2];
-          }
           ljlk_atom_derivs<Real, D>(
               atom_tile_ind1,
               atom_tile_ind2,
@@ -654,46 +693,6 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
       ([=] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
 
   auto load_block_into_shared = ([=] LOAD_BLOCK_INTO_SHARED);
-
-  int const max_important_bond_separation = 4;
-
-  int pose_ind, block_ind1, block_ind2, rot_ind1, rot_ind2;
-  if constexpr (Rotamer) {
-    pose_ind = ctx.dispatch_indices[0][cta];
-    rot_ind1 = ctx.dispatch_indices[1][cta];
-    rot_ind2 = ctx.dispatch_indices[2][cta];
-    if (rot_ind1 < 0 || rot_ind2 < 0) return;
-    block_ind1 = ctx.block_ind_for_rot[rot_ind1];
-    block_ind2 = ctx.block_ind_for_rot[rot_ind2];
-  } else {
-    pose_ind = cta / ctx.max_n_upper_triangle_inds;
-    auto pair = common::upper_triangle_inds_from_linear_index(
-        cta % ctx.max_n_upper_triangle_inds, ctx.max_n_blocks + 1);
-    block_ind1 = common::get<0>(pair);
-    block_ind2 = common::get<1>(pair) - 1;
-    if (!ctx.use_shared_compact_block_neighbors
-        && ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0)
-      return;
-    if constexpr (Mode == LJLKMode::Backward) {
-      if (ctx.dTdV[0][pose_ind][block_ind1][block_ind2] == 0
-          && ctx.dTdV[1][pose_ind][block_ind1][block_ind2] == 0
-          && ctx.dTdV[2][pose_ind][block_ind1][block_ind2] == 0)
-        return;
-    }
-    rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
-    rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
-    if (rot_ind1 < 0 || rot_ind2 < 0) return;
-  }
-
-  int const block_type1 = ctx.block_type_ind_for_rot[rot_ind1];
-  int const block_type2 = ctx.block_type_ind_for_rot[rot_ind2];
-
-  if (block_type1 < 0 || block_type2 < 0) {
-    return;
-  }
-
-  int const n_atoms1 = ctx.block_type_n_atoms[block_type1];
-  int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
 
   auto load_tile_invariant_interres_data =
       ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
