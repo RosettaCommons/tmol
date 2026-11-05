@@ -65,14 +65,14 @@ struct DeviceOperations<tmol::Device::CUDA> {
     forall<launch_t>(mgr, n_items, f);
   }
 
-  static EIGEN_DEVICE_FUNC void store_idempotent(
+  static TMOL_HOST_DEVICE_FUNC void store_idempotent(
       int32_t& target, int32_t value) {
 #ifdef __CUDA_ARCH__
     atomicExch(&target, value);
 #endif
   }
 
-  static EIGEN_DEVICE_FUNC void store_idempotent(
+  static TMOL_HOST_DEVICE_FUNC void store_idempotent(
       int64_t& target, int64_t value) {
 #ifdef __CUDA_ARCH__
     atomicExch(
@@ -81,7 +81,7 @@ struct DeviceOperations<tmol::Device::CUDA> {
 #endif
   }
 
-  static EIGEN_DEVICE_FUNC void bitwise_or(int32_t& target, int32_t value) {
+  static TMOL_HOST_DEVICE_FUNC void bitwise_or(int32_t& target, int32_t value) {
 #ifdef __CUDA_ARCH__
     atomicOr(reinterpret_cast<unsigned int*>(&target), unsigned(value));
 #endif
