@@ -12,6 +12,7 @@
 #include "independent_nonbonded_ffi.hh"
 #include "constraint_torsion_ffi.hh"
 #include "kinematics_ffi.hh"
+#include "forward_kinematics_ffi.hh"
 
 namespace tmol::jax {
 namespace {
@@ -381,3 +382,33 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets(),
     {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_forward_kinematics,
+    tmol::jax::run_kinematic_scan<false>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<tmol::jax::Generations>("generations"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_kinematic_vjp,
+    tmol::jax::run_kinematic_scan<true>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<tmol::jax::Generations>("generations"));
+
+extern "C" uint64_t tmol_kinematic_scan_workspace_bytes(
+    int64_t count,
+    const int32_t* generations,
+    int64_t generation_count,
+    int bits,
+    int derivative) {
+  return tmol::jax::kinematic_workspace_bytes(
+      count, generations, generation_count, bits, derivative);
+}

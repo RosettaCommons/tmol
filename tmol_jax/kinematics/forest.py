@@ -4,9 +4,13 @@ from dataclasses import dataclass, field
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
-from tmol_core.kinematics import prepare_kinematic_forest
-from ._native import inverse_coordinates
+from tmol_core.kinematics import (
+    prepare_kinematic_forest,
+    n_movable_jump_dof_types,
+)
+from ._native import inverse_coordinates, forward_coordinates
 
 
 @dataclass(frozen=True, eq=False, init=False)
@@ -16,8 +20,8 @@ class KinematicForest:
     Indices and input coordinates use kinematic order, including virtual root
     zero. The shared core validates topology; this adapter owns device arrays.
     Capture the prepared forest in a jitted function, or jit ``forest.inverse``.
-    Pose-to-forest construction and internal-coordinate minimization are not
-    provided by this operation.
+    Bind initialized DOFs to obtain a differentiable forward coordinate map.
+    Automatic pose-to-forest construction is not provided by this operation.
     """
 
     _indices: object = field(repr=False)
@@ -40,6 +44,81 @@ class KinematicForest:
     def device(self):
         return self._arrays[0].device
 
+    def bind(self, reference_dofs):
+        """Fix reference rotations and return a differentiable six-column DOF map.
+
+        ``reference_dofs`` is a concrete [nodes,9] initialization, typically from
+        ``inverse``. Binding snapshots its three reference-angle columns; those
+        constants are outside the differentiated arguments. The returned map
+        exposes ``initial_dofs`` with shape [nodes,6] and accepts that layout.
+        """
+        return KinematicCoordinates(self, reference_dofs)
+
     def inverse(self, coords):
         """Return float32/64 DOFs [nodes,9], without differentiating initialization."""
         return inverse_coordinates(jnp.asarray(coords), self._arrays)
+
+
+@dataclass(frozen=True, eq=False, init=False)
+class KinematicCoordinates:
+    """A fixed forest and reference frame, mapping movable DOFs to coordinates.
+
+    All six columns move jump nodes; bond nodes use the first four columns.
+    Root and unused columns have zero derivatives. First reverse derivatives,
+    jit and vmap are supported; forward-mode and higher derivatives are not.
+    """
+
+    initial_dofs: object
+    _reference_angles: object = field(repr=False)
+    _tree: object = field(repr=False)
+    _forward: tuple = field(repr=False)
+    _backward: tuple = field(repr=False)
+
+    def __init__(self, forest, reference_dofs):
+        from tmol_core.kinematics.scan_ordering import prepare_scan_ordering
+
+        reference = np.array(reference_dofs, copy=True)
+        if reference.dtype not in (np.float32, np.float64):
+            raise TypeError("kinematic initialization requires float32 or float64")
+        if reference.shape != (forest.n_nodes, 9):
+            raise ValueError("kinematic initialization must have shape (nodes, 9)")
+        initial = jax.device_put(reference[:, :n_movable_jump_dof_types], forest.device)
+        if initial.dtype != reference.dtype:
+            raise ValueError("enable JAX float64 before binding float64 DOFs")
+        indices = forest._indices
+        tree = np.column_stack(
+            (
+                np.arange(forest.n_nodes, dtype=np.int32),
+                indices.doftype,
+                indices.parent,
+                indices.frame_x,
+                indices.frame_y,
+                indices.frame_z,
+            )
+        )
+        ordering = prepare_scan_ordering(indices.parent)
+        object.__setattr__(self, "initial_dofs", initial)
+        object.__setattr__(
+            self,
+            "_reference_angles",
+            jax.device_put(reference[:, n_movable_jump_dof_types:], forest.device),
+        )
+        object.__setattr__(self, "_tree", jax.device_put(tree, forest.device))
+        for name in ("forward", "backward"):
+            plan = getattr(ordering, name)
+            arrays = (
+                jax.device_put(plan.nodes, forest.device),
+                jax.device_put(plan.scans, forest.device),
+                plan.gens,
+            )
+            object.__setattr__(self, "_" + name, arrays)
+
+    def __call__(self, dofs):
+        """Return [nodes,3] coordinates for [nodes,6] movable DOFs."""
+        dofs = jnp.asarray(dofs)
+        if dofs.shape != self.initial_dofs.shape:
+            raise ValueError("movable DOFs must have shape (nodes, 6)")
+        if dofs.dtype != self.initial_dofs.dtype:
+            raise TypeError("movable DOF dtype must match the bound initialization")
+        packed = jnp.concatenate((dofs, self._reference_angles), axis=1)
+        return forward_coordinates(packed, self._tree, self._forward, self._backward)

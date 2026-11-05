@@ -61,3 +61,63 @@ def test_prepared_forest_snapshots_indices_and_uses_common_validation():
     np.testing.assert_array_equal(forest.inverse(xyz), expected)
     with pytest.raises(ValueError, match="cycle"):
         KinematicForest(*arrays)
+
+
+def test_bound_forward_transform_contract_and_snapshot():
+    from tests.scientific.kinematics import branched_forest
+
+    parent, kinds, reference = branched_forest(np.float32)
+    zeros = np.zeros(len(parent), np.int32)
+    forest = KinematicForest(parent, zeros, zeros, zeros, kinds)
+    mapping = forest.bind(reference)
+    forward = jax.jit(mapping)
+    initial = mapping.initial_dofs
+    expected = forward(initial)
+    assert expected.device == forest.device
+    # Atom storage need not be a topological ordering of the parent tree.
+    permutation = np.array([0, 4, 1, 5, 3, 2])
+    inverse_permutation = np.argsort(permutation)
+    reordered = KinematicForest(
+        inverse_permutation[parent[permutation]],
+        zeros,
+        zeros,
+        zeros,
+        kinds[permutation],
+    ).bind(reference[permutation])
+    np.testing.assert_allclose(
+        jax.jit(reordered)(reordered.initial_dofs),
+        expected[permutation],
+        rtol=1e-6,
+        atol=1e-6,
+    )
+    reference[:, 6:] += 10
+    np.testing.assert_array_equal(forward(initial), expected)
+    shifted = initial.at[1, 0].add(2)
+    batch = jax.jit(jax.vmap(mapping))(jnp.stack((initial, shifted)))
+    np.testing.assert_array_equal(batch[0], expected)
+    np.testing.assert_allclose(
+        batch[1, 1:], expected[1:] + jnp.array([2, 0, 0]), atol=1e-6
+    )
+    gradients = jax.jit(jax.vmap(jax.grad(lambda x: mapping(x).sum())))(
+        jnp.stack((initial, shifted))
+    )
+    np.testing.assert_allclose(gradients[0], gradients[1], atol=3e-6)
+    with pytest.raises(TypeError, match="forward-mode autodiff"):
+        jax.jvp(mapping, (initial,), (jnp.ones_like(initial),))
+    with pytest.raises(ValueError, match="cannot be differentiated"):
+        jax.jacrev(jax.grad(lambda x: mapping(x).sum()))(initial)
+    with pytest.raises(ValueError, match="nodes, 6"):
+        mapping(jnp.zeros((len(parent), 9)))
+    with pytest.raises(TypeError, match="dtype"):
+        mapping(initial.astype(jnp.int32))
+    with pytest.raises(ValueError, match="nodes, 9"):
+        forest.bind(reference[:, :6])
+
+
+def test_bound_empty_forward_and_reverse():
+    forest = KinematicForest(*(np.zeros(0, np.int32),) * 5)
+    mapping = forest.bind(np.zeros((0, 9), np.float32))
+    result = jax.jit(mapping)(mapping.initial_dofs)
+    assert result.shape == (0, 3)
+    gradient = jax.jit(jax.grad(lambda x: mapping(x).sum()))(mapping.initial_dofs)
+    assert gradient.shape == (0, 6)

@@ -89,8 +89,13 @@ doftype, device=...)` prepares validated indices in kinematic coordinate order,
 including virtual root zero. `jax.jit(forest.inverse)(coordinates)` returns
 float32/64 DOFs with shape `[nodes, 9]`; `vmap` accepts coordinate samples for
 the same forest. Initialization does not propagate coordinate derivatives.
-Automatic pose-to-forest preparation, forward kinematics and internal-coordinate
-minimization are not implemented yet.
+Bind initialized DOFs with `coordinates = forest.bind(dofs)`, then evaluate
+`jax.jit(coordinates)(coordinates.initial_dofs)`. This map accepts `[nodes, 6]`
+movable DOFs: six columns for jumps and four for bonds. Binding snapshots the
+three jump reference angles as fixed data. Native forward scans support first
+reverse derivatives and `vmap`; forward-mode and higher derivatives are not
+implemented. Automatic pose-to-forest preparation, MoveMap and molecular
+internal-coordinate minimization remain absent.
 
 `run_cart_relax` performs a no-pack repulsive-weight ramp with optional mainchain
 coordinate constraints. It retains the best full-weight structure. It does not

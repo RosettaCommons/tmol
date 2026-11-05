@@ -140,9 +140,9 @@
     {
       "domain": "kinematics",
       "torch": "supported",
-      "jax": "partial_initialization",
-      "repro_fixture": "tests/jax/test_native_kinematics.py",
-      "implementation_status": "Prepared KinematicForest shares strict host index validation and native float32/64 coordinate-to-DOF initialization. jit/vmap and explicit inverse-coordinate derivative boundary tested; full molecular runtime DOFs match Torch on ten domains, but that oracle uses Torch forest metadata. Independent pose-to-forest preparation, forward kinematics, MoveMap and internal-coordinate minimization remain absent."
+      "jax": "partial_prepared_forest",
+      "repro_fixture": "tests/scientific/test_kinematics.py; tests/jax/test_native_kinematics.py",
+      "implementation_status": "Prepared KinematicForest shares strict host index validation and native float32/64 coordinate-to-DOF initialization. Bound forward maps accept six movable DOF columns and fix reference rotations; shared scans provide first reverse derivatives. jit/vmap supported; inverse-coordinate derivatives, forward-mode AD, higher derivatives, automatic pose-to-forest preparation, MoveMap and molecular internal-coordinate minimization remain absent. Runtime molecular oracle uses Torch forest metadata and does not establish independent pose preparation."
     },
     {
       "domain": "fast_relax",
@@ -326,5 +326,5 @@
       "noncanonical_validation": "Five nonzero metal fixtures: exact fresh Torch/JAX CPU energies and full gradients; independent directional derivatives and custom width/depth scaling. Fresh CPU/CUDA artifacts pass the same science cases and float32/64 transformations."
     }
   },
-  "validation": "Immutable080389e504 native CPU/CUDA artifacts:211 CPU checks pass with8 unavailable-CUDA skips;108 H200 checks pass. Matching core/JAX/native wheels and standalone sdists pass44 float64 molecular cases plus11 reused constraint/reference/palette/minimization checks in an isolated installed Torch-free runtime. Native linkage has no libtorch/libc10. Matched fused nonbonded cases are mostly faster; standalone ligand LJ/LK and electrostatics, noncanonical LJ/LK, protein electrostatics, and Dunbrack batch64 regress against prior JAX GPU execution. These performance blockers remain under active investigation. Full-domain/API acceptance remains incomplete."
+  "validation": "Immutable875e771a21 native CPU/CUDA artifacts:215 CPU checks pass with5 unavailable-CUDA skips;112 H200 checks and explicit CPU placement in a GPU process pass. Earlier080389e504 matching core/JAX/native wheels and standalone sdists passed44 float64 molecular cases plus11 shared capability checks in an isolated Torch-free runtime, without libtorch/libc10 linkage. Shared prepared kinematics passes33 CPU checks and2 Torch scientific checks; molecular runtime coordinate/gradient identity uses Torch-prepared metadata. Dunbrack batch64 and ligand/noncanonical LJ/LK regressions have been resolved; standalone electrostatics GPU regressions still block release. Full-domain/API acceptance and updated clean package validation remain incomplete."
 }
