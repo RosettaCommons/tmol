@@ -1,30 +1,14 @@
-import numpy
 import torch
 
-from tmol.types._array import NDArray
+from tmol_core.geometry import (  # noqa: F401
+    numpy_coord_dihedrals as _numpy_coord_dihedrals,
+)  # noqa: F401
+
 from tmol.types._functional import _validate_args
 from tmol.types._torch import Tensor
 
 Coord64Array = Tensor[torch.double][:, 3]
 Angles = Tensor[float][:]
-
-
-def _numpy_coord_dihedrals(
-    a: NDArray[float][..., 3],
-    b: NDArray[float][..., 3],
-    c: NDArray[float][..., 3],
-    d: NDArray[float][..., 3],
-) -> NDArray[numpy.float32][...]:
-    """Return vectorized coordinate dihedrals for NumPy topology setup."""
-    ba = a - b
-    bc = c - b
-    cd = d - c
-    unit_bc = bc / numpy.linalg.norm(bc, axis=-1, keepdims=True)
-    v = ba - numpy.sum(ba * unit_bc, axis=-1, keepdims=True) * unit_bc
-    w = cd - numpy.sum(cd * unit_bc, axis=-1, keepdims=True) * unit_bc
-    x = numpy.sum(v * w, axis=-1)
-    y = numpy.sum(numpy.cross(unit_bc, v) * w, axis=-1)
-    return numpy.asarray(numpy.arctan2(y, x), dtype=numpy.float32)
 
 
 @_validate_args

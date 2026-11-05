@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-import numpy
 import torch
 import attr
+from tmol_core.pack.chi import (
+    is_fixed_amino_acid as _is_fixed_aa,
+    fixed_amino_acid_roots,
+)
 
 from typing import Tuple
 
@@ -12,17 +15,6 @@ from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
 
 from tmol.pack.rotamer._chi_sampler import ChiSampler
-
-
-def _is_fixed_aa(rt: RefinedResidueType) -> bool:
-    """Alpha amino acid whose only chi, if any, are proton chi: one conformer."""
-    polymer = rt.properties.polymer
-    if not polymer.is_polymer or polymer.polymer_type != "amino_acid":
-        return False
-    if polymer.backbone_type != "alpha_aa":
-        return False
-    proton_chis = {cs.chi_dihedral for cs in rt.chi_samples if cs.is_proton}
-    return all(t.name in proton_chis for t in rt.torsions if t.name.startswith("chi"))
 
 
 @attr.s(auto_attribs=True, frozen=True)
@@ -42,22 +34,7 @@ class FixedAAChiSampler(ChiSampler):
         return pbt.fixed_aa_chi_sampler_builds_bt[bt_inds]
 
     def first_sc_atoms_for_rt(self, rt: RefinedResidueType) -> Tuple[str, ...]:
-        """CA's sidechain branches: the substituents that carry further atoms.
-
-        With none (glycine), every non-mainchain CA substituent is rebuilt:
-        glycine's alpha hydrogens exchange under reflection, so rebuilding only
-        one can place it on top of the retained one, and a glycine-to-amino-acid
-        design must not inherit an arbitrary one.
-        """
-        ca, mainchain = rt.atom_to_idx["CA"], rt.properties.polymer.mainchain_atoms
-        n_bonds = numpy.bincount(rt.bond_indices[:, 0], minlength=len(rt.atoms))
-        substituents = [
-            j
-            for i, j in rt.bond_indices
-            if i == ca and rt.atoms[j].name not in mainchain
-        ]
-        branches = [j for j in substituents if n_bonds[j] > 1]
-        return tuple(rt.atoms[j].name for j in (branches or substituents))
+        return fixed_amino_acid_roots(rt)
 
     def annotate_residue_type(self, block_type):
         if hasattr(block_type, "fixed_aa_chi_sampler_builds_bt"):

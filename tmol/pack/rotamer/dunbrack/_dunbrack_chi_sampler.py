@@ -3,9 +3,15 @@ import attr
 import numpy
 
 from typing import Tuple
+from tmol_core.pack.dunbrack import (  # noqa: F401
+    DunSamplerRTCache,
+    DunSamplerPBTCache,
+    DunbrackSamplingMetadata,
+    prepare_dunbrack_sampler_residue,
+    pack_dunbrack_sampler_metadata,
+)
 
 from tmol.types._torch import Tensor
-from tmol.types._array import NDArray
 from tmol.types._functional import _validate_args
 from tmol.score.dunbrack._params import DunbrackParamResolver
 from tmol.score._annotation_cache import (
@@ -15,14 +21,11 @@ from tmol.score._annotation_cache import (
 )
 
 from tmol.pack.rotamer._chi_sampler import ChiSampler
-from tmol.pack.rotamer._conformer_sampler import _sc_roots_for_chis
 from tmol.pack.rotamer._single_residue_kinforest import (
     _construct_single_residue_kinforest,
 )
 from tmol.pack._packer_task import DEFAULT_CHI_SAMPLE_LIMIT
 from tmol.pack.rotamer._chi_budget import (
-    _apply_chi_sample_budget,
-    _chi_depths,
     _sampler_for_task,
 )
 
@@ -33,39 +36,6 @@ from tmol.pack._packer_task import SetPackerTask
 from tmol.chemical import RefinedResidueType
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
-
-
-@attr.s(auto_attribs=True, slots=True, frozen=True)
-class DunSamplerRTCache:
-    """Data to store in RefinedResidueType that will be reused
-    repeatedly in the creation of the DunSamplerPBTCache
-    """
-
-    bbdihe_uaids: NDArray[numpy.int32][2, 4, 3]
-    chi_defining_atom: NDArray[numpy.int32][:]
-    non_dunbrack_sample_counts: NDArray[numpy.int32][:, 2]
-    non_dunbrack_samples: NDArray[numpy.int32][:, 2, :]
-    rottable_set_for_bt: int
-    frozen_chi: tuple = ()
-
-
-@attr.s(auto_attribs=True, slots=True, frozen=True)
-class DunSamplerPBTCache:
-    """Data needed for chi sampling and for reporting how
-    the chi are to be assigned to atoms
-    """
-
-    bbdihe_uaids: Tensor[torch.int32][:, 2, 4, 3]
-    chi_defining_atom: Tensor[torch.int32][:, :]
-    non_dunbrack_sample_counts: Tensor[torch.int32][:, :, 2]
-    non_dunbrack_samples: Tensor[torch.int32][:, :, 2, :]
-    defines_rotamers_for_bts: Tensor[torch.bool][:]
-    rottable_set_for_bt: Tensor[torch.int32][:]
-    frozen_chi: tuple = ()
-
-    @property
-    def max_n_chi(self):
-        return self.chi_defining_atom.shape[1]
 
 
 @attr.s(auto_attribs=True, eq=False)
@@ -115,6 +85,9 @@ class DunbrackChiSampler(ChiSampler):
             self._library_sizes = tuple(
                 resolver.sampling_db.n_rotamers_for_tableset.cpu().tolist()
             )
+            self._sampling_metadata = DunbrackSamplingMetadata(
+                self._library_indices, self._nchi_for_table, self._library_sizes
+            )
             self._annotation_resolver = resolver
             self._annotation_settings = None
         settings = (self.chi_sample_expanded_limit, self.chi_sample_limit)
@@ -141,180 +114,18 @@ class DunbrackChiSampler(ChiSampler):
         self._annotation_key()
         return int(self._library_indices.get(lib_name, -1))
 
-    def annotate_residue_type(self, restype: RefinedResidueType):  # noqa: C901
-        """TEMP TEMP TEMP: assume the dihedrals we care about are phi and psi"""
+    def annotate_residue_type(self, restype: RefinedResidueType):
         key = self._annotation_key()
         cached = _cached_annotation(restype, "_dun_sampler_annotation", key)
         if cached is not None:
             return cached
 
-        # ok; lets ask the appropriate library what chi it defines samples for
-        # and also incorporate additional chi that the residue type itself
-        # defines its own samples for, as long as this is actually a residue type
-        # that the dunbrack library handles.
-        # Strip away any patches and use the "base name" of the residue type to make
-        # the "which library should I read from?" decision
-
-        # fd  noncanonicals may borrow a canonical's rotamers (sampling only);
-        #     a d-amino acid has a mirrored library of its own, so its own name
-        #     is tried before any reference it carries
-        dun_lib_ind = self._library_index(restype.base_name)
-        borrowed = False
-        if dun_lib_ind < 0 and restype.dunbrack_reference:
-            dun_lib_ind = self._library_index(restype.dunbrack_reference)
-            borrowed = dun_lib_ind >= 0
-
-        # n-bb-dihedrals = 2; n-atoms in a dihedral = 4; n-entries in a uaid  = 3
-        uaids = numpy.full((2, 4, 3), -1, dtype=numpy.int32)
-        # fd  a borrowed library was fit against an alpha backbone; on any other
-        #     backbone its phi/psi are not this residue's, so they are left
-        #     unresolved and the library is read at neutral phi/psi
-        if not (borrowed and restype.properties.polymer.backbone_type != "alpha_aa"):
-            if "phi" in restype.torsion_to_uaids:
-                uaids[0] = numpy.array(
-                    restype.torsion_to_uaids["phi"], dtype=numpy.int32
-                )
-            if "psi" in restype.torsion_to_uaids:
-                uaids[1] = numpy.array(
-                    restype.torsion_to_uaids["psi"], dtype=numpy.int32
-                )
-
-        # a residue with no library still builds rotamers if it samples chi of
-        #    its own; the library supplies the leading n_chi and its own
-        #    samples supply the rest, so with no library it supplies them all
-        n_chi = self._nchi_for_table[dun_lib_ind] if dun_lib_ind >= 0 else 0
-        sampled = restype.chi_samples
-        if sampled and self.defines_rotamers_for_rt(restype):
-            _construct_single_residue_kinforest(restype)
-            depths = _chi_depths(
-                restype.residue_kinforest_data,
-                [restype.torsion_to_uaids[cs.chi_dihedral][2][0] for cs in sampled],
-            )
-            # Bound supplemental products before native enumeration. The full
-            # library size is a conservative bound on phi/psi-specific coverage;
-            # retain all selected library states even when a budget is smaller.
-            library_size = (
-                max(1, self._library_sizes[dun_lib_ind]) if dun_lib_ind >= 0 else 1
-            )
-            sampled = _apply_chi_sample_budget(
-                sampled,
-                depths,
-                max(1, self.chi_sample_expanded_limit // library_size),
-                max(1, self.chi_sample_limit // library_size),
-                n_library_chi=n_chi,
-            )
-        selected_names = {cs.chi_dihedral for cs in sampled}
-        frozen_chi = tuple(
-            cs.chi_dihedral
-            for cs in restype.chi_samples
-            if int(cs.chi_dihedral[3:]) > n_chi
-            and cs.chi_dihedral not in selected_names
-        )
-        if frozen_chi:
-            from tmol.numeric._dihedrals import _numpy_coord_dihedrals
-
-            ideal = restype.ideal_coords[restype.at_to_icoor_ind]
-            for cs in restype.chi_samples:
-                if cs.chi_dihedral not in frozen_chi:
-                    continue
-                atoms = [u[0] for u in restype.torsion_to_uaids[cs.chi_dihedral]]
-                angle = (
-                    float(_numpy_coord_dihedrals(*ideal[atoms]))
-                    if min(atoms) >= 0
-                    else numpy.nan
-                )
-                sampled += (
-                    attr.evolve(cs, samples=(numpy.degrees(angle),), expansions=()),
-                )
-        if dun_lib_ind >= 0 or restype.chi_samples:
-            n_chi_total = n_chi
-            for rt_chi in restype.chi_samples:
-                chi_name = rt_chi.chi_dihedral
-                assert chi_name[:3] == "chi"
-                chi_ind = int(chi_name[3:])
-                if chi_ind > n_chi_total:
-                    n_chi_total = chi_ind
-
-            # Assumption: the Dunbrack library assigns chi for a contiguous
-            # block of chi dihedrals starting with chi1.
-            chi_names = ["chi%d" % (i + 1) for i in range(n_chi)]
-            for chi_name in chi_names:
-                assert chi_name in restype.torsion_to_uaids
-
-            chi_defining_atom = numpy.full(n_chi_total, -1, dtype=numpy.int32)
-            # The third atom (atom 2) in the chi defines the dihedral; this
-            # atoms needs to be a member of the residue type, and not unresolved
-            chi_defining_atom[:n_chi] = [
-                restype.torsion_to_uaids[chi_name][2][0] for chi_name in chi_names
-            ]
-
-            if sampled:
-                chi_inds = numpy.array(
-                    [int(samp.chi_dihedral[3:]) - 1 for samp in sampled],
-                    dtype=int,
-                )
-                sort_inds = numpy.argsort(chi_inds)
-                chi_defining_atom[chi_inds[sort_inds]] = [
-                    restype.torsion_to_uaids[sampled[ind].chi_dihedral][2][0]
-                    for ind in sort_inds
-                ]
-
-            non_dunbrack_sample_counts = numpy.zeros(
-                (n_chi_total, 2), dtype=numpy.int32
-            )
-            max_chi_samples = 0
-            for rt_chi in sampled:
-                chi_name = rt_chi.chi_dihedral
-                assert chi_name[:3] == "chi"
-                chi_ind = int(chi_name[3:]) - 1
-                n_expansions = 1 + 2 * len(rt_chi.expansions)
-                n_samples = len(rt_chi.samples)
-                n_expanded_samples = n_samples * n_expansions
-                max_chi_samples = max(max_chi_samples, n_expanded_samples)
-                non_dunbrack_sample_counts[chi_ind, 0] = n_samples
-                non_dunbrack_sample_counts[chi_ind, 1] = n_expanded_samples
-
-            non_dunbrack_samples = numpy.zeros(
-                (n_chi_total, 2, max_chi_samples), dtype=numpy.float32
-            )
-            deg_to_rad = numpy.pi / 180
-            for rt_chi in sampled:
-                chi_name = rt_chi.chi_dihedral
-                chi_ind = int(chi_name[3:]) - 1
-                n_expansions = 1 + 2 * len(rt_chi.expansions)
-                n_samples = len(rt_chi.samples)
-                non_dunbrack_samples[chi_ind, 0, :n_samples] = deg_to_rad * numpy.array(
-                    rt_chi.samples
-                )
-                for i in range(n_samples):
-                    for j in range(n_expansions):
-                        if j == 0:
-                            non_dunbrack_samples[chi_ind, 1, n_expansions * i + j] = (
-                                deg_to_rad * rt_chi.samples[i]
-                            )
-                        else:
-                            expansion = (j - 1) // 2
-                            factor = -1 if (j - 1) % 2 == 0 else 1
-                            non_dunbrack_samples[chi_ind, 1, n_expansions * i + j] = (
-                                deg_to_rad
-                                * (
-                                    rt_chi.samples[i]
-                                    + factor * rt_chi.expansions[expansion]
-                                )
-                            )
-
-        else:
-            chi_defining_atom = numpy.zeros((0,), dtype=numpy.int32)
-            non_dunbrack_sample_counts = numpy.zeros((0, 2), dtype=numpy.int32)
-            non_dunbrack_samples = numpy.zeros((0, 2, 0), dtype=numpy.int32)
-
-        cache = DunSamplerRTCache(
-            bbdihe_uaids=uaids,
-            chi_defining_atom=chi_defining_atom,
-            non_dunbrack_sample_counts=non_dunbrack_sample_counts,
-            non_dunbrack_samples=non_dunbrack_samples,
-            rottable_set_for_bt=dun_lib_ind,
-            frozen_chi=frozen_chi,
+        cache = prepare_dunbrack_sampler_residue(
+            restype,
+            self._sampling_metadata,
+            expanded_limit=self.chi_sample_expanded_limit,
+            limit=self.chi_sample_limit,
+            prepare_kinematics=_construct_single_residue_kinforest,
         )
         setattr(restype, "dun_sampler_cache", cache)
         # sample_chi_for_poses reads the alias, not the returned snapshot, so a
@@ -336,86 +147,27 @@ class DunbrackChiSampler(ChiSampler):
         for rt in packed_block_types.active_block_types:
             self.annotate_residue_type(rt)
 
-        uaids = numpy.stack(
-            [
-                rt.dun_sampler_cache.bbdihe_uaids
-                for rt in packed_block_types.active_block_types
-            ]
+        block_types = packed_block_types.active_block_types
+        host = pack_dunbrack_sampler_metadata(
+            block_types,
+            [rt.dun_sampler_cache for rt in block_types],
+            [self.defines_rotamers_for_rt(rt) for rt in block_types],
         )
-        uaids = torch.tensor(uaids, dtype=torch.int32, device=self.device)
-
-        max_n_chi = max(
-            rt.dun_sampler_cache.chi_defining_atom.shape[0]
-            for rt in packed_block_types.active_block_types
-        )
-        max_chi_samples = max(
-            rt.dun_sampler_cache.non_dunbrack_samples.shape[2]
-            for rt in packed_block_types.active_block_types
-        )
-        # allocate on cpu, then once populated, move to device
-        cpu_device = torch.device("cpu")
-
-        chi_defining_atom = torch.full(
-            (packed_block_types.n_types, max_n_chi),
-            -1,
-            dtype=torch.int32,
-            device=cpu_device,
-        )
-        for i, rt in enumerate(packed_block_types.active_block_types):
-            chi_defining_atom[i, : rt.dun_sampler_cache.chi_defining_atom.shape[0]] = (
-                torch.tensor(
-                    rt.dun_sampler_cache.chi_defining_atom,
-                    dtype=torch.int32,
-                    device=cpu_device,
+        cache = attr.evolve(
+            host,
+            **{
+                name: torch.tensor(
+                    getattr(host, name), device=packed_block_types.device
                 )
-            )
-
-        non_dunbrack_sample_counts = torch.full(
-            (packed_block_types.n_types, max_n_chi, 2),
-            -1,
-            dtype=torch.int32,
-            device=cpu_device,
-        )
-        non_dunbrack_samples = torch.full(
-            (packed_block_types.n_types, max_n_chi, 2, max_chi_samples),
-            -1,
-            dtype=torch.float32,
-            device=cpu_device,
-        )
-        defines_rotamers_for_bts = torch.zeros(
-            (packed_block_types.n_types,), dtype=torch.bool, device=cpu_device
-        )
-        rottable_set_for_bt = torch.full(
-            (packed_block_types.n_types,), -1, dtype=torch.int32, device=cpu_device
-        )
-        for i, rt in enumerate(packed_block_types.active_block_types):
-            rt_ndsc = rt.dun_sampler_cache.non_dunbrack_sample_counts
-            rt_nds = rt.dun_sampler_cache.non_dunbrack_samples
-            non_dunbrack_sample_counts[i, : rt_ndsc.shape[0], :] = torch.tensor(
-                rt_ndsc, dtype=torch.int32, device=cpu_device
-            )
-            defines_rotamers_for_bts[i] = self.defines_rotamers_for_rt(rt)
-            rottable_set_for_bt[i] = rt.dun_sampler_cache.rottable_set_for_bt
-            # de morgan this to avoid skipping any annotations appended below
-            if rt_ndsc.shape[0] != 0 and rt_nds.shape[2] != 0:
-                non_dunbrack_samples[i, : rt_ndsc.shape[0], :, : rt_nds.shape[2]] = (
-                    torch.tensor(rt_nds, dtype=torch.float32, device=cpu_device)
+                for name in (
+                    "bbdihe_uaids",
+                    "chi_defining_atom",
+                    "non_dunbrack_sample_counts",
+                    "non_dunbrack_samples",
+                    "defines_rotamers_for_bts",
+                    "rottable_set_for_bt",
                 )
-
-        def _d(x):
-            return x.to(packed_block_types.device)
-
-        cache = DunSamplerPBTCache(
-            bbdihe_uaids=uaids,
-            chi_defining_atom=_d(chi_defining_atom),
-            non_dunbrack_sample_counts=_d(non_dunbrack_sample_counts),
-            non_dunbrack_samples=_d(non_dunbrack_samples),
-            defines_rotamers_for_bts=_d(defines_rotamers_for_bts),
-            rottable_set_for_bt=_d(rottable_set_for_bt),
-            frozen_chi=tuple(
-                rt.dun_sampler_cache.frozen_chi
-                for rt in packed_block_types.active_block_types
-            ),
+            },
         )
         setattr(packed_block_types, "dun_sampler_cache", cache)
         return _store_annotation(
@@ -426,37 +178,13 @@ class DunbrackChiSampler(ChiSampler):
             fields=("dun_sampler_cache",),
         )
 
-    def _library_for_rt(self, rt: RefinedResidueType) -> int:
-        """Index of the rotamer library this residue type reads, or -1.
-
-        A residue with a library of its own uses it, under its own name: a
-        d-amino acid has a mirrored library, and reading the l one would give
-        it unmirrored rotamers. A noncanonical has none, and borrows whichever
-        its ``dunbrack_reference`` names, if it names one.
-        """
-        index = self._library_index(rt.base_name)
-        if index < 0 and rt.dunbrack_reference:
-            index = self._library_index(rt.dunbrack_reference)
-        return int(index)
+    def _library_for_rt(self, rt: RefinedResidueType):
+        self._annotation_key()
+        return self._sampling_metadata.library_for_type(rt)
 
     def defines_rotamers_for_rt(self, rt: RefinedResidueType):
-        """Whether a rotamer library reaches this residue type.
-
-        A library resolving answers it for most residues: glycine and alanine
-        have nothing to rotate and no library, and a noncanonical has one only
-        where a reference names it. A residue that samples heavy chi of its
-        own is built from those alone.
-        """
-        if not rt.properties.polymer.is_polymer:
-            return False
-        if rt.properties.polymer.polymer_type != "amino_acid":
-            return False
-        if self._library_for_rt(rt) >= 0:
-            return True
-        # no library, but chi of its own to turn. A proton chi alone is not
-        #    enough: optH samples those, and rotamers varying only hydrogens
-        #    would duplicate its work.
-        return any(not cs.is_proton for cs in rt.chi_samples)
+        self._annotation_key()
+        return self._sampling_metadata.defines_rotamers(rt)
 
     def defines_rotamers_for_bts(
         self, pbt: PackedBlockTypes, bt_inds: Tensor[torch.int64]
@@ -464,19 +192,9 @@ class DunbrackChiSampler(ChiSampler):
         self.annotate_packed_block_types(pbt)
         return pbt.dun_sampler_cache.defines_rotamers_for_bts[bt_inds]
 
-    def first_sc_atoms_for_rt(self, rt: RefinedResidueType) -> Tuple[str, ...]:
-        """The atom chi1 rotates, which is where the sidechain starts.
-
-        Read off the residue rather than named, so a noncanonical whose
-        sidechain does not begin at an atom called CB still transfers its
-        rotamers correctly. Empty for a residue with no chi to rotate.
-        """
-        assert self.defines_rotamers_for_rt(rt)
-        # Explicit chi can start after an unsampled axis. Copy upstream input
-        # geometry instead of treating the entire chi1 branch as rebuilt.
-        if self._library_for_rt(rt) < 0:
-            return _sc_roots_for_chis(rt, (cs.chi_dihedral for cs in rt.chi_samples))
-        return tuple(t.c.atom for t in rt.torsions if t.name == "chi1")
+    def first_sc_atoms_for_rt(self, rt: RefinedResidueType):
+        self._annotation_key()
+        return self._sampling_metadata.sidechain_roots(rt)
 
     def sample_chi_for_poses(
         self, pose_stack: PoseStack, task: SetPackerTask
