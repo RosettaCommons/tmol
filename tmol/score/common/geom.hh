@@ -190,7 +190,13 @@ struct dihedral_angle {
     // Preserve the historical negative-pi branch for exactly planar trans
     // geometry, including either sign of a zero scalar triple product.
     if (sine == 0) sine = -Real(0);
-    return tmol::portable::math::atan2(sine, A.dot(B));
+    Real cosine = A.dot(B);
+    // Keep the legacy value-only convention for missing (NaN) coordinates.
+    // The coordinate derivatives remain undefined for such geometry.
+    if (tmol::portable::math::isnan(sine)
+        || tmol::portable::math::isnan(cosine))
+      return Real(0);
+    return tmol::portable::math::atan2(sine, cosine);
   }
 
   struct V_dV_T {
