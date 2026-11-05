@@ -220,10 +220,12 @@ template struct InverseKinDispatch<tmol::Device::CUDA, double, int32_t>;
 template struct KinDerivDispatch<tmol::Device::CUDA, float, int32_t>;
 template struct KinDerivDispatch<tmol::Device::CUDA, double, int32_t>;
 
-template struct KinForestFromStencil<
+template struct NativeKinForestFromStencil<
     tmol::score::common::DeviceOperations,
     tmol::Device::CUDA,
-    int32_t>;
+    int32_t,
+    TPack,
+    ContextManager>;
 // NOTE: Intetionally not enabling int64_t as there are atomic_incremement
 // operations that are needed for several steps in the kin-forest construction
 // algorithm and atomic_increment is not implemented in CUDA for int64_t.

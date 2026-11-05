@@ -8,6 +8,7 @@ error_this_should_not_be_compiled();  // nvcc should not include this file
 #endif
 
 #include <algorithm>
+#include <tmol/score/common/serial_cpu_operations.hh>
 
 #include <tmol/score/common/device_operations.hh>
 #include <tmol/score/common/workgroup_lane.hh>
@@ -19,14 +20,7 @@ namespace score {
 namespace common {
 
 template <>
-struct DeviceOperations<tmol::Device::CPU> {
-  template <typename launch_t, typename Func>
-  static void forall(ContextManager&, int N, Func f) {
-    for (int i = 0; i < N; ++i) {
-      f(i);
-    }
-  }
-
+struct DeviceOperations<tmol::Device::CPU> : SerialCPUOperations {
   template <typename launch_t, typename Func>
   static void forall_independent(ContextManager&, int N, Func f) {
     constexpr int64_t min_parallel_work = 32768;
@@ -142,44 +136,6 @@ struct DeviceOperations<tmol::Device::CPU> {
     foreach_grouped_workgroup<launch_t>(mgr, n_poses, workgroups_per_pose, f);
   }
 
-  template <tmol::portable::scan_type scan_type, typename T, typename OP>
-  static void scan(ContextManager&, T* src, T* dst, int n, OP op) {
-    if (n <= 0) {
-      return;
-    }
-    T last_val = src[0];
-    if (scan_type == tmol::portable::scan_type::inclusive) {
-      dst[0] = last_val;
-    }
-    for (int i = 1; i < n; ++i) {
-      T i_val = src[i];
-      T next_val = op(last_val, i_val);
-      dst[i] = (scan_type == tmol::portable::scan_type::exclusive) ? last_val
-                                                                   : next_val;
-      last_val = next_val;
-    }
-  }
-
-  template <tmol::portable::scan_type scan_type, typename T, typename OP>
-  static T scan_and_return_total(
-      ContextManager&, T* src, T* dst, int n, OP op) {
-    if (n == 0) {
-      return T(0);
-    }
-    T last_val = src[0];
-    if (scan_type == tmol::portable::scan_type::inclusive) {
-      dst[0] = last_val;
-    }
-    for (int i = 1; i < n; ++i) {
-      T i_val = src[i];
-      T next_val = op(last_val, i_val);
-      dst[i] = (scan_type == tmol::portable::scan_type::exclusive) ? last_val
-                                                                   : next_val;
-      last_val = next_val;
-    }
-    return last_val;
-  }
-
   // Construct load-balanced-search mapping of work items to their generator
   // index; see https://moderngpu.github.io/loadbalance.html
   // Arguments:
@@ -253,24 +209,6 @@ struct DeviceOperations<tmol::Device::CPU> {
       last_val = next_val;
     }
     return dst_t;
-  }
-
-  template <typename T, typename Int, typename Comp>
-  static void segmented_sort(
-      ContextManager&,
-      T* keys,
-      int n,
-      Int* seg_start_inds,
-      int n_segs,
-      Comp comp) {
-    if (n <= 1) {
-      return;
-    }
-    for (int i = 0; i < n_segs; ++i) {
-      int const start = seg_start_inds[i];
-      int const end = i + 1 < n_segs ? seg_start_inds[i + 1] : n;
-      std::sort(keys + start, keys + end, comp);
-    }
   }
 
   template <

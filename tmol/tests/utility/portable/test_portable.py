@@ -213,6 +213,20 @@ def test_inverse_kinematics_needs_no_framework(tmp_path):
 
 
 @requires_cxx
+def test_pose_kinematics_needs_no_framework(tmp_path):
+    binary = tmp_path / "pose_kinematics"
+    proc = _compile(
+        HERE / "native_pose_kinematics.cc",
+        binary,
+        includes=(ROOT / "tmol/extern",),
+        run=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    result = subprocess.run([str(binary)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@requires_cxx
 def test_whole_pose_dunbrack_needs_no_framework(tmp_path):
     proc = _compile(HERE / "native_dunbrack.cc", tmp_path / "dunbrack", run=True)
     assert proc.returncode == 0, proc.stderr
