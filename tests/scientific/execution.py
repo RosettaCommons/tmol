@@ -193,6 +193,43 @@ class Execution:
             )
             return self.numpy(self.module.jit(score)(x))
 
+    def float64_directional_derivative(self, coords, direction, step=1e-4):
+        """Central energy difference at the exact input coordinates/direction.
+
+        Metal analytic gradients stay float32. Its numerical oracle uses the
+        matching native CPU float64 scorer because Metal has no float64 path.
+        Other lanes evaluate the oracle on their requested device.
+        """
+        x = np.asarray(coords, dtype=np.float64)
+        delta = step * np.asarray(direction, dtype=np.float64)
+
+        def difference(score):
+            return (score(x + delta) - score(x - delta)) / (2 * step)
+
+        def score(value):
+            return self.scores(value, sum_terms=False, apply_weights=False)
+
+        if self.framework == "jax":
+            with self.module.enable_x64():
+                return difference(score)
+        if self.requested_device == "mps":
+            with patch.dict(os.environ, {"TMOL_MPS_OFFLOAD": "0"}):
+                reference = self.score_function.render_whole_pose_scoring_module(
+                    self.pose
+                )
+
+            def cpu_score(value):
+                return self.numpy(
+                    reference(
+                        self.module.as_tensor(value, device="cpu"),
+                        sum_terms=False,
+                        apply_weights=False,
+                    )
+                )
+
+            return difference(cpu_score)
+        return difference(score)
+
     def value_and_grad(self, coords, *, coordinate_independent=False):
         if self.framework == "torch":
             x = self.module.tensor(coords, device=self.device, requires_grad=True)

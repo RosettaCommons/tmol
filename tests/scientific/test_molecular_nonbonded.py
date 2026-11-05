@@ -24,11 +24,10 @@ def test_molecular_nonbonded_channels(backend, name):
     assert np.all(np.linalg.norm(gradient.reshape(4, -1), axis=1) > 1e-3)
     direction = np.random.default_rng(194).normal(size=x.shape).astype(x.dtype)
     direction /= np.linalg.norm(direction)
-    step = 5e-3
-    numeric = (
-        backend.scores(x + step * direction, sum_terms=False, apply_weights=False)
-        - backend.scores(x - step * direction, sum_terms=False, apply_weights=False)
-    ) / (2 * step)
+    # Large repulsive energies lose low bits in float32 subtraction. Keep the
+    # tested analytic gradient in its original dtype, and differentiate values
+    # in float64 at the exact same representable coordinates and direction.
+    numeric = backend.float64_directional_derivative(x, direction)
     analytic = (gradient * direction).sum(axis=(2, 3))
     np.testing.assert_allclose(analytic, numeric, rtol=3e-3, atol=3e-3)
     np.testing.assert_allclose(gradient.sum(axis=2), 0, atol=1e-3)
