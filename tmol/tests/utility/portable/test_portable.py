@@ -145,3 +145,12 @@ def test_native_gradient_copy_compiles_for_both_torch_abis(tmp_path, stable):
         flags.append("-std=c++20")
     proc = _compile(HERE / "native_copy.cc", tmp_path / "copy", defines=flags)
     assert proc.returncode == 0, proc.stderr
+
+
+@requires_cxx
+def test_dihedral_precision_near_planar_geometry(tmp_path):
+    binary = tmp_path / "dihedral"
+    proc = _compile(HERE / "dihedral_precision.cc", binary, run=True)
+    assert proc.returncode == 0, proc.stderr
+    proc = subprocess.run([str(binary)], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
