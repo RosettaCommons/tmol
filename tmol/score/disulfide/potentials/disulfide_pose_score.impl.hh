@@ -30,6 +30,7 @@
 
 #include "params.hh"
 #include "potentials.hh"
+#include "disulfide_pose_kernels.hh"
 
 namespace tmol {
 namespace score {
@@ -112,9 +113,6 @@ auto DisulfidePoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
   assert(pose_stack_inter_block_connections.size(1) == max_n_blocks);
   assert(pose_stack_inter_block_connections.size(2) == max_n_conns);
 
-  // Optimal launch box on v100 and a100 is nt=32, vt=1
-  LAUNCH_BOX_32;
-
   int n_V;
   if (output_block_pair_energies) {
     n_V = max_n_blocks;
@@ -126,98 +124,19 @@ auto DisulfidePoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
                      ? TPack<Vec<Real, 3>, 2, D>::zeros({1, n_atoms})
                      : TPack<Vec<Real, 3>, 2, D>::empty({1, n_atoms});
 
-  auto V = V_t.view;
-  auto dV_dx = dV_dx_t.view;
-
-  auto eval_energies = ([=] TMOL_DEVICE_FUNC(int ind) {
-    int const pose_ind = ind / max_n_blocks;
-    int const block_ind1 = ind % max_n_blocks;
-
-    int const rot_ind1 = first_rot_for_block[pose_ind][block_ind1];
-    if (rot_ind1 < 0) {
-      return;
-    }
-    int const block_type1 = first_rot_block_type[pose_ind][block_ind1];
-    if (block_type1 < 0) {
-      return;
-    }
-    for (int conn_ind1 = 0; conn_ind1 < max_n_conns; conn_ind1++) {
-      if (disulfide_conns[block_type1][conn_ind1]) {
-        int const block_ind2 =
-            pose_stack_inter_block_connections[pose_ind][block_ind1][conn_ind1]
-                                              [0];
-        int const conn_ind2 =
-            pose_stack_inter_block_connections[pose_ind][block_ind1][conn_ind1]
-                                              [1];
-        if (block_ind2 < block_ind1) {
-          // Only count disulfides to upper residues;
-          // coincidentally handles the case when block_ind2 == -1
-          continue;
-        }
-        int const block_type2 = first_rot_block_type[pose_ind][block_ind2];
-        int const rot_ind2 = first_rot_for_block[pose_ind][block_ind2];
-        if (rot_ind2 < 0) {
-          continue;
-        }
-
-        // one parameter row per block type; a d-amino acid's row carries
-        //    negated dihedral means
-        const auto& params1 = global_params[block_type1];
-        const auto& params2 = global_params[block_type2];
-
-        int atom_offset1 = rot_coord_offset[rot_ind1];
-        int atom_offset2 = rot_coord_offset[rot_ind2];
-
-        // Skip if the other end isn't capable of a disulfide
-        // bond -- imagine a CYS with a chemical bond to some
-        // kind of funky group; it could happen!
-        if (!disulfide_conns[block_type2][conn_ind2]) {
-          return;
-        }
-
-        // Get the 6 atoms that we need for the disulfides
-        auto block1_CA_ind =
-            atom_offset1
-            + block_type_atom_downstream_of_conn[block_type1][conn_ind1][2];
-        auto block1_CB_ind =
-            atom_offset1
-            + block_type_atom_downstream_of_conn[block_type1][conn_ind1][1];
-        auto block1_S_ind =
-            atom_offset1
-            + block_type_atom_downstream_of_conn[block_type1][conn_ind1][0];
-        auto block2_S_ind =
-            atom_offset2
-            + block_type_atom_downstream_of_conn[block_type2][conn_ind2][0];
-        auto block2_CB_ind =
-            atom_offset2
-            + block_type_atom_downstream_of_conn[block_type2][conn_ind2][1];
-        auto block2_CA_ind =
-            atom_offset2
-            + block_type_atom_downstream_of_conn[block_type2][conn_ind2][2];
-
-        int const Vind1 = output_block_pair_energies ? block_ind1 : 0;
-        int const Vind2 = output_block_pair_energies ? block_ind2 : 0;
-        // Calculate score and derivatives and put them in the out tensors
-        accumulate_disulfide<Real, D>(
-            rot_coords,
-            block1_CA_ind,
-            block1_CB_ind,
-            block1_S_ind,
-            block2_S_ind,
-            block2_CB_ind,
-            block2_CA_ind,
-            params1,
-            params2,
-            dV_dx,
-            Real(1),
-            &V[0][pose_ind][Vind1][Vind2]);
-      }
-    }
-  });
-
-  DeviceDispatch<D>::template forall_grouped<launch_t>(
-      mgr, n_poses, max_n_blocks, eval_energies);
-
+  disulfide_pose_forward<DeviceDispatch, D, Real, Int>(
+      mgr,
+      rot_coords,
+      rot_coord_offset,
+      first_rot_for_block,
+      first_rot_block_type,
+      pose_stack_inter_block_connections,
+      disulfide_conns,
+      block_type_atom_downstream_of_conn,
+      global_params,
+      output_block_pair_energies,
+      V_t.view,
+      dV_dx_t.view);
   return {V_t, dV_dx_t};
 }
 
@@ -285,97 +204,19 @@ auto DisulfidePoseScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
   assert(dTdV.size(3) == max_n_blocks);
 
   auto dV_dcoords_t = TPack<Vec<Real, 3>, 2, D>::zeros({1, n_atoms});
-  auto dV_dx = dV_dcoords_t.view;
 
-  // Optimal launch box on v100 and a100 is nt=32, vt=1
-  LAUNCH_BOX_32;
-
-  auto eval_derivs = ([=] TMOL_DEVICE_FUNC(int ind) {
-    int const pose_ind = ind / max_n_blocks;
-    int const block_ind1 = (ind % max_n_blocks);
-
-    int const rot_ind1 = first_rot_for_block[pose_ind][block_ind1];
-    if (rot_ind1 < 0) {
-      return;
-    }
-    int const block_type1 = first_rot_block_type[pose_ind][block_ind1];
-    if (block_type1 < 0) {
-      return;
-    }
-    for (int conn_ind1 = 0; conn_ind1 < max_n_conns; conn_ind1++) {
-      if (disulfide_conns[block_type1][conn_ind1]) {
-        int const block_ind2 =
-            pose_stack_inter_block_connections[pose_ind][block_ind1][conn_ind1]
-                                              [0];
-        int const conn_ind2 =
-            pose_stack_inter_block_connections[pose_ind][block_ind1][conn_ind1]
-                                              [1];
-        if (block_ind2 < block_ind1) {
-          // Only count disulfides to upper residues;
-          // coincidentally handles the case when block_ind2 == -1
-          continue;
-        }
-        if (dTdV[0][pose_ind][block_ind1][block_ind2] == 0) {
-          continue;
-        }
-        int const block_type2 = first_rot_block_type[pose_ind][block_ind2];
-        int const rot_ind2 = first_rot_for_block[pose_ind][block_ind2];
-        if (rot_ind2 < 0) {
-          continue;
-        }
-
-        // one parameter row per block type; a d-amino acid's row carries
-        //    negated dihedral means
-        const auto& params1 = global_params[block_type1];
-        const auto& params2 = global_params[block_type2];
-
-        int atom_offset1 = rot_coord_offset[rot_ind1];
-        int atom_offset2 = rot_coord_offset[rot_ind2];
-
-        if (!disulfide_conns[block_type2][conn_ind2]) {
-          return;
-        }
-        // Get the 6 atoms that we need for the disulfides
-        auto block1_CA_ind =
-            atom_offset1
-            + block_type_atom_downstream_of_conn[block_type1][conn_ind1][2];
-        auto block1_CB_ind =
-            atom_offset1
-            + block_type_atom_downstream_of_conn[block_type1][conn_ind1][1];
-        auto block1_S_ind =
-            atom_offset1
-            + block_type_atom_downstream_of_conn[block_type1][conn_ind1][0];
-        auto block2_S_ind =
-            atom_offset2
-            + block_type_atom_downstream_of_conn[block_type2][conn_ind2][0];
-        auto block2_CB_ind =
-            atom_offset2
-            + block_type_atom_downstream_of_conn[block_type2][conn_ind2][1];
-        auto block2_CA_ind =
-            atom_offset2
-            + block_type_atom_downstream_of_conn[block_type2][conn_ind2][2];
-
-        // Calculate score and derivatives and put them in the out tensors
-        accumulate_disulfide<Real, D>(
-            rot_coords,
-            block1_CA_ind,
-            block1_CB_ind,
-            block1_S_ind,
-            block2_S_ind,
-            block2_CB_ind,
-            block2_CA_ind,
-            params1,
-            params2,
-            dV_dx,
-            dTdV[0][pose_ind][block_ind1][block_ind2],
-            nullptr);
-      }
-    }
-  });
-
-  DeviceDispatch<D>::template forall_grouped<launch_t>(
-      mgr, n_poses, max_n_blocks, eval_derivs);
-
+  disulfide_pose_backward<DeviceDispatch, D, Real, Int>(
+      mgr,
+      rot_coords,
+      rot_coord_offset,
+      first_rot_for_block,
+      first_rot_block_type,
+      pose_stack_inter_block_connections,
+      disulfide_conns,
+      block_type_atom_downstream_of_conn,
+      global_params,
+      dTdV,
+      dV_dcoords_t.view);
   return dV_dcoords_t;
 }
 
