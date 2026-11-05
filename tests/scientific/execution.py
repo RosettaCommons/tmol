@@ -55,6 +55,7 @@ class Execution:
             with self.module.default_device(self.device):
                 self.pose = pose_stack_from_pdb(path)
                 self.score_function = beta2016_score_function()
+            self.pose = self.pose.to(self.device)
         return self
 
     def _render_torch(self):
@@ -147,6 +148,9 @@ class Execution:
                     parameter_database=db,
                     connections=case.connections(),
                 )
+            # Location alone does not commit a JAX array: otherwise a later jit
+            # can choose the process's default GPU for this explicit CPU lane.
+            self.pose = self.pose.to(self.device)
             self.score_function = ScoreFunction(db)
         self.parameter_database = db
         for term in terms:

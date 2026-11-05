@@ -21,6 +21,7 @@ def test_sparse_and_explicit_dense_topology_have_identical_energy_gradients(name
     scorer = backend.score_function.render_whole_pose_scoring_module(pose)
     evaluate = jax.jit(jax.value_and_grad(lambda x: scorer(x).sum()))
     value, gradient = evaluate(pose.coords)
+    assert value.device == gradient.device == pose.device
     assert not hasattr(pose, "_dense_connections")
     dense = pose.inter_block_bondsep
     assert pose.inter_block_bondsep is dense
@@ -29,6 +30,7 @@ def test_sparse_and_explicit_dense_topology_have_identical_energy_gradients(name
     expected, derivatives = jax.jit(jax.value_and_grad(lambda x: other(x).sum()))(
         pose.coords
     )
+    assert expected.device == derivatives.device == pose.device
     np.testing.assert_array_equal(value, expected)
     np.testing.assert_array_equal(gradient, derivatives)
     # Dense replacements override any retained sparse graph, including under jit.
