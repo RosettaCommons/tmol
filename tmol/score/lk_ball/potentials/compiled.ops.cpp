@@ -246,9 +246,13 @@ class PoseWaterGen : public tmol::native::autograd::Function<PoseWaterGen> {
       for (int row = 0; row < 3; ++row) {
         if (lengths[row] == 0) continue;
         auto dst = packed_water_tors.select(0, row).narrow(0, 0, lengths[row]);
+#ifdef TORCH_TARGET_VERSION
         auto dst_handle = dst.handle();
         auto src_handle = rows[row]->handle();
         torch::stable::copy_(dst_handle, src_handle);
+#else
+        dst.copy_(*rows[row]);
+#endif
       }
     } else {
       packed_water_tors = tmol::native::empty({3, 0}, sp2_water_tors.options());
