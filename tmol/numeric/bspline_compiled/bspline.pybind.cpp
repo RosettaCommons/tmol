@@ -5,6 +5,7 @@
 #include <pybind11/stl.h>
 #include <tmol/utility/tensor/pybind.h>
 
+#include <tmol/numeric/bspline_compiled/bspline.hh>
 #include <tmol/numeric/bspline_compiled/bspline_coeffs.hh>
 
 namespace tmol {

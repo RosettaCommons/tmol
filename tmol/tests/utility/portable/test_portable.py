@@ -157,3 +157,9 @@ def test_whole_pose_cartbonded_needs_no_framework(tmp_path):
 def test_whole_pose_backbone_torsion_needs_no_framework(tmp_path):
     proc = _compile(HERE / "native_backbone_torsion.cc", tmp_path / "backbone", run=True)
     assert proc.returncode == 0, proc.stderr
+
+
+@requires_cxx
+def test_bspline_coefficient_preparation_needs_no_framework(tmp_path):
+    proc = _compile(HERE / "native_bspline_coeffs.cc", tmp_path / "coefficients", run=True)
+    assert proc.returncode == 0, proc.stderr
