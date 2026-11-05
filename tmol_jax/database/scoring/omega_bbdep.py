@@ -8,6 +8,7 @@ from typing import Tuple
 import attr
 import numpy as np
 from tmol_core._yaml import _load_yaml
+from tmol_core.database.content_hash import _content_hash
 
 from ._structure import structure
 
@@ -64,4 +65,8 @@ class OmegaBBDepDatabase:
         rows = structure(_load_yaml(path), _OmegaBBDepLookupRaw)
         stem = os.path.splitext(path)[0]
         tables = cls.load_tables_from_npz(stem + ".npz")
-        return cls(os.path.abspath(path), rows.omega_bbdep_lookup, tables)
+        database = cls("", rows.omega_bbdep_lookup, tables)
+        return attr.evolve(database, uniq_id=database.content_id())
+
+    def content_id(self):
+        return _content_hash(self.bbdep_omega_lookup, self.bbdep_omega_tables)

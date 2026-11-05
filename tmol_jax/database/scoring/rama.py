@@ -8,6 +8,7 @@ from typing import Tuple
 import attr
 import numpy as np
 from tmol_core._yaml import _load_yaml
+from tmol_core.database.content_hash import _content_hash
 
 from ._structure import structure
 
@@ -45,7 +46,7 @@ class RamaDatabase:
         """Load rama energy tables from a numpy ``.npz`` archive.
 
         Uses the flat per-table layout written by
-        ``scripts/convert_binary_tables.py``.
+        ``scripts/build_jax.py``.
         """
         with np.load(npz_path, allow_pickle=False) as data:
             n = int(data["__n_tables"])
@@ -66,4 +67,8 @@ class RamaDatabase:
         rows = structure(_load_yaml(path), _RamaLookupRaw)
         stem = os.path.splitext(path)[0]
         tables = cls.load_tables_from_npz(stem + ".npz")
-        return cls(os.path.abspath(path), rows.rama_lookup, tables)
+        database = cls("", rows.rama_lookup, tables)
+        return attr.evolve(database, uniq_id=database.content_id())
+
+    def content_id(self):
+        return _content_hash(self.rama_lookup, self.rama_tables)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Tuple
+from typing import Optional, Tuple
 
 import attr
 import numpy as np
@@ -29,6 +29,7 @@ class RotamericDataForAA:
     backbone_dihedral_step: np.ndarray
     rotamer_alias: np.ndarray
     backbone_is_mirrored: bool = False
+    backbone_source_start: Optional[np.ndarray] = None
 
     def nchi(self) -> int:
         return int(self.rotamers.shape[1])
@@ -73,7 +74,7 @@ class DunbrackRotamerLibrary:
         """Load the Dunbrack rotamer libraries from a numpy ``.npz``.
 
         The archive layout matches the one written by
-        ``scripts/convert_binary_tables.py`` -- flat arrays keyed by
+        ``scripts/build_jax.py`` -- flat arrays keyed by
         ``rot{i}__...`` / ``semi{i}__...`` prefixes, plus ``__n_rot``
         and ``__n_semi`` counters.
         """
@@ -90,6 +91,7 @@ class DunbrackRotamerLibrary:
 
         def _load_rot_data(data, prefix: str) -> RotamericDataForAA:
             mirror_key = prefix + "data__backbone_is_mirrored"
+            source_key = prefix + "data__backbone_source_start"
             return RotamericDataForAA(
                 **{
                     field: np.asarray(data[prefix + "data__" + field]).copy()
@@ -97,6 +99,9 @@ class DunbrackRotamerLibrary:
                 },
                 backbone_is_mirrored=(
                     bool(data[mirror_key]) if mirror_key in data else False
+                ),
+                backbone_source_start=(
+                    np.asarray(data[source_key]).copy() if source_key in data else None
                 ),
             )
 

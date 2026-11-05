@@ -73,6 +73,10 @@ def export_parameters(source, destination):
             arrays[prefix + "data__backbone_is_mirrored"] = np.asarray(
                 table.rotameric_data.backbone_is_mirrored
             )
+            if table.rotameric_data.backbone_source_start is not None:
+                arrays[prefix + "data__backbone_source_start"] = np.asarray(
+                    table.rotameric_data.backbone_source_start
+                )
             if category == "semi":
                 for field in (
                     "non_rot_chi_start",
