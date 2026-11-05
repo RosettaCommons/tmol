@@ -1,4 +1,5 @@
-// CPU execution policy and XLA registration; science lives in the common kernel.
+// CPU execution policy and XLA registration; science lives in the common
+// kernel.
 #include "genbonded_ffi.hh"
 #include <condition_variable>
 #include <cstring>
@@ -8,10 +9,13 @@ namespace tmol::jax {
 namespace {
 thread_local ffi::ThreadPool* active_pool = nullptr;
 
-template <Device D> struct CpuOps;
-template <> struct CpuOps<Device::CPU> {
+template <Device D>
+struct CpuOps;
+template <>
+struct CpuOps<Device::CPU> {
   template <typename Launch, typename F>
-  static void foreach_pose_workgroup(ContextManager&, int poses, int groups, F f) {
+  static void foreach_pose_workgroup(
+      ContextManager&, int poses, int groups, F f) {
     auto run = [=](int pose) {
       for (int group = 0; group < groups; ++group) f(pose * groups + group);
     };
@@ -33,34 +37,45 @@ template <> struct CpuOps<Device::CPU> {
     std::unique_lock<std::mutex> lock(mutex);
     completed.wait(lock, [&] { return remaining == 0; });
   }
-  template <int N, typename F> static void for_each_in_workgroup(F f) {
+  template <int N, typename F>
+  static void for_each_in_workgroup(F f) {
     static_assert(N == 1, "CPU workgroup must have one lane");
     f(0);
   }
   template <int N, typename T, typename S, typename Op>
-  static T reduce_in_workgroup(T value, S&, Op) { return value; }
+  static T reduce_in_workgroup(T value, S&, Op) {
+    return value;
+  }
 };
 
-ffi::Error run(ffi::ThreadPool pool, ffi::RemainingArgs args,
-               ffi::Result<ffi::AnyBuffer> energy, ffi::RemainingRets rets) {
+ffi::Error run(
+    ffi::ThreadPool pool,
+    ffi::RemainingArgs args,
+    ffi::Result<ffi::AnyBuffer> energy,
+    ffi::RemainingRets rets) {
   auto* previous = active_pool;
   try {
     auto buffers = genbonded_arguments(args);
-    if (rets.size() > 1) throw std::invalid_argument("too many generic bonded results");
+    if (rets.size() > 1)
+      throw std::invalid_argument("too many generic bonded results");
     std::optional<ffi::AnyBuffer> gradient;
     if (rets.size()) {
       auto value = rets.get<ffi::AnyBuffer>(0);
-      if (!value) throw std::invalid_argument("invalid generic bonded gradient buffer");
+      if (!value)
+        throw std::invalid_argument("invalid generic bonded gradient buffer");
       gradient = **value;
     }
     validate_genbonded(buffers, *energy, gradient ? &*gradient : nullptr);
     std::memset(energy->untyped_data(), 0, energy->size_bytes());
-    if (gradient) std::memset(gradient->untyped_data(), 0, gradient->size_bytes());
+    if (gradient)
+      std::memset(gradient->untyped_data(), 0, gradient->size_bytes());
     active_pool = &pool;
     if (buffers[0].element_type() == ffi::DataType::F32) {
-      execute_genbonded<CpuOps, Device::CPU, float>(buffers, *energy, gradient ? &*gradient : nullptr);
+      execute_genbonded<CpuOps, Device::CPU, float>(
+          buffers, *energy, gradient ? &*gradient : nullptr);
     } else {
-      execute_genbonded<CpuOps, Device::CPU, double>(buffers, *energy, gradient ? &*gradient : nullptr);
+      execute_genbonded<CpuOps, Device::CPU, double>(
+          buffers, *energy, gradient ? &*gradient : nullptr);
     }
     active_pool = previous;
     return ffi::Error::Success();
@@ -74,6 +89,10 @@ ffi::Error run(ffi::ThreadPool pool, ffi::RemainingArgs args,
 
 extern "C" int tmol_jax_native_abi_version() { return 1; }
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_genbonded, tmol::jax::run,
-    xla::ffi::Ffi::Bind().Ctx<xla::ffi::ThreadPool>().RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>().RemainingRets());
+    tmol_genbonded,
+    tmol::jax::run,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets());

@@ -32,8 +32,12 @@ def test_explicit_molecular_atom_identity_and_connection_context(backend, name):
             ri = [c.name for c in right_type.connections].index(other_port)
             expected_connections[left, li] = [right, ri]
             expected_connections[right, ri] = [left, li]
-        np.testing.assert_array_equal(connections[p, ..., 0], expected_connections[..., 0])
+        np.testing.assert_array_equal(
+            connections[p, ..., 0], expected_connections[..., 0]
+        )
         # Native topology uses partner=-1 for a disconnected port; the second
         # slot is unspecified in that case (legacy Torch may retain zero).
         connected = expected_connections[..., 0] >= 0
-        np.testing.assert_array_equal(connections[p][connected], expected_connections[connected])
+        np.testing.assert_array_equal(
+            connections[p][connected], expected_connections[connected]
+        )
