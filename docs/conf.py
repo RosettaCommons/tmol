@@ -43,7 +43,9 @@ def _compiled_module_mocks() -> list[str]:
     mocks: set[str] = set()
     for path in (REPO_ROOT / "tmol").rglob("*.py"):
         rel_parts = path.relative_to(REPO_ROOT).parts
-        if "compiled" in rel_parts or path.stem.startswith("compiled"):
+        if any(
+            part in ("compiled", "_compiled") for part in rel_parts
+        ) or path.stem.startswith(("compiled", "_compiled")):
             mocks.add(_module_name_from_path(path))
             if path.name == "__init__.py":
                 mocks.add(".".join(rel_parts[:-1]))
