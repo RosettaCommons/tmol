@@ -23,6 +23,24 @@ namespace common {
 namespace sphere_overlap {
 using tmol::portable::Vec;
 
+// A pose with one block has only its self pair. Its candidate list is
+// independent of coordinates; the consuming kernel must still reject absent
+// rotamers/block types and apply atom-distance cutoffs. This list deliberately
+// includes padded poses, unlike the compact geometric neighbor detector.
+// Caller provides n_poses + 1 entries and requires max_n_blocks == 1.
+template <
+    template <tmol::Device> class DeviceDispatch,
+    tmol::Device D,
+    typename Int>
+void single_block_neighbor_candidates_native(
+    ContextManager& mgr, int n_poses, TView<Int, 1, D> neighbor_indices) {
+  LAUNCH_BOX_32;
+  auto fill = ([=] TMOL_DEVICE_FUNC(int index) {
+    neighbor_indices[index] = index == 0 ? n_poses : index - 1;
+  });
+  DeviceDispatch<D>::template forall<launch_t>(mgr, n_poses + 1, fill);
+}
+
 template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
