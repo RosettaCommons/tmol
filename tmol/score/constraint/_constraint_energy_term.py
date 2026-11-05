@@ -1,13 +1,54 @@
 import math
 
+import attr
 import torch
 
 from .._energy_term import EnergyTerm
 
 from tmol.database import ParameterDatabase
 from tmol.chemical import RefinedResidueType
+from tmol.pose._constraint_set import ConstraintSet
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
+
+
+@attr.s(frozen=True, slots=True, auto_attribs=True)
+class _ConstraintScoringPlan:
+    """Indexing that depends only on the constraint set, built at render time.
+
+    Selecting each function's constraints and summing them per pose would
+    otherwise read data-dependent sizes back to the host on every call, which
+    stalls CUDA scoring and breaks CUDA graph capture.
+
+    function_rows: (function index, constraint rows) for each function in use.
+    pose_rows: [n_poses, max constraints per pose] constraint rows, padded with
+        n_constraints, the index of an appended zero.
+    """
+
+    function_rows: tuple[tuple[int, torch.Tensor], ...]
+    pose_rows: torch.Tensor
+
+    @classmethod
+    def build(cls, constraint_set: ConstraintSet, n_poses: int):
+        fn_inds = constraint_set.constraint_function_inds
+        function_rows = []
+        for ind in range(len(constraint_set.constraint_functions)):
+            rows = torch.nonzero(fn_inds == ind).flatten()
+            if rows.numel():
+                function_rows.append((ind, rows))
+
+        n_constraints = fn_inds.shape[0]
+        pose = constraint_set.constraint_unique_blocks[:, 0].long()
+        counts = torch.bincount(pose, minlength=n_poses)
+        width = int(counts.max()) if n_constraints else 0
+        order = torch.argsort(pose, stable=True)
+        starts = torch.cumsum(counts, 0) - counts
+        slot = torch.arange(n_constraints, device=pose.device) - starts[pose[order]]
+        pose_rows = torch.full(
+            (n_poses, width), n_constraints, dtype=torch.long, device=pose.device
+        )
+        pose_rows[pose[order], slot] = order
+        return cls(tuple(function_rows), pose_rows)
 
 
 class ConstraintEnergyTerm(EnergyTerm):
@@ -69,21 +110,20 @@ class ConstraintEnergyTerm(EnergyTerm):
         atoms2 = atoms[:, 1]
         dist = torch.linalg.norm(atoms1 - atoms2, dim=-1)
 
-        ret = torch.full_like(dist, 0)
-
         ub2 = ub + 0.5 * sd
 
-        g0 = dist < lb
-        # g1 = torch.logical_and(lb <= dist, dist <= ub) # default 0
-        g2 = torch.logical_and(ub < dist, dist <= ub2)
-        g3 = dist > ub2
-
-        ret[g0] = ((lb[g0] - dist[g0]) / sd[g0]) ** 2
-        # ret[g1] = 0
-        ret[g2] = ((dist[g2] - ub[g2]) / sd[g2]) ** 2
-        ret[g3] = 2 * rswitch[g3] * ((dist[g3] - ub[g3]) / sd[g3]) - rswitch[g3] ** 2
-
-        return ret
+        # Selected with torch.where rather than boolean masks, whose
+        # data-dependent sizes would sync with the host and break CUDA graph
+        # capture. Every branch is finite for sd > 0, so the unselected ones
+        # contribute zero gradient.
+        below = ((lb - dist) / sd) ** 2
+        above = ((dist - ub) / sd) ** 2
+        linear = 2 * rswitch * ((dist - ub) / sd) - rswitch**2
+        zero = torch.zeros_like(dist)
+        # lb <= dist <= ub scores 0
+        ret = torch.where(dist > ub2, linear, zero)
+        ret = torch.where(torch.logical_and(ub < dist, dist <= ub2), above, ret)
+        return torch.where(dist < lb, below, ret)
 
     @classmethod
     def circularharmonic(cls, atoms, params):
@@ -134,9 +174,13 @@ class ConstraintEnergyTerm(EnergyTerm):
         return self.constraint_pose_scores(*args[:12], *args[13:])
 
     def get_score_term_attributes(self, pose_stack: PoseStack):
-        return [
-            pose_stack.get_constraint_set(),
-        ]
+        constraint_set = pose_stack.get_constraint_set()
+        plan = (
+            None
+            if constraint_set is None
+            else _ConstraintScoringPlan.build(constraint_set, pose_stack.n_poses)
+        )
+        return [constraint_set, plan]
 
     def constraint_pose_scores(  # noqa: C901
         self,
@@ -154,6 +198,7 @@ class ConstraintEnergyTerm(EnergyTerm):
         rot_offset_for_block______2,  # three times?!
         max_n_rots_per_pose,
         constraint_set,
+        plan,
         output_block_pair_energies=False,
     ):
         device = coords.device
@@ -433,18 +478,20 @@ class ConstraintEnergyTerm(EnergyTerm):
             cnstr_scores = torch.full(
                 (len(types),), 0, dtype=coords.dtype, device=coords.device
             )
-            for ind, fn in enumerate(functions):
-
-                # get the constraints that match this constraint type
-                c_inds = torch.nonzero(types == ind)
-
-                # compute the scores for this function
-                fn_coords = atom_coords[c_inds].squeeze(1)
-                result = fn(fn_coords, params[c_inds].squeeze(1))
-                result = result.unsqueeze(1)
-
-                # add the result to the output tensor
-                cnstr_scores[c_inds] += result
+            # Without rotamers the constraints keep the constraint set's order,
+            # so the plan's rows apply; rotamer expansion reorders them.
+            if plan is not None and not has_rotamers:
+                function_rows = plan.function_rows
+            else:
+                function_rows = [
+                    (ind, torch.nonzero(types == ind).flatten())
+                    for ind in range(len(functions))
+                ]
+            for ind, rows in function_rows:
+                result = functions[ind](atom_coords[rows], params[rows])
+                cnstr_scores = cnstr_scores.index_put(
+                    (rows,), result.to(cnstr_scores.dtype)
+                )
 
             return cnstr_scores
 
@@ -461,7 +508,11 @@ class ConstraintEnergyTerm(EnergyTerm):
             rotamerized_params,
         )
 
-        if not has_rotamers:
+        if not has_rotamers and not output_block_pair_energies and plan is not None:
+            # Fixed gather and sum per pose: no host sync, deterministic order.
+            padded = torch.cat((scores, scores.new_zeros(1)))
+            scores = padded[plan.pose_rows].sum(dim=1)
+        elif not has_rotamers:
             max_n_blocks = first_rot_block_type.shape[1]
             n_poses = first_rot_block_type.shape[0]
             sparse_scores = torch.sparse_coo_tensor(
