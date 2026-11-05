@@ -9,6 +9,10 @@
 #include "common.hh"
 #include "common_dispatch.hh"
 #include "params.hh"
+#ifdef WITH_CUDA
+#include <tmol/utility/tensor/native_cuda.hh>
+#include <optional>
+#endif
 
 namespace tmol {
 namespace kinematics {
@@ -212,6 +216,81 @@ Tensor kin_deriv_op(
 
   return dV_ddof;
 };
+
+auto assemble_pose(
+    int64_t max_n_pose_atoms,
+    Tensor block_coord_offset,
+    Tensor block_type,
+    Tensor inter_residue_connections,
+    Tensor ff_edges,
+    Tensor block_type_n_atoms,
+    Tensor block_type_atom_is_real,
+    Tensor block_type_n_conn,
+    Tensor block_type_conn_atom,
+    Tensor block_type_polymeric_conn,
+    Tensor jump_atom,
+    Tensor parents,
+    Tensor dof_type,
+    Tensor n_gens,
+    Tensor conn_info,
+    Tensor nodes_for_gen,
+    Tensor n_scan_path_segs,
+    Tensor scan_path_seg_starts,
+    Tensor scan_path_seg_is_real,
+    Tensor scan_path_seg_is_inter_block,
+    Tensor scan_path_seg_lengths,
+    Tensor ff_edges_cpu,
+    Tensor block_type_cpu,
+    Tensor connections_cpu,
+    Tensor conn_info_cpu,
+    Tensor polymeric_conn_cpu,
+    Tensor n_conn_cpu) -> tensor_list {
+  tensor_list outputs;
+#ifdef WITH_CUDA
+  std::optional<tmol::native::CUDAGuard> guard;
+  if (block_type.device().is_cuda()) guard.emplace(block_type.device());
+#endif
+  TMOL_DISPATCH_INDEX_DEVICE(
+      block_type.options(), "assemble_pose", ([&] {
+        using Int = int32_t;
+        constexpr tmol::Device Dev = device_t;
+        auto result =
+            KinForestFromStencil<score::common::DeviceOperations, Dev, Int>::
+                assemble_pose(
+                    mgr,
+                    max_n_pose_atoms,
+                    TCAST(block_coord_offset),
+                    TCAST(block_type),
+                    TCAST(inter_residue_connections),
+                    TCAST(ff_edges),
+                    TCAST(block_type_n_atoms),
+                    TCAST(block_type_atom_is_real),
+                    TCAST(block_type_n_conn),
+                    TCAST(block_type_conn_atom),
+                    TCAST(block_type_polymeric_conn),
+                    TCAST(jump_atom),
+                    TCAST(parents),
+                    TCAST(dof_type),
+                    TCAST(n_gens),
+                    TCAST(conn_info),
+                    TCAST(nodes_for_gen),
+                    TCAST(n_scan_path_segs),
+                    TCAST(scan_path_seg_starts),
+                    TCAST(scan_path_seg_is_real),
+                    TCAST(scan_path_seg_is_inter_block),
+                    TCAST(scan_path_seg_lengths),
+                    TCAST(ff_edges_cpu),
+                    TCAST(block_type_cpu),
+                    TCAST(connections_cpu),
+                    TCAST(conn_info_cpu),
+                    TCAST(polymeric_conn_cpu),
+                    TCAST(n_conn_cpu));
+        std::apply(
+            [&](auto const&... pack) { (outputs.push_back(pack.tensor), ...); },
+            result);
+      }));
+  return outputs;
+}
 
 auto get_kfo_indices_for_atoms(
     Tensor pose_stack_block_coord_offset,
@@ -713,6 +792,7 @@ auto inv_kin_dispatch(
 // See https://stackoverflow.com/a/3221914
 
 TMOL_LIBRARY(tmol_kin, m) {
+  m.def("assemble_pose", TMOL_FN(&assemble_pose));
   m.def("forward_kin_op", TMOL_FN(&kinematic_op));
   m.def("forward_only_op", TMOL_FN(&forward_only_op));
   m.def("forward_with_ht_op", TMOL_FN(&forward_with_ht_op));

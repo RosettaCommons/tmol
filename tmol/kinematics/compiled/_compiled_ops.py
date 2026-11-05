@@ -28,3 +28,5 @@ _get_kinforest_scans_from_stencils = _ops.get_kinforest_scans_from_stencils
 _get_kinforest_scans_from_stencils2 = _ops.get_kinforest_scans_from_stencils2
 _minimizer_map_from_movemap = _ops.minimizer_map_from_movemap
 _inverse_kin = _ops.inverse_kin
+
+_assemble_pose = _ops.assemble_pose

@@ -16,6 +16,195 @@ template <
     template <typename, size_t, tmol::Device> class Pack,
     typename Context>
 auto NativeKinForestFromStencil<DeviceDispatch, D, Int, Pack, Context>::
+    assemble_pose(
+        Context& mgr,
+        int64_t max_n_pose_atoms,
+        TView<Int, 2, D> block_coord_offset,
+        TView<Int, 2, D> block_type,
+        TView<Int, 4, D> inter_residue_connections,
+        TView<Int, 3, D> ff_edges,
+        TView<Int, 1, D> block_type_n_atoms,
+        TView<bool, 2, D> block_type_atom_is_real,
+        TView<Int, 1, D> block_type_n_conn,
+        TView<Int, 2, D> block_type_conn_atom,
+        TView<Int, 2, D> block_type_polymeric_conn,
+        TView<Int, 1, D> jump_atom,
+        TView<Int, 3, D> parents,
+        TView<Int, 3, D> dof_type,
+        TView<Int, 3, D> n_gens,
+        TView<Int, 5, D> conn_info,
+        TView<Int, 5, D> nodes_for_gen,
+        TView<Int, 4, D> n_scan_path_segs,
+        TView<Int, 5, D> scan_path_seg_starts,
+        TView<bool, 5, D> scan_path_seg_is_real,
+        TView<bool, 5, D> scan_path_seg_is_inter_block,
+        TView<Int, 5, D> scan_path_seg_lengths,
+        TView<Int, 3, Device::CPU> ff_edges_cpu,
+        TView<Int, 2, Device::CPU> block_type_cpu,
+        TView<Int, 4, Device::CPU> connections_cpu,
+        TView<Int, 5, Device::CPU> conn_info_cpu,
+        TView<Int, 2, Device::CPU> polymeric_conn_cpu,
+        TView<Int, 1, Device::CPU> n_conn_cpu)
+        -> std::tuple<
+            Pack<Int, 1, D>,
+            Pack<Int, 1, D>,
+            Pack<Int, 1, D>,
+            Pack<Int, 1, D>,
+            Pack<Int, 1, D>,
+            Pack<Int, 1, D>,
+            Pack<Int, 1, D>,
+            Pack<Int, 1, D>,
+            Pack<Int, 2, D>,
+            Pack<Int, 1, D>,
+            Pack<Int, 1, D>,
+            Pack<Int, 2, D>,
+            Pack<Int, 3, D>,
+            Pack<bool, 2, D>,
+            Pack<Int, 3, D>,
+            Pack<Int, 2, D>> {
+  // Fold-edge scheduling is host preparation even for device execution.
+  auto delays = calculate_ff_edge_delays(
+      mgr,
+      block_coord_offset,
+      block_type,
+      ff_edges_cpu,
+      conn_info,
+      nodes_for_gen,
+      scan_path_seg_starts,
+      block_type_cpu,
+      connections_cpu,
+      conn_info_cpu,
+      polymeric_conn_cpu,
+      n_conn_cpu);
+  auto delay_cpu = std::get<7>(delays).view;
+  Int max_delay = 0;
+  for (int p = 0; p < delay_cpu.size(0); ++p)
+    for (int e = 0; e < delay_cpu.size(1); ++e)
+      max_delay = std::max(max_delay, delay_cpu[p][e]);
+  auto dfs_order = Pack<Int, 2, D>::from_cpu(std::get<0>(delays));
+  auto n_edges = Pack<Int, 1, D>::from_cpu(std::get<1>(delays));
+  auto first_edge = Pack<Int, 2, D>::from_cpu(std::get<3>(delays));
+  auto ff_parent = Pack<Int, 2, D>::from_cpu(std::get<4>(delays));
+  auto first_child = Pack<Int, 2, D>::from_cpu(std::get<6>(delays));
+  auto delay = Pack<Int, 2, D>::from_cpu(std::get<7>(delays));
+  auto toposort = Pack<Int, 1, D>::from_cpu(std::get<8>(delays));
+  auto [atom_for_jump, atom_for_root_jump] =
+      get_jump_atom_indices(mgr, ff_edges, block_type, jump_atom);
+  auto block_in_and_first_out = get_block_parent_connectivity_from_toposort(
+      mgr,
+      block_type,
+      inter_residue_connections,
+      ff_parent.view,
+      dfs_order.view,
+      n_edges.view,
+      ff_edges,
+      first_edge.view,
+      first_child.view,
+      delay.view,
+      toposort.view,
+      block_type_n_conn,
+      block_type_polymeric_conn);
+  auto [block_offset, mapping, atom_kfo_index] = get_kfo_indices_for_atoms(
+      mgr,
+      block_coord_offset,
+      block_type,
+      block_type_n_atoms,
+      block_type_atom_is_real);
+  auto [parent, grandparents] = get_kfo_atom_parents(
+      mgr,
+      block_type,
+      inter_residue_connections,
+      ff_parent.view,
+      block_in_and_first_out.view,
+      parents,
+      mapping.view,
+      atom_kfo_index.view,
+      jump_atom,
+      block_type_n_conn,
+      block_type_conn_atom);
+  auto [n_children, child_span, children, is_jump] = get_children(
+      mgr,
+      block_type,
+      block_in_and_first_out.view,
+      mapping.view,
+      parent.view,
+      block_type_n_conn);
+  auto [id, frame_x, frame_y, frame_z, keep_atom_fixed] = get_id_and_frame_xyz(
+      mgr,
+      max_n_pose_atoms,
+      block_coord_offset,
+      mapping.view,
+      parent.view,
+      child_span.view,
+      children.view,
+      is_jump.view);
+  auto [nodes_fw, scans_fw, gens_fw, nodes_bw, scans_bw, gens_bw] = get_scans2(
+      mgr,
+      max_n_pose_atoms,
+      block_coord_offset,
+      block_type,
+      inter_residue_connections,
+      ff_edges,
+      max_delay,
+      delay.view,
+      toposort.view,
+      first_edge.view,
+      ff_parent.view,
+      block_in_and_first_out.view,
+      parents,
+      mapping.view,
+      atom_kfo_index.view,
+      jump_atom,
+      block_type_n_conn,
+      block_type_polymeric_conn,
+      n_gens,
+      conn_info,
+      nodes_for_gen,
+      n_scan_path_segs,
+      scan_path_seg_starts,
+      scan_path_seg_is_real,
+      scan_path_seg_is_inter_block,
+      scan_path_seg_lengths);
+  auto doftype = Pack<Int, 1, D>::zeros({id.view.size(0)});
+  auto doftype_view = doftype.view;
+  auto atom_mapping = mapping.view;
+  auto block_inout = block_in_and_first_out.view;
+  LAUNCH_BOX_32;
+  DeviceDispatch<D>::template forall<launch_t>(
+      mgr, id.view.size(0) - 1, [=] TMOL_DEVICE_FUNC(int index) {
+        int const k = index + 1;
+        int const pose = atom_mapping[k][0];
+        int const block = atom_mapping[k][1];
+        int const atom = atom_mapping[k][2];
+        doftype_view[k] = dof_type[block_type[pose][block]]
+                                  [block_inout[pose][block][0]][atom];
+      });
+  return std::make_tuple(
+      id,
+      doftype,
+      parent,
+      frame_x,
+      frame_y,
+      frame_z,
+      nodes_fw,
+      scans_fw,
+      gens_fw,
+      nodes_bw,
+      scans_bw,
+      gens_bw,
+      block_in_and_first_out,
+      keep_atom_fixed,
+      atom_for_jump,
+      atom_for_root_jump);
+}
+
+template <
+    template <tmol::Device> class DeviceDispatch,
+    tmol::Device D,
+    typename Int,
+    template <typename, size_t, tmol::Device> class Pack,
+    typename Context>
+auto NativeKinForestFromStencil<DeviceDispatch, D, Int, Pack, Context>::
     get_kfo_indices_for_atoms(
         Context& mgr,
         TView<Int, 2, D> pose_stack_block_coord_offset,

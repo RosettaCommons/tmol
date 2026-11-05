@@ -19,6 +19,8 @@ struct OwnedHostTensor {
   std::shared_ptr<T[]> storage;
   TView<T, N, D> view;
 
+  static OwnedHostTensor from_cpu(OwnedHostTensor source) { return source; }
+
   static OwnedHostTensor full(std::initializer_list<int64_t> shape, T value) {
     if (shape.size() != N)
       throw std::invalid_argument("Host tensor rank mismatch");
