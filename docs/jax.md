@@ -126,7 +126,9 @@ parameter prerequisites.
 
 Before comparing frontends, verify residue/atom identities and use identical
 coordinates and parameters: loaders can idealize missing atoms and hydrogens
-differently. PDB loading selects the first model/alternate location; represent
+differently. Canonical residue and atom metadata come from the common chemical database.
+Unknown input atom names reject instead of being dropped. PDB loading selects
+the first model/alternate location; represent
 chain breaks explicitly. Float32 reductions and torsion formulas differ between
 execution routes, so energies and gradients need scientifically justified
 term-specific tolerances. The separate L-BFGS implementation need not follow the

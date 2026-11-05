@@ -1,210 +1,28 @@
-"""Canonical-form atom ordering for tmol_jax.
-
-Ported from ``tmol.io.canonical_ordering``.
-
-A :class:`CanonicalOrdering` holds a "palette" of per-residue-type
-canonical atom orderings, built from a
-:class:`~tmol_jax.chemical.patched_chemdb.PatchedChemicalDatabase`. For
-each residue type it records:
-
-- The ordered tuple of atom names (backbone ``N / CA / C / O`` followed
-  by the side-chain atoms, in the order they appear in the chemical
-  database).
-- A mapping from atom name (and any ``atom_aliases`` alternate name) to
-  the integer index of that atom within the canonical ordering. This
-  lets callers fill in a per-position coord tensor given only atom
-  names.
-
-The module also exports two default-factory helpers used by the rest of
-the io pipeline:
-
-- :func:`default_canonical_ordering` returns the canonical ordering for
-  the standard 20 amino acids, built from the default chemical database.
-- :func:`default_packed_block_types` returns the matching
-  :class:`PackedBlockTypes` "palette" for the same 20 residues and
-  their N-/C-terminal variants (``:nterm``, ``:cterm``,
-  ``:cterm:nterm``). Including the termini variants in the default
-  palette lets ``pose_stack_from_canonical_form`` assign the
-  appropriate variant to each chain's first / last residue (matching
-  upstream tmol behaviour), which is necessary for correct fa_elec /
-  hbond / LJ-LK scoring.
-
-We only support the 20 canonical amino acids (plus their termini
-variants) here; unknown residue types are returned with sentinel
-values when queried so callers can filter them out.
-"""
+"""Canonical-form metadata from the shared chemical ordering."""
 
 from __future__ import annotations
 
 from collections import OrderedDict
 from functools import lru_cache
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 import attr
 import numpy as np
 
-# --------------------------------------------------------------------- #
-# Helpers                                                                #
-# --------------------------------------------------------------------- #
+from tmol_core.io.canonical_ordering import CanonicalOrdering as _CanonicalOrdering
 
 
-class _OrderedSet:
-    """Minimal ordered-set helper used to preserve chem-db iteration order."""
+class CanonicalOrdering(_CanonicalOrdering):
+    """Shared canonical residue and atom identities with frontend lookups."""
 
-    __slots__ = ("_seen", "_ordered")
-
-    def __init__(self) -> None:
-        self._seen: set = set()
-        self._ordered: List[Any] = []
-
-    def add(self, value: Any) -> None:
-        if value in self._seen:
-            return
-        self._seen.add(value)
-        self._ordered.append(value)
-
-    @property
-    def values(self) -> List[Any]:
-        return list(self._ordered)
-
-
-# --------------------------------------------------------------------- #
-# CanonicalOrdering                                                      #
-# --------------------------------------------------------------------- #
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class CanonicalOrdering:
-    """Per-residue-type canonical atom ordering.
-
-    Attributes
-    ----------
-    max_n_canonical_atoms:
-        The largest number of distinct canonical atom names across all
-        residue-type equivalence classes in the palette.
-    restype_io_equiv_classes:
-        Tuple of 3-letter residue-type codes, in the order they were
-        added. Use ``tuple.index("ALA")`` etc. to get the integer index
-        canonical-form arrays use for each residue.
-    restypes_ordered_atom_names:
-        Mapping ``{name3: tuple(atom_name, ...)}`` of the canonical
-        atom-name ordering for each residue type. Does NOT include
-        alternate names / aliases.
-    restypes_atom_index_mapping:
-        Mapping ``{name3: {atom_name: int_index}}``. Alternate names
-        (from ``atom_aliases``) are merged in and point at the same
-        index as the canonical name.
-    restypes_mainchain_atoms:
-        Mapping ``{name3: tuple(atom_name, ...) or None}`` with the
-        polymeric main-chain atoms (N / CA / C / O for standard AAs).
-    """
-
-    max_n_canonical_atoms: int
-    restype_io_equiv_classes: Tuple[str, ...]
-    restypes_ordered_atom_names: Mapping[str, Tuple[str, ...]]
-    restypes_atom_index_mapping: Mapping[str, Mapping[str, int]]
-    restypes_mainchain_atoms: Mapping[str, Optional[Tuple[str, ...]]]
-
-    # ---------------------------------------------------------------- #
-    # Properties / lookups                                              #
-    # ---------------------------------------------------------------- #
-
-    def restype_index(self, name3: str) -> int:
-        """Return the integer index of a 3-letter code, or ``-1``."""
+    def restype_index(self, name3):
         try:
             return self.restype_io_equiv_classes.index(name3)
         except ValueError:
             return -1
 
-    def atom_index(self, name3: str, atom_name: str) -> int:
-        """Return the canonical-form atom index for (``name3``, ``atom_name``),
-        or ``-1`` when unknown."""
-        mapping = self.restypes_atom_index_mapping.get(name3)
-        if mapping is None:
-            return -1
-        return mapping.get(atom_name, -1)
-
-    # ---------------------------------------------------------------- #
-    # Builder                                                           #
-    # ---------------------------------------------------------------- #
-
-    @classmethod
-    def from_chemdb(cls, chemdb: Any) -> "CanonicalOrdering":
-        """Build a :class:`CanonicalOrdering` from a ``PatchedChemicalDatabase``.
-
-        Walks ``chemdb.residues`` collecting, for each distinct 3-letter
-        code, the union of atom names across every residue type (so that
-        variant-specific atoms like termini hydrogens are representable
-        in the canonical form). Atom alias mappings are folded into the
-        returned atom-index lookup so callers can feed in either PDBv2
-        or PDBv3 atom names without needing an extra translation step.
-        """
-        # 1. Iterate chem-db residues, collecting a per-name3 ordered
-        #    set of atom names and a per-name3 alias-to-canonical map.
-        name3_order = _OrderedSet()
-        all_atoms: "OrderedDict[str, _OrderedSet]" = OrderedDict()
-        aliases: "Dict[str, Dict[str, str]]" = {}
-        mainchain: "Dict[str, Optional[Tuple[str, ...]]]" = {}
-
-        for restype in chemdb.residues:
-            name3 = restype.name3
-            io_equiv = getattr(restype, "io_equiv_class", name3)
-
-            name3_order.add(io_equiv)
-            if io_equiv not in all_atoms:
-                all_atoms[io_equiv] = _OrderedSet()
-            for atom in restype.atoms:
-                all_atoms[io_equiv].add(atom.name)
-
-            if io_equiv not in aliases:
-                aliases[io_equiv] = {}
-            for alias in getattr(restype, "atom_aliases", ()) or ():
-                # Alias records have ``.name`` (canonical) and ``.alt_name``.
-                prior = aliases[io_equiv].get(alias.alt_name)
-                if prior is not None and prior != alias.name:
-                    # Conflicting alias -- keep the first and move on.
-                    continue
-                aliases[io_equiv][alias.alt_name] = alias.name
-
-            if io_equiv not in mainchain:
-                mc = None
-                polymer = getattr(getattr(restype, "properties", None), "polymer", None)
-                if polymer is not None:
-                    mc_atoms = getattr(polymer, "mainchain_atoms", None)
-                    if mc_atoms:
-                        mc = tuple(mc_atoms)
-                mainchain[io_equiv] = mc
-
-        # 2. Freeze atom-name orderings and build atom-index maps.
-        ordered_atom_names: Dict[str, Tuple[str, ...]] = {
-            name3: tuple(all_atoms[name3].values) for name3 in all_atoms
-        }
-        atom_index_mapping: Dict[str, Dict[str, int]] = {
-            name3: {name: i for i, name in enumerate(names)}
-            for name3, names in ordered_atom_names.items()
-        }
-        # Merge aliases: alias_name -> same index as canonical.
-        for name3, alias_map in aliases.items():
-            idx_map = atom_index_mapping.setdefault(name3, {})
-            for alt, canon in alias_map.items():
-                canon_idx = idx_map.get(canon)
-                if canon_idx is not None:
-                    idx_map[alt] = canon_idx
-
-        max_n = max((len(v) for v in ordered_atom_names.values()), default=0)
-
-        return cls(
-            max_n_canonical_atoms=int(max_n),
-            restype_io_equiv_classes=tuple(name3_order.values),
-            restypes_ordered_atom_names=ordered_atom_names,
-            restypes_atom_index_mapping=atom_index_mapping,
-            restypes_mainchain_atoms=mainchain,
-        )
-
-
-# --------------------------------------------------------------------- #
-# Default-factory helpers                                                #
-# --------------------------------------------------------------------- #
+    def atom_index(self, name3, atom_name):
+        return self.restypes_atom_index_mapping.get(name3, {}).get(atom_name, -1)
 
 
 @lru_cache(maxsize=1)
@@ -227,15 +45,9 @@ def default_canonical_ordering() -> CanonicalOrdering:
         r for r in chemdb.residues if getattr(r, "name3", None) in canonical_set
     )
 
-    # Reconstruct a minimal stand-in chem-db with just the residues we
-    # care about; ``from_chemdb`` only reads ``.residues``.
-    class _MiniDb:
-        __slots__ = ("residues",)
-
-    mini = _MiniDb()
-    mini.residues = filtered_residues  # type: ignore[attr-defined]
-
-    return CanonicalOrdering.from_chemdb(mini)
+    return CanonicalOrdering.from_chemdb(
+        attr.evolve(chemdb, residues=filtered_residues)
+    )
 
 
 @lru_cache(maxsize=1)
@@ -405,9 +217,7 @@ def _canonical_form_from_records(records, canonical_ordering):
         atom_name = str(atom_names[i]).strip()
         aind = canonical_ordering.atom_index(resn, atom_name)
         if aind < 0:
-            # Unknown atom for this residue type -- silently skip.
-            # (Matches upstream behaviour.)
-            continue
+            raise ValueError(f"{resn} atom {atom_name} is not in the chemical atom set")
         coords[0, r, aind, 0] = coords_raw[i, 0]
         coords[0, r, aind, 1] = coords_raw[i, 1]
         coords[0, r, aind, 2] = coords_raw[i, 2]

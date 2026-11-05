@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from tmol_jax.io import (
     canonical_form_from_pdb,
@@ -63,3 +64,11 @@ def test_keyword_metadata_is_used_when_canonical_values_are_none():
     assert np.asarray(pose.pdb_info.res_num)[0].tolist() == [10, 11, 20]
     assert 2 not in np.asarray(pose.inter_residue_connections)[0, 1, :, 0]
     assert 1 not in np.asarray(pose.inter_residue_connections)[0, 2, :, 0]
+
+
+def test_unknown_input_atom_is_not_silently_dropped():
+    lines = PDB.read_text().splitlines()
+    first = next(i for i, line in enumerate(lines) if line.startswith("ATOM"))
+    lines[first] = lines[first][:12] + " ZZ " + lines[first][16:]
+    with pytest.raises(ValueError, match="atom ZZ"):
+        canonical_form_from_pdb("\n".join(lines))

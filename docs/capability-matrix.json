@@ -163,7 +163,7 @@
       "torch": "supported",
       "jax": "partial",
       "repro_fixture": "tmol_jax/io",
-      "implementation_status": "Canonical PDB/Biotite plus explicit ResidueBlock input; no general CIF/ligand preparation/selection adapter."
+      "implementation_status": "Canonical PDB/Biotite loading consumes the complete shared canonical metadata and rejects unknown atom names. Explicit ResidueBlock input supports arbitrary prepared residue identities and parameter contexts. General CIF/ligand preparation/selection adapters remain absent."
     },
     {
       "domain": "jit_vmap_reverse_ad",
@@ -184,14 +184,14 @@
       "torch": "supported",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_native_genbonded.py",
-      "implementation_status": "Generic bonded, Cartesian bonded and backbone share complete native physics/analytic derivatives with Torch. CPU and H200 CUDA values/gradients/transforms/empty batches tested. Other terms still use earlier implementations."
+      "implementation_status": "Generic/Cartesian bonded, backbone, NA torsion, metal coordination, Dunbrack, fused and independent nonbonded terms share native physics and derivatives with Torch. CPU/H200 molecular values, gradients and transformations tested. Hydrogen bond, LK-ball and disulfide frontend conversion remains incomplete."
     },
     {
       "domain": "native_cuda",
       "torch": "supported",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_native_genbonded.py",
-      "implementation_status": "Generic bonded, Cartesian bonded and backbone share complete native physics/analytic derivatives with Torch. CPU and H200 CUDA values/gradients/transforms/empty batches tested. Other terms still use earlier implementations."
+      "implementation_status": "Generic/Cartesian bonded, backbone, NA torsion, metal coordination, Dunbrack, fused and independent nonbonded terms share native physics and derivatives with Torch. CPU/H200 molecular values, gradients and transformations tested. Hydrogen bond, LK-ball and disulfide frontend conversion remains incomplete."
     }
   ],
   "score_terms": {
@@ -326,5 +326,5 @@
       "noncanonical_validation": "Five nonzero metal fixtures: exact fresh Torch/JAX CPU energies and full gradients; independent directional derivatives and custom width/depth scaling. Fresh CPU/CUDA artifacts pass the same science cases and float32/64 transformations."
     }
   },
-  "validation": "Immutable 4b70c92518 native artifacts:198 CPU tests pass with8 unavailable-CUDA skips,97 H200 scientific/transform tests pass. Fresh aff0326258 core/JAX/native wheels and sdists pass44 float64 molecular cases in an isolated installed Torch-free runtime without libtorch linkage; newer packaging validation pending. Native fused nonbonded improves CPU time/memory. Small canonical GPU regression and Dunbrack regression resolved in1fded1dae0 matched cases; LG1 GPU remains slower. Full-domain/API/performance acceptance remains incomplete."
+  "validation": "Immutable771809ed31 CPU/CUDA native artifacts:106 H200 checks pass. Full CPU206passed with8 unavailable-CUDA skips;2 test-double failures fixed6136b7d251 and their focused checks pass. Fresh aff0326258 core/JAX/native wheels and sdists pass44 float64 cases in an isolated installed Torch-free runtime; newer installed packaging validation pending. Matched ligand/noncanonical/canonical nonbonded cases are favorable after implicit self-pair execution. Dunbrack actual1ubq batch4 and16 still regress versus prior JAX GPU execution; further runtime optimization under validation. Full-domain/API/performance acceptance remains incomplete."
 }
