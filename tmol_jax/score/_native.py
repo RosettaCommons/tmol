@@ -103,10 +103,8 @@ def coordinate_energy(target, coords, parameters, *, channels=1):
     return energy(coords, *parameters)
 
 
-def bonded_pose_arguments(pose, pbt):
-    """Runtime layout and common connection paths for whole-pose kernels."""
-    from tmol_core.chemical.packed import PackedBlockTypesData
-
+def pose_arguments(pose):
+    """Flattened coordinate offsets and pose/block indices for native kernels."""
     bti = np.asarray(pose.block_type_ind)
     poses, blocks = bti.shape
     first = np.arange(poses * blocks, dtype=np.int32).reshape(poses, blocks)
@@ -114,6 +112,13 @@ def bonded_pose_arguments(pose, pbt):
     offsets = np.asarray(pose.block_coord_offset) + (
         np.arange(poses, dtype=np.int32)[:, None] * pose.coords.shape[1]
     )
+    return offsets.reshape(-1), first, bti, pose.inter_residue_connections
+
+
+def bonded_pose_arguments(pose, pbt):
+    """Runtime layout and common connection paths for whole-pose kernels."""
+    from tmol_core.chemical.packed import PackedBlockTypesData
+
     paths = PackedBlockTypesData.join_atom_paths_from_conn(pbt.active_block_types)
     if paths.shape[1] < pbt.max_n_conn:
         paths = np.pad(
@@ -121,4 +126,45 @@ def bonded_pose_arguments(pose, pbt):
             ((0, 0), (0, pbt.max_n_conn - paths.shape[1]), (0, 0), (0, 0)),
             constant_values=-1,
         )
-    return offsets.reshape(-1), first, bti, pose.inter_residue_connections, paths
+    return (*pose_arguments(pose), paths)
+
+
+def fit_bspline_coefficients(values):
+    """Fit shared periodic cubic coefficients during host parameter setup."""
+    values = np.asarray(values)
+    if values.dtype not in (np.dtype("float32"), np.dtype("float64")):
+        raise TypeError("spline values must be float32 or float64")
+    if values.ndim not in (2, 3, 4) or any(size == 0 for size in values.shape):
+        raise ValueError("spline tables require 2-4 nonempty dimensions")
+    library = libraries().get("cpu")
+    if library is None:
+        raise RuntimeError("spline preparation requires tmol-jax-native CPU support")
+    try:
+        fit = library.tmol_bspline_coefficients
+    except AttributeError as error:
+        raise RuntimeError(
+            "native spline preparation is missing; rebuild tmol-jax-native"
+        ) from error
+    fit.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.POINTER(ctypes.c_int64),
+        ctypes.c_char_p,
+        ctypes.c_size_t,
+    ]
+    fit.restype = ctypes.c_int
+    output = np.array(values, order="C", copy=True)
+    shape = (ctypes.c_int64 * output.ndim)(*output.shape)
+    error = ctypes.create_string_buffer(256)
+    status = fit(
+        output.ctypes.data,
+        output.dtype.itemsize * 8,
+        output.ndim,
+        shape,
+        error,
+        len(error),
+    )
+    if status:
+        raise ValueError(error.value.decode("utf-8", errors="replace"))
+    return output

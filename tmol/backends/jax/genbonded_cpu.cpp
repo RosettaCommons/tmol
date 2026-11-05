@@ -1,9 +1,11 @@
 // CPU execution policy and XLA registration; science lives in the common
 // kernel.
 #include "cartbonded_ffi.hh"
+#include "backbone_torsion_ffi.hh"
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
+#include <tmol/numeric/bspline_compiled/bspline_coeffs.hh>
 
 namespace tmol::jax {
 namespace {
@@ -36,6 +38,11 @@ struct CpuOps<Device::CPU> {
     run(poses - 1);
     std::unique_lock<std::mutex> lock(mutex);
     completed.wait(lock, [&] { return remaining == 0; });
+  }
+  template <typename Launch, typename F>
+  static void forall_grouped(
+      ContextManager& context, int poses, int groups, F f) {
+    foreach_pose_workgroup<Launch>(context, poses, groups, f);
   }
   template <int N, typename F>
   static void for_each_in_workgroup(F f) {
@@ -106,3 +113,72 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets());
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_backbone_torsion,
+    tmol::jax::run<tmol::jax::BackboneTorsionKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets());
+
+namespace tmol::jax {
+template <typename Real, size_t Rank>
+void fit_spline(void* data, const int64_t* shape) {
+  std::array<int64_t, Rank> sizes;
+  std::copy_n(shape, Rank, sizes.begin());
+  numeric::bspline::ndspline_coeffs<Rank, 3, Device::CPU, Real, int32_t>::
+      computeCoeffs(contiguous_view<Real, Rank, Device::CPU>(data, sizes));
+}
+
+template <typename Real>
+void fit_spline(void* data, int rank, const int64_t* shape) {
+  switch (rank) {
+    case 2:
+      return fit_spline<Real, 2>(data, shape);
+    case 3:
+      return fit_spline<Real, 3>(data, shape);
+    case 4:
+      return fit_spline<Real, 4>(data, shape);
+    default:
+      throw std::invalid_argument("spline table rank must be 2, 3 or 4");
+  }
+}
+}  // namespace tmol::jax
+
+// Host-only parameter preparation; coordinate scoring never passes through
+// here.
+extern "C" int tmol_bspline_coefficients(
+    void* data,
+    int bits,
+    int rank,
+    const int64_t* shape,
+    char* error,
+    size_t error_size) {
+  try {
+    if (!data || !shape || rank < 2 || rank > 4)
+      throw std::invalid_argument("invalid spline buffer or rank");
+    int64_t size = 1;
+    for (int i = 0; i < rank; ++i) {
+      if (shape[i] <= 0
+          || shape[i] > std::numeric_limits<int32_t>::max() / size)
+        throw std::invalid_argument(
+            "spline extents must be positive and fit int32");
+      size *= shape[i];
+    }
+    if (bits == 32)
+      tmol::jax::fit_spline<float>(data, rank, shape);
+    else if (bits == 64)
+      tmol::jax::fit_spline<double>(data, rank, shape);
+    else
+      throw std::invalid_argument("spline values must be float32 or float64");
+    return 0;
+  } catch (const std::exception& exception) {
+    if (error && error_size) {
+      std::strncpy(error, exception.what(), error_size - 1);
+      error[error_size - 1] = '\0';
+    }
+    return 1;
+  }
+}

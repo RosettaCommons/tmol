@@ -198,6 +198,8 @@ class ScoreFunction:
                 ScoreType.fa_lk,
                 ScoreType.fa_elec,
                 ScoreType.gen_torsions,
+                ScoreType.rama,
+                ScoreType.omega,
                 ScoreType.ref,
                 ScoreType.constraint,
             }

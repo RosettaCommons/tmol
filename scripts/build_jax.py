@@ -15,6 +15,8 @@ import tempfile
 import tomllib
 
 import numpy as np
+import attr
+import yaml
 
 from build_core import build_core
 
@@ -39,7 +41,22 @@ def export_parameters(source, destination):
         ("rama", RamaDatabase, "rama_tables", ("table",)),
         ("omega_bbdep", OmegaBBDepDatabase, "bbdep_omega_tables", ("mu", "sigma")),
     ):
-        tables = getattr(cls.from_file(str(source / "scoring" / f"{name}.zip")), field)
+        database = cls.from_file(str(source / "scoring" / f"{name}.zip"))
+        tables = getattr(database, field)
+        # The serialized database is authoritative: its lookup includes
+        # generated variant mappings absent from the historical YAML source.
+        lookup_field = "rama_lookup" if name == "rama" else "bbdep_omega_lookup"
+        yaml_field = "rama_lookup" if name == "rama" else "omega_bbdep_lookup"
+        (destination / "scoring" / f"{name}.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    yaml_field: [
+                        attr.asdict(row) for row in getattr(database, lookup_field)
+                    ]
+                },
+                sort_keys=False,
+            )
+        )
         arrays = {"__n_tables": np.array(len(tables), dtype=np.int32)}
         for i, table in enumerate(tables):
             for field in ("table_id", "bbstep", "bbstart", *values):

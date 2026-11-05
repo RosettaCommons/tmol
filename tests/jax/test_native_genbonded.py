@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from tests.scientific.execution import Execution
-from tests.scientific.molecules import CASES
+from tests.scientific.molecules import CASES, BACKBONE_CASES
 from tmol_jax import ScoreFunction, ScoreType
 
 
@@ -27,6 +27,7 @@ def backend_name(request):
     "terms",
     [
         ("gen_torsions",),
+        ("rama", "omega"),
         (
             "cart_lengths",
             "cart_angles",
@@ -39,7 +40,8 @@ def backend_name(request):
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_native_coordinate_transforms_and_pose_independence(dtype, backend_name, terms):
     with jax.enable_x64(dtype == np.float64):
-        backend = Execution(backend_name).molecule(CASES["mixed_batch"], terms=terms)
+        case = BACKBONE_CASES["mixed"] if "rama" in terms else CASES["mixed_batch"]
+        backend = Execution(backend_name).molecule(case, terms=terms)
         pose = backend.pose
         score = backend.score_function.render_whole_pose_scoring_module(pose)
         x = pose.coords.astype(dtype)
@@ -134,3 +136,15 @@ def test_native_mixed_molecule_minimization_preserves_frozen_atoms(backend_name)
     assert np.isfinite(after).all()
     assert float(result["fun"]) < result["initial_fun"] - 1e-3
     assert np.linalg.norm(after[mask] - before[mask]) > 1e-3
+
+
+@pytest.mark.parametrize("term", ["gen_torsions", "cart_lengths", "rama"])
+def test_empty_native_pose_batch_preserves_value_and_gradient_shapes(
+    backend_name, term
+):
+    backend = Execution(backend_name).molecule(BACKBONE_CASES["mixed"], terms=(term,))
+    pose = backend.pose[:0]
+    score = backend.score_function.render_whole_pose_scoring_module(pose)
+    values = jax.jit(score)(pose.coords)
+    gradient = jax.jit(jax.grad(lambda x: score(x).sum()))(pose.coords)
+    assert values.shape == (0,) and gradient.shape == pose.coords.shape

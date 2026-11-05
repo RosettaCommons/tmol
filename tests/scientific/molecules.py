@@ -115,3 +115,21 @@ DOMAIN_CASES = {
     "metal_mixed": MolecularCase((), (("HIS", "ASP", "ZN_tetrahedral"),), ((1, 1, 1),)),
     "metal_cluster": MolecularCase((), (("SF4",),), ((1,),)),
 }
+
+# Backbone fixtures require connected residues: isolated HYP has no backbone
+# interaction. Its committed parameter record explicitly references PRO tables.
+BACKBONE_CASES = {
+    "canonical": MolecularCase((), (("ALA", "PRO", "VAL"),), ((3,),)),
+    "d_peptide": DOMAIN_CASES["d_peptide"],
+    "hydroxyproline": MolecularCase(
+        CASES["noncanonical"].parameter_files, (("ALA", "HYP", "VAL"),), ((3,),)
+    ),
+    "variants": MolecularCase(
+        (), (("ALA:nterm", "HIS_D", "CYD", "PRO:cterm"),), ((4,),)
+    ),
+    "mixed": MolecularCase(
+        CASES["mixed_batch"].parameter_files,
+        (("ALA", "HYP", "VAL", "LG1"), ("DALA", "DPRO", "DVAL")),
+        ((3, 1), (3,)),
+    ),
+}

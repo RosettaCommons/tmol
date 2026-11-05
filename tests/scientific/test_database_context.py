@@ -104,3 +104,17 @@ def test_d_residue_lookup_uses_actual_mirrored_library(database):
     np.testing.assert_array_equal(
         np.asarray(mirrored.rotamer_means), -means[:, rows][:, :, columns]
     )
+
+
+def test_bundled_backbone_parameter_identity_across_frameworks():
+    pytest.importorskip("torch")
+    pytest.importorskip("jax")
+    from tmol.database import ParameterDatabase as TorchDatabase
+    from tmol_jax.database import ParameterDatabase as JaxDatabase
+
+    torch_db, jax_db = TorchDatabase.get_default(), JaxDatabase.get_default()
+    for name in ("rama", "omega_bbdep"):
+        left, right = getattr(torch_db.scoring, name), getattr(jax_db.scoring, name)
+        # This includes lookup rows, grid metadata and every coefficient-source
+        # byte, so generated variant mappings cannot disappear during export.
+        assert left.content_id() == right.content_id()

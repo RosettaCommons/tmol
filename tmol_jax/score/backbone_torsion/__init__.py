@@ -1,4 +1,4 @@
-"""Backbone-torsion scoring (rama + bb-dependent omega), pure JAX."""
+"""Shared native backbone scoring and legacy scalar JAX interfaces."""
 
 from __future__ import annotations
 
