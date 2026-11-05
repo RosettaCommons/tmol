@@ -1,12 +1,34 @@
 """Native array execution; forest preparation belongs to the shared core."""
 
-from functools import lru_cache
+from functools import lru_cache, partial
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 from tmol_jax.score._native import register, workspace_sizes
+
+
+@partial(
+    jax.jit,
+    static_argnames=("target", "outputs", "generations", "workspaces"),
+)
+def _execute_scan(arguments, *, target, outputs, generations, workspaces):
+    # Lower platform selection with the actual input devices even for an eager
+    # call. Eager platform_dependent otherwise selects the default backend,
+    # which can disagree with explicitly placed CPU buffers in a GPU process.
+    branches = {}
+    for platform, size in workspaces:
+
+        def call(*args, size=size):
+            return jax.ffi.ffi_call(
+                target,
+                outputs + (jax.ShapeDtypeStruct((size,), np.uint8),),
+                vmap_method="sequential",
+            )(*args, generations=np.asarray(generations, np.int32))[:-1]
+
+        branches[platform] = call
+    return jax.lax.platform_dependent(*arguments, **branches)
 
 
 def inverse_coordinates(coords, forest_arrays):
@@ -85,27 +107,25 @@ def forward_coordinates(dofs, tree, forward, backward):
         outputs = (jax.ShapeDtypeStruct((count, 9 if derivative else 3), x.dtype),)
         if not derivative:
             outputs += (jax.ShapeDtypeStruct((count, 16), x.dtype),)
-        branches = {}
         from tmol_jax.score._native import libraries
 
-        for platform in libraries():
-            size = _scan_workspace_size(
+        generations = tuple(generations.ravel())
+        workspaces = tuple(
+            (
                 platform,
-                count,
-                tuple(generations.ravel()),
-                x.dtype.itemsize * 8,
-                derivative,
+                _scan_workspace_size(
+                    platform, count, generations, x.dtype.itemsize * 8, derivative
+                ),
             )
-
-            def call(*args, size=size):
-                return jax.ffi.ffi_call(
-                    target,
-                    outputs + (jax.ShapeDtypeStruct((size,), np.uint8),),
-                    vmap_method="sequential",
-                )(*args, generations=generations.ravel())[:-1]
-
-            branches[platform] = call
-        return jax.lax.platform_dependent(*residual, x, tree, nodes, scans, **branches)
+            for platform in libraries()
+        )
+        return _execute_scan(
+            (*residual, x, tree, nodes, scans),
+            target=target,
+            outputs=outputs,
+            generations=generations,
+            workspaces=workspaces,
+        )
 
     @jax.custom_vjp
     def transform(x):

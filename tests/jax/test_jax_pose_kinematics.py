@@ -58,6 +58,10 @@ def test_pose_assembly_rejects_empty_poses_and_snapshots_topology():
     module = PoseStackKinematics(pose)
     mapping = module.bind()
     before = mapping(mapping.initial_dofs)
+    gradient = jax.grad(lambda x: mapping(x).sum())(mapping.initial_dofs)
+    assert before.device == gradient.device == pose.device
+    batched = jax.vmap(mapping)(jnp.stack((mapping.initial_dofs,) * 2))
+    np.testing.assert_allclose(batched[1], before, atol=2e-5)
     # A different pose view requires its own preparation; the old map is stable.
     reordered = pose[[0, 0]]
     other = PoseStackKinematics(reordered).bind()

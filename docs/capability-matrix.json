@@ -146,7 +146,7 @@
         "tests/scientific/test_kinematics.py",
         "tests/jax/test_native_kinematics.py",
         "tests/scientific/test_molecular_kinematics.py",
-        "tests/jax/test_pose_kinematics.py"
+        "tests/jax/test_jax_pose_kinematics.py"
       ],
       "implementation_status": "PoseStackKinematics shares chemical spanning, residue stencils, complete native pose assembly and inverse/forward scans with Torch. Independent JAX preparation supports ligand, noncanonical/D, nucleic-acid, metal and mixed inputs; CPU atom identity, padding, reconstruction and per-term internal-coordinate gradients tested. Bound six-column maps fix reference rotations and support first reverse derivatives, jit and vmap. Empty poses, inverse-coordinate AD, forward-mode AD, higher derivatives, MoveMap and molecular internal-coordinate minimization remain unsupported. New automatic-pose CUDA and installed-package validation is pending."
     },
