@@ -347,9 +347,14 @@ class PackedBlockTypesData:
 
     @cached_property
     def intrares_path_distance(self):
-        result = numpy.zeros(
-            (self.n_types, self.max_n_atoms, self.max_n_atoms), dtype=numpy.int32
+        from .bonds import pack_bond_separations
+
+        return pack_bond_separations(
+            self.active_block_types, self.max_n_atoms, padding=0
         )
-        for i, bt in enumerate(self.active_block_types):
-            result[i, : bt.n_atoms, : bt.n_atoms] = bt.path_distance
-        return result
+
+    @cached_property
+    def bond_topology(self):
+        from .bonds import pack_bond_topology
+
+        return pack_bond_topology(self.active_block_types, self.max_n_atoms)

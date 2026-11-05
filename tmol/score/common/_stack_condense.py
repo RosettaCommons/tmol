@@ -416,21 +416,14 @@ def _value_or_arg_tile_subset_indices(
                 indices.shape[0], dtype=indices.dtype, device=indices.device
             )
     elif isinstance(indices, numpy.ndarray):
-        if max_entry is None:
-            max_entry = numpy.amax(indices)
-        n_tiles = max_entry // tile_size + 1
-        tiled_indices = numpy.full_like(indices, -1, shape=(n_tiles * tile_size,))
-        n_in_tile = numpy.full_like(indices, 0, shape=(n_tiles,))
-        if return_args:
-            ind_arange = numpy.arange(indices.shape[0], dtype=indices.dtype)
+        from tmol_core.scoring.tiling import tile_subset_indices
+
+        return tile_subset_indices(indices, tile_size, return_args, max_entry)
     else:
         raise ValueError
     for i in range(n_tiles):
         subset = (indices >= i * tile_size) & (indices < (i + 1) * tile_size)
-        if isinstance(tiled_indices, torch.Tensor):
-            subset_size = torch.sum(subset).cpu()
-        else:
-            subset_size = numpy.sum(subset)
+        subset_size = torch.sum(subset).cpu()
         s = slice(i * tile_size, i * tile_size + subset_size)
         if return_args:
             tiled_indices[s] = ind_arange[subset]

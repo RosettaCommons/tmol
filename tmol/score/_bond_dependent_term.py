@@ -4,7 +4,7 @@ import torch
 from ._annotation_cache import AnnotationKey, _cached_annotation, _store_annotation
 
 from tmol.database import ParameterDatabase
-from tmol.chemical._constants import MAX_SIG_BOND_SEPARATION
+from tmol_core.chemical.bonds import pack_bond_topology
 from tmol.chemical import RefinedResidueType
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.score._energy_term import EnergyTerm
@@ -52,61 +52,17 @@ class BondDependentTerm(EnergyTerm):
         if cached is not None:
             return cached
 
-        # Concatenate the block-type path-distances arrays into a single array
-        bond_separation = numpy.full(
-            (
-                packed_block_types.n_types,
-                packed_block_types.max_n_atoms,
-                packed_block_types.max_n_atoms,
-            ),
-            MAX_SIG_BOND_SEPARATION,
-            dtype=numpy.int32,
+        arrays = pack_bond_topology(
+            packed_block_types.active_block_types, packed_block_types.max_n_atoms
         )
-        for i, rt in enumerate(packed_block_types.active_block_types):
-            i_nats = rt.n_atoms
-            bond_separation[i, :i_nats, :i_nats] = rt.path_distance
-
-        max_n_all_bonds = max(
-            bt.all_bonds.shape[0] for bt in packed_block_types.active_block_types
-        )
-        n_all_bonds = numpy.full((packed_block_types.n_types,), -1, dtype=numpy.int32)
-        all_bonds = numpy.full(
-            (packed_block_types.n_types, max_n_all_bonds, 3),
-            -1,
-            dtype=numpy.int32,
-        )
-        atom_all_bond_ranges = numpy.full(
-            (packed_block_types.n_types, packed_block_types.max_n_atoms, 2),
-            -1,
-            dtype=numpy.int32,
-        )
-
-        for i, bt in enumerate(packed_block_types.active_block_types):
-            i_n_bonds = bt.all_bonds.shape[0]
-            n_all_bonds[i] = i_n_bonds
-            all_bonds[i, :i_n_bonds, :] = bt.all_bonds
-            atom_all_bond_ranges[i, : bt.n_atoms] = bt.atom_all_bond_ranges
-
-        setattr(
-            packed_block_types,
-            "bond_separation",
-            torch.as_tensor(bond_separation, device=self.device),
-        )
-        setattr(
-            packed_block_types,
-            "n_all_bonds",
-            torch.as_tensor(n_all_bonds, device=self.device),
-        )
-        setattr(
-            packed_block_types,
-            "all_bonds",
-            torch.as_tensor(all_bonds, device=self.device),
-        )
-        setattr(
-            packed_block_types,
-            "atom_all_bond_ranges",
-            torch.as_tensor(atom_all_bond_ranges, device=self.device),
-        )
+        for name, array in arrays.items():
+            # Empty NumPy arrays can have zero strides; keep native views valid.
+            value = (
+                torch.as_tensor(array, device=self.device)
+                if array.size
+                else torch.empty(array.shape, dtype=torch.int32, device=self.device)
+            )
+            setattr(packed_block_types, name, value)
         return _store_annotation(
             packed_block_types,
             "_bond_dependent_annotation",
