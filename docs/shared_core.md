@@ -48,3 +48,12 @@ Run `pytest -o addopts= tests/core` for shared chemistry contracts and the relev
 frontend chemistry tests for integration. Existing frontend/device suites remain
 necessary for scoring, gradients, packing and minimization. Core code is BSD-3-Clause;
 the shared PySMILES files retain their Apache-2.0 license and attribution.
+
+Residue refinement also lives in `tmol_core.chemical.restypes`. Both frontends
+use the same `RefinedResidueType`: atom and bond indices, bond orders and ring
+membership, aliases, torsions, arbitrary connection paths, clipped graph
+distances, and internal coordinates. The inputs are shared raw residue records;
+the derived arrays are NumPy arrays. Existing frontend imports remain available,
+and each frontend retains its own residue-set defaults and annotation lifetime.
+This includes the full chemical database and custom residues; it does not imply
+that every frontend implements every score term or modeling operation.
