@@ -8,6 +8,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from tmol_jax.score.energy_term import EnergyTerm
+
 from tmol_jax import beta2016_score_function, pose_stack_from_pdb
 from tmol_jax.optimization import lbfgs_minimize, run_cart_min, run_cart_relax
 from tmol_jax.score import score_function as scoring
@@ -58,7 +60,7 @@ class _Pose:
         return replace(self, **updates)
 
 
-class _QuadraticTerm:
+class _QuadraticTerm(EnergyTerm):
     def __init__(self, database):
         pass
 
