@@ -4,6 +4,9 @@ import attr
 import numpy
 from tmol_core.geometry import numpy_coord_dihedrals
 
+DEFAULT_CHI_SAMPLE_EXPANDED_LIMIT = 100
+DEFAULT_CHI_SAMPLE_LIMIT = 1000
+
 
 def n_conformers(samples, expanded: bool) -> int:
     """How many conformers a set of sampled chi enumerates."""
