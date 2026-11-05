@@ -77,6 +77,13 @@ _BOUND_WORKER_STARTS = itertools.count()
 # minimization ~45% slower per evaluation and CPU-only ~18% slower. Workers
 # there keep the whole budget; _single_openmp_thread still applies.
 _CAP_CPU_SCORE_WORKER_THREADS = sys.platform != "darwin"
+# Terms whose every call repeats costly setup (hbond bases; lk_ball waters and
+# their backward), so each neighbor-list shard pays it again. Uncapped macOS
+# workers already run each such term on the whole thread budget, so sharding it
+# there only adds that setup: minimization measured ~10% slower per evaluation.
+_UNSHARDED_PAIR_TERMS = (
+    frozenset(("HBond", "LKBall")) if sys.platform == "darwin" else frozenset()
+)
 _ScoreCallResult = TypeVar("_ScoreCallResult")
 
 
@@ -1290,6 +1297,7 @@ class WholePoseScoringModule:
             index
             for index, term in enumerate(self._execution_modules)
             if getattr(term, "block_neighbor_cutoff", None) is not None
+            and getattr(term, "classname", None) not in _UNSHARDED_PAIR_TERMS
         )
         self._cpu_pair_shards = (
             min(8, max(2, cpu_threads // 2))

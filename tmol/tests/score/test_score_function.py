@@ -544,7 +544,9 @@ def test_cpu_sharding_covers_every_pair_list_term(
         scorer._execution_modules[index].classname
         for index in scorer._cpu_sharded_term_indices
     }
-    assert {"LJLK+Elec", "HBond", "LKBall"} <= sharded
+    unsharded = score_function_module._UNSHARDED_PAIR_TERMS
+    assert {"LJLK+Elec", "HBond", "LKBall"} - unsharded <= sharded
+    assert not sharded & unsharded
 
     sharded_coords = pose.coords.detach().clone().requires_grad_(True)
     separate_coords = pose.coords.detach().clone().requires_grad_(True)
