@@ -1,5 +1,6 @@
 """Locations of optional framework-free native execution libraries."""
 
+import json
 from pathlib import Path
 
 ABI_VERSION = 1
@@ -20,4 +21,16 @@ def library_path(platform="cpu") -> Path | None:
     return libraries[0]
 
 
-__all__ = ["ABI_VERSION", "library_path"]
+def build_info():
+    """Exact staged sources, compiler settings and native artifact identities."""
+    root = Path(__file__).parent
+    return {
+        "source": json.loads((root / "source.json").read_text()),
+        "builds": {
+            path.stem.removeprefix("build-"): json.loads(path.read_text())
+            for path in sorted(root.glob("build-*.json"))
+        },
+    }
+
+
+__all__ = ["ABI_VERSION", "library_path", "build_info"]

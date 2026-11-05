@@ -1,6 +1,8 @@
 """Build thin XLA bindings around the canonical TMol native kernels."""
 
 import os
+import hashlib
+import json
 from pathlib import Path
 import shlex
 import shutil
@@ -34,18 +36,27 @@ class NativeBuildExt(build_ext):
                     flags.append(f"-gencode=arch=compute_{arch},code=sm_{arch}")
         else:
             flags += ["-fPIC", "-pthread"]
-        subprocess.run(
-            [
-                *compiler,
-                *flags,
-                f"-I{jax.ffi.include_dir()}",
-                "-Iinclude",
-                "-Iinclude/tmol/extern",
-                *extension.sources,
-                "-o",
-                str(output),
-            ],
-            check=True,
+        command = [
+            *compiler,
+            *flags,
+            f"-I{jax.ffi.include_dir()}",
+            "-Iinclude",
+            "-Iinclude/tmol/extern",
+            *extension.sources,
+            "-o",
+            str(output),
+        ]
+        subprocess.run(command, check=True)
+        manifest = {
+            "compiler": subprocess.check_output(
+                [*compiler, "--version"], text=True
+            ).splitlines()[0],
+            "command": command,
+            "jax_version": jax.__version__,
+            "library_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+        }
+        (output.parent / ("build-cuda.json" if cuda else "build-cpu.json")).write_text(
+            json.dumps(manifest, indent=2) + "\n"
         )
 
 

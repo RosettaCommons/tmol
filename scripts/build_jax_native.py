@@ -2,6 +2,8 @@
 """Build CPU and optional CUDA XLA bindings from the shared scientific source."""
 
 import argparse
+import hashlib
+import json
 from pathlib import Path
 import os
 import shutil
@@ -42,6 +44,30 @@ def stage_native(root, stage):
                 "*.py", "*.pyc", "__pycache__", "*.cpp", "*.cu"
             ),
         )
+    source_files = {
+        str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(stage.rglob("*"))
+        if path.is_file()
+    }
+    revision = subprocess.check_output(
+        ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
+    ).strip()
+    dirty = bool(
+        subprocess.check_output(
+            ["git", "-C", str(root), "status", "--porcelain"], text=True
+        ).strip()
+    )
+    (stage / "tmol_jax_native/source.json").write_text(
+        json.dumps(
+            {
+                "revision": revision,
+                "dirty": dirty,
+                "sha256": source_files,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     licenses = stage / "licenses"
     licenses.mkdir()
     shutil.copyfile(

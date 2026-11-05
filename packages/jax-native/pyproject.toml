@@ -19,3 +19,6 @@ version = {file = "VERSION"}
 
 [tool.setuptools.packages.find]
 include = ["tmol_jax_native"]
+
+[tool.setuptools.package-data]
+tmol_jax_native = ["*.json"]
