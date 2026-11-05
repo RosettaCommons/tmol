@@ -84,6 +84,14 @@ Harmonic/bounded arithmetic supports higher derivatives; the shared native
 torsion primitive supports first coordinate derivatives. The earlier coordinate
 restraint container in `tmol_jax.score.constraint` remains available.
 
+`tmol_jax.kinematics.KinematicForest(parent, frame_x, frame_y, frame_z,
+doftype, device=...)` prepares validated indices in kinematic coordinate order,
+including virtual root zero. `jax.jit(forest.inverse)(coordinates)` returns
+float32/64 DOFs with shape `[nodes, 9]`; `vmap` accepts coordinate samples for
+the same forest. Initialization does not propagate coordinate derivatives.
+Automatic pose-to-forest preparation, forward kinematics and internal-coordinate
+minimization are not implemented yet.
+
 `run_cart_relax` performs a no-pack repulsive-weight ramp with optional mainchain
 coordinate constraints. It retains the best full-weight structure. It does not
 implement FastRelax. Complete nucleic-acid, metal and ligand/noncanonical

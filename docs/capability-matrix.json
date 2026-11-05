@@ -140,9 +140,9 @@
     {
       "domain": "kinematics",
       "torch": "supported",
-      "jax": "absent",
-      "repro_fixture": "tmol/tests/kinematics",
-      "implementation_status": "FoldForest, MoveMap, torsion DOFs and run_kin_min absent."
+      "jax": "partial_initialization",
+      "repro_fixture": "tests/jax/test_native_kinematics.py",
+      "implementation_status": "Prepared KinematicForest shares strict host index validation and native float32/64 coordinate-to-DOF initialization. jit/vmap and explicit inverse-coordinate derivative boundary tested; full molecular runtime DOFs match Torch on ten domains, but that oracle uses Torch forest metadata. Independent pose-to-forest preparation, forward kinematics, MoveMap and internal-coordinate minimization remain absent."
     },
     {
       "domain": "fast_relax",

@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from tmol_jax.kinematics._native import inverse_coordinates
+from tmol_jax.kinematics import KinematicForest
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
@@ -14,12 +15,14 @@ def test_inverse_jump_translation_batching_and_initialization_boundary(dtype):
     # frame points exercise the common frame repair, without repeating its math.
     with jax.enable_x64():
         xyz = jnp.asarray([[0, 0, 0], [1, 0, 0], [2, 1e-4, 0]], dtype=dtype)
-        forest = tuple(
-            jnp.asarray(row, dtype=jnp.int32)
+        arrays = tuple(
+            np.asarray(row, dtype=np.int32)
             for row in ([0, 0, 0], [0, 1, 2], [0, 0, 1], [0, 2, 0], [0, 1, 1])
         )
-        inverse = jax.jit(lambda x: inverse_coordinates(x, forest))
+        forest = KinematicForest(*arrays, device=xyz.device)
+        inverse = jax.jit(forest.inverse)
         dofs = inverse(xyz)
+        assert forest.n_nodes == 3 and dofs.device == forest.device
         assert dofs.dtype == xyz.dtype
         assert np.isfinite(dofs).all()
         np.testing.assert_array_equal(dofs[0], 0)
@@ -44,3 +47,17 @@ def test_inverse_empty_forest_and_invalid_runtime_layout():
         inverse_coordinates(xyz.reshape(0), forest)
     with pytest.raises(ValueError, match="five int32"):
         inverse_coordinates(xyz, forest[:4])
+
+
+def test_prepared_forest_snapshots_indices_and_uses_common_validation():
+    arrays = [
+        np.array(row, dtype=np.int32)
+        for row in ([0, 0, 0], [0, 1, 2], [0, 0, 1], [0, 2, 0], [0, 1, 1])
+    ]
+    forest = KinematicForest(*arrays)
+    xyz = jnp.array([[0, 0, 0], [1, 0, 0], [2, 0.1, 0]], dtype=jnp.float32)
+    expected = forest.inverse(xyz)
+    arrays[0][1:] = [2, 1]
+    np.testing.assert_array_equal(forest.inverse(xyz), expected)
+    with pytest.raises(ValueError, match="cycle"):
+        KinematicForest(*arrays)
