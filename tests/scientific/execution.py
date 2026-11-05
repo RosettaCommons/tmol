@@ -206,3 +206,27 @@ class Execution:
                     self.module.jacrev(lambda x: score(x).sum(axis=1))
                 )(x)
         return self.numpy(values), self.numpy(gradients)
+
+    def minimize(self, move_mask, iterations=5):
+        """Exercise each framework's public Cartesian minimizer on the same atoms."""
+        if self.framework == "torch":
+            from tmol import run_cart_min
+
+            with patch.dict(
+                os.environ,
+                {"TMOL_MPS_OFFLOAD": "1" if self.requested_device == "mps" else "0"},
+            ):
+                pose = run_cart_min(
+                    self.pose,
+                    self.score_function,
+                    coord_mask=self.module.as_tensor(move_mask, device=self.device),
+                    optimizer_kwargs={"max_iter": iterations},
+                )
+        else:
+            from tmol_jax import run_cart_min
+
+            with self.module.default_device(self.device):
+                pose = run_cart_min(
+                    self.pose, self.score_function, move_mask, max_iter=iterations
+                )
+        return self.numpy(pose.coords)
