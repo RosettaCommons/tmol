@@ -28,7 +28,7 @@ if [ "${TEST_JAX:-false}" = true ]; then
   for backend in cu12 cu13; do
     "$bootstrap/env/bin/python" scripts/test_jax_package_install.py \
       --wheel jax-wheel/tmol_jax-*.whl --core-wheel core-dist/tmol_core-*.whl \
-      --native-wheel "jax-native/$backend"/tmol_jax_cuda-*.whl \
+      --native-wheel "jax-native/$backend"/tmol_jax_native-*.whl \
       --backend "$backend"
   done
 fi

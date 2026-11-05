@@ -1,16 +1,16 @@
-"""Native wheel metadata must preserve the licenses of compiled headers."""
+"""The shared native package must carry every compiled dependency's license."""
 
 from pathlib import Path
 import tomllib
 
-from build_jax_cuda import stage_licenses
+from build_jax_native import stage_native
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_native_license_files_and_metadata(tmp_path):
-    stage_licenses(ROOT, tmp_path)
-    project = tomllib.loads((ROOT / "packages/jax-cuda/pyproject.toml").read_text())[
+    stage_native(ROOT, tmp_path)
+    project = tomllib.loads((ROOT / "packages/jax-native/pyproject.toml").read_text())[
         "project"
     ]
     assert set(project["license"].split(" AND ")) == {
@@ -25,10 +25,13 @@ def test_native_license_files_and_metadata(tmp_path):
         path.relative_to(tmp_path)
         for pattern in project["license-files"]
         for path in tmp_path.glob(pattern)
+        if path.is_file()
     }
     staged = {
-        path.relative_to(tmp_path) for path in tmp_path.rglob("*") if path.is_file()
-    }
+        path.relative_to(tmp_path)
+        for path in (tmp_path / "licenses").rglob("*")
+        if path.is_file()
+    } | {Path("LICENSE"), Path("NOTICE")}
     assert declared == staged
     for source in (ROOT / "tmol/extern/Eigen").glob("COPYING.*"):
         assert (

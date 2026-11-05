@@ -28,16 +28,10 @@ def main():
     from tmol_jax import beta2016_score_function, pose_stack_from_pdb
 
     if args.require_native_cuda:
-        from tmol_jax.score.elec import cuda as elec_cuda
-        from tmol_jax.score.hbond import cuda as hbond_cuda
-        from tmol_jax.score.ljlk import cuda as ljlk_cuda
-        from tmol_jax.score.lk_ball import cuda as lkball_cuda
+        from tmol_jax.score._native import libraries
 
-        assert ljlk_cuda.available()
-        assert ljlk_cuda.fused_available()
-        assert elec_cuda.available()
-        assert hbond_cuda.available()
-        assert lkball_cuda.available()
+        native = libraries()
+        assert "cuda" in native, "Installed native package has no CUDA library"
 
     pose = pose_stack_from_pdb(args.pdb)
     score_function = beta2016_score_function()

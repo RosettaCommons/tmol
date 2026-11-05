@@ -475,8 +475,8 @@ jobs:
             unset PYTHONPATH
             export PYTHONNOUSERSITE=1
             export PATH="${CUDA_HOME}/bin:${PATH}"
-            '"${TARGET_VENV}"'/bin/pip install jax==0.11.2 "setuptools>=77" wheel
-            '"${TARGET_VENV}"'/bin/python scripts/build_jax_cuda.py \
+            '"${TARGET_VENV}"'/bin/pip install build jax==0.11.2 "setuptools>=77" wheel
+            '"${TARGET_VENV}"'/bin/python scripts/build_jax_native.py --cuda \
               --outdir jax-native-dist --cuda-architectures 90
           '
 

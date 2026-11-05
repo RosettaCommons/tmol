@@ -39,7 +39,7 @@ def main():
     pure_owned = owned_packages(args.wheel)
     native_owned = owned_packages(args.native_wheel)
     assert pure_owned == {"tmol_jax"}, pure_owned
-    assert native_owned == {"tmol_jax_cuda"}, native_owned
+    assert native_owned == {"tmol_jax_native"}, native_owned
     assert pure_owned.isdisjoint(native_owned)
 
     version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
@@ -63,7 +63,7 @@ def main():
             cwd=work,
         )
         check(*pip, "check", cwd=work)
-        check(*pip, "uninstall", "-y", "tmol-jax-cuda", cwd=work)
+        check(*pip, "uninstall", "-y", "tmol-jax-native", cwd=work)
         check(python, "-I", "-c", "import tmol_jax", cwd=work)
         check(
             *pip,
