@@ -2,6 +2,7 @@
 // Serial traversal primitives shared by host preparation and framework CPU
 // dispatch. Exclusive scans preserve the caller-initialized identity at dst[0].
 #include <algorithm>
+#include <cassert>
 #include <tmol/utility/portable/reduce_ops.hh>
 
 namespace tmol {
@@ -70,6 +71,45 @@ struct SerialCPUOperations {
       int const start = seg_start_inds[i];
       int const end = i + 1 < n_segs ? seg_start_inds[i + 1] : n;
       std::sort(keys + start, keys + end, comp);
+    }
+  }
+  template <typename T, typename OP, typename Context>
+  static T reduce(Context&, T* src, int n, OP op) {
+    assert(n > 0);
+    T val = src[0];
+    for (int i = 1; i < n; ++i) {
+      val = op(val, src[i]);
+    }
+    return val;
+  }
+
+  template <
+      tmol::portable::scan_type scan_type,
+      typename T,
+      typename Int,
+      typename OP,
+      typename Context>
+  static void segmented_scan_into(
+      Context&,
+      T* src,
+      Int* seg_start_inds,
+      T* dst,
+      int n,
+      int n_segs,
+      OP op,
+      T identity) {
+    T last_val = identity;  // position 0 is always the start of a segment
+    int count_seg = 0;
+    for (int i = 0; i < n; ++i) {
+      T i_val = src[i];
+      if (count_seg < n_segs && i == seg_start_inds[count_seg]) {
+        last_val = identity;
+        count_seg++;
+      }
+      T next_val = op(last_val, i_val);
+      dst[i] = (scan_type == tmol::portable::scan_type::exclusive) ? last_val
+                                                                   : next_val;
+      last_val = next_val;
     }
   }
 };

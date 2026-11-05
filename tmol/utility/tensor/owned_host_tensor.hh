@@ -21,7 +21,8 @@ struct OwnedHostTensor {
 
   static OwnedHostTensor from_cpu(OwnedHostTensor source) { return source; }
 
-  static OwnedHostTensor full(std::initializer_list<int64_t> shape, T value) {
+  static OwnedHostTensor allocate(
+      std::initializer_list<int64_t> shape, T const* initial = nullptr) {
     if (shape.size() != N)
       throw std::invalid_argument("Host tensor rank mismatch");
     std::array<int64_t, N> sizes, strides;
@@ -43,11 +44,25 @@ struct OwnedHostTensor {
     if (uint64_t(count) > std::numeric_limits<size_t>::max() / sizeof(T))
       throw std::overflow_error("Host tensor allocation overflow");
     auto storage = std::shared_ptr<T[]>(new T[count]);
-    std::fill_n(storage.get(), count, value);
+    if (initial) std::fill_n(storage.get(), count, *initial);
     return {
         storage, TView<T, N, D>(storage.get(), sizes.data(), strides.data())};
   }
 
+  static OwnedHostTensor empty(std::initializer_list<int64_t> shape) {
+    return allocate(shape);
+  }
+  static OwnedHostTensor empty(int64_t size) {
+    static_assert(N == 1, "A scalar extent requires rank one");
+    return empty({size});
+  }
+  static OwnedHostTensor full(std::initializer_list<int64_t> shape, T value) {
+    return allocate(shape, &value);
+  }
+  static OwnedHostTensor zeros(int64_t size) {
+    static_assert(N == 1, "A scalar extent requires rank one");
+    return full({size}, T(0));
+  }
   static OwnedHostTensor full(int64_t size, T value) {
     static_assert(N == 1, "A scalar extent requires rank one");
     return full({size}, value);
