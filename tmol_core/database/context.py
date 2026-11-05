@@ -25,6 +25,8 @@ class ParameterDatabase:
     :func:`_inject_residue_params` which returns a **new** database.
     """
 
+    _dunbrack_attribute = "dun"
+
     scoring: object = attr.ib()
     chemical: PatchedChemicalDatabase = attr.ib()
 
@@ -58,7 +60,12 @@ class ParameterDatabase:
         }
         if d_names:
             scoring = attr.evolve(
-                scoring, dun=cls._with_mirrored_libraries(scoring.dun, d_names)
+                scoring,
+                **{
+                    cls._dunbrack_attribute: cls._with_mirrored_libraries(
+                        getattr(scoring, cls._dunbrack_attribute), d_names
+                    )
+                },
             )
         return cls(scoring=scoring, chemical=patched_chemdb)
 
