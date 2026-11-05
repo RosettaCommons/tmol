@@ -1,3 +1,4 @@
+from tmol_core.scoring.count_pair import electrostatic_distances
 import math
 
 import numpy
@@ -116,23 +117,9 @@ class ElecEnergyTerm(AtomTypeDependentTerm, BondDependentTerm):
         ):
             geometry = previous.geometry
         else:
-            # inter[a,b] = path_dist[a, rep(b)]; intra[a,b] =
-            # path_dist[rep(a), rep(b)]. Reuse these quadratic arrays when
-            # only charges change. Advanced indexing already owns the arrays.
-            inter = block_type.path_distance[:, representative_mapping]
-            intra = inter[representative_mapping, :]
-            # Full weight for 3/4-bond paths between ligand-typed atoms, keyed
-            # on the atoms rather than on the residue -- the same convention
-            # ljlk uses, and elec's own inter rule. A noncanonical with a
-            # ligand-typed sidechain is still a polymer, so a residue-level
-            # test left ljlk weighting such a 1-4 pair at 1.0 while elec
-            # weighted it at 0.2.
-            ligand = numpy.array(
-                [a.atom_type not in self.rosetta_typed for a in block_type.atoms],
-                dtype=bool,
+            inter, intra = electrostatic_distances(
+                block_type, representative_mapping, self.rosetta_typed
             )
-            both = ligand[:, None] & ligand[None, :]
-            intra[both & ((intra == 3) | (intra == 4))] = 5
             geometry = _BlockGeometry(representative_mapping, inter, intra)
         setattr(block_type, "elec_partial_charge", partial_charge)
         setattr(block_type, "elec_inter_repr_path_distance", geometry.inter)

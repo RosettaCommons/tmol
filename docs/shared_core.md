@@ -57,3 +57,19 @@ the derived arrays are NumPy arrays. Existing frontend imports remain available,
 and each frontend retains its own residue-set defaults and annotation lifetime.
 This includes the full chemical database and custom residues; it does not imply
 that every frontend implements every score term or modeling operation.
+
+Generic-bonded preparation is provided by
+`tmol_core.scoring.genbonded.GenBondedPreparation(chemical_database, genbonded_database)`.
+`prepare_block`, `prepare_packed`, and `inter_tables` produce the same NumPy
+subgraphs, parameters, type hierarchies, connection metadata, and lookup tables
+used by Torch. Parameter precedence, ring membership, nucleic-acid/backbone
+ownership, ligand-fragment source identities, and invalid-reference validation
+remain in that common implementation. Frontends own annotation caches and device
+transfer.
+
+The native `genbonded_pose_kernels.hh` accepts typed input and output views;
+callers supply zeroed energy/derivative buffers and an execution policy. The
+whole-pose forward and weighted backward algorithms are shared with Torch's
+allocating dispatch, including inter-block proper and improper torsions. This
+header does not require Torch. Other terms still require further extraction;
+sharing scalar potentials alone is not whole-core sharing.

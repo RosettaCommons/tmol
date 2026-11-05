@@ -13,6 +13,8 @@ namespace score {
 namespace genbonded {
 namespace potentials {
 
+constexpr int GB_MAX_HIER_DEPTH = 5;
+
 // Indices of the four atoms defining a proper torsion within a block.
 template <typename Int>
 struct GenBondedTorsionParams {

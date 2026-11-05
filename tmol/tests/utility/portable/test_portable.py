@@ -125,3 +125,10 @@ def test_portable_matrix_matches_eigen(tmp_path):
     assert proc.returncode == 0, proc.stderr
     run = subprocess.run([str(binary)], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
+
+
+@requires_cxx
+def test_whole_pose_genbonded_needs_no_framework(tmp_path):
+    """Instantiate full float/double score and derivative kernels without Torch."""
+    proc = _compile(HERE / "native_genbonded.cc", tmp_path / "genbonded", run=True)
+    assert proc.returncode == 0, proc.stderr

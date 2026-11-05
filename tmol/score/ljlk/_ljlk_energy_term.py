@@ -1,3 +1,4 @@
+from tmol_core.scoring.count_pair import packed_ljlk_distances
 import numpy
 import torch
 
@@ -123,25 +124,12 @@ class LJLKEnergyTerm(AtomTypeDependentTerm, BondDependentTerm):
             torch.as_tensor(n_heavy_ats_in_tile, device=self.device),
         )
 
-        # A pair of ligand-typed atoms uses CP_CROSSOVER_3FULL: 1-4 pairs get
-        # full weight (1.0), encoded by rewriting path_dist 3 and 4 to 5 so
-        # connectivity_weight returns 1.0. The convention follows the atoms,
-        # not the residue: a noncanonical whose sidechain is ligand-typed is
-        # still a polymer. Keep bond_separation unchanged for hbond, which
-        # excludes on a binary rule.
-        rosetta_typed = self.rosetta_typed
-        ljlk_bond_separation = packed_block_types.bond_separation.clone()
-        ligand = numpy.zeros(ljlk_bond_separation.shape[:2], dtype=bool)
-        all_ligand = numpy.zeros(len(ligand), dtype=numpy.int32)
-        for i, bt in enumerate(packed_block_types.active_block_types):
-            typed = [a.atom_type not in rosetta_typed for a in bt.atoms]
-            ligand[i, : len(typed)] = typed
-            all_ligand[i] = all(typed)
-        ligand = torch.from_numpy(ligand).to(ljlk_bond_separation.device)
-        both = ligand.unsqueeze(2) & ligand.unsqueeze(1)
-        ljlk_bond_separation[
-            both & ((ljlk_bond_separation == 3) | (ljlk_bond_separation == 4))
-        ] = 5
+        distances, all_ligand = packed_ljlk_distances(
+            packed_block_types.active_block_types,
+            packed_block_types.max_n_atoms,
+            self.rosetta_typed,
+        )
+        ljlk_bond_separation = torch.from_numpy(distances).to(self.device)
         setattr(packed_block_types, "ljlk_bond_separation", ljlk_bond_separation)
         setattr(
             packed_block_types,
