@@ -64,7 +64,7 @@
         "tests/scientific/test_molecular_nonbonded.py",
         "tests/scientific/test_na_torsion.py"
       ],
-      "implementation_status": "Shared native NA torsion and population channels: exact fresh Torch/JAX CPU energies/full gradients for connected DNA/RNA, termini, real methylcytosine and mixed batches. Custom widths and explicit unknown-base references tested; full multi-term scoring remains gated. NA CUDA validation pending."
+      "implementation_status": "Shared native NA torsion and population channels: exact fresh Torch/JAX CPU energies/full gradients for connected DNA/RNA, termini, real methylcytosine and mixed batches. Custom widths and explicit unknown-base references tested; full multi-term scoring remains gated. CPU/CUDA values, gradients and float32/64 transformations pass."
     },
     {
       "domain": "metals_and_coordination",
@@ -306,12 +306,12 @@
     "na_torsion": {
       "torch": "implemented",
       "jax": "native_values_and_coordinate_gradients",
-      "noncanonical_validation": "Five connected DNA/RNA/termini/5CM/mixed cases: fresh Torch/JAX CPU channel values/full gradients exact; independent derivatives, custom widths, explicit DX references and float32/64 transforms pass. CUDA validation pending."
+      "noncanonical_validation": "Five connected DNA/RNA/termini/5CM/mixed cases: fresh Torch/JAX CPU channel values/full gradients exact; independent derivatives, custom widths, explicit DX references and float32/64 transforms pass. Fresh CPU/CUDA artifacts pass the same scientific and transformation checks."
     },
     "na_torsion_well": {
       "torch": "implemented",
       "jax": "native_values_and_coordinate_gradients",
-      "noncanonical_validation": "Five connected DNA/RNA/termini/5CM/mixed cases: fresh Torch/JAX CPU channel values/full gradients exact; independent derivatives, custom widths, explicit DX references and float32/64 transforms pass. CUDA validation pending."
+      "noncanonical_validation": "Five connected DNA/RNA/termini/5CM/mixed cases: fresh Torch/JAX CPU channel values/full gradients exact; independent derivatives, custom widths, explicit DX references and float32/64 transforms pass. Fresh CPU/CUDA artifacts pass the same scientific and transformation checks."
     },
     "metal_coordination": {
       "torch": "implemented",
@@ -319,5 +319,5 @@
       "noncanonical_validation": "Five nonzero metal fixtures: exact fresh Torch/JAX CPU energies and full gradients; independent directional derivatives and custom width/depth scaling. Fresh CPU/CUDA artifacts pass the same science cases and float32/64 transformations."
     }
   },
-  "validation": "Exact36a4280df4 native CPU/CUDA artifacts:58 H200 tests pass, including nonzero metal coordination, custom parameters and first-order transformations. New NA CPU channel values/full gradients match fresh Torch exactly on5cases;11science/preset and3transform tests pass. Prior310a0fa376 clean installed core/JAX/native wheels and standalone sdists passed28float64CPU molecular cases in a Torch-free runtime. New NA CUDA and clean package validation pending. Full-domain/API/performance acceptance remains incomplete."
+  "validation": "Exacte1a7fc0177 native CPU/CUDA artifacts:70 H200 tests pass, including real modified nucleotides, nonzero metal coordination, per-channel gradients, custom parameters and float32/64 transformations. Fresh Torch/JAX CPU values/full gradients match exactly on5NA and5metal cases. Prior310a0fa376 independently built core/JAX/native wheels and standalone sdists passed28float64CPU molecular cases in a clean Torch-free runtime; newer clean-package validation remains pending. Full-domain/API/performance acceptance remains incomplete."
 }
