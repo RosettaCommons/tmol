@@ -22,3 +22,7 @@ class LKBallEnergyTerm(EnergyTerm):
         return dict(
             zip(self.score_types_provided(), lk_ball_energy(coords, term_state))
         )
+
+    def weighted_energy(self, term_state, coords, weights):
+        """Compose the four channel derivatives in one common reverse pass."""
+        return lk_ball_energy(coords, term_state, weights)

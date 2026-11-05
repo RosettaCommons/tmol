@@ -518,7 +518,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
+        .RemainingRets(),
+    {xla::ffi::Traits::kCmdBufferCompatible});
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_hbond,
@@ -527,7 +528,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
+        .RemainingRets(),
+    {xla::ffi::Traits::kCmdBufferCompatible});
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_sampling_plan,
@@ -560,3 +562,14 @@ extern "C" uint64_t tmol_sampling_workspace_bytes(
   }
   return UINT64_MAX;
 }
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_lk_ball_weighted,
+    (tmol::jax::run<tmol::jax::LKBallWeightedKernel, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<double>("reach"),
+    {xla::ffi::Traits::kCmdBufferCompatible});

@@ -93,15 +93,19 @@ def prepare_lk_ball(pose, database):
     return tuple(jnp.asarray(a) for a in arrays), float(globals_.max_dis)
 
 
-def lk_ball_energy(coords, state):
+def lk_ball_energy(coords, state, weights=None):
     parameters, reach = state
+    target = "tmol_lk_ball" if weights is None else "tmol_lk_ball_weighted"
+    if weights is not None:
+        register(target)
+        parameters += (jnp.asarray(weights, dtype=coords.dtype),)
     return coordinate_energy(
-        "tmol_lk_ball",
+        target,
         coords,
         parameters,
-        channels=4,
+        channels=4 if weights is None else 1,
         workspace_bytes=workspace_sizes(
-            "tmol_lk_ball",
+            target,
             (coords.shape[0], parameters[3].shape[1], coords.shape[1]),
             coords.dtype.itemsize * 8,
         ),

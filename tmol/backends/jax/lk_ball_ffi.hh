@@ -6,10 +6,10 @@
 #include <tmol/score/lk_ball/potentials/lk_ball_pose_kernels.hh>
 
 namespace tmol::jax {
-template <typename Real>
+template <typename Real, bool Weighted = false>
 struct LKBallWorkspace {
   ByteWorkspace storage;
-  Real *spheres, *waters, *water_gradient, *weights;
+  Real *spheres, *waters, *water_gradient, *weights, *channel_energy;
   int32_t *neighbors, *lockstep;
   size_t neighbor_capacity;
   LKBallWorkspace(
@@ -30,16 +30,18 @@ struct LKBallWorkspace {
     waters = storage.take<Real>(poses * atoms * 4 * 3);
     water_gradient = storage.take<Real>(derivative ? poses * atoms * 4 * 3 : 0);
     weights = storage.take<Real>(derivative ? poses * 4 : 0);
+    channel_energy = storage.take<Real>(Weighted ? poses * 4 : 0);
   }
 };
 
-struct LKBallKernel {
+template <bool Weighted = false>
+struct LKBallKernelT {
   static void validate(
       const std::vector<ffi::AnyBuffer>& a,
       ffi::AnyBuffer energy,
       const ffi::AnyBuffer* gradient) {
-    if (a.size() != 34)
-      throw std::invalid_argument("LK-ball expects 34 operands");
+    if (a.size() != (Weighted ? 35 : 34))
+      throw std::invalid_argument("LK-ball operand count mismatch");
     auto real = a[0].element_type();
     if (real != ffi::DataType::F32 && real != ffi::DataType::F64)
       throw std::invalid_argument("LK-ball requires float32/64 coordinates");
@@ -82,8 +84,14 @@ struct LKBallKernel {
     require_shape(a[31], integer, {types, tiles, 32});
     require_shape(a[32], real, {types, tiles, 32, 9});
     require_shape(a[33], real, {1, 5});
-    require_shape(energy, real, {4, poses});
-    if (gradient) require_shape(*gradient, real, {4, poses, atoms, 3});
+    if constexpr (Weighted) {
+      require_shape(a[34], real, {4});
+      require_shape(energy, real, {poses});
+      if (gradient) require_shape(*gradient, real, {poses, atoms, 3});
+    } else {
+      require_shape(energy, real, {4, poses});
+      if (gradient) require_shape(*gradient, real, {4, poses, atoms, 3});
+    }
     if (poses * atoms > INT32_MAX / 12 || rots > INT32_MAX
         || poses > INT32_MAX / 4)
       throw std::invalid_argument(
@@ -95,9 +103,11 @@ struct LKBallKernel {
     auto poses = a[0].dimensions()[0], atoms = a[0].dimensions()[1];
     auto blocks = a[4].dimensions()[1];
     return a[0].element_type() == ffi::DataType::F32
-               ? LKBallWorkspace<float>(poses, blocks, atoms, derivative)
+               ? LKBallWorkspace<float, Weighted>(
+                     poses, blocks, atoms, derivative)
                      .storage.size_bytes()
-               : LKBallWorkspace<double>(poses, blocks, atoms, derivative)
+               : LKBallWorkspace<double, Weighted>(
+                     poses, blocks, atoms, derivative)
                      .storage.size_bytes();
   }
 
@@ -119,7 +129,7 @@ struct LKBallKernel {
     auto poses = a[0].dimensions()[0], atoms = a[0].dimensions()[1];
     auto blocks = a[4].dimensions()[1], rots = poses * blocks,
          count = poses * atoms;
-    LKBallWorkspace<Real> work(
+    LKBallWorkspace<Real, Weighted> work(
         poses, blocks, atoms, gradient != nullptr, workspace.untyped_data());
     auto xyz =
         contiguous_view<Vec<Real, 3>, 1, D>(a[0].untyped_data(), {count});
@@ -217,24 +227,39 @@ struct LKBallKernel {
     score.block_type_tile_lk_ball_params =
         buffer_view<LKBallTypeParams<Real>, 3, D>(a[32]);
     score.global_params = buffer_view<LKBallGlobalParams<Real>, 1, D>(a[33]);
-    score.output =
-        contiguous_view<Real, 4, D>(energy.untyped_data(), {4, poses, 1, 1});
+    score.output = contiguous_view<Real, 4, D>(
+        Weighted ? work.channel_energy : energy.untyped_data(),
+        {4, poses, 1, 1});
     score.max_n_blocks = blocks;
     score.n_block_pairs = score::common::checked_triangular_size(
         blocks, true, "LK-ball block pairs");
     score.use_shared_compact_block_neighbors = true;
     lk_ball_pose_native<false, Ops, D, Real, I>(
         context, score, neighbors, poses);
+    auto user_weights = Weighted ? buffer_view<Real, 1, D>(a[34])
+                                 : contiguous_view<Real, 1, D>(nullptr, {0});
+    if constexpr (Weighted) {
+      auto channels = score.output;
+      auto total = buffer_view<Real, 1, D>(energy);
+      Ops<D>::template forall<launch_t>(
+          context, poses, [=] TMOL_DEVICE_FUNC(int p) {
+            Real value = 0;
+            for (int c = 0; c < 4; ++c)
+              value += user_weights[c] * channels[c][p][0][0];
+            total[p] = value;
+          });
+    }
     if (!gradient) return;
     score.dTdV = contiguous_view<Real, 4, D>(work.weights, {4, poses, 1, 1});
     score.dV_d_water_coords = contiguous_view<Vec<Real, 3>, 2, D>(
         work.water_gradient, {count, lk_max_n_water});
     auto weights = work.weights;
     auto water_gradient = work.water_gradient;
-    for (int channel = 0; channel < 4; ++channel) {
+    for (int channel = 0; channel < (Weighted ? 1 : 4); ++channel) {
       Ops<D>::template forall<launch_t>(
           context, 4 * poses, [=] TMOL_DEVICE_FUNC(int i) {
-            weights[i] = Real(i / poses == channel);
+            weights[i] =
+                Weighted ? user_weights[i / poses] : Real(i / poses == channel);
           });
       Ops<D>::template forall<launch_t>(
           context, count * lk_max_n_water * 3, [=] TMOL_DEVICE_FUNC(int i) {
@@ -250,4 +275,6 @@ struct LKBallKernel {
     }
   }
 };
+using LKBallKernel = LKBallKernelT<false>;
+using LKBallWeightedKernel = LKBallKernelT<true>;
 }  // namespace tmol::jax

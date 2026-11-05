@@ -222,20 +222,30 @@ class ScoreFunction:
                     energies.update(
                         zip(_FUSED_PAIR_TYPES, nonbonded_energy(coords, fused_state))
                     )
+            weighted_terms = []
+            combined_channels = set()
             for term, state in entries:
-                energies.update(term(pose_stack, state, coords_override=coords))
-            selected = tuple(
-                st
-                for st in channels
-                if weighted_pair is None or st not in _FUSED_PAIR_TYPES
-            )
-            if not selected:
-                return (
-                    weighted_pair
-                    if weighted_pair is not None
-                    else jnp.zeros(
-                        (shape[0],) if sum_terms else (0, shape[0]), coords.dtype
+                weighted = getattr(term, "weighted_energy", None)
+                if sum_terms and weighted is not None:
+                    provided = term.score_types_provided()
+                    term_weights = tuple(
+                        weights.get(st, 0) if apply_weights else int(st in channels)
+                        for st in provided
                     )
+                    weighted_terms.append(weighted(state, coords, term_weights))
+                    combined_channels.update(provided)
+                else:
+                    energies.update(term(pose_stack, state, coords_override=coords))
+            if weighted_pair is not None:
+                weighted_terms.append(weighted_pair)
+                combined_channels.update(_FUSED_PAIR_TYPES)
+            selected = tuple(st for st in channels if st not in combined_channels)
+            if not selected:
+                return sum(
+                    weighted_terms,
+                    jnp.zeros(
+                        (shape[0],) if sum_terms else (0, shape[0]), coords.dtype
+                    ),
                 )
             values = jnp.stack(
                 [
@@ -245,7 +255,7 @@ class ScoreFunction:
             )
             if sum_terms:
                 result = values.sum(axis=0)
-                return result if weighted_pair is None else result + weighted_pair
+                return sum(weighted_terms, result)
             return values
 
         return score

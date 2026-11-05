@@ -525,3 +525,29 @@ extern "C" uint64_t tmol_hbond_workspace_bytes(
     return std::numeric_limits<uint64_t>::max();
   }
 }
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_lk_ball_weighted,
+    (tmol::jax::run<tmol::jax::LKBallWeightedKernel, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<double>("reach"));
+
+extern "C" uint64_t tmol_lk_ball_weighted_workspace_bytes(
+    int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
+  try {
+    if (poses < 0 || blocks < 0 || atoms < 0 || (bits != 32 && bits != 64))
+      throw std::invalid_argument("invalid LK-ball workspace dimensions");
+    return bits == 32 ? tmol::jax::LKBallWorkspace<float, true>(
+                            poses, blocks, atoms, derivative)
+                            .storage.size_bytes()
+                      : tmol::jax::LKBallWorkspace<double, true>(
+                            poses, blocks, atoms, derivative)
+                            .storage.size_bytes();
+  } catch (...) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+}
