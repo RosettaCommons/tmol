@@ -1,6 +1,20 @@
-import math
-
 import torch
+from tmol_core.scoring import constraints as constraint_physics
+
+
+def _torsion(atoms):
+    from tmol.score.constraint.potentials._compiled import _get_torsion_angle
+
+    return _get_torsion_angle(atoms)
+
+
+_constraint_ops = constraint_physics.ConstraintOps(
+    norm=lambda vectors: torch.linalg.norm(vectors, dim=-1),
+    where=torch.where,
+    trunc=torch.trunc,
+    sign=torch.sign,
+    torsion=_torsion,
+)
 
 from .._energy_term import EnergyTerm
 
@@ -41,74 +55,19 @@ class ConstraintEnergyTerm(EnergyTerm):
 
     @classmethod
     def harmonic(cls, atoms, params):
-        # params[:, 0] == mean (target value)
-        # params[:, 1] == standard deviation
-        atoms1 = atoms[:, 0]
-        atoms2 = atoms[:, 1]
-        dist = torch.linalg.norm(atoms1 - atoms2, dim=-1)
-        return ((dist - params[:, 0]) / params[:, 1]) ** 2
+        return constraint_physics.harmonic(atoms, params, _constraint_ops)
 
     @classmethod
     def harmonic_coordinate(cls, atoms, params):
-        # params[:, 0]   == distance to target coordinate
-        # params[:, 1:4] == target coordinate
-        # params[:, 4]   == standard deviation
-        atoms1 = atoms[:, 0]
-        atoms2 = params[:, 1:4]
-        dist = torch.linalg.norm(atoms1 - atoms2, dim=-1)
-        return ((dist - params[:, 0]) / params[:, 4]) ** 2
+        return constraint_physics.harmonic_coordinate(atoms, params, _constraint_ops)
 
     @classmethod
     def bounded(cls, atoms, params):
-        lb = params[:, 0]
-        ub = params[:, 1]
-        sd = params[:, 2]
-        rswitch = params[:, 3]
-
-        atoms1 = atoms[:, 0]
-        atoms2 = atoms[:, 1]
-        dist = torch.linalg.norm(atoms1 - atoms2, dim=-1)
-
-        ret = torch.full_like(dist, 0)
-
-        ub2 = ub + 0.5 * sd
-
-        g0 = dist < lb
-        # g1 = torch.logical_and(lb <= dist, dist <= ub) # default 0
-        g2 = torch.logical_and(ub < dist, dist <= ub2)
-        g3 = dist > ub2
-
-        ret[g0] = ((lb[g0] - dist[g0]) / sd[g0]) ** 2
-        # ret[g1] = 0
-        ret[g2] = ((dist[g2] - ub[g2]) / sd[g2]) ** 2
-        ret[g3] = 2 * rswitch[g3] * ((dist[g3] - ub[g3]) / sd[g3]) - rswitch[g3] ** 2
-
-        return ret
+        return constraint_physics.bounded(atoms, params, _constraint_ops)
 
     @classmethod
     def circularharmonic(cls, atoms, params):
-        # params[:, 0] == mean (target value)
-        # params[:, 1] == standard deviation
-        # params[:, 2] == constant that's added to the score regardless
-        from tmol.score.constraint.potentials._compiled import _get_torsion_angle
-
-        x0 = params[:, 0]  # The desired angle
-        sd = params[:, 1]
-        offset = params[:, 2]
-
-        angles = _get_torsion_angle(atoms)
-
-        def round_away_from_zero(val):
-            return torch.trunc(val + torch.sign(val) * 0.5)
-
-        def nearest_angle_radians(angle, x0):
-            return angle - (
-                round_away_from_zero((angle - x0) / (math.pi * 2)) * (math.pi * 2)
-            )
-
-        z = (nearest_angle_radians(angles, x0) - x0) / sd
-
-        return z * z + offset
+        return constraint_physics.circularharmonic(atoms, params, _constraint_ops)
 
     def setup_block_type(self, block_type: RefinedResidueType):
         super(ConstraintEnergyTerm, self).setup_block_type(block_type)
