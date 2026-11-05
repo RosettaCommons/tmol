@@ -282,3 +282,12 @@ def test_scan_workspace_covers_large_final_tile(tmp_path):
     assert proc.returncode == 0, proc.stderr
     run = subprocess.run([str(binary)], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
+
+
+@requires_cxx
+def test_hbond_native_launch_and_full_width_indices(tmp_path):
+    binary = tmp_path / "hbond"
+    proc = _compile(HERE / "native_hbond.cc", binary, run=True)
+    assert proc.returncode == 0, proc.stderr
+    run = subprocess.run([str(binary)], capture_output=True, text=True)
+    assert run.returncode == 0, run.stdout + run.stderr

@@ -23,6 +23,7 @@ def stage_native_headers(root, stage):
         "score/backbone_torsion/potentials",
         "score/metal/potentials",
         "score/disulfide/potentials",
+        "score/hbond/potentials",
         "score/na_torsion/potentials",
         "score/dunbrack/potentials",
         "score/ljlk/potentials",

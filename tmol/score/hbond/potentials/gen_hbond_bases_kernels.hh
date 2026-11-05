@@ -49,14 +49,14 @@ class HBondBasesGenSingleResData {
   TMOL_SHARED_PTR(unsigned char) acc_hybridization;
 };
 
-template <typename Real, int TILE_SIZE>
+template <typename Real, int TileSize>
 struct HBondBasesGenSharedData {
-  Real coords[TILE_SIZE * 3];
+  Real coords[TileSize * 3];
   unsigned char n_donH;
   unsigned char n_acc;
-  unsigned char donH_tile_inds[TILE_SIZE];
-  unsigned char acc_tile_inds[TILE_SIZE];
-  unsigned char acc_hybridization[TILE_SIZE];
+  unsigned char donH_tile_inds[TileSize];
+  unsigned char acc_tile_inds[TileSize];
+  unsigned char acc_hybridization[TileSize];
 };
 
 template <
@@ -122,7 +122,7 @@ TMOL_DEVICE_FUNC int hbond_bases_gen_pose_atom_ind(
 // Resolve a BlockCentricAtom to its coordinate, preferring the shared in-tile
 // coords array when possible and falling back to global memory otherwise.
 // Mirrors load_coord in lk_ball/water.hh.
-template <int TILE_SIZE, typename Real, typename Int, typename Ctx>
+template <int TileSize, typename Real, typename Int, typename Ctx>
 TMOL_DEVICE_FUNC Vec<Real, 3> hbond_bases_gen_load_coord(
     TMOL_THREAD bonded_atom::BlockCentricAtom<Int> const& bcat,
     TMOL_THREAD HBondBasesGenSingleResData<Real> const& r_dat,
@@ -135,7 +135,7 @@ TMOL_DEVICE_FUNC Vec<Real, 3> hbond_bases_gen_load_coord(
   }
   if (bcat.block == r_dat.block_ind) {
     int bcat_tile_ind = bcat.atom - tile_start;
-    if (bcat_tile_ind >= 0 && bcat_tile_ind < TILE_SIZE) {
+    if (bcat_tile_ind >= 0 && bcat_tile_ind < TileSize) {
       return common::coord_from_shared(r_dat.coords, bcat_tile_ind);
     }
   }
@@ -173,7 +173,7 @@ TMOL_DEVICE_FUNC
 }
 
 // Build the donor base entry for the donH at intra-tile index don_h_ind.
-template <int TILE_SIZE, typename Real, typename Int, typename Ctx>
+template <int TileSize, typename Real, typename Int, typename Ctx>
 void TMOL_DEVICE_FUNC build_donor_base(
     TMOL_THREAD Ctx const& ctx,
     TMOL_THREAD HBondBasesGenSingleResData<Real> const& r_dat,
@@ -193,7 +193,7 @@ void TMOL_DEVICE_FUNC build_donor_base(
   auto don_bases = RotamerCentricDonorBase<Int>::for_polar_H(
       H, bonds, ctx.block_type_atom_is_hydrogen);
 
-  Vec<Real, 3> Dxyz = hbond_bases_gen_load_coord<TILE_SIZE>(
+  Vec<Real, 3> Dxyz = hbond_bases_gen_load_coord<TileSize>(
       don_bases.D, r_dat, ctx, pose_ind, tile_start);
   int const D_pose_atom_ind =
       hbond_bases_gen_pose_atom_ind(don_bases.D, r_dat, ctx, pose_ind);
@@ -205,7 +205,7 @@ void TMOL_DEVICE_FUNC build_donor_base(
 
 // Build the two acceptor base entries (B, B0) for the acceptor at intra-tile
 // index acc_ind.
-template <int TILE_SIZE, typename Real, typename Int, typename Ctx>
+template <int TileSize, typename Real, typename Int, typename Ctx>
 void TMOL_DEVICE_FUNC build_acceptor_bases(
     TMOL_THREAD Ctx const& ctx,
     TMOL_THREAD HBondBasesGenSingleResData<Real> const& r_dat,
@@ -227,9 +227,9 @@ void TMOL_DEVICE_FUNC build_acceptor_bases(
       bonds,
       ctx.block_type_atom_is_hydrogen);
 
-  Vec<Real, 3> Bxyz = hbond_bases_gen_load_coord<TILE_SIZE>(
+  Vec<Real, 3> Bxyz = hbond_bases_gen_load_coord<TileSize>(
       acc_bases.B, r_dat, ctx, pose_ind, tile_start);
-  Vec<Real, 3> B0xyz = hbond_bases_gen_load_coord<TILE_SIZE>(
+  Vec<Real, 3> B0xyz = hbond_bases_gen_load_coord<TileSize>(
       acc_bases.B0, r_dat, ctx, pose_ind, tile_start);
   int const B_pose_atom_ind =
       hbond_bases_gen_pose_atom_ind(acc_bases.B, r_dat, ctx, pose_ind);
@@ -264,7 +264,7 @@ TMOL_HOST_DEVICE_FUNC void hbond_bases_gen(
     int rot_ind,
     WorkgroupLane<Dev> lane = {}) {
   CTA_LAUNCH_T_PARAMS;
-  constexpr int TILE_SIZE = HBOND_BASES_GEN_TILE_SIZE;
+  constexpr int TileSize = HBOND_BASES_GEN_TILE_SIZE;
 
   int const pose_ind = ctx.pose_ind_for_rot[rot_ind];
   int const block_type = ctx.block_type_ind_for_rot[rot_ind];
@@ -287,10 +287,10 @@ TMOL_HOST_DEVICE_FUNC void hbond_bases_gen(
   r_dat.acc_tile_inds = shared_m.acc_tile_inds;
   r_dat.acc_hybridization = shared_m.acc_hybridization;
 
-  int const n_iterations = (n_atoms_in_block - 1) / TILE_SIZE + 1;
+  int const n_iterations = (n_atoms_in_block - 1) / TileSize + 1;
   for (int tile_ind = 0; tile_ind < n_iterations; ++tile_ind) {
     int const n_atoms_to_load =
-        min(TILE_SIZE, n_atoms_in_block - TILE_SIZE * tile_ind);
+        min(TileSize, n_atoms_in_block - TileSize * tile_ind);
 
     if (tile_ind != 0) {
       DeviceOps<Dev>::synchronize_workgroup(lane);
@@ -300,20 +300,19 @@ TMOL_HOST_DEVICE_FUNC void hbond_bases_gen(
         DeviceOps,
         Dev,
         nt,
-        Real>(
-        ctx, tile_ind, r_dat, n_atoms_to_load, tile_ind * TILE_SIZE, lane);
+        Real>(ctx, tile_ind, r_dat, n_atoms_to_load, tile_ind * TileSize, lane);
     DeviceOps<Dev>::synchronize_workgroup(lane);
 
     auto gen_tile_bases = ([=] TMOL_DEVICE_FUNC(int tid) {
       int const n_items = r_dat.n_donH + r_dat.n_acc;
       for (int i = tid; i < n_items; i += nt) {
         if (i < r_dat.n_donH) {
-          build_donor_base<TILE_SIZE, Real, Int>(
-              ctx, r_dat, pose_ind, tile_ind * TILE_SIZE, i);
+          build_donor_base<TileSize, Real, Int>(
+              ctx, r_dat, pose_ind, tile_ind * TileSize, i);
         } else {
           int const acc_i = i - r_dat.n_donH;
-          build_acceptor_bases<TILE_SIZE, Real, Int>(
-              ctx, r_dat, pose_ind, tile_ind * TILE_SIZE, acc_i);
+          build_acceptor_bases<TileSize, Real, Int>(
+              ctx, r_dat, pose_ind, tile_ind * TileSize, acc_i);
         }
       }
     });

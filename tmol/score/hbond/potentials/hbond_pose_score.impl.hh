@@ -28,7 +28,7 @@
 
 #include <tmol/score/hbond/potentials/hbond.hh>
 #include <tmol/score/hbond/potentials/hbond_ctx_tensor.hh>
-#include <tmol/score/hbond/potentials/hbond_kernels.hh>
+#include <tmol/score/hbond/potentials/native_hbond_pose.hh>
 #include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
 #include <tmol/backends/metal/score/hbond/potentials/hbond_mps_kernels_source.h>
@@ -256,7 +256,7 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
             first_rot_block_type,
             scratch_rot_spheres,
             scratch_rot_neighbors,
-            Real(5.5));
+            Real(hbond_neighbor_reach()));
   }
 
   // Metal accumulates whole-pose totals into per-block-pair cells and reduces
@@ -347,37 +347,7 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
   // reduction scratch the workgroup primitives need. See workgroup_lane.hh.
   WorkgroupLane<Dev> lane;
 
-  using PairMode = common::TilePairMode;
-#ifdef __NVCC__
-  auto eval_energies_impl = ([=] TMOL_DEVICE_FUNC(
-                                 int cta,
-                                 auto derivative_tag,
-                                 auto pair_mode_tag) {
-    constexpr auto Mode = decltype(pair_mode_tag)::value;
-    typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    hbond_pose_eval_energies<DeviceDispatch, Dev, Real, Int, launch_t, Mode>(
-        ctx, shared, cta, derivative_tag);
-  });
-#else
-  auto eval_energies = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    hbond_pose_eval_energies<
-        DeviceDispatch,
-        Dev,
-        Real,
-        Int,
-        launch_t,
-        PairMode::InterAndIntra>(ctx, shared, cta, accumulate_derivs);
-  });
-#endif
-
-#ifdef __NVCC__
   auto launch_energies = [&](auto eval_energies) {
-#endif
     if (Dev == tmol::Device::MPS) {
       // Metal cannot launch a device lambda -- there is nowhere for a closure
       // to live, and entry points are compiled by a separate toolchain -- so
@@ -427,53 +397,14 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
       DeviceDispatch<Dev>::template foreach_pose_workgroup<launch_t>(
           mgr, n_poses, max_n_upper_triangle_inds, eval_energies);
     }
-
-#ifdef __NVCC__
   };
-  // Split derivative evaluation only when the stack is large enough to
-  // amortize the second pass. Both passes preserve the original candidate IDs.
-  bool const split_pairs =
-      allow_split_pairs && !output_block_pair_energies
-      && use_shared_compact_block_neighbors && max_n_blocks > 1
-      && int64_t(n_poses) * max_n_blocks >= 4096
-      && shared_compact_block_neighbors.size(0) - 1 >= (1 << 15);
-  // Keep the combined latency path for small stacks. Specializing only the
-  // HBond score kernel can slow subsequent terms in this workload range.
-  if (accumulate_derivs || n_rots < 512) {
-    if (accumulate_derivs && split_pairs) {
-      auto eval_inter = ([=] TMOL_DEVICE_FUNC(int cta) {
-        eval_energies_impl(
-            cta,
-            std::true_type{},
-            std::integral_constant<PairMode, PairMode::Inter>{});
-      });
-      launch_energies(eval_inter);
-      auto eval_intra = ([=] TMOL_DEVICE_FUNC(int cta) {
-        eval_energies_impl(
-            cta,
-            std::true_type{},
-            std::integral_constant<PairMode, PairMode::Intra>{});
-      });
-      launch_energies(eval_intra);
-    } else {
-      auto eval = ([=] TMOL_DEVICE_FUNC(int cta) {
-        eval_energies_impl(
-            cta,
-            accumulate_derivs,
-            std::integral_constant<PairMode, PairMode::InterAndIntra>{});
-      });
-      launch_energies(eval);
-    }
-  } else {
-    auto eval = ([=] TMOL_DEVICE_FUNC(int cta) {
-      eval_energies_impl(
-          cta,
-          std::false_type{},
-          std::integral_constant<PairMode, PairMode::InterAndIntra>{});
-    });
-    launch_energies(eval);
-  }
-#endif
+  launch_hbond_pose<DeviceDispatch, Dev, Real, Int>(
+      ctx,
+      n_poses,
+      n_rots,
+      shared_compact_block_neighbors.size(0) - 1,
+      allow_split_pairs,
+      launch_energies);
 
   // DeviceDispatch<Dev>::synchronize_device();
   return {output_t, dV_dcoords_t, scratch_rot_neighbors_t};
@@ -954,7 +885,7 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
               rot_offset_for_block,
               scratch_rot_spheres,
               lockstep_group_for_block,
-              Real(5.5));
+              Real(hbond_neighbor_reach()));
   }
 
   auto dispatch_indices = dispatch_indices_t.view;
