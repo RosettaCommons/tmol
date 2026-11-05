@@ -1,6 +1,7 @@
 # beta_nov16_dens re-weighted for refining a model into a cryo-EM map: the final-stage weights of the Rosetta-style cryo-EM
-# relax (density 140, fa_ljrep 0.8, Rosetta's effective cart_* weights); other weights as beta2016.sfxn. Chosen by a sweep of
-# density weight, repulsion, bonded weights and repack over 24 EMDB targets (see docs/user_guide/scoring.md).
+# relax (density 140, fa_ljrep 0.8, Rosetta's effective cart_* weights); other weights as beta2016.sfxn. Density weight and
+# fa_ljrep (with repack) were chosen by a sweep over 24 EMDB targets; the cart_* weights are the Rosetta cryo-EM script's
+# effective values (scaling them x0.5 or x2 together gave no gain) and no torsion-term weight was varied.
 version: "1.0"
 weights:
   fa_ljatr: 1.0

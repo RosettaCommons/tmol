@@ -120,11 +120,12 @@ def beta_nov16_dens_refine_score_function(
 ) -> "ScoreFunction":
     """Return beta_nov16_dens weighted for refining a model into a cryo-EM map.
 
-    The weights are the final-stage weights of the Rosetta-style cryo-EM relax that
-    performed best in a sweep over 24 EMDB targets: ``elec_dens_fast`` 140,
-    ``fa_ljrep`` 0.8, and Rosetta's effective ``cart_*`` weights (lengths 1.0,
-    angles 1.5, torsions 1.0, impropers 1.0). Every other weight is the
-    beta2016 value. This is a score function only: the relax protocol (the
+    The weights are the final-stage weights of a Rosetta-style cryo-EM relax:
+    ``elec_dens_fast`` 140 and ``fa_ljrep`` 0.8 (with repack) were chosen by a
+    sweep over 24 EMDB targets; the ``cart_*`` weights (lengths 1.0, angles 1.5,
+    torsions 1.0, impropers 1.0) are Rosetta's effective values, not swept, and
+    scaling them x0.5 or x2 together gave no gain. Every other weight, including
+    the backbone and side-chain torsion terms, is the beta2016 value. This is a score function only: the relax protocol (the
     FastRelax ``fa_ljrep`` ramp, repack between stages) is the caller's.
 
     Args:
