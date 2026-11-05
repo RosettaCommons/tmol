@@ -7,6 +7,9 @@ NumPy array; frontends own device materialization and topology-aware caching.
 import math
 
 from collections.abc import Mapping
+from dataclasses import dataclass, replace
+
+from .count_pair import electrostatic_distances
 from typing import TypeAlias
 
 import numpy as np
@@ -53,19 +56,30 @@ def lookup_order(name: str) -> tuple[str, tuple[str, ...]]:
 
 
 def partial_charges_for_block(
-    block_type, partial_charges: PartialChargeTable, *, missing: float | None = None
+    block_type,
+    partial_charges: PartialChargeTable,
+    *,
+    missing: float | None = None,
+    overrides: Mapping[str, float] | None = None,
 ) -> np.ndarray:
     """Return float32 charges in atom order, rejecting non-finite values.
 
     Missing charges raise by default. A frontend preserving zero-filled missing
-    charges must explicitly pass ``missing=0.0``. Restype-carried overrides are a
-    frontend contract and should be resolved before this database lookup.
+    charges must explicitly pass ``missing=0.0``. Explicit overrides take
+    precedence over database rows and must contain every physical atom; the
+    missing-value fallback never applies to an incomplete override.
     """
     residue, variants = lookup_order(block_type.name)
     residue_charges = partial_charges.get(residue, {})
 
     def lookup(atom):
         name = getattr(atom, "name", atom)
+        if overrides is not None:
+            if name not in overrides:
+                raise KeyError(
+                    f"Elec charge for atom {block_type.name},{name} not found"
+                )
+            return overrides[name]
         charges = residue_charges.get(name, {})
         for variant in variants:
             if variant in charges:
@@ -180,3 +194,119 @@ def native_elec_global_parameters(parameters):
         ],
         dtype=np.float32,
     )[None, :]
+
+
+@dataclass(frozen=True)
+class ElecBlockGeometry:
+    representatives: np.ndarray
+    inter: np.ndarray
+    intra: np.ndarray
+
+
+@dataclass(frozen=True)
+class ElecBlockParameters:
+    charges: np.ndarray
+    geometry: ElecBlockGeometry
+    rosetta_typed: frozenset
+
+
+@dataclass(frozen=True)
+class PackedElecParameters:
+    charges: np.ndarray
+    inter: np.ndarray | None
+    intra: np.ndarray | None
+    all_ligand_typed: np.ndarray | None
+    global_parameters: np.ndarray | None = None
+
+
+def prepare_elec_block(
+    block_type, charges, representatives, rosetta_typed, previous=None
+):
+    """Combine validated charge rows with chemistry and parameter-owned geometry.
+
+    A previous geometry may be reused only when both representative indices and
+    the generic/canonical atom-type convention match. Charges are always fresh.
+    """
+    rosetta_typed = frozenset(rosetta_typed)
+    if (
+        previous is not None
+        and previous.rosetta_typed == rosetta_typed
+        and np.array_equal(representatives, previous.geometry.representatives)
+    ):
+        geometry = previous.geometry
+    else:
+        inter, intra = electrostatic_distances(
+            block_type, representatives, rosetta_typed
+        )
+        geometry = ElecBlockGeometry(representatives, inter, intra)
+    return ElecBlockParameters(charges, geometry, rosetta_typed)
+
+
+def pack_elec_parameters(
+    block_types,
+    block_parameters,
+    max_n_atoms,
+    *,
+    include_geometry=True,
+    include_ligand_flags=True,
+):
+    """Pack native electrostatic rows with the canonical zero-padding convention.
+
+    Adapters retaining unchanged device geometry or flags may omit those host
+    allocations. All physical atom axes and ligand flags are prepared here.
+    """
+    if len(block_parameters) != len(block_types):
+        raise ValueError("electrostatic parameter rows must match block types")
+    n_types = len(block_types)
+    charges = np.zeros((n_types, max_n_atoms), dtype=np.float32)
+    shape = (n_types, max_n_atoms, max_n_atoms)
+    inter = np.zeros(shape, dtype=np.int32) if include_geometry else None
+    intra = np.zeros(shape, dtype=np.int32) if include_geometry else None
+    for i, (block, params) in enumerate(zip(block_types, block_parameters)):
+        charges[i, : block.n_atoms] = params.charges
+        if include_geometry:
+            inter[i, : block.n_atoms, : block.n_atoms] = params.geometry.inter
+            intra[i, : block.n_atoms, : block.n_atoms] = params.geometry.intra
+    ligand = (
+        np.asarray(
+            [
+                all(atom.atom_type not in params.rosetta_typed for atom in block.atoms)
+                for block, params in zip(block_types, block_parameters)
+            ],
+            dtype=np.int32,
+        )
+        if include_ligand_flags
+        else None
+    )
+    return PackedElecParameters(charges, inter, intra, ligand)
+
+
+def prepare_electrostatic_parameters(
+    block_types, max_n_atoms, database, rosetta_typed, *, charge_overrides=None
+):
+    """Resolve complete native electrostatic tables from one parameter database.
+
+    ``charge_overrides`` optionally supplies one atom-name mapping or None per
+    block type. Missing rows, invalid representatives, compound variants and
+    non-finite overrides use the same lookup and validation as individual blocks.
+    """
+    if charge_overrides is None:
+        charge_overrides = (None,) * len(block_types)
+    if len(charge_overrides) != len(block_types):
+        raise ValueError("charge overrides must match block types")
+    charges = partial_charge_table(database)
+    representatives = count_pair_table(database)
+    rosetta_typed = frozenset(rosetta_typed)
+    blocks = [
+        prepare_elec_block(
+            block,
+            partial_charges_for_block(block, charges, overrides=override),
+            representative_mapping_for_block(block, representatives),
+            rosetta_typed,
+        )
+        for block, override in zip(block_types, charge_overrides)
+    ]
+    return replace(
+        pack_elec_parameters(block_types, blocks, max_n_atoms),
+        global_parameters=native_elec_global_parameters(database.global_parameters),
+    )

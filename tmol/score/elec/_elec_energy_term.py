@@ -1,7 +1,11 @@
-from tmol_core.scoring.count_pair import electrostatic_distances
-from tmol_core.scoring.elec import native_elec_global_parameters
+from tmol_core.scoring.elec import (  # noqa: F401 (legacy schema reexports)
+    native_elec_global_parameters,
+    prepare_elec_block,
+    pack_elec_parameters,
+    ElecBlockGeometry as _BlockGeometry,
+    ElecBlockParameters as _BlockParameters,
+)
 
-import numpy
 import torch
 from dataclasses import dataclass
 
@@ -19,22 +23,6 @@ from tmol.score.elec._params import ElecParamResolver, ElecGlobalParams
 from tmol.chemical import RefinedResidueType
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
-
-
-@dataclass(frozen=True)
-class _BlockGeometry:
-    representatives: numpy.ndarray
-    inter: numpy.ndarray
-    intra: numpy.ndarray
-
-
-@dataclass(frozen=True)
-class _BlockParameters:
-    charges: numpy.ndarray
-    geometry: _BlockGeometry
-    # The intra count-pair rule rewrites ligand-typed 1-4 pairs, so the geometry
-    # describes one genbonded database and cannot be reused against another.
-    rosetta_typed: frozenset
 
 
 @dataclass(frozen=True)
@@ -104,27 +92,17 @@ class ElecEnergyTerm(AtomTypeDependentTerm, BondDependentTerm):
         representative_mapping = (
             self.param_resolver.get_bonded_path_length_mapping_for_block(block_type)
         )
-        # latest_annotation returns the newest snapshot regardless of key, so the
-        # genbonded component of _block_annotation_key does not reach here;
-        # compare it explicitly or a term built on a different genbonded database
-        # silently inherits this one's 1-4 encoding.
-        if (
-            previous is not None
-            and previous.rosetta_typed == self.rosetta_typed
-            and numpy.array_equal(
-                representative_mapping, previous.geometry.representatives
-            )
-        ):
-            geometry = previous.geometry
-        else:
-            inter, intra = electrostatic_distances(
-                block_type, representative_mapping, self.rosetta_typed
-            )
-            geometry = _BlockGeometry(representative_mapping, inter, intra)
+        annotation = prepare_elec_block(
+            block_type,
+            partial_charge,
+            representative_mapping,
+            self.rosetta_typed,
+            previous=previous,
+        )
+        geometry = annotation.geometry
         setattr(block_type, "elec_partial_charge", partial_charge)
         setattr(block_type, "elec_inter_repr_path_distance", geometry.inter)
         setattr(block_type, "elec_intra_repr_path_distance", geometry.intra)
-        annotation = _BlockParameters(partial_charge, geometry, self.rosetta_typed)
         return _store_annotation(
             block_type,
             "_elec_annotation",
@@ -164,40 +142,32 @@ class ElecEnergyTerm(AtomTypeDependentTerm, BondDependentTerm):
             and all(a is b for a, b in zip(geometry, previous.block_geometry))
         )
 
-        # Stage once on the host, retaining geometry tensors when only charges change.
-        charges = numpy.zeros((pbt.n_types, pbt.max_n_atoms), dtype=numpy.float32)
-        if not reuse_geometry:
-            shape = (pbt.n_types, pbt.max_n_atoms, pbt.max_n_atoms)
-            inter = numpy.zeros(shape, dtype=numpy.int32)
-            intra = numpy.zeros(shape, dtype=numpy.int32)
-        for i, (bt, params) in enumerate(zip(pbt.active_block_types, block_parameters)):
-            charges[i, : bt.n_atoms] = params.charges
-            if not reuse_geometry:
-                inter[i, : bt.n_atoms, : bt.n_atoms] = params.geometry.inter
-                intra[i, : bt.n_atoms, : bt.n_atoms] = params.geometry.intra
-        elec_partial_charge = torch.as_tensor(charges, device=self.device)
+        reuse_ligand_flags = (
+            previous is not None and previous.rosetta_typed == self.rosetta_typed
+        )
+        packed = pack_elec_parameters(
+            pbt.active_block_types,
+            block_parameters,
+            pbt.max_n_atoms,
+            include_geometry=not reuse_geometry,
+            include_ligand_flags=not reuse_ligand_flags,
+        )
+        elec_partial_charge = torch.as_tensor(packed.charges, device=self.device)
         elec_inter_repr_path_distance = (
             previous.inter
             if reuse_geometry
-            else torch.as_tensor(inter, device=self.device)
+            else torch.as_tensor(packed.inter, device=self.device)
         )
         elec_intra_repr_path_distance = (
             previous.intra
             if reuse_geometry
-            else torch.as_tensor(intra, device=self.device)
+            else torch.as_tensor(packed.intra, device=self.device)
         )
         pbt.elec_partial_charge = elec_partial_charge
         all_ligand_typed = (
             previous.all_ligand_typed
-            if previous is not None and previous.rosetta_typed == self.rosetta_typed
-            else torch.tensor(
-                [
-                    all(a.atom_type not in self.rosetta_typed for a in bt.atoms)
-                    for bt in packed_block_types.active_block_types
-                ],
-                dtype=torch.int32,
-                device=self.device,
-            )
+            if reuse_ligand_flags
+            else torch.as_tensor(packed.all_ligand_typed, device=self.device)
         )
         setattr(pbt, "elec_all_atoms_ligand_typed", all_ligand_typed)
         setattr(
