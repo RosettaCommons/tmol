@@ -28,6 +28,8 @@ struct NonbondedWorkspace {
 template <bool Weighted = false>
 struct NonbondedKernel {
   static constexpr int channels = Weighted ? 1 : 4;
+  // Every pose/channel is assigned from the zeroed double accumulator.
+  static constexpr bool zero_energy = false;
   static void validate(
       const std::vector<ffi::AnyBuffer>& a,
       ffi::AnyBuffer energy,
@@ -117,23 +119,29 @@ struct NonbondedKernel {
     auto neighbors = contiguous_view<I, 1, D>(
         work.neighbors, {int64_t(work.neighbor_capacity)});
     ContextManager context;
-    score::common::sphere_overlap::
-        compute_block_spheres_native<Ops, D, Real, I>(
-            context,
-            xyz,
-            buffer_view<I, 1, D>(a[1]),
-            buffer_view<I, 1, D>(a[3]),
-            buffer_view<I, 1, D>(a[4]),
-            types,
-            buffer_view<I, 1, D>(a[8]),
-            spheres);
-    score::common::sphere_overlap::
-        detect_compact_block_neighbors<Ops, D, Real, I>::f(
-            context,
-            buffer_view<I, 2, D>(a[5]),
-            spheres,
-            neighbors,
-            Real(reach));
+    if (blocks == 1) {
+      score::common::sphere_overlap::
+          single_block_neighbor_candidates_native<Ops, D, I>(
+              context, poses, neighbors);
+    } else {
+      score::common::sphere_overlap::
+          compute_block_spheres_native<Ops, D, Real, I>(
+              context,
+              xyz,
+              buffer_view<I, 1, D>(a[1]),
+              buffer_view<I, 1, D>(a[3]),
+              buffer_view<I, 1, D>(a[4]),
+              types,
+              buffer_view<I, 1, D>(a[8]),
+              spheres);
+      score::common::sphere_overlap::
+          detect_compact_block_neighbors<Ops, D, Real, I>::f(
+              context,
+              buffer_view<I, 2, D>(a[5]),
+              spheres,
+              neighbors,
+              Real(reach));
+    }
     // Whole-pose scoring has no rotamer dispatch or upstream-gradient operand.
     // Empty optional views are the canonical native mode contract.
     score::ljlk::potentials::

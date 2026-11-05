@@ -47,14 +47,22 @@ def _compact_connections(dense):
     return near, distances
 
 
-def prepare_nonbonded(pose, database):
-    """Materialize canonical chemistry/parameters in the native operand layout."""
+def _ljlk_parameters(pose, database):
     pbt = pose.packed_block_types
-    types = pbt.active_block_types
     names, flags = atom_type_parameters(database.chemical.atom_types)
     lj = ljlk_type_parameters(names, database.scoring.ljlk)
-    for block in types:
-        lj.validate_block_type(block)
+    active = np.asarray(pose.block_type_ind)
+    for index in np.unique(active[active >= 0]):
+        lj.validate_block_type(pbt.active_block_types[index])
+    return (
+        lj.native_parameters(flags),
+        native_ljlk_global_parameters(database.scoring.ljlk.global_parameters),
+    )
+
+
+def _electrostatic_parameters(pose, database):
+    pbt = pose.packed_block_types
+    types = pbt.active_block_types
     charge_lookup = partial_charge_table(database.scoring.elec)
     representatives = count_pair_table(database.scoring.elec)
     rosetta_typed = database.scoring.genbonded.rosetta_typed
@@ -68,21 +76,38 @@ def prepare_nonbonded(pose, database):
         inter[i, :n, :n], intra[i, :n, :n] = electrostatic_distances(
             block, rep, rosetta_typed
         )
-    lj_paths, generic = packed_ljlk_distances(types, pbt.max_n_atoms, rosetta_typed)
-    offsets, first, indices, _ = pose_arguments(pose)
-    poses, blocks = indices.shape
-    near, separation = _compact_connections(pose.inter_block_bondsep)
+    return (
+        charges,
+        inter,
+        intra,
+        native_elec_global_parameters(database.scoring.elec.global_parameters),
+    )
+
+
+def _validate_native_connections(pbt):
     if pbt.max_n_conn > 12:
         raise NotImplementedError(
             "native nonbonded scoring supports at most 12 ports per residue"
         )
-    # The canonical tile stores connection atom indices in uint8.
     if np.any(np.asarray(pbt.conn_atoms) > 255):
         raise NotImplementedError(
             "native nonbonded connection atom index exceeds uint8"
         )
-    lj_global = native_ljlk_global_parameters(database.scoring.ljlk.global_parameters)
-    elec_global = native_elec_global_parameters(database.scoring.elec.global_parameters)
+
+
+def prepare_nonbonded(pose, database):
+    """Materialize canonical chemistry/parameters in the native operand layout."""
+    pbt = pose.packed_block_types
+    types = pbt.active_block_types
+    lj, lj_global = _ljlk_parameters(pose, database)
+    charges, inter, intra, elec_global = _electrostatic_parameters(pose, database)
+    lj_paths, generic = packed_ljlk_distances(
+        types, pbt.max_n_atoms, database.scoring.genbonded.rosetta_typed
+    )
+    offsets, first, indices, _ = pose_arguments(pose)
+    poses, blocks = indices.shape
+    near, separation = _compact_connections(pose.inter_block_bondsep)
+    _validate_native_connections(pbt)
     parameters = tuple(
         jnp.asarray(a)
         for a in (
@@ -99,7 +124,7 @@ def prepare_nonbonded(pose, database):
             pbt.conn_atoms,
             lj_paths,
             generic,
-            lj.native_parameters(flags),
+            lj,
             lj_global,
             charges,
             inter,
@@ -125,4 +150,61 @@ def nonbonded_energy(coords, state, weights=None):
         channels=4 if weights is None else 1,
         attributes={"reach": np.float64(reach)},
         workspace_bytes=sizes,
+    )
+
+
+def prepare_independent_nonbonded(pose, database, *, electrostatic):
+    from tmol_core.scoring.count_pair import ligand_atom_mask
+
+    pbt = pose.packed_block_types
+    _validate_native_connections(pbt)
+    types = pbt.active_block_types
+    rosetta_typed = database.scoring.genbonded.rosetta_typed
+    offsets, first, indices, _ = pose_arguments(pose)
+    poses, blocks = indices.shape
+    near, separation = _compact_connections(pose.inter_block_bondsep)
+    if electrostatic:
+        charges, inter, intra, globals_ = _electrostatic_parameters(pose, database)
+        generic = np.array(
+            [ligand_atom_mask(bt, rosetta_typed).all() for bt in types], np.int32
+        )
+        specific = (charges, inter, intra, globals_)
+        target, channels, reach = "tmol_elec", 1, globals_[0, 4]
+        # Preserve existing palette charge inspection and immutable scorer snapshots.
+        pbt.elec_partial_charge = jnp.asarray(charges)
+        pbt._elec_owners = (database.scoring.elec, types)
+    else:
+        parameters, globals_ = _ljlk_parameters(pose, database)
+        paths, generic = packed_ljlk_distances(types, pbt.max_n_atoms, rosetta_typed)
+        specific = (pbt.atom_types, paths, parameters, globals_)
+        target, channels, reach = "tmol_ljlk", 3, globals_[0, 0]
+    operands = (
+        offsets,
+        first,
+        np.tile(np.arange(blocks, dtype=np.int32), poses),
+        np.repeat(np.arange(poses, dtype=np.int32), blocks),
+        indices,
+        near,
+        separation,
+        pbt.n_atoms,
+        pbt.n_conn,
+        pbt.conn_atoms,
+        generic,
+        *specific,
+    )
+    register(target)
+    return target, channels, tuple(jnp.asarray(a) for a in operands), float(reach)
+
+
+def independent_nonbonded_energy(coords, state):
+    target, channels, parameters, reach = state
+    return coordinate_energy(
+        target,
+        coords,
+        parameters,
+        channels=channels,
+        workspace_bytes=workspace_sizes(
+            target, parameters[1].shape, coords.dtype.itemsize * 8
+        ),
+        attributes={"reach": np.float64(reach)},
     )

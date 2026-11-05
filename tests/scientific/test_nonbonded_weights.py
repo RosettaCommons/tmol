@@ -29,3 +29,32 @@ def test_nonbonded_custom_weights_and_gradients(backend):
     )
     contributions = backend.scores(x, sum_terms=False)
     np.testing.assert_allclose(contributions.sum(axis=0), total, rtol=3e-6, atol=3e-5)
+
+
+def test_independent_nonbonded_terms_do_not_require_other_parameters(backend):
+    import attrs
+
+    case = CASES["mixed_batch"]
+    terms = ("fa_ljatr", "fa_ljrep", "fa_lk", "fa_elec")
+    backend.molecule(case, terms=terms)
+    x = backend.coords()
+    expected, expected_gradients = backend.channel_values_and_gradients(x)
+    database = backend.parameter_database
+    for keep_electrostatics in (False, True):
+        absent = "ljlk" if keep_electrostatics else "elec"
+        field = (
+            "atom_type_parameters" if keep_electrostatics else "atom_charge_parameters"
+        )
+        missing = attrs.evolve(getattr(database.scoring, absent), **{field: ()})
+        db = attrs.evolve(
+            database, scoring=attrs.evolve(database.scoring, **{absent: missing})
+        )
+        selected = terms[-1:] if keep_electrostatics else terms[:3]
+        rows = slice(3, 4) if keep_electrostatics else slice(0, 3)
+        backend.molecule(case, terms=selected, parameter_database=db)
+        np.testing.assert_array_equal(backend.coords(), x)
+        value, gradient = backend.channel_values_and_gradients(x)
+        np.testing.assert_allclose(value, expected[rows], rtol=3e-6, atol=3e-5)
+        np.testing.assert_allclose(
+            gradient, expected_gradients[rows], rtol=5e-5, atol=5e-5
+        )

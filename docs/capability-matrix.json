@@ -111,7 +111,7 @@
         "tests/scientific/test_constraints.py",
         "tests/jax/test_general_constraints.py"
       ],
-      "implementation_status": "Shared atom topology and four geometric formulas with framework-native callbacks; independent analytic coordinate/parameter gradients, mixed ligand/protein atom identity, pose selection, parameter Hessians and native torsion JVP/vmap pass JAX CPU. GPU and shared Torch case validation pending. Legacy coordinate restraints retained; more than two block runs reject explicitly; packing absent."
+      "implementation_status": "Shared atom topology and four geometric formulas with framework-native callbacks. Independent analytic coordinate/parameter gradients and mixed ligand/protein identity pass Torch CPU and JAX CPU/CUDA. Pose selection, parameter Hessians and torsion JVP/vmap pass JAX CPU. Legacy coordinate restraints retained; more than two block runs reject explicitly; packing absent."
     },
     {
       "domain": "heterogeneous_batches",
@@ -128,7 +128,7 @@
         "tests/jax/test_optimization.py",
         "tests/scientific/test_molecular_minimization.py"
       ],
-      "implementation_status": "Ligand, connected beta-amino acid and D-peptide objectives decrease with exact frozen-atom and unchanged-input invariants in both Torch CPU and JAX CPU. These objectives cover native cartbonded/nonbonded plus generic bonded or Dunbrack; complete noncanonical objective remains absent."
+      "implementation_status": "Ligand, connected beta-amino acid and D-peptide objectives decrease with exact frozen-atom and unchanged-input invariants in Torch CPU and JAX CPU/CUDA. These objectives cover native cartbonded/nonbonded plus generic bonded or Dunbrack; complete noncanonical objective remains absent."
     },
     {
       "domain": "packing_design_mutation",
@@ -170,14 +170,14 @@
       "torch": "torch_autograd",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_native_genbonded.py",
-      "implementation_status": "Shared native gen/cart/backbone/NA/metal first-order JVP, reverse Jacobian and sequential vmap tested CPU/CUDA. Dunbrack and fused nonbonded also pass CPU/CUDA float32/64 transforms. Higher derivatives absent; older standalone nonbonded CUDA custom-VJP routes lack JVP."
+      "implementation_status": "Shared native gen/cart/backbone/NA/metal/Dunbrack/fused nonbonded first-order JVP, reverse Jacobian and sequential vmap tested CPU/CUDA. Independent LJ/LK and electrostatics now consume common native kernels; CPU transformations and empty batches pass, CUDA validation pending. Higher coordinate derivatives remain absent for native terms."
     },
     {
       "domain": "forward_ad",
       "torch": "framework_specific",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_native_genbonded.py",
-      "implementation_status": "Shared native gen/cart/backbone/NA/metal first-order JVP, reverse Jacobian and sequential vmap tested CPU/CUDA. Dunbrack and fused nonbonded also pass CPU/CUDA float32/64 transforms. Higher derivatives absent; older standalone nonbonded CUDA custom-VJP routes lack JVP."
+      "implementation_status": "Shared native gen/cart/backbone/NA/metal/Dunbrack/fused nonbonded first-order JVP, reverse Jacobian and sequential vmap tested CPU/CUDA. Independent LJ/LK and electrostatics now consume common native kernels; CPU transformations and empty batches pass, CUDA validation pending. Higher coordinate derivatives remain absent for native terms."
     },
     {
       "domain": "native_cpu",
@@ -198,22 +198,22 @@
     "fa_ljatr": {
       "torch": "implemented",
       "jax": "molecular_values_and_coordinate_gradients",
-      "noncanonical_validation": "Shared fused native CPU traversal: ten molecular cases in float32/64; every per-channel coordinate gradient exactly matches Torch, energy differs only in reduction rounding. Weighted/decomposed gradients and JIT/JVP/vmap tested. Native CUDA molecular cases and float32/64 transformations pass; small-system GPU performance remains under investigation. Standalone LJ-only/Elec-only retain prior paths."
+      "noncanonical_validation": "Shared fused native CPU traversal: ten molecular cases in float32/64; every per-channel coordinate gradient exactly matches Torch, energy differs only in reduction rounding. Weighted/decomposed gradients and JIT/JVP/vmap tested. Native CUDA molecular cases and float32/64 transformations pass; small-system GPU performance remains under investigation. Standalone LJ/LK and electrostatics now share native physics: ten molecular cases x float32/64 match full Torch CPU gradients exactly; CPU transforms and unrelated-parameter omission pass. Independent CUDA validation pending."
     },
     "fa_ljrep": {
       "torch": "implemented",
       "jax": "molecular_values_and_coordinate_gradients",
-      "noncanonical_validation": "Shared fused native CPU traversal: ten molecular cases in float32/64; every per-channel coordinate gradient exactly matches Torch, energy differs only in reduction rounding. Weighted/decomposed gradients and JIT/JVP/vmap tested. Native CUDA molecular cases and float32/64 transformations pass; small-system GPU performance remains under investigation. Standalone LJ-only/Elec-only retain prior paths."
+      "noncanonical_validation": "Shared fused native CPU traversal: ten molecular cases in float32/64; every per-channel coordinate gradient exactly matches Torch, energy differs only in reduction rounding. Weighted/decomposed gradients and JIT/JVP/vmap tested. Native CUDA molecular cases and float32/64 transformations pass; small-system GPU performance remains under investigation. Standalone LJ/LK and electrostatics now share native physics: ten molecular cases x float32/64 match full Torch CPU gradients exactly; CPU transforms and unrelated-parameter omission pass. Independent CUDA validation pending."
     },
     "fa_lk": {
       "torch": "implemented",
       "jax": "molecular_values_and_coordinate_gradients",
-      "noncanonical_validation": "Shared fused native CPU traversal: ten molecular cases in float32/64; every per-channel coordinate gradient exactly matches Torch, energy differs only in reduction rounding. Weighted/decomposed gradients and JIT/JVP/vmap tested. Native CUDA molecular cases and float32/64 transformations pass; small-system GPU performance remains under investigation. Standalone LJ-only/Elec-only retain prior paths."
+      "noncanonical_validation": "Shared fused native CPU traversal: ten molecular cases in float32/64; every per-channel coordinate gradient exactly matches Torch, energy differs only in reduction rounding. Weighted/decomposed gradients and JIT/JVP/vmap tested. Native CUDA molecular cases and float32/64 transformations pass; small-system GPU performance remains under investigation. Standalone LJ/LK and electrostatics now share native physics: ten molecular cases x float32/64 match full Torch CPU gradients exactly; CPU transforms and unrelated-parameter omission pass. Independent CUDA validation pending."
     },
     "fa_elec": {
       "torch": "implemented",
       "jax": "molecular_values_and_coordinate_gradients",
-      "noncanonical_validation": "Shared fused native CPU traversal: ten molecular cases in float32/64; every per-channel coordinate gradient exactly matches Torch, energy differs only in reduction rounding. Weighted/decomposed gradients and JIT/JVP/vmap tested. Native CUDA molecular cases and float32/64 transformations pass; small-system GPU performance remains under investigation. Standalone LJ-only/Elec-only retain prior paths."
+      "noncanonical_validation": "Shared fused native CPU traversal: ten molecular cases in float32/64; every per-channel coordinate gradient exactly matches Torch, energy differs only in reduction rounding. Weighted/decomposed gradients and JIT/JVP/vmap tested. Native CUDA molecular cases and float32/64 transformations pass; small-system GPU performance remains under investigation. Standalone LJ/LK and electrostatics now share native physics: ten molecular cases x float32/64 match full Torch CPU gradients exactly; CPU transforms and unrelated-parameter omission pass. Independent CUDA validation pending."
     },
     "hbond": {
       "torch": "implemented",
@@ -248,7 +248,7 @@
     "constraint": {
       "torch": "implemented",
       "jax": "general_geometric_constraints",
-      "noncanonical_validation": "Mixed ligand/protein batch atom identities and independent harmonic energies/gradients tested on JAX CPU; shared Torch/device checks pending."
+      "noncanonical_validation": "Mixed ligand/protein atom identity and independent harmonic energies/gradients pass shared Torch CPU and JAX CPU/CUDA cases. Callback parameter gradients and higher derivatives of shared formulas tested JAX CPU."
     },
     "disulfide": {
       "torch": "implemented",
@@ -326,5 +326,5 @@
       "noncanonical_validation": "Five nonzero metal fixtures: exact fresh Torch/JAX CPU energies and full gradients; independent directional derivatives and custom width/depth scaling. Fresh CPU/CUDA artifacts pass the same science cases and float32/64 transformations."
     }
   },
-  "validation": "Immutable aff0326258 native CPU/CUDA artifacts:83 H200 scientific/transform tests pass. Prior73921ec7ba full JAX/scientific CPU suite184 passed with8 unavailable-CUDA skips. Fresh core/JAX/native wheels and sdists built from aff0326258 pass44 float64 molecular cases in an isolated installed Torch-free runtime with no libtorch linkage. Native fused nonbonded improves CPU time/memory but regresses small ligand/canonical GPU cases; optimization candidate pending. Full-domain/API/performance acceptance remains incomplete."
+  "validation": "Immutable 4b70c92518 native artifacts:198 CPU tests pass with8 unavailable-CUDA skips,97 H200 scientific/transform tests pass. Fresh aff0326258 core/JAX/native wheels and sdists pass44 float64 molecular cases in an isolated installed Torch-free runtime without libtorch linkage; newer packaging validation pending. Native fused nonbonded improves CPU time/memory. Small canonical GPU regression and Dunbrack regression resolved in1fded1dae0 matched cases; LG1 GPU remains slower. Full-domain/API/performance acceptance remains incomplete."
 }

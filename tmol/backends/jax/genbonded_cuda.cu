@@ -9,6 +9,7 @@
 #include "workspace_ffi.hh"
 #include "dunbrack_ffi.hh"
 #include "nonbonded_ffi.hh"
+#include "independent_nonbonded_ffi.hh"
 #include "constraint_torsion_ffi.hh"
 
 namespace tmol::jax {
@@ -163,8 +164,9 @@ ffi::Error run(
     auto buffers = native_arguments(args);
     auto outputs = native_outputs<Kernel>(buffers, *energy, rets);
     const auto& gradient = outputs.gradient;
-    check_cuda(cudaMemsetAsync(
-        energy->untyped_data(), 0, energy->size_bytes(), stream));
+    if constexpr (ZeroEnergy<Kernel>::value)
+      check_cuda(cudaMemsetAsync(
+          energy->untyped_data(), 0, energy->size_bytes(), stream));
     if (gradient)
       check_cuda(cudaMemsetAsync(
           gradient->untyped_data(), 0, gradient->size_bytes(), stream));
@@ -292,4 +294,26 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets(),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_ljlk,
+    (tmol::jax::run<tmol::jax::IndependentNonbondedKernel<false>, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<double>("reach"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_elec,
+    (tmol::jax::run<tmol::jax::IndependentNonbondedKernel<true>, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<double>("reach"),
     {xla::ffi::Traits::kCmdBufferCompatible});

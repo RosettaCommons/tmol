@@ -19,6 +19,7 @@ _NATIVE_CASES = {
     "rama": BACKBONE_CASES["mixed"],
     "dunbrack_rot": DUNBRACK_CASES["mixed_batch"],
     "fa_ljatr": CASES["mixed_batch"],
+    "fa_elec": CASES["mixed_batch"],
     "metal_coordination": METAL_CASES["mixed_batch"],
     "na_torsion": NA_CASES["mixed_batch"],
 }
@@ -41,6 +42,8 @@ def backend_name(request):
         ("gen_torsions",),
         ("dunbrack_rot", "dunbrack_rotdev", "dunbrack_semirot"),
         ("fa_ljatr", "fa_ljrep", "fa_lk", "fa_elec"),
+        ("fa_ljatr", "fa_ljrep", "fa_lk"),
+        ("fa_elec",),
         ("rama", "omega"),
         ("metal_coordination",),
         ("na_torsion", "na_torsion_well"),
@@ -160,6 +163,8 @@ def test_native_mixed_molecule_minimization_preserves_frozen_atoms(backend_name)
     [
         "gen_torsions",
         "cart_lengths",
+        "fa_ljatr",
+        "fa_elec",
         "rama",
         "metal_coordination",
         "na_torsion",

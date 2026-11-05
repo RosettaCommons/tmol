@@ -7,6 +7,7 @@
 #include "workspace_ffi.hh"
 #include "dunbrack_ffi.hh"
 #include "nonbonded_ffi.hh"
+#include "independent_nonbonded_ffi.hh"
 #include "constraint_torsion_ffi.hh"
 #include <condition_variable>
 #include <cstring>
@@ -121,7 +122,8 @@ ffi::Error run(
     auto buffers = native_arguments(args);
     auto outputs = native_outputs<Kernel>(buffers, *energy, rets);
     const auto& gradient = outputs.gradient;
-    std::memset(energy->untyped_data(), 0, energy->size_bytes());
+    if constexpr (ZeroEnergy<Kernel>::value)
+      std::memset(energy->untyped_data(), 0, energy->size_bytes());
     if (gradient)
       std::memset(gradient->untyped_data(), 0, gradient->size_bytes());
     if (outputs.workspace)
@@ -340,3 +342,55 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets());
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_ljlk,
+    (tmol::jax::run<tmol::jax::IndependentNonbondedKernel<false>, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<double>("reach"));
+
+extern "C" uint64_t tmol_ljlk_workspace_bytes(
+    int64_t poses, int64_t blocks, int bits, int) {
+  try {
+    if (poses < 0 || blocks < 0 || (bits != 32 && bits != 64))
+      throw std::invalid_argument("invalid independent nonbonded workspace");
+    return bits == 32 ? tmol::jax::IndependentNonbondedWorkspace<float, false>(
+                            poses, blocks)
+                            .storage.size_bytes()
+                      : tmol::jax::IndependentNonbondedWorkspace<double, false>(
+                            poses, blocks)
+                            .storage.size_bytes();
+  } catch (...) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_elec,
+    (tmol::jax::run<tmol::jax::IndependentNonbondedKernel<true>, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<double>("reach"));
+
+extern "C" uint64_t tmol_elec_workspace_bytes(
+    int64_t poses, int64_t blocks, int bits, int) {
+  try {
+    if (poses < 0 || blocks < 0 || (bits != 32 && bits != 64))
+      throw std::invalid_argument("invalid independent nonbonded workspace");
+    return bits == 32 ? tmol::jax::IndependentNonbondedWorkspace<float, true>(
+                            poses, blocks)
+                            .storage.size_bytes()
+                      : tmol::jax::IndependentNonbondedWorkspace<double, true>(
+                            poses, blocks)
+                            .storage.size_bytes();
+  } catch (...) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+}
