@@ -365,8 +365,17 @@ auto ljlk_elec_native_forward(
   CTA_REAL_REDUCE_T_TYPEDEF;
   // CPU workgroup lanes run serially; one lane traverses each tile directly.
   constexpr int score_nt = D == tmol::Device::CPU ? 1 : nt;
+  // An empty view for a single-block pose requests its implicit self pair.
+  // An explicit compact list containing only count=0 still requests no pairs.
+  // Invalid rotamers/types and atom-distance cutoffs remain the pair body's
+  // responsibility, exactly as for explicit candidate lists.
+  bool const implicit_self_pairs =
+      !rotamer_pairs && max_n_blocks == 1
+      && shared_compact_block_neighbors.size(0) == 0;
 #ifdef __NVCC__
-  int const candidate_capacity = shared_compact_block_neighbors.size(0) - 1;
+  int const candidate_capacity =
+      implicit_self_pairs ? n_poses
+                          : shared_compact_block_neighbors.size(0) - 1;
   // Small systems have too few residue pairs to occupy the GPU. Partition
   // each tile's atom-pair lanes across CTAs while sharing its exact physics,
   // loaders and reductions. Large batches retain their original dispatch.
@@ -883,9 +892,13 @@ auto ljlk_elec_native_forward(
       auto eval_shard = ([=] TMOL_DEVICE_FUNC(int cta) {
         for (int task = cta; task < n_tasks; task += n_workgroups) {
           int const index = task / pair_shards;
-          if (index >= shared_compact_block_neighbors[0]) return;
+          int candidate = index;
+          if (!implicit_self_pairs) {
+            if (index >= shared_compact_block_neighbors[0]) return;
+            candidate = shared_compact_block_neighbors[index + 1];
+          }
           eval_pair(
-              shared_compact_block_neighbors[index + 1],
+              candidate,
               std::integral_constant<PairMode, PairMode::InterAndIntra>{},
               task % pair_shards);
         }
@@ -947,13 +960,21 @@ auto ljlk_elec_native_forward(
           mgr, n_outputs, eval_neighbor);
     }
   } else {
-    common::sphere_overlap::
-        launch_precomputed_block_neighbors<DeviceOperations, D, launch_t, Int>(
-            mgr,
-            shared_compact_block_neighbors,
-            n_poses,
-            max_n_blocks,
-            eval_neighbor);
+    if (implicit_self_pairs) {
+      DeviceOperations<D>::template foreach_pose_workgroup<launch_t>(
+          mgr, n_poses, 1, eval_neighbor);
+    } else {
+      common::sphere_overlap::launch_precomputed_block_neighbors<
+          DeviceOperations,
+          D,
+          launch_t,
+          Int>(
+          mgr,
+          shared_compact_block_neighbors,
+          n_poses,
+          max_n_blocks,
+          eval_neighbor);
+    }
   }
   finalize_pose_scores();
   return;
