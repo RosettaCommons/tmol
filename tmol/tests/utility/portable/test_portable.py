@@ -207,6 +207,10 @@ def test_native_neighbors_follow_coordinate_changes(tmp_path):
 def test_whole_pose_lkball_needs_no_framework(tmp_path):
     proc = _compile(HERE / "native_lkball.cc", tmp_path / "lkball", run=True)
     assert proc.returncode == 0, proc.stderr
+    result = subprocess.run(
+        [str(tmp_path / "lkball")], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 @requires_cxx
