@@ -166,16 +166,6 @@ struct DeviceOperations<tmol::Device::CPU> : SerialCPUOperations {
     return gen_for_work_item_t;
   }
 
-  template <typename T, typename OP>
-  static T reduce(ContextManager&, T* src, int n, OP op) {
-    assert(n > 0);
-    T val = src[0];
-    for (int i = 1; i < n; ++i) {
-      val = op(val, src[i]);
-    }
-    return val;
-  }
-
   // Segmented scan expects the indices for the beginning of each segment rather
   // than, e.g., a boolean tensor indicating the start of each segment.
   // The identity value (e.g. 0) must be given because pre-initialization is not
@@ -186,7 +176,7 @@ struct DeviceOperations<tmol::Device::CPU> : SerialCPUOperations {
       typename Int,
       typename OP>
   static auto segmented_scan(
-      ContextManager&,
+      ContextManager& mgr,
       T* src,
       Int* seg_start_inds,
       int n,
@@ -195,19 +185,8 @@ struct DeviceOperations<tmol::Device::CPU> : SerialCPUOperations {
       T identity) -> TPack<T, 1, tmol::Device::CPU> {
     auto dst_t = TPack<T, 1, Device::CPU>::empty({n});
     auto dst = dst_t.view;
-    T last_val = identity;  // position 0 is always the start of a segment
-    int count_seg = 0;
-    for (int i = 0; i < n; ++i) {
-      T i_val = src[i];
-      if (count_seg < n_segs && i == seg_start_inds[count_seg]) {
-        last_val = identity;
-        count_seg++;
-      }
-      T next_val = op(last_val, i_val);
-      dst[i] = (scan_type == tmol::portable::scan_type::exclusive) ? last_val
-                                                                   : next_val;
-      last_val = next_val;
-    }
+    SerialCPUOperations::segmented_scan_into<scan_type>(
+        mgr, src, seg_start_inds, dst.data(), n, n_segs, op, identity);
     return dst_t;
   }
 
