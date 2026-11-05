@@ -155,21 +155,34 @@ def test_cuda_hit_waits_for_nested_annotation_producer_stream():
     key = AnnotationKey.from_sources(source, settings=(torch.device("cuda"),))
     producer = torch.cuda.Stream()
     consumer = torch.cuda.Stream()
+    produced = torch.cuda.Event(enable_timing=True)
+    started = torch.cuda.Event(enable_timing=True)
+    consumed = torch.cuda.Event()
+    tensor = torch.zeros(1, device="cuda")
+    # Initialize clone/event machinery before the delayed producer starts.
+    # Host launch overhead is not a guarantee that GPU work remains pending.
+    with torch.cuda.stream(consumer):
+        tensor.clone()
+        produced.record()
+        started.record()
+        consumed.record()
+    torch.cuda.synchronize()
 
     with torch.cuda.stream(producer):
-        tensor = torch.zeros(1, device="cuda")
         torch.cuda._sleep(200_000_000)
         tensor.fill_(17)
+        produced.record()
         value = NestedTensor((tensor,))
         _store_annotation(owner, "annotation", key, value)
 
     with torch.cuda.stream(consumer):
         cached = _cached_annotation(owner, "annotation", key)
+        started.record()
         observed = cached.values[0].clone()
-        consumed = torch.cuda.Event()
         consumed.record(consumer)
 
     assert cached is value
-    assert not consumed.query()
     consumed.synchronize()
+    produced.synchronize()
+    assert produced.elapsed_time(started) >= 0
     assert observed.item() == 17
