@@ -6,6 +6,7 @@ from importlib import import_module
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 ABI_VERSION = 1
 
@@ -60,7 +61,7 @@ def register(target):
     return tuple(registered)
 
 
-def coordinate_energy(target, coords, parameters):
+def coordinate_energy(target, coords, parameters, *, channels=1):
     """First coordinate derivative from the common analytic native kernels.
 
     Outputs are independent per pose. The native value/gradient call defines a
@@ -68,12 +69,24 @@ def coordinate_energy(target, coords, parameters):
     differentiating fixed chemistry or parameter tables. Higher derivatives
     require a native derivative-of-gradient rule and are not implemented.
     """
-    parameters = tuple(jax.lax.stop_gradient(p) for p in parameters)
-    shape = jax.ShapeDtypeStruct(coords.shape[:1], coords.dtype)
+    if coords.dtype not in (jnp.float32, jnp.float64):
+        raise TypeError(
+            "native molecular scoring requires float32 or float64 coordinates"
+        )
+    parameters = tuple(
+        jax.lax.stop_gradient(
+            p.astype(coords.dtype) if jnp.issubdtype(p.dtype, jnp.floating) else p
+        )
+        for p in parameters
+    )
+    prefix = () if channels == 1 else (channels,)
+    shape = jax.ShapeDtypeStruct(prefix + coords.shape[:1], coords.dtype)
 
     def evaluate(x, args, derivative):
         results = (
-            (shape, jax.ShapeDtypeStruct(x.shape, x.dtype)) if derivative else shape
+            (shape, jax.ShapeDtypeStruct(prefix + x.shape, x.dtype))
+            if derivative
+            else shape
         )
         return jax.ffi.ffi_call(target, results, vmap_method="sequential")(x, *args)
 
@@ -88,3 +101,24 @@ def coordinate_energy(target, coords, parameters):
         return value, jnp.sum(gradient * tangents[0], axis=(-2, -1))
 
     return energy(coords, *parameters)
+
+
+def bonded_pose_arguments(pose, pbt):
+    """Runtime layout and common connection paths for whole-pose kernels."""
+    from tmol_core.chemical.packed import PackedBlockTypesData
+
+    bti = np.asarray(pose.block_type_ind)
+    poses, blocks = bti.shape
+    first = np.arange(poses * blocks, dtype=np.int32).reshape(poses, blocks)
+    first = np.where(bti >= 0, first, -1)
+    offsets = np.asarray(pose.block_coord_offset) + (
+        np.arange(poses, dtype=np.int32)[:, None] * pose.coords.shape[1]
+    )
+    paths = PackedBlockTypesData.join_atom_paths_from_conn(pbt.active_block_types)
+    if paths.shape[1] < pbt.max_n_conn:
+        paths = np.pad(
+            paths,
+            ((0, 0), (0, pbt.max_n_conn - paths.shape[1]), (0, 0), (0, 0)),
+            constant_values=-1,
+        )
+    return offsets.reshape(-1), first, bti, pose.inter_residue_connections, paths

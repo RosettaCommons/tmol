@@ -1,5 +1,8 @@
 """Small execution adapters for the common molecular scoring contract."""
 
+import os
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 
@@ -8,6 +11,7 @@ class Execution:
     def __init__(self, name):
         self.framework, device = name.split("-")
         self.name = name
+        self.requested_device = device
         self.capabilities = {"score", "coordinate_gradient"}
         if self.framework == "torch":
             self.module = pytest.importorskip("torch")
@@ -19,7 +23,15 @@ class Execution:
             )
             if not available:
                 pytest.skip(f"{name} device unavailable")
-            self.device = torch.device(device)
+            if device == "mps":
+                from tmol._cpp_lib import has_mps
+
+                if not has_mps():
+                    raise RuntimeError(
+                        "torch-mps lane requires a native TMol Metal build"
+                    )
+            # Apple execution is the supported CPU-pose/Metal-offload contract.
+            self.device = torch.device("cpu" if device == "mps" else device)
         elif self.framework == "jax":
             self.module = pytest.importorskip("jax")
             try:
@@ -36,9 +48,7 @@ class Execution:
 
             self.pose = pose_stack_from_file(path, self.device)
             self.score_function = beta2016_score_function(self.device)
-            self.scorer = self.score_function.render_whole_pose_scoring_module(
-                self.pose
-            )
+            self._render_torch()
         else:
             from tmol_jax import beta2016_score_function, pose_stack_from_pdb
 
@@ -46,6 +56,35 @@ class Execution:
                 self.pose = pose_stack_from_pdb(path)
                 self.score_function = beta2016_score_function()
         return self
+
+    def _render_torch(self):
+        from tmol.score._mps_offload import WHOLE_POSE_SCORE_TYPES
+
+        # Pure CPU and Apple overlay are separate lanes even on a Mac. The
+        # environment is read during render; each scorer retains its own plan.
+        with patch.dict(
+            os.environ,
+            {"TMOL_MPS_OFFLOAD": "1" if self.requested_device == "mps" else "0"},
+        ):
+            self.scorer = self.score_function.render_whole_pose_scoring_module(
+                self.pose
+            )
+        plan = getattr(self.scorer, "plan", None)
+        active = self.score_function.all_score_types()
+        gpu = (
+            set(st for term in plan.gpu_terms for st in term.score_types())
+            if plan
+            else set()
+        )
+        self.execution_routes = {
+            st.name: "mps" if st in gpu else self.device.type for st in active
+        }
+        if self.requested_device == "mps":
+            expected = set(active) & WHOLE_POSE_SCORE_TYPES
+            if expected != gpu:
+                raise AssertionError(
+                    f"requested Metal terms were not offloaded: {expected - gpu}"
+                )
 
     def coords(self):
         return self.numpy(self.pose.coords)
@@ -100,9 +139,7 @@ class Execution:
         for term in terms:
             self.score_function.set_weight(ScoreType[term], 1.0)
         if self.framework == "torch":
-            self.scorer = self.score_function.render_whole_pose_scoring_module(
-                self.pose
-            )
+            self._render_torch()
         return self
 
     def numpy(self, value):

@@ -109,7 +109,6 @@ def test_pdb_parser_uses_first_model():
 
 def test_peptide_bond_impropers_match_independent_geometry(tmp_path):
     """Planarity impropers across each peptide bond follow plane-normal geometry."""
-    import attrs
     import jax.numpy as jnp
     from tmol_jax.score import ScoreType
 
@@ -124,12 +123,13 @@ def test_peptide_bond_impropers_match_independent_geometry(tmp_path):
     coords = pose.coords + 0.17 * jnp.sin(jnp.arange(pose.coords.size)).reshape(
         pose.coords.shape
     ).astype(pose.coords.dtype)
-    intra_only = attrs.evolve(
-        state, inter_improper_mask=jnp.zeros_like(state.inter_improper_mask)
+    disconnected = pose.replace(
+        inter_residue_connections=jnp.full_like(pose.inter_residue_connections, -1)
     )
+    intra_only = term.setup_for_pose_stack(disconnected)
     inter = (
         term(pose, state, coords)[ScoreType.cart_impropers]
-        - term(pose, intra_only, coords)[ScoreType.cart_impropers]
+        - term(disconnected, intra_only, coords)[ScoreType.cart_impropers]
     )
 
     pbt = pose.packed_block_types

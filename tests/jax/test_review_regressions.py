@@ -17,7 +17,6 @@ from tmol_jax.io import (
 from tmol_jax.io.write_pose_stack_pdb import atom_records_from_pose_stack
 from tmol_jax.numeric.bspline import bspline_coefficients, bspline_interpolate
 from tmol_jax.optimization.line_search import _cubic_interp, strong_wolfe_line_search
-from tmol_jax.pose.packed_block_types import PackedBlockTypes
 from tmol_jax.score import ScoreFunction, ScoreType
 from tmol_jax.score.cartbonded.cartbonded_energy_term import CartBondedEnergyTerm
 
@@ -86,28 +85,26 @@ def test_elec_database_switch_preserves_rendered_scorers():
     np.testing.assert_array_equal(zero(pose.coords), 0.0)
 
 
-def test_cart_tables_follow_palette_lifetime():
+def test_cart_scores_follow_molecular_identity_across_owner_lifetimes():
+    from tmol_jax import ResidueBlock, pose_stack_from_residue_blocks
+
+    db = beta2016_score_function().param_db
     full = default_packed_block_types()
-    term = CartBondedEnergyTerm(beta2016_score_function().param_db)
-    types = [
-        next(rt for rt in full.active_block_types if rt.name == name)
-        for name in ("ILE", "LEU")
-    ]
-    expected = [
-        CartBondedEnergyTerm(term.param_db)._build_pbt_tables(
-            PackedBlockTypes.from_restypes(full.chem_db, [rt])
+    term = CartBondedEnergyTerm(db)
+    scores = []
+    for name in ("ILE", "LEU", "ILE", "LEU"):
+        bt = next(rt for rt in full.active_block_types if rt.name == name)
+        x = bt.ideal_coords[bt.at_to_icoor_ind].astype(np.float32)
+        x += np.random.default_rng(814).normal(0, 0.05, x.shape)
+        pose = pose_stack_from_residue_blocks(
+            [[ResidueBlock(name, tuple(a.name for a in bt.atoms), x)]],
+            parameter_database=db,
         )
-        for rt in types
-    ]
-    # Release each owner, allowing natural address reuse; the result must
-    # always follow its residue type even when the allocator does not recycle.
-    for i in range(60):
-        owner = PackedBlockTypes.from_restypes(full.chem_db, [types[i % 2]])
-        actual = term._build_pbt_tables(owner)
-        assert term._build_pbt_tables(owner) is actual
-        for key in ("length_atoms", "length_params", "angle_atoms", "angle_params"):
-            np.testing.assert_array_equal(actual[key], expected[i % 2][key])
-        del owner
+        state = term.setup_for_pose_stack(pose)
+        scores.append(jnp.stack(list(term(pose, state).values())))
+    np.testing.assert_array_equal(scores[0], scores[2])
+    np.testing.assert_array_equal(scores[1], scores[3])
+    assert not np.allclose(scores[0], scores[1])
 
 
 @pytest.fixture

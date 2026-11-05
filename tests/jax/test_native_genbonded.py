@@ -1,4 +1,4 @@
-"""JAX transformations around real generic bonded native molecular execution."""
+"""JAX transformations around real shared bonded native molecular execution."""
 
 import attrs
 import os
@@ -23,10 +23,23 @@ def backend_name(request):
     return request.param
 
 
+@pytest.mark.parametrize(
+    "terms",
+    [
+        ("gen_torsions",),
+        (
+            "cart_lengths",
+            "cart_angles",
+            "cart_torsions",
+            "cart_impropers",
+            "cart_hxltorsions",
+        ),
+    ],
+)
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
-def test_native_coordinate_transforms_and_pose_independence(dtype, backend_name):
+def test_native_coordinate_transforms_and_pose_independence(dtype, backend_name, terms):
     with jax.enable_x64(dtype == np.float64):
-        backend = Execution(backend_name).molecule(CASES["mixed_batch"])
+        backend = Execution(backend_name).molecule(CASES["mixed_batch"], terms=terms)
         pose = backend.pose
         score = backend.score_function.render_whole_pose_scoring_module(pose)
         x = pose.coords.astype(dtype)

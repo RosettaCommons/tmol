@@ -136,6 +136,11 @@ class ScoreFunction:
                 if types[i].name3 not in canonical_aa_3letter
             }
             general_terms = {
+                ScoreType.cart_lengths,
+                ScoreType.cart_angles,
+                ScoreType.cart_torsions,
+                ScoreType.cart_impropers,
+                ScoreType.cart_hxltorsions,
                 ScoreType.fa_ljatr,
                 ScoreType.fa_ljrep,
                 ScoreType.fa_lk,

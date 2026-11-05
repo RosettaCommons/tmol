@@ -18,14 +18,13 @@ inline void require_shape(
     std::initializer_list<int64_t> shape) {
   auto dims = buffer.dimensions();
   if (buffer.element_type() != dtype || dims.size() != shape.size()) {
-    throw std::invalid_argument(
-        "generic bonded FFI buffer dtype/rank mismatch");
+    throw std::invalid_argument("native FFI buffer dtype/rank mismatch");
   }
   size_t i = 0;
   for (int64_t size : shape) {
     if ((size >= 0 && dims[i] != size)
         || dims[i] > std::numeric_limits<int32_t>::max()) {
-      throw std::invalid_argument("generic bonded FFI buffer shape mismatch");
+      throw std::invalid_argument("native FFI buffer shape mismatch");
     }
     ++i;
   }
@@ -149,15 +148,29 @@ void execute_genbonded(
       g);
 }
 
-inline std::vector<ffi::AnyBuffer> genbonded_arguments(
-    ffi::RemainingArgs args) {
+inline std::vector<ffi::AnyBuffer> native_arguments(ffi::RemainingArgs args) {
   std::vector<ffi::AnyBuffer> result;
   for (size_t i = 0; i < args.size(); ++i) {
     auto value = args.get<ffi::AnyBuffer>(i);
     if (!value)
-      throw std::invalid_argument("generic bonded expected buffer operand");
+      throw std::invalid_argument("native FFI expected buffer operand");
     result.push_back(*value);
   }
   return result;
 }
+struct GenBondedKernel {
+  static void validate(
+      const std::vector<ffi::AnyBuffer>& a,
+      ffi::AnyBuffer e,
+      const ffi::AnyBuffer* g) {
+    validate_genbonded(a, e, g);
+  }
+  template <template <Device> class Ops, Device D, typename Real>
+  static void execute(
+      const std::vector<ffi::AnyBuffer>& a,
+      ffi::AnyBuffer e,
+      const ffi::AnyBuffer* g) {
+    execute_genbonded<Ops, D, Real>(a, e, g);
+  }
+};
 }  // namespace tmol::jax
