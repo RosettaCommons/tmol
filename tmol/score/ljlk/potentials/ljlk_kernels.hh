@@ -576,6 +576,17 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
   CTA_LAUNCH_T_PARAMS;
   typedef LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, launch_t>
       shared_mem_union;
+  // Pair arithmetic needs only these three views. Keeping the full launch
+  // context out of this frequently copied closure avoids copying topology
+  // metadata for every tile while preserving the same native operations.
+  auto const type_params = ctx.type_params;
+  auto const coordinate_derivatives = ctx.dV_dcoords;
+  auto const upstream_weights = ctx.dTdV;
+  // Backward accumulates one weighted gradient lane. Resolve its subview
+  // once per pair workgroup, not once for every atom pair.
+  auto weighted_derivatives = decltype(ctx.dV_dcoords[0]){};
+  if constexpr (Mode == LJLKMode::Backward)
+    weighted_derivatives = ctx.dV_dcoords[0];
   auto atom_pair_ljlk_fn =
       ([=] TMOL_DEVICE_FUNC(
            int atom_tile_ind1,
@@ -584,7 +595,10 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
            int start_atom2,
            TMOL_THREAD LJLKScoringData<Real> const& score_dat,
            int cp_separation) {
-        (void)ctx;
+        (void)type_params;
+        (void)coordinate_derivatives;
+        (void)upstream_weights;
+        (void)weighted_derivatives;
         (void)cta;  // NVCC captures outside constexpr branches.
         // Each mode calls the same mature scalar physics and shares all
         // topology, tile loading, count-pair exclusions and atom traversal.
@@ -592,11 +606,11 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
           Real weights[3];
           for (int term = 0; term < 3; ++term) {
             if constexpr (Rotamer)
-              weights[term] = ctx.dTdV[term][cta];
+              weights[term] = upstream_weights[term][cta];
             else
               weights[term] =
-                  ctx.dTdV[term][score_dat.pose_ind][score_dat.block_ind1]
-                          [score_dat.block_ind2];
+                  upstream_weights[term][score_dat.pose_ind]
+                                  [score_dat.block_ind1][score_dat.block_ind2];
           }
           ljlk_atom_derivs<Real, D>(
               atom_tile_ind1,
@@ -608,8 +622,8 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
               weights[0],
               weights[1],
               weights[2],
-              ctx.dV_dcoords[0],
-              ctx.type_params);
+              weighted_derivatives,
+              type_params);
           return tmol::portable::array<Real, 3>{0, 0, 0};
         } else if constexpr (Mode == LJLKMode::EnergyAndDerivatives) {
           return ljlk_atom_energy_and_derivs_full<Real, D>(
@@ -619,15 +633,15 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
               start_atom2,
               score_dat,
               cp_separation,
-              ctx.dV_dcoords,
-              ctx.type_params);
+              coordinate_derivatives,
+              type_params);
         } else {
           return ljlk_atom_energy<Real, D>(
               atom_tile_ind1,
               atom_tile_ind2,
               score_dat,
               cp_separation,
-              ctx.type_params);
+              type_params);
         }
       });
 
