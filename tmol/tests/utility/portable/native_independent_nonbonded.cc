@@ -19,3 +19,13 @@ auto lj32 =
 auto lj64 =
     &tmol::score::ljlk::potentials::
         ljlk_pose_forward_native<SerialOps, tmol::Device::CPU, double, int>;
+
+using namespace tmol::score::ljlk::potentials;
+auto lb32 =
+    &ljlk_backward_native<false, SerialOps, tmol::Device::CPU, float, int>;
+auto lb64 =
+    &ljlk_backward_native<false, SerialOps, tmol::Device::CPU, double, int>;
+auto lr32 =
+    &ljlk_backward_native<true, SerialOps, tmol::Device::CPU, float, int>;
+auto lr64 =
+    &ljlk_backward_native<true, SerialOps, tmol::Device::CPU, double, int>;

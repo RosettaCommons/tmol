@@ -554,7 +554,11 @@ union LJLKSharedMem {
   }
 // end of macro definitions
 
+enum class LJLKMode { Energy, EnergyAndDerivatives, Backward };
+
 template <
+    LJLKMode Mode,
+    bool Rotamer,
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
     typename Real,
@@ -563,7 +567,7 @@ template <
     typename Ctx,
     typename Shared,
     typename PoseAccum>
-TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
+TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
@@ -576,16 +580,55 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
       ([=] TMOL_DEVICE_FUNC(
            int atom_tile_ind1,
            int atom_tile_ind2,
-           int,
-           int,
+           int start_atom1,
+           int start_atom2,
            TMOL_THREAD LJLKScoringData<Real> const& score_dat,
            int cp_separation) {
-        return ljlk_atom_energy<Real, D>(
-            atom_tile_ind1,
-            atom_tile_ind2,
-            score_dat,
-            cp_separation,
-            ctx.type_params);
+        (void)ctx;
+        (void)cta;  // NVCC captures outside constexpr branches.
+        // Each mode calls the same mature scalar physics and shares all
+        // topology, tile loading, count-pair exclusions and atom traversal.
+        if constexpr (Mode == LJLKMode::Backward) {
+          Real weights[3];
+          for (int term = 0; term < 3; ++term) {
+            if constexpr (Rotamer)
+              weights[term] = ctx.dTdV[term][cta];
+            else
+              weights[term] =
+                  ctx.dTdV[term][score_dat.pose_ind][score_dat.block_ind1]
+                          [score_dat.block_ind2];
+          }
+          ljlk_atom_derivs<Real, D>(
+              atom_tile_ind1,
+              atom_tile_ind2,
+              start_atom1,
+              start_atom2,
+              score_dat,
+              cp_separation,
+              weights[0],
+              weights[1],
+              weights[2],
+              ctx.dV_dcoords[0],
+              ctx.type_params);
+          return tmol::portable::array<Real, 3>{0, 0, 0};
+        } else if constexpr (Mode == LJLKMode::EnergyAndDerivatives) {
+          return ljlk_atom_energy_and_derivs_full<Real, D>(
+              atom_tile_ind1,
+              atom_tile_ind2,
+              start_atom1,
+              start_atom2,
+              score_dat,
+              cp_separation,
+              ctx.dV_dcoords,
+              ctx.type_params);
+        } else {
+          return ljlk_atom_energy<Real, D>(
+              atom_tile_ind1,
+              atom_tile_ind2,
+              score_dat,
+              cp_separation,
+              ctx.type_params);
+        }
       });
 
   auto score_inter_ljlk_atom_pair =
@@ -600,28 +643,32 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
 
   int const max_important_bond_separation = 4;
 
-  int const pose_ind = cta / (ctx.max_n_upper_triangle_inds);
-  int const block_ind_pair = cta % (ctx.max_n_upper_triangle_inds);
-
-  // We do not have to kill half of our thread blocks simply because they
-  // represent the lower triangle now that we're using upper-triangle indices
-  auto upper_triangle_ind = common::upper_triangle_inds_from_linear_index(
-      block_ind_pair, ctx.max_n_blocks + 1);
-
-  int const block_ind1 = common::get<0>(upper_triangle_ind);
-  int const block_ind2 = common::get<1>(upper_triangle_ind) - 1;
-
-  // We still kill CTAs targetting non-neighboring block pairs, though,
-  // and that can be a lot
-  if (!ctx.use_shared_compact_block_neighbors
-      && ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0) {
-    return;
-  }
-  int const rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
-  int const rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
-
-  if (rot_ind1 < 0 || rot_ind2 < 0) {
-    return;
+  int pose_ind, block_ind1, block_ind2, rot_ind1, rot_ind2;
+  if constexpr (Rotamer) {
+    pose_ind = ctx.dispatch_indices[0][cta];
+    rot_ind1 = ctx.dispatch_indices[1][cta];
+    rot_ind2 = ctx.dispatch_indices[2][cta];
+    if (rot_ind1 < 0 || rot_ind2 < 0) return;
+    block_ind1 = ctx.block_ind_for_rot[rot_ind1];
+    block_ind2 = ctx.block_ind_for_rot[rot_ind2];
+  } else {
+    pose_ind = cta / ctx.max_n_upper_triangle_inds;
+    auto pair = common::upper_triangle_inds_from_linear_index(
+        cta % ctx.max_n_upper_triangle_inds, ctx.max_n_blocks + 1);
+    block_ind1 = common::get<0>(pair);
+    block_ind2 = common::get<1>(pair) - 1;
+    if (!ctx.use_shared_compact_block_neighbors
+        && ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0)
+      return;
+    if constexpr (Mode == LJLKMode::Backward) {
+      if (ctx.dTdV[0][pose_ind][block_ind1][block_ind2] == 0
+          && ctx.dTdV[1][pose_ind][block_ind1][block_ind2] == 0
+          && ctx.dTdV[2][pose_ind][block_ind1][block_ind2] == 0)
+        return;
+    }
+    rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
+    rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
+    if (rot_ind1 < 0 || rot_ind2 < 0) return;
   }
 
   int const block_type1 = ctx.block_type_ind_for_rot[rot_ind1];
@@ -645,13 +692,28 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
 
   auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
 
-  // Evaluate both the LJ and LK scores in separate dispatches
-  // over all atoms in the tile and the subset of heavy atoms in
-  // the tile
   auto eval_interres_atom_pair_scores =
       ([=] EVAL_INTERRES_ATOM_PAIR_SCORES_FUSED);
 
-  auto store_calculated_energies = ([=] STORE_POSE_CALCULATED_ENERGIES);
+  auto store_calculated_energies =
+      ([=] TMOL_DEVICE_FUNC(
+           TMOL_THREAD LJLKScoringData<Real>& score_dat,
+           TMOL_SHARED_REF(shared_mem_union) storage) {
+        // Keep captures visible to NVCC outside constexpr branches.
+        (void)ctx;
+        (void)cta;
+        (void)cpu_pose_accum;
+        (void)lane;
+        if constexpr (Mode != LJLKMode::Backward) {
+          if constexpr (Rotamer) {
+            auto store = ([=] STORE_ROTAMER_CALCULATED_ENERGIES);
+            store(score_dat, storage);
+          } else {
+            auto store = ([=] STORE_POSE_CALCULATED_ENERGIES);
+            store(score_dat, storage);
+          }
+        }
+      });
 
   auto load_tile_invariant_intrares_data =
       ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
@@ -664,9 +726,6 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
 
   auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
 
-  // Evaluate both the LJ and LK scores in separate dispatches
-  // over all atoms in the tile and the subset of heavy atoms in
-  // the tile
   auto eval_intrares_atom_pair_scores =
       ([=] EVAL_INTRARES_ATOM_PAIR_SCORES_FUSED);
 
@@ -702,10 +761,31 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
       lane);
 }
 
-// The rotamer-pair variant: identical atom-pair work, but the block pair
-// comes from the dispatch list the sphere-overlap kernels built rather than
-// from the upper triangle, and every workgroup writes its own output cell --
-// so there are no atomics here and nothing to reduce afterwards.
+template <
+    template <tmol::Device> class DeviceDispatch,
+    tmol::Device D,
+    typename Real,
+    typename Int,
+    typename launch_t,
+    typename Ctx,
+    typename Shared,
+    typename PoseAccum>
+TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
+    TMOL_THREAD Ctx const& ctx,
+    TMOL_SHARED_REF(Shared) shared,
+    int cta,
+    PoseAccum cpu_pose_accum,
+    WorkgroupLane<D> lane = {}) {
+  ljlk_evaluate_pair<
+      LJLKMode::Energy,
+      false,
+      DeviceDispatch,
+      D,
+      Real,
+      Int,
+      launch_t>(ctx, shared, cta, cpu_pose_accum, lane);
+}
+
 template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
@@ -721,114 +801,14 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_rotamer_energies_by_block(
     int cta,
     PoseAccum cpu_pose_accum,
     WorkgroupLane<D> lane = {}) {
-  CTA_LAUNCH_T_PARAMS;
-  typedef LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, launch_t>
-      shared_mem_union;
-  auto atom_pair_ljlk_fn =
-      ([=] TMOL_DEVICE_FUNC(
-           int atom_tile_ind1,
-           int atom_tile_ind2,
-           int,
-           int,
-           TMOL_THREAD LJLKScoringData<Real> const& score_dat,
-           int cp_separation) {
-        return ljlk_atom_energy<Real, D>(
-            atom_tile_ind1,
-            atom_tile_ind2,
-            score_dat,
-            cp_separation,
-            ctx.type_params);
-      });
-
-  auto score_inter_ljlk_atom_pair =
-      ([=] SCORE_INTER_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
-  auto score_intra_ljlk_atom_pair =
-      ([=] SCORE_INTRA_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
-
-  auto load_block_coords_and_params_into_shared =
-      ([=] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
-
-  auto load_block_into_shared = ([=] LOAD_BLOCK_INTO_SHARED);
-
-  int const max_important_bond_separation = 4;
-
-  int const pose_ind = ctx.dispatch_indices[0][cta];
-  int const rot_ind1 = ctx.dispatch_indices[1][cta];
-  int const rot_ind2 = ctx.dispatch_indices[2][cta];
-
-  int const block_ind1 = ctx.block_ind_for_rot[rot_ind1];
-  int const block_ind2 = ctx.block_ind_for_rot[rot_ind2];
-
-  int const block_type1 = ctx.block_type_ind_for_rot[rot_ind1];
-  int const block_type2 = ctx.block_type_ind_for_rot[rot_ind2];
-
-  if (block_type1 < 0 || block_type2 < 0) {
-    return;
-  }
-
-  int const n_atoms1 = ctx.block_type_n_atoms[block_type1];
-  int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
-
-  auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
-
-  auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
-
-  auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
-
-  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
-
-  auto eval_interres_atom_pair_scores =
-      ([=] EVAL_INTERRES_ATOM_PAIR_SCORES_FUSED);
-
-  auto store_calculated_energies = ([=] STORE_ROTAMER_CALCULATED_ENERGIES);
-
-  auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
-
-  auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
-
-  auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
-
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
-
-  auto eval_intrares_atom_pair_scores =
-      ([=] EVAL_INTRARES_ATOM_PAIR_SCORES_FUSED);
-
-  tmol::score::common::tile_evaluate_rot_pair<
+  ljlk_evaluate_pair<
+      LJLKMode::Energy,
+      true,
       DeviceDispatch,
       D,
-      LJLKScoringData<Real>,
-      LJLKScoringData<Real>,
       Real,
-      ljlk_tile_size>(
-      shared,
-      pose_ind,
-      rot_ind1,
-      rot_ind2,
-      block_ind1,
-      block_ind2,
-      block_type1,
-      block_type2,
-      n_atoms1,
-      n_atoms2,
-      load_tile_invariant_interres_data,
-      load_interres1_tile_data_to_shared,
-      load_interres2_tile_data_to_shared,
-      load_interres_data_from_shared,
-      eval_interres_atom_pair_scores,
-      store_calculated_energies,
-      load_tile_invariant_intrares_data,
-      load_intrares1_tile_data_to_shared,
-      load_intrares2_tile_data_to_shared,
-      load_intrares_data_from_shared,
-      eval_intrares_atom_pair_scores,
-      store_calculated_energies,
-      lane);
+      Int,
+      launch_t>(ctx, shared, cta, cpu_pose_accum, lane);
 }
 
 template <
@@ -846,134 +826,14 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies(
     int cta,
     PoseAccum cpu_pose_accum,
     WorkgroupLane<D> lane = {}) {
-  CTA_LAUNCH_T_PARAMS;
-  typedef LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, launch_t>
-      shared_mem_union;
-  auto atom_pair_ljlk_fn =
-      ([=] TMOL_DEVICE_FUNC(
-           int atom_tile_ind1,
-           int atom_tile_ind2,
-           int start_atom1,
-           int start_atom2,
-           TMOL_THREAD LJLKScoringData<Real> const& score_dat,
-           int cp_separation) {
-        return ljlk_atom_energy_and_derivs_full<Real, D>(
-            atom_tile_ind1,
-            atom_tile_ind2,
-            start_atom1,
-            start_atom2,
-            score_dat,
-            cp_separation,
-            ctx.dV_dcoords,  // captured
-            ctx.type_params);
-      });
-
-  auto score_inter_ljlk_atom_pair =
-      ([=] SCORE_INTER_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
-  auto score_intra_ljlk_atom_pair =
-      ([=] SCORE_INTRA_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
-
-  auto load_block_coords_and_params_into_shared =
-      ([=] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
-
-  auto load_block_into_shared = ([=] LOAD_BLOCK_INTO_SHARED);
-
-  int const max_important_bond_separation = 4;
-
-  int const pose_ind = cta / (ctx.max_n_upper_triangle_inds);
-  int const block_ind_pair = cta % (ctx.max_n_upper_triangle_inds);
-
-  // We do not have to kill half of our thread blocks simply because they
-  // represent the lower triangle now that we're using upper-triangle indices
-  auto upper_triangle_ind = common::upper_triangle_inds_from_linear_index(
-      block_ind_pair, ctx.max_n_blocks + 1);
-
-  int const block_ind1 = common::get<0>(upper_triangle_ind);
-  int const block_ind2 = common::get<1>(upper_triangle_ind) - 1;
-
-  // We still kill CTAs targetting non-neighboring block pairs, though,
-  // and that can be a lot
-  if (!ctx.use_shared_compact_block_neighbors
-      && ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0) {
-    return;
-  }
-  int const rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
-  int const rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
-
-  if (rot_ind1 < 0 || rot_ind2 < 0) {
-    return;
-  }
-
-  int const block_type1 = ctx.block_type_ind_for_rot[rot_ind1];
-  int const block_type2 = ctx.block_type_ind_for_rot[rot_ind2];
-
-  if (block_type1 < 0 || block_type2 < 0) {
-    return;
-  }
-
-  int const n_atoms1 = ctx.block_type_n_atoms[block_type1];
-  int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
-
-  auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
-
-  auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
-
-  auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
-
-  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
-
-  auto eval_interres_atom_pair_scores =
-      ([=] EVAL_INTERRES_ATOM_PAIR_SCORES_FUSED);
-
-  auto store_calculated_energies = ([=] STORE_POSE_CALCULATED_ENERGIES);
-
-  auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
-
-  auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
-
-  auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
-
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
-
-  auto eval_intrares_atom_pair_scores =
-      ([=] EVAL_INTRARES_ATOM_PAIR_SCORES_FUSED);
-
-  tmol::score::common::tile_evaluate_rot_pair<
+  ljlk_evaluate_pair<
+      LJLKMode::EnergyAndDerivatives,
+      false,
       DeviceDispatch,
       D,
-      LJLKScoringData<Real>,
-      LJLKScoringData<Real>,
       Real,
-      ljlk_tile_size>(
-      shared,
-      pose_ind,
-      rot_ind1,
-      rot_ind2,
-      block_ind1,
-      block_ind2,
-      block_type1,
-      block_type2,
-      n_atoms1,
-      n_atoms2,
-      load_tile_invariant_interres_data,
-      load_interres1_tile_data_to_shared,
-      load_interres2_tile_data_to_shared,
-      load_interres_data_from_shared,
-      eval_interres_atom_pair_scores,
-      store_calculated_energies,
-      load_tile_invariant_intrares_data,
-      load_intrares1_tile_data_to_shared,
-      load_intrares2_tile_data_to_shared,
-      load_intrares_data_from_shared,
-      eval_intrares_atom_pair_scores,
-      store_calculated_energies,
-      lane);
+      Int,
+      launch_t>(ctx, shared, cta, cpu_pose_accum, lane);
 }
 
 }  // namespace potentials
@@ -981,10 +841,7 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies(
 }  // namespace score
 }  // namespace tmol
 
-// The kernel bodies above are the only users of these. ljlk_pose_score.impl.hh
-// keeps its own copies for the rotamer and derivative paths, which capture
-// local state rather than a context struct; without this they would be
-// redefinitions.
+// Keep implementation macros private to this header.
 #undef SCORE_INTER_LJ_ATOM_PAIR
 #undef SCORE_INTRA_LJ_ATOM_PAIR
 #undef LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED
