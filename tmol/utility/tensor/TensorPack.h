@@ -24,6 +24,15 @@ struct TPack {
 
   TPack() : tensor(), view() {};
 
+  // Explicit topology-preparation transfer. The framework binding guards the
+  // input CUDA device before using this policy, as it does for allocations.
+  static TPack from_cpu(TPack<T, N, Device::CPU, P> source) {
+    if constexpr (D == Device::CPU) return source;
+    return TPack(source.tensor.to(
+        tmol::native::Device(
+            D == Device::MPS ? tmol::native::kMPS : tmol::native::kCUDA)));
+  }
+
   int64_t dim() { return view.dim(); }
   int64_t size(int64_t d) { return view.size(d); }
   int64_t stride(int64_t d) { return view.stride(d); }

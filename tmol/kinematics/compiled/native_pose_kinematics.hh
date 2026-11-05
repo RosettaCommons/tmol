@@ -20,6 +20,56 @@ template <
     template <typename, size_t, tmol::Device> class Pack,
     typename Context>
 struct NativeKinForestFromStencil {
+  // Assemble a validated FoldForest and prepared palette in one native call.
+  // CPU mirrors describe the same immutable topology as the device views.
+  // Pack::from_cpu supplies the explicit preparation-time transfer policy.
+  static auto assemble_pose(
+      Context& mgr,
+      int64_t max_n_pose_atoms,
+      TView<Int, 2, D> block_coord_offset,
+      TView<Int, 2, D> block_type,
+      TView<Int, 4, D> inter_residue_connections,
+      TView<Int, 3, D> ff_edges,
+      TView<Int, 1, D> block_type_n_atoms,
+      TView<bool, 2, D> block_type_atom_is_real,
+      TView<Int, 1, D> block_type_n_conn,
+      TView<Int, 2, D> block_type_conn_atom,
+      TView<Int, 2, D> block_type_polymeric_conn,
+      TView<Int, 1, D> jump_atom,
+      TView<Int, 3, D> parents,
+      TView<Int, 3, D> dof_type,
+      TView<Int, 3, D> n_gens,
+      TView<Int, 5, D> conn_info,
+      TView<Int, 5, D> nodes_for_gen,
+      TView<Int, 4, D> n_scan_path_segs,
+      TView<Int, 5, D> scan_path_seg_starts,
+      TView<bool, 5, D> scan_path_seg_is_real,
+      TView<bool, 5, D> scan_path_seg_is_inter_block,
+      TView<Int, 5, D> scan_path_seg_lengths,
+      TView<Int, 3, Device::CPU> ff_edges_cpu,
+      TView<Int, 2, Device::CPU> block_type_cpu,
+      TView<Int, 4, Device::CPU> connections_cpu,
+      TView<Int, 5, Device::CPU> conn_info_cpu,
+      TView<Int, 2, Device::CPU> polymeric_conn_cpu,
+      TView<Int, 1, Device::CPU> n_conn_cpu)
+      -> std::tuple<
+          Pack<Int, 1, D>,
+          Pack<Int, 1, D>,
+          Pack<Int, 1, D>,
+          Pack<Int, 1, D>,
+          Pack<Int, 1, D>,
+          Pack<Int, 1, D>,
+          Pack<Int, 1, D>,
+          Pack<Int, 1, D>,
+          Pack<Int, 2, D>,
+          Pack<Int, 1, D>,
+          Pack<Int, 1, D>,
+          Pack<Int, 2, D>,
+          Pack<Int, 3, D>,
+          Pack<bool, 2, D>,
+          Pack<Int, 3, D>,
+          Pack<Int, 2, D>>;
+
   static auto get_kfo_indices_for_atoms(
       Context& mgr,
       TView<Int, 2, D> pose_stack_block_coord_offset,
