@@ -1,5 +1,6 @@
 """Pack protein coordinates and construct exact connection-graph distances."""
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -19,11 +20,11 @@ def _connect(connections, pose, left, right, left_conn, right_conn):
     connections[pose, right, right_conn] = left, left_conn
 
 
-def _connections(pbt, block_types, chains, disulfides):
+def _connections(pbt, block_types, chains, disulfides, explicit=None):
     poses, blocks = block_types.shape
     connections = np.full((poses, blocks, pbt.max_n_conn, 2), -1, np.int32)
     for pose, row in enumerate(block_types):
-        for left in range(len(chains[pose]) - 1):
+        for left in range(len(chains[pose]) - 1) if explicit is None else ():
             right = left + 1
             if (
                 row[left] < 0
@@ -47,6 +48,23 @@ def _connections(pbt, block_types, chains, disulfides):
                 for i in (left, right)
             ]
             _connect(connections, pose, left, right, *endpoints)
+        for left, left_name, right, right_name in (
+            () if explicit is None else explicit[pose]
+        ):
+            if (
+                not isinstance(left, (int, np.integer))
+                or not isinstance(right, (int, np.integer))
+                or not (0 <= left < blocks and 0 <= right < blocks)
+                or row[left] < 0
+                or row[right] < 0
+                or left == right
+            ):
+                raise ValueError("invalid inter-residue bond endpoints")
+            slots = [
+                pbt.active_block_types[row[b]].connection_to_cidx.get(name, -1)
+                for b, name in ((left, left_name), (right, right_name))
+            ]
+            _connect(connections, pose, left, right, *slots)
     return connections
 
 
@@ -101,9 +119,22 @@ class PoseStackBuilder:
         res_num_per_pose,
         res_name_per_pose=None,
         disulfide_pairs_per_pose=None,
+        *,
+        connections_per_pose=None,
     ):
-        """Pack aligned per-pose arrays; negative block types denote padding."""
+        """Pack aligned arrays; negative block types denote padding.
+
+        Explicit connections are ``(block, connection_name, block,
+        connection_name)`` tuples per pose. When supplied, they replace inferred
+        polymer links, allowing branches, cycles and disconnected components.
+        """
         rows = [np.asarray(row, dtype=np.int32) for row in block_type_inds_per_pose]
+        if connections_per_pose is not None and len(connections_per_pose) != len(rows):
+            raise ValueError("connections must match the pose batch length")
+        if connections_per_pose is not None and disulfide_pairs_per_pose is not None:
+            raise ValueError("use explicit connections or disulfide pairs, not both")
+        if any(np.any(row >= pbt.n_types) for row in rows):
+            raise ValueError("block type index is outside the residue palette")
         if res_name_per_pose is None:
             res_name_per_pose = [
                 [
@@ -125,8 +156,6 @@ class PoseStackBuilder:
             res_name_per_pose,
             disulfides,
         )
-        if any(np.any(row >= pbt.n_types) for row in rows):
-            raise ValueError("block type index is outside the residue palette")
         block_types = np.full((len(rows), max(map(len, rows))), -1, np.int32)
         for pose, row in enumerate(rows):
             block_types[pose, : len(row)] = row
@@ -135,15 +164,22 @@ class PoseStackBuilder:
         cumulative = np.cumsum(counts, axis=1, dtype=np.int32)
         offsets = cumulative - counts
         totals = cumulative[:, -1]
-        coords = np.zeros((len(rows), int(totals.max()), 3), np.float32)
+        dtype = np.result_type(*[np.asarray(x).dtype for x in coords_per_pose])
+        if dtype not in (np.dtype("float32"), np.dtype("float64")):
+            raise TypeError("coordinates must have float32 or float64 dtype")
+        if dtype == np.dtype("float64") and not jax.config.x64_enabled:
+            raise ValueError("float64 coordinates require jax_enable_x64=True")
+        coords = np.zeros((len(rows), int(totals.max()), 3), dtype)
         for pose, source in enumerate(coords_per_pose):
-            source = np.asarray(source, dtype=np.float32)
+            source = np.asarray(source, dtype=dtype)
             if source.shape != (totals[pose], 3):
                 raise ValueError(
                     "coordinate shape does not match the residue atom counts"
                 )
             coords[pose, : totals[pose]] = source
-        connections = _connections(pbt, block_types, chain_id_per_pose, disulfides)
+        connections = _connections(
+            pbt, block_types, chain_id_per_pose, disulfides, connections_per_pose
+        )
         distances = _bond_separation(pbt, block_types, connections)
         numbers = np.full(block_types.shape, -1, np.int32)
         for pose, row in enumerate(res_num_per_pose):

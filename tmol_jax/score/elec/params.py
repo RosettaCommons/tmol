@@ -61,8 +61,8 @@ def _charges_for_block_type(
 ) -> np.ndarray:
     """Per-atom partial charges for one block type, as ``float32[n_atoms]``.
 
-    Preserve the JAX zero-fill policy for absent charges; the shared lookup
-    otherwise follows canonical compound-patch precedence and validation.
+    Missing or non-finite charges are errors, including in explicit overrides.
+    The shared lookup follows compound-patch precedence and validation.
     """
 
     atoms = tuple(block_type.atoms)
@@ -77,11 +77,18 @@ def _charges_for_block_type(
     if restype_charges is not None:
         for i, atm in enumerate(atoms):
             atm_name = getattr(atm, "name", atm)
-            if atm_name in restype_charges:
-                out[i] = np.float32(restype_charges[atm_name])
+            if atm_name not in restype_charges:
+                raise KeyError(
+                    f"Elec charge for atom {block_type.name},{atm_name} not found"
+                )
+            out[i] = np.float32(restype_charges[atm_name])
+        if not np.isfinite(out).all():
+            raise ValueError(
+                f"Elec charges for {block_type.name} are non-finite in float32"
+            )
         return out
 
-    return partial_charges_for_block(block_type, partial_charges, missing=0.0)
+    return partial_charges_for_block(block_type, partial_charges)
 
 
 def _per_block_type_charges(

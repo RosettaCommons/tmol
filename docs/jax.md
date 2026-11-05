@@ -62,6 +62,15 @@ coordinate constraints. It retains the best full-weight structure. It does not
 implement FastRelax. Nucleic acids, metals, ligands/noncanonical residues,
 repacking and kinematic minimization are not supported by JAX scoring.
 
+For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
+a batch of `ResidueBlock(residue_type, atom_names, coords)` records and explicit
+named connection ports. Full residue names include variants; every atom must be
+present exactly once. The loader preserves atom identity and floating precision,
+and does not infer bonds or change chemistry. `return_context=True` returns the
+pose and a context whose `parameter_database` must be used for scoring. Molecular
+input support does not imply complete scoring support: see the current
+[capability matrix](capability-matrix.json).
+
 ## Validation and numerical limits
 
 Run `pytest tests/jax` for JAX transformations and runtime contracts, and

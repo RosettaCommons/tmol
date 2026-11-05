@@ -7,12 +7,14 @@ try:
 except PackageNotFoundError:
     __version__ = "0+source"
 
-from .io import pose_stack_from_pdb
+from .io import ResidueBlock, pose_stack_from_pdb, pose_stack_from_residue_blocks
 from .optimization import run_cart_min, run_cart_relax
 from .score import ScoreFunction, ScoreType, beta2016_score_function
 
 __all__ = [
     "pose_stack_from_pdb",
+    "pose_stack_from_residue_blocks",
+    "ResidueBlock",
     "run_cart_min",
     "run_cart_relax",
     "ScoreFunction",
