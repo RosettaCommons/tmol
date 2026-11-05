@@ -161,7 +161,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
+        .RemainingRets(),
+    {xla::ffi::Traits::kCmdBufferCompatible});
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_cartbonded,
@@ -170,7 +171,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
+        .RemainingRets(),
+    {xla::ffi::Traits::kCmdBufferCompatible});
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_backbone_torsion,
@@ -179,7 +181,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
+        .RemainingRets(),
+    {xla::ffi::Traits::kCmdBufferCompatible});
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_metal_coordination,
@@ -188,7 +191,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
+        .RemainingRets(),
+    {xla::ffi::Traits::kCmdBufferCompatible});
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_na_torsion,
@@ -199,7 +203,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets()
         .Attr<double>("pucker_temperature")
-        .Attr<double>("bin_blend_sdev"));
+        .Attr<double>("bin_blend_sdev"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_dunbrack,
@@ -208,7 +213,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
+        .RemainingRets(),
+    {xla::ffi::Traits::kCmdBufferCompatible});
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_nonbonded,
@@ -218,7 +224,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets()
-        .Attr<double>("reach"));
+        .Attr<double>("reach"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_nonbonded_weighted,
@@ -228,4 +235,5 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets()
-        .Attr<double>("reach"));
+        .Attr<double>("reach"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
