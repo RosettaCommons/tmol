@@ -117,6 +117,36 @@ struct CudaOps<Device::CUDA> {
   }
 };
 
+// Sparse whole-pose Dunbrack work otherwise occupies a single CUDA block.
+// Keep its independent residue evaluations on separate SM workgroups; the
+// common kernel owns all geometry, table lookup and analytic derivatives.
+template <Device D>
+struct DunbrackCudaOps : CudaOps<D> {
+  template <typename Launch, typename F>
+  static void forall_grouped(ContextManager&, int poses, int groups, F f) {
+    int count = score::common::checked_dispatch_product(
+        poses, groups, "JAX CUDA Dunbrack");
+    int threads = count <= 256 ? 1 : 128;
+    if (count)
+      independent_work<<<
+          (count + threads - 1) / threads,
+          threads,
+          0,
+          active_stream>>>(count, f);
+  }
+};
+
+template <typename Kernel>
+struct KernelDispatch {
+  template <Device D>
+  using Ops = CudaOps<D>;
+};
+template <>
+struct KernelDispatch<DunbrackKernel> {
+  template <Device D>
+  using Ops = DunbrackCudaOps<D>;
+};
+
 void check_cuda(cudaError_t error) {
   if (error != cudaSuccess) throw std::runtime_error(cudaGetErrorString(error));
 }
@@ -146,11 +176,17 @@ ffi::Error run(
           stream));
     active_stream = stream;
     if (buffers[0].element_type() == ffi::DataType::F32) {
-      execute_native<Kernel, CudaOps, Device::CUDA, float>(
-          buffers, *energy, outputs, attributes...);
+      execute_native<
+          Kernel,
+          KernelDispatch<Kernel>::template Ops,
+          Device::CUDA,
+          float>(buffers, *energy, outputs, attributes...);
     } else {
-      execute_native<Kernel, CudaOps, Device::CUDA, double>(
-          buffers, *energy, outputs, attributes...);
+      execute_native<
+          Kernel,
+          KernelDispatch<Kernel>::template Ops,
+          Device::CUDA,
+          double>(buffers, *energy, outputs, attributes...);
     }
     active_stream = previous;
     check_cuda(cudaPeekAtLastError());
