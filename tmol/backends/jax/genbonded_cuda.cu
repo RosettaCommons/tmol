@@ -127,10 +127,8 @@ struct DunbrackCudaOps : CudaOps<D> {
   static void forall_grouped(ContextManager&, int poses, int groups, F f) {
     int count = score::common::checked_dispatch_product(
         poses, groups, "JAX CUDA Dunbrack");
-    // Retain enough workgroups for sparse molecular batches; increase active
-    // lanes only when at least 256 workgroups remain after grouping.
-    int threads = 1;
-    while (threads < 128 && count / (2 * threads) >= 256) threads *= 2;
+    // One residue evaluation per workgroup preserves memory-latency overlap.
+    constexpr int threads = 1;
     if (count)
       independent_work<<<
           (count + threads - 1) / threads,
@@ -155,6 +153,65 @@ void check_cuda(cudaError_t error) {
   if (error != cudaSuccess) throw std::runtime_error(cudaGetErrorString(error));
 }
 
+// Output buffers are separate XLA allocations. Clear them in one stream
+// operation while retaining cudaMemsetAsync for a single buffer.
+__global__ void zero_native_buffers(
+    uint32_t* a,
+    size_t na,
+    uint32_t* b,
+    size_t nb,
+    uint32_t* c,
+    size_t nc,
+    size_t count) {
+  for (size_t i = size_t(blockIdx.x) * blockDim.x + threadIdx.x; i < count;
+       i += size_t(gridDim.x) * blockDim.x) {
+    if (i < na) a[i] = 0;
+    if (i < nb) b[i] = 0;
+    if (i < nc) c[i] = 0;
+  }
+}
+
+void zero_outputs(
+    cudaStream_t stream,
+    ffi::AnyBuffer energy,
+    const NativeOutputs& outputs,
+    bool clear_energy,
+    bool clear_workspace) {
+  void* buffers[] = {
+      energy.untyped_data(),
+      outputs.gradient ? outputs.gradient->untyped_data() : nullptr,
+      outputs.workspace ? outputs.workspace->untyped_data() : nullptr};
+  size_t bytes[] = {
+      clear_energy ? energy.size_bytes() : 0,
+      outputs.gradient ? outputs.gradient->size_bytes() : 0,
+      clear_workspace && outputs.workspace ? outputs.workspace->size_bytes()
+                                           : 0};
+  int present = 0;
+  size_t count = 0;
+  for (int i = 0; i != 3; ++i) {
+    present += bytes[i] != 0;
+    count = std::max(count, bytes[i] / sizeof(uint32_t));
+    if (bytes[i] % sizeof(uint32_t))
+      throw std::invalid_argument(
+          "native zero buffer must contain whole words");
+  }
+  if (present < 2) {
+    for (int i = 0; i != 3; ++i)
+      if (bytes[i])
+        check_cuda(cudaMemsetAsync(buffers[i], 0, bytes[i], stream));
+  } else {
+    int blocks = int(std::min(size_t(1024), (count + 255) / 256));
+    zero_native_buffers<<<blocks, 256, 0, stream>>>(
+        static_cast<uint32_t*>(buffers[0]),
+        bytes[0] / sizeof(uint32_t),
+        static_cast<uint32_t*>(buffers[1]),
+        bytes[1] / sizeof(uint32_t),
+        static_cast<uint32_t*>(buffers[2]),
+        bytes[2] / sizeof(uint32_t),
+        count);
+  }
+}
+
 template <typename Kernel, typename... Attributes>
 ffi::Error run(
     cudaStream_t stream,
@@ -166,19 +223,12 @@ ffi::Error run(
   try {
     auto buffers = native_arguments(args);
     auto outputs = native_outputs<Kernel>(buffers, *energy, rets);
-    const auto& gradient = outputs.gradient;
-    if constexpr (ZeroEnergy<Kernel>::value)
-      check_cuda(cudaMemsetAsync(
-          energy->untyped_data(), 0, energy->size_bytes(), stream));
-    if (gradient)
-      check_cuda(cudaMemsetAsync(
-          gradient->untyped_data(), 0, gradient->size_bytes(), stream));
-    if (outputs.workspace)
-      check_cuda(cudaMemsetAsync(
-          outputs.workspace->untyped_data(),
-          0,
-          outputs.workspace->size_bytes(),
-          stream));
+    zero_outputs(
+        stream,
+        *energy,
+        outputs,
+        ZeroEnergy<Kernel>::value,
+        ZeroWorkspace<Kernel>::value);
     active_stream = stream;
     if (buffers[0].element_type() == ffi::DataType::F32) {
       execute_native<

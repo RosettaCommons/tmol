@@ -12,6 +12,12 @@ struct ZeroEnergy<Kernel, std::void_t<decltype(Kernel::zero_energy)>>
     : std::bool_constant<Kernel::zero_energy> {};
 
 template <typename Kernel, typename = void>
+struct ZeroWorkspace : std::true_type {};
+template <typename Kernel>
+struct ZeroWorkspace<Kernel, std::void_t<decltype(Kernel::zero_workspace)>>
+    : std::bool_constant<Kernel::zero_workspace> {};
+
+template <typename Kernel, typename = void>
 struct HasWorkspace : std::false_type {};
 template <typename Kernel>
 struct HasWorkspace<

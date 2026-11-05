@@ -31,6 +31,8 @@ struct DunbrackWorkspace {
 };
 
 struct DunbrackKernel {
+  // Shared forward evaluation writes each scratch value before reading it.
+  static constexpr bool zero_workspace = false;
   static void validate(
       const std::vector<ffi::AnyBuffer>& a,
       ffi::AnyBuffer energy,

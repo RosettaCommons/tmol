@@ -126,7 +126,7 @@ ffi::Error run(
       std::memset(energy->untyped_data(), 0, energy->size_bytes());
     if (gradient)
       std::memset(gradient->untyped_data(), 0, gradient->size_bytes());
-    if (outputs.workspace)
+    if (outputs.workspace && ZeroWorkspace<Kernel>::value)
       std::memset(
           outputs.workspace->untyped_data(),
           0,
