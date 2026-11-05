@@ -37,6 +37,8 @@ def stage_native(root, stage, source_revision=None):
         "score/disulfide/potentials",
         "score/na_torsion/potentials",
         "score/dunbrack/potentials",
+        "score/ljlk/potentials",
+        "score/elec/potentials",
         "utility/portable",
         "utility/tensor",
         "numeric",
