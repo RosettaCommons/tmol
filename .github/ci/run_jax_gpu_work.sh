@@ -16,6 +16,8 @@ strip_cuda_compat_from_ld_path
 "${JAX_BUILD_PYTHON}" -m pip install build jax 'setuptools>=77' wheel
 "${JAX_BUILD_PYTHON}" scripts/build_jax_cuda.py \
   --outdir "${JAX_CUDA_DIST}" --cuda-architectures native
+"${JAX_BUILD_PYTHON}" scripts/build_jax_native.py --cuda \
+  --outdir "${JAX_CUDA_DIST}" --cuda-architectures native
 
 work=$(mktemp -d)
 trap 'rm -rf "${work}"' EXIT
@@ -28,7 +30,8 @@ esac
 "${work}/env/bin/python" -m pip install --upgrade pip
 "${work}/env/bin/python" -m pip install pytest "jax[${extra}]>=0.11.2"
 "${work}/env/bin/python" -m pip install \
-  "${JAX_DIST}"/tmol_core-*.whl "${JAX_DIST}"/tmol_jax-*.whl "${JAX_CUDA_DIST}"/tmol_jax_cuda-*.whl
+  "${JAX_DIST}"/tmol_core-*.whl "${JAX_DIST}"/tmol_jax-*.whl "${JAX_CUDA_DIST}"/tmol_jax_cuda-*.whl \
+  "${JAX_CUDA_DIST}"/tmol_jax_native-*.whl
 
 mkdir -p "${work}/source/tests" "${work}/source/tmol/tests/data/pdb"
 cp -R tests/jax "${work}/source/tests/jax"
@@ -37,6 +40,12 @@ if [ -d tests/scientific ]; then
   cp -R tests/scientific "${work}/source/tests/scientific"
 fi
 cp tmol/tests/data/pdb/{1ubq,3plc}.pdb "${work}/source/tmol/tests/data/pdb/"
+mkdir -p "${work}/source/tmol/tests/data/ligand_params" \
+  "${work}/source/tmol/tests/data/protein_ligand_test"
+cp tmol/tests/data/ligand_params/noncanonical_{alpha,nonstandard}_aa.tmol \
+  "${work}/source/tmol/tests/data/ligand_params/"
+cp tmol/tests/data/protein_ligand_test/hsp90.xtal-lig.mmff94.tmol \
+  "${work}/source/tmol/tests/data/protein_ligand_test/"
 mkdir -p "${work}/source/tmol/database/default/scoring"
 cp tmol/database/default/scoring/hbond.yaml \
   "${work}/source/tmol/database/default/scoring/hbond.yaml"

@@ -111,13 +111,13 @@ sys.meta_path.insert(0, NoFrontend())
 from tmol_core.chemical import ChemicalDatabase
 from tmol_core.chemical.patching import PatchedChemicalDatabase
 from tmol_core.chemical.restypes import refined_from_raw
+from tmol_core.chemical.packed import PackedBlockTypesData
 import tmol_core.scoring.elec
 import tmol_core.scoring.genbonded, tmol_core.scoring.count_pair
 import tmol_core.database.cartbonded, tmol_core.database.generated
 import tmol_core.database.elec, tmol_core.database.ref, tmol_core.database.disulfide
 raw = ChemicalDatabase.get_default()
-for residue in raw.residues:
-    refined_from_raw(residue)
+PackedBlockTypesData.from_restypes(raw, [refined_from_raw(residue) for residue in raw.residues])
 print(json.dumps({"raw": len(raw.residues), "patched": len(PatchedChemicalDatabase.from_chem_db(raw).residues)}))
 """
     result = subprocess.run(
