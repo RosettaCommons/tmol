@@ -8,7 +8,7 @@
 // only one a `.metal` translation unit includes, because TView reaches the
 // torch tensor layer.
 
-#include <tmol/score/common/mps_ctx_builder.hh>
+#include <tmol/backends/metal/score/common/mps_ctx_builder.hh>
 #include <tmol/score/hbond/potentials/hbond_ctx.hh>
 #include <tmol/utility/portable/metal_view.hh>
 
