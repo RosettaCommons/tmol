@@ -14,8 +14,6 @@ touch_gpu_sentinel
 strip_cuda_compat_from_ld_path
 
 "${JAX_BUILD_PYTHON}" -m pip install build jax 'setuptools>=77' wheel
-"${JAX_BUILD_PYTHON}" scripts/build_jax_cuda.py \
-  --outdir "${JAX_CUDA_DIST}" --cuda-architectures native
 "${JAX_BUILD_PYTHON}" scripts/build_jax_native.py --cuda \
   --outdir "${JAX_CUDA_DIST}" --cuda-architectures native
 
@@ -30,7 +28,7 @@ esac
 "${work}/env/bin/python" -m pip install --upgrade pip
 "${work}/env/bin/python" -m pip install pytest "jax[${extra}]>=0.11.2"
 "${work}/env/bin/python" -m pip install \
-  "${JAX_DIST}"/tmol_core-*.whl "${JAX_DIST}"/tmol_jax-*.whl "${JAX_CUDA_DIST}"/tmol_jax_cuda-*.whl \
+  "${JAX_DIST}"/tmol_core-*.whl "${JAX_DIST}"/tmol_jax-*.whl \
   "${JAX_CUDA_DIST}"/tmol_jax_native-*.whl
 
 mkdir -p "${work}/source/tests" "${work}/source/tmol/tests/data/pdb"
