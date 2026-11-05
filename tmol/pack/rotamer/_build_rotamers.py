@@ -24,7 +24,11 @@ from tmol.pack.rotamer._mainchain_fingerprint import (
 )
 from tmol.pack._packer_task import SetPackerTask
 from tmol.numeric import coord_dihedrals
-from tmol.numeric._dihedrals import _numpy_coord_dihedrals
+from tmol_core.pack.chi import (  # noqa: F401
+    chi_moves_fourth_atom as _turns_its_fourth_atom,
+    chi4_by_defining_atom,
+    ring_chi_phi_c_corrections,
+)
 
 ConformerSample = tuple[
     Tensor[torch.int32][:],
@@ -33,85 +37,19 @@ ConformerSample = tuple[
 ]
 
 
-def _turns_its_fourth_atom(rt, third, fourth):
-    """Whether writing phi_c on a chi's third atom moves its fourth.
-
-    A chi that closes a ring measures an atom upstream of the one carrying its
-    degree of freedom, so nothing the packer writes can put that dihedral at a
-    requested value; the write would only spin whatever hangs off the third
-    atom instead.
-    """
-    kf = rt.rotamer_kinforest
-    target = int(kf.kinforest_idx[third])
-    node = int(kf.kinforest_idx[fourth])
-    while True:
-        parent = int(kf.parent[node])
-        if parent == target:
-            return True
-        if parent < 0 or parent == node:
-            return False
-        node = parent
-
-
 def _build_chi4_by_defining_atom(pbt):
-    """(n_types, max_n_atoms, 4) RTO atom indices of the chi each atom defines.
-
-    Keyed by the chi-defining atom rather than by a chi's position, because a
-    residue type's chi are not necessarily numbered without gaps and samplers
-    do not agree on how to lay them out in a column. A chi whose fourth atom
-    the third does not move is left out: it cannot be set.
-    """
-    if hasattr(pbt, "_chi4_by_defining_atom"):
-        return pbt._chi4_by_defining_atom
-
-    table = numpy.full((pbt.n_types, pbt.max_n_atoms, 4), -1, dtype=numpy.int32)
-    for ti, rt in enumerate(pbt.active_block_types):
-        for name, uaids in rt.torsion_to_uaids.items():
-            if not name.startswith("chi"):
-                continue
-            four = [int(u[0]) for u in uaids]
-            if any(a < 0 for a in four):
-                continue
-            if not _turns_its_fourth_atom(rt, four[2], four[3]):
-                continue
-            table[ti, four[2]] = four
-
-    object.__setattr__(pbt, "_chi4_by_defining_atom", table)
-    return table
+    if not hasattr(pbt, "_chi4_by_defining_atom"):
+        values = chi4_by_defining_atom(pbt.active_block_types, pbt.max_n_atoms)
+        object.__setattr__(pbt, "_chi4_by_defining_atom", values)
+    return pbt._chi4_by_defining_atom
 
 
 def _build_ring_chi_phi_c_corrections(pbt):
-    """(n_types, max_n_atoms) phi_c offset for chi that cannot be measured.
-
-    A chi that closes a ring measures an atom upstream of the one carrying its
-    degree of freedom, so no trial pass can tell what to add. Its offset is the
-    difference between the chi and the phi_c of the ideal geometry, which turns
-    what hangs off the third atom by however far the ring has moved from ideal.
-    Zero everywhere else, where the measured correction is exact.
-    """
-    if hasattr(pbt, "_ring_chi_phi_c_corrections"):
-        return pbt._ring_chi_phi_c_corrections
-
-    corrections = numpy.zeros((pbt.n_types, pbt.max_n_atoms), dtype=numpy.float32)
-    for ti, rt in enumerate(pbt.active_block_types):
-        ideal = rt.ideal_coords[rt.at_to_icoor_ind]
-        for name, uaids in rt.torsion_to_uaids.items():
-            if not name.startswith("chi"):
-                continue
-            four = [int(u[0]) for u in uaids]
-            if any(a < 0 for a in four) or _turns_its_fourth_atom(rt, four[2], four[3]):
-                continue
-            xyz = ideal[four]
-            chi_ideal = float(_numpy_coord_dihedrals(xyz[0], xyz[1], xyz[2], xyz[3]))
-            kfo = int(rt.rotamer_kinforest.kinforest_idx[four[2]])
-            corrections[ti, four[2]] = chi_ideal - float(
-                rt.rotamer_kinforest.dofs_ideal[kfo, 3]
-            )
-
-    # Retain only the device table; sampled conformers never need a host lookup.
-    corrections = torch.as_tensor(corrections, device=pbt.device)
-    object.__setattr__(pbt, "_ring_chi_phi_c_corrections", corrections)
-    return corrections
+    if not hasattr(pbt, "_ring_chi_phi_c_corrections"):
+        values = ring_chi_phi_c_corrections(pbt.active_block_types, pbt.max_n_atoms)
+        values = torch.as_tensor(values, device=pbt.device)
+        object.__setattr__(pbt, "_ring_chi_phi_c_corrections", values)
+    return pbt._ring_chi_phi_c_corrections
 
 
 def _kinforest_device_indices(pbt, device):
