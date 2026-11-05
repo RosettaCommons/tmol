@@ -32,6 +32,170 @@ template <
     typename Int,
     template <typename, size_t, tmol::Device> class Pack,
     typename Context>
+void NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
+    prepare_sampling_plan(
+        Context& mgr,
+        Inputs const& in,
+        Plan const& plan,
+        Scratch const& scratch) {
+  sampling_require(
+      in.rotameric_bb_is_mirrored.size(0) == in.rotameric_bb_start.size(0),
+      "Dunbrack reflection metadata must cover every table set");
+  sampling_require(
+      in.rotameric_bb_source_start.size(0) == in.rotameric_bb_start.size(0),
+      "Dunbrack source origins must cover every table set");
+  compute_backbone_dihedrals(
+      mgr,
+      in.coords,
+      in.ndihe_for_res,
+      in.dihedral_offset_for_res,
+      in.dihedral_atom_inds,
+      plan.backbone_dihedrals);
+  map_from_rotamer_index_to_brt_into(
+      mgr,
+      scratch.possible_rotamer_offset_for_brt,
+      scratch.brt_for_possible_rotamer,
+      scratch.boundaries);
+  interpolate_probabilities_for_possible_rotamers(
+      mgr,
+      in.rotameric_prob_tables,
+      in.rotprob_table_sizes,
+      in.rotprob_table_strides,
+      in.rotameric_bb_start,
+      in.rotameric_bb_step,
+      in.rotameric_bb_periodicity,
+      in.rotameric_bb_source_start,
+      in.rotameric_bb_is_mirrored,
+      in.n_rotamers_for_tableset_offsets,
+      in.sorted_rotamer_2_rotamer,
+      in.bubl_and_rottable_set_for_buildable_restype,
+      scratch.brt_for_possible_rotamer,
+      scratch.possible_rotamer_offset_for_brt,
+      plan.backbone_dihedrals,
+      scratch.rotamer_probability);
+  determine_n_base_rotamers_to_build_into(
+      mgr,
+      in.prob_cumsum_limit_for_buildable_restype,
+      scratch.n_possible_rotamers_per_brt,
+      scratch.brt_for_possible_rotamer,
+      scratch.possible_rotamer_offset_for_brt,
+      scratch.rotamer_probability,
+      plan.n_rotamers_to_build_per_brt,
+      scratch.probability_prefix,
+      scratch.keep,
+      scratch.count_prefix,
+      scratch.probability_workspace,
+      scratch.count_workspace);
+  count_expanded_rotamers_into(
+      mgr,
+      in.nchi_for_buildable_restype,
+      in.bubl_and_rottable_set_for_buildable_restype,
+      in.nchi_for_tableset,
+      in.chi_expansion_for_buildable_restype,
+      in.non_dunbrack_expansion_counts_for_buildable_restype,
+      plan.n_expansions_for_brt,
+      plan.expansion_dim_prods_for_brt,
+      plan.n_rotamers_to_build_per_brt);
+}
+
+template <
+    template <tmol::Device> class Dispatch,
+    tmol::Device D,
+    typename Real,
+    typename Int,
+    template <typename, size_t, tmol::Device> class Pack,
+    typename Context>
+void NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
+    emit_samples(
+        Context& mgr,
+        Inputs const& in,
+        Plan const& plan,
+        TView<Int, 1, D> offsets,
+        TView<Int, 1, D> brt,
+        TView<Int, 1, D> boundaries,
+        TView<Real, 2, D> chi) {
+  LAUNCH_BOX_32;
+  map_from_rotamer_index_to_brt_into(mgr, offsets, brt, boundaries);
+  int const width = chi.size(1);
+  Dispatch<D>::template forall<launch_t>(
+      mgr, chi.size(0), [=] TMOL_DEVICE_FUNC(int r) {
+        for (int c = 0; c < width; ++c) chi[r][c] = Real(0);
+      });
+  sample_chi_for_rotamers(
+      mgr,
+      in.rotameric_mean_tables,
+      in.rotameric_sdev_tables,
+      in.rotmean_table_sizes,
+      in.rotmean_table_strides,
+      in.rotameric_meansdev_tableset_offsets,
+      in.rotameric_bb_start,
+      in.rotameric_bb_step,
+      in.rotameric_bb_periodicity,
+      in.rotameric_bb_source_start,
+      in.rotameric_bb_is_mirrored,
+
+      in.sorted_rotamer_2_rotamer,
+      in.nchi_for_tableset,
+
+      in.bubl_and_rottable_set_for_buildable_restype,
+      in.chi_expansion_for_buildable_restype,
+      in.non_dunbrack_expansion_for_buildable_restype,
+      in.nchi_for_buildable_restype,
+
+      plan.backbone_dihedrals,
+
+      offsets,
+      brt,
+      plan.n_expansions_for_brt,
+      in.n_rotamers_for_tableset_offsets,
+
+      plan.expansion_dim_prods_for_brt,
+      chi);
+}
+
+template <
+    template <tmol::Device> class Dispatch,
+    tmol::Device D,
+    typename Real,
+    typename Int,
+    template <typename, size_t, tmol::Device> class Pack,
+    typename Context>
+void NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
+    compute_backbone_dihedrals(
+        Context& mgr,
+        TView<Vec<Real, 3>, 1, D> coords,
+        TView<Int, 1, D> ndihe_for_res,
+        TView<Int, 1, D> dihedral_offset_for_res,
+        TView<Vec<Int, 4>, 1, D> dihedral_atom_inds,
+        TView<Real, 1, D> backbone_dihedrals) {
+  LAUNCH_BOX_32;
+  auto compute_dihedrals = [=] TMOL_DEVICE_FUNC(int bubl) {
+    for (int dihe_ind = 0; dihe_ind < ndihe_for_res[bubl]; ++dihe_ind) {
+      int i = dihedral_offset_for_res[bubl] + dihe_ind;
+      Int at0 = dihedral_atom_inds[i][0];
+      Int at1 = dihedral_atom_inds[i][1];
+      Int at2 = dihedral_atom_inds[i][2];
+      Int at3 = dihedral_atom_inds[i][3];
+      Real dihe = std::numeric_limits<Real>::quiet_NaN();
+      if (at0 >= 0 && at1 >= 0 && at2 >= 0 && at3 >= 0) {
+        dihe = score::common::dihedral_angle<Real>::V(
+            coords[at0], coords[at1], coords[at2], coords[at3]);
+      }
+      backbone_dihedrals[i] = dihe;
+    }
+  };
+
+  Dispatch<D>::template forall<launch_t>(
+      mgr, dihedral_offset_for_res.size(0), compute_dihedrals);
+}
+
+template <
+    template <tmol::Device> class Dispatch,
+    tmol::Device D,
+    typename Real,
+    typename Int,
+    template <typename, size_t, tmol::Device> class Pack,
+    typename Context>
 TMOL_HOST_DEVICE_FUNC void
 NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
     backbone_lookup_coordinate(
@@ -104,7 +268,13 @@ template <
 Int NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
     checked_count_offsets(
         Context& mgr, TView<Int, 1, D> counts, TView<Int, 1, D> offsets) {
+  sampling_require(
+      counts.size(0) == offsets.size(0),
+      "Dunbrack count/offset shape mismatch");
   if (counts.size(0) == 0) return 0;
+  // The serial primitive preserves the caller's exclusive-scan identity;
+  // this checked count scan always uses zero, independent of buffer contents.
+  if constexpr (D == Device::CPU) offsets[0] = 0;
   auto add = [] TMOL_DEVICE_FUNC(Int a, Int b) -> Int {
     if (a < 0 || b < 0 || a > std::numeric_limits<Int>::max() - b) return -1;
     return a + b;
@@ -118,6 +288,34 @@ Int NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
       std::numeric_limits<Int>::max(),
       " or contains a negative count");
   return total;
+}
+
+template <
+    template <tmol::Device> class Dispatch,
+    tmol::Device D,
+    typename Real,
+    typename Int,
+    template <typename, size_t, tmol::Device> class Pack,
+    typename Context>
+Int NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
+    checked_sample_offsets(
+        Context& mgr,
+        TView<Int, 1, D> counts,
+        TView<Int, 1, D> offsets,
+        int64_t max_samples_per_restype) {
+  Int const n_rotamers = checked_count_offsets(mgr, counts, offsets);
+  if (max_samples_per_restype > 0 && counts.size(0) != 0) {
+    Int const maximum = Dispatch<D>::reduce(
+        mgr, counts.data(), counts.size(0), portable::maximum_t<Int>());
+    sampling_require(
+        maximum <= max_samples_per_restype,
+        "Sampling budget ",
+        max_samples_per_restype,
+        " cannot fit the required ",
+        maximum,
+        " Dunbrack library/extra-chi states");
+  }
+  return n_rotamers;
 }
 
 template <
@@ -181,243 +379,16 @@ auto NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::f(
         Pack<Int, 1, D>,
         Pack<Int, 1, D>,
         Pack<Real, 2, D> > {
-  sampling_require(
-      rotameric_bb_is_mirrored.size(0) == rotameric_bb_start.size(0),
-      "Dunbrack reflection metadata must cover every table set");
-  sampling_require(
-      rotameric_bb_source_start.size(0) == rotameric_bb_start.size(0),
-      "Dunbrack source origins must cover every table set");
-  // construct the list of chi for the rotamers that should be built
-  // in 7 stages.
-  // 1. State which AAs at which positions
-  // 2. Determine max # pre-expansion rotamers per AA per position.
-  // 3. Exclusive cumsum for offsets on # pre-expansion rotamers
-  // 4. Interpolate probabilities for each rotamer, using phi/psi
-  // 5. Exclusive segmented scan of post-expansion rot counts
-  // 6. allocate space for rotamer chi
-  // 7. Interpolate chi values and record them
-
-  // Named things
-  // buildable-residue type:  a combination of a table set to read from and a
-  // residue position to build at
-  //                          so that if each of N residues read from 1 table,
-  //                          there would be N buildable
-  //                          residue types and if each residue built all 18
-  //                          amino acids represented in
-  //                          the Dunbrack library (and separately built both
-  //                          HIS and HIS_D) then there
-  //                          would be 19N buildable-residue types (the HIS
-  //                          and HIS-D residue types would
-  //                          be represented separately, meaning the HIS table
-  //                          would be read from twice).
-  // possible rotamer: a rotamer that might be built for a residue type.
-  // Possible rotamers are built
-  //                   in decreasing order by probability, and then only the
-  //                   top X% of the possible
-  //                   rotamers are built. If there are 21N residue types,
-  //                   then there are
-  //                   sum(i=1, 21N,
-  //                   num_possible_rots_for_restable[restable_for_rt[i]] )
-  //
-
-  // Input parameter: bubl_and_rottable_set_for_buildable_restype
-  //                     array of the 1. buildable-block index and
-  //                     2. dunbrack table set to use for each buildable
-  //                     block type; no need to be unique for a single
-  //                     buildable block as multiple block types might share
-  //                     the same table set (e.g. HIS and HIS_D)
-  //                  chi_expansion_for_buildable_restype
-  //                     two-D tensor with 0s where a residue type should
-  //                     expand
-  //                     only use the base rotamer
-  //                     and positive integers for different levels of
-  //                     expansion
-  //                  nchi_for_restype
-  //                     some chi not treated by the dunbrack library need
-  //                     sampling
-  //                     in addition; when writing down the final set of chi
-  //                     that
-  //                     will be sampled, we have to write down these chi
-  //                     values as
-  //                     well
-  //                  non_dunbrack_expansion for restype
-  //                     how should we sample non-dunbrack chi?
-  //                     three-D tensor: n-restypes x max-n-chi x max-samples
-  //                  non_dunbrack_expansion_counts for restype
-  //                     how many elements out of the non_dunbrack_expansion
-  //                     array
-  //                     are used for each restype for each chi
-  //                     2D tensor; 0 for no-expansion
-  //                  prob_cumsum_limit_for_restypes
-  //                     array of the probability limits for the given residue
-  //                     type
-  //                     [0..1) which should have been previously calculated
-  //                     based on residue burial and residue type
-
-  LAUNCH_BOX_32;
-
-  Int const nbubl(ndihe_for_res.size(0));
-  // The number of buildable residue types across all residues
-  Int const n_brt(bubl_and_rottable_set_for_buildable_restype.size(0));
-
+  Int const n_brt = bubl_and_rottable_set_for_buildable_restype.size(0);
   if (n_brt == 0) {
-    // No buildable Dunbrack residue types — nothing to sample.
-    auto empty_i1 = Pack<Int, 1, D>::zeros(0);
-    auto empty_r2 = Pack<Real, 2, D>::zeros({0, 0});
-    return {empty_i1, empty_i1, empty_i1, empty_r2};
+    auto empty_i = Pack<Int, 1, D>::zeros(0);
+    return {empty_i, empty_i, empty_i, Pack<Real, 2, D>::zeros({0, 0})};
   }
-
-  auto n_possible_rotamers_per_brt_tp = Pack<Int, 1, D>::zeros(n_brt);
-  auto n_possible_rotamers_per_brt = n_possible_rotamers_per_brt_tp.view;
-
-  determine_n_possible_rots(
-      mgr,
-      bubl_and_rottable_set_for_buildable_restype,
-      n_rotamers_for_tableset,
-      n_possible_rotamers_per_brt);
-
-  auto possible_rotamer_offset_for_brt_tp = Pack<Int, 1, D>::zeros(n_brt);
-  auto possible_rotamer_offset_for_brt =
-      possible_rotamer_offset_for_brt_tp.view;
-
-  // Exclusive cumulative sum of n_possible_rotamers_per_restype.
-  // Get total number of possible rotamers over all residue types
-  Int const n_possible_rotamers = checked_count_offsets(
-      mgr, n_possible_rotamers_per_brt, possible_rotamer_offset_for_brt);
-
-  // There are some things we need to know about the ith possible rotamer:
-  //   1. What buildable_residue type does it come from?
-  //   2. What table set does it come from?
-  //   3. What residue does it come from?
-
-  auto backbone_dihedrals_tp = Pack<Real, 1, D>::empty(nbubl * 2);
-  auto backbone_dihedrals = backbone_dihedrals_tp.view;
-
-  // This should be extracted to a function
-  auto compute_backbone_dihedrals = [=] TMOL_DEVICE_FUNC(int bubl) {
-    for (int dihe_ind = 0; dihe_ind < ndihe_for_res[bubl]; ++dihe_ind) {
-      int i = dihedral_offset_for_res[bubl] + dihe_ind;
-      Int at0 = dihedral_atom_inds[i][0];
-      Int at1 = dihedral_atom_inds[i][1];
-      Int at2 = dihedral_atom_inds[i][2];
-      Int at3 = dihedral_atom_inds[i][3];
-      Real dihe = std::numeric_limits<Real>::quiet_NaN();
-      if (at0 >= 0 && at1 >= 0 && at2 >= 0 && at3 >= 0) {
-        dihe = score::common::dihedral_angle<Real>::V(
-            coords[at0], coords[at1], coords[at2], coords[at3]);
-      }
-      backbone_dihedrals[i] = dihe;
-    }
-  };
-
-  Dispatch<D>::template forall<launch_t>(
-      mgr, dihedral_offset_for_res.size(0), compute_backbone_dihedrals);
-
-  auto brt_for_possible_rotamer_tp =
-      Pack<Int, 1, D>::zeros(n_possible_rotamers);
-  auto brt_for_possible_rotamer = brt_for_possible_rotamer_tp.view;
-
-  fill_in_brt_for_possrots(
-      mgr, possible_rotamer_offset_for_brt, brt_for_possible_rotamer);
-
-  // std::cout << "5" << std::endl;
-  // Write down the probabilities for each base rotamer in this tensor
-  auto rotamer_probability_tp = Pack<Real, 1, D>::empty(n_possible_rotamers);
-  auto rotamer_probability = rotamer_probability_tp.view;
-
-  interpolate_probabilities_for_possible_rotamers(
-      mgr,
+  Inputs in{
+      coords,
       rotameric_prob_tables,
       rotprob_table_sizes,
       rotprob_table_strides,
-      rotameric_bb_start,
-      rotameric_bb_step,
-      rotameric_bb_periodicity,
-      rotameric_bb_source_start,
-      rotameric_bb_is_mirrored,
-      n_rotamers_for_tableset_offsets,
-      sorted_rotamer_2_rotamer,
-      bubl_and_rottable_set_for_buildable_restype,
-      brt_for_possible_rotamer,
-      possible_rotamer_offset_for_brt,
-      backbone_dihedrals,
-      rotamer_probability);
-
-  // And now the count of rotamers to build per restype:
-  auto n_rotamers_to_build_per_brt_tp = Pack<Int, 1, D>::zeros(n_brt);
-  auto n_rotamers_to_build_per_brt = n_rotamers_to_build_per_brt_tp.view;
-
-  determine_n_base_rotamers_to_build(
-      mgr,
-      prob_cumsum_limit_for_buildable_restype,
-      n_possible_rotamers_per_brt,
-      brt_for_possible_rotamer,
-      possible_rotamer_offset_for_brt,
-      rotamer_probability,
-      n_rotamers_to_build_per_brt);
-
-  // max_n_chi: reduction on max
-  Int max_n_chi = Dispatch<D>::reduce(
-      mgr,
-      nchi_for_buildable_restype.data(),
-      nchi_for_buildable_restype.size(0),
-      tmol::portable::maximum_t<Int>());
-
-  // OK!
-  // So the next step is to expand the base rotamers into extra rotamers
-  // and to write down all the chi that we'll sample from.
-  auto n_expansions_for_brt_tp = Pack<Int, 1, D>::zeros(n_brt);
-  auto n_expansions_for_brt = n_expansions_for_brt_tp.view;
-
-  auto expansion_dim_prods_for_brt_tp =
-      Pack<Int, 2, D>::empty({n_brt, max_n_chi});
-  auto expansion_dim_prods_for_brt = expansion_dim_prods_for_brt_tp.view;
-
-  auto n_rotamers_to_build_per_brt_offsets_tp = Pack<Int, 1, D>::zeros(n_brt);
-  auto n_rotamers_to_build_per_brt_offsets =
-      n_rotamers_to_build_per_brt_offsets_tp.view;
-
-  Int n_rotamers = count_expanded_rotamers(
-      mgr,
-      nchi_for_buildable_restype,
-      bubl_and_rottable_set_for_buildable_restype,
-      nchi_for_tableset,
-      chi_expansion_for_buildable_restype,
-      non_dunbrack_expansion_counts_for_buildable_restype,
-      n_expansions_for_brt,
-      expansion_dim_prods_for_brt,
-      n_rotamers_to_build_per_brt,
-      n_rotamers_to_build_per_brt_offsets);
-
-  if (max_samples_per_restype > 0) {
-    Int const maximum = Dispatch<D>::reduce(
-        mgr,
-        n_rotamers_to_build_per_brt.data(),
-        n_brt,
-        tmol::portable::maximum_t<Int>());
-    sampling_require(
-        maximum <= max_samples_per_restype,
-        "Sampling budget ",
-        max_samples_per_restype,
-        " cannot fit the required ",
-        maximum,
-        " Dunbrack library/extra-chi states");
-  }
-
-  // Get a mapping from rotamer index to buildable restype
-  auto brt_for_rotamer_tp = Pack<Int, 1, D>::zeros(n_rotamers);
-  auto brt_for_rotamer = brt_for_rotamer_tp.view;
-  map_from_rotamer_index_to_brt(
-      mgr, n_rotamers_to_build_per_brt_offsets, brt_for_rotamer);
-
-  // OK Now allocate space for the chi that we're going to write to
-  // auto chi_for_rotamers_tp = Pack<Real, 2, D>::empty({n_rotamers,
-  // max_n_chi});
-  auto chi_for_rotamers_tp = Pack<Real, 2, D>::zeros({n_rotamers, max_n_chi});
-  auto chi_for_rotamers = chi_for_rotamers_tp.view;
-
-  sample_chi_for_rotamers(
-      mgr,
       rotameric_mean_tables,
       rotameric_sdev_tables,
       rotmean_table_sizes,
@@ -428,31 +399,71 @@ auto NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::f(
       rotameric_bb_periodicity,
       rotameric_bb_source_start,
       rotameric_bb_is_mirrored,
-
+      n_rotamers_for_tableset,
+      n_rotamers_for_tableset_offsets,
       sorted_rotamer_2_rotamer,
       nchi_for_tableset,
-
+      ndihe_for_res,
+      dihedral_offset_for_res,
+      dihedral_atom_inds,
       bubl_and_rottable_set_for_buildable_restype,
       chi_expansion_for_buildable_restype,
       non_dunbrack_expansion_for_buildable_restype,
-      nchi_for_buildable_restype,
-
-      backbone_dihedrals,
-
-      n_rotamers_to_build_per_brt_offsets,
-      brt_for_rotamer,
-      n_expansions_for_brt,
-      n_rotamers_for_tableset_offsets,
-
-      expansion_dim_prods_for_brt,
-      chi_for_rotamers);
-  // std::cout << "9" << std::endl;
-
-  return {
-      n_rotamers_to_build_per_brt_tp,
-      n_rotamers_to_build_per_brt_offsets_tp,
-      brt_for_rotamer_tp,
-      chi_for_rotamers_tp};
+      non_dunbrack_expansion_counts_for_buildable_restype,
+      prob_cumsum_limit_for_buildable_restype,
+      nchi_for_buildable_restype};
+  auto possible_counts = Pack<Int, 1, D>::empty(n_brt);
+  auto possible_offsets = Pack<Int, 1, D>::empty(n_brt);
+  determine_n_possible_rots(
+      mgr,
+      in.bubl_and_rottable_set_for_buildable_restype,
+      in.n_rotamers_for_tableset,
+      possible_counts.view);
+  Int const n_possible =
+      checked_count_offsets(mgr, possible_counts.view, possible_offsets.view);
+  Int const max_n_chi = Dispatch<D>::reduce(
+      mgr,
+      nchi_for_buildable_restype.data(),
+      n_brt,
+      portable::maximum_t<Int>());
+  auto backbone = Pack<Real, 1, D>::empty(ndihe_for_res.size(0) * 2);
+  auto expansions = Pack<Int, 1, D>::empty(n_brt);
+  auto products = Pack<Int, 2, D>::empty({n_brt, max_n_chi});
+  auto counts = Pack<Int, 1, D>::empty(n_brt);
+  Plan plan{backbone.view, expansions.view, products.view, counts.view};
+  {
+    auto possible_brt = Pack<Int, 1, D>::empty(n_possible);
+    auto possible_boundary = Pack<Int, 1, D>::empty(n_possible);
+    auto probability = Pack<Real, 1, D>::empty(n_possible);
+    auto probability_prefix = Pack<Real, 1, D>::empty(n_possible);
+    auto keep = Pack<Int, 1, D>::empty(n_possible);
+    auto count_prefix = Pack<Int, 1, D>::empty(n_possible);
+    score::common::OwnedSegmentedScanWorkspace<Real, D, Pack> probability_ws(
+        n_possible, n_brt);
+    score::common::OwnedSegmentedScanWorkspace<Int, D, Pack> count_ws(
+        n_possible, n_brt);
+    Scratch scratch{
+        possible_counts.view,
+        possible_offsets.view,
+        possible_brt.view,
+        possible_boundary.view,
+        probability.view,
+        probability_prefix.view,
+        keep.view,
+        count_prefix.view,
+        probability_ws.views(),
+        count_ws.views()};
+    prepare_sampling_plan(mgr, in, plan, scratch);
+  }
+  auto offsets = Pack<Int, 1, D>::empty(n_brt);
+  Int const n_rotamers = checked_sample_offsets(
+      mgr, counts.view, offsets.view, max_samples_per_restype);
+  auto brt = Pack<Int, 1, D>::empty(n_rotamers);
+  auto boundaries = Pack<Int, 1, D>::empty(n_rotamers);
+  auto chi = Pack<Real, 2, D>::empty({n_rotamers, max_n_chi});
+  emit_samples(
+      mgr, in, plan, offsets.view, brt.view, boundaries.view, chi.view);
+  return {counts, offsets, brt, chi};
 }
 
 template <
@@ -499,38 +510,8 @@ void NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
         Context& mgr,
         TView<Int, 1, D> possible_rotamer_offset_for_brt,
         TView<Int, 1, D> brt_for_possible_rotamer) {
-  LAUNCH_BOX_32;
-
-  int const n_brt = possible_rotamer_offset_for_brt.size(0);
-  int const n_possible_rotamers = brt_for_possible_rotamer.size(0);
-
-  auto brt_for_possible_rotamer_start_tp =
-      Pack<Int, 1, D>::zeros(n_possible_rotamers);
-  auto brt_for_possible_rotamer_start = brt_for_possible_rotamer_start_tp.view;
-
-  // std::cout << "n_brt: "<< n_brt << " n possible rotamers " <<
-  // n_possible_rotamers << std::endl;
-  auto mark_possrot_boundary_beginnings =
-      [=] TMOL_DEVICE_FUNC(int buildable_restype) {
-        // printf("    mark_possrot_boundary beginnings %d\n",
-        // buildable_restype);
-        Int const offset = possible_rotamer_offset_for_brt[buildable_restype];
-        // printf("    offset %d\n", offset);
-        brt_for_possible_rotamer_start[offset] = buildable_restype;
-      };
-
-  Dispatch<D>::template forall<launch_t>(
-      mgr, n_brt, mark_possrot_boundary_beginnings);
-
-  // Non-segmented scan on "max" to get the brt index for each possible
-  // rotamer
-  Dispatch<D>::template scan<tmol::portable::scan_type::inclusive>(
-      mgr,
-      brt_for_possible_rotamer_start.data(),
-      brt_for_possible_rotamer.data(),
-      n_possible_rotamers,
-      tmol::portable::maximum_t<Int>());
-  // std::cout << "done with fill_in_brt_for_possrots" << std::endl;
+  map_from_rotamer_index_to_brt(
+      mgr, possible_rotamer_offset_for_brt, brt_for_possible_rotamer);
 }
 
 template <
@@ -639,6 +620,51 @@ void NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
         TView<Int, 1, D> possible_rotamer_offset_for_brt,
         TView<Real, 1, D> rotamer_probability,
         TView<Int, 1, D> n_rotamers_to_build_per_brt) {
+  int const count = rotamer_probability.size(0);
+  int const segments = possible_rotamer_offset_for_brt.size(0);
+  auto probability_prefix = Pack<Real, 1, D>::empty(count);
+  auto keep = Pack<Int, 1, D>::empty(count);
+  auto count_prefix = Pack<Int, 1, D>::empty(count);
+  score::common::OwnedSegmentedScanWorkspace<Real, D, Pack> probability_ws(
+      count, segments);
+  score::common::OwnedSegmentedScanWorkspace<Int, D, Pack> count_ws(
+      count, segments);
+  determine_n_base_rotamers_to_build_into(
+      mgr,
+      prob_cumsum_limit_for_buildable_restype,
+      n_possible_rotamers_per_brt,
+      brt_for_possible_rotamer,
+      possible_rotamer_offset_for_brt,
+      rotamer_probability,
+      n_rotamers_to_build_per_brt,
+      probability_prefix.view,
+      keep.view,
+      count_prefix.view,
+      probability_ws.views(),
+      count_ws.views());
+}
+
+template <
+    template <tmol::Device> class Dispatch,
+    tmol::Device D,
+    typename Real,
+    typename Int,
+    template <typename, size_t, tmol::Device> class Pack,
+    typename Context>
+void NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
+    determine_n_base_rotamers_to_build_into(
+        Context& mgr,
+        TView<Real, 1, D> prob_cumsum_limit_for_buildable_restype,
+        TView<Int, 1, D> n_possible_rotamers_per_brt,
+        TView<Int, 1, D> brt_for_possible_rotamer,
+        TView<Int, 1, D> possible_rotamer_offset_for_brt,
+        TView<Real, 1, D> rotamer_probability,
+        TView<Int, 1, D> n_rotamers_to_build_per_brt,
+        TView<Real, 1, D> rotamer_probability_cumsum,
+        TView<Int, 1, D> build_possible_rotamer,
+        TView<Int, 1, D> count_rotamers_to_build,
+        score::common::SegmentedScanWorkspace<Real, D> probability_workspace,
+        score::common::SegmentedScanWorkspace<Int, D> count_workspace) {
   LAUNCH_BOX_32;
 
   int const n_brt = n_rotamers_to_build_per_brt.size(0);
@@ -651,21 +677,20 @@ void NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
   // Now we perform (exclusive) segmented scans on the possible-rotamer
   // probabilities to get the cumulative sums of the probabilities so
   // that we can decide where to put the cutoff
-  auto rotamer_probability_cumsum_tp = Dispatch<D>::template segmented_scan<
+  Dispatch<D>::template segmented_scan_into<
       tmol::portable::scan_type::exclusive>(
       mgr,
       rotamer_probability.data(),
       possible_rotamer_offset_for_brt.data(),
+      rotamer_probability_cumsum.data(),
       n_possible_rotamers,
       n_brt,
       tmol::portable::plus_t<Real>(),
-      Real(0));
-  auto rotamer_probability_cumsum = rotamer_probability_cumsum_tp.view;
+      Real(0),
+      probability_workspace);
 
   // And with the cumulative sum, we can now decide which rotamers we will
   // build
-  auto build_possible_rotamer_tp = Pack<Int, 1, D>::empty(n_possible_rotamers);
-  auto build_possible_rotamer = build_possible_rotamer_tp.view;
   auto decide_on_possible_rotamer = [=] TMOL_DEVICE_FUNC(int possible_rotamer) {
     int const rt = brt_for_possible_rotamer[possible_rotamer];
     int keep = rotamer_probability_cumsum[possible_rotamer]
@@ -677,22 +702,23 @@ void NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
       mgr, n_possible_rotamers, decide_on_possible_rotamer);
 
   // *in*clusive segmented scan on the build_possible_rotamer array
-  auto count_rotamers_to_build_tp = Dispatch<D>::template segmented_scan<
+  Dispatch<D>::template segmented_scan_into<
       tmol::portable::scan_type::inclusive>(
       mgr,
       build_possible_rotamer.data(),
       possible_rotamer_offset_for_brt.data(),
+      count_rotamers_to_build.data(),
       n_possible_rotamers,
       n_brt,
       tmol::portable::plus_t<Int>(),
-      Int(0));
-  auto count_rotamers_to_build = count_rotamers_to_build_tp.view;
+      Int(0),
+      count_workspace);
 
   auto count_rots_to_build_per_brt = [=] TMOL_DEVICE_FUNC(int brt) {
     Int const offset = possible_rotamer_offset_for_brt[brt];
     Int const npossible = n_possible_rotamers_per_brt[brt];
     Int const last = offset + npossible - 1;
-    Int const brt_count = count_rotamers_to_build[last];
+    Int const brt_count = npossible == 0 ? 0 : count_rotamers_to_build[last];
     n_rotamers_to_build_per_brt[brt] = brt_count;
   };
 
@@ -719,6 +745,38 @@ Int NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
         TView<Int, 2, D> expansion_dim_prods_for_brt,
         TView<Int, 1, D> n_rotamers_to_build_per_brt,
         TView<Int, 1, D> n_rotamers_to_build_per_brt_offsets) {
+  count_expanded_rotamers_into(
+      mgr,
+      nchi_for_buildable_restype,
+      bubl_and_rottable_set_for_buildable_restype,
+      nchi_for_tableset,
+      chi_expansion_for_buildable_restype,
+      non_dunbrack_expansion_counts_for_buildable_restype,
+      n_expansions_for_brt,
+      expansion_dim_prods_for_brt,
+      n_rotamers_to_build_per_brt);
+  return checked_count_offsets(
+      mgr, n_rotamers_to_build_per_brt, n_rotamers_to_build_per_brt_offsets);
+}
+
+template <
+    template <tmol::Device> class Dispatch,
+    tmol::Device D,
+    typename Real,
+    typename Int,
+    template <typename, size_t, tmol::Device> class Pack,
+    typename Context>
+void NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
+    count_expanded_rotamers_into(
+        Context& mgr,
+        TView<Int, 1, D> nchi_for_buildable_restype,
+        TView<Int, 2, D> bubl_and_rottable_set_for_buildable_restype,
+        TView<Int, 1, D> nchi_for_tableset,
+        TView<Int, 2, D> chi_expansion_for_buildable_restype,
+        TView<Int, 2, D> non_dunbrack_expansion_counts_for_buildable_restype,
+        TView<Int, 1, D> n_expansions_for_brt,
+        TView<Int, 2, D> expansion_dim_prods_for_brt,
+        TView<Int, 1, D> n_rotamers_to_build_per_brt) {
   LAUNCH_BOX_32;
 
   int const n_brt = nchi_for_buildable_restype.size(0);
@@ -729,7 +787,6 @@ Int NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
   assert(n_expansions_for_brt.size(0) == n_brt);
   assert(expansion_dim_prods_for_brt.size(0) == n_brt);
   assert(n_rotamers_to_build_per_brt.size(0) == n_brt);
-  assert(n_rotamers_to_build_per_brt_offsets.size(0) == n_brt);
 
   auto count_expansions_for_brt = [=] TMOL_DEVICE_FUNC(int brt) {
     Int const nchi = nchi_for_buildable_restype[brt];
@@ -761,9 +818,6 @@ Int NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
   };
 
   Dispatch<D>::template forall<launch_t>(mgr, n_brt, count_expansions_for_brt);
-
-  return checked_count_offsets(
-      mgr, n_rotamers_to_build_per_brt, n_rotamers_to_build_per_brt_offsets);
 }
 
 template <
@@ -778,17 +832,42 @@ void NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
         Context& mgr,
         TView<Int, 1, D> n_rotamers_to_build_per_brt_offsets,
         TView<Int, 1, D> brt_for_rotamer) {
+  auto boundary = Pack<Int, 1, D>::empty(brt_for_rotamer.size(0));
+  map_from_rotamer_index_to_brt_into(
+      mgr, n_rotamers_to_build_per_brt_offsets, brt_for_rotamer, boundary.view);
+}
+
+template <
+    template <tmol::Device> class Dispatch,
+    tmol::Device D,
+    typename Real,
+    typename Int,
+    template <typename, size_t, tmol::Device> class Pack,
+    typename Context>
+void NativeDunbrackChiSampler<Dispatch, D, Real, Int, Pack, Context>::
+    map_from_rotamer_index_to_brt_into(
+        Context& mgr,
+        TView<Int, 1, D> n_rotamers_to_build_per_brt_offsets,
+        TView<Int, 1, D> brt_for_rotamer,
+        TView<Int, 1, D> brt_for_rotamer_start) {
   LAUNCH_BOX_32;
 
   int const n_rotamers = brt_for_rotamer.size(0);
   int const n_brt = n_rotamers_to_build_per_brt_offsets.size(0);
 
-  auto brt_for_rotamer_start_tp = Pack<Int, 1, D>::zeros(n_rotamers);
-  auto brt_for_rotamer_start = brt_for_rotamer_start_tp.view;
-
+  sampling_require(
+      brt_for_rotamer_start.size(0) == n_rotamers,
+      "Dunbrack boundary workspace has the wrong size");
+  Dispatch<D>::template forall<launch_t>(
+      mgr, n_rotamers, [=] TMOL_DEVICE_FUNC(int i) {
+        brt_for_rotamer_start[i] = 0;
+      });
   auto mark_rot_brt_boundary_beginnings = [=] TMOL_DEVICE_FUNC(int brt) {
     Int const offset = n_rotamers_to_build_per_brt_offsets[brt];
-    brt_for_rotamer_start[offset] = brt;
+    Int const end = brt + 1 < n_brt
+                        ? n_rotamers_to_build_per_brt_offsets[brt + 1]
+                        : n_rotamers;
+    if (offset < end) brt_for_rotamer_start[offset] = brt;
   };
 
   Dispatch<D>::template forall<launch_t>(

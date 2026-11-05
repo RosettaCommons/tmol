@@ -102,7 +102,7 @@ struct SerialCPUOperations {
     int count_seg = 0;
     for (int i = 0; i < n; ++i) {
       T i_val = src[i];
-      if (count_seg < n_segs && i == seg_start_inds[count_seg]) {
+      while (count_seg < n_segs && i == seg_start_inds[count_seg]) {
         last_val = identity;
         count_seg++;
       }
@@ -111,6 +111,26 @@ struct SerialCPUOperations {
                                                                    : next_val;
       last_val = next_val;
     }
+  }
+  template <
+      tmol::portable::scan_type Scan,
+      typename T,
+      typename Int,
+      typename Op,
+      typename Context,
+      typename Workspace>
+  static void segmented_scan_into(
+      Context& context,
+      T* src,
+      Int* starts,
+      T* dst,
+      int n,
+      int segments,
+      Op op,
+      T identity,
+      Workspace const&) {
+    segmented_scan_into<Scan>(
+        context, src, starts, dst, n, segments, op, identity);
   }
 };
 }  // namespace common

@@ -282,3 +282,12 @@ def test_hbond_native_launch_and_full_width_indices(tmp_path):
     assert proc.returncode == 0, proc.stderr
     run = subprocess.run([str(binary)], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
+
+
+@requires_cxx
+def test_native_sampling_empty_segments(tmp_path):
+    binary = tmp_path / "sampling"
+    proc = _compile(HERE / "native_sampling.cc", binary, run=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    run = subprocess.run([str(binary)], capture_output=True, text=True)
+    assert run.returncode == 0, run.stdout + run.stderr
