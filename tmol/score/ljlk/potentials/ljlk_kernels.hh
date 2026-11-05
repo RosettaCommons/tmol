@@ -153,7 +153,7 @@ union LJLKSharedMem {
       int n_atoms_to_load,                        \
       int start_atom,                             \
       bool count_pair_striking_dist,              \
-      TMOL_SHARED_PTR(int) conn_ats) {  \
+      TMOL_SHARED_PTR(int) conn_ats) {            \
     ljlk_load_block_into_shared<                  \
         DeviceDispatch,                           \
         D,                                        \
@@ -617,8 +617,9 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
   int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
 
   // Pair arithmetic captures only its views and per-pair weights. Keeping the
-  // launch context out of this frequently copied closure avoids copying topology
-  // metadata for every tile while preserving the same native operations.
+  // launch context out of this frequently copied closure avoids copying
+  // topology metadata for every tile while preserving the same native
+  // operations.
   auto const type_params = ctx.type_params;
   auto const coordinate_derivatives = ctx.dV_dcoords;
   tmol::portable::array<Real, 3> weights{0, 0, 0};
