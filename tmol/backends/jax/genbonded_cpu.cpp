@@ -11,6 +11,7 @@
 #include "constraint_torsion_ffi.hh"
 #include "kinematics_ffi.hh"
 #include "forward_kinematics_ffi.hh"
+#include "host_pose_ffi.hh"
 #include <condition_variable>
 #include <cstring>
 #include <mutex>

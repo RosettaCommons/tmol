@@ -9,6 +9,39 @@ from tmol_jax.kinematics._native import inverse_coordinates
 from tmol_jax.kinematics import KinematicForest
 
 
+def test_host_metadata_transport_preserves_inputs_and_owns_outputs():
+    from tmol_jax.kinematics._host import NativePosePlanner
+
+    # Strided int64 inputs exercise conversion without rewriting user metadata.
+    offsets = np.array([[0, -8, 2, -8]], dtype=np.int64)[:, ::2]
+    types = np.array([[0, 0]], dtype=np.int64)
+    counts = np.array([2], dtype=np.int64)
+    real = np.ones((1, 2), dtype=bool)
+    inputs = (offsets, types, counts, real)
+    snapshots = tuple(value.copy() for value in inputs)
+    planner = NativePosePlanner()
+    first = planner.get_kfo_indices_for_atoms(*inputs)
+    saved = tuple(value.copy() for value in first)
+    # Another allocation cannot invalidate the preceding released native result.
+    second = planner.get_kfo_indices_for_atoms(*inputs)
+    for value, snapshot in zip(inputs, snapshots):
+        np.testing.assert_array_equal(value, snapshot)
+    for value, expected, other in zip(first, saved, second):
+        assert value.dtype == np.int32 and not np.shares_memory(value, other)
+        np.testing.assert_array_equal(value, expected)
+    for malformed, error in (
+        (offsets.astype(float), TypeError),
+        (offsets + (1 << 32), OverflowError),
+        (offsets[None], ValueError),
+    ):
+        with pytest.raises(error):
+            planner.get_kfo_indices_for_atoms(malformed, *inputs[1:])
+    with pytest.raises(ValueError, match="missing native host array"):
+        planner.get_kfo_indices_for_atoms(*inputs[:-1])
+    with pytest.raises(ValueError, match="extra native host arguments"):
+        planner.get_kfo_indices_for_atoms(*inputs, real)
+
+
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_inverse_jump_translation_batching_and_initialization_boundary(dtype):
     # Two independent rigid-body jumps from the virtual origin. Near-collinear
