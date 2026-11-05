@@ -69,29 +69,29 @@ def _connections(pbt, block_types, chains, disulfides, explicit=None):
 
 
 def _bond_separation(pbt, block_types, connections):
+    from tmol_core.pose.bond_separation import bondseparation_from_graph
+
     poses, blocks, slots, _ = connections.shape
     cutoff = MAX_SIG_BOND_SEPARATION
-    result = np.full((poses, blocks, blocks, slots, slots), cutoff, np.int32)
     paths = np.asarray(pbt.intrares_path_distance)
     atoms = np.asarray(pbt.conn_atoms)
-    counts = np.asarray(pbt.n_conn)
-    for pose, row in enumerate(block_types):
-        for block, kind in enumerate(row):
-            if kind < 0:
-                continue
-            n = int(counts[kind])
-            endpoints = atoms[kind, :n]
-            distances = paths[kind][np.ix_(endpoints, endpoints)]
-            result[pose, block, block, :n, :n] = np.where(
-                distances < 0, cutoff, np.minimum(distances, cutoff)
-            )
-        for block, slot in zip(*np.nonzero(connections[pose, :, :, 0] >= 0)):
-            partner, partner_slot = connections[pose, block, slot]
-            result[pose, block, partner, slot, partner_slot] = 1
-        flat = result[pose].transpose(0, 2, 1, 3).reshape(blocks * slots, -1).copy()
-        for node in np.flatnonzero(flat.diagonal() == 0):
-            np.minimum(flat, flat[:, node, None] + flat[None, node, :], out=flat)
-        result[pose] = flat.reshape(blocks, slots, blocks, slots).transpose(0, 2, 1, 3)
+    type_counts = np.asarray(pbt.n_conn)
+    counts = np.where(block_types >= 0, type_counts[np.maximum(block_types, 0)], 0)
+    intra = np.full((poses, blocks, slots, slots), cutoff, np.int32)
+    for pose, block in zip(*np.nonzero(block_types >= 0)):
+        kind = block_types[pose, block]
+        n = counts[pose, block]
+        endpoints = atoms[kind, :n]
+        distances = paths[kind][np.ix_(endpoints, endpoints)]
+        intra[pose, block, :n, :n] = np.where(
+            distances < 0, cutoff, np.minimum(distances, cutoff)
+        )
+    prepared = bondseparation_from_graph(counts, intra, connections)
+    # Preserve the public dense layout while remaining portable terms use it.
+    result = np.full((poses, blocks, blocks, slots, slots), cutoff, np.int32)
+    p, b, slot = np.nonzero(prepared.near_blocks[..., 0] >= 0)
+    partner = prepared.near_blocks[p, b, slot, 0]
+    result[p, b, partner] = prepared.bondsep[p, b, slot]
     return result
 
 

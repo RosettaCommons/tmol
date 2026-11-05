@@ -4,6 +4,9 @@
 #include "backbone_torsion_ffi.hh"
 #include "metal_ffi.hh"
 #include "na_torsion_ffi.hh"
+#include "workspace_ffi.hh"
+#include "dunbrack_ffi.hh"
+#include "nonbonded_ffi.hh"
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
@@ -46,13 +49,53 @@ struct CpuOps<Device::CPU> {
       ContextManager& context, int poses, int groups, F f) {
     foreach_pose_workgroup<Launch>(context, poses, groups, f);
   }
+  template <typename Launch, typename F>
+  static void foreach_workgroup(ContextManager&, int count, F f) {
+    for (int index = 0; index < count; ++index) f(index);
+  }
+  template <typename Launch, typename F>
+  static void foreach_independent_workgroup(
+      ContextManager& context, int count, F f) {
+    foreach_pose_workgroup<Launch>(context, count, 1, f);
+  }
+  template <typename Launch, typename F>
+  static void forall(ContextManager& context, int count, F f) {
+    foreach_independent_workgroup<Launch>(context, count, f);
+  }
+  template <typename Launch, typename F>
+  static void forall_independent(ContextManager& context, int count, F f) {
+    forall<Launch>(context, count, f);
+  }
+  template <int N, int Width, typename T>
+  static void copy_contiguous_data(
+      T* destination,
+      T* source,
+      int count,
+      score::common::WorkgroupLane<Device::CPU> = {}) {
+    std::copy_n(source, count, destination);
+  }
+  static void synchronize_workgroup(
+      score::common::WorkgroupLane<Device::CPU> = {}) {}
+  template <int N, typename T, typename Op>
+  static T shuffle_reduce_in_workgroup(
+      T value, Op, score::common::WorkgroupLane<Device::CPU> = {}) {
+    static_assert(N == 1);
+    return value;
+  }
+  template <int N, typename T, typename Op>
+  static T shuffle_reduce_and_broadcast_in_workgroup(
+      T value, Op op, score::common::WorkgroupLane<Device::CPU> lane = {}) {
+    return shuffle_reduce_in_workgroup<N>(value, op, lane);
+  }
   template <int N, typename F>
-  static void for_each_in_workgroup(F f) {
+  static void for_each_in_workgroup(
+      F f, score::common::WorkgroupLane<Device::CPU> = {}) {
     static_assert(N == 1, "CPU workgroup must have one lane");
     f(0);
   }
   template <int N, typename T, typename S, typename Op>
-  static T reduce_in_workgroup(T value, S&, Op) {
+  static T reduce_in_workgroup(
+      T value, S&, Op, score::common::WorkgroupLane<Device::CPU> = {}) {
     return value;
   }
 };
@@ -67,26 +110,23 @@ ffi::Error run(
   auto* previous = active_pool;
   try {
     auto buffers = native_arguments(args);
-    if (rets.size() > 1)
-      throw std::invalid_argument("too many generic bonded results");
-    std::optional<ffi::AnyBuffer> gradient;
-    if (rets.size()) {
-      auto value = rets.get<ffi::AnyBuffer>(0);
-      if (!value)
-        throw std::invalid_argument("invalid generic bonded gradient buffer");
-      gradient = **value;
-    }
-    Kernel::validate(buffers, *energy, gradient ? &*gradient : nullptr);
+    auto outputs = native_outputs<Kernel>(buffers, *energy, rets);
+    const auto& gradient = outputs.gradient;
     std::memset(energy->untyped_data(), 0, energy->size_bytes());
     if (gradient)
       std::memset(gradient->untyped_data(), 0, gradient->size_bytes());
+    if (outputs.workspace)
+      std::memset(
+          outputs.workspace->untyped_data(),
+          0,
+          outputs.workspace->size_bytes());
     active_pool = &pool;
     if (buffers[0].element_type() == ffi::DataType::F32) {
-      Kernel::template execute<CpuOps, Device::CPU, float>(
-          buffers, *energy, gradient ? &*gradient : nullptr, attributes...);
+      execute_native<Kernel, CpuOps, Device::CPU, float>(
+          buffers, *energy, outputs, attributes...);
     } else {
-      Kernel::template execute<CpuOps, Device::CPU, double>(
-          buffers, *energy, gradient ? &*gradient : nullptr, attributes...);
+      execute_native<Kernel, CpuOps, Device::CPU, double>(
+          buffers, *energy, outputs, attributes...);
     }
     active_pool = previous;
     return ffi::Error::Success();
@@ -205,3 +245,80 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .RemainingRets()
         .Attr<double>("pucker_temperature")
         .Attr<double>("bin_blend_sdev"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_dunbrack,
+    tmol::jax::run<tmol::jax::DunbrackKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets());
+
+extern "C" uint64_t tmol_dunbrack_workspace_bytes(
+    int64_t rots, int64_t dihedrals, int bits, int derivative) {
+  try {
+    if (rots < 0 || dihedrals < 0 || rots > INT32_MAX || dihedrals > INT32_MAX)
+      throw std::invalid_argument("invalid Dunbrack workspace extents");
+    if (bits == 32)
+      return tmol::jax::DunbrackWorkspace<float>(rots, dihedrals, derivative)
+          .storage.size_bytes();
+    if (bits == 64)
+      return tmol::jax::DunbrackWorkspace<double>(rots, dihedrals, derivative)
+          .storage.size_bytes();
+  } catch (const std::exception&) {
+  }
+  return std::numeric_limits<uint64_t>::max();
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_nonbonded,
+    (tmol::jax::run<tmol::jax::NonbondedKernel<false>, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<double>("reach"));
+
+extern "C" uint64_t tmol_nonbonded_workspace_bytes(
+    int64_t poses, int64_t blocks, int bits, int) {
+  try {
+    if (poses < 0 || blocks < 0 || poses > INT32_MAX || blocks > INT32_MAX)
+      throw std::invalid_argument("invalid nonbonded workspace extents");
+    if (bits == 32)
+      return tmol::jax::NonbondedWorkspace<float>(poses, blocks)
+          .storage.size_bytes();
+    if (bits == 64)
+      return tmol::jax::NonbondedWorkspace<double>(poses, blocks)
+          .storage.size_bytes();
+  } catch (const std::exception&) {
+  }
+  return std::numeric_limits<uint64_t>::max();
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_nonbonded_weighted,
+    (tmol::jax::run<tmol::jax::NonbondedKernel<true>, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<double>("reach"));
+
+extern "C" uint64_t tmol_nonbonded_weighted_workspace_bytes(
+    int64_t poses, int64_t blocks, int bits, int) {
+  try {
+    if (poses < 0 || blocks < 0 || poses > INT32_MAX || blocks > INT32_MAX)
+      throw std::invalid_argument("invalid nonbonded workspace extents");
+    if (bits == 32)
+      return tmol::jax::NonbondedWorkspace<float, true>(poses, blocks)
+          .storage.size_bytes();
+    if (bits == 64)
+      return tmol::jax::NonbondedWorkspace<double, true>(poses, blocks)
+          .storage.size_bytes();
+  } catch (const std::exception&) {
+  }
+  return std::numeric_limits<uint64_t>::max();
+}

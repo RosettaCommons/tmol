@@ -11,11 +11,14 @@ from tests.scientific.execution import Execution
 from tests.scientific.molecules import CASES, BACKBONE_CASES
 from tests.scientific.metal_molecules import METAL_CASES
 from tests.scientific.na_molecules import NA_CASES
+from tests.scientific.dunbrack_molecules import DUNBRACK_CASES
 
 from tmol_jax import ScoreFunction, ScoreType
 
 _NATIVE_CASES = {
     "rama": BACKBONE_CASES["mixed"],
+    "dunbrack_rot": DUNBRACK_CASES["mixed_batch"],
+    "fa_ljatr": CASES["mixed_batch"],
     "metal_coordination": METAL_CASES["mixed_batch"],
     "na_torsion": NA_CASES["mixed_batch"],
 }
@@ -36,6 +39,8 @@ def backend_name(request):
     "terms",
     [
         ("gen_torsions",),
+        ("dunbrack_rot", "dunbrack_rotdev", "dunbrack_semirot"),
+        ("fa_ljatr", "fa_ljrep", "fa_lk", "fa_elec"),
         ("rama", "omega"),
         ("metal_coordination",),
         ("na_torsion", "na_torsion_well"),

@@ -24,9 +24,10 @@
       "jax": "partial_scoring",
       "repro_fixture": [
         "tests/scientific/test_cartbonded.py",
-        "tests/scientific/test_molecular_nonbonded.py"
+        "tests/scientific/test_molecular_nonbonded.py",
+        "tests/scientific/test_dunbrack.py"
       ],
-      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. Full scoring remains gated. Shared D rotamer libraries loaded; Connected D backbone energy/full gradients now match fresh Torch exactly; Dunbrack scoring not certified."
+      "implementation_status": "Shared native Dunbrack/backbone, bonded and nonbonded channels support explicit D residues. Dunbrack three-channel values and full coordinate gradients exactly match current Torch on L/D/variants/mixed cases in float32/64; custom widths and first-order transformations tested CPU. Full multi-term coverage remains partial."
     },
     {
       "domain": "modifications_and_termini",
@@ -100,7 +101,7 @@
       "torch": "supported",
       "jax": "input_only",
       "repro_fixture": "tests/jax/test_residue_blocks.py",
-      "implementation_status": "Explicit named connection ports; branches/cycles accepted; general inter-block term validation pending."
+      "implementation_status": "Named connection ports and shared sparse capped graph preparation preserve branches/cycles. Dense compatibility layout remains for portable terms. Fused nonbonded currently requires <=12 ports and connection atom indices <=255; wider native metadata pending."
     },
     {
       "domain": "constraints",
@@ -163,14 +164,14 @@
       "torch": "torch_autograd",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_native_genbonded.py",
-      "implementation_status": "Native gen/cart/backbone float32/64 JIT, JVP, reverse Jacobian and sequential vmap tested CPU/CUDA. Native higher derivatives absent; older nonbonded custom-VJP CUDA adapters lack JVP."
+      "implementation_status": "Shared native gen/cart/backbone/NA/metal first-order JVP, reverse Jacobian and sequential vmap tested CPU/CUDA. New Dunbrack and fused nonbonded pass CPU float32/64 transforms; CUDA device validation pending. Higher derivatives absent; older standalone nonbonded CUDA custom-VJP routes lack JVP."
     },
     {
       "domain": "forward_ad",
       "torch": "framework_specific",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_native_genbonded.py",
-      "implementation_status": "Native gen/cart/backbone float32/64 JIT, JVP, reverse Jacobian and sequential vmap tested CPU/CUDA. Native higher derivatives absent; older nonbonded custom-VJP CUDA adapters lack JVP."
+      "implementation_status": "Shared native gen/cart/backbone/NA/metal first-order JVP, reverse Jacobian and sequential vmap tested CPU/CUDA. New Dunbrack and fused nonbonded pass CPU float32/64 transforms; CUDA device validation pending. Higher derivatives absent; older standalone nonbonded CUDA custom-VJP routes lack JVP."
     },
     {
       "domain": "native_cpu",
@@ -191,22 +192,22 @@
     "fa_ljatr": {
       "torch": "implemented",
       "jax": "molecular_values_and_coordinate_gradients",
-      "noncanonical_validation": "CPU values/full gradients audited against Torch on nine molecular cases; CPU/CUDA shared per-channel finite differences pass. CUDA test used portable JAX route, not the optional scalar-kernel package."
+      "noncanonical_validation": "Shared fused native CPU traversal: ten molecular cases in float32/64; every per-channel coordinate gradient exactly matches Torch, energy differs only in reduction rounding. Weighted/decomposed gradients and JIT/JVP/vmap tested. New CUDA route compiled; device validation pending. Standalone LJ-only/Elec-only retain prior paths."
     },
     "fa_ljrep": {
       "torch": "implemented",
       "jax": "molecular_values_and_coordinate_gradients",
-      "noncanonical_validation": "CPU values/full gradients audited against Torch on nine molecular cases; CPU/CUDA shared per-channel finite differences pass. CUDA test used portable JAX route, not the optional scalar-kernel package."
+      "noncanonical_validation": "Shared fused native CPU traversal: ten molecular cases in float32/64; every per-channel coordinate gradient exactly matches Torch, energy differs only in reduction rounding. Weighted/decomposed gradients and JIT/JVP/vmap tested. New CUDA route compiled; device validation pending. Standalone LJ-only/Elec-only retain prior paths."
     },
     "fa_lk": {
       "torch": "implemented",
       "jax": "molecular_values_and_coordinate_gradients",
-      "noncanonical_validation": "CPU values/full gradients audited against Torch on nine molecular cases; CPU/CUDA shared per-channel finite differences pass. CUDA test used portable JAX route, not the optional scalar-kernel package."
+      "noncanonical_validation": "Shared fused native CPU traversal: ten molecular cases in float32/64; every per-channel coordinate gradient exactly matches Torch, energy differs only in reduction rounding. Weighted/decomposed gradients and JIT/JVP/vmap tested. New CUDA route compiled; device validation pending. Standalone LJ-only/Elec-only retain prior paths."
     },
     "fa_elec": {
       "torch": "implemented",
       "jax": "molecular_values_and_coordinate_gradients",
-      "noncanonical_validation": "CPU values/full gradients audited against Torch on nine molecular cases; CPU/CUDA shared per-channel finite differences pass. CUDA test used portable JAX route, not the optional scalar-kernel package."
+      "noncanonical_validation": "Shared fused native CPU traversal: ten molecular cases in float32/64; every per-channel coordinate gradient exactly matches Torch, energy differs only in reduction rounding. Weighted/decomposed gradients and JIT/JVP/vmap tested. New CUDA route compiled; device validation pending. Standalone LJ-only/Elec-only retain prior paths."
     },
     "hbond": {
       "torch": "implemented",
@@ -260,18 +261,18 @@
     },
     "dunbrack_rot": {
       "torch": "implemented",
-      "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "Shared table/topology preparation and native physics: L/D peptides, variants and mixed ligand systems match Torch energies/full gradients exactly in float32/64. Library-width scaling, assigned-versus-sampling-only coverage, JIT/JVP/vmap and empty batches tested CPU. CUDA compiled, device validation pending."
     },
     "dunbrack_rotdev": {
       "torch": "implemented",
-      "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "Shared table/topology preparation and native physics: L/D peptides, variants and mixed ligand systems match Torch energies/full gradients exactly in float32/64. Library-width scaling, assigned-versus-sampling-only coverage, JIT/JVP/vmap and empty batches tested CPU. CUDA compiled, device validation pending."
     },
     "dunbrack_semirot": {
       "torch": "implemented",
-      "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "Shared table/topology preparation and native physics: L/D peptides, variants and mixed ligand systems match Torch energies/full gradients exactly in float32/64. Library-width scaling, assigned-versus-sampling-only coverage, JIT/JVP/vmap and empty batches tested CPU. CUDA compiled, device validation pending."
     },
     "lk_ball_iso": {
       "torch": "implemented",

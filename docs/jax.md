@@ -1,11 +1,12 @@
 # JAX frontend (experimental)
 
 `tmol-jax` provides Torch-free canonical-protein scoring, coordinate gradients
-and Cartesian minimization, plus shared native generic-bonded, Cartesian-bonded, backbone, nucleic-acid torsion and metal coordination
-scoring for explicitly parameterized noncanonical molecules. LJ/LK and electrostatic terms also accept
+and Cartesian minimization, plus shared native generic-bonded, Cartesian-bonded,
+backbone, Dunbrack, nucleic-acid torsion and metal coordination scoring for
+explicitly parameterized noncanonical molecules. LJ/LK and electrostatic terms also accept
 explicit ligand, D-residue, nucleic-acid and metal inputs; complete scoring for
 those domains remains unsupported. It shares immutable parameter contexts, chemical records, topology,
-parameter preparation and whole-pose bonded physics with the Torch frontend through [`tmol-core`](shared_core.md).
+parameter preparation and whole-pose native physics with the Torch frontend through [`tmol-core`](shared_core.md).
 Existing `tmol` imports remain available.
 
 ## Install
@@ -24,7 +25,10 @@ For source development, export tables with
 `python scripts/build_jax.py --export-data DIR` and set `TMOL_JAX_DATABASE=DIR`.
 The frontend requires Python 3.12+ and JAX 0.11.2+.
 
-For CUDA, install a matching runtime, such as `jax[cuda13]`. An optional native
+Build shared CPU/CUDA physics with
+`python scripts/build_jax_native.py --cuda --cuda-architectures "80;90" --outdir dist/jax`.
+The shared adapter supports float32/64; install a matching JAX CUDA runtime,
+such as `jax[cuda13]`. An older optional native
 adapter accelerates float32 LJ/LK, electrostatics, hydrogen bonds and LK-ball
 using the canonical TMol scalar potentials:
 
@@ -79,7 +83,8 @@ pose and a context whose `parameter_database` must be used for scoring. Molecula
 input support does not imply complete scoring support: see the current
 [capability matrix](capability-matrix.json).
 
-Generic, Cartesian bonded, backbone, nucleic-acid torsion and metal coordination scoring require the shared native CPU/CUDA package
+Generic, Cartesian bonded, backbone, Dunbrack, nucleic-acid torsion, metal
+coordination and combined LJ/LK/electrostatic scoring require the shared native package
 built above. Set `ScoreType.gen_torsions` on a `ScoreFunction` constructed with the input's
 parameter database. These terms use the same whole-pose native physics and
 analytic derivatives as Torch; explicit noncanonical input does not enable
@@ -92,9 +97,11 @@ Run `pytest tests/jax` for JAX transformations and runtime contracts, and
 The same cases accept `torch-cpu`, `torch-cuda`, `torch-mps` and `jax-cuda`; missing
 devices are explicitly skipped. Core chemistry tests live in `tests/core`.
 Native FFI calls support reverse gradients, `vmap` and `jacrev`; batching is
-sequential initially. Generic, Cartesian bonded, backbone, nucleic-acid torsion and metal coordination support first-order JVP and reverse gradients in
-float32/64. Their native derivative kernels do not provide higher derivatives. The older
-native nonbonded custom-VJP route does not support JVP.
+sequential initially. Shared native terms support first-order JVP and reverse gradients in float32/64;
+their derivative kernels do not provide higher derivatives. Combined LJ/LK and
+electrostatics use live native spatial neighbors and one gradient buffer for a
+weighted total. Standalone LJ-only/Elec-only still use earlier implementations;
+their optional CUDA custom-VJP route does not support JVP.
 
 Before comparing frontends, verify residue/atom identities and use identical
 coordinates and parameters: loaders can idealize missing atoms and hydrogens
@@ -105,7 +112,9 @@ term-specific tolerances. The separate L-BFGS implementation need not follow the
 same trajectory or stopping point as Torch.
 
 Record setup, compilation and steady execution separately; synchronize with
-`block_until_ready()` for timing. Portable pair tables still have quadratic
-storage. The frontend does not change global JAX precision settings.
+`block_until_ready()` for timing. Portable pair tables and the dense topology compatibility array still have
+quadratic storage. The common sparse graph algorithm supplies their chemistry.
+The fused native nonbonded layout currently supports at most 12 connection ports
+per residue and connection atom indices through 255; larger layouts reject explicitly. The frontend does not change global JAX precision settings.
 The initial implementation derives from
 [tudorcotet/jtmol](https://github.com/tudorcotet/jtmol); see `tmol_jax/NOTICE`.

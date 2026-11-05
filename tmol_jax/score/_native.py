@@ -62,7 +62,14 @@ def register(target):
 
 
 def coordinate_energy(
-    target, coords, parameters, *, channels=1, always_gradient=False, attributes=None
+    target,
+    coords,
+    parameters,
+    *,
+    channels=1,
+    always_gradient=False,
+    attributes=None,
+    workspace_bytes=None,
 ):
     """First coordinate derivative from the common analytic native kernels.
 
@@ -85,14 +92,22 @@ def coordinate_energy(
     shape = jax.ShapeDtypeStruct(prefix + coords.shape[:1], coords.dtype)
 
     def evaluate(x, args, derivative):
-        results = (
-            (shape, jax.ShapeDtypeStruct(prefix + x.shape, x.dtype))
-            if derivative
-            else shape
-        )
-        return jax.ffi.ffi_call(target, results, vmap_method="sequential")(
-            x, *args, **(attributes or {})
-        )
+        results = (shape,)
+        if derivative:
+            results += (jax.ShapeDtypeStruct(prefix + x.shape, x.dtype),)
+        if workspace_bytes is not None:
+            size = (
+                workspace_bytes[derivative]
+                if isinstance(workspace_bytes, tuple)
+                else workspace_bytes
+            )
+            results += (jax.ShapeDtypeStruct((size,), np.uint8),)
+        outputs = jax.ffi.ffi_call(
+            target, results if len(results) > 1 else shape, vmap_method="sequential"
+        )(x, *args, **(attributes or {}))
+        if derivative:
+            return outputs[0], outputs[1]
+        return outputs[0] if len(results) > 1 else outputs
 
     @jax.custom_jvp
     def energy(x, *args):
@@ -144,6 +159,26 @@ def atom_downstream_of_conn(pbt):
         ((0, 0), (0, pbt.max_n_conn - paths.shape[1]), (0, 0)),
         constant_values=-1,
     )
+
+
+@lru_cache(maxsize=None)
+def workspace_sizes(target, dimensions, bits):
+    """Query the native ABI's exact value/derivative workspace sizes on the host."""
+    library = libraries().get("cpu")
+    if library is None:
+        raise RuntimeError("native workspace preparation requires CPU support")
+    try:
+        query = getattr(library, target + "_workspace_bytes")
+    except AttributeError as error:
+        raise RuntimeError(
+            f"native workspace layout missing for {target}; rebuild"
+        ) from error
+    query.argtypes = [ctypes.c_int64] * len(dimensions) + [ctypes.c_int, ctypes.c_int]
+    query.restype = ctypes.c_uint64
+    sizes = tuple(query(*dimensions, bits, derivative) for derivative in (0, 1))
+    if max(sizes) == (1 << 64) - 1:
+        raise ValueError(f"invalid native workspace layout for {target}")
+    return sizes
 
 
 def fit_bspline_coefficients(values):

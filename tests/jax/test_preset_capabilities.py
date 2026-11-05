@@ -25,7 +25,7 @@ def test_preset_keeps_every_declared_weight():
     "name,term",
     [
         ("dna", "hbond"),
-        ("rna", "dunbrack_rot"),
+        ("rna", "lk_ball"),
     ],
 )
 def test_unsupported_active_science_rejects_before_tracing(name, term):

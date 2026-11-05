@@ -126,7 +126,7 @@ class ScoreFunction:
     def active_score_types(self):
         return sorted(st for st, weight in self._weights.items() if weight != 0)
 
-    def _setup(self, pose_stack, constraint_set=None):
+    def _setup(self, pose_stack, constraint_set=None, omit=()):
         if pose_stack.packed_block_types is not None:
             from tmol_jax.chemical.constants import canonical_aa_3letter
 
@@ -148,6 +148,9 @@ class ScoreFunction:
                 ScoreType.fa_lk,
                 ScoreType.fa_elec,
                 ScoreType.gen_torsions,
+                ScoreType.dunbrack_rot,
+                ScoreType.dunbrack_rotdev,
+                ScoreType.dunbrack_semirot,
                 ScoreType.rama,
                 ScoreType.omega,
                 ScoreType.metal_coordination,
@@ -168,7 +171,9 @@ class ScoreFunction:
             raise ValueError("pose coordinates must be finite before scoring setup")
         states = []
         for term in self._terms:
-            if not any(self.get_weight(st) for st in term.score_types_provided()):
+            if term in omit or not any(
+                self.get_weight(st) for st in term.score_types_provided()
+            ):
                 states.append(None)
                 continue
             if ScoreType.constraint in term.score_types_provided():
@@ -200,71 +205,72 @@ class ScoreFunction:
         """
         channels = tuple(self.active_score_types())
         weights = dict(self._weights)
-        with jax.default_device(pose_stack.coords.device):
-            states = self._setup(pose_stack, constraint_set=constraint_set)
-        terms = tuple(copy.copy(term) for term in self._terms)
-        entries = tuple(
-            (term, term_state)
-            for term, term_state in zip(terms, states)
-            if any(weights.get(st, 0) for st in term.score_types_provided())
-        )
-        entry_for_type = {
-            score_type: (index, state)
-            for index, (term, state) in enumerate(entries)
-            for score_type in term.score_types_provided()
-        }
-        fused_entries = tuple(
-            entry_for_type.get(score_type)
-            for score_type in (ScoreType.fa_ljatr, ScoreType.fa_elec)
-        )
-        if None in fused_entries:
-            fused_entries = None
-        shape = pose_stack.coords.shape
-
-        def evaluate(coords, fused=False):
-            energies = {}
-            skip_entries = ()
-            if fused:
-                from tmol_jax.score.ljlk import cuda
-
-                (ljlk_index, ljlk_state), (elec_index, elec_state) = fused_entries
-                fused_values = cuda.score_fused(ljlk_state, elec_state, coords)
-                energies.update(dict(zip(_FUSED_PAIR_TYPES, fused_values.T)))
-                skip_entries = (ljlk_index, elec_index)
-            for index, (term, term_state) in enumerate(entries):
-                if index in skip_entries:
-                    continue
-                energies.update(term(pose_stack, term_state, coords_override=coords))
-            if not channels:
-                return jnp.zeros(
-                    (shape[0],) if sum_terms else (0, shape[0]), coords.dtype
+        # Standalone LJ/LK and electrostatics retain independent parameter
+        # prerequisites. When both are active, use their shared native traversal.
+        fused_terms = ()
+        if self.get_weight(ScoreType.fa_elec) and any(
+            self.get_weight(st) for st in _FUSED_PAIR_TYPES[:3]
+        ):
+            fused_terms = tuple(
+                dict.fromkeys(
+                    self._term_for_st[st]
+                    for st in (ScoreType.fa_ljatr, ScoreType.fa_elec)
                 )
-            values = jnp.stack(
-                [
-                    energies[st] * (weights[st] if apply_weights else 1)
-                    for st in channels
-                ]
             )
-            return values.sum(axis=0) if sum_terms else values
+        with jax.default_device(pose_stack.coords.device):
+            states = self._setup(
+                pose_stack, constraint_set=constraint_set, omit=fused_terms
+            )
+            if fused_terms:
+                from tmol_jax.score.nonbonded import prepare_nonbonded, nonbonded_energy
 
-        @jax.jit
-        def platform_evaluate(coords):
-            return jax.lax.platform_dependent(
-                coords, default=evaluate, cuda=lambda x: evaluate(x, fused=True)
-            )
+                fused_state = prepare_nonbonded(pose_stack, self.param_db)
+        entries = tuple(
+            (copy.copy(term), state)
+            for term, state in zip(self._terms, states)
+            if term not in fused_terms
+            and any(weights.get(st, 0) for st in term.score_types_provided())
+        )
+        shape = pose_stack.coords.shape
+        pair_weights = tuple(weights.get(st, 0) for st in _FUSED_PAIR_TYPES)
 
         def score(coords):
             if coords.shape != shape or not jnp.issubdtype(coords.dtype, jnp.floating):
                 raise ValueError(f"expected floating coordinates with shape {shape}")
-            from tmol_jax.score.ljlk import cuda
-
-            if (
-                fused_entries is not None
-                and coords.dtype == jnp.float32
-                and cuda.fused_available()
-            ):
-                return platform_evaluate(coords)
-            return evaluate(coords)
+            energies = {}
+            weighted_pair = None
+            if fused_terms:
+                if sum_terms and apply_weights:
+                    weighted_pair = nonbonded_energy(coords, fused_state, pair_weights)
+                else:
+                    energies.update(
+                        zip(_FUSED_PAIR_TYPES, nonbonded_energy(coords, fused_state))
+                    )
+            for term, state in entries:
+                energies.update(term(pose_stack, state, coords_override=coords))
+            selected = tuple(
+                st
+                for st in channels
+                if weighted_pair is None or st not in _FUSED_PAIR_TYPES
+            )
+            if not selected:
+                return (
+                    weighted_pair
+                    if weighted_pair is not None
+                    else jnp.zeros(
+                        (shape[0],) if sum_terms else (0, shape[0]), coords.dtype
+                    )
+                )
+            values = jnp.stack(
+                [
+                    energies[st] * (weights[st] if apply_weights else 1)
+                    for st in selected
+                ]
+            )
+            if sum_terms:
+                result = values.sum(axis=0)
+                return result if weighted_pair is None else result + weighted_pair
+            return values
 
         return score
 
