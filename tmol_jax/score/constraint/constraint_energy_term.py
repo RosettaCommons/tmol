@@ -105,8 +105,10 @@ class ConstraintEnergyTerm(EnergyTerm):
             cs = constraint_set
         else:
             cs = getattr(pose_stack, "constraint_set", None)
-            if not isinstance(cs, ConstraintSet):
-                cs = ConstraintSet.empty()
+        if cs is None:
+            cs = ConstraintSet.empty()
+        if not isinstance(cs, ConstraintSet):
+            raise TypeError("coordinate constraints require a JAX ConstraintSet")
 
         target = np.asarray(cs.target_coords)
         indices = np.asarray(cs.atom_indices)
@@ -117,6 +119,8 @@ class ConstraintEnergyTerm(EnergyTerm):
             raise ValueError("constraint target_coords must have shape [n, 3]")
         if indices.shape != (n_constraints, 2):
             raise ValueError("constraint atom_indices must have shape [n, 2]")
+        if not np.issubdtype(indices.dtype, np.integer):
+            raise TypeError("constraint atom_indices must contain integers")
         if k.shape != (n_constraints,) or tol.shape != (n_constraints,):
             raise ValueError("constraint k and tol must have shape [n]")
         if not (

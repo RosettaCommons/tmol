@@ -1,4 +1,4 @@
-"""JAX scoring and the canonical protein beta2016 score preset."""
+"""JAX scoring with the complete declared beta2016 preset composition."""
 
 import yaml
 
@@ -8,9 +8,10 @@ from .score_types import ScoreType
 
 
 def beta2016_score_function(param_db=None):
-    """Construct a fresh protein score configuration using shared TMol weights.
+    """Load every shared beta2016 weight; reject unsupported active chemistry.
 
-    Nucleic acids, metals and noncanonical residues are not yet supported.
+    A term with a provably empty interaction set retains its declared zero
+    channel. Unsupported active terms fail during rendering before tracing.
     """
     from tmol_jax.database import ParameterDatabase, default_directory
 
@@ -21,8 +22,7 @@ def beta2016_score_function(param_db=None):
         weights = yaml.safe_load(source)["weights"]
     score = ScoreFunction(param_db)
     for name, weight in weights.items():
-        if name not in {"metal_coordination", "na_torsion", "na_torsion_well"}:
-            score.set_weight(ScoreType[name], weight)
+        score.set_weight(ScoreType[name], weight)
     return score
 
 

@@ -57,7 +57,12 @@ class ScoreType(IntEnum):
     # Generic bonded torsions + impropers (GenBondedEnergyTerm)
     gen_torsions = 22
 
-    n_score_types = 23
+    # Preset channels whose active chemistry still requires implementation.
+    na_torsion = 23
+    na_torsion_well = 24
+    metal_coordination = 25
+
+    n_score_types = 26
 
 
 __all__ = ["ScoreType"]
