@@ -128,8 +128,8 @@ struct DunbrackCudaOps : CudaOps<D> {
   static void forall_grouped(ContextManager&, int poses, int groups, F f) {
     int count = score::common::checked_dispatch_product(
         poses, groups, "JAX CUDA Dunbrack");
-    // One residue evaluation per workgroup preserves memory-latency overlap.
-    constexpr int threads = 1;
+    // Small batches need many workgroups; large batches fill active warp lanes.
+    int threads = count >= 2048 ? 16 : 1;
     if (count)
       independent_work<<<
           (count + threads - 1) / threads,
