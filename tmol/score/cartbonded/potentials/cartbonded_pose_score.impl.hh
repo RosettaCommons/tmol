@@ -102,6 +102,18 @@ auto CartBondedPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
         > {
   int const n_atoms = rot_coords.size(0);
   int const n_poses = first_rot_for_block.size(0);
+  int const n_rots = rot_coord_offset.size(0);
+  int const max_n_blocks = first_rot_for_block.size(1);
+  assert(pose_ind_for_atom.size(0) == n_atoms);
+  assert(block_ind_for_rot.size(0) == n_rots);
+  assert(pose_ind_for_rot.size(0) == n_rots);
+  assert(block_type_ind_for_rot.size(0) == n_rots);
+  assert(n_rots_for_pose.size(0) == n_poses);
+  assert(rot_offset_for_pose.size(0) == n_poses);
+  assert(n_rots_for_block.size(0) == n_poses);
+  assert(n_rots_for_block.size(1) == max_n_blocks);
+  assert(rot_offset_for_block.size(0) == n_poses);
+  assert(rot_offset_for_block.size(1) == max_n_blocks);
   int const n_V = output_block_pair_energies ? first_rot_for_block.size(1) : 1;
   auto V_t = TPack<Real, 4, D>::zeros({5, n_poses, n_V, n_V});
   bool const accumulate_derivs = compute_derivs && !output_block_pair_energies;
@@ -112,17 +124,8 @@ auto CartBondedPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
       mgr,
       rot_coords,
       rot_coord_offset,
-      pose_ind_for_atom,
       first_rot_for_block,
       first_rot_block_type,
-      block_ind_for_rot,
-      pose_ind_for_rot,
-      block_type_ind_for_rot,
-      n_rots_for_pose,
-      rot_offset_for_pose,
-      n_rots_for_block,
-      rot_offset_for_block,
-      max_n_rots_per_pose,
       pose_stack_inter_block_connections,
       atom_paths_from_conn,
       atom_unique_ids,
@@ -198,22 +201,27 @@ auto CartBondedPoseScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
 
     TView<Real, 4, D> dTdV  // nterms x n-poses x max_n_blocks x max_n_blocks
     ) -> TPack<Vec<Real, 3>, 2, D> {
+  int const n_atoms = rot_coords.size(0);
+  int const n_rots = rot_coord_offset.size(0);
+  int const n_poses = first_rot_for_block.size(0);
+  int const max_n_blocks = first_rot_for_block.size(1);
+  assert(pose_ind_for_atom.size(0) == n_atoms);
+  assert(block_ind_for_rot.size(0) == n_rots);
+  assert(pose_ind_for_rot.size(0) == n_rots);
+  assert(block_type_ind_for_rot.size(0) == n_rots);
+  assert(n_rots_for_pose.size(0) == n_poses);
+  assert(rot_offset_for_pose.size(0) == n_poses);
+  assert(n_rots_for_block.size(0) == n_poses);
+  assert(n_rots_for_block.size(1) == max_n_blocks);
+  assert(rot_offset_for_block.size(0) == n_poses);
+  assert(rot_offset_for_block.size(1) == max_n_blocks);
   auto dV_dx_t = TPack<Vec<Real, 3>, 2, D>::zeros({5, rot_coords.size(0)});
   cartbonded_pose_backward<DeviceDispatch, D, Real, Int>(
       mgr,
       rot_coords,
       rot_coord_offset,
-      pose_ind_for_atom,
       first_rot_for_block,
       first_rot_block_type,
-      block_ind_for_rot,
-      pose_ind_for_rot,
-      block_type_ind_for_rot,
-      n_rots_for_pose,
-      rot_offset_for_pose,
-      n_rots_for_block,
-      rot_offset_for_block,
-      max_n_rots_per_pose,
       pose_stack_inter_block_connections,
       atom_paths_from_conn,
       atom_unique_ids,

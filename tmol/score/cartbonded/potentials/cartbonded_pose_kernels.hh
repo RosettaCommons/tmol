@@ -405,17 +405,8 @@ void cartbonded_pose_forward(
 
     TView<Vec<Real, 3>, 1, D> rot_coords,
     TView<Int, 1, D> rot_coord_offset,
-    TView<Int, 1, D> pose_ind_for_atom,
     TView<Int, 2, D> first_rot_for_block,
     TView<Int, 2, D> first_rot_block_type,
-    TView<Int, 1, D> block_ind_for_rot,
-    TView<Int, 1, D> pose_ind_for_rot,
-    TView<Int, 1, D> block_type_ind_for_rot,
-    TView<Int, 1, D> n_rots_for_pose,
-    TView<Int, 1, D> rot_offset_for_pose,
-    TView<Int, 2, D> n_rots_for_block,
-    TView<Int, 2, D> rot_offset_for_block,
-    Int max_n_rots_per_pose,
 
     TView<Vec<Int, 2>, 3, D> pose_stack_inter_block_connections,
     TView<Vec<Int, 3>, 3, D> atom_paths_from_conn,
@@ -446,8 +437,6 @@ void cartbonded_pose_forward(
   using tmol::score::common::get_connection_spanning_subgraphs_offset;
   using tmol::score::common::get_n_connection_spanning_subgraphs;
 
-  int const n_atoms = rot_coords.size(0);
-  int const n_rots = rot_coord_offset.size(0);
   int const n_poses = first_rot_for_block.size(0);
   int const max_n_blocks = first_rot_for_block.size(1);
 
@@ -460,20 +449,8 @@ void cartbonded_pose_forward(
   int const n_subgraphs = cart_subgraphs.size(0);
   int const n_max_atoms_per_block = atom_unique_ids.size(1);
 
-  assert(pose_ind_for_atom.size(0) == n_atoms);
   assert(first_rot_block_type.size(0) == n_poses);
   assert(first_rot_block_type.size(1) == max_n_blocks);
-
-  assert(block_ind_for_rot.size(0) == n_rots);
-  assert(pose_ind_for_rot.size(0) == n_rots);
-  assert(block_type_ind_for_rot.size(0) == n_rots);
-  assert(n_rots_for_pose.size(0) == n_poses);
-  assert(rot_offset_for_pose.size(0) == n_poses);
-
-  assert(n_rots_for_block.size(0) == n_poses);
-  assert(n_rots_for_block.size(1) == max_n_blocks);
-  assert(rot_offset_for_block.size(0) == n_poses);
-  assert(rot_offset_for_block.size(1) == max_n_blocks);
 
   assert(pose_stack_inter_block_connections.size(0) == n_poses);
   assert(pose_stack_inter_block_connections.size(1) == max_n_blocks);
@@ -808,17 +785,8 @@ void cartbonded_pose_backward(
 
     TView<Vec<Real, 3>, 1, D> rot_coords,
     TView<Int, 1, D> rot_coord_offset,
-    TView<Int, 1, D> pose_ind_for_atom,
     TView<Int, 2, D> first_rot_for_block,
     TView<Int, 2, D> first_rot_block_type,
-    TView<Int, 1, D> block_ind_for_rot,
-    TView<Int, 1, D> pose_ind_for_rot,
-    TView<Int, 1, D> block_type_ind_for_rot,
-    TView<Int, 1, D> n_rots_for_pose,
-    TView<Int, 1, D> rot_offset_for_pose,
-    TView<Int, 2, D> n_rots_for_block,
-    TView<Int, 2, D> rot_offset_for_block,
-    Int max_n_rots_per_pose,
 
     TView<Vec<Int, 2>, 3, D> pose_stack_inter_block_connections,
     TView<Vec<Int, 3>, 3, D> atom_paths_from_conn,
@@ -843,8 +811,6 @@ void cartbonded_pose_backward(
 
     TView<Real, 4, D> dTdV,
     TView<Vec<Real, 3>, 2, D> dV_dx) {
-  int const n_atoms = rot_coords.size(0);
-  int const n_rots = rot_coord_offset.size(0);
   int const n_poses = first_rot_for_block.size(0);
   int const max_n_blocks = first_rot_for_block.size(1);
 
@@ -857,20 +823,8 @@ void cartbonded_pose_backward(
   int const n_subgraphs = cart_subgraphs.size(0);
   int const n_max_atoms_per_block = atom_unique_ids.size(1);
 
-  assert(pose_ind_for_atom.size(0) == n_atoms);
   assert(first_rot_block_type.size(0) == n_poses);
   assert(first_rot_block_type.size(1) == max_n_blocks);
-
-  assert(block_ind_for_rot.size(0) == n_rots);
-  assert(pose_ind_for_rot.size(0) == n_rots);
-  assert(block_type_ind_for_rot.size(0) == n_rots);
-  assert(n_rots_for_pose.size(0) == n_poses);
-  assert(rot_offset_for_pose.size(0) == n_poses);
-
-  assert(n_rots_for_block.size(0) == n_poses);
-  assert(n_rots_for_block.size(1) == max_n_blocks);
-  assert(rot_offset_for_block.size(0) == n_poses);
-  assert(rot_offset_for_block.size(1) == max_n_blocks);
 
   assert(pose_stack_inter_block_connections.size(0) == n_poses);
   assert(pose_stack_inter_block_connections.size(1) == max_n_blocks);
