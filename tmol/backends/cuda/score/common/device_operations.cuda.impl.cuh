@@ -5,7 +5,7 @@ error_this_should_not_be_compiled();  // gcc should not include this file
 #endif
 
 #include <tmol/utility/portable/reduce_ops.hh>
-#include <tmol/utility/portable/scan_workspace.hh>
+#include <tmol/score/common/segmented_scan_cuda.cuh>
 #include <moderngpu/transform.hxx>
 #include <moderngpu/loadstore.hxx>
 #include <moderngpu/kernel_load_balance.hxx>
@@ -36,14 +36,6 @@ namespace common {
       std::exit(EXIT_FAILURE);                                         \
     }                                                                  \
   } while (0)
-
-// tmol's scan tag is backend-neutral; moderngpu needs its own. Translate at
-// the boundary so kernel bodies and the DeviceOperations interface never name
-// a moderngpu type.
-constexpr mgpu::scan_type_t mgpu_scan_type(tmol::portable::scan_type t) {
-  return t == tmol::portable::scan_type::inclusive ? mgpu::scan_type_inc
-                                                   : mgpu::scan_type_exc;
-}
 
 template <>
 struct DeviceOperations<tmol::Device::CUDA> {
@@ -214,49 +206,35 @@ struct DeviceOperations<tmol::Device::CUDA> {
       int n_segs,
       OP op,
       T identity) -> TPack<T, 1, tmol::Device::CUDA> {
-    // mgpu::standard_context_t context;
-    typedef typename mgpu::launch_params_t<128, 2> launch_t;
-
-    std::shared_ptr<mgpu::standard_context_t> context = _get_context(mgr);
-
-    int const nt = launch_t::nt;
-    int const vt = launch_t::vt;
-
-    auto src_indexing = [=] MGPU_DEVICE(int i, int _seg, int _rank) {
-      return src[i];
-    };
-
-    auto sizes =
-        tmol::portable::scan_workspace_sizes<Int>(int64_t(n) + n_segs, nt, vt);
-    Int const carryoutBuffer = sizes[1];
-    Int const lbsBuffer = sizes[2];
-
-    auto scanCarryout_t =
-        TPack<T, 1, tmol::Device::CUDA>::empty({carryoutBuffer});
-    auto scanCarryout = scanCarryout_t.view;
-    auto scanCodes_t =
-        TPack<int, 1, tmol::Device::CUDA>::empty({carryoutBuffer});
-    auto scanCodes = scanCodes_t.view;
-    auto LBS_t = TPack<int, 1, tmol::Device::CUDA>::empty({lbsBuffer});
-    auto LBS = LBS_t.view;
-
-    // The return tensor
-    auto dst_scan_t = TPack<T, 1, tmol::Device::CUDA>::empty({n});
-    auto dst_scan = dst_scan_t.view;
-
-    tmol::kinematics::kernel_segscan<launch_t, mgpu_scan_type(scan_type)>(
-        src_indexing,
+    OwnedSegmentedScanWorkspace<T, Device::CUDA, TPack> workspace(n, n_segs);
+    auto result = TPack<T, 1, Device::CUDA>::empty({n});
+    segmented_scan_into<scan_type>(
+        mgr,
+        src,
+        seg_start_inds,
+        result.view.data(),
         n,
-        &seg_start_inds[0],
         n_segs,
-        &dst_scan.data()[0],
-        &scanCarryout.data()[0],
-        &scanCodes.data()[0],
-        &LBS.data()[0],
         op,
         identity,
-        *context);
-    return dst_scan_t;
+        workspace.views());
+    return result;
+  }
+
+  template <portable::scan_type Scan, typename T, typename Int, typename Op>
+  static void segmented_scan_into(
+      ContextManager& mgr,
+      T* src,
+      Int* starts,
+      T* dst,
+      int n,
+      int segments,
+      Op op,
+      T identity,
+      SegmentedScanWorkspace<T, Device::CUDA> workspace) {
+    auto context = _get_context(mgr);
+    segmented_scan_into_cuda<Scan>(
+        *context, src, starts, dst, n, segments, op, identity, workspace);
   }
 
   template <typename T, typename Int, typename Comp>

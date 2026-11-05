@@ -1,4 +1,7 @@
 #include <tmol/utility/portable/scan_workspace.hh>
+#include <tmol/score/common/segmented_scan_workspace.hh>
+#include <tmol/score/common/serial_cpu_operations.hh>
+#include <tmol/utility/tensor/owned_host_tensor.hh>
 #include <cassert>
 #include <cstdint>
 #include <limits>
@@ -38,4 +41,34 @@ int main() {
     rejected = true;
   }
   assert(rejected);
+  // Duplicate starts denote empty segments, not missed future boundaries.
+  int source[] = {2, 3, 5, 7}, starts[] = {0, 0, 2, 2}, result[4] = {};
+  int context = 0;
+  tmol::score::common::
+      OwnedSegmentedScanWorkspace<int, tmol::Device::CPU, tmol::OwnedHostTensor>
+          workspace(4, 4);
+  tmol::score::common::SerialCPUOperations::segmented_scan_into<
+      tmol::portable::scan_type::exclusive>(
+      context,
+      source,
+      starts,
+      result,
+      4,
+      4,
+      tmol::portable::plus_t<int>(),
+      0,
+      workspace.views());
+  assert(result[0] == 0 && result[1] == 2 && result[2] == 0 && result[3] == 5);
+  tmol::score::common::SerialCPUOperations::segmented_scan_into<
+      tmol::portable::scan_type::inclusive>(
+      context,
+      source,
+      starts,
+      result,
+      4,
+      4,
+      tmol::portable::plus_t<int>(),
+      0,
+      workspace.views());
+  assert(result[0] == 2 && result[1] == 5 && result[2] == 5 && result[3] == 12);
 }
