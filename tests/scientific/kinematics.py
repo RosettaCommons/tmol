@@ -2,6 +2,19 @@
 
 import numpy as np
 
+MOLECULAR_KINEMATIC_TERMS = (
+    "gen_torsions",
+    "cart_lengths",
+    "cart_angles",
+    "cart_torsions",
+    "cart_impropers",
+    "cart_hxltorsions",
+    "fa_ljatr",
+    "fa_ljrep",
+    "fa_lk",
+    "fa_elec",
+)
+
 
 def branched_forest(dtype):
     parent = np.array([0, 0, 1, 1, 2, 3], np.int32)
@@ -84,3 +97,82 @@ class KinematicExecution:
             weights = backend.module.tensor(weights, device=backend.device)
             gradient = backend.module.autograd.grad((coords * weights).sum(), x)[0]
         return backend.numpy(coords), backend.numpy(gradient)
+
+
+class MolecularKinematicExecution(KinematicExecution):
+    """Framework adapters around independently prepared molecular forests."""
+
+    def __init__(self, backend, coordinates):
+        self.backend = backend
+        if backend.requested_device == "mps":
+            raise NotImplementedError("native Metal kinematic scans are not exposed")
+        if backend.framework == "jax":
+            from tmol_jax import PoseStackKinematics
+
+            self.module = PoseStackKinematics(backend.pose)
+            mapping = self.module.bind(coordinates)
+            self.forward = backend.module.jit(mapping)
+            self.initial_dofs = backend.numpy(mapping.initial_dofs)
+            self.atom_ids = backend.numpy(self.module.atom_ids)
+        else:
+            from tmol import FoldForest
+            from tmol.kinematics import PoseStackKinematicsModule
+            from tmol.kinematics.compiled._compiled_ops import _inverse_kin
+
+            torch = backend.module
+            self.module = PoseStackKinematicsModule(
+                backend.pose, FoldForest.reasonable_fold_forest(backend.pose)
+            )
+            forest = self.module.kmd.forest
+            self.atom_ids = backend.numpy(forest.id)
+            ids = forest.id[1:].to(torch.int64)
+            template = torch.tensor(coordinates, device=backend.device)
+            packed = torch.cat((template.new_zeros((1, 3)), template.view(-1, 3)[ids]))
+            reference = _inverse_kin(
+                packed,
+                forest.parent,
+                forest.frame_x,
+                forest.frame_y,
+                forest.frame_z,
+                forest.doftype,
+            )
+            self.initial_dofs = backend.numpy(reference[:, :6])
+
+            def forward(dofs):
+                packed = self.module(torch.cat((dofs, reference[:, 6:]), dim=1))
+                result = template.reshape(-1, 3).clone()
+                result[ids] = packed[1:]
+                return result.reshape(template.shape)
+
+            self.forward = forward
+
+    def score(self, dofs, *, gradient=False):
+        backend = self.backend
+        if backend.framework == "jax":
+            scorer = backend.score_function.render_whole_pose_scoring_module(
+                backend.pose, sum_terms=False, apply_weights=False
+            )
+            fn = backend.module.jit(lambda x: scorer(self.forward(x)).sum(axis=1))
+            x = backend.module.device_put(dofs, backend.device)
+            values = fn(x)
+            if gradient:
+                derivatives = backend.module.jit(backend.module.jacrev(fn))(x)
+        else:
+            x = backend.module.tensor(
+                dofs, device=backend.device, requires_grad=gradient
+            )
+            values = backend.scorer(
+                self.forward(x), sum_terms=False, apply_weights=False
+            ).sum(dim=1)
+            if gradient:
+                derivatives = backend.module.stack(
+                    [
+                        backend.module.autograd.grad(value, x, retain_graph=True)[0]
+                        for value in values
+                    ]
+                )
+        return (
+            (backend.numpy(values), backend.numpy(derivatives))
+            if gradient
+            else backend.numpy(values)
+        )

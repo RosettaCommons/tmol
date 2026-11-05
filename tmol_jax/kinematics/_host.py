@@ -28,6 +28,7 @@ _OPERATIONS = {
     "get_block_parent_connectivity_from_toposort": 6,
     "get_scans2": 7,
     "create_minimizer_map": 8,
+    "assemble_pose": 10,
 }
 
 
@@ -80,7 +81,14 @@ def _invoke(operation, *arguments):
         if array.dtype.kind == "b":
             scalar_type = 2
         elif array.dtype.kind in "iu":
-            if array.size and (array.min() < -(1 << 31) or array.max() >= (1 << 31)):
+            needs_range_check = array.dtype.itemsize > 4 or (
+                array.dtype.kind == "u" and array.dtype.itemsize == 4
+            )
+            if (
+                needs_range_check
+                and array.size
+                and (array.min() < -(1 << 31) or array.max() >= (1 << 31))
+            ):
                 raise OverflowError("native pose indices exceed int32")
             array = array.astype(np.int32, copy=False)
             scalar_type = 1

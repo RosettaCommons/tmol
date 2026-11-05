@@ -87,8 +87,24 @@ restraint container in `tmol_jax.score.constraint` remains available.
 `FoldForest.reasonable_fold_forest(pose)` shares chemical spanning and cycle
 handling with Torch, preserving chain labels and non-kinematic closures.
 For manually prepared poses without chain metadata, supply `chain_id=` with
-shape `[poses, blocks]`. These residue-level edges do not yet construct an
-atom-level kinematic forest.
+shape `[poses, blocks]`.
+
+`PoseStackKinematics(pose, fold_forest=None)` uses the common chemical stencils
+and native pose assembler without Torch. Preparation runs once on CPU;
+coordinate execution uses the pose's device and preserves atom IDs and padding.
+
+```python
+from tmol_jax import PoseStackKinematics
+
+kinematics = PoseStackKinematics(pose)
+coordinates = kinematics.bind()
+xyz = jax.jit(coordinates)(coordinates.initial_dofs)
+```
+
+The bound map accepts six movable DOF columns per forest node and returns the
+original `[poses, atoms, 3]` layout. `kinematics.inverse(xyz)` initializes the
+full nine-column layout. Ligands, noncanonical/D residues, nucleic acids, metals
+and mixed batches use the same preparation. Empty poses reject explicitly.
 
 `tmol_jax.kinematics.KinematicForest(parent, frame_x, frame_y, frame_z,
 doftype, device=...)` prepares validated indices in kinematic coordinate order,
@@ -100,8 +116,7 @@ Bind initialized DOFs with `coordinates = forest.bind(dofs)`, then evaluate
 movable DOFs: six columns for jumps and four for bonds. Binding snapshots the
 three jump reference angles as fixed data. Native forward scans support first
 reverse derivatives and `vmap`; forward-mode and higher derivatives are not
-implemented. Automatic pose-to-forest preparation, MoveMap and molecular
-internal-coordinate minimization remain absent.
+implemented. MoveMap and molecular internal-coordinate minimization remain absent.
 
 `run_cart_relax` performs a no-pack repulsive-weight ramp with optional mainchain
 coordinate constraints. It retains the best full-weight structure. It does not

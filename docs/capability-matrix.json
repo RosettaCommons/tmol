@@ -140,13 +140,15 @@
     {
       "domain": "kinematics",
       "torch": "supported",
-      "jax": "partial_prepared_forest",
+      "jax": "molecular_forests_first_reverse",
       "repro_fixture": [
         "tests/scientific/test_fold_forest.py",
         "tests/scientific/test_kinematics.py",
-        "tests/jax/test_native_kinematics.py"
+        "tests/jax/test_native_kinematics.py",
+        "tests/scientific/test_molecular_kinematics.py",
+        "tests/jax/test_pose_kinematics.py"
       ],
-      "implementation_status": "FoldForest shares chemical spanning, polymer cycles and chain-gap policy with Torch; molecular components and explicit chain metadata tested. Prepared atom forests share validated indices and native inverse/forward scans. Bound maps accept six movable DOF columns with fixed reference rotations and support first reverse derivatives, jit and vmap. Inverse-coordinate derivatives, forward-mode AD, higher derivatives, automatic pose-to-atom-forest preparation, MoveMap and molecular internal-coordinate minimization remain absent. Molecular runtime oracles use Torch atom-forest metadata."
+      "implementation_status": "PoseStackKinematics shares chemical spanning, residue stencils, complete native pose assembly and inverse/forward scans with Torch. Independent JAX preparation supports ligand, noncanonical/D, nucleic-acid, metal and mixed inputs; CPU atom identity, padding, reconstruction and per-term internal-coordinate gradients tested. Bound six-column maps fix reference rotations and support first reverse derivatives, jit and vmap. Empty poses, inverse-coordinate AD, forward-mode AD, higher derivatives, MoveMap and molecular internal-coordinate minimization remain unsupported. New automatic-pose CUDA and installed-package validation is pending."
     },
     {
       "domain": "fast_relax",

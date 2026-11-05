@@ -21,20 +21,54 @@ class KinematicForest:
     zero. The shared core validates topology; this adapter owns device arrays.
     Capture the prepared forest in a jitted function, or jit ``forest.inverse``.
     Bind initialized DOFs to obtain a differentiable forward coordinate map.
+    A supplied common ``ScanOrdering`` is validated and retained for execution.
     Automatic pose-to-forest construction is not provided by this operation.
     """
 
     _indices: object = field(repr=False)
     _arrays: tuple = field(repr=False)
+    _ordering: object = field(repr=False)
 
-    def __init__(self, parent, frame_x, frame_y, frame_z, doftype, *, device=None):
+    def __init__(
+        self,
+        parent,
+        frame_x,
+        frame_y,
+        frame_z,
+        doftype,
+        *,
+        device=None,
+        scan_ordering=None,
+    ):
         indices = prepare_kinematic_forest(parent, frame_x, frame_y, frame_z, doftype)
+        if scan_ordering is not None:
+            from tmol_core.kinematics.scan_ordering import (
+                ScanOrdering,
+                validate_scan_plan,
+            )
+
+            scan_ordering = ScanOrdering(
+                *(
+                    validate_scan_plan(
+                        indices.parent,
+                        plan.nodes,
+                        plan.scans,
+                        plan.gens,
+                        reverse=reverse,
+                    )
+                    for plan, reverse in (
+                        (scan_ordering.forward, False),
+                        (scan_ordering.backward, True),
+                    )
+                )
+            )
         arrays = tuple(
             jax.device_put(getattr(indices, name), device)
             for name in ("parent", "frame_x", "frame_y", "frame_z", "doftype")
         )
         object.__setattr__(self, "_indices", indices)
         object.__setattr__(self, "_arrays", arrays)
+        object.__setattr__(self, "_ordering", scan_ordering)
 
     @property
     def n_nodes(self):
@@ -96,7 +130,7 @@ class KinematicCoordinates:
                 indices.frame_z,
             )
         )
-        ordering = prepare_scan_ordering(indices.parent)
+        ordering = forest._ordering or prepare_scan_ordering(indices.parent)
         object.__setattr__(self, "initial_dofs", initial)
         object.__setattr__(
             self,

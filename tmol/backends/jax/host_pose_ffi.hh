@@ -39,6 +39,7 @@ extern "C" int tmol_kinematic_host_prepare(
       TMOL_HOST_OPERATION(6, get_block_parent_connectivity_from_toposort);
       TMOL_HOST_OPERATION(7, get_scans2);
       TMOL_HOST_OPERATION(8, create_minimizer_map);
+      TMOL_HOST_OPERATION(10, assemble_pose);
       default:
         throw std::invalid_argument("unknown native pose operation");
     }

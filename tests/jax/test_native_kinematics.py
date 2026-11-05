@@ -98,10 +98,18 @@ def test_prepared_forest_snapshots_indices_and_uses_common_validation():
 
 def test_bound_forward_transform_contract_and_snapshot():
     from tests.scientific.kinematics import branched_forest
+    from tmol_core.kinematics.scan_ordering import prepare_scan_ordering
 
     parent, kinds, reference = branched_forest(np.float32)
     zeros = np.zeros(len(parent), np.int32)
-    forest = KinematicForest(parent, zeros, zeros, zeros, kinds)
+    forest = KinematicForest(
+        parent,
+        zeros,
+        zeros,
+        zeros,
+        kinds,
+        scan_ordering=prepare_scan_ordering(parent),
+    )
     mapping = forest.bind(reference)
     forward = jax.jit(mapping)
     initial = mapping.initial_dofs
