@@ -12,7 +12,7 @@
 #include <tmol/score/hbond/potentials/gen_hbond_bases.hh>
 #include <tmol/score/hbond/potentials/gen_hbond_bases_ctx.hh>
 #include <tmol/score/common/tview_binder.hh>
-#include <tmol/score/hbond/potentials/gen_hbond_bases_kernels.hh>
+#include <tmol/score/hbond/potentials/native_hbond_bases.hh>
 #include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
 #include <tmol/backends/metal/score/hbond/potentials/gen_hbond_bases_mps_kernels_source.h>
@@ -22,12 +22,6 @@ namespace tmol {
 namespace score {
 namespace hbond {
 namespace potentials {
-
-template <typename Real, typename Int, tmol::Device D>
-using HBondBasesCtx = HBondBasesCtxT<
-    tmol::score::common::TViewBinder<D>::template View,
-    Real,
-    Int>;
 
 template <
     template <tmol::Device> class DeviceOps,
@@ -66,8 +60,6 @@ auto GenerateHBondBases<DeviceOps, Dev, Real, Int>::forward(
 
   NVTXRange _function(__FUNCTION__);
 
-  constexpr int TILE_SIZE = HBOND_BASES_GEN_TILE_SIZE;
-
   nvtx_range_push("hbond_bases::setup");
   auto derived_coords_t = TPack<Vec<Real, 3>, 2, Dev>::full({n_atoms, 3}, NAN);
   auto derived_coords = derived_coords_t.view;
@@ -76,8 +68,6 @@ auto GenerateHBondBases<DeviceOps, Dev, Real, Int>::forward(
   nvtx_range_pop();
 
   nvtx_range_push("hbond_bases::gen");
-  LAUNCH_BOX_32;
-  CTA_LAUNCH_T_PARAMS;
 
   // State the kernel body reads, named explicitly rather than captured
   // implicitly by [=]; the Metal backend has nowhere for a closure to live.
@@ -107,12 +97,6 @@ auto GenerateHBondBases<DeviceOps, Dev, Real, Int>::forward(
   ctx.derived_coords = derived_coords;
   ctx.derived_atom_inds = derived_atom_inds;
 
-  auto f_basesgen = ([=] TMOL_DEVICE_FUNC(int rot_ind) {
-    SHARED_MEMORY HBondBasesGenSharedData<Real, TILE_SIZE> shared_m;
-    hbond_bases_gen<DeviceOps, Dev, Real, Int, launch_t>(
-        ctx, shared_m, rot_ind);
-  });
-
   if (Dev == tmol::Device::MPS) {
     // Metal cannot launch a device lambda, so the identical body is reached
     // through a named entry instead. Each rotamer writes only its own atoms'
@@ -124,8 +108,7 @@ auto GenerateHBondBases<DeviceOps, Dev, Real, Int>::forward(
         int64_t(n_rots),
         true);
   } else {
-    DeviceOps<Dev>::template foreach_workgroup<launch_t>(
-        mgr, n_rots, f_basesgen);
+    launch_hbond_bases<DeviceOps, Dev, Real, Int>(mgr, ctx);
   }
   nvtx_range_pop();
 
