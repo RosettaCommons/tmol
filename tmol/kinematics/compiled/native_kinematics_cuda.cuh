@@ -1,6 +1,7 @@
 #pragma once
 #include "native_kinematics.hh"
 #include "kernel_segscan.cuh"
+#include <tmol/utility/portable/scan_workspace.hh>
 #include <moderngpu/transform.hxx>
 #include <tmol/utility/nvtx.hh>
 namespace tmol {
@@ -25,8 +26,8 @@ struct f1f2VecsRawBuffer {
 //   scan_length = #elements + #segments
 //
 // Then using the kernel launch parameters 'nt' and 'vt':
-//      vt: # of threads per CTA
-//      nt: # of elements processed per thread
+//      nt: # of threads per CTA
+//      vt: # of elements processed per thread
 // it computes three quantities:
 //   scanSize - "scan_length" above, used for the output buffer
 //   lbsSize - a temporary buffer used for the load-balancing scan parameters
@@ -45,22 +46,23 @@ auto getScanBufferSize(
     TView<KinForestGenData<Int>, 1, tmol::Device::CPU> gens, Int nt, Int vt)
     -> mgpu::tuple<Int, Int, Int> {
   auto ngens = gens.size(0) - 1;
-  Int scanSize = 0;
+  int64_t scanSize = 0;
   for (int gen = 0; gen < ngens; ++gen) {
-    Int nnodes = gens[gen + 1].node_start - gens[gen].node_start;
-    Int nsegs = gens[gen + 1].scan_start - gens[gen].scan_start;
+    int64_t node_begin = gens[gen].node_start;
+    int64_t scan_begin = gens[gen].scan_start;
+    int64_t node_end = gens[gen + 1].node_start;
+    int64_t scan_end = gens[gen + 1].scan_start;
+    if (node_begin < 0 || scan_begin < 0 || node_end < node_begin
+        || scan_end < scan_begin)
+      throw std::invalid_argument("Nonmonotonic kinematic scan generations");
+    int64_t nnodes = node_end - node_begin;
+    int64_t nsegs = scan_end - scan_begin;
+    if (nnodes > std::numeric_limits<int64_t>::max() - nsegs)
+      throw std::overflow_error("Kinematic scan generation exceeds capacity");
     scanSize = std::max(nnodes + nsegs, scanSize);
   }
-
-  float scanleft = std::ceil(((float)scanSize) / (nt * vt));
-  Int lbsSize = (Int)scanleft + 1;
-  Int carryoutSize = (Int)scanleft;
-  while (scanleft > 1) {
-    scanleft = std::ceil(scanleft / nt);
-    carryoutSize += (Int)scanleft;
-  }
-
-  return {scanSize, carryoutSize, lbsSize};
+  auto sizes = portable::scan_workspace_sizes<Int>(scanSize, nt, vt);
+  return {sizes[0], sizes[1], sizes[2]};
 }
 
 // the composite operation for the forward pass: apply a transform
