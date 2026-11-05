@@ -343,10 +343,9 @@ def _annotate_packed_block_types_w_kinematic_conns(pbt: PackedBlockTypes):
     """Mark, per block type, which connections carry motion between blocks."""
     if hasattr(pbt, "kinematic_conn"):
         return
-    kinematic_conn = numpy.zeros((pbt.n_types, pbt.max_n_conn), dtype=bool)
-    for i, bt in enumerate(pbt.active_block_types):
-        for ind, conn in enumerate(bt.connections):
-            kinematic_conn[i, ind] = conn.kinematic
+    kinematic_conn = PackedBlockTypesData.join_kinematic_connections(
+        pbt.active_block_types, pbt.max_n_conn
+    )
     setattr(
         pbt,
         "kinematic_conn",
