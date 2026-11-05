@@ -142,46 +142,6 @@ class ScoreFunction:
         return sorted(st for st, weight in self._weights.items() if weight != 0)
 
     def _setup(self, pose_stack, constraint_set=None, omit=()):
-        if pose_stack.packed_block_types is not None:
-            from tmol_jax.chemical.constants import canonical_aa_3letter
-
-            types = pose_stack.packed_block_types.active_block_types
-            used = {i for i in np.asarray(pose_stack.block_type_ind).ravel() if i >= 0}
-            unsupported = {
-                types[i].name
-                for i in used
-                if types[i].name3 not in canonical_aa_3letter
-            }
-            general_terms = {
-                ScoreType.cart_lengths,
-                ScoreType.cart_angles,
-                ScoreType.cart_torsions,
-                ScoreType.cart_impropers,
-                ScoreType.cart_hxltorsions,
-                ScoreType.fa_ljatr,
-                ScoreType.fa_ljrep,
-                ScoreType.fa_lk,
-                ScoreType.fa_elec,
-                ScoreType.gen_torsions,
-                ScoreType.dunbrack_rot,
-                ScoreType.dunbrack_rotdev,
-                ScoreType.dunbrack_semirot,
-                ScoreType.rama,
-                ScoreType.omega,
-                ScoreType.metal_coordination,
-                ScoreType.na_torsion,
-                ScoreType.na_torsion_well,
-                ScoreType.ref,
-                ScoreType.constraint,
-            }
-            limited = set(self.active_score_types()) - general_terms
-            if unsupported and limited:
-                raise NotImplementedError(
-                    "JAX terms "
-                    + ", ".join(sorted(st.name for st in limited))
-                    + " are not validated for: "
-                    + ", ".join(sorted(unsupported))
-                )
         if not np.isfinite(np.asarray(pose_stack.coords)).all():
             raise ValueError("pose coordinates must be finite before scoring setup")
         states = []

@@ -1,13 +1,16 @@
 # JAX frontend (experimental)
 
-`tmol-jax` provides Torch-free canonical-protein scoring, coordinate gradients
-and Cartesian minimization, plus shared native generic-bonded, Cartesian-bonded,
-backbone, Dunbrack, nucleic-acid torsion and metal coordination scoring for
-explicitly parameterized noncanonical molecules. LJ/LK and electrostatic terms also accept
-explicit ligand, D-residue, nucleic-acid and metal inputs; complete scoring for
-those domains remains unsupported. It shares immutable parameter contexts, chemical records, topology,
-parameter preparation and whole-pose native physics with the Torch frontend through [`tmol-core`](shared_core.md).
-Existing `tmol` imports remain available.
+`tmol-jax` provides Torch-free molecular scoring, coordinate gradients and
+Cartesian/internal-coordinate minimization. Chemistry, parameter preparation,
+topology and native CPU/CUDA scoring physics are shared with Torch through
+[`tmol-core`](shared_core.md). Explicitly parameterized ligands, noncanonical and
+D residues, variants, nucleic acids, metals and mixed systems retain their input
+identities and parameter context. Existing `tmol` imports remain available.
+
+This is experimental: full packing/design execution is unfinished, and new
+hydrogen-bond, LK-ball and disulfide adapters still require final CUDA, package
+and Metal validation. See the [capability matrix](capability-matrix.json) for
+implemented behavior and evidence rather than assuming full TMol parity.
 
 ## Install
 
@@ -28,19 +31,11 @@ The frontend requires Python 3.12+ and JAX 0.11.2+.
 Build shared CPU/CUDA physics with
 `python scripts/build_jax_native.py --cuda --cuda-architectures "80;90" --outdir dist/jax`.
 The shared adapter supports float32/64; install a matching JAX CUDA runtime,
-such as `jax[cuda13]`. An older optional native
-adapter accelerates float32 hydrogen bonds and LK-ball
-using the canonical TMol scalar potentials:
-
-```sh
-python scripts/build_jax_cuda.py --outdir dist/jax-cuda --cuda-architectures "80;90"
-pip install dist/jax-cuda/tmol_jax_cuda-*.whl
-```
-
-Build it with the CUDA toolkit appropriate to the deployment. Its ABI marker is
-checked before registration. CPU and other portable routes remain available;
-dispatch follows the compilation platform, including CPU arrays in a GPU process.
-The native adapter recomputes conservative pair bounds from current coordinates.
+such as `jax[cuda13]`. Build with the CUDA toolkit appropriate to the deployment.
+Its ABI marker is checked before registration. Dispatch follows the compilation
+platform, including CPU arrays in a GPU process. Native adapters recompute
+spatial neighbors from current coordinates. The former `tmol-jax-cuda` prototype
+is superseded by `tmol-jax-native`.
 
 ## Score and minimize
 
@@ -166,12 +161,12 @@ pose and a context whose `parameter_database` must be used for scoring. Molecula
 input support does not imply complete scoring support: see the current
 [capability matrix](capability-matrix.json).
 
-Generic, Cartesian bonded, backbone, Dunbrack, nucleic-acid torsion, metal
-coordination and combined LJ/LK/electrostatic scoring require the shared native package
-built above. Set `ScoreType.gen_torsions` on a `ScoreFunction` constructed with the input's
-parameter database. These terms use the same whole-pose native physics and
-analytic derivatives as Torch; explicit noncanonical input does not enable
-unvalidated terms. See `scripts/build_jax_native.py --help` for CUDA builds.
+All molecular interaction terms use the shared native package built above.
+Use a `ScoreFunction` constructed with the input's parameter database; missing
+required parameters raise an error. Hydrogen-bond polynomial coefficients retain
+the native float64 representation even when JAX x64 mode is disabled. Disulfide
+connections retain each residue's L/D stereochemistry. Reference and constraint
+terms use their common host records and formulas.
 
 ## Validation and numerical limits
 

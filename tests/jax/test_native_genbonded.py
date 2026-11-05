@@ -12,10 +12,14 @@ from tests.scientific.molecules import CASES, BACKBONE_CASES, MolecularCase
 from tests.scientific.metal_molecules import METAL_CASES
 from tests.scientific.na_molecules import NA_CASES
 from tests.scientific.dunbrack_molecules import DUNBRACK_CASES
+from tests.scientific.hbond_molecules import HBOND_CASES
+from tests.scientific.disulfide_molecules import DISULFIDE_CASES
 
 from tmol_jax import ScoreFunction, ScoreType
 
 _NATIVE_CASES = {
+    "hbond": HBOND_CASES["mixed_batch"],
+    "disulfide": DISULFIDE_CASES["mixed_batch"],
     "rama": BACKBONE_CASES["mixed"],
     "dunbrack_rot": DUNBRACK_CASES["mixed_batch"],
     "fa_ljatr": CASES["mixed_batch"],
@@ -44,6 +48,9 @@ def backend_name(request):
         ("fa_ljatr", "fa_ljrep", "fa_lk", "fa_elec"),
         ("fa_ljatr", "fa_ljrep", "fa_lk"),
         ("fa_elec",),
+        ("hbond",),
+        ("disulfide",),
+        ("lk_ball_iso", "lk_ball", "lk_bridge", "lk_bridge_uncpl"),
         ("rama", "omega"),
         ("metal_coordination",),
         ("na_torsion", "na_torsion_well"),
@@ -88,6 +95,10 @@ def test_native_coordinate_transforms_and_pose_independence(dtype, backend_name,
         # Summed float32 torsions lose precision for sub-milliangstrom changes;
         # 5e-3 along this normalized direction balances cancellation/truncation.
         step = 5e-3 if dtype == np.float32 else 1e-5
+        if terms == ("hbond",) and dtype == np.float64:
+            # Degree-ten native HB polynomials cancel at 1e-5; the 1e-2..1e-4
+            # convergence window supports 1e-3 without weakening tolerances.
+            step = 1e-3
         numeric = (score(x + step * direction) - score(x - step * direction)) / (
             2 * step
         )
@@ -203,6 +214,9 @@ def test_native_mixed_molecule_minimization_preserves_frozen_atoms(backend_name)
         "rama",
         "metal_coordination",
         "na_torsion",
+        "hbond",
+        "lk_ball",
+        "disulfide",
     ],
 )
 def test_empty_native_pose_batch_preserves_value_and_gradient_shapes(

@@ -5,6 +5,9 @@
 #include "metal_ffi.hh"
 #include "na_torsion_ffi.hh"
 #include "workspace_ffi.hh"
+#include "lk_ball_ffi.hh"
+#include "hbond_ffi.hh"
+#include "disulfide_ffi.hh"
 #include "dunbrack_ffi.hh"
 #include "nonbonded_ffi.hh"
 #include "independent_nonbonded_ffi.hh"
@@ -65,7 +68,22 @@ struct CpuOps<Device::CPU> {
   }
   template <typename Launch, typename F>
   static void forall(ContextManager& context, int count, F f) {
-    foreach_independent_workgroup<Launch>(context, count, f);
+    // Elementwise initialization is too small for one pool task per element.
+    // Bound scheduling overhead and keep contiguous writes in each task.
+    constexpr int grain = 4096;
+    int chunks = count / grain + (count % grain != 0);
+    if (active_pool)
+      chunks = std::min<int64_t>(chunks, active_pool->num_threads());
+    if (chunks <= 1) {
+      for (int i = 0; i < count; ++i) f(i);
+      return;
+    }
+    int width = count / chunks + (count % chunks != 0);
+    foreach_pose_workgroup<Launch>(context, chunks, 1, [=](int chunk) {
+      int begin = chunk * width;
+      int end = begin + std::min(width, count - begin);
+      for (int i = begin; i < end; ++i) f(i);
+    });
   }
   template <typename Launch, typename F>
   static void forall_independent(ContextManager& context, int count, F f) {
@@ -448,4 +466,62 @@ extern "C" uint64_t tmol_kinematic_scan_workspace_bytes(
     int derivative) {
   return tmol::jax::kinematic_workspace_bytes(
       count, generations, generation_count, bits, derivative);
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_lk_ball,
+    (tmol::jax::run<tmol::jax::LKBallKernel, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<double>("reach"));
+
+extern "C" uint64_t tmol_lk_ball_workspace_bytes(
+    int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
+  try {
+    if (poses < 0 || blocks < 0 || atoms < 0 || (bits != 32 && bits != 64))
+      throw std::invalid_argument("invalid LK-ball workspace dimensions");
+    return bits == 32 ? tmol::jax::LKBallWorkspace<float>(
+                            poses, blocks, atoms, derivative)
+                            .storage.size_bytes()
+                      : tmol::jax::LKBallWorkspace<double>(
+                            poses, blocks, atoms, derivative)
+                            .storage.size_bytes();
+  } catch (...) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_disulfide,
+    tmol::jax::run<tmol::jax::DisulfideKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets());
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_hbond,
+    tmol::jax::run<tmol::jax::HBondKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets());
+
+extern "C" uint64_t tmol_hbond_workspace_bytes(
+    int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
+  try {
+    if (poses < 0 || blocks < 0 || atoms < 0 || (bits != 32 && bits != 64))
+      throw std::invalid_argument("invalid HBond workspace dimensions");
+    return bits == 32 ? tmol::jax::HBondWorkspace<float>(poses, blocks, atoms)
+                            .storage.size_bytes()
+                      : tmol::jax::HBondWorkspace<double>(poses, blocks, atoms)
+                            .storage.size_bytes();
+  } catch (...) {
+    return std::numeric_limits<uint64_t>::max();
+  }
 }

@@ -7,6 +7,9 @@
 #include "metal_ffi.hh"
 #include "na_torsion_ffi.hh"
 #include "workspace_ffi.hh"
+#include "lk_ball_ffi.hh"
+#include "hbond_ffi.hh"
+#include "disulfide_ffi.hh"
 #include "dunbrack_ffi.hh"
 #include "nonbonded_ffi.hh"
 #include "independent_nonbonded_ffi.hh"
@@ -412,3 +415,32 @@ extern "C" uint64_t tmol_kinematic_scan_workspace_bytes(
   return tmol::jax::kinematic_workspace_bytes(
       count, generations, generation_count, bits, derivative);
 }
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_lk_ball,
+    (tmol::jax::run<tmol::jax::LKBallKernel, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<double>("reach"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_disulfide,
+    tmol::jax::run<tmol::jax::DisulfideKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets());
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_hbond,
+    tmol::jax::run<tmol::jax::HBondKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets());

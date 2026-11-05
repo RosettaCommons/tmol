@@ -2,7 +2,6 @@
 
 import jax
 import numpy as np
-import pytest
 import yaml
 
 from tests.scientific.execution import Execution
@@ -19,24 +18,6 @@ def test_preset_keeps_every_declared_weight():
     assert {st.name: weight for st, weight in score.weights.items()} == expected
     assert ScoreType.na_torsion in score.active_score_types()
     assert ScoreType.metal_coordination in score.active_score_types()
-
-
-@pytest.mark.parametrize(
-    "name,term",
-    [
-        ("dna", "hbond"),
-        ("rna", "lk_ball"),
-    ],
-)
-def test_unsupported_active_science_rejects_before_tracing(name, term):
-    backend = Execution("jax-cpu").molecule(DOMAIN_CASES[name], terms=())
-    sf = ScoreFunction(backend.parameter_database)
-    sf.set_weight(ScoreType[term], 1)
-    with pytest.raises(NotImplementedError, match=term):
-        sf.render_whole_pose_scoring_module(backend.pose)
-    sf.set_weight(ScoreType[term], 0)
-    score = sf.render_whole_pose_scoring_module(backend.pose)
-    np.testing.assert_array_equal(jax.jit(score)(backend.pose.coords), 0)
 
 
 def test_ineligible_terms_preserve_empty_channels_and_coordinate_gradients():
