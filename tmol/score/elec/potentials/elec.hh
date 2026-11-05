@@ -63,7 +63,8 @@ template <typename Real, int TILE_SIZE, int MAX_N_CONN>
 struct ElecBlockPairSharedData {
   Real coords1[TILE_SIZE * 3];  // 768 bytes for coords
   Real coords2[TILE_SIZE * 3];
-  int conn_ats1[MAX_N_CONN];  // Full residue atom indices, including atoms above 255.
+  int conn_ats1[MAX_N_CONN];  // Full residue atom indices, including atoms
+                              // above 255.
   int conn_ats2[MAX_N_CONN];
   unsigned char path_dist1[MAX_N_CONN * TILE_SIZE];  // 384 bytes
   unsigned char path_dist2[MAX_N_CONN * TILE_SIZE];

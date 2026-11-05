@@ -24,5 +24,8 @@ auto backward32 =
     &metal_coordination_pose_backward<SerialOps, tmol::Device::CPU, float, int>;
 auto forward64 =
     &metal_coordination_pose_forward<SerialOps, tmol::Device::CPU, double, int>;
-auto backward64 =
-    &metal_coordination_pose_backward<SerialOps, tmol::Device::CPU, double, int>;
+auto backward64 = &metal_coordination_pose_backward<
+    SerialOps,
+    tmol::Device::CPU,
+    double,
+    int>;

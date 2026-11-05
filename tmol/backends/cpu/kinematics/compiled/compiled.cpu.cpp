@@ -101,8 +101,11 @@ struct InverseKinDispatch {
     auto dofs_t = TPack<KintreeDof, 1, D>::empty({num_atoms});
     auto dofs = dofs_t.view;
 
-    inverse_kinematics_native<tmol::score::common::DeviceOperations,
-                              D, Real, Int>(
+    inverse_kinematics_native<
+        tmol::score::common::DeviceOperations,
+        D,
+        Real,
+        Int>(
         mgr, coords, parent, frame_x, frame_y, frame_z, doftype, HTs, dofs);
 
     return dofs_t;

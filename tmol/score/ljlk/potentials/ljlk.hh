@@ -63,7 +63,8 @@ struct LJLKBlockPairSharedData {
   Real coords2[TileSize * 3];
   short atom_types1[TileSize];  // 64 bytes of type indices, not params
   short atom_types2[TileSize];
-  int conn_ats1[MaxNConn];  // Full residue atom indices, including atoms above 255.
+  int conn_ats1[MaxNConn];  // Full residue atom indices, including atoms above
+                            // 255.
   int conn_ats2[MaxNConn];
   unsigned char path_dist1[MaxNConn * TileSize];  // 384 bytes
   unsigned char path_dist2[MaxNConn * TileSize];
