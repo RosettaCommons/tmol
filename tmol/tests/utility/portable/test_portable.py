@@ -145,3 +145,9 @@ def test_native_gradient_copy_compiles_for_both_torch_abis(tmp_path, stable):
         flags.append("-std=c++20")
     proc = _compile(HERE / "native_copy.cc", tmp_path / "copy", defines=flags)
     assert proc.returncode == 0, proc.stderr
+
+
+@requires_cxx
+def test_whole_pose_cartbonded_needs_no_framework(tmp_path):
+    proc = _compile(HERE / "native_cartbonded.cc", tmp_path / "cartbonded", run=True)
+    assert proc.returncode == 0, proc.stderr
