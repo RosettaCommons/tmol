@@ -39,6 +39,7 @@ def stage_native(root, stage, source_revision=None):
         "score/dunbrack/potentials",
         "score/ljlk/potentials",
         "score/elec/potentials",
+        "score/lk_ball/potentials",
         "utility/portable",
         "utility/tensor",
         "numeric",
@@ -51,10 +52,14 @@ def stage_native(root, stage, source_revision=None):
                 "*.py", "*.pyc", "__pycache__", "*.cpp", "*.cu"
             ),
         )
-    shutil.copyfile(
-        root / "tmol/score/unresolved_atom_types.hh",
-        stage / "include/tmol/score/unresolved_atom_types.hh",
-    )
+    for relative in (
+        "hbond/identification.hh",
+        "bonded_atom.hh",
+        "unresolved_atom_types.hh",
+    ):
+        destination = stage / "include/tmol/score" / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(root / "tmol/score" / relative, destination)
     source_files = {
         str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(stage.rglob("*"))

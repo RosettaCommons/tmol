@@ -39,7 +39,7 @@ kernel void water_gen_build_waters_f32(
       WaterCtx::n_views == 30,
       "buffer bindings here must cover every view visit_views enumerates");
   device void* ptrs[30] = {TMOL_MPS_PTRS_30};
-  threadgroup WaterGenSharedData<float, TILE_SIZE> shared_m;
+  threadgroup WaterGenSharedData<float, lk_tile_size> shared_m;
   threadgroup float reduce_scratch[TMOL_N_SIMDS];
   WaterCtx ctx = tmol::score::common::mps_build_ctx<WaterCtx>(ptrs, meta);
   Lane lane(tid, n_threads, reduce_scratch);
@@ -62,7 +62,7 @@ kernel void water_gen_build_water_derivs_f32(
       WaterDerivCtx::n_views == 29,
       "buffer bindings here must cover every view visit_views enumerates");
   device void* ptrs[29] = {TMOL_MPS_PTRS_29};
-  threadgroup WaterGenSharedData<float, TILE_SIZE> shared_m;
+  threadgroup WaterGenSharedData<float, lk_tile_size> shared_m;
   threadgroup float reduce_scratch[TMOL_N_SIMDS];
   WaterDerivCtx ctx =
       tmol::score::common::mps_build_ctx<WaterDerivCtx>(ptrs, meta);

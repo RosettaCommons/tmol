@@ -28,10 +28,7 @@
 #include <tmol/score/common/workgroup_lane.hh>
 #include <tmol/score/lk_ball/potentials/lk_ball.hh>
 #include <tmol/score/lk_ball/potentials/lk_ball_ctx.hh>
-// After lk_ball.hh, deliberately: constants.hh defines TILE_SIZE,
-// MAX_N_WATER and MAX_N_CONN as macros, and those are also the names of
-// lk_ball.hh's template parameters. Including it first turns
-// `template <..., int TILE_SIZE, ...>` into `template <..., int 32, ...>`.
+// Scoped constants also work when all score headers share one translation unit.
 #include <tmol/score/lk_ball/potentials/constants.hh>
 #include <tmol/utility/portable/device.hh>
 #include <tmol/utility/portable/metal_view.hh>
@@ -465,11 +462,11 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_energies_by_block(
         (polar_first ? inter_dat.r1 : inter_dat.r2).pol_occ_tile_inds[pol_ind];
     int occ_tile_ind =
         (polar_first ? inter_dat.r2 : inter_dat.r1).pol_occ_tile_inds[occ_ind];
-    int separation = interres_count_pair_separation<TILE_SIZE>(
+    int separation = interres_count_pair_separation<lk_tile_size>(
         inter_dat,
         (polar_first ? pol_tile_ind : occ_tile_ind),
         (polar_first ? occ_tile_ind : pol_tile_ind));
-    lk_ball_Vt<Real> E = lk_ball_atom_energy_full<MAX_N_WATER>(
+    lk_ball_Vt<Real> E = lk_ball_atom_energy_full<lk_max_n_water>(
         pol_ind,
         occ_ind,
         pol_tile_ind,
@@ -504,7 +501,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_energies_by_block(
     int const separation =
         ctx.block_type_path_distance[intra_dat.r1.block_type][pol_atom_ind]
                                     [occ_atom_ind];
-    lk_ball_Vt<Real> E = lk_ball_atom_energy_full<MAX_N_WATER>(
+    lk_ball_Vt<Real> E = lk_ball_atom_energy_full<lk_max_n_water>(
         pol_ind,
         occ_ind,
         pol_tile_ind,
@@ -595,7 +592,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_energies_by_block(
       LKBallScoringData<Real>,
       LKBallScoringData<Real>,
       Real,
-      TILE_SIZE,
+      lk_tile_size,
       pair_mode>(
       shared,
       pose_ind,
@@ -678,8 +675,8 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
            TMOL_THREAD LKBallResPairData<Real> const& respair_dat,
            int cp_separation) {
         lk_ball_atom_derivs_full<
-            TILE_SIZE,
-            MAX_N_WATER,
+            lk_tile_size,
+            lk_max_n_water,
             Real,
             Dev,
             (Dev == tmol::Device::CUDA)>(
@@ -710,7 +707,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
         (polar_first ? inter_dat.r1 : inter_dat.r2).pol_occ_tile_inds[pol_ind];
     int occ_tile_ind =
         (polar_first ? inter_dat.r2 : inter_dat.r1).pol_occ_tile_inds[occ_ind];
-    int separation = interres_count_pair_separation<TILE_SIZE>(
+    int separation = interres_count_pair_separation<lk_tile_size>(
         inter_dat,
         (polar_first ? pol_tile_ind : occ_tile_ind),
         (polar_first ? occ_tile_ind : pol_tile_ind));
@@ -833,7 +830,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
       LKBallScoringData<Real>,
       LKBallScoringData<Real>,
       Real,
-      TILE_SIZE,
+      lk_tile_size,
       pair_mode>(
       shared,
       pose_ind,
@@ -889,11 +886,11 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_rotamer_energies_by_block(
         (polar_first ? inter_dat.r1 : inter_dat.r2).pol_occ_tile_inds[pol_ind];
     int occ_tile_ind =
         (polar_first ? inter_dat.r2 : inter_dat.r1).pol_occ_tile_inds[occ_ind];
-    int separation = interres_count_pair_separation<TILE_SIZE>(
+    int separation = interres_count_pair_separation<lk_tile_size>(
         inter_dat,
         (polar_first ? pol_tile_ind : occ_tile_ind),
         (polar_first ? occ_tile_ind : pol_tile_ind));
-    lk_ball_Vt<Real> E = lk_ball_atom_energy_full<MAX_N_WATER>(
+    lk_ball_Vt<Real> E = lk_ball_atom_energy_full<lk_max_n_water>(
         pol_ind,
         occ_ind,
         pol_tile_ind,
@@ -928,7 +925,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_rotamer_energies_by_block(
     int const separation =
         ctx.block_type_path_distance[intra_dat.r1.block_type][pol_atom_ind]
                                     [occ_atom_ind];
-    lk_ball_Vt<Real> E = lk_ball_atom_energy_full<MAX_N_WATER>(
+    lk_ball_Vt<Real> E = lk_ball_atom_energy_full<lk_max_n_water>(
         pol_ind,
         occ_ind,
         pol_tile_ind,
@@ -1005,7 +1002,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_rotamer_energies_by_block(
       LKBallScoringData<Real>,
       LKBallScoringData<Real>,
       Real,
-      TILE_SIZE>(
+      lk_tile_size>(
       shared,
       pose_ind,
       rot_ind1,
