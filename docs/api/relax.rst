@@ -12,3 +12,4 @@ protocol for custom minimizers.
    :members:
    :imported-members:
    :show-inheritance:
+   :exclude-members: CartesianRelaxMinimizer, KinematicRelaxMinimizer
