@@ -18,12 +18,18 @@ def stage_native(root, stage):
     shutil.copyfile(root / "LICENSE", stage / "LICENSE")
     shutil.copytree(package / "tmol_jax_native", stage / "tmol_jax_native")
     backend = root / "tmol/backends/jax"
-    for name in ("genbonded_cpu.cpp", "genbonded_cuda.cu", "genbonded_ffi.hh"):
+    for name in (
+        "genbonded_cpu.cpp",
+        "genbonded_cuda.cu",
+        "genbonded_ffi.hh",
+        "cartbonded_ffi.hh",
+    ):
         shutil.copyfile(backend / name, stage / name)
     # Include canonical source headers, never a second scientific implementation.
     for relative in (
         "score/common",
         "score/genbonded/potentials",
+        "score/cartbonded/potentials",
         "utility/portable",
         "utility/tensor",
         "numeric",
