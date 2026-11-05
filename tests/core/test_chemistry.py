@@ -116,6 +116,7 @@ import tmol_core.scoring.elec
 import tmol_core.scoring.genbonded, tmol_core.scoring.count_pair
 import tmol_core.scoring.atom_types, tmol_core.scoring.ljlk, tmol_core.scoring.hbond
 import tmol_core.scoring.cartbonded, tmol_core.scoring.cartbonded_connections, tmol_core.scoring.atom_ids
+import tmol_core.database.context, tmol_core.database.mirrored_dunbrack
 import tmol_core.database.ljlk, tmol_core.database.hbond
 import tmol_core.database.cartbonded, tmol_core.database.generated
 import tmol_core.database.elec, tmol_core.database.ref, tmol_core.database.disulfide
