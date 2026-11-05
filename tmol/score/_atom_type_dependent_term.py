@@ -14,10 +14,10 @@ from tmol.pose._pose_stack import PoseStack
 from tmol.types._array import NDArray
 from tmol.utility import resolve_device
 
-from collections import OrderedDict
+from tmol_core.scoring.atom_ids import AtomNames, packed_atom_ids
 
 
-class AtomTypeDependentTerm(EnergyTerm):
+class AtomTypeDependentTerm(EnergyTerm, AtomNames):
     atom_type_resolver: AtomTypeParamResolver  # = attr.ib()
     atom_type_index: pandas.Index  # = attr.ib()
     np_is_hydrogen: NDArray[bool]  # = attr.ib()
@@ -40,29 +40,6 @@ class AtomTypeDependentTerm(EnergyTerm):
         self._packed_atom_type_key = AnnotationKey.from_sources(
             param_db.chemical, settings=(self.device,)
         )
-
-    def get_atom_unique_id_name(self, block_name, atom_name):
-        return "UNIQUE_ID:" + block_name + ":" + atom_name
-
-    def get_atom_wildcard_id_name(self, atom_name):
-        return "WILDCARD_ID:" + atom_name
-
-    def get_atom_cross_id_name(self, atom_name):
-        """Id for an atom matched across a residue connection, by name."""
-        return "CROSS_ID:" + atom_name
-
-    def _create_uniq_and_wildcard_names_for_bt(self, block_type):
-        atom_names = [x.name for x in block_type.atoms]
-
-        unique_ids = [
-            self.get_atom_unique_id_name(block_type.base_name, atom_name)
-            for atom_name in atom_names
-        ]
-        wildcard_ids = [
-            self.get_atom_wildcard_id_name(atom_name) for atom_name in atom_names
-        ]
-        cross_ids = [self.get_atom_cross_id_name(atom_name) for atom_name in atom_names]
-        return unique_ids, wildcard_ids, cross_ids
 
     def setup_block_type(self, block_type: RefinedResidueType):
         super(AtomTypeDependentTerm, self).setup_block_type(block_type)
@@ -120,36 +97,14 @@ class AtomTypeDependentTerm(EnergyTerm):
             dtype=numpy.int32,
         )
 
-        atom_unique_ids = numpy.full(
-            (packed_block_types.n_types, packed_block_types.max_n_atoms),
-            -1,
-            dtype=numpy.int32,
+        host_ids = packed_atom_ids(
+            packed_block_types.active_block_types, packed_block_types.max_n_atoms
         )
-        atom_wildcard_ids = numpy.full(
-            (packed_block_types.n_types, packed_block_types.max_n_atoms),
-            -1,
-            dtype=numpy.int32,
-        )
-        atom_cross_ids = numpy.full(
-            (packed_block_types.n_types, packed_block_types.max_n_atoms),
-            -1,
-            dtype=numpy.int32,
-        )
-
-        atom_unique_id_index = OrderedDict()
-        for i, bt in enumerate(packed_block_types.active_block_types):
-            for j, atom_name in enumerate(bt.atom_unique_ids):
-                if atom_name not in atom_unique_id_index:
-                    atom_unique_id_index[atom_name] = len(atom_unique_id_index)
-                atom_unique_ids[i, j] = atom_unique_id_index[atom_name]
-            for j, atom_name in enumerate(bt.atom_wildcard_ids):
-                if atom_name not in atom_unique_id_index:
-                    atom_unique_id_index[atom_name] = len(atom_unique_id_index)
-                atom_wildcard_ids[i, j] = atom_unique_id_index[atom_name]
-            for j, atom_name in enumerate(bt.atom_cross_ids):
-                if atom_name not in atom_unique_id_index:
-                    atom_unique_id_index[atom_name] = len(atom_unique_id_index)
-                atom_cross_ids[i, j] = atom_unique_id_index[atom_name]
+        atom_unique_ids = host_ids.atom_unique_ids
+        atom_wildcard_ids = host_ids.atom_wildcard_ids
+        atom_cross_ids = host_ids.atom_cross_ids
+        atom_unique_id_index = host_ids.atom_unique_id_index
+        packed_block_types.atom_unique_id_data = host_ids
 
         for i, (indices, _) in enumerate(block_params):
             atom_types[i, : len(indices)] = indices
@@ -192,6 +147,7 @@ class AtomTypeDependentTerm(EnergyTerm):
                 "atom_wildcard_ids",
                 "atom_cross_ids",
                 "atom_unique_id_index",
+                "atom_unique_id_data",
             ),
             bindings=tuple(
                 (block_type, field)
