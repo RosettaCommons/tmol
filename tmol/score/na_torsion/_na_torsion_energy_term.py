@@ -308,7 +308,7 @@ def _eval_na_torsion_for_pose(
         )
         return _finish((zero, zero), output_block_pair_energies)
 
-    if rot_coords.is_cuda and not output_block_pair_energies:
+    if rot_coords.device.type in ("cpu", "cuda") and not output_block_pair_energies:
         from .potentials._compiled import _na_torsion_pose_score
 
         return _na_torsion_pose_score(

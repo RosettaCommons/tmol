@@ -1,16 +1,12 @@
 #include <tmol/utility/tensor/native_library.hh>
 
-#ifdef WITH_CUDA
-
 #include "na_torsion_pose_score.hh"
-#endif
 
 namespace tmol {
 namespace score {
 namespace na_torsion {
 namespace potentials {
 
-#ifdef WITH_CUDA
 using tmol::native::Tensor;
 using tmol::native::autograd::AutogradContext;
 using tmol::native::autograd::Function;
@@ -47,7 +43,11 @@ class NaTorsionPoseScoreOp
       Tensor weight_sugar,
       double pucker_temperature,
       double bin_blend_sdev) {
-    auto result = na_torsion_pose_score_cuda(
+    auto score_kernel = &na_torsion_pose_score_cpu;
+#ifdef WITH_CUDA
+    if (coords.is_cuda()) score_kernel = &na_torsion_pose_score_cuda;
+#endif
+    auto result = score_kernel(
         coords,
         base,
         is_na,
@@ -83,8 +83,12 @@ class NaTorsionPoseScoreOp
 
   static tensor_list backward(AutogradContext* ctx, tensor_list grad_outputs) {
     auto saved = ctx->get_saved_variables();
-    auto grad_coords =
-        na_torsion_pose_score_backward_cuda(saved[0], grad_outputs[0]);
+    auto backward_kernel = &na_torsion_pose_score_backward_cpu;
+#ifdef WITH_CUDA
+    if (saved[0].is_cuda())
+      backward_kernel = &na_torsion_pose_score_backward_cuda;
+#endif
+    auto grad_coords = backward_kernel(saved[0], grad_outputs[0]);
     return {
         grad_coords, Tensor(), Tensor(), Tensor(), Tensor(), Tensor(), Tensor(),
         Tensor(),    Tensor(), Tensor(), Tensor(), Tensor(), Tensor(), Tensor(),
@@ -148,24 +152,9 @@ std::tuple<Tensor, Tensor> na_torsion_pose_score(
       bin_blend_sdev);
   return {result[0], result[1]};
 }
-#endif
 
 TMOL_LIBRARY(tmol_na_torsion, m) {
-#ifdef WITH_CUDA
   m.def("na_torsion_pose_score", TMOL_FN(&na_torsion_pose_score));
-#else
-  m.def(
-      "na_torsion_pose_score("
-      "Tensor coords, Tensor base, Tensor is_na, Tensor torsion_indices, "
-      "Tensor torsion_ok, Tensor ring_indices, Tensor ring_ok, Tensor prev, "
-      "Tensor backbone_means, Tensor backbone_sdev, Tensor sugar_means, "
-      "Tensor chi_means, Tensor sdev_sugar, Tensor sdev_chi, "
-      "Tensor well_pucker, Tensor well_alpha_gamma, "
-      "Tensor well_bibii_pucker, Tensor well_alphanext_bibii, "
-      "Tensor well_chi_syn, Tensor is_north, Tensor weight_bb, "
-      "Tensor weight_chi, Tensor weight_sugar, float pucker_temperature, "
-      "float bin_blend_sdev) -> (Tensor, Tensor)");
-#endif
 }
 
 }  // namespace potentials
