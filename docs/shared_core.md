@@ -73,3 +73,13 @@ whole-pose forward and weighted backward algorithms are shared with Torch's
 allocating dispatch, including inter-block proper and improper torsions. This
 header does not require Torch. Other terms still require further extraction;
 sharing scalar potentials alone is not whole-core sharing.
+
+
+Packed topology is prepared by `tmol_core.chemical.packed.PackedBlockTypesData`.
+It accepts any ordered refined residue types and their chemical database, and
+returns NumPy atom, bond, connection, and torsion metadata. Atom typing, ideal
+coordinates in physical atom order, and path distances are available lazily.
+Frontends transfer these arrays and choose storage capacity; a padded connection
+slot does not change the true connection count. Torch reserves one slot for
+native fixed-width views, including ligand-only palettes. The native scoring
+backend's connection limit remains an explicit frontend constraint.
