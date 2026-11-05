@@ -1,7 +1,4 @@
-from enum import Enum
-
 import torch
-import numpy
 
 from .._energy_term import EnergyTerm
 from .._annotation_cache import AnnotationKey, _cached_annotation, _store_annotation
@@ -13,51 +10,15 @@ from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
 
 
-class _DisulfideParameter(Enum):
-    """Describe the C++ parameter struct layout and D-residue transformation."""
-
-    D_LOCATION = ("d_location", False)
-    D_SCALE = ("d_scale", False)
-    D_SHAPE = ("d_shape", False)
-    A_LOG_A = ("a_logA", False)
-    A_KAPPA = ("a_kappa", False)
-    A_MU = ("a_mu", False)
-    DSS_LOG_A1 = ("dss_logA1", False)
-    DSS_KAPPA1 = ("dss_kappa1", False)
-    DSS_MU1 = ("dss_mu1", True)
-    DSS_LOG_A2 = ("dss_logA2", False)
-    DSS_KAPPA2 = ("dss_kappa2", False)
-    DSS_MU2 = ("dss_mu2", True)
-    DCS_LOG_A1 = ("dcs_logA1", False)
-    DCS_MU1 = ("dcs_mu1", True)
-    DCS_KAPPA1 = ("dcs_kappa1", False)
-    DCS_LOG_A2 = ("dcs_logA2", False)
-    DCS_MU2 = ("dcs_mu2", True)
-    DCS_KAPPA2 = ("dcs_kappa2", False)
-    DCS_LOG_A3 = ("dcs_logA3", False)
-    DCS_MU3 = ("dcs_mu3", True)
-    DCS_KAPPA3 = ("dcs_kappa3", False)
-    WT_DIH_SS = ("wt_dih_ss", False)
-    WT_DIH_CS = ("wt_dih_cs", False)
-    WT_ANG = ("wt_ang", False)
-    WT_LEN = ("wt_len", False)
-    SHIFT = ("shift", False)
-    DSS_MIXED_LOG_A1 = ("dss_mixed_logA1", False)
-    DSS_MIXED_KAPPA1 = ("dss_mixed_kappa1", False)
-    DSS_MIXED_MU1 = ("dss_mixed_mu1", False)
-    DSS_MIXED_LOG_A2 = ("dss_mixed_logA2", False)
-    DSS_MIXED_KAPPA2 = ("dss_mixed_kappa2", False)
-    DSS_MIXED_MU2 = ("dss_mixed_mu2", False)
-    CHIRALITY = (None, True)
-
-    def __init__(self, attribute: str | None, negated_for_d: bool):
-        self.attribute = attribute
-        self.negated_for_d = negated_for_d
-
-
-_MIRRORED_PARAMETER_SIGNS = torch.tensor(
-    [-1.0 if parameter.negated_for_d else 1.0 for parameter in _DisulfideParameter]
+from tmol_core.scoring.disulfide import (
+    DisulfideParameter as _DisulfideParameter,
+    MIRRORED_PARAMETER_SIGNS,
+    disulfide_connections,
+    pack_disulfide_connections,
+    disulfide_parameter_signs,
 )
+
+_MIRRORED_PARAMETER_SIGNS = torch.from_numpy(MIRRORED_PARAMETER_SIGNS)
 
 
 class DisulfideEnergyTerm(EnergyTerm):
@@ -97,18 +58,14 @@ class DisulfideEnergyTerm(EnergyTerm):
         if cached is not None:
             return cached
 
-        disulfide_connections = numpy.array([], dtype=numpy.int32)
-        if "dslf" in block_type.connection_to_cidx.keys():
-            disulfide_connections = numpy.append(
-                disulfide_connections, [block_type.connection_to_cidx["dslf"]]
-            )
+        connections = disulfide_connections(block_type)
 
-        setattr(block_type, "disulfide_connections", disulfide_connections)
+        setattr(block_type, "disulfide_connections", connections)
         return _store_annotation(
             block_type,
             "_disulfide_annotation",
             self._block_annotation_key,
-            disulfide_connections,
+            connections,
             fields=("disulfide_connections",),
         )
 
@@ -123,40 +80,31 @@ class DisulfideEnergyTerm(EnergyTerm):
         if cached is not None:
             return cached
 
-        disulfide_conns = torch.full(
-            (packed_block_types.n_types, packed_block_types.max_n_conn),
-            False,
-            dtype=torch.bool,
-            device=self.device,
-        )
-
         block_connections = [
             self.setup_block_type(bt) for bt in packed_block_types.active_block_types
         ]
-        for i, connections in enumerate(block_connections):
-            for conn in connections:
-                disulfide_conns[i, conn] = True
-
-        setattr(packed_block_types, "disulfide_conns", disulfide_conns)
-
-        # a reflected residue contributes negated dihedrals; cos is even, so
-        #    the same energy comes from negating the dihedral means instead,
-        #    which needs no correction to the derivative
-        is_mirrored = torch.tensor(
-            [
-                bt.properties.polymer.sidechain_chirality == "d"
-                for bt in packed_block_types.active_block_types
-            ],
-            dtype=torch.bool,
-            device=self.device,
+        connections, mirrored = pack_disulfide_connections(
+            packed_block_types.active_block_types,
+            packed_block_types.max_n_conn,
+            block_connections,
         )
+        disulfide_conns = torch.tensor(connections, device=self.device)
+        is_mirrored = torch.tensor(mirrored, device=self.device)
+        setattr(packed_block_types, "disulfide_conns", disulfide_conns)
         setattr(packed_block_types, "disulfide_bt_is_mirrored", is_mirrored)
+        packed_block_types._disulfide_parameter_signs = torch.tensor(
+            disulfide_parameter_signs(mirrored), device=self.device
+        )
         return _store_annotation(
             packed_block_types,
             "_disulfide_annotation",
             self._packed_annotation_key,
             (disulfide_conns, is_mirrored),
-            fields=("disulfide_conns", "disulfide_bt_is_mirrored"),
+            fields=(
+                "disulfide_conns",
+                "disulfide_bt_is_mirrored",
+                "_disulfide_parameter_signs",
+            ),
             bindings=tuple(
                 (block_type, "disulfide_connections")
                 for block_type in packed_block_types.active_block_types
@@ -193,26 +141,21 @@ class DisulfideEnergyTerm(EnergyTerm):
         )
 
     def get_score_term_attributes(self, pose_stack):
-        def _t(ts):
-            return tuple(map(lambda t: t.to(torch.float), ts))
-
-        def parameter_value(parameter):
-            if parameter is _DisulfideParameter.CHIRALITY:
-                return torch.ones_like(self.global_params.shift)
-            return getattr(self.global_params, parameter.attribute)
-
-        global_params = torch.stack(
-            _t(parameter_value(parameter) for parameter in _DisulfideParameter),
+        # Column order and chirality signs are common chemistry. Stack and
+        # multiply the live framework tensors without a device-to-host copy.
+        values = torch.stack(
+            [
+                (
+                    torch.ones_like(self.global_params.shift)
+                    if p.attribute is None
+                    else getattr(self.global_params, p.attribute)
+                ).to(torch.float)
+                for p in _DisulfideParameter
+            ],
             dim=1,
         )
         pbt = pose_stack.packed_block_types
-
-        # the kernel reads one parameter row per block type so that each half
-        #    of a disulfide is scored with its own residue's parameters
-        per_block_type = global_params.expand(pbt.n_types, -1).clone()
-        per_block_type[pbt.disulfide_bt_is_mirrored, :] *= _MIRRORED_PARAMETER_SIGNS.to(
-            per_block_type.device
-        )
+        per_block_type = values * pbt._disulfide_parameter_signs
         return [
             pose_stack.block_type_ind,
             pose_stack.inter_residue_connections,
