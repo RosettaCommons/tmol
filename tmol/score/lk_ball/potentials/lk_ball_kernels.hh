@@ -550,6 +550,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_energies_by_block(
 
   int const block_type1 = ctx.block_type_ind_for_rot[rot_ind1];
   int const block_type2 = ctx.block_type_ind_for_rot[rot_ind2];
+  if (block_type1 < 0 || block_type2 < 0) return;
 
   int const n_atoms1 = ctx.block_type_n_atoms[block_type1];
   int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
@@ -786,6 +787,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
 
   int const block_type1 = ctx.block_type_ind_for_rot[rot_ind1];
   int const block_type2 = ctx.block_type_ind_for_rot[rot_ind2];
+  if (block_type1 < 0 || block_type2 < 0) return;
 
   int const n_atoms1 = ctx.block_type_n_atoms[block_type1];
   int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
