@@ -40,7 +40,12 @@ def _module_name_from_path(path: Path) -> str:
 
 
 def _compiled_module_mocks() -> list[str]:
-    mocks: set[str] = set()
+    # These native wrappers have descriptive names rather than a compiled
+    # prefix. Mock the wrappers only; runtime extension loading stays strict.
+    mocks = {
+        "tmol.score.common._cubic_hermite_polynomial",
+        "tmol.optimization._armijo_compiled",
+    }
     for path in (REPO_ROOT / "tmol").rglob("*.py"):
         rel_parts = path.relative_to(REPO_ROOT).parts
         if any(
