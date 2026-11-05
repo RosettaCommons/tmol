@@ -133,12 +133,13 @@
     {
       "domain": "packing_design_mutation",
       "torch": "supported",
-      "jax": "palette_and_rotamer_geometry_only",
+      "jax": "shared_palette_geometry_and_sampling_preparation",
       "repro_fixture": [
         "tests/scientific/test_packing_palette.py",
-        "tests/scientific/test_molecular_rotamer_geometry.py"
+        "tests/scientific/test_molecular_rotamer_geometry.py",
+        "tests/scientific/test_molecular_sampling_preparation.py"
       ],
-      "implementation_status": "Shared residue choices, single-residue and connected-group rotamer geometry. JAX native CPU initialization reproduces 3877 metadata/ideal-DOF arrays across 322 default/custom residue types exactly against Torch. Molecular ideal-coordinate reconstruction and typed host inverse transport tested CPU; new geometry CUDA/install validation pending. PackerTask, rotamer sampling, interaction graphs, annealing, pack_rotamers and mutation/design execution remain absent."
+      "implementation_status": "Shared residue choices, single-residue and connected-group rotamer geometry, Dunbrack library/explicit-chi preparation and retained-atom copy plans. JAX native CPU initialization reproduces 3877 geometry arrays across 322 default/custom residue types exactly against Torch; sampling preparation matches 2588 arrays and 644 ownership records across the same types and two budgets. Molecular geometry passes CPU/CUDA and matching Torch-free installed artifacts. New sampling adapters have CPU validation; CUDA validation pending. PackerTask, native rotamer enumeration, interaction graphs, annealing, pack_rotamers and mutation/design execution remain absent."
     },
     {
       "domain": "kinematics",
@@ -210,7 +211,7 @@
         "tests/scientific/test_molecular_movement.py",
         "tests/jax/test_jax_move_map.py"
       ],
-      "implementation_status": "Shared MoveMap selection rules and native chemical DOF resolution, with the existing JAX L-BFGS optimizer. Ten-domain defaults/overrides, ligand/noncanonical/D energy reduction, fixed-DOF preservation and float32/64 diagnostics pass JAX CPU. The same ten-domain movement and three molecular energy-reduction checks pass Torch CPU. CUDA and matching installed-package validation pending. Complete scoring objectives and optimizer API parity remain incomplete."
+      "implementation_status": "Shared MoveMap selection rules and native chemical DOF resolution, with the existing JAX L-BFGS optimizer. Ten-domain defaults/overrides, ligand/noncanonical/D energy reduction, fixed-DOF preservation and float32/64 diagnostics pass JAX CPU. The same ten-domain movement and three molecular energy-reduction checks pass Torch CPU. CUDA and matching Torch-free installed-package validation pass. Complete scoring objectives and optimizer API parity remain incomplete."
     }
   ],
   "score_terms": {
@@ -345,5 +346,5 @@
       "noncanonical_validation": "Five nonzero metal fixtures: exact fresh Torch/JAX CPU energies and full gradients; independent directional derivatives and custom width/depth scaling. Fresh CPU/CUDA artifacts pass the same science cases and float32/64 transformations."
     }
   },
-  "validation": "Immutable979e0e4806:341 CPU checks pass with5 unavailable-CUDA skips;22 focused H200 kinematic/placement checks and explicit CPU placement pass. Matching core/JAX/native wheels and sdists pass44 molecular and23 shared capability checks in an isolated Torch-free runtime. Strict float32 DNA full-DOF comparison failed and remains under numerical investigation. Standalone electrostatics GPU regression and missing HB/LK-ball/disulfide/packing capabilities still block full-domain acceptance. New MoveMap/internal-minimization development validation is recorded separately."
+  "validation": "Immutable de9d6d932d: matching core/JAX/native wheels and sdists pass 44 molecular and 42 shared capability checks in an isolated Torch-free runtime; 97 focused H200 checks and one explicit CPU-placement check pass. Development CPU suite passes 376 checks with five unavailable-CUDA skips, using the unchanged f493 native ABI. Five additional backbone/Dunbrack/nucleic/metal DOF cases pass Torch CPU, JAX CPU and CUDA. Float32 DNA rotational-gradient cancellation remains a documented limitation; same-state float64 comparisons pass. Standalone electrostatics GPU regression and missing HB/LK-ball/disulfide/packing capabilities still block full-domain acceptance."
 }

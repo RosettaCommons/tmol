@@ -150,8 +150,12 @@ and `create_restrict_to_repacking_mask(...)`. These prepare choices. `tmol_jax.p
 shares residue-local trees, ideal DOFs and scan planning with Torch;
 `prepare_block_group_kinematics(block_types, links, anchor=0)` prepares connected
 chemical groups. Initialization calls the common native CPU inverse directly,
-without compiling each residue shape. Sampling, packing tasks, interaction-graph
-construction, annealing and design execution remain unavailable.
+without compiling each residue shape. `DunbrackChiSampler.from_database(db,
+expanded_limit=1000, limit=1000).prepare_packed_block_types(pbt)` prepares shared
+library/explicit-chi metadata on the palette's device. `prepare_atom_copy_plan(pbt,
+samplers)` preserves sampler-owned retained atom identities. These are preparation
+APIs; native rotamer enumeration, packing tasks, interaction-graph construction,
+annealing and design execution remain unavailable.
 
 For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
 a batch of `ResidueBlock(residue_type, atom_names, coords)` records and explicit
