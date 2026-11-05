@@ -1,6 +1,8 @@
 import torch
 import numpy
 import os
+import subprocess
+import sys
 import threading
 import attr
 import pytest
@@ -569,6 +571,46 @@ def test_cpu_score_workers_share_the_thread_budget():
         assert torch.get_num_threads() == 4
     finally:
         torch.set_num_threads(budget)
+
+
+_BOUND_WORKER_AFFINITY_SCRIPT = """
+import os
+cpus = os.sched_getaffinity(0)
+import torch
+import tmol.score._score_function as sf
+assert os.sched_getaffinity(0) < cpus, "OpenMP binding did not pin the main thread"
+torch.set_num_threads(4)
+x = torch.randn(1_000_000)
+
+
+def run_openmp_region(_):
+    (x * 2).sum()
+    return torch.get_num_threads(), os.sched_getaffinity(0)
+
+
+for share_threads in (True, False):
+    executor = sf._cpu_score_term_executor(2, share_threads=share_threads)
+    workers = list(executor.map(run_openmp_region, range(8)))
+    assert all(worker == (1, cpus) for worker in workers), (share_threads, workers)
+"""
+
+
+def test_cpu_score_workers_escape_openmp_binding():
+    if not hasattr(os, "sched_setaffinity"):
+        pytest.skip("thread affinity is not settable on this platform")
+    if "parallel backend: OpenMP" not in torch.__config__.parallel_info():
+        pytest.skip("torch is not using an OpenMP runtime")
+    if len(os.sched_getaffinity(0)) < 2:
+        pytest.skip("binding is only observable with two or more CPUs")
+    env = dict(os.environ, OMP_PROC_BIND="close", OMP_PLACES="cores")
+    env.pop("OMP_NUM_THREADS", None)
+    result = subprocess.run(
+        [sys.executable, "-c", _BOUND_WORKER_AFFINITY_SCRIPT],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_weighted_fused_score_adaptive_dispatch():

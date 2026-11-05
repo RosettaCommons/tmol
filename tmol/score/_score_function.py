@@ -3,6 +3,7 @@ import contextlib
 import ctypes
 import functools
 from functools import partial
+import itertools
 import logging
 import os
 import sys
@@ -70,6 +71,7 @@ _PACK_ROTAMER_BLOCK_PAIR_WINDOW = 32 * 1024
 _PACK_FUSED_ROTAMER_SCORE_WINDOW = 4 * 1024 * 1024
 _CPU_SCORE_TERM_EXECUTORS: dict[tuple[int, int | None], ThreadPoolExecutor] = {}
 _CPU_SCORE_TERM_EXECUTOR_LOCK = threading.Lock()
+_BOUND_WORKER_STARTS = itertools.count()
 _ScoreCallResult = TypeVar("_ScoreCallResult")
 
 
@@ -147,14 +149,46 @@ def _openmp_runtime() -> ctypes.CDLL | None:
     return None
 
 
-def _share_cpu_threads_with_pool(n_threads: int) -> None:
-    """Executor initializer: cap this worker's OpenMP team at its share.
+@functools.cache
+def _openmp_place_cpus() -> frozenset[int]:
+    """CPUs of all OpenMP places; empty when OpenMP binding is off."""
+    runtime = _openmp_runtime()
+    if runtime is None or not hasattr(runtime, "omp_get_num_places"):
+        return frozenset()
+    cpus = set()
+    for place in range(runtime.omp_get_num_places()):
+        ids = (ctypes.c_int * runtime.omp_get_place_num_procs(place))()
+        runtime.omp_get_place_proc_ids(place, ids)
+        cpus.update(ids)
+    return frozenset(cpus)
+
+
+def _init_cpu_score_worker(n_threads: int | None) -> None:
+    """Executor initializer: run on every bound CPU, then cap the OpenMP team.
+
+    Under OpenMP binding new threads inherit the main thread's single CPU, and a
+    thread that starts an OpenMP team is pinned to the first place with its team
+    after it. So under binding a worker takes every CPU of the places, starting
+    on a CPU of its own, and never starts a team.
 
     Every thread that enters an OpenMP region gets its own team, sized by that
-    thread's OpenMP setting, so uncapped pool workers each start a full-size team
-    and oversubscribe the CPU. The setting is per thread, so the caller's budget
-    is unchanged. Query torch first: it seeds a new thread's setting on first use.
+    thread's OpenMP setting, so uncapped workers oversubscribe the CPU. With
+    n_threads the worker is capped at its share; the setting is per thread, so
+    the caller's budget is unchanged. Query torch first: it seeds a new thread's
+    setting on first use.
     """
+    cpus = _openmp_place_cpus()
+    if cpus:
+        if hasattr(os, "sched_setaffinity"):
+            # Widening alone leaves the worker on the main thread's CPU; start
+            # it on its own CPU, counting down from the main team's places.
+            ordered = sorted(cpus)
+            start = ordered[-1 - next(_BOUND_WORKER_STARTS) % len(ordered)]
+            os.sched_setaffinity(0, {start})
+            os.sched_setaffinity(0, cpus)
+        n_threads = 1
+    if n_threads is None:
+        return
     torch.get_num_threads()
     runtime = _openmp_runtime()
     if runtime is not None:
@@ -195,8 +229,8 @@ def _cpu_score_term_executor(
             executor = ThreadPoolExecutor(
                 max_workers=n_workers,
                 thread_name_prefix="tmol-score",
-                initializer=(_share_cpu_threads_with_pool if share_threads else None),
-                initargs=(threads_per_worker,) if share_threads else (),
+                initializer=_init_cpu_score_worker,
+                initargs=(threads_per_worker,),
             )
             _CPU_SCORE_TERM_EXECUTORS[key] = executor
         return executor
@@ -2592,7 +2626,13 @@ class RotamerScoringModule:
         )
         use_fused = self._use_fused_ljlk_elec(coords)
         execution_terms = self._execution_terms(use_fused)
-        parallel = self._cpu_term_workers >= 2 and not differentiable
+        # Under OpenMP binding workers cannot run teams; the terms' own OpenMP
+        # loops on this thread use every core instead.
+        parallel = (
+            self._cpu_term_workers >= 2
+            and not differentiable
+            and not _openmp_place_cpus()
+        )
         if parallel:
             executor = _cpu_score_term_executor(
                 self._cpu_term_workers, share_threads=False
