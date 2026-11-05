@@ -62,59 +62,28 @@ class LJTypeParams:
 
     # Constructors                                                       #
     @classmethod
-    def from_database(cls, ljlk_db: Any, chem_db: Any) -> "LJTypeParams":
-        """Build packed per-atom-type parameters indexed against
-        ``chem_db.atom_types``.
+    def from_database(
+        cls, ljlk_db: Any, chem_db: Any, *, active_types=()
+    ) -> "LJTypeParams":
+        """Transfer common parameters after validating the active chemistry."""
+        from tmol_core.scoring.atom_types import atom_type_parameters
+        from tmol_core.scoring.ljlk import ljlk_type_parameters, LJLK_FIELDS
 
-        Every atom type in the chemical database is resolved against
-        ``ljlk_db.atom_type_parameters``. Types missing from the LJLK
-        table (shouldn't happen for the canonical beta_nov2016 palette,
-        but guards against custom atoms) fall back to zero-valued LJ/LK
-        parameters, with flags copied from the chem-db entry.
-        """
-        lj_by_name = {p.name: p for p in ljlk_db.atom_type_parameters}
-        n = len(chem_db.atom_types)
-
-        # Use safely-positive defaults to keep gradients finite through
-        # padded/virtual atoms. The downstream real-atom mask zeros the
-        # contribution out of the sum, but intermediate values must be
-        # finite so that reverse-mode autograd doesn't propagate NaN.
-        lj_radius = np.full(n, 1.7, dtype=np.float32)
-        lj_wdepth = np.zeros(n, dtype=np.float32)
-        lk_volume = np.zeros(n, dtype=np.float32)
-        lk_dgfree = np.zeros(n, dtype=np.float32)
-        lk_lambda = np.ones(n, dtype=np.float32)  # avoid divide-by-zero
-        is_donor = np.zeros(n, dtype=np.bool_)
-        is_acceptor = np.zeros(n, dtype=np.bool_)
-        is_hydroxyl = np.zeros(n, dtype=np.bool_)
-        is_polarh = np.zeros(n, dtype=np.bool_)
-
-        for i, at in enumerate(chem_db.atom_types):
-            is_donor[i] = bool(at.is_donor)
-            is_acceptor[i] = bool(at.is_acceptor)
-            is_hydroxyl[i] = bool(at.is_hydroxyl)
-            is_polarh[i] = bool(at.is_polarh)
-            lj = lj_by_name.get(at.name)
-            if lj is not None:
-                lj_radius[i] = lj.lj_radius
-                lj_wdepth[i] = lj.lj_wdepth
-                lk_volume[i] = lj.lk_volume
-                lk_dgfree[i] = lj.lk_dgfree
-                lk_lambda[i] = lj.lk_lambda
-
+        names, flags = atom_type_parameters(chem_db.atom_types)
+        host = ljlk_type_parameters(names[:-1], ljlk_db)
+        for bt in active_types:
+            host.validate_block_type(bt)
+        # Only unused/padding entries may be missing. Safe intermediates keep
+        # masked pair derivatives finite without inventing real-atom parameters.
+        defaults = np.asarray([1.7, 0, 0, 1, 0], dtype=np.float32)
+        values = np.where(np.isfinite(host.values), host.values, defaults)
         return cls(
-            lj_radius=jnp.asarray(lj_radius),
-            lj_wdepth=jnp.asarray(lj_wdepth),
-            is_donor=jnp.asarray(is_donor),
-            is_acceptor=jnp.asarray(is_acceptor),
-            is_hydroxyl=jnp.asarray(is_hydroxyl),
-            is_polarh=jnp.asarray(is_polarh),
-            is_carbon_lk=jnp.asarray(
-                [at.name in {"CH1", "CH2", "CH3", "Caro"} for at in chem_db.atom_types]
-            ),
-            lk_volume=jnp.asarray(lk_volume),
-            lk_dgfree=jnp.asarray(lk_dgfree),
-            lk_lambda=jnp.asarray(lk_lambda),
+            **{name: jnp.asarray(values[:, i]) for i, name in enumerate(LJLK_FIELDS)},
+            **{
+                name: jnp.asarray(flags[name][:-1])
+                for name in ("is_donor", "is_acceptor", "is_hydroxyl", "is_polarh")
+            },
+            is_carbon_lk=jnp.asarray(host.is_carbon_lk),
         )
 
     # Gather                                                             #

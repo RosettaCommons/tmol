@@ -133,3 +133,26 @@ class Execution:
             x = self.module.device_put(coords, self.device)
             values, gradient = self.score_function.jitted_value_and_grad(self.pose)(x)
             return self.numpy(values), self.numpy(gradient)
+
+    def channel_values_and_gradients(self, coords):
+        """Unweighted channels and the derivative of each channel's pose sum."""
+        if self.framework == "torch":
+            x = self.module.tensor(coords, device=self.device, requires_grad=True)
+            values = self.scorer(x, sum_terms=False, apply_weights=False)
+            gradients = self.module.stack(
+                [
+                    self.module.autograd.grad(value.sum(), x, retain_graph=True)[0]
+                    for value in values
+                ]
+            )
+        else:
+            with self.module.default_device(self.device):
+                x = self.module.device_put(coords, self.device)
+                score = self.score_function.render_whole_pose_scoring_module(
+                    self.pose, sum_terms=False, apply_weights=False
+                )
+                values = self.module.jit(score)(x)
+                gradients = self.module.jit(
+                    self.module.jacrev(lambda x: score(x).sum(axis=1))
+                )(x)
+        return self.numpy(values), self.numpy(gradients)

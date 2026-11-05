@@ -499,41 +499,22 @@ class LKBallEnergyTerm(EnergyTerm):
         if getattr(pbt, "_lkball_ljlk_database", None) is ljlk:
             return
 
-        type_params = list(ljlk.atom_type_parameters)
-        type_names = [p.name for p in type_params]
-        name_to_idx = {n: i for i, n in enumerate(type_names)}
+        from tmol_core.scoring.atom_types import block_type_indices
+        from tmol_core.scoring.ljlk import ljlk_type_parameters, LJLK_FIELDS
 
-        is_carbon_lk_table = np.asarray(
-            [p.name in {"CH1", "CH2", "CH3", "Caro"} for p in type_params],
-            dtype=bool,
+        names = tuple(at.name for at in pbt.chem_db.atom_types) + (None,)
+        host = ljlk_type_parameters(names, ljlk)
+        indices = np.full(
+            (pbt.n_types, pbt.max_n_atoms), len(names) - 1, dtype=np.int32
         )
-
-        chem_db = pbt.chem_db
-        chem_atom_type_names = [at.name for at in chem_db.atom_types]
-        chem_to_ljlk = np.asarray(
-            [name_to_idx.get(n, -1) for n in chem_atom_type_names],
-            dtype=np.int32,
-        )
-        atom_types_np = np.asarray(pbt.atom_types)  # [n_types, max_n_atoms_per_block]
-        ljlk_idx_np = np.where(
-            atom_types_np >= 0, chem_to_ljlk[np.clip(atom_types_np, 0, None)], -1
-        )
-        safe_idx = np.clip(ljlk_idx_np, 0, None)
-
-        def _gather(tab):
-            out = tab[safe_idx]
-            return np.where(ljlk_idx_np >= 0, out, 0.0).astype(np.float32)
-
+        for index, bt in enumerate(pbt.active_block_types):
+            host.validate_block_type(bt)
+            indices[index, : bt.n_atoms] = block_type_indices(names, bt)
         for name in ("lj_radius", "lk_dgfree", "lk_lambda", "lk_volume"):
-            table = np.asarray(
-                [getattr(p, name) for p in type_params], dtype=np.float32
-            )
-            setattr(pbt, f"lkball_bt_{name}", jnp.asarray(_gather(table)))
-        setattr(
-            pbt,
-            "lkball_bt_is_carbon_lk",
-            jnp.asarray(_gather(is_carbon_lk_table).astype(bool)),
-        )
+            values = host.values[:, LJLK_FIELDS.index(name)][indices]
+            values = np.where(np.asarray(pbt.atom_is_real), values, 0)
+            setattr(pbt, f"lkball_bt_{name}", jnp.asarray(values))
+        pbt.lkball_bt_is_carbon_lk = jnp.asarray(host.is_carbon_lk[indices])
         pbt._lkball_ljlk_database = ljlk
 
     def _annotate_pbt_polar_flags(self, pbt: Any) -> None:
@@ -546,36 +527,19 @@ class LKBallEnergyTerm(EnergyTerm):
         """
         if hasattr(pbt, "lkball_bt_is_donor"):
             return
-        chem_db = pbt.chem_db
-        chem_is_donor = np.asarray(
-            [at.is_donor for at in chem_db.atom_types], dtype=bool
-        )
-        chem_is_acc = np.asarray(
-            [at.is_acceptor for at in chem_db.atom_types], dtype=bool
-        )
-        chem_is_hxl = np.asarray(
-            [at.is_hydroxyl for at in chem_db.atom_types], dtype=bool
-        )
-        chem_is_ph = np.asarray([at.is_polarh for at in chem_db.atom_types], dtype=bool)
+        from tmol_core.scoring.atom_types import atom_type_parameters
 
-        atom_types_np = np.asarray(pbt.atom_types)
-        safe_types = np.clip(atom_types_np, 0, None)
-        real = atom_types_np >= 0
-
-        def _g(tab):
-            out = tab[safe_types]
-            return np.where(real, out, False)
-
-        setattr(pbt, "lkball_bt_is_donor", jnp.asarray(_g(chem_is_donor)))
-        setattr(pbt, "lkball_bt_is_acc", jnp.asarray(_g(chem_is_acc)))
-        setattr(pbt, "lkball_bt_is_hxl", jnp.asarray(_g(chem_is_hxl)))
-        setattr(pbt, "lkball_bt_is_ph", jnp.asarray(_g(chem_is_ph)))
-        is_hydrogen_per_block = np.asarray(pbt.atom_is_hydrogen, dtype=bool)
-        setattr(
-            pbt,
-            "lkball_bt_is_hydrogen",
-            jnp.asarray(is_hydrogen_per_block),
-        )
+        _, flags = atom_type_parameters(pbt.chem_db.atom_types)
+        types = np.asarray(pbt.atom_types)
+        real = np.asarray(pbt.atom_is_real)
+        for field, suffix in (
+            ("is_donor", "is_donor"),
+            ("is_acceptor", "is_acc"),
+            ("is_hydroxyl", "is_hxl"),
+            ("is_polarh", "is_ph"),
+            ("is_hydrogen", "is_hydrogen"),
+        ):
+            setattr(pbt, "lkball_bt_" + suffix, jnp.asarray(flags[field][types] & real))
 
     def _annotate_pbt_acceptor_bases(self, pbt, max_H_per_donor):
         """Cache current native acceptor frames and attached polar hydrogens."""

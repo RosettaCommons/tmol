@@ -136,6 +136,10 @@ class ScoreFunction:
                 if types[i].name3 not in canonical_aa_3letter
             }
             general_terms = {
+                ScoreType.fa_ljatr,
+                ScoreType.fa_ljrep,
+                ScoreType.fa_lk,
+                ScoreType.fa_elec,
                 ScoreType.gen_torsions,
                 ScoreType.ref,
                 ScoreType.constraint,

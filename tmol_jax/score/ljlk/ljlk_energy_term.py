@@ -36,24 +36,22 @@ class LJLKEnergyTerm(EnergyTerm):
         indices = np.full(pose_stack.coords.shape[:2], -1, dtype=np.int32)
         block_types = np.asarray(pose_stack.block_type_ind)
         offsets = np.asarray(pose_stack.block_coord_offset)
-        atom_types = {
-            a.name: i for i, a in enumerate(self.param_db.chemical.atom_types)
-        }
-        lj_types = {a.name for a in self.param_db.scoring.ljlk.atom_type_parameters}
-        for pose, block in zip(*np.nonzero(block_types >= 0)):
-            bt = block_types[pose, block]
-            offset = offsets[pose, block]
-            n_atoms = len(pbt.active_block_types[bt].atoms)
-            names = [a.atom_type for a in pbt.active_block_types[bt].atoms]
-            missing = set(names) - (atom_types.keys() & lj_types)
-            if missing:
-                raise KeyError(f"missing LJ/LK atom types: {sorted(missing)}")
-            indices[pose, offset : offset + n_atoms] = [
-                atom_types[name] for name in names
-            ]
-        parameters = LJTypeParams.from_database(
-            self.param_db.scoring.ljlk, self.param_db.chemical
+        from tmol_core.scoring.atom_types import (
+            atom_type_parameters,
+            block_type_indices,
         )
+
+        names, _ = atom_type_parameters(self.param_db.chemical.atom_types)
+        used = tuple(
+            pbt.active_block_types[i] for i in np.unique(block_types[block_types >= 0])
+        )
+        parameters = LJTypeParams.from_database(
+            self.param_db.scoring.ljlk, self.param_db.chemical, active_types=used
+        )
+        for pose, block in zip(*np.nonzero(block_types >= 0)):
+            bt = pbt.active_block_types[block_types[pose, block]]
+            offset = offsets[pose, block]
+            indices[pose, offset : offset + bt.n_atoms] = block_type_indices(names, bt)
         rosetta_typed = self.param_db.scoring.genbonded.rosetta_typed
         if all(
             a.atom_type in rosetta_typed

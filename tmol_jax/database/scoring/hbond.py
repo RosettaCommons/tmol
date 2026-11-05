@@ -1,95 +1,17 @@
-"""Hydrogen-bond parameter database.
-
-Port of :mod:`tmol.database.scoring.hbond`. Upstream used a pandas
-``DataFrame`` to provide an indexed donor/acceptor-type mapper; we
-instead expose two plain Python dicts (``don_type_map`` /
-``acc_type_map``) which is what the downstream code actually needs and
-which are trivially JIT-friendly (static aux data).
-"""
-
-from __future__ import annotations
+"""JAX compatibility view over the shared hydrogen-bond records."""
 
 from typing import Dict, Tuple
-
 import attr
-from tmol_core._yaml import _load_yaml
-
-from ._structure import structure
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class HBondGlobalParams:
-    hb_sp2_range_span: float
-    hb_sp2_BAH180_rise: float
-    hb_sp2_outer_width: float
-    hb_sp3_softmax_fade: float
-    threshold_distance: float
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class DonorAtomType:
-    d: str
-    donor_type: str
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class AcceptorAtomType:
-    a: str
-    acceptor_type: str
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class DonorTypeParam:
-    name: str
-    weight: float
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class AcceptorTypeParam:
-    name: str
-    weight: float
-
-
-@attr.s(auto_attribs=True, slots=True, frozen=True)
-class PolynomialParameters:
-    name: str
-    dimension: str
-    xmin: float
-    xmax: float
-    min_val: float
-    max_val: float
-    degree: int
-    c_0: float = 0.0
-    c_1: float = 0.0
-    c_2: float = 0.0
-    c_3: float = 0.0
-    c_4: float = 0.0
-    c_5: float = 0.0
-    c_6: float = 0.0
-    c_7: float = 0.0
-    c_8: float = 0.0
-    c_9: float = 0.0
-    c_10: float = 0.0
-
-
-@attr.s(auto_attribs=True, slots=True, frozen=True)
-class PairParameters:
-    donor_type: str
-    acceptor_type: str
-    AHdist: str
-    cosBAH: str
-    cosAHD: str
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class _HBondDatabaseRaw:
-    global_parameters: HBondGlobalParams
-    donor_atom_types: Tuple[DonorAtomType, ...]
-    donor_type_params: Tuple[DonorTypeParam, ...]
-    acceptor_atom_types: Tuple[AcceptorAtomType, ...]
-    acceptor_type_params: Tuple[AcceptorTypeParam, ...]
-    pair_parameters: Tuple[PairParameters, ...]
-    polynomial_parameters: Tuple[PolynomialParameters, ...]
+from tmol_core.database.hbond import (  # noqa: F401
+    GlobalParams as HBondGlobalParams,
+    DonorAtomType,
+    AcceptorAtomType,
+    DonorTypeParam,
+    AcceptorTypeParam,
+    PolynomialParameters,
+    PairParameters,
+    HBondDatabaseRaw,
+)
 
 
 @attr.s(auto_attribs=True, frozen=True, slots=True)
@@ -106,10 +28,17 @@ class HBondDatabase:
     don_type_map: Dict[str, str]
     acc_type_map: Dict[str, str]
 
+    @property
+    def donor_type_params(self):
+        return self.don_type_params
+
+    @property
+    def acceptor_type_params(self):
+        return self.acc_type_params
+
     @classmethod
     def from_file(cls, path: str) -> "HBondDatabase":
-        raw = _load_yaml(path)
-        rawdb = structure(raw, _HBondDatabaseRaw)
+        rawdb = HBondDatabaseRaw.from_file(path)
         return cls(
             global_parameters=rawdb.global_parameters,
             donor_atom_types=rawdb.donor_atom_types,

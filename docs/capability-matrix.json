@@ -11,16 +11,16 @@
     {
       "domain": "noncanonical_polymers",
       "torch": "supported",
-      "jax": "generic_bonded_values_gradients",
-      "repro_fixture": "tests/scientific/test_genbonded.py",
-      "implementation_status": "HYP and connected B3Q+B3D native CPU values/gradients tested; complete scoring remains gated."
+      "jax": "partial_scoring",
+      "repro_fixture": "tests/scientific/test_molecular_nonbonded.py",
+      "implementation_status": "LJ attraction/repulsion, isotropic LK and electrostatics CPU values/gradients tested on explicit parameterized inputs. Full scoring remains gated; native genbonded additionally tested on ligand/noncanonical cases."
     },
     {
       "domain": "d_amino_acids",
       "torch": "supported",
-      "jax": "input_only",
-      "repro_fixture": "tmol/tests/database/test_d_amino_acids.py",
-      "implementation_status": "Shared database includes D types; backbone mirroring and torsion lookup need JAX validation."
+      "jax": "partial_scoring",
+      "repro_fixture": "tests/scientific/test_molecular_nonbonded.py",
+      "implementation_status": "LJ attraction/repulsion, isotropic LK and electrostatics CPU values/gradients tested on explicit parameterized inputs. Full scoring remains gated; native genbonded additionally tested on ligand/noncanonical cases."
     },
     {
       "domain": "modifications_and_termini",
@@ -32,30 +32,30 @@
     {
       "domain": "ligand_only",
       "torch": "supported",
-      "jax": "generic_bonded_values_gradients",
-      "repro_fixture": "tests/scientific/test_genbonded.py",
-      "implementation_status": "LG1 native CPU nonzero energy/gradient and finite differences tested; no ligand preparation adapter or full scoring."
+      "jax": "partial_scoring",
+      "repro_fixture": "tests/scientific/test_molecular_nonbonded.py",
+      "implementation_status": "LJ attraction/repulsion, isotropic LK and electrostatics CPU values/gradients tested on explicit parameterized inputs. Full scoring remains gated; native genbonded additionally tested on ligand/noncanonical cases."
     },
     {
       "domain": "protein_ligand_mixed",
       "torch": "supported",
-      "jax": "generic_bonded_values_gradients",
-      "repro_fixture": "tests/scientific/test_genbonded.py",
-      "implementation_status": "GLY/HYP/LG1 heterogeneous batch tested for native generic bonded only."
+      "jax": "partial_scoring",
+      "repro_fixture": "tests/scientific/test_molecular_nonbonded.py",
+      "implementation_status": "LJ attraction/repulsion, isotropic LK and electrostatics CPU values/gradients tested on explicit parameterized inputs. Full scoring remains gated; native genbonded additionally tested on ligand/noncanonical cases."
     },
     {
       "domain": "nucleic_acids",
       "torch": "supported",
-      "jax": "input_only",
-      "repro_fixture": "tmol/tests/score/na_torsion/test_na_torsion_energy_term.py",
-      "implementation_status": "NA score channels and runtime absent in JAX."
+      "jax": "partial_scoring",
+      "repro_fixture": "tests/scientific/test_molecular_nonbonded.py",
+      "implementation_status": "LJ attraction/repulsion, isotropic LK and electrostatics CPU values/gradients tested on explicit parameterized inputs. Full scoring remains gated; native genbonded additionally tested on ligand/noncanonical cases. NA torsion channels remain absent."
     },
     {
       "domain": "metals_and_coordination",
       "torch": "supported",
-      "jax": "input_only",
-      "repro_fixture": "tmol/tests/io/test_metal_geometry.py",
-      "implementation_status": "Ion types load; coordination score absent in JAX."
+      "jax": "partial_scoring",
+      "repro_fixture": "tests/scientific/test_molecular_nonbonded.py",
+      "implementation_status": "LJ attraction/repulsion, isotropic LK and electrostatics CPU values/gradients tested on explicit parameterized inputs. Full scoring remains gated; native genbonded additionally tested on ligand/noncanonical cases. Coordination is absent; zero-LJ-depth ions retain exactly zero LJ interactions."
     },
     {
       "domain": "disconnected_components",
@@ -166,23 +166,23 @@
   "score_terms": {
     "fa_ljatr": {
       "torch": "implemented",
-      "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "HYP/B3Q+B3D/mixed CPU audit matches; ligand-only and broader coverage pending, still gated"
+      "jax": "molecular_values_and_coordinate_gradients",
+      "noncanonical_validation": "CPU values/full gradients audited against Torch on 9 domains; shared per-channel finite differences pass. CUDA molecular validation pending."
     },
     "fa_ljrep": {
       "torch": "implemented",
-      "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "HYP/B3Q+B3D/mixed CPU audit matches; ligand-only and broader coverage pending, still gated"
+      "jax": "molecular_values_and_coordinate_gradients",
+      "noncanonical_validation": "CPU values/full gradients audited against Torch on 9 domains; shared per-channel finite differences pass. CUDA molecular validation pending."
     },
     "fa_lk": {
       "torch": "implemented",
-      "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "HYP/B3Q+B3D/mixed CPU audit matches; ligand-only and broader coverage pending, still gated"
+      "jax": "molecular_values_and_coordinate_gradients",
+      "noncanonical_validation": "CPU values/full gradients audited against Torch on 9 domains; shared per-channel finite differences pass. CUDA molecular validation pending."
     },
     "fa_elec": {
       "torch": "implemented",
-      "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "HYP/B3Q+B3D/mixed CPU audit matches; ligand-only and broader coverage pending, still gated"
+      "jax": "molecular_values_and_coordinate_gradients",
+      "noncanonical_validation": "CPU values/full gradients audited against Torch on 9 domains; shared per-channel finite differences pass. CUDA molecular validation pending."
     },
     "hbond": {
       "torch": "implemented",
@@ -295,5 +295,5 @@
       "noncanonical_validation": "pending"
     }
   },
-  "validation": "Shared native generic bonded molecular invariants, custom parameter scaling and JAX transformations/minimization tested on CPU; full domain and CUDA acceptance incomplete."
+  "validation": "CPU shared topology/native tests41 passed; expanded nonbonded/core/poly/review45 passed; ligand custom charge scaling/missing-LJ test passed. Full scope and final CUDA/artifact acceptance incomplete."
 }

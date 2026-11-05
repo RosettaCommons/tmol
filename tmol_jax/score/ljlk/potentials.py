@@ -197,11 +197,11 @@ def lj_atr_rep(
     multiplied by ``connectivity_weight(bonded_path_length)``.
     """
     sigma = lj_sigma(i_params, j_params, global_params)
-    # Geometric-mean well depth. Clamp to a tiny positive floor so
-    # ``sqrt`` has a finite gradient even when either wdepth is zero
-    # (virtual atoms / padding). The downstream mask still nulls these
-    # contributions out of the sum.
-    epsilon = jnp.sqrt(jnp.maximum(i_params.lj_wdepth * j_params.lj_wdepth, 1e-12))
+    # Zero-depth physical types (including ions) exert no LJ force. Keep a
+    # finite intermediate for masked parameter derivatives without inventing
+    # a nonzero well depth for those atoms.
+    product = i_params.lj_wdepth * j_params.lj_wdepth
+    epsilon = jnp.where(product > 0, jnp.sqrt(jnp.where(product > 0, product, 1)), 0)
 
     cpoly_dmax = jnp.asarray(global_params.max_dis, dtype=sigma.dtype)
     spline_start = cpoly_dmax - jnp.asarray(_FAR_FADE_WIDTH, dtype=sigma.dtype)

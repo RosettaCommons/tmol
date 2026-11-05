@@ -19,17 +19,13 @@ from tmol_jax.types import pytree_dataclass
 
 # Hybridization enum (values match tmol's C++ AcceptorHybridization)     #
 
-HYBRIDIZATION_NONE = 0
-HYBRIDIZATION_SP2 = 1
-HYBRIDIZATION_SP3 = 2
-HYBRIDIZATION_RING = 3
+from tmol_core.scoring.atom_types import AcceptorHybridization, HYBRIDIZATION_NAMES
 
-_HYB_NAME_TO_INT = {
-    None: HYBRIDIZATION_NONE,
-    "sp2": HYBRIDIZATION_SP2,
-    "sp3": HYBRIDIZATION_SP3,
-    "ring": HYBRIDIZATION_RING,
-}
+HYBRIDIZATION_NONE = int(AcceptorHybridization.none)
+HYBRIDIZATION_SP2 = int(AcceptorHybridization.sp2)
+HYBRIDIZATION_SP3 = int(AcceptorHybridization.sp3)
+HYBRIDIZATION_RING = int(AcceptorHybridization.ring)
+_HYB_NAME_TO_INT = {name: i for i, name in enumerate(HYBRIDIZATION_NAMES)}
 
 
 # Parameter pytrees                                                      #
@@ -204,16 +200,6 @@ def _poly_to_array(poly_entry: Any) -> np.ndarray:
     ).astype(np.float32)
 
 
-def _poly_to_native_array(poly_entry: Any) -> np.ndarray:
-    """Pack the canonical monomial form consumed by the native scalar core."""
-    return np.asarray(
-        [getattr(poly_entry, f"c_{i}") for i in range(10, -1, -1)]
-        + [poly_entry.xmin, poly_entry.xmax]
-        + [poly_entry.min_val, poly_entry.max_val],
-        dtype=np.float64,
-    )
-
-
 def _double_words(values: np.ndarray) -> np.ndarray:
     """Represent float64 parameters losslessly without enabling JAX x64."""
     bits = np.ascontiguousarray(values, dtype=np.float64).view(np.uint64)
@@ -226,90 +212,40 @@ def _double_words(values: np.ndarray) -> np.ndarray:
 def _build_pair_tables(
     hbond_db: Any, chemical_db: Any
 ) -> Tuple[HBondPairParams, HBondPolynomials, dict, dict]:
-    """Build per (donor_type, acceptor_type) pair tables.
+    """Transfer validated shared families and adapt polynomial storage."""
+    from tmol_core.scoring.hbond import hbond_pair_parameters
+    from numpy.polynomial import Polynomial, Chebyshev
 
-    Returns the pair-param / polynomial pytrees plus forward dicts
-    mapping hbond-type name -> int index so callers can translate
-    per-atom type assignments.
-    """
-    donor_types = list(
-        getattr(hbond_db, "don_type_params", None)
-        or getattr(hbond_db, "donor_type_params", [])
-    )
-    acceptor_types = list(
-        getattr(hbond_db, "acc_type_params", None)
-        or getattr(hbond_db, "acceptor_type_params", [])
-    )
-    donor_type_to_idx = {g.name: i for i, g in enumerate(donor_types)}
-    acceptor_type_to_idx = {g.name: i for i, g in enumerate(acceptor_types)}
-    n_don = len(donor_types)
-    n_acc = len(acceptor_types)
-
-    # Donor/acceptor weight outer product -> pair weight.
-    d_w = np.asarray([g.weight for g in donor_types], dtype=np.float32)
-    a_w = np.asarray([g.weight for g in acceptor_types], dtype=np.float32)
-    weight = d_w[:, None] * a_w[None, :]
-
-    # Acceptor hybridization, broadcast along donor axis. Upstream
-    # indirection: hbond_db.acceptor_atom_types maps atom-type -> hb
-    # acceptor-type; chemical_db.atom_types carries the hybridization.
-    atom_hyb = {
-        at.name: _HYB_NAME_TO_INT.get(at.acceptor_hybridization, 0)
-        for at in chemical_db.atom_types
-    }
-    acc_hyb = np.zeros(n_acc, dtype=np.int32)
-    for mapping in hbond_db.acceptor_atom_types:
-        # Each atom-type may pair with exactly one acceptor-type in the
-        # YAML, so the first one we see wins (the hybridization is a
-        # property of the atom-type anyway).
-        idx = acceptor_type_to_idx.get(mapping.acceptor_type)
-        if idx is None:
-            continue
-        acc_hyb[idx] = atom_hyb.get(mapping.a, 0)
-    hyb = np.broadcast_to(acc_hyb[None, :], (n_don, n_acc)).astype(np.int32)
-
+    host = hbond_pair_parameters(chemical_db, hbond_db)
     pair_params = HBondPairParams(
-        weight=jnp.asarray(weight),
-        acceptor_hybridization=jnp.asarray(hyb),
+        weight=jnp.asarray(host.donor_weight * host.acceptor_weight),
+        acceptor_hybridization=jnp.asarray(host.acceptor_hybridization),
     )
-
-    # Polynomial tables. Each pair slot gets its own full [15] vector;
-    # slots with no explicit pair entry stay zero-filled, which makes
-    # ``bound_poly`` return ``y_lo = y_hi = 0`` (our sentinel). We keep
-    # coefficients in f64 to match upstream's ``bound_poly<11, double>``
-    # precision — see ``_poly_to_array`` docstring for the rationale.
-    poly_by_name = {p.name: _poly_to_array(p) for p in hbond_db.polynomial_parameters}
-    native_by_name = {
-        p.name: _poly_to_native_array(p) for p in hbond_db.polynomial_parameters
-    }
-    zeros = np.zeros(15, dtype=np.float32)
-    native_zeros = np.zeros(15, dtype=np.float64)
-
-    ahdist = np.zeros((n_don, n_acc, 15), dtype=np.float32)
-    ahd = np.zeros((n_don, n_acc, 15), dtype=np.float32)
-    bah = np.zeros((n_don, n_acc, 15), dtype=np.float32)
-    native = np.zeros((n_don, n_acc, 3, 15), dtype=np.float64)
-
-    for pp in hbond_db.pair_parameters:
-        di = donor_type_to_idx.get(pp.donor_type)
-        ai = acceptor_type_to_idx.get(pp.acceptor_type)
-        if di is None or ai is None:
-            continue
-        ahdist[di, ai] = poly_by_name.get(pp.AHdist, zeros)
-        ahd[di, ai] = poly_by_name.get(pp.cosAHD, zeros)
-        bah[di, ai] = poly_by_name.get(pp.cosBAH, zeros)
-        native[di, ai, 0] = native_by_name.get(pp.AHdist, native_zeros)
-        native[di, ai, 1] = native_by_name.get(pp.cosBAH, native_zeros)
-        native[di, ai, 2] = native_by_name.get(pp.cosAHD, native_zeros)
-
+    portable, native = {}, []
+    for kind in ("AHdist", "cosBAH", "cosAHD"):
+        table = host.polynomials[kind]
+        native.append(np.concatenate([table[..., 4:], table[..., :4]], axis=-1))
+        output = np.empty_like(table, dtype=np.float32)
+        for index in np.ndindex(table.shape[:2]):
+            row = table[index]
+            converted = Polynomial(row[4:][::-1]).convert(
+                kind=Chebyshev, domain=row[:2]
+            )
+            coefficients = np.pad(converted.coef, (0, 11 - len(converted.coef)))
+            output[index] = np.concatenate([coefficients, row[:4]])
+        portable[kind] = jnp.asarray(output)
     polynomials = HBondPolynomials(
-        AHdist_poly=jnp.asarray(ahdist),
-        cosAHD_poly=jnp.asarray(ahd),
-        cosBAH_poly=jnp.asarray(bah),
-        native_poly_words=jnp.asarray(_double_words(native)),
+        AHdist_poly=portable["AHdist"],
+        cosBAH_poly=portable["cosBAH"],
+        cosAHD_poly=portable["cosAHD"],
+        native_poly_words=jnp.asarray(_double_words(np.stack(native, axis=2))),
     )
-
-    return pair_params, polynomials, donor_type_to_idx, acceptor_type_to_idx
+    return (
+        pair_params,
+        polynomials,
+        {name: i for i, name in enumerate(host.donor_names)},
+        {name: i for i, name in enumerate(host.acceptor_names)},
+    )
 
 
 def _atom_type_hbond_maps(

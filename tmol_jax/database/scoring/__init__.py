@@ -15,11 +15,11 @@ and used in isolation:
   parameters.
 * :mod:`.ref` — per-residue reference energies.
 * :mod:`.rama` — Ramachandran energy-grid mappings (tables read from
-  ``rama.npz``; falls back to ``rama.zip`` via torch if missing).
+  ``rama.npz``; legacy archives must be converted at build time).
 * :mod:`.omega_bbdep` — backbone-dependent omega mean / sigma tables
-  (read from ``omega_bbdep.npz``; torch fallback for the legacy zip).
+  (read from ``omega_bbdep.npz``; legacy archives require build-time conversion).
 * :mod:`.dunbrack_libraries` — rotamer libraries (read from
-  ``dunbrack.npz``; falls back to ``dunbrack.bin`` via torch).
+  ``dunbrack.npz``; legacy archives require build-time conversion).
 * :mod:`.disulfide` — disulfide polynomial / gaussian mixture globals.
 """
 

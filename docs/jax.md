@@ -2,7 +2,9 @@
 
 `tmol-jax` provides Torch-free canonical-protein scoring, coordinate gradients
 and Cartesian minimization, plus native generic-bonded scoring for explicitly
-parameterized noncanonical molecules. It shares chemical records, validation, patching and
+parameterized noncanonical molecules. LJ/LK and electrostatic terms also accept
+explicit ligand, D-residue, nucleic-acid and metal inputs; complete scoring for
+those domains remains unsupported. It shares chemical records, validation, patching and
 SMILES parsing with the Torch frontend through [`tmol-core`](shared_core.md).
 Existing `tmol` imports remain available.
 
