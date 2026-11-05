@@ -16,7 +16,7 @@ from tmol.database.chemical import ChemicalDatabase
 from tmol.database._patched_chemdb import PatchedChemicalDatabase
 
 from .._chemical_database import AcceptorHybridization  # noqa: F401
-from tmol_core.scoring.hbond import hbond_pair_parameters
+from tmol_core.scoring.hbond import hbond_pair_parameters, native_hbond_parameters
 from tmol.utility import resolve_device
 from tmol.utility.weak_identity_cache import WeakIdentityLRU
 
@@ -163,90 +163,27 @@ class CompactedHBondDatabase(ValidateAttrs):
 
     @classmethod
     def _from_database(cls, chemical_database, hbond_database, device):
-        def _p(t):
-            return torch.nn.Parameter(t, requires_grad=False)
+        host = native_hbond_parameters(chemical_database, hbond_database)
 
-        def _stack(ts):
-            return torch.cat([t.unsqueeze(-1) for t in ts], -1)
-
-        def _f32(ts):
-            return [t.to(torch.float32) for t in ts]
-
-        global_params = {
-            n: torch.tensor(v, device=device).expand(1).to(dtype=torch.float32)
-            for n, v in attr.asdict(hbond_database.global_parameters).items()
-        }
-        resolver = HBondParamResolver.from_database(
-            chemical_database, hbond_database, device
-        )
-        distances = [
-            p.xmax
-            for p in hbond_database.polynomial_parameters
-            if p.dimension == "hbgd_AHdist"
-        ]
-        if not distances and resolver.pair_params.donor_weight.numel():
-            raise ValueError("HBond pair table has no AHdist polynomial range")
-        max_ahdis = max(distances, default=0.0)
-
-        # also store the distance of the longest possible hbond
-        # by reading the set of hbond polynomials
-        global_param_table = _p(
-            (
-                torch.cat(
-                    [
-                        global_params["hb_sp2_range_span"],
-                        global_params["hb_sp2_BAH180_rise"],
-                        global_params["hb_sp2_outer_width"],
-                        global_params["hb_sp3_softmax_fade"],
-                        global_params["threshold_distance"],
-                        torch.tensor([max_ahdis], device=device, dtype=torch.float32),
-                    ],
-                    0,
+        def tensor(values, target):
+            # Empty NumPy arrays may carry zero strides; native struct views
+            # still require a contiguous consumed parameter dimension.
+            return (
+                torch.tensor(values, device=target)
+                if values.size
+                else torch.empty(
+                    values.shape, dtype=torch.from_numpy(values).dtype, device=target
                 )
-            ).unsqueeze(0)
-        )
-
-        pp = resolver.pair_params
-
-        # Note: acceptor_hybridization is an integer, but can be exactly represented
-        # as a float (since it is small). Pack it with the donor and acceptor weights
-        # (which themselves could just be pre-multiplied?!) to reduce the number of
-        # arguments to the hbond evaluation function
-        pair_param_table = _p(
-            _stack(
-                _f32([pp.acceptor_hybridization, pp.acceptor_weight, pp.donor_weight])
             )
-        )
 
-        # Eigen allocates space for 12 Reals for an 11x1 matrix
-        # so we need to pad out with 0s in between the coefficients
-        # and the ranges.
-        # On the same device as the coefficients, which is the host when the
-        # requested device is MPS -- that backend has no float64. See the
-        # comment on poly_device in HBondParamResolver._from_database.
-        pad = torch.zeros(
-            [pp.AHdist.coeffs.shape[0], pp.AHdist.coeffs.shape[1], 1],
-            device=pp.AHdist.coeffs.device,
-            dtype=torch.float64,
+        global_param_table = torch.nn.Parameter(
+            tensor(host["global_param_table"], device), requires_grad=False
         )
-
-        packed = torch.cat(
-            [
-                pp.AHdist.coeffs,
-                pad,
-                pp.AHdist.range,
-                pp.AHdist.bound,
-                pp.cosBAH.coeffs,
-                pad,
-                pp.cosBAH.range,
-                pp.cosBAH.bound,
-                pp.cosAHD.coeffs,
-                pad,
-                pp.cosAHD.range,
-                pp.cosAHD.bound,
-            ],
-            2,
+        pair_param_table = torch.nn.Parameter(
+            tensor(host["pair_param_table"], device), requires_grad=False
         )
+        poly_device = torch.device("cpu") if device.type == "mps" else device
+        packed = tensor(host["pair_poly_table"], poly_device)
 
         if device.type == "mps":
             # Metal has no float64 at the tensor level either, so each
@@ -263,7 +200,7 @@ class CompactedHBondDatabase(ValidateAttrs):
             )
             packed = packed.to(device)
 
-        pair_poly_table = _p(packed)
+        pair_poly_table = torch.nn.Parameter(packed, requires_grad=False)
 
         return cls(
             global_param_table=global_param_table,
