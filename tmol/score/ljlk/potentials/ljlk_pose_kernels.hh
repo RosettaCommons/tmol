@@ -30,15 +30,16 @@ template <
 struct LJLKPoseEvaluator {
   LJLKCtx<Real, Int, D> ctx;
   double* cpu_pose_accum;
-  TMOL_DEVICE_FUNC void operator()(int cta) const {
+  TMOL_DEVICE_FUNC void operator()(
+      int cta, int shard = 0, int partitions = 1) const {
     SHARED_MEMORY LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, Launch>
         shared;
     if constexpr (Grad)
       ljlk_eval_energies<Ops, D, Real, Int, Launch>(
-          ctx, shared, cta, cpu_pose_accum);
+          ctx, shared, cta, cpu_pose_accum, {}, shard, partitions);
     else
       ljlk_eval_energies_by_block<Ops, D, Real, Int, Launch>(
-          ctx, shared, cta, cpu_pose_accum);
+          ctx, shared, cta, cpu_pose_accum, {}, shard, partitions);
   }
 };
 
@@ -55,12 +56,42 @@ void ljlk_pose_forward_native(
     double* cpu_pose_accum) {
   LAUNCH_BOX_32;
   LAUNCH_BOX_32_OCC_AS(launch_high, 32);
+  bool const implicit_self = ctx.max_n_blocks == 1 && neighbors.size(0) == 0;
+  if (implicit_self) ctx.use_shared_compact_block_neighbors = true;
   LJLKPoseEvaluator<false, Ops, D, Real, Int, launch_t> energy{
       ctx, cpu_pose_accum};
   LJLKPoseEvaluator<true, Ops, D, Real, Int, launch_t> deriv{
       ctx, cpu_pose_accum};
   bool const gradients =
       ctx.require_gradient && !ctx.output_block_pair_energies;
+  if constexpr (D == tmol::Device::CUDA) {
+    if (!ctx.output_block_pair_energies) {
+      int capacity = implicit_self ? n_poses : neighbors.size(0) - 1;
+      int partitions = common::sphere_overlap::small_pair_partitions(
+          capacity, ctx.block_type_atom_types.size(1));
+      if (partitions > 1 || implicit_self) {
+        bool handled =
+            gradients
+                ? common::sphere_overlap::
+                      launch_partitioned_block_neighbors<Ops, D, launch_t>(
+                          mgr,
+                          neighbors,
+                          n_poses,
+                          ctx.max_n_blocks,
+                          partitions,
+                          deriv)
+                : common::sphere_overlap::
+                      launch_partitioned_block_neighbors<Ops, D, launch_t>(
+                          mgr,
+                          neighbors,
+                          n_poses,
+                          ctx.max_n_blocks,
+                          partitions,
+                          energy);
+        if (handled) return;
+      }
+    }
+  }
   if (neighbors.size(0) && !ctx.output_block_pair_energies) {
     if (gradients)
       common::sphere_overlap::

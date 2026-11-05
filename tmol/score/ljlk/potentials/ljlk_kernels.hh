@@ -313,11 +313,12 @@ union LJLKSharedMem {
           Real,                                                 \
           Int>::                                                \
           eval_interres_atom_pair(                              \
-              tid,                                              \
+              tid + pair_shard * nt,                            \
               start_atom1,                                      \
               start_atom2,                                      \
               score_inter_ljlk_atom_pair,                       \
-              inter_dat);                                       \
+              inter_dat,                                        \
+              nt * pair_shards);                                \
       inter_dat.total_ljatr += tmol::portable::get<0>(LJLK);    \
       inter_dat.total_ljrep += tmol::portable::get<1>(LJLK);    \
       inter_dat.total_lk += tmol::portable::get<2>(LJLK);       \
@@ -540,11 +541,12 @@ union LJLKSharedMem {
           Real,                                                 \
           Int>::                                                \
           eval_intrares_atom_pairs(                             \
-              tid,                                              \
+              tid + pair_shard * nt,                            \
               start_atom1,                                      \
               start_atom2,                                      \
               score_intra_ljlk_atom_pair,                       \
-              intra_dat);                                       \
+              intra_dat,                                        \
+              nt * pair_shards);                                \
       intra_dat.total_ljatr += tmol::portable::get<0>(LJLK);    \
       intra_dat.total_ljrep += tmol::portable::get<1>(LJLK);    \
       intra_dat.total_lk += tmol::portable::get<2>(LJLK);       \
@@ -572,7 +574,9 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
     TMOL_SHARED_REF(Shared) shared,
     int cta,
     PoseAccum cpu_pose_accum,
-    WorkgroupLane<D> lane = {}) {
+    WorkgroupLane<D> lane = {},
+    int pair_shard = 0,
+    int pair_shards = 1) {
   CTA_LAUNCH_T_PARAMS;
   typedef LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, launch_t>
       shared_mem_union;
@@ -789,7 +793,9 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
     TMOL_SHARED_REF(Shared) shared,
     int cta,
     PoseAccum cpu_pose_accum,
-    WorkgroupLane<D> lane = {}) {
+    WorkgroupLane<D> lane = {},
+    int pair_shard = 0,
+    int pair_shards = 1) {
   ljlk_evaluate_pair<
       LJLKMode::Energy,
       false,
@@ -797,7 +803,8 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
       D,
       Real,
       Int,
-      launch_t>(ctx, shared, cta, cpu_pose_accum, lane);
+      launch_t>(
+      ctx, shared, cta, cpu_pose_accum, lane, pair_shard, pair_shards);
 }
 
 template <
@@ -814,7 +821,9 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_rotamer_energies_by_block(
     TMOL_SHARED_REF(Shared) shared,
     int cta,
     PoseAccum cpu_pose_accum,
-    WorkgroupLane<D> lane = {}) {
+    WorkgroupLane<D> lane = {},
+    int pair_shard = 0,
+    int pair_shards = 1) {
   ljlk_evaluate_pair<
       LJLKMode::Energy,
       true,
@@ -822,7 +831,8 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_rotamer_energies_by_block(
       D,
       Real,
       Int,
-      launch_t>(ctx, shared, cta, cpu_pose_accum, lane);
+      launch_t>(
+      ctx, shared, cta, cpu_pose_accum, lane, pair_shard, pair_shards);
 }
 
 template <
@@ -839,7 +849,9 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies(
     TMOL_SHARED_REF(Shared) shared,
     int cta,
     PoseAccum cpu_pose_accum,
-    WorkgroupLane<D> lane = {}) {
+    WorkgroupLane<D> lane = {},
+    int pair_shard = 0,
+    int pair_shards = 1) {
   ljlk_evaluate_pair<
       LJLKMode::EnergyAndDerivatives,
       false,
@@ -847,7 +859,8 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies(
       D,
       Real,
       Int,
-      launch_t>(ctx, shared, cta, cpu_pose_accum, lane);
+      launch_t>(
+      ctx, shared, cta, cpu_pose_accum, lane, pair_shard, pair_shards);
 }
 
 }  // namespace potentials
