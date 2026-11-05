@@ -18,10 +18,12 @@ struct IndependentNonbondedWorkspace {
       : storage(data) {
     auto pairs = score::common::checked_triangular_size(
         blocks, true, "independent nonbonded neighbors");
-    neighbor_capacity = 1
-                        + score::common::checked_dispatch_product(
-                            poses, pairs, "independent nonbonded neighbors");
-    spheres = storage.take<Real>(poses * blocks * 4);
+    neighbor_capacity =
+        blocks == 1 ? 0
+                    : 1
+                          + score::common::checked_dispatch_product(
+                              poses, pairs, "independent nonbonded neighbors");
+    spheres = storage.take<Real>(blocks == 1 ? 0 : poses * blocks * 4);
     neighbors = storage.take<int32_t>(neighbor_capacity);
     accumulation = storage.take<double>(Electrostatic ? 0 : 3 * poses);
   }
@@ -110,11 +112,7 @@ struct IndependentNonbondedKernel {
     auto neighbors = contiguous_view<I, 1, D>(
         work.neighbors, {int64_t(work.neighbor_capacity)});
     ContextManager context;
-    if (blocks == 1) {
-      score::common::sphere_overlap::
-          single_block_neighbor_candidates_native<Ops, D, I>(
-              context, poses, neighbors);
-    } else {
+    if (blocks != 1) {
       score::common::sphere_overlap::
           compute_block_spheres_native<Ops, D, Real, I>(
               context,
