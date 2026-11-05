@@ -29,7 +29,7 @@ Build shared CPU/CUDA physics with
 `python scripts/build_jax_native.py --cuda --cuda-architectures "80;90" --outdir dist/jax`.
 The shared adapter supports float32/64; install a matching JAX CUDA runtime,
 such as `jax[cuda13]`. An older optional native
-adapter accelerates float32 LJ/LK, electrostatics, hydrogen bonds and LK-ball
+adapter accelerates float32 hydrogen bonds and LK-ball
 using the canonical TMol scalar potentials:
 
 ```sh
