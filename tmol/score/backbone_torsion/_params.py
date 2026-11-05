@@ -1,8 +1,8 @@
 from tmol_core.scoring.torsion_ownership import _omega_connection  # noqa: F401
 import attr
-import cattr
 
 import pandas
+import numpy
 import torch
 
 import toolz.functoolz
@@ -11,6 +11,11 @@ from tmol.types._torch import Tensor
 from tmol.types._attrs import ValidateAttrs, ConvertAttrs
 from tmol.types._functional import _validate_args
 from tmol.numeric._bspline import BSplineInterpolation
+from tmol_core.scoring.backbone_torsion import (
+    BackboneTorsionPreparation,
+    prepare_backbone_tables,
+    _mirror_grid as _host_mirror_grid,
+)
 
 from tmol.database.scoring import (
     RamaDatabase,
@@ -26,12 +31,8 @@ def _mirror_grid(table, bbstart, bbstep):
     registered differently -- rama starts at -180 and omega at -175 -- so the
     reflection is derived from the grid rather than assumed.
     """
-    out = table
-    for axis, (start, step) in enumerate(zip(bbstart, bbstep)):
-        n = out.shape[axis]
-        c = int(round(-2.0 * float(start) / float(step)))
-        out = torch.roll(torch.flip(out, (axis,)), (c - n + 1) % n, dims=axis)
-    return out
+    mirrored = _host_mirror_grid(table.detach().cpu().numpy(), bbstart, bbstep)
+    return torch.from_numpy(numpy.ascontiguousarray(mirrored)).to(device=table.device)
 
 
 # the rama database packed into a single tensor
@@ -67,6 +68,7 @@ class BackboneTorsionParamResolver(ValidateAttrs):
     n_omega_tables: int
 
     device: torch.device
+    host_preparation: object = None
 
     @classmethod
     @_validate_args
@@ -85,97 +87,62 @@ class BackboneTorsionParamResolver(ValidateAttrs):
         bbdep_omega_database: OmegaBBDepDatabase,
         device: torch.device,
     ):
-        ## RAMA
-        # setup name to index mapping
-        rama_lookup = pandas.DataFrame.from_records(
-            cattr.unstructure(rama_database.rama_lookup)
-        ).set_index(["res_middle", "res_upper"])
-        tindices = pandas.Index([f.table_id for f in rama_database.rama_tables])
-
-        # map table names to indices
-        rama_lookup.table_id = tindices.get_indexer(rama_lookup.table_id)
-
-        # interpolate spline tables; every table is followed by its mirror
-        #    image at index i + ntables, which a d-amino acid selects so that
-        #    its l counterpart's statistics are read at negated phi/psi
-        ntables = len(rama_database.rama_tables)
-        tablesize = rama_database.rama_tables[0].table.shape
-        tables = torch.empty((2 * ntables, *tablesize))
-
-        for i, t_i in enumerate(rama_database.rama_tables):
-            raw = t_i.table.detach().clone().to(dtype=torch.float)
-            tables[i, ...] = BSplineInterpolation.from_coordinates(raw).coeffs
-            tables[i + ntables, ...] = BSplineInterpolation.from_coordinates(
-                _mirror_grid(raw, t_i.bbstart, t_i.bbstep)
-            ).coeffs
-
-        rama_params = PackedRamaDatabase(
-            # interpolate on CPU then move coeffs to GPU
-            tables=tables.to(device=device),
-            bbsteps=torch.tensor(
-                [f.bbstep for f in rama_database.rama_tables] * 2,
-                dtype=torch.float,
-                device=device,
-            ),
-            bbstarts=torch.tensor(
-                [f.bbstart for f in rama_database.rama_tables] * 2,
-                dtype=torch.float,
-                device=device,
-            ),
-        )
-        n_rama_tables = ntables
-
-        ## OMEGA
-        omega_lookup = pandas.DataFrame.from_records(
-            cattr.unstructure(bbdep_omega_database.bbdep_omega_lookup)
-        ).set_index(["res_middle", "res_upper"])
-        tindices = pandas.Index(
-            [f.table_id for f in bbdep_omega_database.bbdep_omega_tables]
+        rama_rows = rama_database.rama_tables
+        omega_rows = bbdep_omega_database.bbdep_omega_tables
+        host = BackboneTorsionPreparation(
+            rama_database.rama_lookup,
+            bbdep_omega_database.bbdep_omega_lookup,
+            [r.table_id for r in rama_rows],
+            [r.table_id for r in omega_rows],
         )
 
-        # map table names to indices
-        omega_lookup.table_id = tindices.get_indexer(omega_lookup.table_id)
+        def fit(raw):
+            tensor = torch.from_numpy(numpy.ascontiguousarray(raw))
+            return BSplineInterpolation._coefficients_from_coordinates(tensor).numpy()
 
-        # interpolate spline tables, mirrored copies second as for rama.
-        #    omega is a gaussian about mu, and the mirror sends omega -> -omega,
-        #    so the mirrored mean is -mu read at negated phi/psi
-        ntables = len(bbdep_omega_database.bbdep_omega_tables)
-        tablesize = rama_database.rama_tables[0].table.shape
-        tables = torch.empty((2 * ntables, 2, *tablesize))
-
-        for i, t_i in enumerate(bbdep_omega_database.bbdep_omega_tables):
-            mu = t_i.mu.detach().clone().to(dtype=torch.float)
-            sigma = t_i.sigma.detach().clone().to(dtype=torch.float)
-            tables[i, 0, ...] = BSplineInterpolation.from_coordinates(mu).coeffs
-            tables[i, 1, ...] = BSplineInterpolation.from_coordinates(sigma).coeffs
-            tables[i + ntables, 0, ...] = BSplineInterpolation.from_coordinates(
-                360.0 - _mirror_grid(mu, t_i.bbstart, t_i.bbstep)
-            ).coeffs
-            tables[i + ntables, 1, ...] = BSplineInterpolation.from_coordinates(
-                _mirror_grid(sigma, t_i.bbstart, t_i.bbstep)
-            ).coeffs
-
-        # assumes bbstep is the same for both tables
-        omega_params = PackedOmegaDatabase(
-            tables=tables.to(device=device),
-            bbsteps=torch.tensor(
-                [f.bbstep for f in bbdep_omega_database.bbdep_omega_tables] * 2,
-                dtype=torch.float,
-                device=device,
-            ),
-            bbstarts=torch.tensor(
-                [f.bbstart for f in bbdep_omega_database.bbdep_omega_tables] * 2,
-                dtype=torch.float,
-                device=device,
-            ),
+        rama, omega = prepare_backbone_tables(
+            [attr.evolve(r, table=r.table.detach().cpu().numpy()) for r in rama_rows],
+            [
+                attr.evolve(
+                    r,
+                    mu=r.mu.detach().cpu().numpy(),
+                    sigma=r.sigma.detach().cpu().numpy(),
+                )
+                for r in omega_rows
+            ],
+            fit,
         )
+
+        def lookup_frame(lookup):
+            rows = [
+                dict(
+                    res_middle=key[0],
+                    res_upper=key[1],
+                    table_id=value[0],
+                    invert_phi=value[1],
+                    invert_psi=value[2],
+                )
+                for key, value in lookup.items()
+            ]
+            return pandas.DataFrame.from_records(rows).set_index(
+                ["res_middle", "res_upper"]
+            )
+
+        def on_device(data, cls):
+            return cls(
+                **{
+                    f.name: torch.from_numpy(getattr(data, f.name)).to(device)
+                    for f in attr.fields(type(data))
+                }
+            )
 
         return cls(
-            rama_lookup=rama_lookup,
-            rama_params=rama_params,
-            omega_lookup=omega_lookup,
-            omega_params=omega_params,
-            n_rama_tables=n_rama_tables,
-            n_omega_tables=ntables,
+            rama_lookup=lookup_frame(host.rama_lookup),
+            omega_lookup=lookup_frame(host.omega_lookup),
+            rama_params=on_device(rama, PackedRamaDatabase),
+            omega_params=on_device(omega, PackedOmegaDatabase),
+            n_rama_tables=host.n_rama_tables,
+            n_omega_tables=host.n_omega_tables,
             device=device,
+            host_preparation=host,
         )
