@@ -1,6 +1,7 @@
 """Framework-neutral NA preparation invariants."""
 
 import numpy as np
+import pytest
 
 from tmol_core.scoring.na_torsion_params import _circular_mean
 from tmol_core.scoring.na_torsion_topology import prepare_na_torsion_topology
@@ -43,3 +44,27 @@ def test_connected_topology_preserves_batch_padding_and_missing_neighbors():
     assert not ring_valid[1, 1].any()
     np.testing.assert_array_equal(previous, [[1, 0], [-1, -1]])
     assert torsions.dtype == ring.dtype == previous.dtype == np.int64
+
+
+@pytest.mark.parametrize("shape", [(0, 2), (2, 0)])
+def test_empty_topology_retains_declared_batch_dimensions(shape):
+    result = prepare_na_torsion_topology(
+        np.empty(shape, dtype=np.int32),
+        np.array([0]),
+        np.full((1, 10, 4, 3), -1, dtype=np.int32),
+        np.full((1, 5), -1, dtype=np.int32),
+        np.array([-1]),
+        np.full((1, 1, 1), -1, dtype=np.int32),
+        np.empty(shape, dtype=np.int32),
+        np.full((*shape, 1, 2), -1, dtype=np.int32),
+        0,
+    )
+    assert [x.shape for x in result] == [
+        shape,
+        shape,
+        (*shape, 10, 4),
+        (*shape, 10),
+        (*shape, 5),
+        (*shape, 5),
+        shape,
+    ]
