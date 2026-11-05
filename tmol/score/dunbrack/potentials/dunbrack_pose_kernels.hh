@@ -18,6 +18,11 @@
 #include <tmol/score/common/warp_stride_reduce.hh>
 
 // Complete shared pose science. Bindings own output and scratch allocation.
+// Forward scratch may be uninitialized: each active residue assigns all
+// consumed dihedral indices, values, derivatives and table assignments before
+// use. Term derivative scratch is overwritten before each contribution.
+// Padded/unassigned residues do not read scratch. Only V and dV_dx must start
+// at zero, since scoring accumulates into those output buffers.
 
 #include "potentials.hh"
 
