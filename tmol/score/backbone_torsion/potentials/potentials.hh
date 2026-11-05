@@ -8,7 +8,7 @@
 #include <tmol/score/common/tuple_operators.hh>
 
 #include <tmol/utility/tensor/TensorAccessor.h>
-#include <tmol/numeric/bspline_compiled/bspline.hh>
+#include <tmol/numeric/bspline_compiled/bspline_kernel.hh>
 
 namespace tmol {
 namespace score {
@@ -45,7 +45,7 @@ def rama_V_dV(
   phipsi_idx[1] = (psiang.V - bbstart[1]) / bbstep[1];
 
   tie(V, dVdphipsi) =
-      tmol::numeric::bspline::ndspline<2, 3, D, Real, Int>::interpolate(
+      tmol::numeric::bspline::ndspline_kernel<2, 3, D, Real, Int>::interpolate(
           coeffs, phipsi_idx);
 
   tmol::portable::row_ref(dV_dphiatm, 0) =
@@ -84,7 +84,7 @@ def rama_V(
       (dihedral_angle<Real>::V(psi.row(0), psi.row(1), psi.row(2), psi.row(3))
        - bbstart[1])
       / bbstep[1];
-  return tmol::numeric::bspline::ndspline<2, 3, D, Real, Int>::interpolate_V(
+  return tmol::numeric::bspline::ndspline_kernel<2, 3, D, Real, Int>::interpolate_V(
       coeffs, phipsi_idx);
 }
 
@@ -168,10 +168,10 @@ def omega_bbdep_V_dV(
     phipsi_idx[1] = (psiang.V - bbstart[1]) / bbstep[1];
 
     tie(mu, dmudphipsi) =
-        tmol::numeric::bspline::ndspline<2, 3, D, Real, Int>::interpolate(
+        tmol::numeric::bspline::ndspline_kernel<2, 3, D, Real, Int>::interpolate(
             coeffs_mu, phipsi_idx);
     tie(sig, dsigdphipsi) =
-        tmol::numeric::bspline::ndspline<2, 3, D, Real, Int>::interpolate(
+        tmol::numeric::bspline::ndspline_kernel<2, 3, D, Real, Int>::interpolate(
             coeffs_sig, phipsi_idx);
 
     // energy
@@ -240,10 +240,10 @@ def omega_bbdep_V(
        - bbstart[1])
       / bbstep[1];
 
-  Real mu = tmol::numeric::bspline::ndspline<2, 3, D, Real, Int>::interpolate_V(
+  Real mu = tmol::numeric::bspline::ndspline_kernel<2, 3, D, Real, Int>::interpolate_V(
       coeffs_mu, phipsi_idx);
   Real sig =
-      tmol::numeric::bspline::ndspline<2, 3, D, Real, Int>::interpolate_V(
+      tmol::numeric::bspline::ndspline_kernel<2, 3, D, Real, Int>::interpolate_V(
           coeffs_sig, phipsi_idx);
   Real baseline = tmol::portable::math::log(1. / (6. * sqrt(2. * pi)))
                   - tmol::portable::math::log(1. / (sig * sqrt(2. * pi)));
