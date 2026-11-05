@@ -84,11 +84,19 @@ def ljlk_type_parameters(names, database):
     )
 
 
+def lk_isotropic_coefficients(dgfree, lk_lambda):
+    dgfree = np.asarray(dgfree, dtype=np.float32)
+    lk_lambda = np.asarray(lk_lambda, dtype=np.float32)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return -dgfree / (2 * 5.56832799683 * lk_lambda), 1 / (lk_lambda * lk_lambda)
+
+
 def native_ljlk_type_parameters(parameters):
     """Pack the canonical 13-scalar native record from NumPy field arrays."""
     p = {
         name: np.asarray(value, dtype=np.float32) for name, value in parameters.items()
     }
+    coeff, inv_lambda2 = lk_isotropic_coefficients(p["lk_dgfree"], p["lk_lambda"])
     with np.errstate(invalid="ignore", divide="ignore"):
         return np.stack(
             [
@@ -103,8 +111,8 @@ def native_ljlk_type_parameters(parameters):
                 p["is_acceptor"],
                 p["is_carbon_lk"],
                 p["is_hydrogen"],
-                -p["lk_dgfree"] / (2 * 5.56832799683 * p["lk_lambda"]),
-                1 / (p["lk_lambda"] * p["lk_lambda"]),
+                coeff,
+                inv_lambda2,
             ],
             axis=1,
         )
