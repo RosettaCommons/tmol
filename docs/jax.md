@@ -1,11 +1,11 @@
 # JAX frontend (experimental)
 
 `tmol-jax` provides Torch-free canonical-protein scoring, coordinate gradients
-and Cartesian minimization, plus native generic-bonded scoring for explicitly
-parameterized noncanonical molecules. LJ/LK and electrostatic terms also accept
+and Cartesian minimization, plus native generic-bonded and Cartesian-bonded
+scoring for explicitly parameterized noncanonical molecules. LJ/LK and electrostatic terms also accept
 explicit ligand, D-residue, nucleic-acid and metal inputs; complete scoring for
-those domains remains unsupported. It shares chemical records, validation, patching and
-SMILES parsing with the Torch frontend through [`tmol-core`](shared_core.md).
+those domains remains unsupported. It shares immutable parameter contexts, chemical records, topology,
+parameter preparation and whole-pose bonded physics with the Torch frontend through [`tmol-core`](shared_core.md).
 Existing `tmol` imports remain available.
 
 ## Install
@@ -14,7 +14,8 @@ From a TMol development environment with `build` installed:
 
 ```sh
 python scripts/build_jax.py --outdir dist/jax
-pip install dist/jax/tmol_core-*.whl dist/jax/tmol_jax-*.whl
+python scripts/build_jax_native.py --outdir dist/jax
+pip install dist/jax/tmol_core-*.whl dist/jax/tmol_jax-*.whl dist/jax/tmol_jax_native-*.whl
 ```
 
 The builder exports the canonical Torch-serialized scoring tables as NumPy
@@ -53,6 +54,10 @@ minimized, result = run_cart_min(
 )
 ```
 
+The beta2016 preset retains every declared weight; rendering rejects active
+unsupported NA/metal chemistry before tracing. Shared chemistry can establish
+that these channels have no applicable interactions.
+
 Rendered scorers snapshot weights, term options and topology. Reuse them for
 coordinate changes; render again after changing weights, parameters, types,
 connectivity or batch layout. `sum_terms=False` returns weighted channels in
@@ -74,15 +79,9 @@ pose and a context whose `parameter_database` must be used for scoring. Molecula
 input support does not imply complete scoring support: see the current
 [capability matrix](capability-matrix.json).
 
-Generic bonded scoring requires the shared native CPU/CUDA package:
-
-```sh
-python scripts/build_jax_native.py --outdir dist/jax-native
-pip install dist/jax-native/tmol_jax_native-*.whl
-```
-
-Set `ScoreType.gen_torsions` on a `ScoreFunction` constructed with the input's
-parameter database. This term uses the same whole-pose native physics and
+Generic and Cartesian bonded scoring require the shared native CPU/CUDA package
+built above. Set `ScoreType.gen_torsions` on a `ScoreFunction` constructed with the input's
+parameter database. These bonded terms use the same whole-pose native physics and
 analytic derivatives as Torch; explicit noncanonical input does not enable
 unvalidated terms. See `scripts/build_jax_native.py --help` for CUDA builds.
 
@@ -93,8 +92,8 @@ Run `pytest tests/jax` for JAX transformations and runtime contracts, and
 The same cases accept `torch-cpu`, `torch-cuda`, `torch-mps` and `jax-cuda`; missing
 devices are explicitly skipped. Core chemistry tests live in `tests/core`.
 Native FFI calls support reverse gradients, `vmap` and `jacrev`; batching is
-sequential initially. Generic bonded supports first-order JVP and reverse gradients in float32/64.
-Its native derivative kernel does not provide higher derivatives. The older
+sequential initially. Generic and Cartesian bonded support first-order JVP and reverse gradients in
+float32/64. Their native derivative kernels do not provide higher derivatives. The older
 native nonbonded custom-VJP route does not support JVP.
 
 Before comparing frontends, verify residue/atom identities and use identical

@@ -12,15 +12,21 @@
       "domain": "noncanonical_polymers",
       "torch": "supported",
       "jax": "partial_scoring",
-      "repro_fixture": "tests/scientific/test_molecular_nonbonded.py",
-      "implementation_status": "LJ attraction/repulsion, isotropic LK and electrostatics CPU values/gradients tested on explicit parameterized inputs. Full scoring remains gated; native genbonded additionally tested on ligand/noncanonical cases."
+      "repro_fixture": [
+        "tests/scientific/test_cartbonded.py",
+        "tests/scientific/test_molecular_nonbonded.py"
+      ],
+      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. Full scoring remains gated."
     },
     {
       "domain": "d_amino_acids",
       "torch": "supported",
       "jax": "partial_scoring",
-      "repro_fixture": "tests/scientific/test_molecular_nonbonded.py",
-      "implementation_status": "LJ attraction/repulsion, isotropic LK and electrostatics CPU values/gradients tested on explicit parameterized inputs. Full scoring remains gated; native genbonded additionally tested on ligand/noncanonical cases."
+      "repro_fixture": [
+        "tests/scientific/test_cartbonded.py",
+        "tests/scientific/test_molecular_nonbonded.py"
+      ],
+      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. Full scoring remains gated. Shared D rotamer libraries loaded; D backbone and Dunbrack scoring not certified."
     },
     {
       "domain": "modifications_and_termini",
@@ -33,29 +39,41 @@
       "domain": "ligand_only",
       "torch": "supported",
       "jax": "partial_scoring",
-      "repro_fixture": "tests/scientific/test_molecular_nonbonded.py",
-      "implementation_status": "LJ attraction/repulsion, isotropic LK and electrostatics CPU values/gradients tested on explicit parameterized inputs. Full scoring remains gated; native genbonded additionally tested on ligand/noncanonical cases."
+      "repro_fixture": [
+        "tests/scientific/test_cartbonded.py",
+        "tests/scientific/test_molecular_nonbonded.py"
+      ],
+      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. Full scoring remains gated."
     },
     {
       "domain": "protein_ligand_mixed",
       "torch": "supported",
       "jax": "partial_scoring",
-      "repro_fixture": "tests/scientific/test_molecular_nonbonded.py",
-      "implementation_status": "LJ attraction/repulsion, isotropic LK and electrostatics CPU values/gradients tested on explicit parameterized inputs. Full scoring remains gated; native genbonded additionally tested on ligand/noncanonical cases."
+      "repro_fixture": [
+        "tests/scientific/test_cartbonded.py",
+        "tests/scientific/test_molecular_nonbonded.py"
+      ],
+      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. Full scoring remains gated."
     },
     {
       "domain": "nucleic_acids",
       "torch": "supported",
       "jax": "partial_scoring",
-      "repro_fixture": "tests/scientific/test_molecular_nonbonded.py",
-      "implementation_status": "LJ attraction/repulsion, isotropic LK and electrostatics CPU values/gradients tested on explicit parameterized inputs. Full scoring remains gated; native genbonded additionally tested on ligand/noncanonical cases. NA torsion channels remain absent."
+      "repro_fixture": [
+        "tests/scientific/test_cartbonded.py",
+        "tests/scientific/test_molecular_nonbonded.py"
+      ],
+      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. Full scoring remains gated. NA torsion remains unimplemented."
     },
     {
       "domain": "metals_and_coordination",
       "torch": "supported",
       "jax": "partial_scoring",
-      "repro_fixture": "tests/scientific/test_molecular_nonbonded.py",
-      "implementation_status": "LJ attraction/repulsion, isotropic LK and electrostatics CPU values/gradients tested on explicit parameterized inputs. Full scoring remains gated; native genbonded additionally tested on ligand/noncanonical cases. Coordination is absent; zero-LJ-depth ions retain exactly zero LJ interactions."
+      "repro_fixture": [
+        "tests/scientific/test_cartbonded.py",
+        "tests/scientific/test_molecular_nonbonded.py"
+      ],
+      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. Full scoring remains gated. Coordination remains unimplemented; zero-depth ions have exactly zero LJ energy."
     },
     {
       "domain": "disconnected_components",
@@ -68,8 +86,12 @@
       "domain": "custom_database",
       "torch": "supported",
       "jax": "partial",
-      "repro_fixture": "tests/jax/test_review_regressions.py",
-      "implementation_status": "Exact parameter context retained; generic torsion/improper scaling changes energies and gradients; charge omission rejects."
+      "repro_fixture": [
+        "tests/scientific/test_database_context.py",
+        "tests/jax/test_dunbrack_metadata.py",
+        "tests/jax/test_native_genbonded.py"
+      ],
+      "implementation_status": "Shared immutable context: stable subsets/aliases, private subclass defaults, symmetric glycine, content-derived identities and custom reflected grid origins. Generic bonded parameter scaling and ligand charge scaling change values/gradients; incomplete charge/type parameters reject."
     },
     {
       "domain": "arbitrary_connectivity",
@@ -83,14 +105,14 @@
       "torch": "supported",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_optimization.py",
-      "implementation_status": "Only flat-bottom coordinate restraints in JAX; Torch general callable geometric constraints absent."
+      "implementation_status": "Coordinate restraints only; invalid constraint objects and fractional/bool atom indices reject explicitly. General callable geometric constraints absent."
     },
     {
       "domain": "heterogeneous_batches",
       "torch": "supported",
       "jax": "partial",
-      "repro_fixture": "tests/jax/test_residue_blocks.py",
-      "implementation_status": "Explicit mixed residue input; noncanonical score/gradient and packing layout changes not certified."
+      "repro_fixture": "tests/jax/test_native_genbonded.py",
+      "implementation_status": "Mixed ligand/HYP/GLY batches: native gen/cart coordinate gradients, independent poses and vmap tested CPU/CUDA; packing/topology mutation APIs absent."
     },
     {
       "domain": "cartesian_minimization",
@@ -138,51 +160,51 @@
       "domain": "jit_vmap_reverse_ad",
       "torch": "torch_autograd",
       "jax": "partial",
-      "repro_fixture": "tests/jax/test_cuda.py",
-      "implementation_status": "Native generic bonded float32/64 jit, JVP, jacrev, vmap and pose independence tested on mixed inputs; batching sequential."
+      "repro_fixture": "tests/jax/test_native_genbonded.py",
+      "implementation_status": "Native gen/cart float32/64 JIT, JVP, reverse Jacobian and sequential vmap tested CPU/CUDA. Native higher derivatives absent; older nonbonded custom-VJP CUDA adapters lack JVP."
     },
     {
       "domain": "forward_ad",
       "torch": "framework_specific",
       "jax": "partial",
-      "repro_fixture": "tmol_jax/score/_cuda.py",
-      "implementation_status": "Native generic bonded implements JVP; older native nonbonded custom-VJP adapter lacks JVP. Native higher derivatives unsupported."
+      "repro_fixture": "tests/jax/test_native_genbonded.py",
+      "implementation_status": "Native gen/cart float32/64 JIT, JVP, reverse Jacobian and sequential vmap tested CPU/CUDA. Native higher derivatives absent; older nonbonded custom-VJP CUDA adapters lack JVP."
     },
     {
       "domain": "native_cpu",
       "torch": "supported",
       "jax": "partial",
-      "repro_fixture": "tmol/backends/jax",
-      "implementation_status": "Generic bonded uses the canonical whole-pose kernel and analytical gradients. Other terms still portable."
+      "repro_fixture": "tests/jax/test_native_genbonded.py",
+      "implementation_status": "Generic bonded and Cartesian bonded share complete native physics/analytic derivatives with Torch. CPU and scheduler H200 CUDA execution tested. Other score terms still use earlier execution implementations."
     },
     {
       "domain": "native_cuda",
       "torch": "supported",
       "jax": "partial",
-      "repro_fixture": "tests/jax/test_cuda.py",
-      "implementation_status": "Generic bonded uses canonical whole-pose kernel; compiled successfully, execution validation pending. Older four adapters share scalar potentials."
+      "repro_fixture": "tests/jax/test_native_genbonded.py",
+      "implementation_status": "Generic bonded and Cartesian bonded share complete native physics/analytic derivatives with Torch. CPU and scheduler H200 CUDA execution tested. Other score terms still use earlier execution implementations."
     }
   ],
   "score_terms": {
     "fa_ljatr": {
       "torch": "implemented",
       "jax": "molecular_values_and_coordinate_gradients",
-      "noncanonical_validation": "CPU values/full gradients audited against Torch on 9 domains; shared per-channel finite differences pass. CUDA molecular validation pending."
+      "noncanonical_validation": "CPU values/full gradients audited against Torch on nine molecular cases; CPU/CUDA shared per-channel finite differences pass. CUDA test used portable JAX route, not the optional scalar-kernel package."
     },
     "fa_ljrep": {
       "torch": "implemented",
       "jax": "molecular_values_and_coordinate_gradients",
-      "noncanonical_validation": "CPU values/full gradients audited against Torch on 9 domains; shared per-channel finite differences pass. CUDA molecular validation pending."
+      "noncanonical_validation": "CPU values/full gradients audited against Torch on nine molecular cases; CPU/CUDA shared per-channel finite differences pass. CUDA test used portable JAX route, not the optional scalar-kernel package."
     },
     "fa_lk": {
       "torch": "implemented",
       "jax": "molecular_values_and_coordinate_gradients",
-      "noncanonical_validation": "CPU values/full gradients audited against Torch on 9 domains; shared per-channel finite differences pass. CUDA molecular validation pending."
+      "noncanonical_validation": "CPU values/full gradients audited against Torch on nine molecular cases; CPU/CUDA shared per-channel finite differences pass. CUDA test used portable JAX route, not the optional scalar-kernel package."
     },
     "fa_elec": {
       "torch": "implemented",
       "jax": "molecular_values_and_coordinate_gradients",
-      "noncanonical_validation": "CPU values/full gradients audited against Torch on 9 domains; shared per-channel finite differences pass. CUDA molecular validation pending."
+      "noncanonical_validation": "CPU values/full gradients audited against Torch on nine molecular cases; CPU/CUDA shared per-channel finite differences pass. CUDA test used portable JAX route, not the optional scalar-kernel package."
     },
     "hbond": {
       "torch": "implemented",
@@ -191,28 +213,28 @@
     },
     "cart_lengths": {
       "torch": "implemented",
-      "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "blocked: connected B3Q+B3D differs from Torch; do not enable"
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "All nine molecular cases: CPU full gradients exact against Torch, energy max9.54e-7 float32; CPU/CUDA independent derivatives. Connected B3Q+B3D gap fixed by shared whole-pose science."
     },
     "cart_angles": {
       "torch": "implemented",
-      "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "blocked: connected B3Q+B3D differs from Torch; do not enable"
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "All nine molecular cases: CPU full gradients exact against Torch, energy max9.54e-7 float32; CPU/CUDA independent derivatives. Connected B3Q+B3D gap fixed by shared whole-pose science."
     },
     "cart_torsions": {
       "torch": "implemented",
-      "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "blocked: connected B3Q+B3D differs from Torch; do not enable"
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "All nine molecular cases: CPU full gradients exact against Torch, energy max9.54e-7 float32; CPU/CUDA independent derivatives. Connected B3Q+B3D gap fixed by shared whole-pose science."
     },
     "cart_impropers": {
       "torch": "implemented",
-      "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "blocked: connected B3Q+B3D differs from Torch; do not enable"
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "All nine molecular cases: CPU full gradients exact against Torch, energy max9.54e-7 float32; CPU/CUDA independent derivatives. Connected B3Q+B3D gap fixed by shared whole-pose science."
     },
     "cart_hxltorsions": {
       "torch": "implemented",
-      "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "blocked: connected B3Q+B3D differs from Torch; do not enable"
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "All nine molecular cases: CPU full gradients exact against Torch, energy max9.54e-7 float32; CPU/CUDA independent derivatives. Connected B3Q+B3D gap fixed by shared whole-pose science."
     },
     "constraint": {
       "torch": "implemented",
@@ -277,23 +299,23 @@
     "gen_torsions": {
       "torch": "implemented",
       "jax": "native_values_and_coordinate_gradients",
-      "noncanonical_validation": "CPU: LG1/HYP/B3Q+B3D/mixed nonzero fixtures; CUDA runtime pending"
+      "noncanonical_validation": "Nonzero LG1/HYP/B3Q+B3D/mixed cases: CPU Torch identity; CPU/CUDA independent derivatives and transformations; float64 cross-device gradients within8e-12. Float32 near-planar geometry discrepancy under investigation."
     },
     "na_torsion": {
       "torch": "implemented",
-      "jax": "absent",
-      "noncanonical_validation": "pending"
+      "jax": "declared_channel_active_science_unimplemented",
+      "noncanonical_validation": "Complete preset retains weight. Active eligible chemistry rejects before tracing; shared chemistry may prove an empty interaction set."
     },
     "na_torsion_well": {
       "torch": "implemented",
-      "jax": "absent",
-      "noncanonical_validation": "pending"
+      "jax": "declared_channel_active_science_unimplemented",
+      "noncanonical_validation": "Complete preset retains weight. Active eligible chemistry rejects before tracing; shared chemistry may prove an empty interaction set."
     },
     "metal_coordination": {
       "torch": "implemented",
-      "jax": "absent",
-      "noncanonical_validation": "pending"
+      "jax": "declared_channel_active_science_unimplemented",
+      "noncanonical_validation": "Complete preset retains weight. Active eligible chemistry rejects before tracing; shared chemistry may prove an empty interaction set."
     }
   },
-  "validation": "CPU shared topology/native tests41 passed; expanded nonbonded/core/poly/review45 passed; ligand custom charge scaling/missing-LJ test passed. Full scope and final CUDA/artifact acceptance incomplete."
+  "validation": "Exact5033 clean installed core/JAX/native wheels and sdists:22float64CPU scientific cases in a Torch-free runtime. Exact816084 CPU/CUDA native artifacts:28 H200 tests passed. Context527afa:21targetedchecks passed. Final all-domain/API/artifact/performance acceptance remains incomplete."
 }
