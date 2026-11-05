@@ -14,7 +14,7 @@ int main() {
   using namespace tmol::score::common;
   // Partitioning lanes must visit every actual atom pair exactly once, also
   // across partial tiles and the intra-residue diagonal.
-  for (int shards : {1, 4, 16})
+  for (int shards : {1, 4, 16, 32})
     for (bool intra : {false, true}) {
       PairData<double> data{{52}, {52}};
       std::vector<int> visits(52 * 52, 0);
