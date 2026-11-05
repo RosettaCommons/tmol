@@ -1,3 +1,4 @@
+#include <tmol/score/cartbonded/potentials/cartbonded_pose_kernels.hh>
 #include <tmol/score/backbone_torsion/potentials/backbone_torsion_pose_kernels.hh>
 int main() { return 0; }
 template <tmol::Device D>
