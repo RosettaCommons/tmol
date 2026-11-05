@@ -166,17 +166,17 @@ class WaterGenData {
   WaterGenPoseContextData<View, Real, Int> pose_context;
 };
 
-template <typename Real, int TILE_SIZE>
+template <typename Real, int TileSize>
 struct WaterGenSharedData {
-  Real coords[TILE_SIZE * 3];  // 384 bytes for coords
-  unsigned char n_donH;        // 4 bytes for counts
+  Real coords[TileSize * 3];  // 384 bytes for coords
+  unsigned char n_donH;       // 4 bytes for counts
   unsigned char n_acc;
-  unsigned char don_inds[TILE_SIZE];  //
-  unsigned char don_hvy_inds[TILE_SIZE];
-  unsigned char which_donH_for_hvy[TILE_SIZE];
-  unsigned char acc_inds[TILE_SIZE];
-  unsigned char acc_hybridization[TILE_SIZE];
-  unsigned char acc_n_attached_H[TILE_SIZE];
+  unsigned char don_inds[TileSize];  //
+  unsigned char don_hvy_inds[TileSize];
+  unsigned char which_donH_for_hvy[TileSize];
+  unsigned char acc_inds[TileSize];
+  unsigned char acc_hybridization[TileSize];
+  unsigned char acc_n_attached_H[TileSize];
 };
 
 template <
@@ -212,8 +212,8 @@ void TMOL_DEVICE_FUNC water_gen_load_block_coords_and_params_into_shared(
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
     WorkgroupLane<Dev> lane = {}) {
-  // pre-condition: n_atoms_to_load < TILE_SIZE
-  // Note that TILE_SIZE is not explicitly passed in, but is "present"
+  // pre-condition: n_atoms_to_load < TileSize
+  // Note that TileSize is not explicitly passed in, but is "present"
   // in r_dat.coords allocation
 
   r_dat.n_donH = block_type_tile_n_donH[r_dat.block_type][tile_ind];
@@ -264,7 +264,7 @@ template <
     int nt,
     typename Int,
     typename Real,
-    int TILE_SIZE,
+    int TileSize,
     typename RotCoordsView,
     typename FirstRotForBlockView,
     typename FirstRotBlockTypeView,
@@ -307,7 +307,7 @@ void TMOL_DEVICE_FUNC water_gen_load_tile_invariant_data(
     int n_atoms,
 
     TMOL_THREAD WaterGenData<View, Real, Int>& water_gen_dat,
-    TMOL_SHARED_REF(WaterGenSharedData<Real, TILE_SIZE>) shared_m,
+    TMOL_SHARED_REF(WaterGenSharedData<Real, TileSize>) shared_m,
     // Unused here -- this loader reaches no workgroup primitive -- but taken
     // for uniformity with its sibling, which the same kernel body calls.
     WorkgroupLane<Dev> lane = {}) {
@@ -389,7 +389,7 @@ TMOL_DEVICE_FUNC int rot_coord_offset_for(
 // Some coordinates are available in shared memory, some we will
 // have to go out to global memory for.
 template <
-    int TILE_SIZE,
+    int TileSize,
     template <typename, int> class View,
     typename Real,
     typename Int>
@@ -414,7 +414,7 @@ TMOL_DEVICE_FUNC tmol::portable::Vec<Real, 3> load_coord(
   bool in_smem = false;
   if (bcat.block == single_res_dat.block_ind) {
     int bcat_tile_ind = bcat.atom - tile_start;
-    if (bcat_tile_ind >= 0 && bcat_tile_ind < TILE_SIZE) {
+    if (bcat_tile_ind >= 0 && bcat_tile_ind < TileSize) {
       in_smem = true;
       xyz = common::coord_from_shared(single_res_dat.coords, bcat_tile_ind);
     }
@@ -429,7 +429,7 @@ TMOL_DEVICE_FUNC tmol::portable::Vec<Real, 3> load_coord(
 }
 
 template <
-    int TILE_SIZE,
+    int TileSize,
     tmol::Device Dev,
     template <typename, int> class View,
     typename Real,
@@ -451,7 +451,7 @@ void TMOL_DEVICE_FUNC build_water_for_don(
   bonded_atom::BlockCentricAtom<Int> const D{
       res_dat.block_ind, res_dat.block_type, Dind};
 
-  Real3 Dxyz = load_coord<TILE_SIZE>(D, res_dat, context_dat, tile_start);
+  Real3 Dxyz = load_coord<TileSize>(D, res_dat, context_dat, tile_start);
 
   auto Wxyz = build_don_water<Real>::V(
       Dxyz, Hxyz, context_dat.global_params.lkb_water_dist);
@@ -463,7 +463,7 @@ void TMOL_DEVICE_FUNC build_water_for_don(
 }
 
 template <
-    int TILE_SIZE,
+    int TileSize,
     tmol::Device Dev,
     template <typename, int> class View,
     typename Real,
@@ -480,7 +480,7 @@ void TMOL_DEVICE_FUNC build_water_for_acc(
     WaterGenData<View, Real, Int> wat_gen_dat,
     int tile_start,
     int acc_ind,   // [0..n_acc)
-    int water_ind  // [0..MAX_N_WATER)
+    int water_ind  // [0..MaxNWater)
 ) {
   using Real3 = Vec<Real, 3>;
 
@@ -537,9 +537,9 @@ void TMOL_DEVICE_FUNC build_water_for_acc(
   }
 
   Real3 Bxyz =
-      load_coord<TILE_SIZE>(acc_bases.B, res_dat, context_dat, tile_start);
+      load_coord<TileSize>(acc_bases.B, res_dat, context_dat, tile_start);
   Real3 B0xyz =
-      load_coord<TILE_SIZE>(acc_bases.B0, res_dat, context_dat, tile_start);
+      load_coord<TileSize>(acc_bases.B0, res_dat, context_dat, tile_start);
 
   if (hyb == hbond::AcceptorHybridization::ring) {
     // take the bisector of the line between B and B0 to build from
@@ -559,7 +559,7 @@ void TMOL_DEVICE_FUNC build_water_for_acc(
 }
 
 template <
-    int TILE_SIZE,
+    int TileSize,
     tmol::Device Dev,
     template <typename, int> class View,
     typename Real,
@@ -583,7 +583,7 @@ void TMOL_DEVICE_FUNC d_build_water_for_don(
   int const Dind = res_dat.don_hvy_inds[don_h_ind];
   bonded_atom::BlockCentricAtom<Int> const D{
       res_dat.block_ind, res_dat.block_type, Dind};
-  Real3 Dxyz = load_coord<TILE_SIZE>(D, res_dat, context_dat, tile_start);
+  Real3 Dxyz = load_coord<TileSize>(D, res_dat, context_dat, tile_start);
 
   auto dW = build_don_water<Real>::dV(
       Dxyz, Hxyz, context_dat.global_params.lkb_water_dist);
@@ -602,7 +602,7 @@ void TMOL_DEVICE_FUNC d_build_water_for_don(
 }
 
 template <
-    int TILE_SIZE,
+    int TileSize,
     tmol::Device Dev,
     template <typename, int> class View,
     typename Real,
@@ -621,7 +621,7 @@ void TMOL_DEVICE_FUNC d_build_water_for_acc(
     WaterGenData<View, Real, Int> wat_gen_dat,
     int tile_start,
     int acc_ind,   // [0..n_acc)
-    int water_ind  // [0..MAX_N_WATER)
+    int water_ind  // [0..MaxNWater)
 ) {
   using Real3 = Vec<Real, 3>;
   auto res_dat = wat_gen_dat.r_dat;
@@ -677,9 +677,9 @@ void TMOL_DEVICE_FUNC d_build_water_for_acc(
   }
 
   Real3 Bxyz =
-      load_coord<TILE_SIZE>(acc_bases.B, res_dat, context_dat, tile_start);
+      load_coord<TileSize>(acc_bases.B, res_dat, context_dat, tile_start);
   Real3 B0xyz =
-      load_coord<TILE_SIZE>(acc_bases.B0, res_dat, context_dat, tile_start);
+      load_coord<TileSize>(acc_bases.B0, res_dat, context_dat, tile_start);
 
   if (hyb == hbond::AcceptorHybridization::ring) {
     // take the bisector of the line between B and B0 to build from

@@ -29,7 +29,7 @@ LAUNCH_BOX_32
 typedef WorkgroupLane<tmol::Device::MPS> Lane;
 typedef LKBallCtxT<tmol::portable::MetalView, float, int32_t, 4> PoseCtx;
 typedef LKBallCtxT<tmol::portable::MetalView, float, int32_t, 2> RotCtx;
-typedef LKBallSharedMem<float, TILE_SIZE, MAX_N_WATER, MAX_N_CONN, launch_t>
+typedef LKBallSharedMem<float, lk_tile_size, lk_max_n_water, lk_max_n_conn, launch_t>
     LKBallShared;
 
 #define TMOL_N_SIMDS ((launch_t::sm_ptx::nt + 31) / 32)
