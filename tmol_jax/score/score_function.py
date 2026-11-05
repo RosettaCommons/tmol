@@ -49,6 +49,7 @@ _TERM_TYPES = {
     "ref": ("RefEnergyTerm", ("ref",)),
     "genbonded": ("GenBondedEnergyTerm", ("gen_torsions",)),
     "metal": ("MetalCoordinationEnergyTerm", ("metal_coordination",)),
+    "na_torsion": ("NaTorsionEnergyTerm", ("na_torsion", "na_torsion_well")),
 }
 _TERM_FOR_TYPE = {
     ScoreType[name]: (module, class_name)
@@ -60,13 +61,6 @@ _FUSED_PAIR_TYPES = (
     ScoreType.fa_ljrep,
     ScoreType.fa_lk,
     ScoreType.fa_elec,
-)
-
-_UNIMPLEMENTED_TYPES = frozenset(
-    (
-        ScoreType.na_torsion,
-        ScoreType.na_torsion_well,
-    )
 )
 
 
@@ -110,9 +104,6 @@ class ScoreFunction:
         weight = float(weight)
         if not math.isfinite(weight):
             raise ValueError("score weights must be finite")
-        if score_type in _UNIMPLEMENTED_TYPES:
-            self._weights[score_type] = weight
-            return
         if score_type not in _TERM_FOR_TYPE:
             raise NotImplementedError(f"JAX scoring does not support {score_type.name}")
         if score_type not in self._term_for_st and weight != 0:
@@ -135,44 +126,7 @@ class ScoreFunction:
     def active_score_types(self):
         return sorted(st for st, weight in self._weights.items() if weight != 0)
 
-    def _empty_unimplemented_types(self, pose_stack):
-        """Prove term ineligibility using shared chemistry before tracing.
-
-        There are no placeholder kernels for an unsupported active term. The
-        complete requested composition is retained, including empty channels.
-        """
-        pending = set(self.active_score_types()) & _UNIMPLEMENTED_TYPES
-        if not pending:
-            return pending
-        pbt = pose_stack.packed_block_types
-        if pbt is None:
-            raise NotImplementedError(
-                "cannot establish term applicability without molecular topology"
-            )
-        indices = np.asarray(pose_stack.block_type_ind)
-        used = [pbt.active_block_types[i] for i in np.unique(indices[indices >= 0])]
-        active = {}
-        na = pending & {ScoreType.na_torsion, ScoreType.na_torsion_well}
-        if na:
-            from tmol_core.scoring.na_torsion import _block_type_params
-
-            elements = {a.name: a.element for a in self._param_db.chemical.atom_types}
-            eligible = [
-                bt.name for bt in used if _block_type_params(bt, elements)["base"] >= 0
-            ]
-            if eligible:
-                active.update({st.name: eligible for st in na})
-        if active:
-            details = "; ".join(
-                f"{name}: {', '.join(types)}" for name, types in sorted(active.items())
-            )
-            raise NotImplementedError(
-                "JAX has no implementation for active score terms (" + details + ")"
-            )
-        return pending
-
     def _setup(self, pose_stack, constraint_set=None):
-        empty_types = self._empty_unimplemented_types(pose_stack)
         if pose_stack.packed_block_types is not None:
             from tmol_jax.chemical.constants import canonical_aa_3letter
 
@@ -197,10 +151,12 @@ class ScoreFunction:
                 ScoreType.rama,
                 ScoreType.omega,
                 ScoreType.metal_coordination,
+                ScoreType.na_torsion,
+                ScoreType.na_torsion_well,
                 ScoreType.ref,
                 ScoreType.constraint,
             }
-            limited = set(self.active_score_types()) - general_terms - empty_types
+            limited = set(self.active_score_types()) - general_terms
             if unsupported and limited:
                 raise NotImplementedError(
                     "JAX terms "
@@ -212,6 +168,9 @@ class ScoreFunction:
             raise ValueError("pose coordinates must be finite before scoring setup")
         states = []
         for term in self._terms:
+            if not any(self.get_weight(st) for st in term.score_types_provided()):
+                states.append(None)
+                continue
             if ScoreType.constraint in term.score_types_provided():
                 state = term.setup_for_pose_stack(
                     pose_stack,
@@ -223,7 +182,7 @@ class ScoreFunction:
                     pose_stack, pose_stack.packed_block_types
                 )
             states.append(state)
-        return tuple(states), empty_types
+        return tuple(states)
 
     def render_whole_pose_scoring_module(
         self,
@@ -242,7 +201,7 @@ class ScoreFunction:
         channels = tuple(self.active_score_types())
         weights = dict(self._weights)
         with jax.default_device(pose_stack.coords.device):
-            states, empty_types = self._setup(pose_stack, constraint_set=constraint_set)
+            states = self._setup(pose_stack, constraint_set=constraint_set)
         terms = tuple(copy.copy(term) for term in self._terms)
         entries = tuple(
             (term, term_state)
@@ -263,7 +222,7 @@ class ScoreFunction:
         shape = pose_stack.coords.shape
 
         def evaluate(coords, fused=False):
-            energies = {st: jnp.zeros((shape[0],), coords.dtype) for st in empty_types}
+            energies = {}
             skip_entries = ()
             if fused:
                 from tmol_jax.score.ljlk import cuda

@@ -61,7 +61,9 @@ def register(target):
     return tuple(registered)
 
 
-def coordinate_energy(target, coords, parameters, *, channels=1):
+def coordinate_energy(
+    target, coords, parameters, *, channels=1, always_gradient=False, attributes=None
+):
     """First coordinate derivative from the common analytic native kernels.
 
     Outputs are independent per pose. The native value/gradient call defines a
@@ -88,11 +90,14 @@ def coordinate_energy(target, coords, parameters, *, channels=1):
             if derivative
             else shape
         )
-        return jax.ffi.ffi_call(target, results, vmap_method="sequential")(x, *args)
+        return jax.ffi.ffi_call(target, results, vmap_method="sequential")(
+            x, *args, **(attributes or {})
+        )
 
     @jax.custom_jvp
     def energy(x, *args):
-        return evaluate(x, args, False)
+        result = evaluate(x, args, always_gradient)
+        return result[0] if always_gradient else result
 
     @energy.defjvp
     def energy_jvp(primals, tangents):
@@ -127,6 +132,18 @@ def bonded_pose_arguments(pose, pbt):
             constant_values=-1,
         )
     return (*pose_arguments(pose), paths)
+
+
+def atom_downstream_of_conn(pbt):
+    """Shared downstream atom paths padded to the frontend's connection width."""
+    from tmol_core.chemical.packed import PackedBlockTypesData
+
+    paths = PackedBlockTypesData.join_atom_downstream_of_conn(pbt.active_block_types)
+    return np.pad(
+        paths,
+        ((0, 0), (0, pbt.max_n_conn - paths.shape[1]), (0, 0)),
+        constant_values=-1,
+    )
 
 
 def fit_bspline_coefficients(values):

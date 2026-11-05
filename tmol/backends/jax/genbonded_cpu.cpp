@@ -3,6 +3,7 @@
 #include "cartbonded_ffi.hh"
 #include "backbone_torsion_ffi.hh"
 #include "metal_ffi.hh"
+#include "na_torsion_ffi.hh"
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
@@ -56,12 +57,13 @@ struct CpuOps<Device::CPU> {
   }
 };
 
-template <typename Kernel>
+template <typename Kernel, typename... Attributes>
 ffi::Error run(
     ffi::ThreadPool pool,
     ffi::RemainingArgs args,
     ffi::Result<ffi::AnyBuffer> energy,
-    ffi::RemainingRets rets) {
+    ffi::RemainingRets rets,
+    Attributes... attributes) {
   auto* previous = active_pool;
   try {
     auto buffers = native_arguments(args);
@@ -81,10 +83,10 @@ ffi::Error run(
     active_pool = &pool;
     if (buffers[0].element_type() == ffi::DataType::F32) {
       Kernel::template execute<CpuOps, Device::CPU, float>(
-          buffers, *energy, gradient ? &*gradient : nullptr);
+          buffers, *energy, gradient ? &*gradient : nullptr, attributes...);
     } else {
       Kernel::template execute<CpuOps, Device::CPU, double>(
-          buffers, *energy, gradient ? &*gradient : nullptr);
+          buffers, *energy, gradient ? &*gradient : nullptr, attributes...);
     }
     active_pool = previous;
     return ffi::Error::Success();
@@ -192,3 +194,14 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets());
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_na_torsion,
+    (tmol::jax::run<tmol::jax::NaTorsionKernel, double, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<double>("pucker_temperature")
+        .Attr<double>("bin_blend_sdev"));

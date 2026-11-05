@@ -10,7 +10,15 @@ import pytest
 from tests.scientific.execution import Execution
 from tests.scientific.molecules import CASES, BACKBONE_CASES
 from tests.scientific.metal_molecules import METAL_CASES
+from tests.scientific.na_molecules import NA_CASES
+
 from tmol_jax import ScoreFunction, ScoreType
+
+_NATIVE_CASES = {
+    "rama": BACKBONE_CASES["mixed"],
+    "metal_coordination": METAL_CASES["mixed_batch"],
+    "na_torsion": NA_CASES["mixed_batch"],
+}
 
 
 @pytest.fixture(
@@ -30,6 +38,7 @@ def backend_name(request):
         ("gen_torsions",),
         ("rama", "omega"),
         ("metal_coordination",),
+        ("na_torsion", "na_torsion_well"),
         (
             "cart_lengths",
             "cart_angles",
@@ -43,15 +52,7 @@ def backend_name(request):
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_native_coordinate_transforms_and_pose_independence(dtype, backend_name, terms):
     with jax.enable_x64(dtype == np.float64):
-        case = (
-            BACKBONE_CASES["mixed"]
-            if "rama" in terms
-            else (
-                METAL_CASES["mixed_batch"]
-                if "metal_coordination" in terms
-                else CASES["mixed_batch"]
-            )
-        )
+        case = _NATIVE_CASES.get(terms[0], CASES["mixed_batch"])
         backend = Execution(backend_name).molecule(case, terms=terms)
         pose = backend.pose
         score = backend.score_function.render_whole_pose_scoring_module(pose)
@@ -150,16 +151,19 @@ def test_native_mixed_molecule_minimization_preserves_frozen_atoms(backend_name)
 
 
 @pytest.mark.parametrize(
-    "term", ["gen_torsions", "cart_lengths", "rama", "metal_coordination"]
+    "term",
+    [
+        "gen_torsions",
+        "cart_lengths",
+        "rama",
+        "metal_coordination",
+        "na_torsion",
+    ],
 )
 def test_empty_native_pose_batch_preserves_value_and_gradient_shapes(
     backend_name, term
 ):
-    case = (
-        METAL_CASES["mixed_batch"]
-        if term == "metal_coordination"
-        else BACKBONE_CASES["mixed"]
-    )
+    case = _NATIVE_CASES.get(term, BACKBONE_CASES["mixed"])
     backend = Execution(backend_name).molecule(case, terms=(term,))
     pose = backend.pose[:0]
     score = backend.score_function.render_whole_pose_scoring_module(pose)

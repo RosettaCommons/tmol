@@ -5,12 +5,12 @@ from typing import NamedTuple
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_core.chemical.packed import PackedBlockTypesData
 from tmol_core.scoring.backbone_torsion import (
     BackboneTorsionPreparation,
     prepare_backbone_tables,
 )
 from tmol_jax.score._native import (
+    atom_downstream_of_conn,
     coordinate_energy,
     fit_bspline_coefficients,
     pose_arguments,
@@ -46,22 +46,13 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
             omega.bbdep_omega_tables,
             fit_bspline_coefficients,
         )
-        downstream = PackedBlockTypesData.join_atom_downstream_of_conn(
-            pbt.active_block_types
-        )
-        if downstream.shape[1] < pbt.max_n_conn:
-            downstream = np.pad(
-                downstream,
-                ((0, 0), (0, pbt.max_n_conn - downstream.shape[1]), (0, 0)),
-                constant_values=-1,
-            )
         register("tmol_backbone_torsion")
         return BackboneTorsionTermState(
             tuple(
                 jnp.asarray(a)
                 for a in (
                     *pose_arguments(pose_stack),
-                    downstream,
+                    atom_downstream_of_conn(pbt),
                     *(
                         host[name]
                         for name in (

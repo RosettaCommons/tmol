@@ -24,8 +24,8 @@ def test_preset_keeps_every_declared_weight():
 @pytest.mark.parametrize(
     "name,term",
     [
-        ("dna", "na_torsion"),
-        ("rna", "na_torsion_well"),
+        ("dna", "hbond"),
+        ("rna", "dunbrack_rot"),
     ],
 )
 def test_unsupported_active_science_rejects_before_tracing(name, term):

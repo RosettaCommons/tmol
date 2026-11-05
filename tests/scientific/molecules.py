@@ -116,6 +116,9 @@ DOMAIN_CASES = {
     "d_peptide": MolecularCase((), (("DALA", "DPRO", "DVAL"),), ((3,),)),
     "dna": MolecularCase((), (("DA", "DC"),), ((2,),)),
     "rna": MolecularCase((), (("RA", "RC"),), ((2,),)),
+    "modified_dna": MolecularCase(
+        ("ligand_params/noncanonical_dna.tmol",), (("DA", "5CM", "DG"),), ((3,),)
+    ),
     "metal_mixed": MolecularCase((), (("HIS", "ASP", "ZN_tetrahedral"),), ((1, 1, 1),)),
     "metal_cluster": MolecularCase((), (("SF4",),), ((1,),)),
 }

@@ -4,6 +4,7 @@
 #include "cartbonded_ffi.hh"
 #include "backbone_torsion_ffi.hh"
 #include "metal_ffi.hh"
+#include "na_torsion_ffi.hh"
 
 namespace tmol::jax {
 namespace {
@@ -54,12 +55,13 @@ void check_cuda(cudaError_t error) {
   if (error != cudaSuccess) throw std::runtime_error(cudaGetErrorString(error));
 }
 
-template <typename Kernel>
+template <typename Kernel, typename... Attributes>
 ffi::Error run(
     cudaStream_t stream,
     ffi::RemainingArgs args,
     ffi::Result<ffi::AnyBuffer> energy,
-    ffi::RemainingRets rets) {
+    ffi::RemainingRets rets,
+    Attributes... attributes) {
   auto previous = active_stream;
   try {
     auto buffers = native_arguments(args);
@@ -81,10 +83,10 @@ ffi::Error run(
     active_stream = stream;
     if (buffers[0].element_type() == ffi::DataType::F32) {
       Kernel::template execute<CudaOps, Device::CUDA, float>(
-          buffers, *energy, gradient ? &*gradient : nullptr);
+          buffers, *energy, gradient ? &*gradient : nullptr, attributes...);
     } else {
       Kernel::template execute<CudaOps, Device::CUDA, double>(
-          buffers, *energy, gradient ? &*gradient : nullptr);
+          buffers, *energy, gradient ? &*gradient : nullptr, attributes...);
     }
     active_stream = previous;
     check_cuda(cudaPeekAtLastError());
@@ -133,3 +135,14 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets());
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_na_torsion,
+    (tmol::jax::run<tmol::jax::NaTorsionKernel, double, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<double>("pucker_temperature")
+        .Attr<double>("bin_blend_sdev"));

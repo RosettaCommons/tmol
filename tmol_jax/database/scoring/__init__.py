@@ -36,6 +36,7 @@ from tmol_core.database.generated import (
 )
 
 from tmol_core.database.metal_coordination import MetalCoordinationDatabase
+from tmol_core.database.na_torsion import NaTorsionDatabase
 
 from .cartbonded import CartBondedDatabase
 from .disulfide import DisulfideDatabase
@@ -64,6 +65,7 @@ class ScoringDatabase:
     disulfide: DisulfideDatabase
     omega_bbdep: OmegaBBDepDatabase
     metal_coordination: MetalCoordinationDatabase
+    na_torsion: NaTorsionDatabase
 
     @classmethod
     def from_file(cls, path: Optional[str] = None) -> "ScoringDatabase":
@@ -79,6 +81,9 @@ class ScoringDatabase:
         path = os.path.abspath(path)
 
         return cls(
+            na_torsion=NaTorsionDatabase.from_file(
+                os.path.join(path, "na_torsion.yaml")
+            ),
             metal_coordination=MetalCoordinationDatabase.from_file(
                 os.path.join(path, "metal_coordination.yaml")
             ),
@@ -118,6 +123,7 @@ __all__ = [
     "HBondDatabase",
     "LJLKDatabase",
     "MetalCoordinationDatabase",
+    "NaTorsionDatabase",
     "OmegaBBDepDatabase",
     "RamaDatabase",
     "RefDatabase",
