@@ -76,102 +76,25 @@ class InterBlockBondsep:
         """Shortest paths below the cap between ``[pose, block, conn]`` connections, one
         bond per ``connections`` partner (-1: none) plus ``intra_separation`` in a block.
         """
-        n_poses, max_n_blocks, max_n_conn = connections.shape[:3]
-        device = connections.device
-        block_counts = counts.flatten().to(torch.int64)
-        node_start = torch.cumsum(block_counts, 0) - block_counts
-        n_nodes = int(block_counts.sum())
-        conn = torch.arange(max_n_conn, dtype=torch.int64, device=device)
-        real = conn < counts[..., None]
-        pose, block, conn1, conn2 = torch.nonzero(
-            real[..., :, None] & real[..., None, :], as_tuple=True
-        )
-        first = node_start[pose * max_n_blocks + block]
-        intra_key = (first + conn1) * n_nodes + first + conn2
-        intra_weight = intra_separation[pose, block, conn1, conn2].to(torch.int32)
-        pose, block, conn1 = torch.nonzero(connections[..., 0] != -1, as_tuple=True)
-        partner = connections[pose, block, conn1]
-        inter_key = (node_start[pose * max_n_blocks + block] + conn1) * n_nodes + (
-            node_start[pose * max_n_blocks + partner[:, 0]] + partner[:, 1]
+        from tmol_core.pose.bond_separation import bondseparation_from_graph
+
+        prepared = bondseparation_from_graph(
+            counts.numpy(force=True),
+            intra_separation.numpy(force=True),
+            connections.numpy(force=True),
         )
 
-        edge_key, edge_of_key = torch.unique(
-            torch.cat((intra_key, inter_key)), sorted=True, return_inverse=True
-        )
-        edge_weight = torch.empty(edge_key.shape, dtype=torch.int32, device=device)
-        edge_weight[edge_of_key[: intra_key.shape[0]]] = intra_weight
-        edge_weight[edge_of_key[intra_key.shape[0] :]] = 1
-        edge_src = torch.div(edge_key, n_nodes, rounding_mode="floor")
-        edge_dst = edge_key % n_nodes
-        out_degree = torch.bincount(edge_src, minlength=n_nodes)
-        out_start = torch.cumsum(out_degree, 0) - out_degree
+        def tensor(array):
+            value = torch.from_numpy(array)
+            if not array.size:
+                return torch.empty(
+                    array.shape, dtype=value.dtype, device=connections.device
+                )
+            return value.to(connections.device)
 
-        # extend every path improved in the last round by one edge, until none improves
-        best_key, best_sep = edge_key, edge_weight
-        front_src, front_node, front_sep = edge_src, edge_dst, edge_weight
-        while front_src.shape[0] > 0:
-            n_out = out_degree[front_node]
-            path = torch.repeat_interleave(
-                torch.arange(front_src.shape[0], device=device), n_out
-            )
-            path_start = torch.cumsum(n_out, 0) - n_out
-            edge = out_start[front_node][path] + (
-                torch.arange(path.shape[0], device=device) - path_start[path]
-            )
-            sep = front_sep[path] + edge_weight[edge]
-            short = sep < MAX_SIG_BOND_SEPARATION
-            cand_key = front_src[path][short] * n_nodes + edge_dst[edge][short]
-
-            merged_key, merged_of = torch.unique(
-                torch.cat((best_key, cand_key)), sorted=True, return_inverse=True
-            )
-            merged_sep = torch.full(
-                merged_key.shape,
-                MAX_SIG_BOND_SEPARATION,
-                dtype=torch.int32,
-                device=device,
-            ).scatter_reduce(0, merged_of, torch.cat((best_sep, sep[short])), "amin")
-            previous = torch.full_like(merged_sep, MAX_SIG_BOND_SEPARATION)
-            previous[merged_of[: best_key.shape[0]]] = best_sep
-            improved = merged_sep < previous
-            best_key, best_sep = merged_key, merged_sep
-            front_src = torch.div(merged_key[improved], n_nodes, rounding_mode="floor")
-            front_node = merged_key[improved] % n_nodes
-            front_sep = merged_sep[improved]
-
-        node_row = torch.repeat_interleave(
-            torch.arange(block_counts.shape[0], device=device), block_counts
+        return cls(
+            near_blocks=tensor(prepared.near_blocks), bondsep=tensor(prepared.bondsep)
         )
-        node_conn = torch.arange(n_nodes, device=device) - node_start[node_row]
-        src = torch.div(best_key, n_nodes, rounding_mode="floor")
-        dst = best_key % n_nodes
-        # node_row is pose * max_n_blocks + block; one slot per (row, block2)
-        n_rows = n_poses * max_n_blocks
-        pair_key, pair_of_entry = torch.unique(
-            node_row[src] * max_n_blocks + node_row[dst] % max_n_blocks,
-            sorted=True,
-            return_inverse=True,
-        )
-        pair_row = torch.div(pair_key, max_n_blocks, rounding_mode="floor")
-        row_len = torch.bincount(pair_row, minlength=n_rows)
-        n_slots = int(row_len.max()) + 1 if n_rows else 1
-        row_start = torch.cumsum(row_len, 0) - row_len
-        pair_slot = (
-            torch.arange(pair_key.shape[0], dtype=torch.int64, device=device)
-            - row_start[pair_row]
-        )
-
-        result = cls.empty(n_poses, max_n_blocks, max_n_conn, device, n_slots)
-        near_blocks = result.near_blocks.view(n_rows, n_slots, 2)
-        bondsep = result.bondsep.view(n_rows, n_slots, max_n_conn, max_n_conn)
-        near_blocks[pair_row, pair_slot, 0] = (pair_key % max_n_blocks).to(torch.int32)
-        entry_row, entry_slot = pair_row[pair_of_entry], pair_slot[pair_of_entry]
-        bondsep[entry_row, entry_slot, node_conn[src], node_conn[dst]] = best_sep.to(
-            torch.int8
-        )
-        if max_n_conn > 0:
-            near_blocks[..., 1] = torch.amin(bondsep, dim=(2, 3)).to(torch.int32)
-        return result
 
     @classmethod
     def concatenate(
