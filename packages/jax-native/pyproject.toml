@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "tmol-jax-native"
 dynamic = ["version", "dependencies"]
 description = "CPU and optional CUDA execution bindings for shared TMol scientific kernels"
-license = "BSD-3-Clause AND Apache-2.0 AND BSD-2-Clause"
-license-files = ["LICENSE", "NOTICE", "licenses/*"]
+license = "BSD-3-Clause AND Apache-2.0 AND MPL-2.0 AND BSD-2-Clause AND 0BSD"
+license-files = ["LICENSE", "NOTICE", "licenses/*", "licenses/Eigen/*"]
 requires-python = ">=3.12"
 
 [project.urls]
