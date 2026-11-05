@@ -4,6 +4,8 @@ Tables belong to their parameter-database owner. Each lookup returns a fresh
 NumPy array; frontends own device materialization and topology-aware caching.
 """
 
+import math
+
 from collections.abc import Mapping
 from typing import TypeAlias
 
@@ -122,3 +124,59 @@ def representative_mapping_for_block(block_type, cp_reps: CountPairTable) -> np.
                 mapping[atom_to_idx[inner]] = atom_to_idx[outer]
             break
     return mapping
+
+
+def native_elec_global_parameters(parameters):
+    """Pack dielectric and cutoff-spline constants in native field order."""
+    D = float(parameters.elec_sigmoidal_die_D)
+    D0 = float(parameters.elec_sigmoidal_die_D0)
+    S = float(parameters.elec_sigmoidal_die_S)
+    min_dis = float(parameters.elec_min_dis)
+    max_dis = float(parameters.elec_max_dis)
+
+    def eps(dist):
+        return D - 0.5 * (D - D0) * (2 + 2 * dist * S + dist * dist * S * S) * math.exp(
+            -dist * S
+        )
+
+    def deps(dist):
+        return 0.5 * (D - D0) * dist * dist * S * S * S * math.exp(-dist * S)
+
+    eps_at_cutoff = eps(max_dis)
+    cutoff_offset = 322.0637 / (max_dis * eps_at_cutoff)
+    min_score = 322.0637 / (min_dis * eps(min_dis)) - cutoff_offset
+
+    low_end = min_dis + 0.25
+    low_eps = eps(low_end)
+    low_score = 322.0637 / (low_end * low_eps) - cutoff_offset
+    low_deriv = (
+        -322.0637
+        * (low_eps + low_end * deps(low_end))
+        / (low_end * low_end * low_eps * low_eps)
+    )
+
+    high_start = max_dis - 1.0
+    high_eps = eps(high_start)
+    high_score = 322.0637 / (high_start * high_eps) - cutoff_offset
+    high_deriv = (
+        -322.0637
+        * (high_eps + high_start * deps(high_start))
+        / (high_start * high_start * high_eps * high_eps)
+    )
+
+    return np.asarray(
+        [
+            D,
+            D0,
+            S,
+            min_dis,
+            max_dis,
+            cutoff_offset,
+            min_score,
+            low_score,
+            low_deriv,
+            high_score,
+            high_deriv,
+        ],
+        dtype=np.float32,
+    )[None, :]
