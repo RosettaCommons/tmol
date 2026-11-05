@@ -6,19 +6,37 @@ import numpy as np
 import pytest
 
 from .kinematics import MolecularKinematicExecution, MOLECULAR_KINEMATIC_TERMS
-from .molecules import DOMAIN_CASES
+from .molecules import BACKBONE_CASES, DOMAIN_CASES
+from .dunbrack_molecules import DUNBRACK_CASES
+from .na_molecules import NA_CASES
+from .metal_molecules import METAL_CASES
+
+KINEMATIC_CASES = {
+    name: (case, MOLECULAR_KINEMATIC_TERMS) for name, case in DOMAIN_CASES.items()
+}
+KINEMATIC_CASES.update(
+    backbone_variants=(BACKBONE_CASES["variants"], ("omega", "rama")),
+    dunbrack_d_peptide=(
+        DUNBRACK_CASES["d_peptide"],
+        ("dunbrack_rot", "dunbrack_rotdev", "dunbrack_semirot"),
+    ),
+    dunbrack_mixed=(
+        DUNBRACK_CASES["mixed_batch"],
+        ("dunbrack_rot", "dunbrack_rotdev", "dunbrack_semirot"),
+    ),
+    nucleic_modified=(NA_CASES["methylcytosine"], ("na_torsion", "na_torsion_well")),
+    coordination_bridge=(METAL_CASES["bridging_donor"], ("metal_coordination",)),
+)
 
 
-@pytest.mark.parametrize("case_name", DOMAIN_CASES)
+@pytest.mark.parametrize("case_name", KINEMATIC_CASES)
 def test_molecular_coordinate_mapping_and_term_gradients(backend, case_name):
     context = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
     )
     with context:
-        backend.molecule(
-            DOMAIN_CASES[case_name],
-            terms=MOLECULAR_KINEMATIC_TERMS,
-        )
+        case, terms = KINEMATIC_CASES[case_name]
+        backend.molecule(case, terms=terms)
         coordinates = backend.coords().astype(np.float64)
         # Padding deliberately contains a recognizable value and must survive.
         pbt = backend.pose.packed_block_types
