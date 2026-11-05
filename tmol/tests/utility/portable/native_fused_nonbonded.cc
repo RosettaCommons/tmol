@@ -2,7 +2,62 @@
 #include <tmol/score/na_torsion/potentials/na_torsion_pose_kernels.hh>
 #include <tmol/score/cartbonded/potentials/cartbonded_pose_kernels.hh>
 #include <algorithm>
-int main() { return 0; }
+#include <cassert>
+#include <vector>
+template <typename Real>
+struct PairData {
+  struct Residue {
+    int n_atoms;
+  } r1, r2;
+};
+int main() {
+  using namespace tmol::score::common;
+  // Partitioning lanes must visit every actual atom pair exactly once, also
+  // across partial tiles and the intra-residue diagonal.
+  for (int shards : {1, 4, 16})
+    for (bool intra : {false, true}) {
+      PairData<double> data{{52}, {52}};
+      std::vector<int> visits(52 * 52, 0);
+      auto pair = [&](int s1, int s2, int a1, int a2, PairData<double> const&) {
+        ++visits[(s1 + a1) * 52 + s2 + a2];
+        return tmol::portable::array<double, 1>{1.0};
+      };
+      for (int s1 : {0, 32})
+        for (int s2 : {0, 32})
+          for (int shard = 0; shard < shards; ++shard)
+            for (int lane = 0; lane < 32; ++lane) {
+              int const tid = shard * 32 + lane;
+              if (intra)
+                IntraResBlockEvaluation<
+                    PairData,
+                    AllAtomPairSelector,
+                    tmol::Device::CPU,
+                    32,
+                    32,
+                    1,
+                    double,
+                    int>::
+                    eval_intrares_atom_pairs(
+                        tid, s1, s2, pair, data, 32 * shards);
+              else
+                InterResBlockEvaluation<
+                    PairData,
+                    AllAtomPairSelector,
+                    tmol::Device::CPU,
+                    32,
+                    32,
+                    1,
+                    double,
+                    int>::
+                    eval_interres_atom_pair(
+                        tid, s1, s2, pair, data, 32 * shards);
+            }
+      for (int i = 0; i < 52; ++i)
+        for (int j = 0; j < 52; ++j)
+          assert(visits[i * 52 + j] == int(!intra || i < j));
+    }
+  return 0;
+}
 template <tmol::Device D>
 struct SerialOps {
   template <int nt, class F>
