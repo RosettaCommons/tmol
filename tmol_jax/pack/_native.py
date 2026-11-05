@@ -1,5 +1,8 @@
 """Eager CPU execution of the common dynamically sized chi sampler."""
 
+import ctypes
+from functools import lru_cache
+
 import jax
 import numpy as np
 
@@ -48,18 +51,9 @@ _INT64_TABLES = {
 }
 
 
-def sample_chi_cpu(tables, coordinates, *request, max_samples_per_restype=0):
-    """Execute prepared native inputs; pose/task preparation is a separate API.
-
-    Sampling has dynamic output cardinality and is not differentiable or jittable.
-    CUDA execution requires the shared staged workspace API; it never falls back
-    silently to host execution here.
-    """
+def _sampling_inputs(tables, coordinates, request):
     if isinstance(coordinates, jax.core.Tracer):
         raise TypeError("dynamic chi sampling requires eager coordinates")
-    device = coordinates.device if isinstance(coordinates, jax.Array) else None
-    if device is not None and device.platform != "cpu":
-        raise NotImplementedError("native dynamic chi sampling currently requires CPU")
     coordinates = np.asarray(coordinates)
     if coordinates.dtype not in (np.dtype("float32"), np.dtype("float64")):
         raise TypeError("sampling coordinates must be float32 or float64")
@@ -86,12 +80,112 @@ def sample_chi_cpu(tables, coordinates, *request, max_samples_per_restype=0):
         array(tables.sampling_db[name], name in _INT64_TABLES)
         for name in _TABLE_ARGUMENTS
     )
-    result = invoke(
-        12,
-        coordinates,
-        *arguments,
-        *(array(value) for value in request),
-        max_samples_per_restype,
-    )
+    return coordinates, arguments, tuple(array(value) for value in request)
+
+
+def sample_chi_cpu(tables, coordinates, *request, max_samples_per_restype=0):
+    """Eager CPU sampling of prepared requests with dynamic output cardinality."""
+    device = coordinates.device if isinstance(coordinates, jax.Array) else None
+    if device is not None and device.platform != "cpu":
+        raise ValueError("sample_chi_cpu requires CPU coordinates; use sample_chi")
+    coordinates, arguments, request = _sampling_inputs(tables, coordinates, request)
+    result = invoke(12, coordinates, *arguments, *request, max_samples_per_restype)
     device = device or jax.devices("cpu")[0]
     return tuple(jax.device_put(value, device) for value in result)
+
+
+@lru_cache(maxsize=1)
+def _cuda_sampling():
+    from tmol_jax.score._native import libraries
+
+    library = libraries().get("cuda")
+    if library is None:
+        raise RuntimeError("CUDA chi sampling requires the native CUDA adapter")
+    for target in ("tmol_sampling_plan", "tmol_sampling_emit"):
+        try:
+            symbol = getattr(library, target)
+        except AttributeError as error:
+            raise RuntimeError(
+                "native CUDA sampler missing; rebuild matching artifacts"
+            ) from error
+        jax.ffi.register_ffi_target(target, jax.ffi.pycapsule(symbol), platform="CUDA")
+    size = library.tmol_sampling_workspace_bytes
+    size.argtypes = [ctypes.c_int64, ctypes.c_int64, ctypes.c_int, ctypes.c_int]
+    size.restype = ctypes.c_uint64
+    return size
+
+
+def sample_chi(tables, coordinates, *request, max_samples_per_restype=0):
+    """Execute common sampling on the coordinates' device, without host fallback.
+
+    Dynamic counts require an eager device-to-host allocation barrier. Sampling
+    is discrete, so jit/vmap/autodiff are not defined for this interface.
+    Table int64 metadata is transported as opaque bytes even when JAX x64 is off.
+    """
+    if isinstance(coordinates, jax.core.Tracer):
+        raise TypeError("dynamic chi sampling requires eager coordinates")
+    device = coordinates.device if isinstance(coordinates, jax.Array) else None
+    if device is None or device.platform == "cpu":
+        return sample_chi_cpu(
+            tables,
+            coordinates,
+            *request,
+            max_samples_per_restype=max_samples_per_restype,
+        )
+    if device.platform != "gpu":
+        raise NotImplementedError("chi sampling supports native CPU and CUDA")
+    # Host request preparation is explicit; coordinates remain the device input
+    # to the canonical geometry kernel, never a CPU sampling result.
+    if coordinates.dtype not in (np.dtype("float32"), np.dtype("float64")):
+        raise TypeError("sampling coordinates must be float32 or float64")
+    dummy = np.empty((0, 3), coordinates.dtype)
+    _, all_tables, prepared_request = _sampling_inputs(tables, dummy, request)
+    if len(prepared_request) != 9:
+        raise ValueError("native sampling requires nine prepared request arrays")
+    counts, offsets, dimensions = invoke(
+        13,
+        prepared_request[3],
+        all_tables[_TABLE_ARGUMENTS.index("n_rotamers_for_tableset")],
+        prepared_request[8],
+    )
+    possible, width = map(int, dimensions)
+    ntypes, nblocks = len(counts), len(prepared_request[0])
+    size = _cuda_sampling()
+
+    def workspace(count, emit):
+        nbytes = size(count, ntypes, coordinates.dtype.itemsize * 8, emit)
+        if nbytes == (1 << 64) - 1:
+            raise ValueError("invalid sampling workspace extent")
+        return jax.ShapeDtypeStruct((nbytes,), np.uint8)
+
+    def put(value):
+        value = np.ascontiguousarray(value)
+        if value.dtype == np.int64:
+            value = value.view(np.uint8).reshape(value.shape + (8,))
+        return jax.device_put(value, device)
+
+    active = all_tables[:13] + all_tables[23:27]
+    inputs = (coordinates,) + tuple(map(put, active + prepared_request))
+    shape = jax.ShapeDtypeStruct
+    plan_shapes = (
+        shape((2 * nblocks,), coordinates.dtype),
+        shape((ntypes,), np.int32),
+        shape((ntypes, width), np.int32),
+        shape((ntypes,), np.int32),
+    )
+    with jax.default_device(device):
+        plan = jax.ffi.ffi_call(
+            "tmol_sampling_plan", plan_shapes + (workspace(possible, 0),)
+        )(*inputs, put(counts), put(offsets), count=np.int64(possible))[:4]
+        host_counts = np.asarray(jax.device_get(plan[3]))
+        host_offsets, total = invoke(14, host_counts, max_samples_per_restype)
+        count = int(total[0])
+        identities, chi, _ = jax.ffi.ffi_call(
+            "tmol_sampling_emit",
+            (
+                shape((count,), np.int32),
+                shape((count, width), coordinates.dtype),
+                workspace(count, 1),
+            ),
+        )(*inputs, *plan, put(host_offsets), count=np.int64(count))
+    return plan[3], put(host_offsets), identities, chi

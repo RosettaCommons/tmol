@@ -104,7 +104,7 @@ def invoke(operation, *arguments):
             scalars.append(value)
             continue
         array, scalar_type = _prepare_array(
-            argument, operation in (11, 12), preserve_int64=operation == 12
+            argument, operation in (11, 12), preserve_int64=operation in (12, 13)
         )
         arrays.append(array)  # Keep input memory alive throughout the native call.
         records.append(

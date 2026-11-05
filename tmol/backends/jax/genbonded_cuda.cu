@@ -16,6 +16,7 @@
 #include "constraint_torsion_ffi.hh"
 #include "kinematics_ffi.hh"
 #include "forward_kinematics_ffi.hh"
+#include "sampling_ffi.hh"
 
 namespace tmol::jax {
 namespace {
@@ -122,6 +123,89 @@ struct CudaOps<Device::CUDA> {
         threadIdx.x, value, shared.reduce, N, op);
   }
 };
+
+// Sampling reuses the canonical segmented scan for both segmented sums and
+// the single-segment maximum. XLA owns scratch, and every launch uses its
+// stream.
+template <Device D>
+struct SamplingCudaOps : CudaOps<D> {
+  template <portable::scan_type Scan, typename T, typename I, typename Op>
+  static void segmented_scan_into(
+      SamplingContext& context,
+      T* source,
+      I* starts,
+      T* dest,
+      int count,
+      int segments,
+      Op op,
+      T identity,
+      score::common::SegmentedScanWorkspace<T, D> workspace) {
+    score::common::segmented_scan_into_cuda<Scan>(
+        context.execution,
+        source,
+        starts,
+        dest,
+        count,
+        segments,
+        op,
+        identity,
+        workspace);
+  }
+  template <portable::scan_type Scan, typename Op>
+  static void scan(
+      SamplingContext& context,
+      int32_t* source,
+      int32_t* dest,
+      int count,
+      Op op) {
+    static_assert(Scan == portable::scan_type::inclusive);
+    segmented_scan_into<Scan>(
+        context,
+        source,
+        context.starts,
+        dest,
+        count,
+        1,
+        op,
+        int32_t(0),
+        context.scan_workspace);
+  }
+};
+
+template <bool Emit>
+ffi::Error run_sampling(
+    cudaStream_t stream,
+    ffi::RemainingArgs arguments,
+    ffi::Result<ffi::AnyBuffer> first,
+    ffi::RemainingRets remaining,
+    int64_t count) {
+  try {
+    active_stream = stream;
+    auto inputs = native_arguments(arguments);
+    std::vector<ffi::AnyBuffer> outputs{*first};
+    for (size_t i = 0; i < remaining.size(); ++i) {
+      auto result = remaining.get<ffi::AnyBuffer>(i);
+      if (!result)
+        throw std::invalid_argument("sampling output is not a buffer");
+      outputs.push_back(**result);
+    }
+    if (inputs.empty()) throw std::invalid_argument("missing sampling inputs");
+    if (inputs[0].element_type() == ffi::DataType::F32)
+      execute_sampling<SamplingCudaOps, float, Emit>(
+          stream, inputs, outputs, count);
+    else if (inputs[0].element_type() == ffi::DataType::F64)
+      execute_sampling<SamplingCudaOps, double, Emit>(
+          stream, inputs, outputs, count);
+    else
+      throw std::invalid_argument("sampling coordinates require float32/64");
+    auto status = cudaGetLastError();
+    if (status != cudaSuccess)
+      throw std::runtime_error(cudaGetErrorString(status));
+    return ffi::Error::Success();
+  } catch (const std::exception& error) {
+    return ffi::Error::InvalidArgument(error.what());
+  }
+}
 
 // Sparse whole-pose Dunbrack work otherwise occupies a single CUDA block.
 // Keep its independent residue evaluations on separate SM workgroups; the
@@ -444,3 +528,35 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets());
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_sampling_plan,
+    tmol::jax::run_sampling<false>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<int64_t>("count"));
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_sampling_emit,
+    tmol::jax::run_sampling<true>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<int64_t>("count"));
+extern "C" uint64_t tmol_sampling_workspace_bytes(
+    int64_t count, int64_t segments, int bits, int emit) {
+  try {
+    if (bits == 32)
+      return tmol::jax::SamplingWorkspace<float>(count, segments, emit)
+          .storage.size_bytes();
+    if (bits == 64)
+      return tmol::jax::SamplingWorkspace<double>(count, segments, emit)
+          .storage.size_bytes();
+  } catch (...) {
+  }
+  return UINT64_MAX;
+}

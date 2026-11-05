@@ -51,6 +51,32 @@ auto host_inverse_kinematics(
       result.view);
   return result;
 }
+// Only array ownership/transport is local; layout and budget semantics are
+// shared.
+inline auto sampling_host_layout(
+    ContextManager&,
+    TView<int32_t, 2, Device::CPU> types,
+    TView<int64_t, 1, Device::CPU> library_counts,
+    TView<int32_t, 1, Device::CPU> chi_counts) {
+  auto layout = pack::rotamer::dunbrack::prepare_dunbrack_sampling_layout(
+      types, library_counts, chi_counts);
+  auto dimensions = OwnedHostTensor<int32_t, 1, Device::CPU>::empty({2});
+  dimensions.view[0] = layout.n_possible_rotamers;
+  dimensions.view[1] = layout.max_n_chi;
+  return std::make_tuple(
+      layout.possible_counts, layout.possible_offsets, dimensions);
+}
+inline auto sampling_host_offsets(
+    ContextManager& context,
+    TView<int32_t, 1, Device::CPU> counts,
+    int64_t budget) {
+  auto offsets =
+      OwnedHostTensor<int32_t, 1, Device::CPU>::empty({counts.size(0)});
+  auto total = OwnedHostTensor<int32_t, 1, Device::CPU>::empty({1});
+  total.view[0] = pack::rotamer::dunbrack::HostDunbrackSampling<
+      float>::checked_sample_offsets(context, counts, offsets.view, budget);
+  return std::make_tuple(offsets, total);
+}
 }  // namespace tmol::jax
 
 extern "C" size_t tmol_kinematic_host_array_size() {
@@ -125,6 +151,14 @@ extern "C" int tmol_kinematic_host_prepare(
         else
           throw std::invalid_argument(
               "sampling coordinates must be float32/64");
+        break;
+      case 13:
+        tmol::jax::invoke_host(
+            &tmol::jax::sampling_host_layout, context, inputs, *output);
+        break;
+      case 14:
+        tmol::jax::invoke_host(
+            &tmol::jax::sampling_host_offsets, context, inputs, *output);
         break;
       default:
         throw std::invalid_argument("unknown native pose operation");
