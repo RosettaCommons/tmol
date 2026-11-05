@@ -172,3 +172,9 @@ def test_dihedral_precision_near_planar_geometry(tmp_path):
 def test_bspline_coefficient_preparation_needs_no_framework(tmp_path):
     proc = _compile(HERE / "native_bspline_coeffs.cc", tmp_path / "coefficients", run=True)
     assert proc.returncode == 0, proc.stderr
+
+
+@requires_cxx
+def test_whole_pose_metal_needs_no_framework(tmp_path):
+    proc = _compile(HERE / "native_metal.cc", tmp_path / "metal", run=True)
+    assert proc.returncode == 0, proc.stderr

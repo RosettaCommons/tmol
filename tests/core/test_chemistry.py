@@ -115,6 +115,10 @@ from tmol_core.chemical.packed import PackedBlockTypesData
 import tmol_core.scoring.elec
 import tmol_core.scoring.genbonded, tmol_core.scoring.count_pair
 import tmol_core.scoring.atom_types, tmol_core.scoring.ljlk, tmol_core.scoring.hbond
+from tmol_core.chemical.metal_donors import _metal_donor_patch
+patch = _metal_donor_patch("HIS", "NE2", 2)
+assert [c.name for c in patch.add_connections] == ["metal_NE2", "metal2_NE2"]
+assert all(not c.kinematic for c in patch.add_connections)
 import tmol_core.scoring.metal, tmol_core.database.metal_coordination
 import tmol_core.scoring.backbone_torsion
 import tmol_core.scoring.cartbonded, tmol_core.scoring.cartbonded_connections, tmol_core.scoring.atom_ids

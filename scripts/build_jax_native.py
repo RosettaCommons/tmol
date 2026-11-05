@@ -33,6 +33,7 @@ def stage_native(root, stage, source_revision=None):
         "score/genbonded/potentials",
         "score/cartbonded/potentials",
         "score/backbone_torsion/potentials",
+        "score/metal/potentials",
         "utility/portable",
         "utility/tensor",
         "numeric",
