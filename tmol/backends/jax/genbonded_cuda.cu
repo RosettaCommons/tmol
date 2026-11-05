@@ -11,6 +11,7 @@
 #include "nonbonded_ffi.hh"
 #include "independent_nonbonded_ffi.hh"
 #include "constraint_torsion_ffi.hh"
+#include "kinematics_ffi.hh"
 
 namespace tmol::jax {
 namespace {
@@ -369,4 +370,14 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets()
         .Attr<double>("reach"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_inverse_kinematics,
+    tmol::jax::run<tmol::jax::InverseKinematicsKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets(),
     {xla::ffi::Traits::kCmdBufferCompatible});

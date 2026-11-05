@@ -9,6 +9,7 @@
 #include "nonbonded_ffi.hh"
 #include "independent_nonbonded_ffi.hh"
 #include "constraint_torsion_ffi.hh"
+#include "kinematics_ffi.hh"
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
@@ -390,6 +391,30 @@ extern "C" uint64_t tmol_elec_workspace_bytes(
                       : tmol::jax::IndependentNonbondedWorkspace<double, true>(
                             poses, blocks)
                             .storage.size_bytes();
+  } catch (...) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_inverse_kinematics,
+    tmol::jax::run<tmol::jax::InverseKinematicsKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets());
+
+extern "C" uint64_t tmol_inverse_kinematics_workspace_bytes(
+    int64_t nodes, int bits, int) {
+  try {
+    if (bits != 32 && bits != 64)
+      throw std::invalid_argument("invalid kinematic workspace precision");
+    return bits == 32
+               ? tmol::jax::InverseKinematicsKernel::workspace_bytes<float>(
+                     nodes)
+               : tmol::jax::InverseKinematicsKernel::workspace_bytes<double>(
+                     nodes);
   } catch (...) {
     return std::numeric_limits<uint64_t>::max();
   }
