@@ -14,11 +14,13 @@ from tmol.tests.data import data_path
 from tmol.pose import repeat_pose_stack
 
 
+@pytest.mark.parametrize("ligand", ["dock_ring_ether", "dock_ring_phenol"])
 @pytest.mark.parametrize("n_poses", [1, 4])
-def test_ring_adjacent_torsions_preserve_geometry(torch_device, n_poses):
-    # Ligand-only 1nav geometry reproduces the jump-stub/ring interaction;
-    # regenerating its conformer changes the chosen root and hides the failure.
-    path = data_path("protein_ligand_test/dock_ring_ether.mol2")
+def test_ring_adjacent_torsions_preserve_geometry(torch_device, n_poses, ligand):
+    # Preserve the input conformers: changing the jump stub can hide the bug.
+    # The ether (1nav) fails declared-chi isolation with its old controller;
+    # the phenol (1of6) passes that guard while its old control tears the ring.
+    path = data_path(f"protein_ligand_test/{ligand}.mol2")
     info = nonstandard_residue_info_from_mol2(path, res_name="LG1")
     database, _ = prepare_ligand_from_mol2(path, res_name="LG1", mode="keep")
     pose = pose_stack_from_atom_array(

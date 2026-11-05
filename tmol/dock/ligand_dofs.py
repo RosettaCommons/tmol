@@ -291,7 +291,7 @@ def _sidechain_end_local_atoms(
 def _ligand_controller_preserves_components(
     block_type, local_parents, torsion_atoms, raw_atom, dof_type
 ):
-    """Check whole chemical components using the repair's shared host topology."""
+    """Check whether a control rotates one complete chemical component."""
     _, atom_b, atom_c, _ = torsion_atoms
     component = set(
         _sidechain_end_local_atoms(
@@ -322,9 +322,8 @@ def _resolve_ligand_ring_controllers(
     child_central,
     use_reversed,
 ):
-    original = raw_atoms
     raw_atoms = raw_atoms.clone()
-    # Copy only the first pose's ligand nodes/parents once per repair. This is
+    # Copy only the first pose's ligand nodes/parents once during setup. This is
     # discrete topology; repeated device ancestry walks add synchronization.
     nodes = ligand_nodes[0]
     ids, parents = torch.stack((nodes, kmd.forest.parent[nodes].long())).cpu().tolist()
@@ -355,8 +354,6 @@ def _resolve_ligand_ring_controllers(
                 "no ligand torsion controller preserves chemical components"
             )
         raw_atoms[torsion_index] = alternative
-    if torch.equal(raw_atoms, original):
-        raise ValueError("no ring-cutting ligand controller could be replaced")
     return raw_atoms
 
 
@@ -910,11 +907,12 @@ def build_ligand_docking_dofs(
     ligand gets its existing root jump and its existing jump atom/frame.  Six
     DOFs are enabled on that root jump.  Each named ligand torsion first tries
     the normal child-central ``phi_c`` controller.  If the jump stub fixes that
-    controller, the resolver reverses the dihedral and enables ``phi_p`` on the
-    opposite outer atom, matching Rosetta's bidirectional torsion lookup. If
-    that controller fails the empirical isolation check and its subtree cuts
-    a chemical ring, it tries a child-central ``phi_p`` that rotates a whole
-    component of the chemical graph. Accepted mappings remain unchanged.
+    controller, the resolver tries ``phi_p`` on the opposite outer atom. A
+    reversed control must rotate a complete chemical component beyond the
+    central bond; otherwise it tries a child-central ``phi_p``. This check
+    precedes the empirical torsion test because declared dihedrals alone can
+    remain isolated while a partial subtree distorts bond lengths or angles.
+    Existing controls that rotate a complete component remain unchanged.
 
     The affine sign between the selected raw DOF and the declared four-atom
     dihedral is measured by small, one-at-a-time perturbations through the
@@ -1010,32 +1008,19 @@ def build_ligand_docking_dofs(
     if bool(torch.any(kmd.keep_atom_fixed[reversed_nodes, int(BondDOFTypes.phi_p)])):
         raise ValueError("both ends of a ligand torsion are fixed by the fold forest")
 
-    try:
-        signs = _empirical_torsion_signs(
-            kin_module,
-            raw_dofs,
-            ligand_nodes,
-            torsion_atoms,
-            raw_nodes,
-            dof_types,
-        )
-    except ValueError:
-        # Preserve accepted mappings exactly. Only repair a rejected controller,
-        # and retain the same empirical guard for its replacement.
-        repaired = _resolve_ligand_ring_controllers(
-            block_type,
-            kmd,
-            ligand_nodes,
-            torsion_atoms_host,
-            raw_atoms,
-            child_central,
-            use_reversed,
-        )
-        raw_atoms = repaired
-        raw_nodes = ligand_nodes[:, raw_atoms]
-        signs = _empirical_torsion_signs(
-            kin_module, raw_dofs, ligand_nodes, torsion_atoms, raw_nodes, dof_types
-        )
+    raw_atoms = _resolve_ligand_ring_controllers(
+        block_type,
+        kmd,
+        ligand_nodes,
+        torsion_atoms_host,
+        raw_atoms,
+        child_central,
+        use_reversed,
+    )
+    raw_nodes = ligand_nodes[:, raw_atoms]
+    signs = _empirical_torsion_signs(
+        kin_module, raw_dofs, ligand_nodes, torsion_atoms, raw_nodes, dof_types
+    )
 
     raw_keys = raw_atoms * raw_dofs.shape[1] + dof_types
     if torch.unique(raw_keys).numel() != raw_keys.numel():
