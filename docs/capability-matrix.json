@@ -133,9 +133,12 @@
     {
       "domain": "packing_design_mutation",
       "torch": "supported",
-      "jax": "palette_only",
-      "repro_fixture": "tests/scientific/test_packing_palette.py",
-      "implementation_status": "Shared residue-choice preparation: terminal variants, L/D chirality policy, AIB, disulfide identity, ligands and padding pass Torch/JAX CPU invariants. JAX PackerPalette exposes choices and repacking masks. PackerTask, rotamer generation, pack_rotamers and mutation execution remain absent."
+      "jax": "palette_and_rotamer_geometry_only",
+      "repro_fixture": [
+        "tests/scientific/test_packing_palette.py",
+        "tests/scientific/test_molecular_rotamer_geometry.py"
+      ],
+      "implementation_status": "Shared residue choices, single-residue and connected-group rotamer geometry. JAX native CPU initialization reproduces 3877 metadata/ideal-DOF arrays across 322 default/custom residue types exactly against Torch. Molecular ideal-coordinate reconstruction and typed host inverse transport tested CPU; new geometry CUDA/install validation pending. PackerTask, rotamer sampling, interaction graphs, annealing, pack_rotamers and mutation/design execution remain absent."
     },
     {
       "domain": "kinematics",

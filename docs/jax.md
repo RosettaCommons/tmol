@@ -146,8 +146,12 @@ scoring and repacking remain unsupported.
 
 `PackerPalette(noncanonical_design=True)` exposes the shared chemical residue-choice
 policy through `block_types_from_original(pose.packed_block_types, pose.block_type_ind)`
-and `create_restrict_to_repacking_mask(...)`. These prepare choices; JAX rotamer
-generation, packing tasks and packing execution remain unavailable.
+and `create_restrict_to_repacking_mask(...)`. These prepare choices. `tmol_jax.pack.prepare_rotamer_kinematics(packed_block_types)`
+shares residue-local trees, ideal DOFs and scan planning with Torch;
+`prepare_block_group_kinematics(block_types, links, anchor=0)` prepares connected
+chemical groups. Initialization calls the common native CPU inverse directly,
+without compiling each residue shape. Sampling, packing tasks, interaction-graph
+construction, annealing and design execution remain unavailable.
 
 For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
 a batch of `ResidueBlock(residue_type, atom_names, coords)` records and explicit

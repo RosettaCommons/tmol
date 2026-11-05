@@ -16,7 +16,7 @@ struct HostArray {
   const void* data = nullptr;
   int64_t shape[5] = {};
   int32_t rank = 0;
-  int32_t scalar_type = 0;  // 1: int32, 2: bool8
+  int32_t scalar_type = 0;  // 1: int32, 2: bool8, 3: float32, 4: float64
 };
 
 template <typename T>
@@ -30,17 +30,24 @@ struct HostElement<bool> {
   static_assert(sizeof(bool) == 1);
   static constexpr int32_t scalar_type = 2, lanes = 1;
 };
+template <>
+struct HostElement<float> {
+  static constexpr int32_t scalar_type = 3, lanes = 1;
+};
+template <>
+struct HostElement<double> {
+  static constexpr int32_t scalar_type = 4, lanes = 1;
+};
 template <int N>
 struct HostElement<portable::Vec<int32_t, N>> {
   static_assert(sizeof(portable::Vec<int32_t, N>) == N * sizeof(int32_t));
   static constexpr int32_t scalar_type = 1, lanes = N;
 };
-template <int N, int Options, int MaxRows>
-struct HostElement<Eigen::Matrix<int32_t, N, 1, Options, MaxRows, 1>> {
+template <typename T, int N, int Options, int MaxRows>
+struct HostElement<Eigen::Matrix<T, N, 1, Options, MaxRows, 1>> {
   static_assert(
-      sizeof(Eigen::Matrix<int32_t, N, 1, Options, MaxRows, 1>)
-      == N * sizeof(int32_t));
-  static constexpr int32_t scalar_type = 1, lanes = N;
+      sizeof(Eigen::Matrix<T, N, 1, Options, MaxRows, 1>) == N * sizeof(T));
+  static constexpr int32_t scalar_type = HostElement<T>::scalar_type, lanes = N;
 };
 template <>
 struct HostElement<UnresolvedAtomID<int32_t>> {
@@ -49,8 +56,8 @@ struct HostElement<UnresolvedAtomID<int32_t>> {
 };
 
 inline size_t host_array_size(const HostArray& array) {
-  if (array.rank < 1 || array.rank > 5
-      || (array.scalar_type != 1 && array.scalar_type != 2))
+  if (array.rank < 1 || array.rank > 5 || array.scalar_type < 1
+      || array.scalar_type > 4)
     throw std::invalid_argument("invalid native host array rank or dtype");
   size_t count = 1;
   for (int i = 0; i < array.rank; ++i) {

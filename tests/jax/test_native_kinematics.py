@@ -9,6 +9,47 @@ from tmol_jax.kinematics._native import inverse_coordinates
 from tmol_jax.kinematics import KinematicForest
 
 
+@pytest.mark.parametrize("dtype", (np.float32, np.float64))
+def test_host_inverse_transport_matches_runtime_and_owns_output(dtype):
+    from tests.scientific.execution import Execution
+    from tests.scientific.molecules import DOMAIN_CASES
+    from tmol_jax import PoseStackKinematics
+    from tmol_jax.kinematics._host import NativePosePlanner
+
+    with jax.enable_x64():
+        pose = (
+            Execution("jax-cpu").molecule(DOMAIN_CASES["ligand"], terms=("ref",)).pose
+        )
+        module = PoseStackKinematics(pose)
+        xyz = np.asarray(pose.coords, dtype=dtype)
+        packed = np.concatenate(
+            (
+                np.zeros((1, 3), dtype),
+                xyz.reshape(-1, 3)[np.asarray(module.atom_ids)[1:]],
+            )
+        )
+        indices = module.forest._indices
+        arrays = tuple(
+            getattr(indices, name)
+            for name in ("parent", "frame_x", "frame_y", "frame_z", "doftype")
+        )
+        inverse = NativePosePlanner().inverse_kinematics
+        actual = inverse(packed, *arrays)
+        np.testing.assert_array_equal(actual, module.inverse(xyz))
+        assert actual.dtype == dtype and not np.shares_memory(actual, packed)
+        saved = actual.copy()
+        packed[:] = 0
+        np.testing.assert_array_equal(actual, saved)
+        with pytest.raises(ValueError, match="extents"):
+            inverse(packed[:-1], *arrays)
+        bad_parent = arrays[0].copy()
+        bad_parent[1] = len(packed)
+        with pytest.raises(ValueError, match="out of bounds"):
+            inverse(packed, bad_parent, *arrays[1:])
+        with pytest.raises(TypeError):
+            inverse(packed.astype(np.float16), *arrays)
+
+
 def test_host_metadata_transport_preserves_inputs_and_owns_outputs():
     from tmol_jax.kinematics._host import NativePosePlanner
 

@@ -2,7 +2,55 @@
 #pragma once
 #include "host_array_ffi.hh"
 #include <tmol/kinematics/compiled/host_pose_kinematics.hh>
+#include <tmol/kinematics/compiled/native_kinematics.hh>
 #include <cstdio>
+
+namespace tmol::jax {
+// Host allocation/dispatch only; the inverse operation is the runtime kernel.
+template <typename Real>
+auto host_inverse_kinematics(
+    ContextManager& context,
+    TView<kinematics::KinCoord<Real>, 1, Device::CPU> coords,
+    TView<int32_t, 1, Device::CPU> parent,
+    TView<int32_t, 1, Device::CPU> frame_x,
+    TView<int32_t, 1, Device::CPU> frame_y,
+    TView<int32_t, 1, Device::CPU> frame_z,
+    TView<int32_t, 1, Device::CPU> kinds) {
+  auto count = coords.size(0);
+  for (auto index : {parent, frame_x, frame_y, frame_z, kinds})
+    if (index.size(0) != count)
+      throw std::invalid_argument(
+          "inverse forest and coordinate extents differ");
+  for (int32_t i = 0; i < count; ++i) {
+    for (auto index : {parent, frame_x, frame_y, frame_z})
+      if (index[i] < 0 || index[i] >= count)
+        throw std::invalid_argument("inverse forest index is out of bounds");
+    if (kinds[i] < 0 || kinds[i] > 2)
+      throw std::invalid_argument("invalid inverse forest node type");
+  }
+  using Transform = kinematics::KinTransform<Real>;
+  using Dofs = kinematics::KinDofs<Real>;
+  auto scratch = OwnedHostTensor<Transform, 1, Device::CPU>::full(
+      {count}, Transform::Zero());
+  auto result =
+      OwnedHostTensor<Dofs, 1, Device::CPU>::full({count}, Dofs::Zero());
+  kinematics::inverse_kinematics_native<
+      kinematics::HostPoseOperations,
+      Device::CPU,
+      Real,
+      int32_t>(
+      context,
+      coords,
+      parent,
+      frame_x,
+      frame_y,
+      frame_z,
+      kinds,
+      scratch.view,
+      result.view);
+  return result;
+}
+}  // namespace tmol::jax
 
 extern "C" size_t tmol_kinematic_host_array_size() {
   return sizeof(tmol::jax::HostArray);
@@ -40,6 +88,24 @@ extern "C" int tmol_kinematic_host_prepare(
       TMOL_HOST_OPERATION(7, get_scans2);
       TMOL_HOST_OPERATION(8, create_minimizer_map);
       TMOL_HOST_OPERATION(10, assemble_pose);
+      case 11:
+        if (array_count < 1)
+          throw std::invalid_argument("missing inverse coordinates");
+        if (arrays[0].scalar_type == 3)
+          tmol::jax::invoke_host(
+              &tmol::jax::host_inverse_kinematics<float>,
+              context,
+              inputs,
+              *output);
+        else if (arrays[0].scalar_type == 4)
+          tmol::jax::invoke_host(
+              &tmol::jax::host_inverse_kinematics<double>,
+              context,
+              inputs,
+              *output);
+        else
+          throw std::invalid_argument("inverse coordinates must be float32/64");
+        break;
       default:
         throw std::invalid_argument("unknown native pose operation");
     }

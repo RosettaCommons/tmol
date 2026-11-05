@@ -29,6 +29,14 @@ _OPERATIONS = {
     "get_scans2": 7,
     "create_minimizer_map": 8,
     "assemble_pose": 10,
+    "inverse_kinematics": 11,
+}
+
+_SCALARS = {
+    1: (ctypes.c_int32, np.int32),
+    2: (ctypes.c_bool, np.bool_),
+    3: (ctypes.c_float, np.float32),
+    4: (ctypes.c_double, np.float64),
 }
 
 
@@ -68,6 +76,35 @@ def _bindings():
     return prepare, count, array, release
 
 
+def _prepare_array(argument, allow_real):
+    array = np.asarray(argument)
+    if array.dtype.kind == "b":
+        scalar_type = 2
+    elif allow_real and array.dtype in (
+        np.dtype("float32"),
+        np.dtype("float64"),
+    ):
+        scalar_type = 3 if array.dtype.itemsize == 4 else 4
+    elif array.dtype.kind in "iu":
+        needs_range_check = array.dtype.itemsize > 4 or (
+            array.dtype.kind == "u" and array.dtype.itemsize == 4
+        )
+        if (
+            needs_range_check
+            and array.size
+            and (array.min() < -(1 << 31) or array.max() >= (1 << 31))
+        ):
+            raise OverflowError("native pose indices exceed int32")
+        array = array.astype(np.int32, copy=False)
+        scalar_type = 1
+    else:
+        raise TypeError("native host arrays require int32, bool, float32 or float64")
+    if not 1 <= array.ndim <= 5:
+        raise ValueError("native pose metadata requires rank one through five")
+    array = np.ascontiguousarray(array)
+    return array, scalar_type
+
+
 def _invoke(operation, *arguments):
     arrays, scalars, records = [], [], []
     for argument in arguments:
@@ -77,28 +114,7 @@ def _invoke(operation, *arguments):
                 raise OverflowError("native pose scalar exceeds int64")
             scalars.append(value)
             continue
-        array = np.asarray(argument)
-        if array.dtype.kind == "b":
-            scalar_type = 2
-        elif array.dtype.kind in "iu":
-            needs_range_check = array.dtype.itemsize > 4 or (
-                array.dtype.kind == "u" and array.dtype.itemsize == 4
-            )
-            if (
-                needs_range_check
-                and array.size
-                and (array.min() < -(1 << 31) or array.max() >= (1 << 31))
-            ):
-                raise OverflowError("native pose indices exceed int32")
-            array = array.astype(np.int32, copy=False)
-            scalar_type = 1
-        else:
-            raise TypeError(
-                "native pose metadata must contain integer or boolean arrays"
-            )
-        if not 1 <= array.ndim <= 5:
-            raise ValueError("native pose metadata requires rank one through five")
-        array = np.ascontiguousarray(array)
+        array, scalar_type = _prepare_array(argument, operation == 11)
         arrays.append(array)  # Keep input memory alive throughout the native call.
         records.append(
             _Array(
@@ -132,13 +148,12 @@ def _invoke(operation, *arguments):
             record = _Array()
             if get_array(result, index, ctypes.byref(record)):
                 raise RuntimeError("invalid native pose result descriptor")
-            if record.scalar_type not in (1, 2) or not 1 <= record.rank <= 5:
+            if record.scalar_type not in _SCALARS or not 1 <= record.rank <= 5:
                 raise RuntimeError("invalid native pose result dtype or rank")
             shape = tuple(record.shape[: record.rank])
             if any(dim < 0 for dim in shape):
                 raise RuntimeError("invalid native pose result extent")
-            ctype = ctypes.c_int32 if record.scalar_type == 1 else ctypes.c_bool
-            dtype = np.int32 if record.scalar_type == 1 else np.bool_
+            ctype, dtype = _SCALARS[record.scalar_type]
             elements = math.prod(shape)
             if elements > (1 << 31) - 1:
                 raise RuntimeError("native pose result exceeds int32 indexing")
@@ -154,7 +169,7 @@ def _invoke(operation, *arguments):
             else:
                 value = np.empty(shape, dtype=dtype)
             outputs.append(value)
-        return outputs[0] if operation in (6, 8) else tuple(outputs)
+        return outputs[0] if operation in (6, 8, 11) else tuple(outputs)
     finally:
         if result.value:
             release(result)
