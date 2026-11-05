@@ -45,6 +45,7 @@ def pytree_dataclass(cls):
         cls = attrs.define(slots=False, frozen=True)(cls)
 
     field_names = tuple(f.name for f in cls.__attrs_attrs__)
+    field_aliases = tuple(f.alias for f in cls.__attrs_attrs__)
 
     def tree_flatten(obj):
         values = [getattr(obj, n) for n in field_names]
@@ -58,7 +59,7 @@ def pytree_dataclass(cls):
         c_iter = iter(children)
         a_iter = iter(aux_values)
         kw = {}
-        for name, is_child in zip(field_names, child_mask):
+        for name, is_child in zip(field_aliases, child_mask):
             kw[name] = next(c_iter) if is_child else next(a_iter)
         return cls(**kw)
 

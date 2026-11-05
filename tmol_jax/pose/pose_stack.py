@@ -20,12 +20,46 @@ class PoseStack:
     coords: jax.Array  # float32[n_poses, max_n_atoms_per_pose, 3]
     block_coord_offset: jax.Array  # int32[n_poses, max_n_blocks]
     inter_residue_connections: jax.Array  # int32[P, B, C, 2]
-    inter_block_bondsep: jax.Array  # int32[P, B, B, C, C]
+    _inter_block_bondsep: Any = attr.field(alias="inter_block_bondsep")
     block_type_ind: jax.Array  # int32[n_poses, max_n_blocks]
     pdb_info: Optional[Any] = None  # PDBInfo; aux.
     constraint_set: Optional[Any] = None
+    near_blocks: Optional[jax.Array] = None  # int32[P,B,K,2], common sparse graph
+    bondsep: Optional[jax.Array] = None  # int8[P,B,K,C,C]
 
     # Properties
+
+    @property
+    def inter_block_bondsep(self):
+        """Dense capped connection distances, materialized only when requested.
+
+        Native scorers consume the common sparse graph directly. Explicit dense
+        constructor/replacement values remain authoritative for compatibility.
+        """
+        if self._inter_block_bondsep is not None:
+            return self._inter_block_bondsep
+        if hasattr(self, "_dense_connections"):
+            return self._dense_connections
+        from tmol_core.chemical.constants import MAX_SIG_BOND_SEPARATION
+
+        if self.near_blocks is None or self.bondsep is None:
+            raise ValueError("pose requires dense or sparse connection distances")
+        poses, blocks, _, ports, _ = self.bondsep.shape
+        with jax.default_device(getattr(self.bondsep, "device", None)):
+            dense = jnp.full(
+                (poses, blocks, blocks, ports, ports),
+                MAX_SIG_BOND_SEPARATION,
+                dtype=jnp.int32,
+            )
+            p = jnp.arange(poses)[:, None, None]
+            b = jnp.arange(blocks)[None, :, None]
+            partner = jnp.where(
+                self.near_blocks[..., 0] >= 0, self.near_blocks[..., 0], blocks
+            )
+            result = dense.at[p, b, partner].set(self.bondsep, mode="drop")
+        if not isinstance(result, jax.core.Tracer):
+            object.__setattr__(self, "_dense_connections", result)
+        return result
 
     @property
     def n_poses(self) -> int:
@@ -97,7 +131,13 @@ class PoseStack:
             coords=_take(self.coords),
             block_coord_offset=_take(self.block_coord_offset),
             inter_residue_connections=_take(self.inter_residue_connections),
-            inter_block_bondsep=_take(self.inter_block_bondsep),
+            inter_block_bondsep=(
+                None
+                if self._inter_block_bondsep is None
+                else _take(self._inter_block_bondsep)
+            ),
+            near_blocks=None if self.near_blocks is None else _take(self.near_blocks),
+            bondsep=None if self.bondsep is None else _take(self.bondsep),
             block_type_ind=_take(self.block_type_ind),
             pdb_info=None if self.pdb_info is None else self.pdb_info.take(indices),
         )

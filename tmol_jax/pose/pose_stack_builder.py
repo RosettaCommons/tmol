@@ -86,13 +86,7 @@ def _bond_separation(pbt, block_types, connections):
         intra[pose, block, :n, :n] = np.where(
             distances < 0, cutoff, np.minimum(distances, cutoff)
         )
-    prepared = bondseparation_from_graph(counts, intra, connections)
-    # Preserve the public dense layout while remaining portable terms use it.
-    result = np.full((poses, blocks, blocks, slots, slots), cutoff, np.int32)
-    p, b, slot = np.nonzero(prepared.near_blocks[..., 0] >= 0)
-    partner = prepared.near_blocks[p, b, slot, 0]
-    result[p, b, partner] = prepared.bondsep[p, b, slot]
-    return result
+    return bondseparation_from_graph(counts, intra, connections)
 
 
 def _validate_rows(block_types, coordinates, chains, numbers, names, disulfides):
@@ -199,7 +193,9 @@ class PoseStackBuilder:
             coords=jnp.asarray(coords),
             block_coord_offset=jnp.asarray(offsets),
             inter_residue_connections=jnp.asarray(connections),
-            inter_block_bondsep=jnp.asarray(distances),
+            inter_block_bondsep=None,
+            near_blocks=jnp.asarray(distances.near_blocks),
+            bondsep=jnp.asarray(distances.bondsep),
             block_type_ind=jnp.asarray(block_types),
             pdb_info=metadata,
         )

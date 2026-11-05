@@ -27,8 +27,8 @@ from tmol_jax.score.elec.params import _charges_for_block_type
 def _compact_connections(dense):
     """Pack existing capped graph distances into the native sparse slot layout.
 
-    The frontend still owns a dense graph here. This is only an ABI layout
-    conversion; shared graph preparation will remove that setup allocation.
+    Compatibility for explicitly supplied dense topology. New pose preparation
+    retains the common sparse layout and does not invoke this conversion.
     """
     dense = np.asarray(dense)
     poses, blocks, _, ports, _ = dense.shape
@@ -45,6 +45,12 @@ def _compact_connections(dense):
         near[pose, block, :n, 1] = minima[pose, block, partners]
         distances[pose, block, :n] = np.minimum(dense[pose, block, partners], 6)
     return near, distances
+
+
+def _pose_connections(pose):
+    if pose._inter_block_bondsep is None:
+        return pose.near_blocks, pose.bondsep
+    return _compact_connections(pose.inter_block_bondsep)
 
 
 def _ljlk_parameters(pose, database):
@@ -102,7 +108,7 @@ def prepare_nonbonded(pose, database):
     )
     offsets, first, indices, _ = pose_arguments(pose)
     poses, blocks = indices.shape
-    near, separation = _compact_connections(pose.inter_block_bondsep)
+    near, separation = _pose_connections(pose)
     _validate_native_connections(pbt)
     parameters = tuple(
         jnp.asarray(a)
@@ -158,7 +164,7 @@ def prepare_independent_nonbonded(pose, database, *, electrostatic):
     rosetta_typed = database.scoring.genbonded.rosetta_typed
     offsets, first, indices, _ = pose_arguments(pose)
     poses, blocks = indices.shape
-    near, separation = _compact_connections(pose.inter_block_bondsep)
+    near, separation = _pose_connections(pose)
     if electrostatic:
         charges, inter, intra, globals_ = _electrostatic_parameters(pose, database)
         generic = np.array(
