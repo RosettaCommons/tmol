@@ -567,7 +567,9 @@ def test_cpu_score_workers_share_the_thread_budget():
         torch.set_num_threads(4)
         executor = score_function_module._cpu_score_term_executor(2)
         worker_threads = set(executor.map(lambda _: torch.get_num_threads(), range(8)))
-        assert worker_threads == {2}
+        # macOS workers keep the whole budget; elsewhere each gets its share.
+        expected = 2 if score_function_module._CAP_CPU_SCORE_WORKER_THREADS else 4
+        assert worker_threads == {expected}
         assert torch.get_num_threads() == 4
     finally:
         torch.set_num_threads(budget)

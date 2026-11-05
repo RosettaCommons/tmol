@@ -72,6 +72,11 @@ _PACK_FUSED_ROTAMER_SCORE_WINDOW = 4 * 1024 * 1024
 _CPU_SCORE_TERM_EXECUTORS: dict[tuple[int, int | None], ThreadPoolExecutor] = {}
 _CPU_SCORE_TERM_EXECUTOR_LOCK = threading.Lock()
 _BOUND_WORKER_STARTS = itertools.count()
+# On macOS, capping each pool worker at an equal share of the thread budget
+# starves the expensive terms while the cheap ones idle; it made Metal-offloaded
+# minimization ~45% slower per evaluation and CPU-only ~18% slower. Workers
+# there keep the whole budget; _single_openmp_thread still applies.
+_CAP_CPU_SCORE_WORKER_THREADS = sys.platform != "darwin"
 _ScoreCallResult = TypeVar("_ScoreCallResult")
 
 
@@ -217,10 +222,13 @@ def _cpu_score_term_executor(
 
     With ``share_threads`` each worker gets an equal share of the thread budget.
     Without it each worker may use the whole budget, which suits a few large
-    tasks that parallelize internally and finish at different times.
+    tasks that parallelize internally and finish at different times. Workers
+    are never capped on macOS (see _CAP_CPU_SCORE_WORKER_THREADS).
     """
     threads_per_worker = (
-        max(1, torch.get_num_threads() // n_workers) if share_threads else None
+        max(1, torch.get_num_threads() // n_workers)
+        if share_threads and _CAP_CPU_SCORE_WORKER_THREADS
+        else None
     )
     key = (n_workers, threads_per_worker)
     with _CPU_SCORE_TERM_EXECUTOR_LOCK:
