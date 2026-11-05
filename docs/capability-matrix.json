@@ -133,9 +133,9 @@
     {
       "domain": "packing_design_mutation",
       "torch": "supported",
-      "jax": "absent",
-      "repro_fixture": "tmol/tests/pack/rotamer/test_noncanonical_rotamers.py",
-      "implementation_status": "PackerTask, PackerPalette, pack_rotamers, mutate_residue and mutate_to_sequence absent."
+      "jax": "palette_only",
+      "repro_fixture": "tests/scientific/test_packing_palette.py",
+      "implementation_status": "Shared residue-choice preparation: terminal variants, L/D chirality policy, AIB, disulfide identity, ligands and padding pass Torch/JAX CPU invariants. JAX PackerPalette exposes choices and repacking masks. PackerTask, rotamer generation, pack_rotamers and mutation execution remain absent."
     },
     {
       "domain": "kinematics",

@@ -89,6 +89,11 @@ coordinate constraints. It retains the best full-weight structure. It does not
 implement FastRelax. Complete nucleic-acid, metal and ligand/noncanonical
 scoring, repacking and kinematic minimization remain unsupported.
 
+`PackerPalette(noncanonical_design=True)` exposes the shared chemical residue-choice
+policy through `block_types_from_original(pose.packed_block_types, pose.block_type_ind)`
+and `create_restrict_to_repacking_mask(...)`. These prepare choices; JAX rotamer
+generation, packing tasks and packing execution remain unavailable.
+
 For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
 a batch of `ResidueBlock(residue_type, atom_names, coords)` records and explicit
 named connection ports. Full residue names include variants; every atom must be

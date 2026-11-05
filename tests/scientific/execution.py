@@ -155,6 +155,21 @@ class Execution:
             self._render_torch()
         return self
 
+    def palette_choices(self, *, noncanonical_design=False):
+        if self.framework == "torch":
+            from tmol.pack._packer_task import PackerPalette
+
+            indices = self.pose.block_type_ind64
+        else:
+            from tmol_jax.pack import PackerPalette
+
+            indices = self.pose.block_type_ind
+        palette = PackerPalette(noncanonical_design=noncanonical_design)
+        pbt = self.pose.packed_block_types
+        counts, choices, original = palette.block_types_from_original(pbt, indices)
+        repack = palette.create_restrict_to_repacking_mask(pbt, indices)
+        return tuple(self.numpy(a) for a in (counts, choices, original, repack))
+
     def set_options(self, options):
         self.score_function.set_options(options)
         if self.framework == "torch":

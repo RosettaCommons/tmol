@@ -9,6 +9,7 @@ except PackageNotFoundError:
 
 from .io import ResidueBlock, pose_stack_from_pdb, pose_stack_from_residue_blocks
 from .optimization import run_cart_min, run_cart_relax
+from .pack import PackerPalette
 from .pose import ConstraintSet
 from .score import ScoreFunction, ScoreType, beta2016_score_function
 
@@ -17,6 +18,7 @@ __all__ = [
     "pose_stack_from_residue_blocks",
     "ResidueBlock",
     "ConstraintSet",
+    "PackerPalette",
     "run_cart_min",
     "run_cart_relax",
     "ScoreFunction",
