@@ -365,6 +365,19 @@ auto ljlk_elec_native_forward(
   CTA_REAL_REDUCE_T_TYPEDEF;
   // CPU workgroup lanes run serially; one lane traverses each tile directly.
   constexpr int score_nt = D == tmol::Device::CPU ? 1 : nt;
+#ifdef __NVCC__
+  int const candidate_capacity = shared_compact_block_neighbors.size(0) - 1;
+  // Small systems have too few residue pairs to occupy the GPU. Partition
+  // each tile's atom-pair lanes across CTAs while sharing its exact physics,
+  // loaders and reductions. Large batches retain their original dispatch.
+  int const pair_shards = !rotamer_pairs && candidate_capacity > 0
+                              ? (candidate_capacity <= 64     ? 16
+                                 : candidate_capacity <= 1024 ? 4
+                                                              : 1)
+                              : 1;
+#else
+  int const pair_shards = 1;
+#endif
 
   auto finalize_pose_scores = [&]() {
     if constexpr (!rotamer_pairs) {
@@ -378,11 +391,13 @@ auto ljlk_elec_native_forward(
   };
 
 #ifdef __NVCC__
-  auto eval_pair = ([=] TMOL_DEVICE_FUNC(int candidate, auto pair_mode_tag) {
+  auto eval_pair = ([=] TMOL_DEVICE_FUNC(
+                        int candidate, auto pair_mode_tag, int pair_shard = 0) {
     constexpr auto pair_mode = decltype(pair_mode_tag)::value;
 #else
   auto eval_neighbor = ([=] TMOL_DEVICE_FUNC(int candidate) {
     constexpr auto pair_mode = common::TilePairMode::InterAndIntra;
+    int const pair_shard = 0;
 #endif
     Real derivative_scale = 1;
     if (require_gradient && rotamer_pairs) {
@@ -665,6 +680,8 @@ auto ljlk_elec_native_forward(
             derivative_scale);
       });
       auto evaluate = ([&](int tid) {
+        int const score_tid = tid + pair_shard * score_nt;
+        int const score_stride = score_nt * pair_shards;
         PairScores scores = {};
         if constexpr (D == tmol::Device::CPU) {
           // The CPU workgroup has one lane. Traverse directly so GCC keeps
@@ -694,7 +711,8 @@ auto ljlk_elec_native_forward(
                 PairScores::size(),
                 Real,
                 Int>::
-                eval_intrares_atom_pairs(tid, start1, start2, pair_score, data);
+                eval_intrares_atom_pairs(
+                    score_tid, start1, start2, pair_score, data, score_stride);
           } else {
             scores = common::InterResBlockEvaluation<
                 ScoringData,
@@ -705,7 +723,8 @@ auto ljlk_elec_native_forward(
                 PairScores::size(),
                 Real,
                 Int>::
-                eval_interres_atom_pair(tid, start1, start2, pair_score, data);
+                eval_interres_atom_pair(
+                    score_tid, start1, start2, pair_score, data, score_stride);
           }
         }
         if constexpr (!require_gradient || !rotamer_pairs) {
@@ -854,6 +873,27 @@ auto ljlk_elec_native_forward(
     eval_pair(
         candidate, std::integral_constant<PairMode, PairMode::InterAndIntra>{});
   });
+  if constexpr (!rotamer_pairs) {
+    if (pair_shards > 1) {
+      int const n_tasks = common::checked_dispatch_product(
+          candidate_capacity, pair_shards, "fused atom-pair lane dispatch");
+      int const n_workgroups = n_tasks < (1 << 14) ? n_tasks : (1 << 14);
+      auto eval_shard = ([=] TMOL_DEVICE_FUNC(int cta) {
+        for (int task = cta; task < n_tasks; task += n_workgroups) {
+          int const index = task / pair_shards;
+          if (index >= shared_compact_block_neighbors[0]) return;
+          eval_pair(
+              shared_compact_block_neighbors[index + 1],
+              std::integral_constant<PairMode, PairMode::InterAndIntra>{},
+              task % pair_shards);
+        }
+      });
+      DeviceOperations<D>::template foreach_workgroup<launch_t>(
+          mgr, n_workgroups, eval_shard);
+      finalize_pose_scores();
+      return;
+    }
+  }
   if constexpr (!rotamer_pairs) {
     // Specialization amortizes the second launch only on larger stacks.
     // Derivative evaluation has enough work to benefit at a smaller size.

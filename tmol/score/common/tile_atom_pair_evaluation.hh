@@ -104,7 +104,8 @@ class InterResBlockEvaluation {
       int start_atom1,
       int start_atom2,
       AtomPairFunc f,
-      TMOL_THREAD InterEnergyData<Real> const& inter_dat) {
+      TMOL_THREAD InterEnergyData<Real> const& inter_dat,
+      int lane_stride = nt) {
     tmol::portable::array<Real, NTERMS> score_total = {};
     int const n_remain1 =
         PairSelector<InterEnergyData, Real>::template n_remain1<TILE>(
@@ -116,7 +117,7 @@ class InterResBlockEvaluation {
       return score_total;
     }
     int const n_pairs = n_remain1 * n_remain2;
-    for (int i = tid; i < n_pairs; i += nt) {
+    for (int i = tid; i < n_pairs; i += lane_stride) {
       int const atom_tile_ind1 = i / n_remain2;
       int const atom_tile_ind2 = i % n_remain2;
       tmol::portable::array<Real, NTERMS> score_i = f(
@@ -153,7 +154,8 @@ class IntraResBlockEvaluation {
       int start_atom1,
       int start_atom2,
       AtomPairFunc f,
-      TMOL_THREAD IntraEnergyData<Real> const& intra_dat) {
+      TMOL_THREAD IntraEnergyData<Real> const& intra_dat,
+      int lane_stride = nt) {
     tmol::portable::array<Real, NTERMS> score_total = {};
     int const n_remain1 =
         PairSelector<IntraEnergyData, Real>::template n_remain1<TILE>(
@@ -165,7 +167,7 @@ class IntraResBlockEvaluation {
       return score_total;
     }
     int const n_pairs = n_remain1 * n_remain2;
-    for (int i = tid; i < n_pairs; i += nt) {
+    for (int i = tid; i < n_pairs; i += lane_stride) {
       int const atom_tile_ind1 = i / n_remain2;
       int const atom_tile_ind2 = i % n_remain2;
       int const atom_ind1 = atom_tile_ind1 + start_atom1;
