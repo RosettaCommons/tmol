@@ -4,7 +4,13 @@ import torch
 import attr
 
 from tmol.types._torch import Tensor
-from tmol.database.chemical import DEPROTONATED_STATE
+from tmol_core.pack.palette import (  # noqa: F401 (legacy helper reexports)
+    prepare_packer_palette,
+    _backbone_signatures as _core_backbone_signatures,
+    _mainchain_elements as _mainchain_elements,
+    _exchangeable as _exchangeable,
+    _set_compare as _set_compare,
+)
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
 from typing import Collection, TYPE_CHECKING
@@ -38,25 +44,13 @@ if TYPE_CHECKING:
 #   designed for L-AA redesign / repacking tasks.
 
 
-def _set_compare(x, y):
-    """Treat the collections x and y as if they are sets. Return true if they
-    contain the same elements and false otherwise
-    """
-    if len(x) != len(y):
-        return False
-    for val in x:
-        if val not in y:
-            return False
-    return True
-
-
 @attr.define(slots=True, frozen=True)
 class PackerPalleteAnnotation:
     """Cached residue-type compatibility tensors for a packer palette."""
 
     max_n_allowed: int
     n_allowed_block_types_for_block_type: Tensor[torch.int64][:]
-    allowed_block_types_for_block_type: Tensor[torch.bool][:, :]
+    allowed_block_types_for_block_type: Tensor[torch.int64][:, :]
     allowed_block_type_is_orig: Tensor[torch.bool][:, :]
     restrict_to_repacking_masks: Tensor[torch.bool][:, :]
 
@@ -172,59 +166,8 @@ class PackerPalette:
         return [FallbackSampler()]
 
 
-def _mainchain_elements(block_type, element_for_atom_type):
-    """The element of each mainchain atom, in mainchain order.
-
-    A mainchain fingerprint identifies an atom by its position along the
-    mainchain, so two block types can only exchange dofs when their mainchains
-    agree position by position. Comparing elements rather than atom names lets
-    two backbones of the same shape exchange dofs whatever they call their
-    atoms, and comparing elements rather than atom types keeps a difference
-    that does not move an atom from blocking the exchange.
-    """
-    types = {atom.name: atom.atom_type for atom in block_type.atoms}
-    return tuple(
-        element_for_atom_type[types[name]]
-        for name in (block_type.properties.polymer.mainchain_atoms or ())
-    )
-
-
 def _backbone_signatures(pbt: PackedBlockTypes):
-    """Mainchain elements and applied terminal chemistry for each block type."""
-    element_for_atom_type = {at.name: at.element for at in pbt.chem_db.atom_types}
-    terminal_patches = {
-        patch.display_name
-        for patch in pbt.chem_db.variants
-        if {"<{down}>", "<{up}>"}.intersection(patch.remove_atoms)
-    }
-    return [
-        (
-            _mainchain_elements(bt, element_for_atom_type),
-            frozenset(bt.name.split(":")[1:]) & terminal_patches,
-        )
-        for bt in pbt.active_block_types
-    ]
-
-
-def _exchangeable(orig_bt, alt_bt, orig_backbone, alt_backbone) -> bool:
-    """Whether block types can exchange, aside from side-chain protonation."""
-    return (
-        alt_bt.properties.polymer.is_polymer == orig_bt.properties.polymer.is_polymer
-        and alt_bt.properties.polymer.polymer_type
-        == orig_bt.properties.polymer.polymer_type
-        and alt_bt.properties.polymer.backbone_type
-        == orig_bt.properties.polymer.backbone_type
-        and alt_bt.connections == orig_bt.connections
-        and alt_bt.conjugation_context == orig_bt.conjugation_context
-        and orig_backbone == alt_backbone
-        and _set_compare(
-            alt_bt.properties.chemical_modifications,
-            orig_bt.properties.chemical_modifications,
-        )
-        and _set_compare(
-            alt_bt.properties.connectivity, orig_bt.properties.connectivity
-        )
-    )
+    return _core_backbone_signatures(pbt.chem_db, pbt.active_block_types)
 
 
 _PALETTE_ANNOTATION_ATTRS = {
@@ -240,133 +183,24 @@ def _annotate_packed_block_types_for_default_packer_palette(
     attr_name = _PALETTE_ANNOTATION_ATTRS[noncanonical_design]
     if hasattr(pbt, attr_name):
         return getattr(pbt, attr_name)
-    backbones = _backbone_signatures(pbt)
-    allowed_block_types_for_block_type = [list() for _ in range(pbt.n_types)]
-    allowed_block_is_orig = [list() for _ in range(pbt.n_types)]
-    restrict_to_repacking_masks = [list() for _ in range(pbt.n_types)]
-    # types that only metal detection selects never trade places with another
-    selected_by_detection = [
-        bool(bt.metal_sites)
-        or bt.properties.protonation.protonation_state == DEPROTONATED_STATE
-        for bt in pbt.active_block_types
-    ]
-    # types can exchange only within a group that agrees on these fields; each
-    #    type's candidates keep the order of the full n^2 scan
-    groups = {}
-    for j, bt in enumerate(pbt.active_block_types):
-        polymer = bt.properties.polymer
-        key = (
-            polymer.is_polymer,
-            polymer.polymer_type,
-            polymer.backbone_type,
-            bt.properties.protonation.protonation_state,
-            len(bt.connections),
-            backbones[j],
-        )
-        groups.setdefault(key, []).append(j)
-    group_of = {j: members for members in groups.values() for j in members}
-    for i, orig_bt in enumerate(pbt.active_block_types):
-        for j in group_of[i]:
-            alt_bt = pbt.active_block_types[j]
-            if i != j and (selected_by_detection[i] or selected_by_detection[j]):
-                continue
-            # a noncanonical type replaces only its own kind unless asked for
-            if (
-                not noncanonical_design
-                and not alt_bt.properties.is_canonical
-                and alt_bt.name3 != orig_bt.name3
-            ):
-                continue
-            j_allowed_for_restrict_to_repack = alt_bt.name3 == orig_bt.name3
-            if _exchangeable(orig_bt, alt_bt, backbones[i], backbones[j]):
-                if (
-                    alt_bt.properties.polymer.sidechain_chirality
-                    == orig_bt.properties.polymer.sidechain_chirality
-                ):
-                    allowed_block_types_for_block_type[i].append(j)
-                    allowed_block_is_orig[i].append(j == i)
-                    restrict_to_repacking_masks[i].append(
-                        j_allowed_for_restrict_to_repack
-                    )
-                elif orig_bt.properties.polymer.polymer_type == "amino_acid" and (
-                    (
-                        orig_bt.properties.polymer.sidechain_chirality == "l"
-                        and alt_bt.properties.polymer.sidechain_chirality == "achiral"
-                    )
-                    or (
-                        orig_bt.properties.polymer.sidechain_chirality == "achiral"
-                        and alt_bt.properties.polymer.sidechain_chirality == "l"
-                    )
-                ):
-                    # allow glycine <--> l-caa mutations
-                    allowed_block_types_for_block_type[i].append(j)
-                    allowed_block_is_orig[i].append(j == i)
-                    restrict_to_repacking_masks[i].append(
-                        j_allowed_for_restrict_to_repack
-                    )
-                elif (
-                    orig_bt.properties.polymer.polymer_type == "amino_acid"
-                    and orig_bt.properties.polymer.sidechain_chirality == "d"
-                    and alt_bt.properties.polymer.sidechain_chirality == "achiral"
-                ):
-                    # allow d-caa --> glycine mutations;
-                    # dangerous because this packer pallete will allow
-                    # your d-caa to become glycine, and then later
-                    # to an l-caa, but not the other way around
-                    allowed_block_types_for_block_type[i].append(j)
-                    allowed_block_is_orig[i].append(j == i)
-                    restrict_to_repacking_masks[i].append(
-                        j_allowed_for_restrict_to_repack
-                    )
-                elif (
-                    noncanonical_design
-                    and orig_bt.properties.polymer.polymer_type == "amino_acid"
-                ):
-                    # noncanonical design also crosses between l and d amino acids
-                    allowed_block_types_for_block_type[i].append(j)
-                    allowed_block_is_orig[i].append(j == i)
-                    restrict_to_repacking_masks[i].append(
-                        j_allowed_for_restrict_to_repack
-                    )
-            elif i == j:
-                allowed_block_types_for_block_type[i].append(j)
-                allowed_block_is_orig[i].append(j == i)
-                restrict_to_repacking_masks[i].append(j_allowed_for_restrict_to_repack)
+    data = prepare_packer_palette(
+        pbt.chem_db, pbt.active_block_types, noncanonical_design
+    )
 
-    max_n_allowed = max(len(lst) for lst in allowed_block_types_for_block_type)
-    n_allowed_block_types_for_block_type = torch.tensor(
-        [len(lst) for lst in allowed_block_types_for_block_type],
-        dtype=torch.int64,
-        device=pbt.device,
-    )
-    allowed_block_types_for_block_type = torch.tensor(
-        [
-            lst + [-1] * (max_n_allowed - len(lst))
-            for lst in allowed_block_types_for_block_type
-        ],
-        dtype=torch.int64,
-        device=pbt.device,
-    )
-    allowed_block_type_is_orig = torch.tensor(
-        [lst + [False] * (max_n_allowed - len(lst)) for lst in allowed_block_is_orig],
-        dtype=torch.bool,
-        device=pbt.device,
-    )
-    restrict_to_repacking_masks = torch.tensor(
-        [
-            lst + [False] * (max_n_allowed - len(lst))
-            for lst in restrict_to_repacking_masks
-        ],
-        dtype=torch.bool,
-        device=pbt.device,
-    )
+    def tensor(array):
+        # Empty NumPy arrays can have zero strides; Torch empty keeps the
+        # intended two-dimensional padding shape without importing storage.
+        if array.size == 0:
+            dtype = torch.bool if array.dtype.kind == "b" else torch.int64
+            return torch.empty(array.shape, dtype=dtype, device=pbt.device)
+        return torch.as_tensor(array, device=pbt.device)
 
     annotation = PackerPalleteAnnotation(
-        max_n_allowed=max_n_allowed,
-        n_allowed_block_types_for_block_type=n_allowed_block_types_for_block_type,
-        allowed_block_types_for_block_type=allowed_block_types_for_block_type,
-        allowed_block_type_is_orig=allowed_block_type_is_orig,
-        restrict_to_repacking_masks=restrict_to_repacking_masks,
+        max_n_allowed=data.max_n_allowed,
+        n_allowed_block_types_for_block_type=tensor(data.n_allowed),
+        allowed_block_types_for_block_type=tensor(data.allowed_types),
+        allowed_block_type_is_orig=tensor(data.is_original),
+        restrict_to_repacking_masks=tensor(data.repack_mask),
     )
     setattr(pbt, attr_name, annotation)
     return annotation
