@@ -8,8 +8,10 @@ from tmol.types._array import NDArray
 from tmol.types._attrs import ConvertAttrs
 from tmol.types._functional import _convert_args
 from tmol_core import kinematics as _core_kinematics
+from tmol_core.kinematics import chemical as _core_chemical_kinematics
 from tmol_core.kinematics import NodeType, prepare_kinematic_forest
 
+BTGenerationalSegScanPathSegs = _core_chemical_kinematics.BTGenerationalSegScanPathSegs
 BondDOFTypes = _core_kinematics.BondDOFTypes
 JumpDOFTypes = _core_kinematics.JumpDOFTypes
 n_movable_bond_dof_types = _core_kinematics.n_movable_bond_dof_types
@@ -258,80 +260,6 @@ class JumpDOF(TensorGroup, ConvertAttrs):
 
 
 @attrs.define
-class BTGenerationalSegScanPathSegs:
-    jump_atom: int
-    parents: NDArray[numpy.int64][:, :]  # n-input x n-atoms
-    dof_type: NDArray[numpy.int64][:, :]  # n-input x n-atoms
-    input_conn_atom: NDArray[numpy.int64][:]  # n-input
-    n_gens: NDArray[numpy.int64][:, :]  # n-input x n-output
-    n_nodes_for_gen: NDArray[numpy.int64][:, :, :]
-    nodes_for_gen: NDArray[numpy.int64][
-        :, :, :, :
-    ]  # n-input x n-output x max-n-gen x max-n-nodes-per-gen
-    n_scan_path_segs: NDArray[numpy.int64][:, :, :]  # n-input x n-output x n-gen
-    scan_path_seg_that_builds_output_conn: NDArray[numpy.int64][
-        :, :, :, 2
-    ]  # n-input x n-output x n-conn x 2
-    scan_path_seg_starts: NDArray[numpy.int64][:, :, :, :]
-    scan_path_seg_is_real: NDArray[bool][:, :, :, :]
-    scan_path_seg_is_inter_block: NDArray[bool][:, :, :, :]
-    scan_path_seg_lengths: NDArray[numpy.int64][:, :, :, :]
-    uaid_for_torsion_by_inconn: NDArray[numpy.int64][
-        :, :, 3
-    ]  # n-input x n-torsions x 3
-    torsion_direction: NDArray[numpy.int64][:, :]  # n-input x n-torsions
-
-    @classmethod
-    def empty(
-        cls,
-        n_input_types: int,
-        n_output_types: int,
-        n_atoms: int,
-        n_conn: int,
-        max_n_gens: int,
-        max_n_scan_path_segs_per_gen: int,
-        max_n_nodes_per_gen: int,
-        n_torsions: int,
-    ):
-        io = (n_input_types, n_output_types)
-        return cls(
-            jump_atom=-1,
-            parents=numpy.full(
-                (n_input_types, n_atoms), -1, dtype=int
-            ),  # independent of primary output
-            dof_type=numpy.full(
-                (n_input_types, n_atoms), -1, dtype=int
-            ),  # independent of primary output
-            input_conn_atom=numpy.full(n_input_types, -1, dtype=int),
-            n_gens=numpy.zeros(io, dtype=int),
-            n_nodes_for_gen=numpy.zeros(io + (max_n_gens,), dtype=int),
-            nodes_for_gen=numpy.full(
-                io + (max_n_gens, max_n_nodes_per_gen), -1, dtype=int
-            ),
-            n_scan_path_segs=numpy.zeros(io + (max_n_gens,), dtype=int),
-            scan_path_seg_that_builds_output_conn=numpy.full(
-                io + (n_conn, 2), -1, dtype=int
-            ),
-            scan_path_seg_starts=numpy.full(
-                io + (max_n_gens, max_n_scan_path_segs_per_gen), -1, dtype=int
-            ),
-            scan_path_seg_is_real=numpy.zeros(
-                io + (max_n_gens, max_n_scan_path_segs_per_gen), dtype=bool
-            ),
-            scan_path_seg_is_inter_block=numpy.zeros(
-                io + (max_n_gens, max_n_scan_path_segs_per_gen), dtype=bool
-            ),
-            scan_path_seg_lengths=numpy.zeros(
-                io + (max_n_gens, max_n_scan_path_segs_per_gen), dtype=int
-            ),
-            uaid_for_torsion_by_inconn=numpy.full(
-                (n_input_types, n_torsions, 3), -1, dtype=int
-            ),
-            torsion_direction=numpy.full((n_input_types, n_torsions), 1, dtype=int),
-        )
-
-
-@attrs.define
 class PBTGenerationalSegScanPathSegs:
     jump_atom: NDArray[numpy.int64][:]  # n-bt
     parents: Tensor[torch.int32][:, :, :]  # n-bt x n-input x n-atoms
@@ -358,6 +286,19 @@ class PBTGenerationalSegScanPathSegs:
     torsion_direction: NDArray[numpy.int64][:, :, :]  # n-bt x n-input x n-torsions
 
     @classmethod
+    def from_numpy(cls, arrays, device):
+        def convert(array):
+            # Empty NumPy arrays have zero strides; native tensor views retain
+            # the normal contiguous Torch layout even when an axis is empty.
+            if array.size == 0:
+                return torch.empty(
+                    array.shape, dtype=torch.from_numpy(array).dtype, device=device
+                )
+            return torch.from_numpy(array).to(device)
+
+        return cls(**{name: convert(array) for name, array in arrays.items()})
+
+    @classmethod
     def empty(
         cls,
         device,
@@ -371,71 +312,15 @@ class PBTGenerationalSegScanPathSegs:
         max_n_nodes_per_gen: int,
         max_n_torsions: int,
     ):
-        io = (n_bt, max_n_input_types, max_n_output_types)
-        return cls(
-            jump_atom=torch.full((n_bt,), -1, dtype=torch.int32, device=device),
-            parents=torch.full(
-                (n_bt, max_n_input_types, max_n_atoms),
-                -1,
-                dtype=torch.int32,
-                device=device,
-            ),  # independent of primary output
-            dof_type=torch.full(
-                (n_bt, max_n_input_types, max_n_atoms),
-                -1,
-                dtype=torch.int32,
-                device=device,
-            ),  # independent of primary output
-            input_conn_atom=torch.full(
-                (n_bt, max_n_input_types), -1, dtype=torch.int32, device=device
-            ),
-            n_gens=torch.zeros(io, dtype=torch.int32, device=device),
-            n_nodes_for_gen=torch.zeros(
-                io + (max_n_gens,), dtype=torch.int32, device=device
-            ),
-            nodes_for_gen=torch.full(
-                io + (max_n_gens, max_n_nodes_per_gen),
-                -1,
-                dtype=torch.int32,
-                device=device,
-            ),
-            n_scan_path_segs=torch.zeros(
-                io + (max_n_gens,), dtype=torch.int32, device=device
-            ),
-            scan_path_seg_that_builds_output_conn=torch.full(
-                io + (max_n_conn, 2), -1, dtype=torch.int32, device=device
-            ),
-            scan_path_seg_starts=torch.full(
-                io + (max_n_gens, max_n_scan_path_segs_per_gen),
-                -1,
-                dtype=torch.int32,
-                device=device,
-            ),
-            scan_path_seg_is_real=torch.zeros(
-                io + (max_n_gens, max_n_scan_path_segs_per_gen),
-                dtype=torch.bool,
-                device=device,
-            ),
-            scan_path_seg_is_inter_block=torch.zeros(
-                io + (max_n_gens, max_n_scan_path_segs_per_gen),
-                dtype=bool,
-                device=device,
-            ),
-            scan_path_seg_lengths=torch.zeros(
-                io + (max_n_gens, max_n_scan_path_segs_per_gen),
-                dtype=torch.int32,
-                device=device,
-            ),
-            uaid_for_torsion_by_inconn=torch.full(
-                (n_bt, max_n_input_types, max_n_torsions, 3),
-                -1,
-                dtype=torch.int32,
-                device=device,
-            ),
-            torsion_direction=torch.full(
-                (n_bt, max_n_input_types, max_n_torsions),
-                1,
-                dtype=torch.int32,
-                device=device,
-            ),
+        arrays = _core_chemical_kinematics.empty_packed_kinematic_stencils(
+            n_bt,
+            max_n_input_types,
+            max_n_output_types,
+            max_n_atoms,
+            max_n_conn,
+            max_n_gens,
+            max_n_scan_path_segs_per_gen,
+            max_n_nodes_per_gen,
+            max_n_torsions,
         )
+        return cls.from_numpy(arrays, device)

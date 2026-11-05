@@ -18,6 +18,18 @@ from tmol.kinematics._scan_ordering import (
 from tmol.kinematics.compiled._compiled_ops import _inverse_kin, _forward_kin_op
 
 
+def test_empty_stencil_axes_keep_native_tensor_strides():
+    import attrs
+    from tmol.kinematics._datatypes import PBTGenerationalSegScanPathSegs
+
+    data = PBTGenerationalSegScanPathSegs.empty(
+        torch.device("cpu"), 1, 2, 2, 1, 0, 0, 0, 0, 0
+    )
+    for field in attrs.fields(type(data)):
+        value = getattr(data, field.name)
+        assert value.stride() == torch.empty(value.shape, dtype=value.dtype).stride()
+
+
 def test_gen_seg_scan_paths_block_type_annotation_smoke(fresh_default_restype_set):
     bt_list = [bt for bt in fresh_default_restype_set.residue_types if bt.name == "LEU"]
     for bt in bt_list:

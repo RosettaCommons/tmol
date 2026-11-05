@@ -46,6 +46,8 @@ def test_packed_atom_order_and_physical_connections(chemistry):
 
 
 def test_empty_palette_retains_requested_connection_capacity(chemistry):
+    from tmol_core.kinematics.chemical import prepare_packed_kinematic_stencils
+
     data = PackedBlockTypesData.from_restypes(chemistry, [], min_n_conn=2)
     assert data.conn_atom.shape == (0, 2)
     assert data.kinematic_conn.shape == (0, 2)
@@ -53,6 +55,12 @@ def test_empty_palette_retains_requested_connection_capacity(chemistry):
     assert data.torsion_uaids.shape == (0, 0, 4, 3)
     assert data.atom_is_hydrogen.shape == (0, 0)
     assert data.ideal_coords.shape == (0, 0, 3)
+    stencils = prepare_packed_kinematic_stencils(
+        [], max_n_atoms=0, max_n_conn=2, max_n_torsions=0
+    )
+    assert stencils["parents"].shape == (0, 0, 0)
+    assert stencils["scan_path_seg_that_builds_output_conn"].shape == (0, 0, 0, 2, 2)
+    assert all(value.shape[0] == 0 for value in stencils.values())
 
 
 def test_missing_atom_type_fails_before_device_transfer(chemistry):
