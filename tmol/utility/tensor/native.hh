@@ -260,6 +260,9 @@ using torch::kFloat64;
 using torch::kInt32;
 using torch::kMPS;
 namespace autograd = torch::autograd;
+inline Tensor realigned_copy(const Tensor& source) {
+  return at::empty(source.sizes(), source.options()).copy_(source);
+}
 inline ScalarType scalar_type_from_options(const TensorOptions& o) {
   return c10::typeMetaToScalarType(o.dtype());
 }

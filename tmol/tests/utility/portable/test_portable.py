@@ -132,3 +132,16 @@ def test_whole_pose_genbonded_needs_no_framework(tmp_path):
     """Instantiate full float/double score and derivative kernels without Torch."""
     proc = _compile(HERE / "native_genbonded.cc", tmp_path / "genbonded", run=True)
     assert proc.returncode == 0, proc.stderr
+
+
+@requires_cxx
+@pytest.mark.parametrize("stable", [False, True])
+def test_native_gradient_copy_compiles_for_both_torch_abis(tmp_path, stable):
+    flags = _torch_flags()
+    if not stable:
+        flags = [
+            flag for flag in flags if not flag.startswith("-DTORCH_TARGET_VERSION")
+        ]
+        flags.append("-std=c++20")
+    proc = _compile(HERE / "native_copy.cc", tmp_path / "copy", defines=flags)
+    assert proc.returncode == 0, proc.stderr
