@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from tests.scientific.execution import Execution
-from tests.scientific.molecules import CASES, BACKBONE_CASES
+from tests.scientific.molecules import CASES, BACKBONE_CASES, MolecularCase
 from tests.scientific.metal_molecules import METAL_CASES
 from tests.scientific.na_molecules import NA_CASES
 from tests.scientific.dunbrack_molecules import DUNBRACK_CASES
@@ -84,6 +84,7 @@ def test_native_coordinate_transforms_and_pose_independence(dtype, backend_name,
         np.testing.assert_allclose(values[0], value, rtol=2e-6, atol=2e-6)
         np.testing.assert_allclose(gradients[0], gradient, rtol=2e-6, atol=2e-6)
         assert values.dtype == gradient.dtype == dtype
+        assert value.device == gradient.device == backend.device
         # Summed float32 torsions lose precision for sub-milliangstrom changes;
         # 5e-3 along this normalized direction balances cancellation/truncation.
         step = 5e-3 if dtype == np.float32 else 1e-5
@@ -96,6 +97,40 @@ def test_native_coordinate_transforms_and_pose_independence(dtype, backend_name,
             rtol=3e-3 if dtype == np.float32 else 2e-6,
             atol=3e-3 if dtype == np.float32 else 2e-6,
         )
+
+
+def test_native_nonbonded_bounds_follow_changed_coordinates(backend_name):
+    """One rendered scorer must find interactions that begin outside its cutoff."""
+    terms = ("fa_ljatr", "fa_ljrep", "fa_lk", "fa_elec")
+    case = MolecularCase(CASES["ligand"].parameter_files, (("LG1", "LG1"),), ((1, 1),))
+    backend = Execution(backend_name).molecule(case, terms=terms)
+    near = backend.pose.coords
+    offset = int(backend.pose.block_coord_offset[0, 1])
+    far = near.at[:, offset:, 0].add(100)
+    pose = backend.pose.replace(coords=far)
+    weights = (0.7, -0.2, 1.3, 0.5)
+
+    def prepare(names):
+        score_function = ScoreFunction(backend.parameter_database)
+        for name, weight in zip(terms, weights):
+            if name in names:
+                score_function.set_weight(ScoreType[name], weight)
+        return score_function.render_whole_pose_scoring_module(pose)
+
+    fused = prepare(terms)
+    ljlk, elec = prepare(terms[:3]), prepare(terms[3:])
+    fused_vg = jax.jit(jax.value_and_grad(lambda x: fused(x).sum()))
+    split_vg = jax.jit(jax.value_and_grad(lambda x: (ljlk(x) + elec(x)).sum()))
+    results = []
+    for coords in (far, near, far):
+        value, gradient = fused_vg(coords)
+        split_value, split_gradient = split_vg(coords)
+        np.testing.assert_allclose(value, split_value, atol=1e-4, rtol=2e-5)
+        np.testing.assert_allclose(gradient, split_gradient, atol=1e-4, rtol=2e-5)
+        results.append((value, gradient))
+    assert abs(float(results[1][0] - results[0][0])) > 1e-3
+    np.testing.assert_array_equal(results[0][0], results[2][0])
+    np.testing.assert_allclose(results[0][1], results[2][1], atol=1e-5, rtol=1e-6)
 
 
 def test_native_custom_parameters_change_values_and_gradients_without_stale_cache(
