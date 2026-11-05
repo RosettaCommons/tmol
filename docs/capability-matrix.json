@@ -137,9 +137,10 @@
       "repro_fixture": [
         "tests/scientific/test_packing_palette.py",
         "tests/scientific/test_molecular_rotamer_geometry.py",
-        "tests/scientific/test_molecular_sampling_preparation.py"
+        "tests/scientific/test_molecular_sampling_preparation.py",
+        "tests/jax/test_native_sampling.py"
       ],
-      "implementation_status": "Shared residue choices, single-residue and connected-group rotamer geometry, Dunbrack library/explicit-chi preparation and retained-atom copy plans. JAX native CPU initialization reproduces 3877 geometry arrays across 322 default/custom residue types exactly against Torch; sampling preparation matches 2588 arrays and 644 ownership records across the same types and two budgets. Molecular geometry passes CPU/CUDA and matching Torch-free installed artifacts. New sampling adapters have CPU validation; CUDA validation pending. PackerTask, native rotamer enumeration, interaction graphs, annealing, pack_rotamers and mutation/design execution remain absent."
+      "implementation_status": "Shared residue choices, single-residue and connected-group rotamer geometry, Dunbrack library/explicit-chi preparation and retained-atom copy plans. JAX native CPU initialization reproduces 3877 geometry arrays across 322 default/custom residue types exactly against Torch; sampling preparation matches 2588 arrays and 644 ownership records across the same types and two budgets. Molecular geometry passes CPU/CUDA and matching Torch-free installed artifacts. Sampling preparation passes the same seven molecular assertions on Torch CPU and JAX CPU/CUDA. The private CPU dynamic-sampling binding matches all four outputs for 50 calls in float32/64 against a fresh Torch artifact from the same geometry revision; two budget errors agree. Public pose/task sampling, CUDA dynamic enumeration, PackerTask, interaction graphs, annealing, pack_rotamers and mutation/design execution remain absent."
     },
     {
       "domain": "kinematics",

@@ -3,6 +3,7 @@
 #include "host_array_ffi.hh"
 #include <tmol/kinematics/compiled/host_pose_kinematics.hh>
 #include <tmol/kinematics/compiled/native_kinematics.hh>
+#include <tmol/pack/rotamer/dunbrack/host_sampling.hh>
 #include <cstdio>
 
 namespace tmol::jax {
@@ -105,6 +106,25 @@ extern "C" int tmol_kinematic_host_prepare(
               *output);
         else
           throw std::invalid_argument("inverse coordinates must be float32/64");
+        break;
+      case 12:
+        if (array_count < 1)
+          throw std::invalid_argument("missing sampling coordinates");
+        if (arrays[0].scalar_type == 3)
+          tmol::jax::invoke_host(
+              &tmol::pack::rotamer::dunbrack::HostDunbrackSampling<float>::f,
+              context,
+              inputs,
+              *output);
+        else if (arrays[0].scalar_type == 4)
+          tmol::jax::invoke_host(
+              &tmol::pack::rotamer::dunbrack::HostDunbrackSampling<double>::f,
+              context,
+              inputs,
+              *output);
+        else
+          throw std::invalid_argument(
+              "sampling coordinates must be float32/64");
         break;
       default:
         throw std::invalid_argument("unknown native pose operation");
