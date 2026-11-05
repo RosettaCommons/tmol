@@ -121,3 +121,30 @@ def test_bound_empty_forward_and_reverse():
     assert result.shape == (0, 3)
     gradient = jax.jit(jax.grad(lambda x: mapping(x).sum()))(mapping.initial_dofs)
     assert gradient.shape == (0, 6)
+
+
+def test_fold_forest_chain_gaps_preserve_explicit_labels():
+    from tmol_jax import FoldForest
+    from tests.scientific.execution import Execution
+    from tests.scientific.molecules import MolecularCase
+    from tmol_core.kinematics.fold_forest import EdgeType
+
+    pose = (
+        Execution("jax-cpu")
+        .molecule(MolecularCase((), (("ALA", "GLY"),), ((1, 1),)), terms=("ref",))
+        .pose
+    )
+    separate = FoldForest.reasonable_fold_forest(pose)
+    assert (separate.edges[0, :, 0] == EdgeType.root_jump).sum() == 2
+    without_labels = pose.replace(pdb_info=None)
+    with pytest.raises(ValueError, match="chain_id is required"):
+        FoldForest.reasonable_fold_forest(without_labels)
+    with pytest.raises(ValueError, match="shape"):
+        FoldForest.reasonable_fold_forest(without_labels, chain_id=["A", "A"])
+    with pytest.raises(ValueError, match="every real block"):
+        FoldForest.reasonable_fold_forest(without_labels, chain_id=[[None, None]])
+    empty = FoldForest.reasonable_fold_forest(pose[:0])
+    assert empty.edges.shape == (0, 1, 4) and empty.n_edges.size == 0
+    gap = FoldForest.reasonable_fold_forest(without_labels, chain_id=[["A", "A"]])
+    assert (gap.edges[0, :, 0] == EdgeType.root_jump).sum() == 1
+    np.testing.assert_array_equal(gap.edges[0, 1], [EdgeType.jump, 0, 1, 0])

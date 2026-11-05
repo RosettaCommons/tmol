@@ -84,6 +84,12 @@ Harmonic/bounded arithmetic supports higher derivatives; the shared native
 torsion primitive supports first coordinate derivatives. The earlier coordinate
 restraint container in `tmol_jax.score.constraint` remains available.
 
+`FoldForest.reasonable_fold_forest(pose)` shares chemical spanning and cycle
+handling with Torch, preserving chain labels and non-kinematic closures.
+For manually prepared poses without chain metadata, supply `chain_id=` with
+shape `[poses, blocks]`. These residue-level edges do not yet construct an
+atom-level kinematic forest.
+
 `tmol_jax.kinematics.KinematicForest(parent, frame_x, frame_y, frame_z,
 doftype, device=...)` prepares validated indices in kinematic coordinate order,
 including virtual root zero. `jax.jit(forest.inverse)(coordinates)` returns
