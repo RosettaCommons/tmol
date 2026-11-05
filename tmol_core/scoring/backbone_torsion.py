@@ -48,7 +48,23 @@ def prepare_backbone_tables(rama_tables, omega_tables, fit_coefficients):
     returns same-shaped coefficients using the shared native spline prefilter.
     Original and mirrored tables occupy [0,n) and [n,2*n), respectively.
     """
-    shape = rama_tables[0].table.shape
+
+    def family_shape(rows, fields, name):
+        if not rows:
+            raise ValueError(f"{name} requires at least one parameter table")
+        shape = numpy.asarray(getattr(rows[0], fields[0])).shape
+        if len(shape) != 2 or min(shape) == 0:
+            raise ValueError(f"{name} tables must be nonempty two-dimensional grids")
+        if any(
+            numpy.asarray(getattr(row, field)).shape != shape
+            for row in rows
+            for field in fields
+        ):
+            raise ValueError(f"All {name} tables must share one grid shape")
+        return shape
+
+    shape = family_shape(rama_tables, ("table",), "Ramachandran")
+    omega_shape = family_shape(omega_tables, ("mu", "sigma"), "omega")
     rama = numpy.empty((2 * len(rama_tables), *shape), dtype=numpy.float32)
     for i, row in enumerate(rama_tables):
         raw = numpy.asarray(row.table, dtype=numpy.float32)
@@ -56,7 +72,7 @@ def prepare_backbone_tables(rama_tables, omega_tables, fit_coefficients):
         rama[i + len(rama_tables)] = fit_coefficients(
             _mirror_grid(raw, row.bbstart, row.bbstep)
         )
-    omega = numpy.empty((2 * len(omega_tables), 2, *shape), dtype=numpy.float32)
+    omega = numpy.empty((2 * len(omega_tables), 2, *omega_shape), dtype=numpy.float32)
     for i, row in enumerate(omega_tables):
         mu, sigma = (numpy.asarray(v, dtype=numpy.float32) for v in (row.mu, row.sigma))
         omega[i, 0] = fit_coefficients(mu)

@@ -207,3 +207,41 @@ def test_active_reference_to_missing_table_is_rejected(default_database, name):
     )
     with pytest.raises(ValueError, match="names a missing table"):
         term.setup_block_type(block_type)
+
+
+def test_independent_backbone_grid_shapes_preserve_constant_models(default_database):
+    rama = default_database.scoring.rama
+    omega = default_database.scoring.omega_bbdep
+    rama = attr.evolve(
+        rama,
+        rama_tables=tuple(
+            attr.evolve(row, table=torch.full((7, 5), 2.0)) for row in rama.rama_tables
+        ),
+    )
+    omega = attr.evolve(
+        omega,
+        bbdep_omega_tables=tuple(
+            attr.evolve(
+                row, mu=torch.full((6, 9), 190.0), sigma=torch.full((6, 9), 8.0)
+            )
+            for row in omega.bbdep_omega_tables
+        ),
+    )
+    rama, omega = (attr.evolve(db, uniq_id=db.content_id()) for db in (rama, omega))
+    params = BackboneTorsionParamResolver.from_database(
+        rama, omega, torch.device("cpu")
+    )
+    assert params.rama_params.tables.shape[1:] == (7, 5)
+    assert params.omega_params.tables.shape[2:] == (6, 9)
+    torch.testing.assert_close(
+        params.rama_params.tables, torch.full_like(params.rama_params.tables, 2.0)
+    )
+    mu = params.omega_params.tables[:, 0]
+    torch.testing.assert_close(
+        mu[: params.n_omega_tables], torch.full_like(mu[: params.n_omega_tables], 190.0)
+    )
+    torch.testing.assert_close(
+        mu[params.n_omega_tables :], torch.full_like(mu[params.n_omega_tables :], 170.0)
+    )
+    sigma = params.omega_params.tables[:, 1]
+    torch.testing.assert_close(sigma, torch.full_like(sigma, 8.0))

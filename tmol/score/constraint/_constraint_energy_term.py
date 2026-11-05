@@ -213,7 +213,7 @@ class ConstraintEnergyTerm(EnergyTerm):
         def add_onebody_vectorized():
             # first, compute how many copies of each constraint we get
             onebody = (unique_blocks == 1).nonzero().squeeze(-1)
-            if onebody.count_nonzero() == 0:
+            if onebody.numel() == 0:
                 return
 
             constraint_poses = constraint_atoms[onebody][:, 0, 0]
@@ -294,7 +294,7 @@ class ConstraintEnergyTerm(EnergyTerm):
         def add_twobody_vectorized():
             # first, compute how many copies of each constraint we get
             twobody = (unique_blocks == 2).nonzero().squeeze(-1)
-            if twobody.count_nonzero() == 0:
+            if twobody.numel() == 0:
                 return
 
             constraint_poses = constraint_atoms[twobody][:, 0, 0]
