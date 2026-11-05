@@ -8,7 +8,7 @@ namespace numeric {
 // effectively pow(2,int(floor(log2(g.size())))), but avoiding
 // transcendental function evaluation. Handy for working with
 // coalesced groups, which usually are not an even power of 2
-TMOL_HOST_DEVICE_FUNC inline unsigned int most_sig_bit(unsigned int x) {
+TMOL_HOST_DEVICE_FUNC unsigned int most_sig_bit(unsigned int x) {
 #ifdef __CUDA_ARCH__
   return 1 << (31 - __clz(x));
 #else
