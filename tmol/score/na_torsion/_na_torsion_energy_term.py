@@ -1,4 +1,5 @@
 import numpy
+from tmol_core.scoring.na_torsion_topology import prepare_na_torsion_topology
 import torch
 
 from .._energy_term import EnergyTerm
@@ -249,64 +250,6 @@ class NaTorsionEnergyTerm(EnergyTerm):
         return [*self.get_score_term_attributes(pose_stack), *indices]
 
 
-def _resolve_uaids(
-    uaids, block_type, block_coord_offset, inter_res_conn, atom_downstream_of_conn
-):
-    """Global (flattened) atom indices for unresolved atom ids; -1 if absent.
-
-    A uaid is (atom, connection, bonds-from-connection): connection -1 means the
-    atom is local, otherwise it is reached through a residue connection.
-    """
-    n_poses, max_n_blocks = block_type.shape
-    trailing = uaids.shape[2:-1]  # (n_torsion, 4)
-    shape = (n_poses, max_n_blocks) + tuple(trailing)
-
-    atom = uaids[..., 0].to(torch.int64)
-    conn = uaids[..., 1].to(torch.int64)
-    sep = uaids[..., 2].to(torch.int64)
-    is_inter = conn >= 0
-
-    self_block = (
-        torch.arange(max_n_blocks, device=uaids.device)
-        .view(1, max_n_blocks, *([1] * len(trailing)))
-        .expand_as(atom)
-    )
-
-    # partner block/connection for every inter-residue uaid
-    conn_idx = conn.clamp_min(0).reshape(n_poses, max_n_blocks, -1)
-    other_block = torch.gather(inter_res_conn[..., 0].to(torch.int64), 2, conn_idx)
-    other_conn = torch.gather(inter_res_conn[..., 1].to(torch.int64), 2, conn_idx)
-    other_block = other_block.reshape(atom.shape)
-    other_conn = other_conn.reshape(atom.shape)
-
-    target_block = torch.where(is_inter, other_block, self_block)
-    # an inter-residue uaid carries atom == -1; its atom index comes from the
-    # partner block below
-    ok = torch.where(is_inter, other_block >= 0, atom >= 0)
-    target_block_safe = target_block.clamp_min(0)
-
-    target_bt = torch.gather(
-        block_type.to(torch.int64), 1, target_block_safe.reshape(n_poses, -1)
-    ).reshape(*shape)
-    ok = ok & (target_bt >= 0)
-
-    local_inter = atom_downstream_of_conn.to(torch.int64)[
-        target_bt.clamp_min(0), other_conn.clamp_min(0), sep.clamp_min(0)
-    ]
-    local = torch.where(is_inter, local_inter, atom)
-    ok = ok & (local >= 0)
-
-    offset = torch.gather(
-        block_coord_offset.to(torch.int64), 1, target_block_safe.reshape(n_poses, -1)
-    ).reshape(*shape)
-    pose = (
-        torch.arange(n_poses, device=uaids.device)
-        .view(n_poses, *([1] * (atom.dim() - 1)))
-        .expand_as(atom)
-    )
-    return pose, offset + local, ok
-
-
 def _eval_na_torsion_for_pose(
     # common args
     rot_coords,
@@ -435,55 +378,15 @@ def _eval_na_torsion_for_pose(
     )
 
 
-def _pose_indices(
-    block_type_ind_for_rot,
-    bt_base,
-    bt_uaids,
-    bt_ring,
-    bt_down,
-    atom_downstream_of_conn,
-    block_coord_offset,
-    inter_residue_connections,
-    max_n_atoms,
-):
-    """Resolve immutable nucleic-acid topology once for repeated scoring."""
-    n_poses, max_n_blocks = block_coord_offset.shape
-    block_type = block_type_ind_for_rot.view(n_poses, max_n_blocks).to(torch.int64)
-    real = block_type >= 0
-    bt_safe = block_type.clamp_min(0)
-    base = torch.where(real, bt_base.to(torch.int64)[bt_safe], -1)
-    is_na = base >= 0
-
-    pose, index, ok = _resolve_uaids(
-        bt_uaids[bt_safe],
-        block_type,
-        block_coord_offset,
-        inter_residue_connections,
-        atom_downstream_of_conn,
+def _pose_indices(*args):
+    # Static topology is prepared once on the host. Coordinate execution stays
+    # on the requested device and uses these immutable index arrays.
+    device = args[0].device
+    arrays = [a.detach().cpu().numpy() for a in args[:-1]]
+    return tuple(
+        torch.as_tensor(value, device=device)
+        for value in prepare_na_torsion_topology(*arrays, args[-1])
     )
-    torsion_indices = (pose * max_n_atoms + index).clamp_min(0)
-    torsion_ok = ok.all(-1) & is_na.unsqueeze(-1)
-
-    ring_local = bt_ring.to(torch.int64)[bt_safe]
-    ring_pose = torch.arange(n_poses, device=block_type.device).view(n_poses, 1, 1)
-    ring_index = block_coord_offset.to(torch.int64).unsqueeze(-1) + ring_local
-    ring_indices = (ring_pose * max_n_atoms + ring_index).clamp_min(0)
-    ring_ok = (ring_local >= 0) & is_na.unsqueeze(-1)
-
-    down = bt_down.to(torch.int64)[bt_safe]
-    prev_block = torch.gather(
-        inter_residue_connections[..., 0].to(torch.int64),
-        2,
-        down.clamp_min(0)[..., None],
-    ).squeeze(-1)
-    has_prev = (down >= 0) & (prev_block >= 0)
-    pose_ind = torch.arange(n_poses, device=block_type.device).view(n_poses, 1)
-    prev = torch.where(
-        has_prev,
-        pose_ind * max_n_blocks + prev_block,
-        torch.full_like(prev_block, -1),
-    )
-    return base, is_na, torsion_indices, torsion_ok, ring_indices, ring_ok, prev
 
 
 def _pose_subterms(

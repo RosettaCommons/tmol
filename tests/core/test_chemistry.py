@@ -119,6 +119,8 @@ from tmol_core.chemical.metal_donors import _metal_donor_patch
 patch = _metal_donor_patch("HIS", "NE2", 2)
 assert [c.name for c in patch.add_connections] == ["metal_NE2", "metal2_NE2"]
 assert all(not c.kinematic for c in patch.add_connections)
+import tmol_core.scoring.na_torsion_params, tmol_core.scoring.na_torsion_topology
+import tmol_core.database.na_torsion
 import tmol_core.scoring.metal, tmol_core.database.metal_coordination
 import tmol_core.scoring.backbone_torsion
 import tmol_core.scoring.cartbonded, tmol_core.scoring.cartbonded_connections, tmol_core.scoring.atom_ids
