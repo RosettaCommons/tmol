@@ -17,7 +17,9 @@ def test_generic_bonded_molecular_derivative(backend, name):
     # Central differences are independent of the common analytic kernel.
     direction = np.random.default_rng(91).normal(size=coords.shape).astype(coords.dtype)
     direction /= np.linalg.norm(direction)
-    step = 1e-3
+    # At float32, 1e-3 steps lose digits in summed ligand torsions. A
+    # 5e-3 step converges with the double-precision directional derivative.
+    step = 5e-3
     numeric = (
         backend.scores(coords + step * direction)
         - backend.scores(coords - step * direction)

@@ -14,68 +14,6 @@ import numpy as np
 
 from tmol_jax.types import pytree_dataclass
 
-# Helpers                                                                      #
-
-
-def _element_index_map(chem_db: Any) -> dict:
-    """Build ``{element_symbol: int_index}`` from a PatchedChemicalDatabase.
-
-    Element indices are assigned in the order they appear in
-    ``chem_db.element_types``. An "UNKNOWN"-style fallback is emitted as
-    index ``-1`` by callers that consult this map and get ``None``.
-    """
-    return {el.name: i for i, el in enumerate(chem_db.element_types)}
-
-
-def _atom_type_index_map(chem_db: Any) -> dict:
-    """Build ``{atom_type_name: int_index}`` from a PatchedChemicalDatabase."""
-    return {at.name: i for i, at in enumerate(chem_db.atom_types)}
-
-
-def _atom_element_map(chem_db: Any) -> dict:
-    """Build ``{atom_type_name: element_symbol}`` from the atom types table."""
-    return {at.name: at.element for at in chem_db.atom_types}
-
-
-def _path_distance_within_residue(
-    n_atoms: int, bond_indices: np.ndarray, max_sep: int = 6
-) -> np.ndarray:
-    """Compute shortest-path distance (in #bonds) between every pair of atoms
-    in a single residue type, clipped at ``max_sep``.
-
-    BFS from each source atom -- avoids the scipy.sparse dependency of
-    the upstream implementation while producing an identical result for
-    the connectivity we care about (unweighted undirected bond graph).
-    """
-    if n_atoms == 0:
-        return np.zeros((0, 0), dtype=np.int32)
-
-    # Adjacency list from the (redundant, symmetric) bond edge list.
-    adj: List[List[int]] = [[] for _ in range(n_atoms)]
-    for i in range(bond_indices.shape[0]):
-        a, b = int(bond_indices[i, 0]), int(bond_indices[i, 1])
-        if 0 <= a < n_atoms and 0 <= b < n_atoms:
-            adj[a].append(b)
-
-    dist = np.full((n_atoms, n_atoms), max_sep, dtype=np.int32)
-    for src in range(n_atoms):
-        # BFS with a simple queue; max depth is ``max_sep`` since
-        # further-than-that distances are clamped.
-        dist[src, src] = 0
-        frontier = [src]
-        d = 0
-        while frontier and d < max_sep:
-            d += 1
-            nxt: List[int] = []
-            for u in frontier:
-                for v in adj[u]:
-                    if dist[src, v] > d:
-                        dist[src, v] = d
-                        nxt.append(v)
-            frontier = nxt
-    return dist
-
-
 # PackedBlockTypes                                                             #
 
 
@@ -130,150 +68,38 @@ class PackedBlockTypes:
         chem_db: Any,
         active_types: Sequence[Any],
     ) -> "PackedBlockTypes":
-        """Build a ``PackedBlockTypes`` from a list of
-        ``RefinedResidueType`` instances.
+        """Transfer the common host topology onto the current JAX device."""
+        from tmol_core.chemical.packed import PackedBlockTypesData
 
-        The build proceeds on the CPU via ``numpy`` (residue-type
-        metadata is Python-object-heavy and iterating over it from JAX
-        tracing would be nonsensical) and the final arrays are moved
-        onto whatever device ``jax.numpy`` defaults to via
-        ``jnp.asarray``.
-        """
-        from tmol_jax.chemical.ideal_coords import build_ideal_coords
-
-        active_types = tuple(active_types)
-        n_types = len(active_types)
-
-        # Cached lookups on the chemical database.
-        element_index = _element_index_map(chem_db)
-        atom_type_index = _atom_type_index_map(chem_db)
-        atom_element = _atom_element_map(chem_db)
-
-        # Dimensions                                                      #
-        if n_types == 0:
-            max_n_atoms = 0
-            max_n_bonds = 0
-            max_n_conn = 2
-        else:
-            max_n_atoms = max(len(rt.atoms) for rt in active_types)
-            max_n_bonds = max(
-                (rt.bond_indices.shape[0] if rt.bond_indices is not None else 0)
-                for rt in active_types
+        host = PackedBlockTypesData.from_restypes(chem_db, active_types, min_n_conn=2)
+        arrays = {
+            name: jnp.asarray(getattr(host, name))
+            for name in (
+                "n_atoms",
+                "atom_is_real",
+                "atom_elements",
+                "atom_types",
+                "atom_is_backbone",
+                "n_bonds",
+                "ideal_coords",
+                "n_conn",
+                "intrares_path_distance",
             )
-            max_n_conn = max(2, max(len(rt.connections) for rt in active_types))
-
-        # Per-type scalar counts                                          #
-        n_atoms_np = np.asarray([len(rt.atoms) for rt in active_types], dtype=np.int32)
-        n_bonds_np = np.asarray(
-            [
-                (rt.bond_indices.shape[0] if rt.bond_indices is not None else 0)
-                for rt in active_types
-            ],
-            dtype=np.int32,
+        }
+        arrays["atom_is_hydrogen"] = jnp.asarray(host.atom_is_hydrogen, dtype=bool)
+        arrays["bond_indices"] = jnp.asarray(
+            np.where(host.bond_is_real[..., None], host.bond_indices, 0)
         )
-        n_conn_np = np.asarray(
-            [len(rt.connections) for rt in active_types], dtype=np.int32
-        )
-
-        # Per-atom packed arrays                                          #
-        atom_is_real_np = np.zeros((n_types, max_n_atoms), dtype=bool)
-        atom_elements_np = np.zeros((n_types, max_n_atoms), dtype=np.int32)
-        atom_types_np = np.zeros((n_types, max_n_atoms), dtype=np.int32)
-        atom_is_hydrogen_np = np.zeros((n_types, max_n_atoms), dtype=bool)
-        atom_is_backbone_np = np.zeros((n_types, max_n_atoms), dtype=bool)
-        atom_names_list: List[Tuple[str, ...]] = []
-
-        for i, rt in enumerate(active_types):
-            atoms = list(rt.atoms)
-            atom_is_real_np[i, : len(atoms)] = True
-
-            # Main-chain atom set (may be ``None`` / empty for non-
-            # polymeric residues). We use *set* membership rather than
-            # atom index because some variants re-order atoms.
-            mc_atoms: set[str]
-            try:
-                polymer = rt.properties.polymer
-                mc_atoms = set(polymer.mainchain_atoms or ())
-            except AttributeError:
-                mc_atoms = set()
-
-            names: List[str] = []
-            for j, atom in enumerate(atoms):
-                names.append(atom.name)
-                atype = atom.atom_type
-                atom_types_np[i, j] = atom_type_index.get(atype, -1)
-                elem = atom_element.get(atype, None)
-                atom_elements_np[i, j] = (
-                    element_index.get(elem, -1) if elem is not None else -1
-                )
-                atom_is_hydrogen_np[i, j] = elem == "H"
-                atom_is_backbone_np[i, j] = atom.name in mc_atoms
-            # pad names out to ``max_n_atoms`` with the empty string
-            while len(names) < max_n_atoms:
-                names.append("")
-            atom_names_list.append(tuple(names))
-
-        # Bond edges                                                      #
-        bond_indices_np = np.zeros((n_types, max_n_bonds, 2), dtype=np.int32)
-        for i, rt in enumerate(active_types):
-            bi = rt.bond_indices
-            if bi is not None and bi.shape[0] > 0:
-                bond_indices_np[i, : bi.shape[0]] = bi.astype(np.int32)
-
-        # Connections: atom index each connection exits through           #
-        conn_atoms_np = np.full((n_types, max_n_conn), -1, dtype=np.int32)
-        for i, rt in enumerate(active_types):
-            oc = getattr(rt, "ordered_connection_atoms", None)
-            if oc is not None and oc.shape[0] > 0:
-                conn_atoms_np[i, : oc.shape[0]] = oc.astype(np.int32)
-            else:
-                # Fall back to iterating the raw connection list.
-                for k, conn in enumerate(rt.connections):
-                    conn_atoms_np[i, k] = rt.atom_to_idx[conn.atom]
-
-        # Ideal coords                                                    #
-        ideal_coords_np = np.zeros((n_types, max_n_atoms, 3), dtype=np.float32)
-        for i, rt in enumerate(active_types):
-            coords = build_ideal_coords(rt)
-            ideal_coords_np[i, : len(rt.atoms)] = coords[rt.at_to_icoor_ind]
-
-        # Intra-residue path distances                                    #
-        intrares_pd_np = np.zeros((n_types, max_n_atoms, max_n_atoms), dtype=np.int32)
-        for i, rt in enumerate(active_types):
-            n = len(rt.atoms)
-            # Prefer the cached ``path_distance`` attribute when present;
-            # otherwise compute via BFS.
-            pd = getattr(rt, "path_distance", None)
-            if pd is None:
-                bi = (
-                    rt.bond_indices
-                    if rt.bond_indices is not None
-                    else np.zeros((0, 2), dtype=np.int32)
-                )
-                pd = _path_distance_within_residue(n, bi)
-            intrares_pd_np[i, :n, :n] = pd[:n, :n].astype(np.int32)
-
-        # Build the instance                                              #
+        arrays["conn_atoms"] = jnp.asarray(host.conn_atom)
         return cls(
             chem_db=chem_db,
-            active_block_types=active_types,
-            atom_names=tuple(atom_names_list),
-            n_types=int(n_types),
-            max_n_atoms=int(max_n_atoms),
-            max_n_bonds=int(max_n_bonds),
-            max_n_conn=int(max_n_conn),
-            n_atoms=jnp.asarray(n_atoms_np),
-            atom_is_real=jnp.asarray(atom_is_real_np),
-            atom_elements=jnp.asarray(atom_elements_np),
-            atom_types=jnp.asarray(atom_types_np),
-            atom_is_hydrogen=jnp.asarray(atom_is_hydrogen_np),
-            atom_is_backbone=jnp.asarray(atom_is_backbone_np),
-            bond_indices=jnp.asarray(bond_indices_np),
-            n_bonds=jnp.asarray(n_bonds_np),
-            ideal_coords=jnp.asarray(ideal_coords_np),
-            conn_atoms=jnp.asarray(conn_atoms_np),
-            n_conn=jnp.asarray(n_conn_np),
-            intrares_path_distance=jnp.asarray(intrares_pd_np),
+            active_block_types=host.active_block_types,
+            atom_names=host.atom_names,
+            n_types=host.n_types,
+            max_n_atoms=host.max_n_atoms,
+            max_n_bonds=host.max_n_bonds,
+            max_n_conn=host.max_n_conn,
+            **arrays,
         )
 
     # Convenience constructors                                            #

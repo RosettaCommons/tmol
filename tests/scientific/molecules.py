@@ -104,3 +104,14 @@ CASES = {
         ((1, 1, 1), (1,)),
     ),
 }
+
+# Broader chemistry inputs for topology/parameter and per-term audits. These
+# do not imply full scoring support or nonzero generic-bonded parameterization.
+DOMAIN_CASES = {
+    **CASES,
+    "d_peptide": MolecularCase((), (("DALA", "DPRO", "DVAL"),), ((3,),)),
+    "dna": MolecularCase((), (("DA", "DC"),), ((2,),)),
+    "rna": MolecularCase((), (("RA", "RC"),), ((2,),)),
+    "metal_mixed": MolecularCase((), (("HIS", "ASP", "ZN_tetrahedral"),), ((1, 1, 1),)),
+    "metal_cluster": MolecularCase((), (("SF4",),), ((1,),)),
+}
