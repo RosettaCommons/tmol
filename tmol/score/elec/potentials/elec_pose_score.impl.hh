@@ -29,26 +29,16 @@
 #include <tmol/score/elec/potentials/params.hh>
 #include <tmol/score/elec/potentials/elec_ctx.hh>
 #include <tmol/score/common/tview_binder.hh>
-#include <tmol/score/elec/potentials/elec_kernels.hh>
+#include <tmol/score/elec/potentials/elec_pose_kernels.hh>
 #include <tmol/score/elec/potentials/elec_pose_score.hh>
 // Operator definitions; safe for CPU compilation
 #include <chrono>
 // The maximum number of inter-residue chemical bonds
-#define MAX_N_CONN 12
-#define TILE_SIZE 32
 namespace tmol {
 namespace score {
 namespace elec {
 namespace potentials {
 
-template <typename Real, typename Int, tmol::Device D, int OutRank = 4>
-using ElecCtx = ElecCtxT<
-    tmol::score::common::TViewBinder<D>::template View,
-    Real,
-    Int,
-    OutRank>;
-using tmol::portable::Vec;
-// MACROS
 template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
@@ -118,7 +108,7 @@ auto ElecPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
   int const n_block_types = block_type_n_atoms.size(0);
   int const max_n_interblock_bonds =
       block_type_atoms_forming_chemical_bonds.size(1);
-  assert(max_n_interblock_bonds <= MAX_N_CONN);
+  assert(max_n_interblock_bonds <= elec_max_n_conn);
   assert(first_rot_block_type.size(0) == n_poses);
   assert(first_rot_block_type.size(1) == max_n_blocks);
   assert(block_ind_for_rot.size(0) == n_rots);
@@ -268,41 +258,16 @@ auto ElecPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
   ctx.output_block_pair_energies =
       output_block_pair_energies || mps_cell_reduction;
   ctx.use_shared_compact_block_neighbors = use_shared_compact_block_neighbors;
-  auto eval_energies_by_block = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef ElecSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    elec_eval_energies_by_block_2<DeviceDispatch, D, Real, Int, launch_t>(
-        ctx, shared, cta);
-  });
-  auto eval_energies = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef ElecSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    elec_eval_energies<DeviceDispatch, D, Real, Int, launch_t>(
-        ctx, shared, cta);
-  });
+  ElecPoseEvaluator<0, DeviceDispatch, D, Real, Int, launch_t>
+      eval_energies_by_block{ctx};
+  ElecPoseEvaluator<1, DeviceDispatch, D, Real, Int, launch_t> eval_energies{
+      ctx};
   // Score neighboring block pairs. Sparse large CUDA poses use a
   // device-resident compact list to avoid launching dead scoring CTAs.
 #ifdef __NVCC__
   if (!output_block_pair_energies && use_shared_compact_block_neighbors) {
-    if (compute_derivs) {
-      score::common::sphere_overlap::
-          launch_precomputed_block_neighbors<DeviceDispatch, D, launch_t, Int>(
-              mgr,
-              shared_compact_block_neighbors,
-              n_poses,
-              max_n_blocks,
-              eval_energies);
-    } else {
-      score::common::sphere_overlap::
-          launch_precomputed_block_neighbors<DeviceDispatch, D, launch_t, Int>(
-              mgr,
-              shared_compact_block_neighbors,
-              n_poses,
-              max_n_blocks,
-              eval_energies_by_block);
-    }
+    elec_pose_forward_native<DeviceDispatch, D, Real, Int>(
+        mgr, ctx, shared_compact_block_neighbors, n_poses, compute_derivs);
   } else if (
       !output_block_pair_energies
       && score::common::sphere_overlap::should_compact_block_neighbors(
@@ -351,37 +316,8 @@ auto ElecPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
           mgr, cells_t.view, output_t.view);
     }
   } else {
-    if (!output_block_pair_energies && use_shared_compact_block_neighbors) {
-      if (compute_derivs) {
-        score::common::sphere_overlap::launch_precomputed_block_neighbors<
-            DeviceDispatch,
-            D,
-            launch_t,
-            Int>(
-            mgr,
-            shared_compact_block_neighbors,
-            n_poses,
-            max_n_blocks,
-            eval_energies);
-      } else {
-        score::common::sphere_overlap::launch_precomputed_block_neighbors<
-            DeviceDispatch,
-            D,
-            launch_t,
-            Int>(
-            mgr,
-            shared_compact_block_neighbors,
-            n_poses,
-            max_n_blocks,
-            eval_energies_by_block);
-      }
-    } else if (output_block_pair_energies || !compute_derivs) {
-      DeviceDispatch<D>::template foreach_pose_workgroup<launch_t>(
-          mgr, n_poses, max_n_upper_triangle_inds, eval_energies_by_block);
-    } else {
-      DeviceDispatch<D>::template foreach_pose_workgroup<launch_t>(
-          mgr, n_poses, max_n_upper_triangle_inds, eval_energies);
-    }
+    elec_pose_forward_native<DeviceDispatch, D, Real, Int>(
+        mgr, ctx, shared_compact_block_neighbors, n_poses, compute_derivs);
   }
   return {output_t, dV_dcoords_t, scratch_rot_neighbors_t};
 }  // namespace potentials
@@ -462,7 +398,7 @@ auto ElecPoseScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
   assert(n_rots_for_block.size(1) == max_n_blocks);
   assert(rot_offset_for_block.size(0) == n_poses);
   assert(rot_offset_for_block.size(1) == max_n_blocks);
-  assert(max_n_interblock_bonds <= MAX_N_CONN);
+  assert(max_n_interblock_bonds <= elec_max_n_conn);
   assert(pose_stack_near_blocks.size(0) == n_poses);
   assert(pose_stack_near_blocks.size(1) == max_n_blocks);
   assert(pose_stack_near_blocks.size(3) == 2);
@@ -512,17 +448,7 @@ auto ElecPoseScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
   ctx.dV_dcoords = dV_dcoords;
   ctx.max_n_blocks = max_n_blocks;
   ctx.max_n_upper_triangle_inds = max_n_upper_triangle_inds;
-  auto eval_derivs = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef ElecSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    elec_eval_derivs_2<DeviceDispatch, D, Real, Int, launch_t>(
-        ctx, shared, cta);
-  });
-  // Since we have the sphere overlap results from the forward pass,
-  // there's only a single kernel launch here
-  DeviceDispatch<D>::template foreach_pose_workgroup<launch_t>(
-      mgr, n_poses, max_n_upper_triangle_inds, eval_derivs);
+  elec_pose_backward_native<DeviceDispatch, D, Real, Int>(mgr, ctx, n_poses);
   return dV_dcoords_t;
 }
 template <
@@ -596,7 +522,7 @@ auto ElecRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
   int const n_block_types = block_type_n_atoms.size(0);
   int const max_n_interblock_bonds =
       block_type_atoms_forming_chemical_bonds.size(1);
-  assert(max_n_interblock_bonds <= MAX_N_CONN);
+  assert(max_n_interblock_bonds <= elec_max_n_conn);
   assert(first_rot_block_type.size(0) == n_poses);
   assert(first_rot_block_type.size(1) == max_n_blocks);
   assert(block_ind_for_rot.size(0) == n_rots);
@@ -708,7 +634,7 @@ auto ElecRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
   ctx.max_n_upper_triangle_inds = 0;
   ctx.use_shared_compact_block_neighbors = false;
   auto eval_energies_by_block = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef ElecSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
+    typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
         shared_mem_union;
     SHARED_MEMORY shared_mem_union shared;
     elec_eval_energies_by_block<DeviceDispatch, D, Real, Int, launch_t>(
@@ -810,7 +736,7 @@ auto ElecRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
   assert(n_rots_for_block.size(1) == max_n_blocks);
   assert(rot_offset_for_block.size(0) == n_poses);
   assert(rot_offset_for_block.size(1) == max_n_blocks);
-  assert(max_n_interblock_bonds <= MAX_N_CONN);
+  assert(max_n_interblock_bonds <= elec_max_n_conn);
   assert(pose_stack_near_blocks.size(0) == n_poses);
   assert(pose_stack_near_blocks.size(1) == max_n_blocks);
   assert(pose_stack_near_blocks.size(3) == 2);
@@ -857,7 +783,7 @@ auto ElecRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
   ctx.dV_dcoords = dV_dcoords;
   ctx.max_n_blocks = max_n_blocks;
   auto eval_derivs = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef ElecSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
+    typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
         shared_mem_union;
     SHARED_MEMORY shared_mem_union shared;
     elec_eval_derivs<DeviceDispatch, D, Real, Int, launch_t>(ctx, shared, cta);

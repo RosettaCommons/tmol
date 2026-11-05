@@ -31,7 +31,7 @@
 #include <tmol/score/ljlk/potentials/ljlk.hh>
 #include <tmol/score/ljlk/potentials/ljlk_ctx.hh>
 #include <tmol/score/common/tview_binder.hh>
-#include <tmol/score/ljlk/potentials/ljlk_kernels.hh>
+#include <tmol/score/ljlk/potentials/ljlk_pose_kernels.hh>
 #include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
 #include <tmol/backends/metal/score/ljlk/potentials/ljlk_mps_kernels_source.h>
@@ -43,21 +43,14 @@
 
 #include <chrono>
 
-// MAX_N_CONN (the maximum number of inter-residue chemical bonds) and
-// TILE_SIZE come from ljlk_kernels.hh, which the kernel bodies and this
+// ljlk_max_n_conn (the maximum number of inter-residue chemical bonds) and
+// ljlk_tile_size come from ljlk_kernels.hh, which the kernel bodies and this
 // dispatch must agree on.
 
 namespace tmol {
 namespace score {
 namespace ljlk {
 namespace potentials {
-
-template <typename Real, typename Int, tmol::Device D, int OutRank = 4>
-using LJLKCtx = LJLKCtxT<
-    tmol::score::common::TViewBinder<D>::template View,
-    Real,
-    Int,
-    OutRank>;
 
 using tmol::portable::Vec;
 
@@ -68,7 +61,7 @@ using tmol::portable::Vec;
       int atom_tile_ind1,                                                   \
       int atom_tile_ind2,                                                   \
       LJLKScoringData<Real> const& inter_dat) {                             \
-    int separation = interres_count_pair_separation<TILE_SIZE>(             \
+    int separation = interres_count_pair_separation<ljlk_tile_size>(        \
         inter_dat,                                                          \
         atom_tile_ind1,                                                     \
         atom_tile_ind2,                                                     \
@@ -157,7 +150,7 @@ using tmol::portable::Vec;
         DeviceOperations,                     \
         D,                                    \
         nt,                                   \
-        TILE_SIZE,                            \
+        ljlk_tile_size,                       \
         Real,                                 \
         Int>(                                 \
         rot_coords,                           \
@@ -237,8 +230,8 @@ using tmol::portable::Vec;
         DeviceOperations,                    \
         D,                                   \
         nt,                                  \
-        TILE_SIZE,                           \
-        MAX_N_CONN,                          \
+        ljlk_tile_size,                      \
+        ljlk_max_n_conn,                     \
         Real,                                \
         Int>(                                \
         rot_coords,                          \
@@ -270,8 +263,8 @@ using tmol::portable::Vec;
         DeviceOperations,                    \
         D,                                   \
         nt,                                  \
-        TILE_SIZE,                           \
-        MAX_N_CONN,                          \
+        ljlk_tile_size,                      \
+        ljlk_max_n_conn,                     \
         Real,                                \
         Int>(                                \
         rot_coords,                          \
@@ -301,7 +294,7 @@ using tmol::portable::Vec;
           LJLKScoringData,                                                  \
           AllAtomPairSelector,                                              \
           D,                                                                \
-          TILE_SIZE,                                                        \
+          ljlk_tile_size,                                                   \
           nt,                                                               \
           3,                                                                \
           Real,                                                             \
@@ -440,8 +433,8 @@ using tmol::portable::Vec;
         DeviceOperations,                    \
         D,                                   \
         nt,                                  \
-        TILE_SIZE,                           \
-        MAX_N_CONN,                          \
+        ljlk_tile_size,                      \
+        ljlk_max_n_conn,                     \
         Real,                                \
         Int>(                                \
         rot_coords,                          \
@@ -471,8 +464,8 @@ using tmol::portable::Vec;
         DeviceOperations,                    \
         D,                                   \
         nt,                                  \
-        TILE_SIZE,                           \
-        MAX_N_CONN,                          \
+        ljlk_tile_size,                      \
+        ljlk_max_n_conn,                     \
         Real,                                \
         Int>(                                \
         rot_coords,                          \
@@ -506,7 +499,7 @@ using tmol::portable::Vec;
           LJLKScoringData,                                                  \
           AllAtomPairSelector,                                              \
           D,                                                                \
-          TILE_SIZE,                                                        \
+          ljlk_tile_size,                                                   \
           nt,                                                               \
           3,                                                                \
           Real,                                                             \
@@ -720,7 +713,7 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
   assert(rot_offset_for_block.size(0) == n_poses);
   assert(rot_offset_for_block.size(1) == max_n_blocks);
 
-  assert(max_n_interblock_bonds <= MAX_N_CONN);
+  assert(max_n_interblock_bonds <= ljlk_max_n_conn);
 
   assert(pose_stack_near_blocks.size(0) == n_poses);
   assert(pose_stack_near_blocks.size(1) == max_n_blocks);
@@ -736,7 +729,8 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
   assert(block_type_n_heavy_atoms_in_tile.size(0) == n_block_types);
 
   assert(block_type_heavy_atoms_in_tile.size(0) == n_block_types);
-  assert(block_type_heavy_atoms_in_tile.size(1) == TILE_SIZE * max_n_tiles);
+  assert(
+      block_type_heavy_atoms_in_tile.size(1) == ljlk_tile_size * max_n_tiles);
 
   assert(block_type_atom_types.size(0) == n_block_types);
   assert(block_type_atom_types.size(1) == max_n_block_atoms);
@@ -816,7 +810,6 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
   // small workloads, where register pressure is less important than avoiding
   // spills.
   LAUNCH_BOX_32_OCC_AS(launch_t_high_occupancy, 32);
-  constexpr int min_high_occupancy_workgroups = 1 << 14;
   // Define nt and reduce_t
   CTA_REAL_REDUCE_T_TYPEDEF;
   // The total number of unique block pairs (including self-pairs)
@@ -873,21 +866,10 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
   ctx.require_gradient = require_gradient;
   ctx.max_dis = max_dis;
 
-  auto eval_energies_by_block = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef LJLKSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    ljlk_eval_energies_by_block<DeviceOperations, D, Real, Int, launch_t>(
-        ctx, shared, cta, cpu_pose_accum);
-  });
-
-  auto eval_energies = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef LJLKSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    ljlk_eval_energies<DeviceOperations, D, Real, Int, launch_t>(
-        ctx, shared, cta, cpu_pose_accum);
-  });
+  LJLKPoseEvaluator<false, DeviceOperations, D, Real, Int, launch_t>
+      eval_energies_by_block{ctx, cpu_pose_accum};
+  LJLKPoseEvaluator<true, DeviceOperations, D, Real, Int, launch_t>
+      eval_energies{ctx, cpu_pose_accum};
 
   ///////////////////////////////////////////////////////////////////////
 
@@ -948,39 +930,10 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
       score::common::pose_total_reduce<DeviceOperations, D, Real>::f(
           mgr, cells_t.view, output_t.view);
     }
-  } else if (
-      !output_block_pair_energies && use_shared_compact_block_neighbors) {
-    if (require_gradient) {
-      score::common::sphere_overlap::launch_precomputed_block_neighbors<
-          DeviceOperations,
-          D,
-          launch_t_high_occupancy,
-          Int>(
-          mgr,
-          shared_compact_block_neighbors,
-          n_poses,
-          max_n_blocks,
-          eval_energies);
-    } else {
-      score::common::sphere_overlap::launch_precomputed_block_neighbors<
-          DeviceOperations,
-          D,
-          launch_t_high_occupancy,
-          Int>(
-          mgr,
-          shared_compact_block_neighbors,
-          n_poses,
-          max_n_blocks,
-          eval_energies_by_block);
-    }
-  } else if (output_block_pair_energies) {
-    DeviceOperations<D>::template foreach_pose_workgroup<launch_t>(
-        mgr, n_poses, max_n_upper_triangle_inds, eval_energies_by_block);
   } else {
-    int const n_workgroups = score::common::checked_dispatch_product(
-        n_poses, max_n_upper_triangle_inds, "LJ/LK block-pair dispatch");
 #ifdef __NVCC__
-    if (score::common::sphere_overlap::should_compact_block_neighbors(
+    if (!output_block_pair_energies && !use_shared_compact_block_neighbors
+        && score::common::sphere_overlap::should_compact_block_neighbors(
             n_poses, max_n_blocks, require_gradient)) {
       if (require_gradient) {
         score::common::sphere_overlap::launch_compact_block_neighbors<
@@ -998,31 +951,8 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
     } else
 #endif
     {
-      if (!require_gradient && n_workgroups >= min_high_occupancy_workgroups) {
-        DeviceOperations<D>::template foreach_pose_workgroup<
-            launch_t_high_occupancy>(
-            mgr, n_poses, max_n_upper_triangle_inds, eval_energies_by_block);
-      } else if (!require_gradient) {
-        DeviceOperations<D>::template foreach_pose_workgroup<launch_t>(
-            mgr, n_poses, max_n_upper_triangle_inds, eval_energies_by_block);
-      } else if (n_workgroups >= min_high_occupancy_workgroups) {
-        DeviceOperations<D>::template foreach_pose_workgroup<
-            launch_t_high_occupancy>(
-            mgr, n_poses, max_n_upper_triangle_inds, eval_energies);
-      } else {
-        DeviceOperations<D>::template foreach_pose_workgroup<launch_t>(
-            mgr, n_poses, max_n_upper_triangle_inds, eval_energies);
-      }
-    }
-  }
-
-  if constexpr (D == tmol::Device::CPU) {
-    if (!output_block_pair_energies) {
-      for (int p = 0; p < n_poses; ++p) {
-        for (int term = 0; term < 3; ++term) {
-          output[term][p][0][0] = cpu_pose_accum[3 * p + term];
-        }
-      }
+      ljlk_pose_forward_native<DeviceOperations, D, Real, Int>(
+          mgr, ctx, shared_compact_block_neighbors, n_poses, cpu_pose_accum);
     }
   }
 
@@ -1123,7 +1053,7 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::backward(
   assert(rot_offset_for_block.size(0) == n_poses);
   assert(rot_offset_for_block.size(1) == max_n_blocks);
 
-  assert(max_n_interblock_bonds <= MAX_N_CONN);
+  assert(max_n_interblock_bonds <= ljlk_max_n_conn);
 
   assert(pose_stack_near_blocks.size(0) == n_poses);
   assert(pose_stack_near_blocks.size(1) == max_n_blocks);
@@ -1139,7 +1069,8 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::backward(
   assert(block_type_n_heavy_atoms_in_tile.size(0) == n_block_types);
 
   assert(block_type_heavy_atoms_in_tile.size(0) == n_block_types);
-  assert(block_type_heavy_atoms_in_tile.size(1) == TILE_SIZE * max_n_tiles);
+  assert(
+      block_type_heavy_atoms_in_tile.size(1) == ljlk_tile_size * max_n_tiles);
 
   assert(block_type_atom_types.size(0) == n_block_types);
   assert(block_type_atom_types.size(1) == max_n_block_atoms);
@@ -1202,7 +1133,7 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::backward(
 
     SHARED_MEMORY union shared_mem_union {
       shared_mem_union() {}
-      LJLKBlockPairSharedData<Real, TILE_SIZE, MAX_N_CONN> m;
+      LJLKBlockPairSharedData<Real, ljlk_tile_size, ljlk_max_n_conn> m;
       CTA_REAL_REDUCE_T_VARIABLE;
 
     } shared;
@@ -1279,7 +1210,7 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::backward(
         LJLKScoringData<Real>,
         LJLKScoringData<Real>,
         Real,
-        TILE_SIZE>(
+        ljlk_tile_size>(
         shared,
         pose_ind,
         rot_ind1,
@@ -1418,7 +1349,7 @@ auto LJLKRotamerScoreDispatch<DeviceOperations, D, Real, Int>::forward(
   assert(rot_offset_for_block.size(0) == n_poses);
   assert(rot_offset_for_block.size(1) == max_n_blocks);
 
-  assert(max_n_interblock_bonds <= MAX_N_CONN);
+  assert(max_n_interblock_bonds <= ljlk_max_n_conn);
 
   assert(pose_stack_near_blocks.size(0) == n_poses);
   assert(pose_stack_near_blocks.size(1) == max_n_blocks);
@@ -1434,7 +1365,8 @@ auto LJLKRotamerScoreDispatch<DeviceOperations, D, Real, Int>::forward(
   assert(block_type_n_heavy_atoms_in_tile.size(0) == n_block_types);
 
   assert(block_type_heavy_atoms_in_tile.size(0) == n_block_types);
-  assert(block_type_heavy_atoms_in_tile.size(1) == TILE_SIZE * max_n_tiles);
+  assert(
+      block_type_heavy_atoms_in_tile.size(1) == ljlk_tile_size * max_n_tiles);
 
   assert(block_type_atom_types.size(0) == n_block_types);
   assert(block_type_atom_types.size(1) == max_n_block_atoms);
@@ -1546,7 +1478,7 @@ auto LJLKRotamerScoreDispatch<DeviceOperations, D, Real, Int>::forward(
   double* cpu_pose_accum = nullptr;
 
   auto eval_energies_by_block = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef LJLKSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
+    typedef LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, launch_t>
         shared_mem_union;
     SHARED_MEMORY shared_mem_union shared;
     ljlk_eval_rotamer_energies_by_block<
@@ -1680,7 +1612,7 @@ auto LJLKRotamerScoreDispatch<DeviceOperations, D, Real, Int>::backward(
   assert(rot_offset_for_block.size(0) == n_poses);
   assert(rot_offset_for_block.size(1) == max_n_blocks);
 
-  assert(max_n_interblock_bonds <= MAX_N_CONN);
+  assert(max_n_interblock_bonds <= ljlk_max_n_conn);
 
   assert(pose_stack_near_blocks.size(0) == n_poses);
   assert(pose_stack_near_blocks.size(1) == max_n_blocks);
@@ -1696,7 +1628,8 @@ auto LJLKRotamerScoreDispatch<DeviceOperations, D, Real, Int>::backward(
   assert(block_type_n_heavy_atoms_in_tile.size(0) == n_block_types);
 
   assert(block_type_heavy_atoms_in_tile.size(0) == n_block_types);
-  assert(block_type_heavy_atoms_in_tile.size(1) == TILE_SIZE * max_n_tiles);
+  assert(
+      block_type_heavy_atoms_in_tile.size(1) == ljlk_tile_size * max_n_tiles);
 
   assert(block_type_atom_types.size(0) == n_block_types);
   assert(block_type_atom_types.size(1) == max_n_block_atoms);
@@ -1753,7 +1686,7 @@ auto LJLKRotamerScoreDispatch<DeviceOperations, D, Real, Int>::backward(
 
     SHARED_MEMORY union shared_mem_union {
       shared_mem_union() {}
-      LJLKBlockPairSharedData<Real, TILE_SIZE, MAX_N_CONN> m;
+      LJLKBlockPairSharedData<Real, ljlk_tile_size, ljlk_max_n_conn> m;
       CTA_REAL_REDUCE_T_VARIABLE;
 
     } shared;
@@ -1817,7 +1750,7 @@ auto LJLKRotamerScoreDispatch<DeviceOperations, D, Real, Int>::backward(
         LJLKScoringData<Real>,
         LJLKScoringData<Real>,
         Real,
-        TILE_SIZE>(
+        ljlk_tile_size>(
         shared,
         pose_ind,
         rot_ind1,
