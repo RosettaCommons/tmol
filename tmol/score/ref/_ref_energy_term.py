@@ -7,7 +7,7 @@ from tmol.database import ParameterDatabase
 from tmol.score.common._scoring_module import _coordinate_independent_score
 
 from tmol.chemical import RefinedResidueType
-from tmol.database.chemical import _l_base_name
+from tmol_core.scoring.ref import reference_weight
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
 
@@ -75,12 +75,7 @@ class RefEnergyTerm(EnergyTerm):
         if cached is not None:
             return cached
 
-        # read the map actually in use: a score function may override the
-        #    database weights with one covering fewer residues, so a d-amino
-        #    acid falls back to the l form it mirrors rather than to zero
-        ref_weight = src.get(block_type.base_name)
-        if ref_weight is None:
-            ref_weight = src.get(_l_base_name(block_type), 0.0)
+        ref_weight = reference_weight(block_type, src)
 
         setattr(block_type, "ref_weight", ref_weight)
         return _store_annotation(
