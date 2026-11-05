@@ -63,8 +63,8 @@ struct LJLKBlockPairSharedData {
   Real coords2[TileSize * 3];
   short atom_types1[TileSize];  // 64 bytes of type indices, not params
   short atom_types2[TileSize];
-  unsigned char conn_ats1[MaxNConn];  // 12 bytes
-  unsigned char conn_ats2[MaxNConn];
+  int conn_ats1[MaxNConn];  // Full residue atom indices, including atoms above 255.
+  int conn_ats2[MaxNConn];
   unsigned char path_dist1[MaxNConn * TileSize];  // 384 bytes
   unsigned char path_dist2[MaxNConn * TileSize];
   unsigned char conn_seps[MaxNConn * MaxNConn];  // 144 bytes
@@ -176,7 +176,7 @@ void TMOL_DEVICE_FUNC ljlk_load_block_into_shared(
     int n_atoms_to_load,
     int start_atom,
     bool count_pair_striking_dist,
-    TMOL_SHARED_PTR(unsigned char) conn_ats,
+    TMOL_SHARED_PTR(int) conn_ats,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
     WorkgroupLane<D> lane = {}) {

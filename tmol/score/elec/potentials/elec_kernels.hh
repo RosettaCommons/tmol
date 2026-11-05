@@ -142,7 +142,7 @@ using tmol::portable::Vec;
       int n_atoms_to_load,                                                    \
       int start_atom,                                                         \
       bool count_pair_striking_dist,                                          \
-      TMOL_SHARED_PTR(unsigned char) conn_ats) {                              \
+      TMOL_SHARED_PTR(int) conn_ats) {                              \
     elec_load_block_into_shared<DeviceDispatch, D, nt, elec_tile_size, Real, Int>( \
         ctx.rot_coords,                                                       \
         ctx.block_type_partial_charge,                                        \

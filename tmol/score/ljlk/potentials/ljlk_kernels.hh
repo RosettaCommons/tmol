@@ -153,7 +153,7 @@ union LJLKSharedMem {
       int n_atoms_to_load,                        \
       int start_atom,                             \
       bool count_pair_striking_dist,              \
-      TMOL_SHARED_PTR(unsigned char) conn_ats) {  \
+      TMOL_SHARED_PTR(int) conn_ats) {  \
     ljlk_load_block_into_shared<                  \
         DeviceDispatch,                           \
         D,                                        \
