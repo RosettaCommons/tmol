@@ -273,3 +273,12 @@ def test_large_residue_connection_atoms(tmp_path):
         [str(tmp_path / "connections")], capture_output=True, text=True
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@requires_cxx
+def test_scan_workspace_covers_large_final_tile(tmp_path):
+    binary = tmp_path / "scan_workspace"
+    proc = _compile(HERE / "native_scan_workspace.cc", binary, run=True)
+    assert proc.returncode == 0, proc.stderr
+    run = subprocess.run([str(binary)], capture_output=True, text=True)
+    assert run.returncode == 0, run.stdout + run.stderr
