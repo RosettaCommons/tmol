@@ -83,3 +83,11 @@ Frontends transfer these arrays and choose storage capacity; a padded connection
 slot does not change the true connection count. Torch reserves one slot for
 native fixed-width views, including ligand-only palettes. The native scoring
 backend's connection limit remains an explicit frontend constraint.
+
+Chemical atom flags, ordered LJ/LK tables, and complete hydrogen-bond family
+tables are prepared in `tmol_core.scoring.atom_types`, `ljlk`, and `hbond`.
+Real atoms must resolve to registered types and finite active parameters. Missing
+unused LJ/LK types retain explicit NaN rows; padding is not a valid real type.
+Hydrogen-bond polynomial preparation retains the canonical float64 coefficients
+and validates complete family-pair coverage before a backend chooses its numeric
+representation. Torch keeps its public tensor containers and device caches.
