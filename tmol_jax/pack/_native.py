@@ -63,6 +63,8 @@ def sample_chi_cpu(tables, coordinates, *request, max_samples_per_restype=0):
     coordinates = np.asarray(coordinates)
     if coordinates.dtype not in (np.dtype("float32"), np.dtype("float64")):
         raise TypeError("sampling coordinates must be float32 or float64")
+    if coordinates.dtype == np.float64 and not jax.config.x64_enabled:
+        raise ValueError("float64 sampling requires JAX x64 to preserve output dtype")
 
     def array(value, wide=False):
         value = np.asarray(value)

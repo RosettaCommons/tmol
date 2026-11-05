@@ -15,6 +15,14 @@ def tables():
     return DunbrackChiSampler.from_database(ParameterDatabase.get_default()).tables
 
 
+def test_sampling_does_not_silently_downcast_coordinates(tables):
+    with jax.enable_x64(False):
+        with pytest.raises(ValueError, match="preserve output dtype"):
+            sample_chi_cpu(tables, np.zeros((4, 3), np.float64))
+    with pytest.raises(TypeError, match="float32 or float64"):
+        sample_chi_cpu(tables, np.zeros((4, 3), np.float16))
+
+
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
 def test_libraryless_chi_choices_counts_identity_and_budget(tables, dtype):
     coordinates = np.zeros((4, 3), dtype)
