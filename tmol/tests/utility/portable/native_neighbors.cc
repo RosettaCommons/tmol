@@ -66,6 +66,22 @@ TView<T, N, Device::CPU> view(T* ptr, int64_t const (&shape)[N]) {
   return TView<T, N, Device::CPU>(ptr, shape, stride);
 }
 int main() {
+  // Empty batches still initialize their count; large batches cover more
+  // than one launch group. Every pose has exactly one self-pair candidate,
+  // including padded poses which the score body rejects.
+  for (int n_poses : {0, 1, 3, 129}) {
+    std::vector<int> neighbors(n_poses + 2, -73);
+    ContextManager mgr;
+    single_block_neighbor_candidates_native<SerialOps, Device::CPU, int>(
+        mgr, n_poses, view(neighbors.data(), {n_poses + 1}));
+    assert(neighbors[0] == n_poses);
+    assert(neighbors.back() == -73);
+    for (int p = 0; p < n_poses; ++p) {
+      int candidate = neighbors[p + 1];
+      // One upper-triangular pair per pose means candidate is the pose ID.
+      assert(candidate == p);
+    }
+  }
   portable::Vec<double, 3> xyz[6] = {
       {0, 0, 0}, {2, 0, 0}, {10, 0, 0}, {12, 0, 0}, {-1, 0, 0}, {1, 0, 0}};
   int offset[] = {0, 2, 4}, block[] = {0, 1, 0}, pose[] = {0, 0, 1},
