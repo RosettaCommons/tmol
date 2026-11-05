@@ -4,6 +4,10 @@ import torch
 import attr
 
 from tmol.types._torch import Tensor
+from tmol_core.pack.chi import (
+    DEFAULT_CHI_SAMPLE_EXPANDED_LIMIT,
+    DEFAULT_CHI_SAMPLE_LIMIT,
+)
 from tmol_core.pack.palette import (  # noqa: F401 (legacy helper reexports)
     prepare_packer_palette,
     _backbone_signatures as _core_backbone_signatures,
@@ -209,8 +213,6 @@ def _annotate_packed_block_types_for_default_packer_palette(
 # Defaults carried over from ligand preparation, where this budget used to be
 # applied; exposed here because the count a group enumerates is not knowable
 # until the pose says which blocks are conjugated to which.
-DEFAULT_CHI_SAMPLE_EXPANDED_LIMIT = 100
-DEFAULT_CHI_SAMPLE_LIMIT = 1000
 
 
 class PackerTask:
