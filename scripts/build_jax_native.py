@@ -14,19 +14,7 @@ import tempfile
 import tomllib
 
 
-def stage_native(root, stage, source_revision=None):
-    package = root / "packages/jax-native"
-    for name in ("pyproject.toml", "setup.py", "NOTICE"):
-        shutil.copyfile(package / name, stage / name)
-    shutil.copyfile(root / "LICENSE", stage / "LICENSE")
-    shutil.copytree(package / "tmol_jax_native", stage / "tmol_jax_native")
-    backend = root / "tmol/backends/jax"
-    for path in (
-        backend / "genbonded_cpu.cpp",
-        backend / "genbonded_cuda.cu",
-        *backend.glob("*_ffi.hh"),
-    ):
-        shutil.copyfile(path, stage / path.name)
+def stage_native_headers(root, stage):
     # Include canonical source headers, never a second scientific implementation.
     for relative in (
         "score/common",
@@ -40,10 +28,12 @@ def stage_native(root, stage, source_revision=None):
         "score/ljlk/potentials",
         "score/elec/potentials",
         "score/lk_ball/potentials",
+        "kinematics/compiled",
         "utility/portable",
         "utility/tensor",
         "numeric",
         "extern/moderngpu",
+        "extern/Eigen",
     ):
         shutil.copytree(
             root / "tmol" / relative,
@@ -60,6 +50,40 @@ def stage_native(root, stage, source_revision=None):
         destination = stage / "include/tmol/score" / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / "tmol/score" / relative, destination)
+    shutil.copyfile(
+        root / "tmol/utility/nvtx.hh", stage / "include/tmol/utility/nvtx.hh"
+    )
+
+
+def stage_native_licenses(root, stage):
+    licenses = stage / "licenses"
+    licenses.mkdir()
+    eigen_licenses = licenses / "Eigen"
+    eigen_licenses.mkdir()
+    for path in (root / "tmol/extern/Eigen").glob("COPYING.*"):
+        shutil.copyfile(path, eigen_licenses / path.name)
+    shutil.copyfile(
+        root / "tmol/extern/Eigen/COPYING.APACHE", licenses / "APACHE-2.0.txt"
+    )
+    shutil.copyfile(
+        root / "tmol/extern/moderngpu/LICENSE.md", licenses / "moderngpu-LICENSE.md"
+    )
+
+
+def stage_native(root, stage, source_revision=None):
+    package = root / "packages/jax-native"
+    for name in ("pyproject.toml", "setup.py", "NOTICE"):
+        shutil.copyfile(package / name, stage / name)
+    shutil.copyfile(root / "LICENSE", stage / "LICENSE")
+    shutil.copytree(package / "tmol_jax_native", stage / "tmol_jax_native")
+    backend = root / "tmol/backends/jax"
+    for path in (
+        backend / "genbonded_cpu.cpp",
+        backend / "genbonded_cuda.cu",
+        *backend.glob("*_ffi.hh"),
+    ):
+        shutil.copyfile(path, stage / path.name)
+    stage_native_headers(root, stage)
     source_files = {
         str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(stage.rglob("*"))
@@ -107,14 +131,7 @@ def stage_native(root, stage, source_revision=None):
         )
         + "\n"
     )
-    licenses = stage / "licenses"
-    licenses.mkdir()
-    shutil.copyfile(
-        root / "tmol/extern/Eigen/COPYING.APACHE", licenses / "APACHE-2.0.txt"
-    )
-    shutil.copyfile(
-        root / "tmol/extern/moderngpu/LICENSE.md", licenses / "moderngpu-LICENSE.md"
-    )
+    stage_native_licenses(root, stage)
     project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
     (stage / "VERSION").write_text(project["version"] + "\n")
     (stage / "MANIFEST.in").write_text(

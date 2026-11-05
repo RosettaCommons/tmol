@@ -95,6 +95,45 @@ void ljlk_pose_forward_native(
           ctx.output[term][p][0][0] = cpu_pose_accum[3 * p + term];
   }
 }
+// ctx.dV_dcoords is zeroed [1, n_atoms]; ctx.dTdV contains arbitrary
+// per-term upper-triangle block-pair weights, or [3, n_pairs] for rotamers.
+template <
+    bool Rotamer,
+    template <tmol::Device> class Ops,
+    tmol::Device D,
+    typename Real,
+    typename Int,
+    typename Launch>
+struct LJLKBackwardEvaluator {
+  LJLKCtx<Real, Int, D, Rotamer ? 2 : 4> ctx;
+  TMOL_DEVICE_FUNC void operator()(int cta) const {
+    SHARED_MEMORY LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, Launch>
+        shared;
+    ljlk_evaluate_pair<LJLKMode::Backward, Rotamer, Ops, D, Real, Int, Launch>(
+        ctx, shared, cta, static_cast<double*>(nullptr));
+  }
+};
+
+template <
+    bool Rotamer,
+    template <tmol::Device> class Ops,
+    tmol::Device D,
+    typename Real,
+    typename Int>
+void ljlk_backward_native(
+    ContextManager& mgr,
+    LJLKCtx<Real, Int, D, Rotamer ? 2 : 4> ctx,
+    int n_poses) {
+  LAUNCH_BOX_32;
+  LJLKBackwardEvaluator<Rotamer, Ops, D, Real, Int, launch_t> evaluate{ctx};
+  if constexpr (Rotamer)
+    Ops<D>::template foreach_workgroup<launch_t>(
+        mgr, ctx.dispatch_indices.size(1), evaluate);
+  else
+    Ops<D>::template foreach_pose_workgroup<launch_t>(
+        mgr, n_poses, ctx.max_n_upper_triangle_inds, evaluate);
+}
+
 }  // namespace potentials
 }  // namespace ljlk
 }  // namespace score
