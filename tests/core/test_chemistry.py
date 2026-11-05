@@ -123,6 +123,7 @@ import tmol_core.scoring.na_torsion_params, tmol_core.scoring.na_torsion_topolog
 import tmol_core.database.na_torsion
 import tmol_core.scoring.metal, tmol_core.database.metal_coordination
 import tmol_core.scoring.backbone_torsion, tmol_core.scoring.dunbrack
+import tmol_core.pose.bond_separation
 import tmol_core.scoring.cartbonded, tmol_core.scoring.cartbonded_connections, tmol_core.scoring.atom_ids
 import tmol_core.database.context, tmol_core.database.mirrored_dunbrack
 import tmol_core.database.ljlk, tmol_core.database.hbond
