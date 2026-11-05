@@ -121,7 +121,7 @@ TMOL_HOST_DEVICE_FUNC void water_gen_build_waters_for_rot(
         lane);
     DeviceOps<Dev>::synchronize_workgroup(lane);
 
-    auto gen_tile_waters = ([=, &ctx] TMOL_DEVICE_FUNC(int tid) {
+    auto gen_tile_waters = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
       // Each iteration will build one water
       // Donor hydrogens build for their parent heavy atom and have to
       // know which hydrogen child they represent for their heavy atom
@@ -269,7 +269,7 @@ TMOL_HOST_DEVICE_FUNC void water_gen_build_water_derivs_for_rot(
         lane);
     DeviceOps<Dev>::synchronize_workgroup(lane);
 
-    auto gen_tile_waters = ([=, &ctx] TMOL_DEVICE_FUNC(int tid) {
+    auto gen_tile_waters = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
       // Each iteration will build one water
       // Donor hydrogens build for their parent heavy atom and have to
       // know which hydrogen child they represent for their heavy atom
