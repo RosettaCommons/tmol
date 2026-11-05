@@ -420,8 +420,8 @@ def test_btn_close_contact_ligand_not_dropped_as_covalent(filename) -> None:
     cif_path = _YANJING_BTN_DIR / filename
     try:
         available = cif_path.exists()
-    except PermissionError:
-        pytest.skip(f"Yanjing dataset not accessible: {cif_path}")
+    except OSError:  # directory exists but belongs to another user
+        available = False
     if not available:
         pytest.skip(f"Yanjing dataset not available: {cif_path}")
 
