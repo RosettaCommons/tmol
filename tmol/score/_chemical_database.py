@@ -1,8 +1,6 @@
 import functools
-import typing
 
 import attr
-import cattr
 
 import pandas
 
@@ -17,21 +15,15 @@ from tmol.types._tensor import TensorGroup
 from tmol.types._array import NDArray
 from tmol.types._attrs import ValidateAttrs
 
-from enum import IntEnum
+from tmol_core.scoring.atom_types import (
+    AcceptorHybridization,
+    HYBRIDIZATION_NAMES,
+    atom_type_parameters,
+    block_type_indices,
+)
 
-
-class AcceptorHybridization(IntEnum):
-    """Hydrogen-bond acceptor hybridization categories."""
-
-    none = 0
-    sp2 = 1
-    sp3 = 2
-    ring = 3
-
-    _index: typing.ClassVar[pandas.Index]
-
-
-AcceptorHybridization._index = pandas.Index([None, "sp2", "sp3", "ring"])
+# Retain the historical pandas lookup on the public enum.
+AcceptorHybridization._index = pandas.Index(HYBRIDIZATION_NAMES)
 
 
 @attr.s(auto_attribs=True, frozen=True, slots=True)
@@ -67,17 +59,7 @@ class AtomTypeParamResolver(ValidateAttrs):
 
     def block_type_indices(self, block_type):
         """Resolve real atoms, keeping the low-level padding sentinel separate."""
-        indices = self.index.get_indexer([a.atom_type for a in block_type.atoms])
-        invalid = (indices < 0) | (indices == len(self.index) - 1)
-        if numpy.any(invalid):
-            atoms = ", ".join(
-                f"{block_type.atoms[i].name} ({block_type.atoms[i].atom_type!r})"
-                for i in numpy.flatnonzero(invalid)
-            )
-            raise ValueError(
-                f"Residue {block_type.name} has unregistered chemical atom types: {atoms}"
-            )
-        return indices
+        return block_type_indices(self.index, block_type)
 
     def type_idx(self, atom_types: NDArray[object][...]) -> Tensor[torch.int64][...]:
         """Convert array of atom type names to parameter indices.
@@ -105,50 +87,14 @@ class AtomTypeParamResolver(ValidateAttrs):
     def _from_atom_types(cls, atom_types, device):
         """Initialize and cache parameters for an immutable atom-type tuple."""
 
-        # Generate a full atom type index, appending a "None" value at index -1
-        # to generate nan parameter entries if an atom type is not present in
-        # the index.
-        atom_type_names = [p.name for p in atom_types]
-        atom_type_index = pandas.Index(atom_type_names + [None])
-
-        # Pack the tuple of type parameters into a dataframe and reindex via
-        # the param resolver type index. This appends a "nan" row at the end of
-        # the frame for the invalid/None entry added above.
-        param_records = (
-            pandas.DataFrame.from_records(cattr.unstructure(atom_types))
-            .set_index("name")
-            .reindex(index=atom_type_index)
+        names, values = atom_type_parameters(atom_types)
+        return cls(
+            index=pandas.Index(names),
+            params=AtomTypeParams(
+                **{
+                    name: torch.from_numpy(value).to(device)
+                    for name, value in values.items()
+                }
+            ),
+            device=device,
         )
-
-        # Map element to is_hydrogen flag
-        param_records["is_hydrogen"] = param_records["element"] == "H"
-
-        # Map acceptor hybridization from string space to index space
-        param_records.loc[None, "acceptor_hybridization"] = None
-        param_records["acceptor_hybridization"] = (
-            AcceptorHybridization._index.get_indexer_for(
-                param_records["acceptor_hybridization"]
-            )
-        )
-
-        # Convert boolean types for torch, setting the invalid/None
-        # entry to 0/false
-        for field in attr.fields(AtomTypeParams):
-            if field.type.dtype == torch.bool:
-                param_records[field.name] = (
-                    param_records[field.name].fillna(value=0).astype(bool)
-                )
-
-        assert not (param_records["acceptor_hybridization"] == -1).any()
-
-        # Convert the param record dataframe into typed TensorGroup
-        atom_type_params = AtomTypeParams(
-            **{
-                f.name: torch.tensor(
-                    param_records[f.name].values, dtype=f.type.dtype, device=device
-                )
-                for f in attr.fields(AtomTypeParams)
-            }
-        )
-
-        return cls(index=atom_type_index, params=atom_type_params, device=device)

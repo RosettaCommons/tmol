@@ -15,7 +15,8 @@ from tmol.database.scoring import HBondDatabase
 from tmol.database.chemical import ChemicalDatabase
 from tmol.database._patched_chemdb import PatchedChemicalDatabase
 
-from .._chemical_database import AcceptorHybridization
+from .._chemical_database import AcceptorHybridization  # noqa: F401
+from tmol_core.scoring.hbond import hbond_pair_parameters
 from tmol.utility import resolve_device
 from tmol.utility.weak_identity_cache import WeakIdentityLRU
 
@@ -102,127 +103,32 @@ class HBondParamResolver(ValidateAttrs):
 
     @classmethod
     def _from_database(cls, chemical_database, hbond_database, device):
-        donors = {g.name: g for g in hbond_database.donor_type_params}
-        donor_type_to_index = {name: i for i, name in enumerate(donors)}
-        donor_type_index = pandas.Index(donor_type_to_index)
-
-        acceptors = {g.name: g for g in hbond_database.acceptor_type_params}
-        acceptor_type_to_index = {name: i for i, name in enumerate(acceptors)}
-        acceptor_type_index = pandas.Index(acceptor_type_to_index)
-
-        atom_type_hybridization = {
-            a.name: a.acceptor_hybridization for a in chemical_database.atom_types
-        }
-        acceptor_type_hybridization = {
-            g.acceptor_type: atom_type_hybridization[g.a]
-            for g in hbond_database.acceptor_atom_types
-        }
-
-        # Preserve the historical last-definition-wins rules while ordering the
-        # dense table once. Repeated advanced-index assignment is unnecessary.
-        poly_values = {
-            p.name: [p.xmin, p.xmax, p.min_val, p.max_val]
-            + [getattr(p, f"c_{n}") for n in range(10, -1, -1)]
-            for p in hbond_database.polynomial_parameters
-        }
-        kinds = ("AHdist", "cosBAH", "cosAHD")
-        pairs = {}
-        for row in hbond_database.pair_parameters:
-            if row.donor_type not in donors or row.acceptor_type not in acceptors:
-                raise ValueError(
-                    f"HBond pair references unknown family: "
-                    f"{row.donor_type}, {row.acceptor_type}"
-                )
-            for kind in kinds:
-                name = getattr(row, kind)
-                if name not in poly_values:
-                    raise ValueError(
-                        f"HBond pair references unknown polynomial {name!r}"
-                    )
-            pairs[row.donor_type, row.acceptor_type] = row
-        rows = []
-        for donor in donors:
-            for acceptor in acceptors:
-                row = pairs.get((donor, acceptor))
-                if row is None:
-                    raise ValueError(
-                        f"Missing HBond pair parameters: {donor}, {acceptor}"
-                    )
-                rows.append(row)
-        shape = (len(donors), len(acceptors))
-
-        def weights(records, kind):
-            with numpy.errstate(over="ignore"):
-                values = numpy.array(
-                    [g.weight for g in records.values()], dtype=numpy.float32
-                )
-            invalid = ~numpy.isfinite(values)
-            if invalid.any():
-                names = [name for name, bad in zip(records, invalid) if bad]
-                raise ValueError(
-                    f"HBond {kind} weights {names} are non-finite in float32"
-                )
-            return values
-
-        def tensor(values, dtype):
-            return torch.tensor(values, dtype=dtype, device=device)
-
-        # MPS has no float64, so these float64 polynomial tables stay on the
-        # host. Rounding them to float32 instead would cost up to 0.1 kcal/mol
-        # in the ordinary hydrogen-bond window -- these degree-10 fits reach
-        # |V| ~ 1e7 inside their own range. The hbond Metal kernels read the
-        # packed pair table built below, which crosses to the GPU as hi + lo
-        # float32 pairs; LK-ball reads only the donor/acceptor listings.
+        host = hbond_pair_parameters(chemical_database, hbond_database)
+        # MPS polynomial coefficients stay double precision on the host; the
+        # existing compact adapter transports hi/lo float32 words to Metal.
         poly_device = torch.device("cpu") if device.type == "mps" else device
 
-        def poly_tensor(values, dtype):
-            return torch.tensor(values, dtype=dtype, device=poly_device)
-
-        # Gather on the host, then copy each final tensor once. Polynomial
-        # coefficients retain double precision and descending-power order.
-        def pack_polynomial(kind):
-            names = [getattr(row, kind) for row in rows]
-            values = numpy.array(
-                [poly_values[name] for name in names], dtype=numpy.float64
-            ).reshape(shape + (15,))
-            invalid = ~numpy.isfinite(values).all(axis=-1).ravel()
-            if invalid.any():
-                names = list(
-                    dict.fromkeys(name for name, bad in zip(names, invalid) if bad)
-                )
-                raise ValueError(
-                    f"HBond polynomials {names} contain non-finite parameters"
-                )
+        def polynomial(values):
             return HBondPolyParams(
-                range=poly_tensor(values[..., :2], torch.float64),
-                bound=poly_tensor(values[..., 2:4], torch.float64),
-                coeffs=poly_tensor(values[..., 4:], torch.float64),
+                range=torch.tensor(values[..., :2], device=poly_device),
+                bound=torch.tensor(values[..., 2:4], device=poly_device),
+                coeffs=torch.tensor(values[..., 4:], device=poly_device),
             )
 
-        hybridization = AcceptorHybridization._index.get_indexer(
-            [acceptor_type_hybridization[name] for name in acceptors]
-        )
-        if (hybridization < 0).any():
-            raise ValueError("HBond acceptor family has unknown hybridization")
-        pair_params = HBondPairParams(
-            donor_weight=tensor(
-                numpy.broadcast_to(weights(donors, "donor")[:, None], shape),
-                torch.float32,
-            ),
-            acceptor_weight=tensor(
-                numpy.broadcast_to(weights(acceptors, "acceptor")[None, :], shape),
-                torch.float32,
-            ),
-            acceptor_hybridization=tensor(
-                numpy.broadcast_to(hybridization[None, :], shape), torch.int32
-            ),
-            **{kind: pack_polynomial(kind) for kind in kinds},
-        )
-
         return cls(
-            donor_type_index=donor_type_index,
-            acceptor_type_index=acceptor_type_index,
-            pair_params=pair_params,
+            donor_type_index=pandas.Index(host.donor_names),
+            acceptor_type_index=pandas.Index(host.acceptor_names),
+            pair_params=HBondPairParams(
+                donor_weight=torch.tensor(host.donor_weight, device=device),
+                acceptor_weight=torch.tensor(host.acceptor_weight, device=device),
+                acceptor_hybridization=torch.tensor(
+                    host.acceptor_hybridization, device=device
+                ),
+                **{
+                    kind: polynomial(values)
+                    for kind, values in host.polynomials.items()
+                },
+            ),
             device=device,
         )
 
