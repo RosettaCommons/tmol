@@ -1,4 +1,4 @@
-#include <tmol/kinematics/compiled/native_kinematics.hh>
+#include <tmol/kinematics/compiled/native_kinematics_cpu.hh>
 #include "native_test_ops.hh"
 #include <cmath>
 #include <stdexcept>
@@ -73,7 +73,87 @@ void check() {
       view(dofs, {0}));
 }
 
+template <class Real>
+void check_forward_derivatives() {
+  KinDofs<Real> dofs[5], derivs[5];
+  KinTransform<Real> frames[5];
+  KinCoord<Real> xyz[5], forces[5];
+  Eigen::Matrix<Real, 6, 1> scratch[5];
+  KinForestParams<int> forest[5] = {
+      {0, ROOT, 0, 0, 0, 0},
+      {1, JUMP, 0, 0, 0, 0},
+      {2, BOND, 1, 0, 0, 0},
+      {3, JUMP, 0, 0, 0, 0},
+      {4, BOND, 2, 0, 0, 0}};
+  int forward_nodes[] = {0, 1, 2, 4, 0, 3};
+  int reverse_nodes[] = {4, 2, 1, 0, 3, 0};
+  int scans[] = {0, 4};
+  KinForestGenData<int> generations[] = {{0, 0}, {6, 2}};
+  for (int i = 0; i < 5; ++i) {
+    dofs[i].setZero();
+    if (forest[i].doftype == JUMP) {
+      dofs[i][DOF_RBx] = Real(0.3 * i);
+      dofs[i][DOF_RBy] = Real(-0.2 * i);
+      dofs[i][DOF_RBz] = Real(0.4 * i);
+      dofs[i][DOF_rotalpha] = Real(0.2);
+      dofs[i][DOF_rotbeta] = Real(-0.3);
+      dofs[i][DOF_rotgamma] = Real(0.1);
+    } else if (forest[i].doftype == BOND) {
+      dofs[i][DOF_phip] = Real(0.4);
+      dofs[i][DOF_theta] = Real(1.4);
+      dofs[i][DOF_D] = Real(1.5);
+      dofs[i][DOF_phic] = Real(0.2);
+    }
+    forces[i] << Real(0.1 * i), Real(-0.2 * i), Real(0.3 * i);
+  }
+  auto forward = [&]() {
+    forward_kinematics_cpu_native<Real, int>(
+        view(dofs, {5}),
+        view(forward_nodes, {6}),
+        view(scans, {2}),
+        view(generations, {2}),
+        view(forest, {5}),
+        view(frames, {5}),
+        view(xyz, {5}));
+    Real energy = 0;
+    for (int i = 0; i < 5; ++i) energy += xyz[i].dot(forces[i]);
+    return energy;
+  };
+  forward();
+  kin_derivatives_cpu_native<Real, int>(
+      view(forces, {5}),
+      view(frames, {5}),
+      view(dofs, {5}),
+      view(reverse_nodes, {6}),
+      view(scans, {2}),
+      view(generations, {2}),
+      view(forest, {5}),
+      view(scratch, {5}),
+      view(derivs, {5}));
+  if (!derivs[0].isZero()) throw std::runtime_error("nonzero root derivative");
+  Real step = sizeof(Real) == 4 ? Real(2e-3) : Real(1e-5);
+  Real tolerance = sizeof(Real) == 4 ? Real(2e-3) : Real(1e-8);
+  for (int i = 1; i < 5; ++i) {
+    // The mature jump convention differentiates RBdelta, not base Euler angles.
+    int nactive = forest[i].doftype == JUMP ? 6 : 4;
+    for (int j = 0; j < nactive; ++j) {
+      Real original = dofs[i][j];
+      dofs[i][j] = original + step;
+      Real plus = forward();
+      dofs[i][j] = original - step;
+      Real minus = forward();
+      dofs[i][j] = original;
+      Real numeric = (plus - minus) / (2 * step);
+      if (!std::isfinite(derivs[i][j])
+          || std::abs(numeric - derivs[i][j]) > tolerance)
+        throw std::runtime_error("native kinematic derivative mismatch");
+    }
+  }
+}
+
 int main() {
   check<float>();
   check<double>();
+  check_forward_derivatives<float>();
+  check_forward_derivatives<double>();
 }
