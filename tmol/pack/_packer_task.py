@@ -4,12 +4,12 @@ import torch
 import attr
 
 from tmol.types._torch import Tensor
-from tmol_core.pack.palette import (
+from tmol_core.pack.palette import (  # noqa: F401 (legacy helper reexports)
     prepare_packer_palette,
     _backbone_signatures as _core_backbone_signatures,
-    _mainchain_elements,  # noqa: F401 (legacy private import compatibility)
-    _exchangeable,  # noqa: F401
-    _set_compare,  # noqa: F401
+    _mainchain_elements as _mainchain_elements,
+    _exchangeable as _exchangeable,
+    _set_compare as _set_compare,
 )
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
