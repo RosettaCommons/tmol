@@ -53,6 +53,24 @@ class PackedBlockTypesData:
     def n_types(self):
         return len(self.active_block_types)
 
+    @cached_property
+    def kinematic_conn(self):
+        return self.join_kinematic_connections(self.active_block_types, self.max_n_conn)
+
+    @classmethod
+    def join_kinematic_connections(cls, active_block_types, max_n_conn=None):
+        """Pack chemical connection motion flags without residue-name assumptions."""
+        active_block_types = tuple(active_block_types)
+        if max_n_conn is None:
+            max_n_conn = max(
+                (len(bt.connections) for bt in active_block_types), default=0
+            )
+        result = numpy.zeros((len(active_block_types), max_n_conn), dtype=bool)
+        for i, bt in enumerate(active_block_types):
+            for ind, conn in enumerate(bt.connections):
+                result[i, ind] = conn.kinematic
+        return result
+
     @classmethod
     def from_restypes(cls, chem_db, active_types, *, min_n_conn=0):
         active_block_types = tuple(active_types)
