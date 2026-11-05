@@ -6,6 +6,8 @@ import weakref
 
 import torch
 
+from tmol_core.cache import AnnotationKey as CoreAnnotationKey
+
 from tmol.utility import resolve_device
 from tmol.utility.weak_identity_cache import (
     _record_cuda_readiness,
@@ -24,38 +26,15 @@ def _normalize_setting(value):
     return value
 
 
-@dataclass(frozen=True, slots=True, eq=False)
-class AnnotationKey:
-    """Identify an annotation by live source objects and scalar settings.
+class AnnotationKey(CoreAnnotationKey):
+    """Source identity with framework-specific device normalization."""
 
-    Equal but distinct sources intentionally do not match. Sources are expected
-    to be immutable snapshots; call :func:`_invalidate_annotation` after an
-    unsupported in-place mutation of data used by an annotation.
-    """
-
-    sources: tuple
-    settings: tuple = ()
+    __slots__ = ()
 
     @classmethod
     def from_sources(cls, *sources, settings=()):
-        return cls(
-            tuple(weakref.ref(source) for source in sources),
-            tuple(_normalize_setting(setting) for setting in settings),
-        )
-
-    def matches(self, other):
-        # A compiled configuration remains valid after its source expires.
-        # Distinct keys still require live, identical source referents.
-        if self is other:
-            return True
-        return (
-            isinstance(other, AnnotationKey)
-            and self.settings == other.settings
-            and len(self.sources) == len(other.sources)
-            and all(
-                (source := first()) is not None and source is second()
-                for first, second in zip(self.sources, other.sources)
-            )
+        return super().from_sources(
+            *sources, settings=tuple(_normalize_setting(value) for value in settings)
         )
 
 
