@@ -86,3 +86,41 @@ def test_jax_custom_angle_policy_and_recursive_records():
     assert attr.has(type(database.global_parameters))
     assert isinstance(database.atom_type_parameters, tuple)
     assert all(isinstance(p.lj_radius, float) for p in database.atom_type_parameters)
+
+
+def test_generated_cartesian_records_and_connection_identity(tmp_path):
+    from tmol_core.database.cartbonded import CartBondedDatabase
+
+    empty = dict(
+        length_parameters=[],
+        angle_parameters=[],
+        torsion_parameters=[],
+        improper_parameters=[],
+        hxltorsion_parameters=[],
+    )
+    base = tmp_path / "cart.yaml"
+    extra = tmp_path / "extra.yaml"
+    base.write_text(yaml.safe_dump({"residue_params": {"CUSTOM": empty}}))
+    changed = {**empty, "length_parameters": [dict(atm1="A", atm2="B", x0=1.5, K=200)]}
+    connection = dict(
+        block_type1="CUSTOM",
+        connection1="link",
+        block_type2="CUSTOM",
+        connection2="other",
+        length_parameters=[],
+        angle_parameters=[],
+    )
+    extra.write_text(
+        yaml.safe_dump(
+            {
+                "residue_params": {"CUSTOM:variant": changed},
+                "connection_params": [connection],
+            }
+        )
+    )
+    plain = CartBondedDatabase.from_file(base)
+    extended = CartBondedDatabase.from_file(base, [extra])
+    assert extended.residue_params["CUSTOM:variant"].length_parameters[0].K == 200
+    assert extended.connection_params[0].connection2 == "other"
+    assert plain.hash != extended.hash
+    assert "CUSTOM:variant" not in plain.residue_params

@@ -30,17 +30,11 @@ __all__ = [
     "RamaDatabase",
 ]
 
-# residue sets written by a support script, merged into the databases at load
-GENERATED_ELEC_FILES = (
-    "elec_d_amino_acids.yaml",
-    "elec_metal_ions.yaml",
-    "elec_metal_clusters.yaml",
+from tmol_core.database.generated import (
+    GENERATED_ELEC_FILES,
+    GENERATED_CARTBONDED_FILES,
+    GENERATED_REF_FILES,
 )
-GENERATED_CARTBONDED_FILES = (
-    "cartbonded_d_amino_acids.yaml",
-    "cartbonded_metal_clusters.yaml",
-)
-GENERATED_REF_FILES = ("ref_d_amino_acids.yaml",)
 
 
 @attr.s(auto_attribs=True, slots=True, frozen=True)

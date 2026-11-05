@@ -112,6 +112,8 @@ from tmol_core.chemical import ChemicalDatabase
 from tmol_core.chemical.patching import PatchedChemicalDatabase
 from tmol_core.chemical.restypes import refined_from_raw
 import tmol_core.scoring.elec
+import tmol_core.scoring.genbonded, tmol_core.scoring.count_pair
+import tmol_core.database.cartbonded, tmol_core.database.generated
 import tmol_core.database.elec, tmol_core.database.ref, tmol_core.database.disulfide
 raw = ChemicalDatabase.get_default()
 for residue in raw.residues:
