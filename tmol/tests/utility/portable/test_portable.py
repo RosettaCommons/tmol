@@ -3,7 +3,9 @@
 These compile C++ in a subprocess rather than going through a pybind module:
 what they assert is a property of the *headers* -- that tmol's kernel-evaluated
 math neither reaches Eigen nor the C++ standard library's containers -- which a
-compiled extension could not express.
+compiled extension could not express. Whole native kernel guards additionally
+verify independence from framework headers and allocation; kinematics retains
+its established Eigen transforms.
 
 Two tiers, because the math is in two states:
 
@@ -188,6 +190,20 @@ def test_fused_nonbonded_needs_no_framework(tmp_path):
 
 
 @requires_cxx
+def test_inverse_kinematics_needs_no_framework(tmp_path):
+    binary = tmp_path / "kinematics"
+    proc = _compile(
+        HERE / "native_kinematics.cc",
+        binary,
+        includes=(ROOT / "tmol/extern",),
+        run=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    result = subprocess.run([str(binary)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@requires_cxx
 def test_whole_pose_dunbrack_needs_no_framework(tmp_path):
     proc = _compile(HERE / "native_dunbrack.cc", tmp_path / "dunbrack", run=True)
     assert proc.returncode == 0, proc.stderr
@@ -211,9 +227,7 @@ def test_native_neighbors_follow_coordinate_changes(tmp_path):
 def test_whole_pose_lkball_needs_no_framework(tmp_path):
     proc = _compile(HERE / "native_lkball.cc", tmp_path / "lkball", run=True)
     assert proc.returncode == 0, proc.stderr
-    result = subprocess.run(
-        [str(tmp_path / "lkball")], capture_output=True, text=True
-    )
+    result = subprocess.run([str(tmp_path / "lkball")], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
 
 

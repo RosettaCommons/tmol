@@ -10,6 +10,7 @@
 #include <moderngpu/transform.hxx>
 
 #include <tmol/kinematics/compiled/common.hh>
+#include <tmol/kinematics/compiled/native_kinematics.hh>
 #include <tmol/kinematics/compiled/params.hh>
 #include <tmol/kinematics/compiled/compiled.impl.hh>
 
@@ -314,38 +315,9 @@ struct InverseKinDispatch {
     auto dofs_t = TPack<KintreeDof, 1, D>::empty({num_atoms});
     auto dofs = dofs_t.view;
 
-    auto k_coords2hts = ([=] EIGEN_DEVICE_FUNC(int i) {
-      if (i == 0) {
-        HTs[i] = HomogeneousTransform::Identity();
-      } else {
-        HTs[i] = common<D, Real, Int>::hts_from_frames(
-            coords[i],
-            coords[frame_x[i]],
-            coords[frame_y[i]],
-            coords[frame_z[i]]);
-      }
-    });
-
-    // mgpu::standard_context_t context;
-    std::shared_ptr<mgpu::standard_context_t> context = current_context(mgr);
-    mgpu::transform(k_coords2hts, num_atoms, *context);
-
-    auto k_hts2dofs = ([=] EIGEN_DEVICE_FUNC(int i) {
-      HomogeneousTransform lclHT;
-      if (doftype[i] == ROOT) {
-        dofs[i] = KintreeDof::Constant(0);  // for num deriv check
-      } else {
-        lclHT = HTs[i] * common<D, Real, Int>::ht_inv(HTs[parent[i]]);
-
-        if (doftype[i] == JUMP) {
-          dofs[i] = common<D, Real, Int>::invJumpTransform(lclHT);
-        } else if (doftype[i] == BOND) {
-          dofs[i] = common<D, Real, Int>::invBondTransform(lclHT);
-        }
-      }
-    });
-
-    mgpu::transform(k_hts2dofs, num_atoms, *context);
+    inverse_kinematics_native<tmol::score::common::DeviceOperations,
+                              D, Real, Int>(
+        mgr, coords, parent, frame_x, frame_y, frame_z, doftype, HTs, dofs);
 
     return dofs_t;
   }
