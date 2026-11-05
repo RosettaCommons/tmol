@@ -36,6 +36,7 @@ def stage_native(root, stage, source_revision=None):
         "score/metal/potentials",
         "score/disulfide/potentials",
         "score/na_torsion/potentials",
+        "score/dunbrack/potentials",
         "utility/portable",
         "utility/tensor",
         "numeric",

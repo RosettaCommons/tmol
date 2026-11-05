@@ -185,3 +185,9 @@ def test_whole_pose_na_torsion_needs_no_framework(tmp_path):
 def test_fused_nonbonded_needs_no_framework(tmp_path):
     proc = _compile(HERE / "native_fused_nonbonded.cc", tmp_path / "fused", run=True)
     assert proc.returncode == 0, proc.stderr
+
+
+@requires_cxx
+def test_whole_pose_dunbrack_needs_no_framework(tmp_path):
+    proc = _compile(HERE / "native_dunbrack.cc", tmp_path / "dunbrack", run=True)
+    assert proc.returncode == 0, proc.stderr
