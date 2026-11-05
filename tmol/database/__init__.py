@@ -17,7 +17,7 @@ from .scoring._cartbonded import CartRes, ConnectionCartRes  # noqa: F401
 from .scoring._mirrored_dunbrack import _with_mirrored_libraries
 
 
-from tmol_core.database.context import (
+from tmol_core.database.context import (  # noqa: F401
     ParameterDatabase as _ParameterDatabase,
     _inject_residue_params,  # noqa: F401
 )
