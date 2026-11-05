@@ -145,7 +145,7 @@ using tmol::portable::Vec;
       int n_atoms_to_load,                    \
       int start_atom,                         \
       bool count_pair_striking_dist,          \
-      unsigned char* __restrict__ conn_ats) { \
+      int* __restrict__ conn_ats) { \
     ljlk_load_block_into_shared<              \
         DeviceOperations,                     \
         D,                                    \

@@ -215,3 +215,16 @@ def test_independent_nonbonded_needs_no_framework(tmp_path):
         HERE / "native_independent_nonbonded.cc", tmp_path / "nonbonded", run=True
     )
     assert proc.returncode == 0, proc.stderr
+
+
+@requires_cxx
+def test_large_residue_connection_atoms(tmp_path):
+    """A bond to atom 299 must retain its two-bond nonbonded exclusion."""
+    proc = _compile(
+        HERE / "native_connection_atoms.cc", tmp_path / "connections", run=True
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    result = subprocess.run(
+        [str(tmp_path / "connections")], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

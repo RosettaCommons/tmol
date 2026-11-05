@@ -73,8 +73,8 @@ struct SharedData {
   LJLKTypeParams<Real> ljlk_params2[tile_size];
   Real charges1[tile_size];
   Real charges2[tile_size];
-  unsigned char conn_ats1[max_n_conn];
-  unsigned char conn_ats2[max_n_conn];
+  int conn_ats1[max_n_conn];
+  int conn_ats2[max_n_conn];
   unsigned char ljlk_path_dist1[max_n_conn * tile_size];
   unsigned char ljlk_path_dist2[max_n_conn * tile_size];
   unsigned char elec_path_dist1[max_n_conn * tile_size];
@@ -495,7 +495,7 @@ auto ljlk_elec_native_forward(
                           Real* charge_dst,
                           unsigned char* lj_path_dst,
                           unsigned char* elec_path_dst,
-                          unsigned char* conn_ats) {
+                          int* conn_ats) {
       DeviceOperations<D>::template copy_contiguous_data<nt, 3>(
           coord_dst,
           reinterpret_cast<Real*>(
