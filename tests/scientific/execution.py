@@ -174,6 +174,25 @@ class Execution:
         repack = palette.create_restrict_to_repacking_mask(pbt, indices)
         return tuple(self.numpy(a) for a in (counts, choices, original, repack))
 
+    def use_beta2016(self):
+        """Use the complete public preset with this molecule's parameter context."""
+        if self.framework == "torch":
+            from tmol import beta2016_score_function
+
+            self.score_function = beta2016_score_function(
+                self.device, self.parameter_database
+            )
+            self._render_torch()
+            channels = self.score_function.all_score_types()
+        else:
+            from tmol_jax import beta2016_score_function
+
+            self.score_function = beta2016_score_function(self.parameter_database)
+            channels = self.score_function.active_score_types()
+        return tuple(st.name for st in channels), np.array(
+            [float(self.score_function.get_weight(st)) for st in channels]
+        )
+
     def set_options(self, options):
         self.score_function.set_options(options)
         if self.framework == "torch":
