@@ -26,14 +26,14 @@
         "tests/scientific/test_cartbonded.py",
         "tests/scientific/test_molecular_nonbonded.py"
       ],
-      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. Full scoring remains gated. Shared D rotamer libraries loaded; D backbone and Dunbrack scoring not certified."
+      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. Full scoring remains gated. Shared D rotamer libraries loaded; Connected D backbone energy/full gradients now match fresh Torch exactly; Dunbrack scoring not certified."
     },
     {
       "domain": "modifications_and_termini",
       "torch": "supported",
       "jax": "partial",
-      "repro_fixture": "tmol/tests/ligand/test_complete_polymer_chemistry.py",
-      "implementation_status": "Canonical termini and histidine/disulfide variants tested; broad modifications not certified."
+      "repro_fixture": "tests/scientific/test_backbone_torsion.py",
+      "implementation_status": "Native backbone values/full gradients validated for connected HYP, HIS_D, CYD and termini; every shipped Rama/Omega lookup row and table byte matches Torch. Broader modification scoring remains partial."
     },
     {
       "domain": "ligand_only",
@@ -161,28 +161,28 @@
       "torch": "torch_autograd",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_native_genbonded.py",
-      "implementation_status": "Native gen/cart float32/64 JIT, JVP, reverse Jacobian and sequential vmap tested CPU/CUDA. Native higher derivatives absent; older nonbonded custom-VJP CUDA adapters lack JVP."
+      "implementation_status": "Native gen/cart/backbone float32/64 JIT, JVP, reverse Jacobian and sequential vmap tested CPU/CUDA. Native higher derivatives absent; older nonbonded custom-VJP CUDA adapters lack JVP."
     },
     {
       "domain": "forward_ad",
       "torch": "framework_specific",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_native_genbonded.py",
-      "implementation_status": "Native gen/cart float32/64 JIT, JVP, reverse Jacobian and sequential vmap tested CPU/CUDA. Native higher derivatives absent; older nonbonded custom-VJP CUDA adapters lack JVP."
+      "implementation_status": "Native gen/cart/backbone float32/64 JIT, JVP, reverse Jacobian and sequential vmap tested CPU/CUDA. Native higher derivatives absent; older nonbonded custom-VJP CUDA adapters lack JVP."
     },
     {
       "domain": "native_cpu",
       "torch": "supported",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_native_genbonded.py",
-      "implementation_status": "Generic bonded and Cartesian bonded share complete native physics/analytic derivatives with Torch. CPU and scheduler H200 CUDA execution tested. Other score terms still use earlier execution implementations."
+      "implementation_status": "Generic bonded, Cartesian bonded and backbone share complete native physics/analytic derivatives with Torch. CPU and H200 CUDA values/gradients/transforms/empty batches tested. Other terms still use earlier implementations."
     },
     {
       "domain": "native_cuda",
       "torch": "supported",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_native_genbonded.py",
-      "implementation_status": "Generic bonded and Cartesian bonded share complete native physics/analytic derivatives with Torch. CPU and scheduler H200 CUDA execution tested. Other score terms still use earlier execution implementations."
+      "implementation_status": "Generic bonded, Cartesian bonded and backbone share complete native physics/analytic derivatives with Torch. CPU and H200 CUDA values/gradients/transforms/empty batches tested. Other terms still use earlier implementations."
     }
   ],
   "score_terms": {
@@ -248,13 +248,13 @@
     },
     "omega": {
       "torch": "implemented",
-      "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "blocked: connected B3Q+B3D differs from Torch; do not enable"
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "Five connected canonical/D/HYP/variant/mixed cases: independent Torch/JAX host prep yields exact per-channel CPU values/full gradients. CPU/CUDA independent derivatives and float32/64 transformations pass. B3Q/B3D correctly contribute zero with no statistical reference."
     },
     "rama": {
       "torch": "implemented",
-      "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "blocked: connected B3Q+B3D differs from Torch; do not enable"
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "Five connected canonical/D/HYP/variant/mixed cases: independent Torch/JAX host prep yields exact per-channel CPU values/full gradients. CPU/CUDA independent derivatives and float32/64 transformations pass. B3Q/B3D correctly contribute zero with no statistical reference."
     },
     "dunbrack_rot": {
       "torch": "implemented",
@@ -299,7 +299,7 @@
     "gen_torsions": {
       "torch": "implemented",
       "jax": "native_values_and_coordinate_gradients",
-      "noncanonical_validation": "Nonzero LG1/HYP/B3Q+B3D/mixed cases: CPU Torch identity; CPU/CUDA independent derivatives and transformations; float64 cross-device gradients within8e-12. Float32 near-planar geometry discrepancy under investigation."
+      "noncanonical_validation": "Nonzero LG1/HYP/B3Q+B3D/mixed fixtures. Shared atan2 geometry fixes near-planar discrepancy: exact644faabba8 CPU/CUDA float32 full gradients differ by at most8.83e-6, float64 earlier8e-12. First-order transformations and empty batches pass."
     },
     "na_torsion": {
       "torch": "implemented",
@@ -317,5 +317,5 @@
       "noncanonical_validation": "Complete preset retains weight. Active eligible chemistry rejects before tracing; shared chemistry may prove an empty interaction set."
     }
   },
-  "validation": "Exact5033 clean installed core/JAX/native wheels and sdists:22float64CPU scientific cases in a Torch-free runtime. Exact816084 CPU/CUDA native artifacts:28 H200 tests passed. Context527afa:21targetedchecks passed. Final all-domain/API/artifact/performance acceptance remains incomplete."
+  "validation": "Exact310a0fa376: clean installed core/JAX/native wheels and standalone sdists,28float64CPU scientific cases in Torch-free runtime; matching-source Torch/JAX backbone per-channel values/full gradients exact on6cases. NativeCPU/CUDA artifacts:48H200tests passed including first-order transforms, empty batches and periodic spline invariants. Final all-domain/API/performance acceptance remains incomplete."
 }
