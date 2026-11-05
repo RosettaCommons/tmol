@@ -567,7 +567,7 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
   CTA_LAUNCH_T_PARAMS;
   typedef LJLKSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t> shared_mem_union;
   auto atom_pair_ljlk_fn =
-      ([=] TMOL_DEVICE_FUNC(
+      ([=, &ctx] TMOL_DEVICE_FUNC(
            int atom_tile_ind1,
            int atom_tile_ind2,
            int,
@@ -583,14 +583,14 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
       });
 
   auto score_inter_ljlk_atom_pair =
-      ([=] SCORE_INTER_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
+      ([ =, &ctx ] SCORE_INTER_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
   auto score_intra_ljlk_atom_pair =
-      ([=] SCORE_INTRA_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
+      ([ =, &ctx ] SCORE_INTRA_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
 
   auto load_block_coords_and_params_into_shared =
-      ([=] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
+      ([ =, &ctx ] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
 
-  auto load_block_into_shared = ([=] LOAD_BLOCK_INTO_SHARED);
+  auto load_block_into_shared = ([ =, &ctx ] LOAD_BLOCK_INTO_SHARED);
 
   int const max_important_bond_separation = 4;
 
@@ -629,40 +629,42 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies_by_block(
   int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
 
   auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
+      ([ =, &ctx ] LOAD_TILE_INVARIANT_INTERRES_DATA);
 
   auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
+      ([ =, &ctx ] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
 
   auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
+      ([ =, &ctx ] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
 
-  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
+  auto load_interres_data_from_shared =
+      ([ =, &ctx ] LOAD_INTERRES_DATA_FROM_SHARED);
 
   // Evaluate both the LJ and LK scores in separate dispatches
   // over all atoms in the tile and the subset of heavy atoms in
   // the tile
   auto eval_interres_atom_pair_scores =
-      ([=] EVAL_INTERRES_ATOM_PAIR_SCORES_FUSED);
+      ([ =, &ctx ] EVAL_INTERRES_ATOM_PAIR_SCORES_FUSED);
 
-  auto store_calculated_energies = ([=] STORE_POSE_CALCULATED_ENERGIES);
+  auto store_calculated_energies = ([ =, &ctx ] STORE_POSE_CALCULATED_ENERGIES);
 
   auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
+      ([ =, &ctx ] LOAD_TILE_INVARIANT_INTRARES_DATA);
 
   auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
+      ([ =, &ctx ] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
 
   auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
+      ([ =, &ctx ] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
 
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
+  auto load_intrares_data_from_shared =
+      ([ =, &ctx ] LOAD_INTRARES_DATA_FROM_SHARED);
 
   // Evaluate both the LJ and LK scores in separate dispatches
   // over all atoms in the tile and the subset of heavy atoms in
   // the tile
   auto eval_intrares_atom_pair_scores =
-      ([=] EVAL_INTRARES_ATOM_PAIR_SCORES_FUSED);
+      ([ =, &ctx ] EVAL_INTRARES_ATOM_PAIR_SCORES_FUSED);
 
   tmol::score::common::tile_evaluate_rot_pair<
       DeviceOperations,
@@ -718,7 +720,7 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_rotamer_energies_by_block(
   CTA_LAUNCH_T_PARAMS;
   typedef LJLKSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t> shared_mem_union;
   auto atom_pair_ljlk_fn =
-      ([=] TMOL_DEVICE_FUNC(
+      ([=, &ctx] TMOL_DEVICE_FUNC(
            int atom_tile_ind1,
            int atom_tile_ind2,
            int,
@@ -734,14 +736,14 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_rotamer_energies_by_block(
       });
 
   auto score_inter_ljlk_atom_pair =
-      ([=] SCORE_INTER_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
+      ([ =, &ctx ] SCORE_INTER_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
   auto score_intra_ljlk_atom_pair =
-      ([=] SCORE_INTRA_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
+      ([ =, &ctx ] SCORE_INTRA_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
 
   auto load_block_coords_and_params_into_shared =
-      ([=] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
+      ([ =, &ctx ] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
 
-  auto load_block_into_shared = ([=] LOAD_BLOCK_INTO_SHARED);
+  auto load_block_into_shared = ([ =, &ctx ] LOAD_BLOCK_INTO_SHARED);
 
   int const max_important_bond_separation = 4;
 
@@ -763,34 +765,37 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_rotamer_energies_by_block(
   int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
 
   auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
+      ([ =, &ctx ] LOAD_TILE_INVARIANT_INTERRES_DATA);
 
   auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
+      ([ =, &ctx ] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
 
   auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
+      ([ =, &ctx ] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
 
-  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
+  auto load_interres_data_from_shared =
+      ([ =, &ctx ] LOAD_INTERRES_DATA_FROM_SHARED);
 
   auto eval_interres_atom_pair_scores =
-      ([=] EVAL_INTERRES_ATOM_PAIR_SCORES_FUSED);
+      ([ =, &ctx ] EVAL_INTERRES_ATOM_PAIR_SCORES_FUSED);
 
-  auto store_calculated_energies = ([=] STORE_ROTAMER_CALCULATED_ENERGIES);
+  auto store_calculated_energies =
+      ([ =, &ctx ] STORE_ROTAMER_CALCULATED_ENERGIES);
 
   auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
+      ([ =, &ctx ] LOAD_TILE_INVARIANT_INTRARES_DATA);
 
   auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
+      ([ =, &ctx ] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
 
   auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
+      ([ =, &ctx ] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
 
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
+  auto load_intrares_data_from_shared =
+      ([ =, &ctx ] LOAD_INTRARES_DATA_FROM_SHARED);
 
   auto eval_intrares_atom_pair_scores =
-      ([=] EVAL_INTRARES_ATOM_PAIR_SCORES_FUSED);
+      ([ =, &ctx ] EVAL_INTRARES_ATOM_PAIR_SCORES_FUSED);
 
   tmol::score::common::tile_evaluate_rot_pair<
       DeviceDispatch,
@@ -842,7 +847,7 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies(
   CTA_LAUNCH_T_PARAMS;
   typedef LJLKSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t> shared_mem_union;
   auto atom_pair_ljlk_fn =
-      ([=] TMOL_DEVICE_FUNC(
+      ([=, &ctx] TMOL_DEVICE_FUNC(
            int atom_tile_ind1,
            int atom_tile_ind2,
            int start_atom1,
@@ -861,14 +866,14 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies(
       });
 
   auto score_inter_ljlk_atom_pair =
-      ([=] SCORE_INTER_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
+      ([ =, &ctx ] SCORE_INTER_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
   auto score_intra_ljlk_atom_pair =
-      ([=] SCORE_INTRA_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
+      ([ =, &ctx ] SCORE_INTRA_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
 
   auto load_block_coords_and_params_into_shared =
-      ([=] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
+      ([ =, &ctx ] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
 
-  auto load_block_into_shared = ([=] LOAD_BLOCK_INTO_SHARED);
+  auto load_block_into_shared = ([ =, &ctx ] LOAD_BLOCK_INTO_SHARED);
 
   int const max_important_bond_separation = 4;
 
@@ -907,34 +912,36 @@ TMOL_HOST_DEVICE_FUNC void ljlk_eval_energies(
   int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
 
   auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
+      ([ =, &ctx ] LOAD_TILE_INVARIANT_INTERRES_DATA);
 
   auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
+      ([ =, &ctx ] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
 
   auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
+      ([ =, &ctx ] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
 
-  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
+  auto load_interres_data_from_shared =
+      ([ =, &ctx ] LOAD_INTERRES_DATA_FROM_SHARED);
 
   auto eval_interres_atom_pair_scores =
-      ([=] EVAL_INTERRES_ATOM_PAIR_SCORES_FUSED);
+      ([ =, &ctx ] EVAL_INTERRES_ATOM_PAIR_SCORES_FUSED);
 
-  auto store_calculated_energies = ([=] STORE_POSE_CALCULATED_ENERGIES);
+  auto store_calculated_energies = ([ =, &ctx ] STORE_POSE_CALCULATED_ENERGIES);
 
   auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
+      ([ =, &ctx ] LOAD_TILE_INVARIANT_INTRARES_DATA);
 
   auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
+      ([ =, &ctx ] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
 
   auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
+      ([ =, &ctx ] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
 
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
+  auto load_intrares_data_from_shared =
+      ([ =, &ctx ] LOAD_INTRARES_DATA_FROM_SHARED);
 
   auto eval_intrares_atom_pair_scores =
-      ([=] EVAL_INTRARES_ATOM_PAIR_SCORES_FUSED);
+      ([ =, &ctx ] EVAL_INTRARES_ATOM_PAIR_SCORES_FUSED);
 
   tmol::score::common::tile_evaluate_rot_pair<
       DeviceOperations,
