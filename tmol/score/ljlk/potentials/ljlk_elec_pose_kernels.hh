@@ -380,12 +380,9 @@ auto ljlk_elec_native_forward(
   // each tile's atom-pair lanes across CTAs while sharing its exact physics,
   // loaders and reductions. Large batches retain their original dispatch.
   int const pair_shards =
-      !rotamer_pairs && candidate_capacity > 0
-          ? (candidate_capacity == 1 && block_type_atom_types.size(1) >= 32 ? 32
-             : candidate_capacity <= 64                                     ? 16
-             : candidate_capacity <= 1024                                   ? 4
-                                                                            : 1)
-          : 1;
+      !rotamer_pairs ? common::sphere_overlap::small_pair_partitions(
+                           candidate_capacity, block_type_atom_types.size(1))
+                     : 1;
 #else
   int const pair_shards = 1;
 #endif
@@ -886,25 +883,20 @@ auto ljlk_elec_native_forward(
   });
   if constexpr (!rotamer_pairs) {
     if (pair_shards > 1) {
-      int const n_tasks = common::checked_dispatch_product(
-          candidate_capacity, pair_shards, "fused atom-pair lane dispatch");
-      int const n_workgroups = n_tasks < (1 << 14) ? n_tasks : (1 << 14);
-      auto eval_shard = ([=] TMOL_DEVICE_FUNC(int cta) {
-        for (int task = cta; task < n_tasks; task += n_workgroups) {
-          int const index = task / pair_shards;
-          int candidate = index;
-          if (!implicit_self_pairs) {
-            if (index >= shared_compact_block_neighbors[0]) return;
-            candidate = shared_compact_block_neighbors[index + 1];
-          }
-          eval_pair(
-              candidate,
-              std::integral_constant<PairMode, PairMode::InterAndIntra>{},
-              task % pair_shards);
-        }
+      auto eval_shard = ([=] TMOL_DEVICE_FUNC(int candidate, int shard, int) {
+        eval_pair(
+            candidate,
+            std::integral_constant<PairMode, PairMode::InterAndIntra>{},
+            shard);
       });
-      DeviceOperations<D>::template foreach_workgroup<launch_t>(
-          mgr, n_workgroups, eval_shard);
+      common::sphere_overlap::
+          launch_partitioned_block_neighbors<DeviceOperations, D, launch_t>(
+              mgr,
+              shared_compact_block_neighbors,
+              n_poses,
+              max_n_blocks,
+              pair_shards,
+              eval_shard);
       finalize_pose_scores();
       return;
     }

@@ -66,6 +66,49 @@ TView<T, N, Device::CPU> view(T* ptr, int64_t const (&shape)[N]) {
   return TView<T, N, Device::CPU>(ptr, shape, stride);
 }
 int main() {
+  // Candidate dispatch and atom-pair partitioning are independent: every
+  // requested candidate/partition must run once, including strided groups.
+  for (int count : {0, 1, 3, 129, 1025}) {
+    for (int partitions : {1, 4, 16, 32}) {
+      ContextManager mgr;
+      std::vector<int> visits(count * partitions, 0);
+      auto visit = [&](int candidate, int shard, int total) {
+        assert(total == partitions && candidate >= 0 && candidate < count);
+        assert(shard >= 0 && shard < partitions);
+        ++visits[candidate * partitions + shard];
+      };
+      assert((launch_partitioned_block_neighbors<SerialOps, Device::CPU, void>(
+          mgr,
+          view(static_cast<int*>(nullptr), {0}),
+          count,
+          1,
+          partitions,
+          visit)));
+      for (int n : visits) assert(n == 1);
+    }
+  }
+  {
+    ContextManager mgr;
+    int neighbors[] = {3, 6, 2, 10, -999};
+    int visits[11][4] = {};
+    auto visit = [&](int candidate, int shard, int total) {
+      assert(total == 4 && candidate >= 0 && candidate < 11);
+      ++visits[candidate][shard];
+    };
+    assert((launch_partitioned_block_neighbors<SerialOps, Device::CPU, void>(
+        mgr, view(neighbors, {5}), 2, 3, 4, visit)));
+    for (int candidate = 0; candidate < 11; ++candidate)
+      for (int shard = 0; shard < 4; ++shard)
+        assert(
+            visits[candidate][shard]
+            == int(candidate == 6 || candidate == 2 || candidate == 10));
+    neighbors[0] = 0;
+    auto forbidden = [](int, int, int) { assert(false); };
+    assert((launch_partitioned_block_neighbors<SerialOps, Device::CPU, void>(
+        mgr, view(neighbors, {5}), 1, 1, 4, forbidden)));
+    assert((!launch_partitioned_block_neighbors<SerialOps, Device::CPU, void>(
+        mgr, view(static_cast<int*>(nullptr), {0}), 2, 3, 4, forbidden)));
+  }
   // Empty batches still initialize their count; large batches cover more
   // than one launch group. Every pose has exactly one self-pair candidate,
   // including padded poses which the score body rejects.
