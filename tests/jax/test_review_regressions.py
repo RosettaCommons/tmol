@@ -213,7 +213,7 @@ def test_pose_slice_preserves_missing_metadata_fields(heterogeneous_pose, field)
 def test_elec_adapter_preserves_restype_overrides_and_compound_patches():
     from types import SimpleNamespace
 
-    from tmol_jax.score.elec.params import _charges_for_block_type
+    from tmol_core.scoring.elec import partial_charges_for_block
 
     block = SimpleNamespace(name="LIG:nterm:conj_x:other", atoms=("N", "H", "V"))
     table = {
@@ -223,14 +223,30 @@ def test_elec_adapter_preserves_restype_overrides_and_compound_patches():
         }
     }
     with pytest.raises(KeyError, match="V not found"):
-        _charges_for_block_type(block, table)
+        partial_charges_for_block(
+            block, table, overrides=getattr(block, "elec_partial_charges", None)
+        )
     table["LIG"]["V"] = {"": 0.0}
-    np.testing.assert_array_equal(_charges_for_block_type(block, table), [3, 4, 0])
+    np.testing.assert_array_equal(
+        partial_charges_for_block(
+            block, table, overrides=getattr(block, "elec_partial_charges", None)
+        ),
+        [3, 4, 0],
+    )
     block.elec_partial_charges = {"N": -0.5, "H": 0.5}
     with pytest.raises(KeyError, match="V not found"):
-        _charges_for_block_type(block, table)
+        partial_charges_for_block(
+            block, table, overrides=getattr(block, "elec_partial_charges", None)
+        )
     block.elec_partial_charges["V"] = 0.0
-    np.testing.assert_array_equal(_charges_for_block_type(block, table), [-0.5, 0.5, 0])
+    np.testing.assert_array_equal(
+        partial_charges_for_block(
+            block, table, overrides=getattr(block, "elec_partial_charges", None)
+        ),
+        [-0.5, 0.5, 0],
+    )
     block.elec_partial_charges["V"] = float("nan")
     with pytest.raises(ValueError, match="non-finite"):
-        _charges_for_block_type(block, table)
+        partial_charges_for_block(
+            block, table, overrides=getattr(block, "elec_partial_charges", None)
+        )

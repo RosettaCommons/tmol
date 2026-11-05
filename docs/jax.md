@@ -176,7 +176,8 @@ The same cases accept `torch-cpu`, `torch-cuda`, `torch-mps` and `jax-cuda`; mis
 devices are explicitly skipped. Core chemistry tests live in `tests/core`.
 Native FFI calls support reverse gradients, `vmap` and `jacrev`; batching is
 sequential initially. Shared native terms support first-order JVP and reverse gradients in float32/64;
-their derivative kernels do not provide higher derivatives. Combined LJ/LK and
+their derivative kernels do not provide higher derivatives. Coincident or
+collinear atoms do not define a torsion; its native derivative can be non-finite. Combined LJ/LK and
 electrostatics use live native spatial neighbors and one gradient buffer for a
 weighted total. Standalone LJ/LK and electrostatics use their shared native
 kernels with the same first-order transformation contract and independent

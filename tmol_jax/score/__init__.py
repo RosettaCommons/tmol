@@ -8,10 +8,10 @@ from .score_types import ScoreType
 
 
 def beta2016_score_function(param_db=None):
-    """Load every shared beta2016 weight; reject unsupported active chemistry.
+    """Load every shared beta2016 weight using the supplied parameter context.
 
     A term with a provably empty interaction set retains its declared zero
-    channel. Unsupported active terms fail during rendering before tracing.
+    channel. Missing required parameters fail during rendering before tracing.
     """
     from tmol_jax.database import ParameterDatabase, default_directory
 

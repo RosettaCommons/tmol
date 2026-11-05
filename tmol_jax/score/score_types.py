@@ -57,7 +57,7 @@ class ScoreType(IntEnum):
     # Generic bonded torsions + impropers (GenBondedEnergyTerm)
     gen_torsions = 22
 
-    # Preset channels whose active chemistry still requires implementation.
+    # Nucleic-acid and metal-coordination channels.
     na_torsion = 23
     na_torsion_well = 24
     metal_coordination = 25
