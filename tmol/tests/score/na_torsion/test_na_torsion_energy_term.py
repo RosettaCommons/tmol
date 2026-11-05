@@ -180,11 +180,9 @@ def _reference_pose_scores(term, ps, coords):
 
 @pytest.mark.parametrize("fixture", ["dna_pdb", "rna_pdb", "protein_dna_pdb"])
 @pytest.mark.parametrize("n_poses", [1, 3])
-def test_native_cuda_pose_scores_match_reference(
-    n_poses, fixture, request, torch_device
-):
-    if torch_device.type != "cuda":
-        pytest.skip("native NA torsion scoring is CUDA-only")
+def test_native_pose_scores_match_reference(n_poses, fixture, request, torch_device):
+    if torch_device.type not in ("cpu", "cuda"):
+        pytest.skip("native NA torsion scoring supports CPU and CUDA")
 
     from tmol import PoseStackBuilder
 
@@ -200,11 +198,9 @@ def test_native_cuda_pose_scores_match_reference(
 
 @pytest.mark.parametrize("fixture", ["dna_pdb", "rna_pdb", "protein_dna_pdb"])
 @pytest.mark.parametrize("n_poses", [1, 3])
-def test_native_cuda_pose_gradients_match_reference(
-    n_poses, fixture, request, torch_device
-):
-    if torch_device.type != "cuda":
-        pytest.skip("native NA torsion scoring is CUDA-only")
+def test_native_pose_gradients_match_reference(n_poses, fixture, request, torch_device):
+    if torch_device.type not in ("cpu", "cuda"):
+        pytest.skip("native NA torsion scoring supports CPU and CUDA")
 
     from tmol import PoseStackBuilder
 
@@ -234,9 +230,9 @@ def test_native_cuda_pose_gradients_match_reference(
     torch.testing.assert_close(native_grad, reference_grad, rtol=5e-4, atol=5e-2)
 
 
-def test_native_cuda_degenerate_dihedral_has_finite_subgradient(dna_pdb, torch_device):
-    if torch_device.type != "cuda":
-        pytest.skip("native NA torsion scoring is CUDA-only")
+def test_native_degenerate_dihedral_has_finite_subgradient(dna_pdb, torch_device):
+    if torch_device.type not in ("cpu", "cuda"):
+        pytest.skip("native NA torsion scoring supports CPU and CUDA")
 
     term, pose = _term_and_pose(dna_pdb, torch_device)
     coords = pose.coords.detach().clone()
@@ -257,7 +253,7 @@ def test_native_cuda_degenerate_dihedral_has_finite_subgradient(dna_pdb, torch_d
 
 
 @pytest.mark.parametrize("fixture", ["dna_pdb", "rna_pdb", "protein_dna_pdb"])
-def test_native_cuda_pose_scoring_is_graph_capture_safe(
+def test_native_pose_scoring_is_graph_capture_safe(
     fixture, request, default_database, torch_device
 ):
     if torch_device.type != "cuda":

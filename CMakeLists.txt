@@ -405,8 +405,9 @@ set(_C_SOURCES
   # score/metal
   tmol/score/metal/potentials/compiled.ops.cpp
   tmol/backends/cpu/score/metal/potentials/metal_coordination_pose_score.cpu.cpp
-  # score/na_torsion (CUDA implementation registered separately below)
+  # score/na_torsion
   tmol/score/na_torsion/potentials/compiled.ops.cpp
+  tmol/backends/cpu/score/na_torsion/potentials/na_torsion_pose_score.cpu.cpp
 )
 
 if(TMOL_HAS_CUDA)

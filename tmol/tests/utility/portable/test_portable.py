@@ -155,7 +155,9 @@ def test_whole_pose_cartbonded_needs_no_framework(tmp_path):
 
 @requires_cxx
 def test_whole_pose_backbone_torsion_needs_no_framework(tmp_path):
-    proc = _compile(HERE / "native_backbone_torsion.cc", tmp_path / "backbone", run=True)
+    proc = _compile(
+        HERE / "native_backbone_torsion.cc", tmp_path / "backbone", run=True
+    )
     assert proc.returncode == 0, proc.stderr
 
 
@@ -170,11 +172,19 @@ def test_dihedral_precision_near_planar_geometry(tmp_path):
 
 @requires_cxx
 def test_bspline_coefficient_preparation_needs_no_framework(tmp_path):
-    proc = _compile(HERE / "native_bspline_coeffs.cc", tmp_path / "coefficients", run=True)
+    proc = _compile(
+        HERE / "native_bspline_coeffs.cc", tmp_path / "coefficients", run=True
+    )
     assert proc.returncode == 0, proc.stderr
 
 
 @requires_cxx
 def test_whole_pose_metal_needs_no_framework(tmp_path):
     proc = _compile(HERE / "native_metal.cc", tmp_path / "metal", run=True)
+    assert proc.returncode == 0, proc.stderr
+
+
+@requires_cxx
+def test_whole_pose_na_torsion_needs_no_framework(tmp_path):
+    proc = _compile(HERE / "native_na_torsion.cc", tmp_path / "na", run=True)
     assert proc.returncode == 0, proc.stderr
