@@ -213,6 +213,19 @@ def test_pose_stack_kinematics_module_smoke(
     assert dofs.raw.grad is not None
 
 
+def test_kinematic_forest_host_roundtrip(pose_stack_gradcheck_test_system1):
+    from tmol.kinematics._datatypes import KinForest
+
+    _, module, _, _ = pose_stack_gradcheck_test_system1
+    original = module.kmd.forest
+    host = original.to_host_indices()
+    rebuilt = KinForest.from_host_indices(original.id, host)
+    for name in ("id", "parent", "frame_x", "frame_y", "frame_z", "doftype"):
+        torch.testing.assert_close(getattr(rebuilt, name), getattr(original, name))
+    with pytest.raises(ValueError, match="id must be an int32 vector"):
+        KinForest.from_host_indices(original.id.to(torch.int64), host)
+
+
 def test_pose_stack_kinematic_torch_op_gradcheck_perturbed(
     pose_stack_gradcheck_test_system1, coord_weights, torch_device
 ):

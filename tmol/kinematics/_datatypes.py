@@ -8,14 +8,7 @@ from tmol.types._tensor import TensorGroup
 from tmol.types._array import NDArray
 from tmol.types._attrs import ConvertAttrs
 from tmol.types._functional import _convert_args
-
-
-class NodeType(enum.IntEnum):
-    """KinForest node types."""
-
-    root = 0
-    jump = enum.auto()
-    bond = enum.auto()
+from tmol_core.kinematics import NodeType, prepare_kinematic_forest
 
 
 @attrs.define(auto_attribs=True, frozen=True)
@@ -88,6 +81,31 @@ class KinForest(TensorGroup, ConvertAttrs):
     frame_x: Tensor[torch.int32][...]
     frame_y: Tensor[torch.int32][...]
     frame_z: Tensor[torch.int32][...]
+
+    def to_host_indices(self):
+        """Snapshot and validate native indices outside tensor execution."""
+        return prepare_kinematic_forest(
+            *(
+                getattr(self, name).detach().cpu().numpy()
+                for name in ("parent", "frame_x", "frame_y", "frame_z", "doftype")
+            )
+        )
+
+    @classmethod
+    def from_host_indices(cls, id, indices, device=None):
+        """Create a Torch forest from common host metadata and target atom IDs."""
+        names = ("parent", "frame_x", "frame_y", "frame_z", "doftype")
+        indices = prepare_kinematic_forest(*(getattr(indices, name) for name in names))
+        if id.dtype != torch.int32 or id.ndim != 1 or len(id) != indices.n_nodes:
+            raise ValueError("id must be an int32 vector with one entry per node")
+        device = id.device if device is None else device
+        return cls(
+            id=id.to(device),
+            **{
+                name: torch.from_numpy(getattr(indices, name).copy()).to(device)
+                for name in names
+            },
+        )
 
     @classmethod
     @_convert_args

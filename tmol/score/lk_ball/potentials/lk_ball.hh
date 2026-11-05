@@ -694,7 +694,8 @@ struct LKBallBlockPairSharedData {
   unsigned char pol_occ_tile_inds1[TileSize];  // 64 bytes for indices
   unsigned char pol_occ_tile_inds2[TileSize];
 
-  int conn_ats1[MaxNConn];  // Full residue atom indices, including atoms above 255.
+  int conn_ats1[MaxNConn];  // Full residue atom indices, including atoms above
+                            // 255.
   int conn_ats2[MaxNConn];
   unsigned char path_dist1[MaxNConn * TileSize];  // 384 bytes
   unsigned char path_dist2[MaxNConn * TileSize];
