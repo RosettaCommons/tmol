@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 
 _EXPORTS = {
+    "ConstraintSet": "tmol_jax.pose.constraint_set",
     "PoseStack": "tmol_jax.pose.pose_stack",
     "PackedBlockTypes": "tmol_jax.pose.packed_block_types",
     "PoseStackBuilder": "tmol_jax.pose.pose_stack_builder",

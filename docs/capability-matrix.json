@@ -107,8 +107,11 @@
       "domain": "constraints",
       "torch": "supported",
       "jax": "partial",
-      "repro_fixture": "tests/jax/test_optimization.py",
-      "implementation_status": "Coordinate restraints only; invalid constraint objects and fractional/bool atom indices reject explicitly. General callable geometric constraints absent."
+      "repro_fixture": [
+        "tests/scientific/test_constraints.py",
+        "tests/jax/test_general_constraints.py"
+      ],
+      "implementation_status": "Shared atom topology and four geometric formulas with framework-native callbacks; independent analytic coordinate/parameter gradients, mixed ligand/protein atom identity, pose selection, parameter Hessians and native torsion JVP/vmap pass JAX CPU. GPU and shared Torch case validation pending. Legacy coordinate restraints retained; more than two block runs reject explicitly; packing absent."
     },
     {
       "domain": "heterogeneous_batches",
@@ -244,8 +247,8 @@
     },
     "constraint": {
       "torch": "implemented",
-      "jax": "coordinate_restraints_only",
-      "noncanonical_validation": "pending"
+      "jax": "general_geometric_constraints",
+      "noncanonical_validation": "Mixed ligand/protein batch atom identities and independent harmonic energies/gradients tested on JAX CPU; shared Torch/device checks pending."
     },
     "disulfide": {
       "torch": "implemented",

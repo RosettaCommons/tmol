@@ -23,6 +23,7 @@ class PoseStack:
     inter_block_bondsep: jax.Array  # int32[P, B, B, C, C]
     block_type_ind: jax.Array  # int32[n_poses, max_n_blocks]
     pdb_info: Optional[Any] = None  # PDBInfo; aux.
+    constraint_set: Optional[Any] = None
 
     # Properties
 
@@ -79,7 +80,19 @@ class PoseStack:
         def _take(x):
             return x[jnp.asarray(indices)]
 
+        constraints = None
+        if self.constraint_set is not None:
+            from tmol_jax.pose.constraint_set import ConstraintSet
+
+            constraints = (
+                ConstraintSet.concatenate(
+                    [self.constraint_set.split(int(index)) for index in indices]
+                )
+                if len(indices)
+                else ConstraintSet.create_empty(self.coords.device, 0)
+            )
         return PoseStack(
+            constraint_set=constraints,
             packed_block_types=self.packed_block_types,
             coords=_take(self.coords),
             block_coord_offset=_take(self.block_coord_offset),

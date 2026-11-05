@@ -9,6 +9,7 @@
 #include "workspace_ffi.hh"
 #include "dunbrack_ffi.hh"
 #include "nonbonded_ffi.hh"
+#include "constraint_torsion_ffi.hh"
 
 namespace tmol::jax {
 namespace {
@@ -70,6 +71,15 @@ struct CudaOps<Device::CUDA> {
       score::common::WorkgroupLane<Device::CUDA> = {}) {
     mgpu::mem_to_shared<N, Width>(
         source, threadIdx.x, count, destination, false);
+  }
+  template <int N, int Width, typename T, typename U>
+  __device__ static void copy_contiguous_data_and_cast(
+      T* destination,
+      const U* source,
+      int count,
+      score::common::WorkgroupLane<Device::CUDA> = {}) {
+    for (int i = threadIdx.x; i < count; i += N)
+      destination[i] = static_cast<T>(source[i]);
   }
   __device__ static void synchronize_workgroup(
       score::common::WorkgroupLane<Device::CUDA> = {}) {
@@ -236,4 +246,14 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets()
         .Attr<double>("reach"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_constraint_torsion,
+    tmol::jax::run<tmol::jax::ConstraintTorsionKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets(),
     {xla::ffi::Traits::kCmdBufferCompatible});

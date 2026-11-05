@@ -1,9 +1,4 @@
-"""Flat-bottom Cartesian coordinate constraints.
-
-For each (pose, atom), the energy is 0.5*k*max(0, distance_to_target-tol)**2.
-ConstraintSet stores targets [constraints, 3], indices [constraints, 2], and
-per-constraint k and tol. Empty sets contribute zero. Other native constraint
-forms and packing are not exposed by this JAX term."""
+"""Coordinate restraints and callable geometric constraints on molecular atoms."""
 
 from __future__ import annotations
 
@@ -16,33 +11,14 @@ import numpy as np
 from tmol_jax.score.energy_term import EnergyTerm
 from tmol_jax.score.score_types import ScoreType
 from tmol_jax.types import pytree_dataclass
+from . import functions
 
 # ConstraintSet pytree                                                  #
 
 
 @pytree_dataclass
 class ConstraintSet:
-    """Flat container for a bag of coordinate constraints.
-
-    All fields are ``jax.Array`` leaves, so the whole object flows
-    through ``jit`` / ``vmap`` / ``grad`` as a pytree. The leading
-    ``n_constraints`` dimension may be zero; every reduction in the
-    scoring path returns zeros in that case.
-
-    Fields
-    ------
-    target_coords : float32[n_constraints, 3]
-        Target 3-D coordinate each atom is tethered to.
-    atom_indices : int32[n_constraints, 2]
-        ``(pose_ind, atom_ind)`` pair identifying the constrained atom
-        inside ``PoseStack.coords``. ``atom_ind`` is the flat index into
-        a pose's coord slab (i.e. ``block_coord_offset[pose, block] +
-        local_atom_ind``).
-    k : float32[n_constraints]
-        Spring constant for the harmonic penalty.
-    tol : float32[n_constraints]
-        Flat-bottom tolerance. Distances below this incur no penalty.
-    """
+    """Legacy flat-bottom coordinate restraints as differentiable JAX arrays."""
 
     target_coords: jax.Array
     atom_indices: jax.Array
@@ -70,18 +46,17 @@ class ConstraintSet:
 
 
 class ConstraintEnergyTerm(EnergyTerm):
-    """Sum-of-coordinate-restraints energy term.
-
-    Parameters
-    ----------
-    param_db
-        Ignored (retained for :class:`EnergyTerm` compatibility). The
-        constraint set is user-supplied; there are no tabulated
-        parameters to look up.
-    """
+    """Score geometric callbacks or legacy coordinate restraints per pose."""
 
     def __init__(self, param_db: Any = None):
         super().__init__(param_db=param_db)
+
+    harmonic = staticmethod(functions.harmonic)
+    harmonic_coordinate = staticmethod(functions.harmonic_coordinate)
+    bounded = staticmethod(functions.bounded)
+    circularharmonic = staticmethod(functions.circularharmonic)
+    coordinate_flatbottom = staticmethod(functions.coordinate_flatbottom)
+    get_torsion_angle_test = staticmethod(functions.torsion)
 
     def score_types_provided(self) -> list[ScoreType]:
         return [ScoreType.constraint]
@@ -92,14 +67,7 @@ class ConstraintEnergyTerm(EnergyTerm):
         pbt: Any = None,
         constraint_set: Optional[ConstraintSet] = None,
     ) -> ConstraintSet:
-        """Return the user-supplied :class:`ConstraintSet` verbatim.
-
-        Upstream tmol lets the constraint set live on the pose stack
-        itself. In this port we accept it as an explicit kwarg and pass
-        it through, or fall back to ``pose_stack.constraint_set`` /
-        ``ConstraintSet.empty()``. The returned object is the term's
-        per-pose-stack state and is threaded back into ``__call__``.
-        """
+        """Validate host atom topology and resolve callbacks before tracing."""
         del pbt
         if constraint_set is not None:
             cs = constraint_set
@@ -108,6 +76,12 @@ class ConstraintEnergyTerm(EnergyTerm):
         if cs is None:
             cs = ConstraintSet.empty()
         if not isinstance(cs, ConstraintSet):
+            from tmol_jax.pose.constraint_set import (
+                ConstraintSet as GeometricConstraints,
+            )
+
+            if isinstance(cs, GeometricConstraints):
+                return _prepare_geometric_constraints(pose_stack, cs)
             raise TypeError("coordinate constraints require a JAX ConstraintSet")
 
         target = np.asarray(cs.target_coords)
@@ -148,27 +122,22 @@ class ConstraintEnergyTerm(EnergyTerm):
         term_state: ConstraintSet,
         coords_override: Optional[jax.Array] = None,
     ) -> dict[ScoreType, jax.Array]:
-        """Compute the per-pose total of 0.5 k max(0, d - tol)^2 terms.
-
-        Parameters
-        ----------
-        pose_stack
-            Supplies ``coords`` and ``n_poses`` (plus any metadata we
-            might look at in the future).
-        term_state
-            The :class:`ConstraintSet` returned by
-            :meth:`setup_for_pose_stack`.
-        coords_override
-            Optional replacement for ``pose_stack.coords``. This is how
-            the minimizer gets gradients w.r.t. atomic coordinates.
-
-        Returns
-        -------
-        dict
-            ``{ScoreType.constraint: jnp.float32[n_poses]}`` -- per-pose
-            sum of all constraint penalties touching that pose.
-        """
+        """Evaluate prepared constraints and sum their energies within each pose."""
         coords = pose_stack.coords if coords_override is None else coords_override
+        if isinstance(term_state, tuple):
+            values = jnp.zeros(coords.shape[0], coords.dtype)
+            flat = coords.reshape(-1, 3)
+            for function, atom_indices, params, pose_indices in term_state:
+                penalties = function(flat[atom_indices], params.astype(coords.dtype))
+                if penalties.shape != pose_indices.shape:
+                    raise ValueError(
+                        "constraint callback must return one energy per constraint"
+                    )
+                values += jax.ops.segment_sum(
+                    penalties, pose_indices, num_segments=coords.shape[0]
+                )
+            return {ScoreType.constraint: values}
+
         # ``coords`` is [n_poses, max_n_atoms_per_pose, 3].
         n_poses = coords.shape[0]
 
@@ -190,13 +159,9 @@ class ConstraintEnergyTerm(EnergyTerm):
         # ``coords[pose_ind, atom_ind]`` is [n_constraints, 3].
         atom_xyz = coords[pose_ind, atom_ind]
 
-        # Euclidean distance to target.
-        diff = atom_xyz - target  # [n_constraints, 3]
-        dist = jnp.sqrt(jnp.sum(diff * diff, axis=-1) + 1e-20)
-
-        # Flat-bottom harmonic: zero below tol, 0.5 k (d - tol)^2 above.
-        excess = jnp.maximum(dist - tol, 0.0)
-        penalty = 0.5 * k * excess * excess  # [n_constraints]
+        penalty = functions.coordinate_flatbottom(
+            atom_xyz[:, None, :], jnp.column_stack((target, k, tol))
+        )
 
         # Scatter-sum into the per-pose total. ``segment_sum`` is the
         # standard JAX primitive for this and is differentiable w.r.t.
@@ -206,6 +171,81 @@ class ConstraintEnergyTerm(EnergyTerm):
         )
 
         return {ScoreType.constraint: per_pose}
+
+
+def _prepare_geometric_constraints(pose, constraints):
+    """Resolve named block-local topology to native coordinate storage once."""
+    if constraints.n_poses != pose.coords.shape[0]:
+        raise ValueError("constraint pose count does not match the molecular batch")
+    atoms = np.asarray(constraints.constraint_atoms)
+    functions = np.asarray(constraints.constraint_function_inds)
+    parameters = constraints.constraint_params
+    if atoms.ndim != 3 or atoms.shape[1:] != (4, 3):
+        raise ValueError("constraint atoms must have shape [constraint, 4, 3]")
+    if not np.issubdtype(atoms.dtype, np.integer):
+        raise TypeError("constraint atoms must contain integer indices")
+    if (
+        functions.shape != atoms.shape[:1]
+        or not np.issubdtype(functions.dtype, np.integer)
+        or np.any(functions < 0)
+        or np.any(functions >= len(constraints.constraint_functions))
+    ):
+        raise ValueError("constraint function indices do not match the registry")
+    if parameters.ndim != 2 or parameters.shape[0] != len(atoms):
+        raise ValueError("constraint parameters must have one row per constraint")
+    if not jnp.issubdtype(parameters.dtype, jnp.floating):
+        raise TypeError("constraint parameters must be floating point")
+    actual = atoms[..., 0] >= 0
+    if not np.all(actual[:, 0]) or np.any(atoms[~actual] != -1):
+        raise ValueError("constraint atoms contain invalid padding")
+    if np.any(
+        atoms[..., 0][actual] != np.broadcast_to(atoms[:, :1, 0], actual.shape)[actual]
+    ):
+        raise ValueError("a constraint cannot contain atoms from multiple poses")
+    if np.any(np.asarray(constraints.constraint_num_unique_blocks) > 2):
+        raise NotImplementedError(
+            "constraints spanning more than two block runs are not supported"
+        )
+    p, b, a = np.moveaxis(atoms, -1, 0)
+    if (
+        np.any(p[actual] >= pose.n_poses)
+        or np.any(b[actual] < 0)
+        or np.any(b[actual] >= pose.max_n_blocks)
+        or np.any(a[actual] < 0)
+    ):
+        raise ValueError("constraint atom index is outside the pose")
+    bti = np.asarray(pose.block_type_ind)
+    real_types = bti[p[actual], b[actual]]
+    if np.any(real_types < 0) or np.any(
+        a[actual]
+        >= np.asarray(pose.packed_block_types.n_atoms)[np.maximum(real_types, 0)]
+    ):
+        raise ValueError("constraint atom refers to molecular padding")
+    offsets = np.asarray(pose.block_coord_offset)
+    flat_atoms = np.full(atoms.shape[:2], -1, np.int32)
+    flat_atoms[actual] = (
+        p[actual] * pose.coords.shape[1] + offsets[p[actual], b[actual]] + a[actual]
+    )
+    groups = []
+    for index, function in enumerate(constraints.constraint_functions):
+        rows = np.flatnonzero(functions == index)
+        if not rows.size:
+            continue
+        required_atoms = getattr(function, "_tmol_constraint_atoms", None)
+        if required_atoms is not None and not np.all(actual[rows, :required_atoms]):
+            raise ValueError("constraint callback is missing required atoms")
+        required_params = getattr(function, "_tmol_constraint_parameters", 0)
+        if parameters.shape[1] < required_params:
+            raise ValueError("constraint callback is missing required parameters")
+        groups.append(
+            (
+                function,
+                jnp.asarray(flat_atoms[rows]),
+                constraints.constraint_params[rows],
+                jnp.asarray(p[rows, 0]),
+            )
+        )
+    return tuple(groups)
 
 
 __all__ = ["ConstraintSet", "ConstraintEnergyTerm"]

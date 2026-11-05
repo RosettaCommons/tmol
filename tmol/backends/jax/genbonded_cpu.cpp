@@ -7,6 +7,7 @@
 #include "workspace_ffi.hh"
 #include "dunbrack_ffi.hh"
 #include "nonbonded_ffi.hh"
+#include "constraint_torsion_ffi.hh"
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
@@ -70,6 +71,14 @@ struct CpuOps<Device::CPU> {
   static void copy_contiguous_data(
       T* destination,
       T* source,
+      int count,
+      score::common::WorkgroupLane<Device::CPU> = {}) {
+    std::copy_n(source, count, destination);
+  }
+  template <int N, int Width, typename T, typename U>
+  static void copy_contiguous_data_and_cast(
+      T* destination,
+      const U* source,
       int count,
       score::common::WorkgroupLane<Device::CPU> = {}) {
     std::copy_n(source, count, destination);
@@ -322,3 +331,12 @@ extern "C" uint64_t tmol_nonbonded_weighted_workspace_bytes(
   }
   return std::numeric_limits<uint64_t>::max();
 }
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_constraint_torsion,
+    tmol::jax::run<tmol::jax::ConstraintTorsionKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets());

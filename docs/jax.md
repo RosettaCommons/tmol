@@ -69,6 +69,19 @@ connectivity or batch layout. `sum_terms=False` returns weighted channels in
 Minimization accepts atom or xyz movement masks, freezes padding and returns a
 new pose. Check `result["converged"]` and `result["status"]`.
 
+Attach general geometric constraints with `tmol_jax.ConstraintSet.create_empty(
+pose.device, pose.n_poses).add_constraints(callback, atom_indices, parameters)`
+and `pose.replace(constraint_set=constraints)`, then enable `ScoreType.constraint`.
+Indices identify `(pose, block, local_atom)`; `(block, local_atom)` rows repeat
+across poses. `ConstraintEnergyTerm` provides shared harmonic distance/coordinate,
+bounded distance and circular harmonic formulas. JAX callbacks can also supply
+one energy per gathered four-atom row. Parameter arrays remain differentiable;
+pose selection preserves their atom identities. Topology preparation is on the
+host, and constraints spanning more than two block runs reject explicitly.
+Harmonic/bounded arithmetic supports higher derivatives; the shared native
+torsion primitive supports first coordinate derivatives. The earlier coordinate
+restraint container in `tmol_jax.score.constraint` remains available.
+
 `run_cart_relax` performs a no-pack repulsive-weight ramp with optional mainchain
 coordinate constraints. It retains the best full-weight structure. It does not
 implement FastRelax. Complete nucleic-acid, metal and ligand/noncanonical
