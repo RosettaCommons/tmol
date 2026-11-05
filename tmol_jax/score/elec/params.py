@@ -65,30 +65,11 @@ def _charges_for_block_type(
     The shared lookup follows compound-patch precedence and validation.
     """
 
-    atoms = tuple(block_type.atoms)
-    out = np.zeros(len(atoms), dtype=np.float32)
-
-    # Restype-carried charges (e.g. a ligand RefinedResidueType built
-    # from a ``.tmol`` params file) take precedence over the elec-DB
-    # lookup. Canonical residues never set this attribute, so their
-    # charges are byte-unchanged. Mirrors upstream's per-block
-    # ``elec_partial_charge`` annotation.
-    restype_charges = getattr(block_type, "elec_partial_charges", None)
-    if restype_charges is not None:
-        for i, atm in enumerate(atoms):
-            atm_name = getattr(atm, "name", atm)
-            if atm_name not in restype_charges:
-                raise KeyError(
-                    f"Elec charge for atom {block_type.name},{atm_name} not found"
-                )
-            out[i] = np.float32(restype_charges[atm_name])
-        if not np.isfinite(out).all():
-            raise ValueError(
-                f"Elec charges for {block_type.name} are non-finite in float32"
-            )
-        return out
-
-    return partial_charges_for_block(block_type, partial_charges)
+    return partial_charges_for_block(
+        block_type,
+        partial_charges,
+        overrides=getattr(block_type, "elec_partial_charges", None),
+    )
 
 
 def _per_block_type_charges(

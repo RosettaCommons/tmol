@@ -4,13 +4,8 @@ import jax.numpy as jnp
 import numpy as np
 
 from tmol_core.scoring.atom_types import atom_type_parameters
-from tmol_core.scoring.count_pair import electrostatic_distances, packed_ljlk_distances
-from tmol_core.scoring.elec import (
-    count_pair_table,
-    native_elec_global_parameters,
-    partial_charge_table,
-    representative_mapping_for_block,
-)
+from tmol_core.scoring.count_pair import packed_ljlk_distances
+from tmol_core.scoring.elec import prepare_electrostatic_parameters
 from tmol_core.scoring.ljlk import (
     ljlk_type_parameters,
     native_ljlk_global_parameters,
@@ -21,7 +16,6 @@ from tmol_jax.score._native import (
     register,
     workspace_sizes,
 )
-from tmol_jax.score.elec.params import _charges_for_block_type
 
 
 def _compact_connections(dense):
@@ -69,24 +63,14 @@ def _ljlk_parameters(pose, database):
 def _electrostatic_parameters(pose, database):
     pbt = pose.packed_block_types
     types = pbt.active_block_types
-    charge_lookup = partial_charge_table(database.scoring.elec)
-    representatives = count_pair_table(database.scoring.elec)
-    rosetta_typed = database.scoring.genbonded.rosetta_typed
-    charges = np.zeros((len(types), pbt.max_n_atoms), np.float32)
-    inter = np.full((len(types), pbt.max_n_atoms, pbt.max_n_atoms), 6, np.int32)
-    intra = np.full_like(inter, 6)
-    for i, block in enumerate(types):
-        n = block.n_atoms
-        charges[i, :n] = _charges_for_block_type(block, charge_lookup)
-        rep = representative_mapping_for_block(block, representatives)
-        inter[i, :n, :n], intra[i, :n, :n] = electrostatic_distances(
-            block, rep, rosetta_typed
-        )
-    return (
-        charges,
-        inter,
-        intra,
-        native_elec_global_parameters(database.scoring.elec.global_parameters),
+    return prepare_electrostatic_parameters(
+        types,
+        pbt.max_n_atoms,
+        database.scoring.elec,
+        database.scoring.genbonded.rosetta_typed,
+        charge_overrides=tuple(
+            getattr(bt, "elec_partial_charges", None) for bt in types
+        ),
     )
 
 
@@ -102,7 +86,7 @@ def prepare_nonbonded(pose, database):
     pbt = pose.packed_block_types
     types = pbt.active_block_types
     lj, lj_global = _ljlk_parameters(pose, database)
-    charges, inter, intra, elec_global = _electrostatic_parameters(pose, database)
+    elec = _electrostatic_parameters(pose, database)
     lj_paths, generic = packed_ljlk_distances(
         types, pbt.max_n_atoms, database.scoring.genbonded.rosetta_typed
     )
@@ -128,15 +112,15 @@ def prepare_nonbonded(pose, database):
             generic,
             lj,
             lj_global,
-            charges,
-            inter,
-            intra,
-            elec_global,
+            elec.charges,
+            elec.inter,
+            elec.intra,
+            elec.global_parameters,
         )
     )
     for target in ("tmol_nonbonded", "tmol_nonbonded_weighted"):
         register(target)
-    return parameters, float(max(lj_global[0, 0], elec_global[0, 4]))
+    return parameters, float(max(lj_global[0, 0], elec.global_parameters[0, 4]))
 
 
 def nonbonded_energy(coords, state, weights=None):
@@ -156,8 +140,6 @@ def nonbonded_energy(coords, state, weights=None):
 
 
 def prepare_independent_nonbonded(pose, database, *, electrostatic):
-    from tmol_core.scoring.count_pair import ligand_atom_mask
-
     pbt = pose.packed_block_types
     _validate_native_connections(pbt)
     types = pbt.active_block_types
@@ -166,14 +148,12 @@ def prepare_independent_nonbonded(pose, database, *, electrostatic):
     poses, blocks = indices.shape
     near, separation = _pose_connections(pose)
     if electrostatic:
-        charges, inter, intra, globals_ = _electrostatic_parameters(pose, database)
-        generic = np.array(
-            [ligand_atom_mask(bt, rosetta_typed).all() for bt in types], np.int32
-        )
-        specific = (charges, inter, intra, globals_)
-        target, channels, reach = "tmol_elec", 1, globals_[0, 4]
+        elec = _electrostatic_parameters(pose, database)
+        generic = elec.all_ligand_typed
+        specific = (elec.charges, elec.inter, elec.intra, elec.global_parameters)
+        target, channels, reach = "tmol_elec", 1, elec.global_parameters[0, 4]
         # Preserve existing palette charge inspection and immutable scorer snapshots.
-        pbt.elec_partial_charge = jnp.asarray(charges)
+        pbt.elec_partial_charge = jnp.asarray(elec.charges)
         pbt._elec_owners = (database.scoring.elec, types)
     else:
         parameters, globals_ = _ljlk_parameters(pose, database)
