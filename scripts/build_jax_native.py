@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import os
 import shutil
@@ -13,25 +14,25 @@ import tempfile
 import tomllib
 
 
-def stage_native(root, stage):
+def stage_native(root, stage, source_revision=None):
     package = root / "packages/jax-native"
     for name in ("pyproject.toml", "setup.py", "NOTICE"):
         shutil.copyfile(package / name, stage / name)
     shutil.copyfile(root / "LICENSE", stage / "LICENSE")
     shutil.copytree(package / "tmol_jax_native", stage / "tmol_jax_native")
     backend = root / "tmol/backends/jax"
-    for name in (
-        "genbonded_cpu.cpp",
-        "genbonded_cuda.cu",
-        "genbonded_ffi.hh",
-        "cartbonded_ffi.hh",
+    for path in (
+        backend / "genbonded_cpu.cpp",
+        backend / "genbonded_cuda.cu",
+        *backend.glob("*_ffi.hh"),
     ):
-        shutil.copyfile(backend / name, stage / name)
+        shutil.copyfile(path, stage / path.name)
     # Include canonical source headers, never a second scientific implementation.
     for relative in (
         "score/common",
         "score/genbonded/potentials",
         "score/cartbonded/potentials",
+        "score/backbone_torsion/potentials",
         "utility/portable",
         "utility/tensor",
         "numeric",
@@ -44,19 +45,46 @@ def stage_native(root, stage):
                 "*.py", "*.pyc", "__pycache__", "*.cpp", "*.cu"
             ),
         )
+    shutil.copyfile(
+        root / "tmol/score/unresolved_atom_types.hh",
+        stage / "include/tmol/score/unresolved_atom_types.hh",
+    )
     source_files = {
         str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(stage.rglob("*"))
         if path.is_file()
     }
-    revision = subprocess.check_output(
-        ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
-    ).strip()
-    dirty = bool(
-        subprocess.check_output(
-            ["git", "-C", str(root), "status", "--porcelain"], text=True
-        ).strip()
+    if source_revision is not None and not re.fullmatch(
+        r"[0-9a-f]{40}", source_revision
+    ):
+        raise ValueError("--source-revision must be the verified full Git commit SHA")
+    probe = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True
     )
+    top = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+    )
+    if (
+        probe.returncode == 0
+        and top.returncode == 0
+        and Path(top.stdout.strip()).resolve() == root.resolve()
+    ):
+        revision = probe.stdout.strip()
+        if source_revision is not None and source_revision != revision:
+            raise ValueError("--source-revision disagrees with the checkout")
+        dirty = bool(
+            subprocess.check_output(
+                ["git", "-C", str(root), "status", "--porcelain"], text=True
+            ).strip()
+        )
+    else:
+        if source_revision is None:
+            raise ValueError(
+                "Building a source archive requires --source-revision with its verified commit SHA"
+            )
+        revision, dirty = source_revision, None
     (stage / "tmol_jax_native/source.json").write_text(
         json.dumps(
             {
@@ -90,11 +118,15 @@ def main():
         "--cuda", action="store_true", help="Include CUDA as well as CPU"
     )
     parser.add_argument("--cuda-architectures", help="Semicolon-separated SM values")
+    parser.add_argument(
+        "--source-revision",
+        help="Verified full Git SHA for an immutable source archive",
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory(prefix="tmol-jax-native-") as temporary:
         stage = Path(temporary)
-        stage_native(root, stage)
+        stage_native(root, stage, args.source_revision)
         environment = os.environ.copy()
         environment["TMOL_JAX_NATIVE_CUDA"] = "1" if args.cuda else "0"
         if args.cuda_architectures:

@@ -2,17 +2,14 @@
 
 // B-spline coefficient construction.
 //
-// Host-side setup: filters a parameter table into spline coefficients using a
-// dynamically sized scratch buffer per row stripe, which is why it still uses
-// Eigen. Kept out of bspline.hh -- which kernels include for interpolate() --
-// so that the interpolation half stays free of Eigen and of dynamic
-// allocation. Coefficients are computed once here and uploaded; nothing on a
-// device calls this (it is only ever instantiated at Device::CPU, from
-// bspline.pybind.cpp).
+// Host-side setup: filters parameter tables with one native scratch buffer per
+// row stripe. Coefficients are prepared once, then used by the allocation-free
+// interpolation kernel. This header needs neither Eigen nor Torch.
 
-#include <Eigen/Core>
+#include <array>
+#include <vector>
 
-#include <tmol/numeric/bspline_compiled/bspline.hh>
+#include <tmol/numeric/bspline_compiled/bspline_kernel.hh>
 
 namespace tmol {
 namespace numeric {
@@ -28,7 +25,7 @@ struct ndspline_coeffs {
   // 1D stripe setter
   static auto TMOL_HOST_DEVICE_FUNC _put_line(
       TensorAccessor<Real, NDIM, D> coeffs,
-      Eigen::Matrix<Real, Eigen::Dynamic, 1> line,
+      const std::vector<Real>& line,
       Int start,
       Int step) {
     Real* vptr = &coeffs.data()[start];
@@ -41,7 +38,7 @@ struct ndspline_coeffs {
   // 1D stripe getter
   static auto TMOL_HOST_DEVICE_FUNC _get_line(
       TensorAccessor<Real, NDIM, D> coeffs,
-      Eigen::Matrix<Real, Eigen::Dynamic, 1>& line,
+      std::vector<Real>& line,
       Int start,
       Int step) {
     Real* vptr = &coeffs.data()[start];
@@ -52,7 +49,7 @@ struct ndspline_coeffs {
   }
 
   static auto TMOL_HOST_DEVICE_FUNC
-  _init_causal_coeff(Eigen::Matrix<Real, Eigen::Dynamic, 1>& line, Real pole) {
+  _init_causal_coeff(std::vector<Real>& line, Real pole) {
     // inplace calculation of "cell 0" coefficient
     // ** currently, initialization corresponds to periodic boundaries
     //    (if one were to add alternate boundary conditions, this would be the
@@ -76,8 +73,8 @@ struct ndspline_coeffs {
     }
   }
 
-  static auto TMOL_HOST_DEVICE_FUNC _init_anticausal_coeff(
-      Eigen::Matrix<Real, Eigen::Dynamic, 1>& line, Real pole) {
+  static auto TMOL_HOST_DEVICE_FUNC
+  _init_anticausal_coeff(std::vector<Real>& line, Real pole) {
     // inplace calculation of "cell (N-1)" coefficient
     // ** currently, initialization corresponds to periodic boundaries
     Int N = line.size();
@@ -103,8 +100,7 @@ struct ndspline_coeffs {
   }
 
   static auto TMOL_HOST_DEVICE_FUNC _convert_interp_coeffs(
-      Eigen::Matrix<Real, Eigen::Dynamic, 1>& line,
-      Eigen::Matrix<Real, DEGREE / 2, 1> poles) {
+      std::vector<Real>& line, std::array<Real, DEGREE / 2> poles) {
     // interpolation coefficients along one line (in place)
     Real lambda = 1.0;
     Int N = line.size();
@@ -136,9 +132,9 @@ struct ndspline_coeffs {
   }
 
   static auto TMOL_HOST_DEVICE_FUNC _get_poles()
-      -> Eigen::Matrix<Real, DEGREE / 2, 1> {
+      -> std::array<Real, DEGREE / 2> {
     static_assert(DEGREE >= 2 && DEGREE <= 5, "Invalid spline degree.");
-    Eigen::Matrix<Real, DEGREE / 2, 1> poles;
+    std::array<Real, DEGREE / 2> poles;
     if (DEGREE == 2) {
       poles[0] = std::sqrt(8.0) - 3.0;
     } else if (DEGREE == 3) {
@@ -168,12 +164,9 @@ struct ndspline_coeffs {
       npoints *= values.size(i);
     }
 
-    typedef Eigen::Matrix<Real, Eigen::Dynamic, 1> RowStripe;
-    RowStripe line_i(values.size(0));
-
     // loop over all dimensions
     for (int dim = 0; dim < NDIM; ++dim) {
-      typedef Eigen::Matrix<Real, Eigen::Dynamic, 1> RowStripe;
+      typedef std::vector<Real> RowStripe;
 
       // allocate memory for one slice in this dimension
       RowStripe line_i(values.size(dim));

@@ -50,7 +50,7 @@ class NativeBuildExt(build_ext):
         manifest = {
             "compiler": subprocess.check_output(
                 [*compiler, "--version"], text=True
-            ).splitlines()[0],
+            ).strip(),
             "command": command,
             "jax_version": jax.__version__,
             "library_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),

@@ -62,7 +62,6 @@ TMOL_DEVICE_FUNC void join_tail_head(
 }
 template <typename Real>
 using CoordQuad = tmol::portable::Mat<Real, 4, 3>;
-#define Real3 Vec<Real, 3>
 
 enum class subgraph_type { length, angle, torsion };
 
@@ -135,7 +134,7 @@ TMOL_DEVICE_FUNC void reverse_subgraph(Vec<Int, 4>& subgraph) {
 template <typename Real, typename Int, int N, tmol::Device D>
 TMOL_DEVICE_FUNC void accumulate_result(
     Real& val,
-    common::tuple<Real, Vec<Real3, N>> to_add,
+    common::tuple<Real, Vec<Vec<Real, 3>, N>> to_add,
     Vec<Int, N> atoms,
     bool accumulate_derivs,
     TensorAccessor<Vec<Real, 3>, 1, D> dV,

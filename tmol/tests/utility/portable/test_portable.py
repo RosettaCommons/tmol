@@ -166,3 +166,9 @@ def test_dihedral_precision_near_planar_geometry(tmp_path):
     assert proc.returncode == 0, proc.stderr
     proc = subprocess.run([str(binary)], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+@requires_cxx
+def test_bspline_coefficient_preparation_needs_no_framework(tmp_path):
+    proc = _compile(HERE / "native_bspline_coeffs.cc", tmp_path / "coefficients", run=True)
+    assert proc.returncode == 0, proc.stderr
