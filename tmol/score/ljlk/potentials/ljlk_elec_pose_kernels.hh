@@ -370,11 +370,13 @@ auto ljlk_elec_native_forward(
   // Small systems have too few residue pairs to occupy the GPU. Partition
   // each tile's atom-pair lanes across CTAs while sharing its exact physics,
   // loaders and reductions. Large batches retain their original dispatch.
-  int const pair_shards = !rotamer_pairs && candidate_capacity > 0
-                              ? (candidate_capacity <= 64     ? 16
-                                 : candidate_capacity <= 1024 ? 4
-                                                              : 1)
-                              : 1;
+  int const pair_shards =
+      !rotamer_pairs && candidate_capacity > 0
+          ? (candidate_capacity == 1 && block_type_atom_types.size(1) >= 32 ? 32
+             : candidate_capacity <= 64                                     ? 16
+             : candidate_capacity <= 1024                                   ? 4
+                                                                            : 1)
+          : 1;
 #else
   int const pair_shards = 1;
 #endif
