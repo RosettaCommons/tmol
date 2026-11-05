@@ -11,9 +11,9 @@
     {
       "domain": "noncanonical_polymers",
       "torch": "supported",
-      "jax": "input_only",
-      "repro_fixture": "tmol/tests/score/test_noncanonical_scoring.py",
-      "implementation_status": "Explicit parameterized residue input implemented; scoring gate remains until per-term validation."
+      "jax": "generic_bonded_values_gradients",
+      "repro_fixture": "tests/scientific/test_genbonded.py",
+      "implementation_status": "HYP and connected B3Q+B3D native CPU values/gradients tested; complete scoring remains gated."
     },
     {
       "domain": "d_amino_acids",
@@ -32,16 +32,16 @@
     {
       "domain": "ligand_only",
       "torch": "supported",
-      "jax": "input_only",
-      "repro_fixture": "tmol/tests/ligand/test_ligand_pipeline.py",
-      "implementation_status": "No JAX ligand preparation adapter; explicit parameterized input only. Generic bonded execution pending."
+      "jax": "generic_bonded_values_gradients",
+      "repro_fixture": "tests/scientific/test_genbonded.py",
+      "implementation_status": "LG1 native CPU nonzero energy/gradient and finite differences tested; no ligand preparation adapter or full scoring."
     },
     {
       "domain": "protein_ligand_mixed",
       "torch": "supported",
-      "jax": "input_only",
-      "repro_fixture": "tmol/tests/ligand/test_protein_ligand_ddg.py",
-      "implementation_status": "No full per-term JAX value/gradient evidence yet."
+      "jax": "generic_bonded_values_gradients",
+      "repro_fixture": "tests/scientific/test_genbonded.py",
+      "implementation_status": "GLY/HYP/LG1 heterogeneous batch tested for native generic bonded only."
     },
     {
       "domain": "nucleic_acids",
@@ -69,7 +69,7 @@
       "torch": "supported",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_review_regressions.py",
-      "implementation_status": "Shared schema and electrostatic parameter identity; arbitrary custom-term semantics pending."
+      "implementation_status": "Exact parameter context retained; generic torsion/improper scaling changes energies and gradients; charge omission rejects."
     },
     {
       "domain": "arbitrary_connectivity",
@@ -95,9 +95,9 @@
     {
       "domain": "cartesian_minimization",
       "torch": "supported",
-      "jax": "canonical_only",
+      "jax": "partial",
       "repro_fixture": "tests/jax/test_optimization.py",
-      "implementation_status": "JAX L-BFGS supports masks; complete noncanonical objective pending."
+      "implementation_status": "Native generic-bonded mixed objective decreases with frozen-atom invariants; complete noncanonical objective absent."
     },
     {
       "domain": "packing_design_mutation",
@@ -139,50 +139,50 @@
       "torch": "torch_autograd",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_cuda.py",
-      "implementation_status": "Canonical transforms tested; new molecular domains need tests; native batching sequential."
+      "implementation_status": "Native generic bonded float32/64 jit, JVP, jacrev, vmap and pose independence tested on mixed inputs; batching sequential."
     },
     {
       "domain": "forward_ad",
       "torch": "framework_specific",
-      "jax": "portable_only",
+      "jax": "partial",
       "repro_fixture": "tmol_jax/score/_cuda.py",
-      "implementation_status": "Native custom-VJP path has no JVP."
+      "implementation_status": "Native generic bonded implements JVP; older native nonbonded custom-VJP adapter lacks JVP. Native higher derivatives unsupported."
     },
     {
       "domain": "native_cpu",
       "torch": "supported",
-      "jax": "absent",
+      "jax": "partial",
       "repro_fixture": "tmol/backends/jax",
-      "implementation_status": "Current JAX CPU uses portable JAX expressions, not common native whole-pose dispatch."
+      "implementation_status": "Generic bonded uses the canonical whole-pose kernel and analytical gradients. Other terms still portable."
     },
     {
       "domain": "native_cuda",
       "torch": "supported",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_cuda.py",
-      "implementation_status": "Four native adapters share scalar potentials; mature whole-pose kernels not fully reused."
+      "implementation_status": "Generic bonded uses canonical whole-pose kernel; compiled successfully, execution validation pending. Older four adapters share scalar potentials."
     }
   ],
   "score_terms": {
     "fa_ljatr": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "HYP/B3Q+B3D/mixed CPU audit matches; ligand-only and broader coverage pending, still gated"
     },
     "fa_ljrep": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "HYP/B3Q+B3D/mixed CPU audit matches; ligand-only and broader coverage pending, still gated"
     },
     "fa_lk": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "HYP/B3Q+B3D/mixed CPU audit matches; ligand-only and broader coverage pending, still gated"
     },
     "fa_elec": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "HYP/B3Q+B3D/mixed CPU audit matches; ligand-only and broader coverage pending, still gated"
     },
     "hbond": {
       "torch": "implemented",
@@ -192,27 +192,27 @@
     "cart_lengths": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "blocked: connected B3Q+B3D differs from Torch; do not enable"
     },
     "cart_angles": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "blocked: connected B3Q+B3D differs from Torch; do not enable"
     },
     "cart_torsions": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "blocked: connected B3Q+B3D differs from Torch; do not enable"
     },
     "cart_impropers": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "blocked: connected B3Q+B3D differs from Torch; do not enable"
     },
     "cart_hxltorsions": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "blocked: connected B3Q+B3D differs from Torch; do not enable"
     },
     "constraint": {
       "torch": "implemented",
@@ -227,12 +227,12 @@
     "omega": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "blocked: connected B3Q+B3D differs from Torch; do not enable"
     },
     "rama": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "blocked: connected B3Q+B3D differs from Torch; do not enable"
     },
     "dunbrack_rot": {
       "torch": "implemented",
@@ -252,22 +252,22 @@
     "lk_ball_iso": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "HYP/B3Q+B3D/mixed CPU audit matches; ligand-only and broader coverage pending, still gated"
     },
     "lk_ball": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "HYP/B3Q+B3D/mixed CPU audit matches; ligand-only and broader coverage pending, still gated"
     },
     "lk_bridge": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "HYP/B3Q+B3D/mixed CPU audit matches; ligand-only and broader coverage pending, still gated"
     },
     "lk_bridge_uncpl": {
       "torch": "implemented",
       "jax": "canonical_values_and_gradients",
-      "noncanonical_validation": "pending"
+      "noncanonical_validation": "HYP/B3Q+B3D/mixed CPU audit matches; ligand-only and broader coverage pending, still gated"
     },
     "ref": {
       "torch": "implemented",
@@ -276,8 +276,8 @@
     },
     "gen_torsions": {
       "torch": "implemented",
-      "jax": "zero_placeholder",
-      "noncanonical_validation": "pending"
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "CPU: LG1/HYP/B3Q+B3D/mixed nonzero fixtures; CUDA runtime pending"
     },
     "na_torsion": {
       "torch": "implemented",
@@ -295,5 +295,5 @@
       "noncanonical_validation": "pending"
     }
   },
-  "validation": "Current source input tests pending; previous campaign evidence does not certify changed source."
+  "validation": "Shared native generic bonded molecular invariants, custom parameter scaling and JAX transformations/minimization tested on CPU; full domain and CUDA acceptance incomplete."
 }

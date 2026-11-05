@@ -1,4 +1,4 @@
-"""Small execution adapters for the common canonical-protein scoring contract."""
+"""Small execution adapters for the common molecular scoring contract."""
 
 import numpy as np
 import pytest
@@ -49,6 +49,61 @@ class Execution:
 
     def coords(self):
         return self.numpy(self.pose.coords)
+
+    def molecule(self, case, terms=("gen_torsions",)):
+        if self.framework == "torch":
+            from tmol import (
+                ParameterDatabase,
+                PackedBlockTypes,
+                PoseStackBuilder,
+                ScoreFunction,
+                ScoreType,
+            )
+            from tmol.chemical._restypes import ResidueTypeSet
+
+            db = case.database(ParameterDatabase.get_default())
+            restypes = ResidueTypeSet.from_database(db.chemical)
+            by_name = {rt.name: rt for rt in restypes.residue_types}
+            names = dict.fromkeys(name for row in case.sequences for name in row)
+            pbt = PackedBlockTypes.from_restype_list(
+                db.chemical, restypes, [by_name[name] for name in names], self.device
+            )
+            self.pose = PoseStackBuilder.from_block_type_names(
+                pbt,
+                [list(row) for row in case.sequences],
+                [list(row) for row in case.chain_lengths],
+            )
+            coordinates = np.zeros(self.pose.coords.shape, np.float32)
+            for p, row in enumerate(case.blocks(db)):
+                xyz = np.concatenate([r[2] for r in row])
+                coordinates[p, : len(xyz)] = xyz
+            self.pose.coords = self.module.as_tensor(coordinates, device=self.device)
+            self.score_function = ScoreFunction(db, self.device)
+        else:
+            from tmol_jax.database import ParameterDatabase
+            from tmol_jax import (
+                ResidueBlock,
+                pose_stack_from_residue_blocks,
+                ScoreFunction,
+                ScoreType,
+            )
+
+            db = case.database(ParameterDatabase.get_default())
+            with self.module.default_device(self.device):
+                self.pose = pose_stack_from_residue_blocks(
+                    [[ResidueBlock(*b) for b in row] for row in case.blocks(db)],
+                    parameter_database=db,
+                    connections=case.connections(),
+                )
+            self.score_function = ScoreFunction(db)
+        self.parameter_database = db
+        for term in terms:
+            self.score_function.set_weight(ScoreType[term], 1.0)
+        if self.framework == "torch":
+            self.scorer = self.score_function.render_whole_pose_scoring_module(
+                self.pose
+            )
+        return self
 
     def numpy(self, value):
         if self.framework == "torch":

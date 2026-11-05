@@ -1,7 +1,8 @@
 # JAX frontend (experimental)
 
 `tmol-jax` provides Torch-free canonical-protein scoring, coordinate gradients
-and Cartesian minimization. It shares chemical records, validation, patching and
+and Cartesian minimization, plus native generic-bonded scoring for explicitly
+parameterized noncanonical molecules. It shares chemical records, validation, patching and
 SMILES parsing with the Torch frontend through [`tmol-core`](shared_core.md).
 Existing `tmol` imports remain available.
 
@@ -59,8 +60,8 @@ new pose. Check `result["converged"]` and `result["status"]`.
 
 `run_cart_relax` performs a no-pack repulsive-weight ramp with optional mainchain
 coordinate constraints. It retains the best full-weight structure. It does not
-implement FastRelax. Nucleic acids, metals, ligands/noncanonical residues,
-repacking and kinematic minimization are not supported by JAX scoring.
+implement FastRelax. Complete nucleic-acid, metal and ligand/noncanonical
+scoring, repacking and kinematic minimization remain unsupported.
 
 For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
 a batch of `ResidueBlock(residue_type, atom_names, coords)` records and explicit
@@ -71,6 +72,18 @@ pose and a context whose `parameter_database` must be used for scoring. Molecula
 input support does not imply complete scoring support: see the current
 [capability matrix](capability-matrix.json).
 
+Generic bonded scoring requires the shared native CPU/CUDA package:
+
+```sh
+python scripts/build_jax_native.py --outdir dist/jax-native
+pip install dist/jax-native/tmol_jax_native-*.whl
+```
+
+Set `ScoreType.gen_torsions` on a `ScoreFunction` constructed with the input's
+parameter database. This term uses the same whole-pose native physics and
+analytic derivatives as Torch; explicit noncanonical input does not enable
+unvalidated terms. See `scripts/build_jax_native.py --help` for CUDA builds.
+
 ## Validation and numerical limits
 
 Run `pytest tests/jax` for JAX transformations and runtime contracts, and
@@ -78,8 +91,9 @@ Run `pytest tests/jax` for JAX transformations and runtime contracts, and
 The same cases accept `torch-cpu`, `torch-cuda`, `torch-mps` and `jax-cuda`; missing
 devices are explicitly skipped. Core chemistry tests live in `tests/core`.
 Native FFI calls support reverse gradients, `vmap` and `jacrev`; batching is
-sequential initially. Forward-mode JVP through the native custom-VJP route is
-unsupported. Installing the adapter can therefore restrict forward-mode use.
+sequential initially. Generic bonded supports first-order JVP and reverse gradients in float32/64.
+Its native derivative kernel does not provide higher derivatives. The older
+native nonbonded custom-VJP route does not support JVP.
 
 Before comparing frontends, verify residue/atom identities and use identical
 coordinates and parameters: loaders can idealize missing atoms and hydrogens

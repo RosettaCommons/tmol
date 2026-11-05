@@ -128,14 +128,24 @@ class ScoreFunction:
         if pose_stack.packed_block_types is not None:
             from tmol_jax.chemical.constants import canonical_aa_3letter
 
+            types = pose_stack.packed_block_types.active_block_types
+            used = {i for i in np.asarray(pose_stack.block_type_ind).ravel() if i >= 0}
             unsupported = {
-                rt.name
-                for rt in pose_stack.packed_block_types.active_block_types
-                if rt.name3 not in canonical_aa_3letter
+                types[i].name
+                for i in used
+                if types[i].name3 not in canonical_aa_3letter
             }
-            if unsupported:
+            general_terms = {
+                ScoreType.gen_torsions,
+                ScoreType.ref,
+                ScoreType.constraint,
+            }
+            limited = set(self.active_score_types()) - general_terms
+            if unsupported and limited:
                 raise NotImplementedError(
-                    "JAX scoring does not yet support: "
+                    "JAX terms "
+                    + ", ".join(sorted(st.name for st in limited))
+                    + " are not validated for: "
                     + ", ".join(sorted(unsupported))
                 )
         if not np.isfinite(np.asarray(pose_stack.coords)).all():
@@ -171,7 +181,8 @@ class ScoreFunction:
         """
         channels = tuple(self.active_score_types())
         weights = dict(self._weights)
-        states = self._setup(pose_stack, constraint_set=constraint_set)
+        with jax.default_device(pose_stack.coords.device):
+            states = self._setup(pose_stack, constraint_set=constraint_set)
         terms = tuple(copy.copy(term) for term in self._terms)
         entries = tuple(
             (term, term_state)

@@ -29,6 +29,11 @@ import os
 from typing import Optional
 
 import attr
+from tmol_core.database.generated import (
+    GENERATED_CARTBONDED_FILES,
+    GENERATED_ELEC_FILES,
+    GENERATED_REF_FILES,
+)
 
 from .cartbonded import CartBondedDatabase
 from .disulfide import DisulfideDatabase
@@ -63,10 +68,8 @@ class ScoringDatabase:
 
         ``path`` defaults to the package's bundled
         ``default/scoring/`` directory. Binary tables are read from
-        ``rama.npz`` / ``omega_bbdep.npz`` / ``dunbrack.npz`` if
-        present (no torch needed); the loaders fall back to the
-        legacy ``rama.zip`` / ``omega_bbdep.zip`` / ``dunbrack.bin``
-        via ``torch.load`` only if the ``.npz`` is missing.
+        ``rama.npz`` / ``omega_bbdep.npz`` / ``dunbrack.npz``. Legacy
+        Torch archives must be converted at package build time.
         """
         if path is None:
             path = os.path.join(os.path.dirname(__file__), "..", "default", "scoring")
@@ -74,13 +77,20 @@ class ScoringDatabase:
 
         return cls(
             ljlk=LJLKDatabase.from_file(os.path.join(path, "ljlk.yaml")),
-            elec=ElecDatabase.from_file(os.path.join(path, "elec.yaml")),
+            elec=ElecDatabase.from_file(
+                os.path.join(path, "elec.yaml"),
+                generated=[os.path.join(path, f) for f in GENERATED_ELEC_FILES],
+            ),
             hbond=HBondDatabase.from_file(os.path.join(path, "hbond.yaml")),
             cartbonded=CartBondedDatabase.from_file(
-                os.path.join(path, "cartbonded.yaml")
+                os.path.join(path, "cartbonded.yaml"),
+                generated=[os.path.join(path, f) for f in GENERATED_CARTBONDED_FILES],
             ),
             genbonded=GenBondedDatabase.from_file(os.path.join(path, "genbonded.yaml")),
-            ref=RefDatabase.from_file(os.path.join(path, "ref.yaml")),
+            ref=RefDatabase.from_file(
+                os.path.join(path, "ref.yaml"),
+                generated=[os.path.join(path, f) for f in GENERATED_REF_FILES],
+            ),
             rama=RamaDatabase.from_file(os.path.join(path, "rama.yaml")),
             dunbrack=DunbrackRotamerLibrary.from_file(
                 os.path.join(path, "dunbrack.yaml")

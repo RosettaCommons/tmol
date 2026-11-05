@@ -14,6 +14,7 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from tmol_jax.types import Array
 
@@ -81,6 +82,28 @@ def connectivity_weight(bonded_path_length: Array) -> Array:
     w = jnp.where(bpl == 4, jnp.float32(0.2), jnp.float32(0.0))
     w = jnp.where(bpl > 4, jnp.float32(1.0), w)
     return w
+
+
+def encode_inter_ligand_paths(pose, pbt, distances, all_ligand):
+    """Apply the shared palette's generic count-pair mode between blocks.
+
+    Native interres_count_pair_separation uses full 1–4/1–5 weight when both
+    entire blocks are ligand typed. Intra-block encoding is prepared in core.
+    """
+    if not np.any(all_ligand):
+        return distances
+    blocks, _, real = pose_atom_block_index(
+        pose.block_type_ind,
+        pose.block_coord_offset,
+        pbt.n_atoms,
+        pose.coords.shape[1],
+    )
+    kinds = jnp.maximum(pose.block_type_ind, 0)
+    generic = jnp.asarray(all_ligand, dtype=bool)[kinds]
+    generic = generic[jnp.arange(pose.n_poses)[:, None], blocks] & real
+    inter = blocks[:, :, None] != blocks[:, None, :]
+    full = inter & generic[:, :, None] & generic[:, None, :]
+    return jnp.where(full & ((distances == 3) | (distances == 4)), 5, distances)
 
 
 # JIT-able pose-level pair lookups                                       #

@@ -13,9 +13,11 @@ from typing import Any, Optional
 import jax
 import jax.numpy as jnp
 import numpy as np
+from tmol_core.scoring.count_pair import electrostatic_distances, ligand_atom_mask
 
 from tmol_jax.score.common.count_pair import (
     pair_bonded_path_length_direct,
+    encode_inter_ligand_paths,
     pose_atom_real_mask,
 )
 
@@ -41,14 +43,16 @@ _MAX_COUNTPAIR_SEPARATION: int = 6
 # Host-side packed-block-type setup                                      #
 
 
-def _annotate_packed_block_types(packed_block_types: Any, elec_db: Any) -> None:
+def _annotate_packed_block_types(
+    packed_block_types: Any, elec_db: Any, rosetta_typed
+) -> None:
     """Attach charge and representative-distance arrays for this database.
 
     For T types and M atom slots: charges[T,M], inter[T,M,M] = path[a,rep[b]],
     and intra[T,M,M] = path[rep[a],rep[b]]. Replacing annotations preserves arrays
     already captured by rendered scorers. Reuse requires the same live owners."""
 
-    owners = (elec_db, packed_block_types.active_block_types)
+    owners = (elec_db, packed_block_types.active_block_types, rosetta_typed)
     cached_owners = getattr(packed_block_types, "_elec_owners", ())
     if len(cached_owners) == len(owners) and all(
         old is new for old, new in zip(cached_owners, owners)
@@ -65,9 +69,7 @@ def _annotate_packed_block_types(packed_block_types: Any, elec_db: Any) -> None:
     inter_rpd = np.zeros((n_types, max_n_atoms, max_n_atoms), dtype=np.int32)
     intra_rpd = np.zeros((n_types, max_n_atoms, max_n_atoms), dtype=np.int32)
 
-    # Fall back to the PBT-packed path_distance if a block type has no
-    # ``path_distance`` attribute of its own.
-    packed_pd = np.asarray(packed_block_types.intrares_path_distance)
+    all_ligand = np.zeros(n_types, np.int32)
 
     for i, bt in enumerate(packed_block_types.active_block_types):
         from tmol_jax.score.elec.params import _charges_for_block_type
@@ -78,15 +80,10 @@ def _annotate_packed_block_types(packed_block_types: Any, elec_db: Any) -> None:
         rep = representative_mapping_for_block_type(bt, cp_reps)
         n = rep.shape[0]
 
-        pd = getattr(bt, "path_distance", None)
-        if pd is None:
-            pd = packed_pd[i, :n, :n]
-        pd = np.asarray(pd, dtype=np.int32)[:n, :n]
-
-        # inter_rpd[a, b] = pd[a, rep[b]]
-        inter_rpd[i, :n, :n] = pd[:, rep]
-        # intra_rpd[a, b] = pd[rep[a], rep[b]]
-        intra_rpd[i, :n, :n] = pd[rep][:, rep]
+        inter, intra = electrostatic_distances(bt, rep, rosetta_typed)
+        inter_rpd[i, :n, :n] = inter
+        intra_rpd[i, :n, :n] = intra
+        all_ligand[i] = ligand_atom_mask(bt, rosetta_typed).all()
 
     setattr(packed_block_types, "elec_partial_charge", jnp.asarray(charges))
     setattr(
@@ -100,6 +97,7 @@ def _annotate_packed_block_types(packed_block_types: Any, elec_db: Any) -> None:
         jnp.asarray(intra_rpd),
     )
     packed_block_types._elec_owners = owners
+    packed_block_types.elec_all_ligand = all_ligand
 
 
 # Per-atom-pair scoring                                                  #
@@ -117,11 +115,14 @@ def pair_bonded_path_length(pose_stack: Any, packed_block_types: Any) -> jax.Arr
     connection atom). Pure JAX on-device, so repeated setup calls for
     equivalently-shaped PoseStacks amortise the initial XLA compile.
     """
-    return pair_bonded_path_length_direct(
+    distances = pair_bonded_path_length_direct(
         pose_stack,
         packed_block_types,
         packed_block_types.elec_intra_repr_path_distance,
         packed_block_types.elec_inter_repr_path_distance,
+    )
+    return encode_inter_ligand_paths(
+        pose_stack, packed_block_types, distances, packed_block_types.elec_all_ligand
     )
 
 
@@ -222,9 +223,15 @@ class ElecEnergyTerm(EnergyTerm):
         if hasattr(param_db, "scoring"):
             super().__init__(param_db)
             self.elec_db = param_db.scoring.elec
+            self.rosetta_typed = param_db.scoring.genbonded.rosetta_typed
         else:
+            from tmol_jax.database import ParameterDatabase
+
             super().__init__(param_db=None)
             self.elec_db = param_db
+            self.rosetta_typed = (
+                ParameterDatabase.get_default().scoring.genbonded.rosetta_typed
+            )
         self.global_params: ElecGlobalParams = elec_global_params_from_database(
             self.elec_db
         )
@@ -243,7 +250,9 @@ class ElecEnergyTerm(EnergyTerm):
         (e.g. the factor-graph minimizer) can hoist this work out of
         the per-pose setup. Idempotent.
         """
-        _annotate_packed_block_types(packed_block_types, self.elec_db)
+        _annotate_packed_block_types(
+            packed_block_types, self.elec_db, self.rosetta_typed
+        )
 
     def setup_for_pose_stack(
         self, pose_stack: Any, pbt: Optional[Any] = None

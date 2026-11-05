@@ -4,7 +4,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_jax.score.common.count_pair import pairwise_bonded_path_length
+from tmol_core.scoring.count_pair import packed_ljlk_distances
+from tmol_jax.score.common.count_pair import (
+    pair_bonded_path_length_direct,
+    pairwise_bonded_path_length,
+    encode_inter_ligand_paths,
+)
 from tmol_jax.score.energy_term import EnergyTerm
 from tmol_jax.score.ljlk.params import LJLKGlobal, LJTypeParams
 from tmol_jax.score.ljlk.potentials import lj_atr_rep, lk_isotropic_pair
@@ -31,19 +36,47 @@ class LJLKEnergyTerm(EnergyTerm):
         indices = np.full(pose_stack.coords.shape[:2], -1, dtype=np.int32)
         block_types = np.asarray(pose_stack.block_type_ind)
         offsets = np.asarray(pose_stack.block_coord_offset)
-        atom_types = np.asarray(pbt.atom_types)
+        atom_types = {
+            a.name: i for i, a in enumerate(self.param_db.chemical.atom_types)
+        }
+        lj_types = {a.name for a in self.param_db.scoring.ljlk.atom_type_parameters}
         for pose, block in zip(*np.nonzero(block_types >= 0)):
             bt = block_types[pose, block]
             offset = offsets[pose, block]
             n_atoms = len(pbt.active_block_types[bt].atoms)
-            indices[pose, offset : offset + n_atoms] = atom_types[bt, :n_atoms]
+            names = [a.atom_type for a in pbt.active_block_types[bt].atoms]
+            missing = set(names) - (atom_types.keys() & lj_types)
+            if missing:
+                raise KeyError(f"missing LJ/LK atom types: {sorted(missing)}")
+            indices[pose, offset : offset + n_atoms] = [
+                atom_types[name] for name in names
+            ]
         parameters = LJTypeParams.from_database(
             self.param_db.scoring.ljlk, self.param_db.chemical
         )
+        rosetta_typed = self.param_db.scoring.genbonded.rosetta_typed
+        if all(
+            a.atom_type in rosetta_typed
+            for bt in pbt.active_block_types
+            for a in bt.atoms
+        ):
+            distances = pairwise_bonded_path_length(pose_stack, pbt)
+        else:
+            intra, all_ligand = packed_ljlk_distances(
+                pbt.active_block_types,
+                pbt.max_n_atoms,
+                rosetta_typed,
+            )
+            distances = pair_bonded_path_length_direct(
+                pose_stack, pbt, jnp.asarray(intra), pbt.intrares_path_distance
+            )
+            distances = encode_inter_ligand_paths(
+                pose_stack, pbt, distances, all_ligand
+            )
         return _LJLKState(
             parameters.gather(jnp.asarray(indices)),
             LJLKGlobal.from_database(self.param_db.scoring.ljlk),
-            pairwise_bonded_path_length(pose_stack, pbt),
+            distances,
             jnp.asarray(indices >= 0),
         )
 
