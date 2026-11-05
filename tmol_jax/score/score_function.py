@@ -78,6 +78,7 @@ class ScoreFunction:
         self._weights = {}
         self._terms = []
         self._term_for_st = {}
+        self._options = {}
 
     @property
     def param_db(self):
@@ -94,9 +95,23 @@ class ScoreFunction:
     def clone(self):
         """Return an independent score configuration with identical weights."""
         cloned = type(self)(self._param_db)
+        cloned.set_options(self._options)
         for score_type, weight in self._weights.items():
             cloned.set_weight(score_type, weight)
         return cloned
+
+    def set_options(self, options):
+        """Replace supported term options; unsupported options fail explicitly."""
+        unsupported = set(options) - {"ref_weights"}
+        if unsupported:
+            raise NotImplementedError(
+                "JAX score options are not implemented: "
+                + ", ".join(sorted(unsupported))
+            )
+        self._options = copy.deepcopy(dict(options))
+
+    def set_option(self, key, value):
+        self.set_options({**self._options, key: value})
 
     def set_weight(self, score_type, weight):
         if not isinstance(score_type, ScoreType):
@@ -176,6 +191,7 @@ class ScoreFunction:
             ):
                 states.append(None)
                 continue
+            term.set_options(self._options)
             if ScoreType.constraint in term.score_types_provided():
                 state = term.setup_for_pose_stack(
                     pose_stack,

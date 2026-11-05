@@ -89,10 +89,6 @@ def _validate_native_connections(pbt):
         raise NotImplementedError(
             "native nonbonded scoring supports at most 12 ports per residue"
         )
-    if np.any(np.asarray(pbt.conn_atoms) > 255):
-        raise NotImplementedError(
-            "native nonbonded connection atom index exceeds uint8"
-        )
 
 
 def prepare_nonbonded(pose, database):

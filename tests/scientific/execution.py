@@ -155,6 +155,11 @@ class Execution:
             self._render_torch()
         return self
 
+    def set_options(self, options):
+        self.score_function.set_options(options)
+        if self.framework == "torch":
+            self._render_torch()
+
     def numpy(self, value):
         if self.framework == "torch":
             return value.detach().cpu().numpy()
@@ -173,11 +178,13 @@ class Execution:
             )
             return self.numpy(self.module.jit(score)(x))
 
-    def value_and_grad(self, coords):
+    def value_and_grad(self, coords, *, coordinate_independent=False):
         if self.framework == "torch":
             x = self.module.tensor(coords, device=self.device, requires_grad=True)
             values = self.scorer(x)
-            (gradient,) = self.module.autograd.grad(values.sum(), x)
+            (gradient,) = self.module.autograd.grad(
+                values.sum(), x, materialize_grads=coordinate_independent
+            )
             return self.numpy(values), self.numpy(gradient)
         with self.module.default_device(self.device):
             x = self.module.device_put(coords, self.device)

@@ -66,7 +66,9 @@ Rendered scorers snapshot weights, term options and topology. Reuse them for
 coordinate changes; render again after changing weights, parameters, types,
 connectivity or batch layout. `sum_terms=False` returns weighted channels in
 `ScoreType` order; additionally set `apply_weights=False` for unweighted values.
-Minimization accepts atom or xyz movement masks, freezes padding and returns a
+`set_options({"ref_weights": weights})` replaces reference weights; explicit D
+entries take precedence over the corresponding L residue. Other score options
+currently reject explicitly. Minimization accepts atom or xyz movement masks, freezes padding and returns a
 new pose. Check `result["converged"]` and `result["status"]`.
 
 Attach general geometric constraints with `tmol_jax.ConstraintSet.create_empty(
@@ -113,8 +115,9 @@ Native FFI calls support reverse gradients, `vmap` and `jacrev`; batching is
 sequential initially. Shared native terms support first-order JVP and reverse gradients in float32/64;
 their derivative kernels do not provide higher derivatives. Combined LJ/LK and
 electrostatics use live native spatial neighbors and one gradient buffer for a
-weighted total. Standalone LJ-only/Elec-only still use earlier implementations;
-their optional CUDA custom-VJP route does not support JVP.
+weighted total. Standalone LJ/LK and electrostatics use their shared native
+kernels with the same first-order transformation contract and independent
+parameter prerequisites.
 
 Before comparing frontends, verify residue/atom identities and use identical
 coordinates and parameters: loaders can idealize missing atoms and hydrogens
@@ -128,6 +131,7 @@ Record setup, compilation and steady execution separately; synchronize with
 `block_until_ready()` for timing. Portable pair tables and the dense topology compatibility array still have
 quadratic storage. The common sparse graph algorithm supplies their chemistry.
 The fused native nonbonded layout currently supports at most 12 connection ports
-per residue and connection atom indices through 255; larger layouts reject explicitly. The frontend does not change global JAX precision settings.
+per residue; larger port counts reject explicitly. Connection atom indices use
+the full native integer range. The frontend does not change global JAX precision settings.
 The initial implementation derives from
 [tudorcotet/jtmol](https://github.com/tudorcotet/jtmol); see `tmol_jax/NOTICE`.

@@ -9,6 +9,9 @@ class EnergyTerm(ABC):
     def __init__(self, param_db):
         self.param_db = param_db
 
+    def set_options(self, options):
+        """Configure supported term-specific rendering options."""
+
     @abstractmethod
     def score_types_provided(self):
         """ScoreType channels implemented by this term."""

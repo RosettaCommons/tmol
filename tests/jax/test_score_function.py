@@ -12,9 +12,10 @@ import pytest
 
 from tmol_jax.score import score_function as scoring
 from tmol_jax.score import ScoreFunction, ScoreType
+from tmol_jax.score.energy_term import EnergyTerm
 
 
-class QuadraticTerm:
+class QuadraticTerm(EnergyTerm):
     def __init__(self, database):
         self.scale = 1.0
 
@@ -173,3 +174,33 @@ def test_count_pair_matches_explicit_atom_graph():
     expected = np.full((1, 8, 8), cutoff, dtype=np.uint8)
     expected[0, :6, :6] = np.abs(np.arange(6)[:, None] - np.arange(6)[None, :])
     np.testing.assert_array_equal(actual, expected)
+
+
+def test_reference_options_snapshot_clone_dtype_and_transform_contract():
+    from tests.scientific.execution import Execution
+    from tests.scientific.dunbrack_molecules import DUNBRACK_CASES
+
+    backend = Execution("jax-cpu").molecule(DUNBRACK_CASES["d_peptide"], terms=("ref",))
+    sf, pose = backend.score_function, backend.pose
+    weights = {"ALA": 1.0, "LEU": 2.0, "ARG": 3.0, "PHE": 4.0}
+    sf.set_options({"ref_weights": weights})
+    old = sf.render_whole_pose_scoring_module(pose)
+    clone = sf.clone()
+    weights["ALA"] = 99.0
+    sf.set_option("ref_weights", {"DALA": 8.0})
+    new = sf.render_whole_pose_scoring_module(pose)
+    with jax.enable_x64():
+        coords = pose.coords.astype(jnp.float64)
+        assert jax.jit(old)(coords).dtype == coords.dtype
+        np.testing.assert_array_equal(jax.jit(old)(coords), [10.0])
+        np.testing.assert_array_equal(clone.jitted(pose)(coords), [10.0])
+        np.testing.assert_array_equal(jax.jit(new)(coords), [8.0])
+        values, tangent = jax.jit(lambda x: jax.jvp(old, (x,), (jnp.ones_like(x),)))(
+            coords
+        )
+        np.testing.assert_array_equal(tangent, [0.0])
+        np.testing.assert_array_equal(
+            jax.jit(jax.vmap(old))(jnp.stack([coords, coords + 3])), [[10.0], [10.0]]
+        )
+    with pytest.raises(NotImplementedError, match="soft_rep"):
+        sf.set_option("soft_rep", True)
