@@ -1,0 +1,14 @@
+tmol-jax-native contains thin XLA execution bindings and shared TMol scientific kernels.
+Copyright (c) 2026, Institute for Protein Design, University of Washington.
+The accompanying LICENSE contains the BSD-3-Clause terms for TMol.
+Source: https://github.com/RosettaCommons/tmol
+
+The bindings compile OpenXLA FFI API headers supplied by the installed JAX/JAXlib
+build dependency. Copyright 2023 The OpenXLA Authors. Apache-2.0 terms are in
+licenses/APACHE-2.0.txt. JAX/JAXlib is installed separately, not bundled here.
+Source: https://github.com/openxla/xla/tree/main/xla/ffi/api
+
+Optional CUDA execution uses vendored ModernGPU headers.
+Copyright (c) 2016, Sean Baxter. BSD-2-Clause terms and the additional disclaimer
+are reproduced in licenses/moderngpu-LICENSE.md.
+Source: https://github.com/moderngpu/moderngpu

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=77", "wheel", "jax>=0.11.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tmol-jax-native"
+dynamic = ["version", "dependencies"]
+description = "CPU and optional CUDA execution bindings for shared TMol scientific kernels"
+license = "BSD-3-Clause AND Apache-2.0 AND BSD-2-Clause"
+license-files = ["LICENSE", "NOTICE", "licenses/*"]
+requires-python = ">=3.12"
+
+[project.urls]
+Repository = "https://github.com/RosettaCommons/tmol"
+Documentation = "https://rosettacommons.github.io/tmol/"
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
+
+[tool.setuptools.packages.find]
+include = ["tmol_jax_native"]
