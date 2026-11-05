@@ -116,12 +116,33 @@ Bind initialized DOFs with `coordinates = forest.bind(dofs)`, then evaluate
 movable DOFs: six columns for jumps and four for bonds. Binding snapshots the
 three jump reference angles as fixed data. Native forward scans support first
 reverse derivatives and `vmap`; forward-mode and higher derivatives are not
-implemented. MoveMap and molecular internal-coordinate minimization remain absent.
+implemented.
+
+`MoveMap.from_pose_stack(pose)` prepares the shared hierarchical movement policy
+on the host, with all DOFs initially disabled. Enable named torsions, individual
+bonds or jumps using the same flags and setters as Torch. For example:
+
+```python
+from tmol_jax import MoveMap, run_kin_min
+
+movement = MoveMap.from_pose_stack(pose)
+movement.move_all_named_torsions = True
+minimized, diagnostics = run_kin_min(
+    pose, score_function, movement, max_iter=50, return_result=True
+)
+```
+
+The native resolver maps these choices to chemical DOFs. Internal and Cartesian
+minimization share the JAX L-BFGS implementation; the input pose stays unchanged.
+Fixed DOFs remain exact, while atoms downstream of movable bonds or jumps move.
+Internal-minimization diagnostics report DOFs and their masked gradients.
+Float32 internal derivatives can lose accuracy through cancellation; float64 is
+recommended when comparing small rotational gradients of strongly repulsive systems.
 
 `run_cart_relax` performs a no-pack repulsive-weight ramp with optional mainchain
 coordinate constraints. It retains the best full-weight structure. It does not
 implement FastRelax. Complete nucleic-acid, metal and ligand/noncanonical
-scoring, repacking and kinematic minimization remain unsupported.
+scoring and repacking remain unsupported.
 
 `PackerPalette(noncanonical_design=True)` exposes the shared chemical residue-choice
 policy through `block_types_from_original(pose.packed_block_types, pose.block_type_ind)`

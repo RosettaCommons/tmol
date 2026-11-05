@@ -148,7 +148,7 @@
         "tests/scientific/test_molecular_kinematics.py",
         "tests/jax/test_jax_pose_kinematics.py"
       ],
-      "implementation_status": "PoseStackKinematics shares chemical spanning, residue stencils, complete native pose assembly and inverse/forward scans with Torch. Independent JAX preparation supports ligand, noncanonical/D, nucleic-acid, metal and mixed inputs; CPU atom identity, padding, reconstruction and per-term internal-coordinate gradients tested. Bound six-column maps fix reference rotations and support first reverse derivatives, jit and vmap. Empty poses, inverse-coordinate AD, forward-mode AD, higher derivatives, MoveMap and molecular internal-coordinate minimization remain unsupported. New automatic-pose CUDA and installed-package validation is pending."
+      "implementation_status": "PoseStackKinematics shares chemical spanning, residue stencils, complete native pose assembly and inverse/forward scans with Torch. Independent preparation covers ligand, noncanonical/D, nucleic-acid, metal and mixed inputs; CPU metadata/coordinates/full DOF gradients match Torch exactly. Six-column maps fix reference rotations and support first reverse derivatives, jit and vmap; matching installed Torch-free package passes. CUDA eager/compiled placement passes; all ten same-state float64 molecular gradient comparisons agree within 1.5e-11. Float32 DNA rotational gradients show cancellation, still under investigation. Empty poses, inverse-coordinate AD, forward-mode and higher derivatives remain unsupported."
     },
     {
       "domain": "fast_relax",
@@ -198,6 +198,16 @@
       "jax": "partial",
       "repro_fixture": "tests/jax/test_native_genbonded.py",
       "implementation_status": "Generic/Cartesian bonded, backbone, NA torsion, metal coordination, Dunbrack, fused and independent nonbonded terms share native physics and derivatives with Torch. CPU/H200 molecular values, gradients and transformations tested. Hydrogen bond, LK-ball and disulfide frontend conversion remains incomplete."
+    },
+    {
+      "domain": "internal_coordinate_minimization",
+      "torch": "supported",
+      "jax": "shared_movement_policy_partial_objectives",
+      "repro_fixture": [
+        "tests/scientific/test_molecular_movement.py",
+        "tests/jax/test_jax_move_map.py"
+      ],
+      "implementation_status": "Shared MoveMap selection rules and native chemical DOF resolution, with the existing JAX L-BFGS optimizer. Ten-domain defaults/overrides, ligand/noncanonical/D energy reduction, fixed-DOF preservation and float32/64 diagnostics pass JAX CPU. The same ten-domain movement and three molecular energy-reduction checks pass Torch CPU. CUDA and matching installed-package validation pending. Complete scoring objectives and optimizer API parity remain incomplete."
     }
   ],
   "score_terms": {
@@ -332,5 +342,5 @@
       "noncanonical_validation": "Five nonzero metal fixtures: exact fresh Torch/JAX CPU energies and full gradients; independent directional derivatives and custom width/depth scaling. Fresh CPU/CUDA artifacts pass the same science cases and float32/64 transformations."
     }
   },
-  "validation": "Immutable28df9eb54f native CPU/CUDA artifacts:220 CPU checks pass with5 unavailable-CUDA skips;117 H200 checks and explicit CPU placement in a GPU process pass. Matching core/JAX/native wheels and standalone sdists pass44 float64 molecular cases plus13 shared constraint/reference/palette/minimization/kinematics checks in an isolated Torch-free runtime, without libtorch/libc10 linkage. Dunbrack batch64 and ligand/noncanonical LJ/LK regressions have been resolved; standalone electrostatics GPU regressions still block release. Full-domain/API acceptance remains incomplete."
+  "validation": "Immutable979e0e4806:341 CPU checks pass with5 unavailable-CUDA skips;22 focused H200 kinematic/placement checks and explicit CPU placement pass. Matching core/JAX/native wheels and sdists pass44 molecular and23 shared capability checks in an isolated Torch-free runtime. Strict float32 DNA full-DOF comparison failed and remains under numerical investigation. Standalone electrostatics GPU regression and missing HB/LK-ball/disulfide/packing capabilities still block full-domain acceptance. New MoveMap/internal-minimization development validation is recorded separately."
 }

@@ -54,6 +54,37 @@ def run_cart_min(
     diagnostics mapping includes the final value, gradient, iteration count,
     convergence flag, and termination status.
     """
+    coords, scorer = _prepare_minimization(pose_stack, score_function, constraint_set)
+    mask = _coordinate_mask(pose_stack, move_mask)
+    shape = coords.shape
+    x0 = coords.reshape(-1)
+    flat_mask = mask.reshape(-1)
+
+    def energy(x_flat):
+        return scorer(x_flat.reshape(shape)).sum()
+
+    result = _minimize(
+        energy,
+        x0,
+        flat_mask,
+        max_iter,
+        history,
+        gtol,
+        ftol,
+        line_search_max_iter,
+        verbose,
+    )
+    final_coords = result["x"].reshape(shape).astype(coords.dtype)
+    final_coords = jnp.where(mask, final_coords, coords)
+    minimized = pose_stack.replace(coords=final_coords)
+    if return_result:
+        diagnostics = dict(result)
+        diagnostics["initial_fun"] = float(result["initial_fun"])
+        return minimized, diagnostics
+    return minimized
+
+
+def _prepare_minimization(pose_stack, score_function, constraint_set):
     coords = jnp.asarray(pose_stack.coords)
     if not jnp.issubdtype(coords.dtype, jnp.floating):
         raise TypeError("pose coordinates must be floating point")
@@ -63,7 +94,7 @@ def run_cart_min(
         getattr(term, "use_neighbor_list", False)
         for term in getattr(score_function, "terms", ())
     ):
-        raise ValueError("Cartesian minimization requires a dense score function")
+        raise ValueError("minimization requires a dense score function")
 
     try:
         scorer = score_function.render_whole_pose_scoring_module(
@@ -74,48 +105,97 @@ def run_cart_min(
             "score_function must provide the TMol JAX render API"
         ) from error
 
-    mask = _coordinate_mask(pose_stack, move_mask)
-    shape = coords.shape
-    x0 = coords.reshape(-1)
-    flat_mask = mask.reshape(-1)
+    return coords, scorer
 
-    def energy(x_flat):
-        return scorer(x_flat.reshape(shape)).sum()
 
-    value_and_grad = jax.jit(jax.value_and_grad(energy))
-    result = lbfgs_minimize(
-        energy,
-        x0,
-        max_iter=max_iter,
-        history=history,
-        gtol=gtol,
-        ftol=ftol,
-        grad_mask=flat_mask,
-        line_search_max_iter=line_search_max_iter,
-        verbose=verbose,
-        value_and_grad=value_and_grad,
-    )
-    initial_energy = float(result["initial_fun"])
-    final_coords = result["x"].reshape(shape).astype(coords.dtype)
-    final_coords = jnp.where(mask, final_coords, coords)
-    if not bool(jnp.isfinite(final_coords).all()) or not bool(
+def _minimize(
+    energy, x0, mask, max_iter, history, gtol, ftol, line_search_max_iter, verbose
+):
+    with jax.default_device(x0.device):
+        result = lbfgs_minimize(
+            energy,
+            x0,
+            max_iter=max_iter,
+            history=history,
+            gtol=gtol,
+            ftol=ftol,
+            grad_mask=mask,
+            line_search_max_iter=line_search_max_iter,
+            verbose=verbose,
+            value_and_grad=jax.jit(jax.value_and_grad(energy)),
+        )
+    if not bool(jnp.isfinite(result["x"]).all()) or not bool(
         jnp.isfinite(result["fun"])
     ):
         raise FloatingPointError("minimization produced non-finite output")
-    final_energy = float(result["fun"])
-    tolerance = 1e-6 * max(abs(initial_energy), 1.0)
-    if final_energy > initial_energy + tolerance:
+    initial_energy, final_energy = float(result["initial_fun"]), float(result["fun"])
+    if final_energy > initial_energy + 1e-6 * max(abs(initial_energy), 1.0):
         raise RuntimeError(
             "minimization increased the energy: "
             f"{initial_energy:.7g} -> {final_energy:.7g}"
         )
+    return result
 
+
+def run_kin_min(
+    pose_stack,
+    score_function,
+    move_map,
+    *,
+    fold_forest=None,
+    max_iter=100,
+    history=5,
+    gtol=1e-5,
+    ftol=1e-6,
+    line_search_max_iter=25,
+    verbose=False,
+    return_result=False,
+    constraint_set=None,
+):
+    """Minimize selected internal DOFs through shared native molecular kinematics.
+
+    ``move_map`` uses the same hierarchical selection rules as Torch. Its default
+    disables every DOF. Padding and unselected DOFs remain fixed; atoms downstream
+    of selected bonds or jumps move. The original pose is unchanged. Diagnostics
+    contain flat DOFs and their masked gradient, rather than Cartesian coordinates.
+    This host-controlled optimizer requires first reverse derivatives only.
+    """
+    from tmol_jax.kinematics import PoseStackKinematics
+
+    coords, scorer = _prepare_minimization(pose_stack, score_function, constraint_set)
+    kinematics = PoseStackKinematics(pose_stack, fold_forest)
+    mapping = kinematics.bind(coords)
+    mask = kinematics.resolve_move_map(move_map)
+    initial = mapping.initial_dofs
+    movable = bool(jnp.any(mask))
+
+    def coordinates(flat):
+        if not movable:
+            return coords
+        dofs = jnp.where(mask, flat.reshape(initial.shape), initial)
+        return mapping(dofs)
+
+    def energy(flat):
+        return scorer(coordinates(flat)).sum()
+
+    result = _minimize(
+        energy,
+        initial.reshape(-1),
+        mask.reshape(-1),
+        max_iter,
+        history,
+        gtol,
+        ftol,
+        line_search_max_iter,
+        verbose,
+    )
+    final_coords = jax.jit(coordinates)(result["x"])
+    if not bool(jnp.isfinite(final_coords).all()):
+        raise FloatingPointError("minimization produced non-finite coordinates")
     minimized = pose_stack.replace(coords=final_coords)
     if return_result:
-        diagnostics = dict(result)
-        diagnostics["initial_fun"] = initial_energy
-        return minimized, diagnostics
+        return minimized, dict(result, initial_fun=float(result["initial_fun"]))
     return minimized
 
 
-__all__ = ["run_cart_min"]
+__all__ = ["run_cart_min", "run_kin_min"]

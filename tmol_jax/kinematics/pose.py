@@ -14,11 +14,9 @@ from .fold_forest import FoldForest
 from .forest import KinematicForest
 
 
-def _prepare_pose(pose, fold_forest):
+def _prepare_palette(pbt):
     from tmol_core.kinematics.chemical import prepare_packed_kinematic_stencils
-    from tmol_core.kinematics.pose import validate_pose_kinematics_inputs
 
-    pbt = pose.packed_block_types
     if not hasattr(pbt, "_kinematic_preparation"):
         host = PackedBlockTypesData.from_restypes(
             pbt.chem_db, pbt.active_block_types, min_n_conn=pbt.max_n_conn
@@ -30,7 +28,13 @@ def _prepare_pose(pose, fold_forest):
             max_n_torsions=host.max_n_torsions,
         )
         pbt._kinematic_preparation = (host, stencils)
-    host, stencils = pbt._kinematic_preparation
+    return pbt._kinematic_preparation
+
+
+def _prepare_pose(pose, fold_forest):
+    from tmol_core.kinematics.pose import validate_pose_kinematics_inputs
+
+    host, stencils = _prepare_palette(pose.packed_block_types)
     offsets = np.asarray(pose.block_coord_offset)
     kinds = np.asarray(pose.block_type_ind)
     connections = np.asarray(pose.inter_residue_connections)
@@ -98,6 +102,7 @@ class PoseStackKinematics:
     atom_for_jump: object
     atom_for_root_jump: object
     _pose: object = field(repr=False)
+    _host_data: tuple = field(repr=False)
 
     def __init__(self, pose, fold_forest=None):
         if (
@@ -122,6 +127,7 @@ class PoseStackKinematics:
         )
         object.__setattr__(self, "forest", forest)
         object.__setattr__(self, "_pose", pose)
+        object.__setattr__(self, "_host_data", values)
         for name, array in zip(
             (
                 "atom_ids",
@@ -155,6 +161,50 @@ class PoseStackKinematics:
         coords = self._coordinates(coords)
         mapping = self.forest.bind(self.inverse(coords))
         return PoseCoordinates(mapping, self.atom_ids[1:], coords)
+
+    def resolve_move_map(self, move_map):
+        """Resolve hierarchical movement rules through the common native planner.
+
+        Returns a snapshotted boolean [nodes,6] mask on the forest's device.
+        Reference rotations are fixed by the coordinate map and cannot move.
+        """
+        pose = self._pose
+        host, stencils = _prepare_palette(pose.packed_block_types)
+        expected = (
+            pose.n_poses,
+            pose.max_n_blocks,
+            host.max_n_torsions,
+            pose.max_n_atoms_per_block,
+        )
+        dimensions = (
+            move_map.n_poses,
+            move_map.max_n_blocks,
+            move_map.max_n_named_torsions,
+            move_map.max_n_atoms_per_block,
+        )
+        if dimensions != expected:
+            raise ValueError("MoveMap dimensions must match the prepared pose")
+        data = self._host_data
+        mask = NativePosePlanner().create_minimizer_map(
+            data[0],
+            pose.max_n_atoms_per_pose,
+            np.asarray(pose.block_coord_offset),
+            np.asarray(pose.block_type_ind),
+            np.asarray(pose.inter_residue_connections),
+            data[12],
+            data[14],
+            data[15],
+            data[13],
+            host.n_torsions,
+            stencils["uaid_for_torsion_by_inconn"],
+            host.is_torsion_mc,
+            host.which_mcsc_torsions,
+            host.atom_downstream_of_conn,
+            *move_map.native_arguments,
+        )
+        if mask[:, 6:].any():
+            raise ValueError("reference rotations cannot be movable DOFs")
+        return jax.device_put(mask[:, :6], self.forest.device)
 
 
 @dataclass(frozen=True, eq=False)

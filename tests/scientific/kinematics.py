@@ -146,6 +146,44 @@ class MolecularKinematicExecution(KinematicExecution):
 
             self.forward = forward
 
+    def move_map(self):
+        if self.backend.framework == "jax":
+            from tmol_jax import MoveMap
+        else:
+            from tmol import MoveMap
+        return MoveMap.from_pose_stack(self.backend.pose)
+
+    def movement_mask(self, move_map):
+        if self.backend.framework == "jax":
+            mask = self.module.resolve_move_map(move_map)
+        else:
+            from tmol.kinematics._move_map import MinimizerMap
+
+            mask = MinimizerMap(self.backend.pose, self.module.kmd, move_map).dof_mask[
+                :, :6
+            ]
+        return self.backend.numpy(mask)
+
+    def minimize(self, move_map, iterations):
+        backend = self.backend
+        if backend.framework == "jax":
+            from tmol_jax import run_kin_min
+
+            result = run_kin_min(
+                backend.pose, backend.score_function, move_map, max_iter=iterations
+            )
+        else:
+            from tmol import FoldForest, run_kin_min
+
+            result = run_kin_min(
+                backend.pose,
+                backend.score_function,
+                FoldForest.reasonable_fold_forest(backend.pose),
+                move_map,
+                optimizer_kwargs={"max_iter": iterations},
+            )
+        return backend.numpy(result.coords)
+
     def score(self, dofs, *, gradient=False):
         backend = self.backend
         if backend.framework == "jax":

@@ -8,8 +8,8 @@ except PackageNotFoundError:
     __version__ = "0+source"
 
 from .io import ResidueBlock, pose_stack_from_pdb, pose_stack_from_residue_blocks
-from .optimization import run_cart_min, run_cart_relax
-from .kinematics import FoldForest, PoseStackKinematics
+from .optimization import run_cart_min, run_cart_relax, run_kin_min
+from .kinematics import FoldForest, MoveMap, PoseStackKinematics
 from .pack import PackerPalette
 from .pose import ConstraintSet
 from .score import ScoreFunction, ScoreType, beta2016_score_function
@@ -22,7 +22,9 @@ __all__ = [
     "PackerPalette",
     "FoldForest",
     "PoseStackKinematics",
+    "MoveMap",
     "run_cart_min",
+    "run_kin_min",
     "run_cart_relax",
     "ScoreFunction",
     "ScoreType",

@@ -10,12 +10,14 @@ from tmol_core.kinematics import (
 from .forest import KinematicForest, KinematicCoordinates
 from .fold_forest import FoldForest
 from .pose import PoseStackKinematics, PoseCoordinates
+from .move_map import MoveMap
 
 __all__ = [
     "KinematicForest",
     "KinematicCoordinates",
     "PoseStackKinematics",
     "PoseCoordinates",
+    "MoveMap",
     "NodeType",
     "FoldForest",
     "BondDOFTypes",
