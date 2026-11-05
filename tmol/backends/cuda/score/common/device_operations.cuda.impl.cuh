@@ -5,6 +5,7 @@ error_this_should_not_be_compiled();  // gcc should not include this file
 #endif
 
 #include <tmol/utility/portable/reduce_ops.hh>
+#include <tmol/utility/portable/scan_workspace.hh>
 #include <moderngpu/transform.hxx>
 #include <moderngpu/loadstore.hxx>
 #include <moderngpu/kernel_load_balance.hxx>
@@ -225,15 +226,10 @@ struct DeviceOperations<tmol::Device::CUDA> {
       return src[i];
     };
 
-    // Copying Frank's code from kinematics/compiled/compiled.cuda.cuh
-    int const scanBuffer = n + n_segs;
-    float scanleft = std::ceil(((float)scanBuffer) / (nt * vt));
-    Int lbsBuffer = (Int)scanleft + 1;
-    Int carryoutBuffer = (Int)scanleft;
-    while (scanleft > 1) {
-      scanleft = std::ceil(scanleft / nt);
-      carryoutBuffer += (Int)scanleft;
-    }
+    auto sizes =
+        tmol::portable::scan_workspace_sizes<Int>(int64_t(n) + n_segs, nt, vt);
+    Int const carryoutBuffer = sizes[1];
+    Int const lbsBuffer = sizes[2];
 
     auto scanCarryout_t =
         TPack<T, 1, tmol::Device::CUDA>::empty({carryoutBuffer});
