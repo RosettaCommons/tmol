@@ -1,4 +1,3 @@
-import enum
 import numpy
 import torch
 import attrs
@@ -8,7 +7,13 @@ from tmol.types._tensor import TensorGroup
 from tmol.types._array import NDArray
 from tmol.types._attrs import ConvertAttrs
 from tmol.types._functional import _convert_args
+from tmol_core import kinematics as _core_kinematics
 from tmol_core.kinematics import NodeType, prepare_kinematic_forest
+
+BondDOFTypes = _core_kinematics.BondDOFTypes
+JumpDOFTypes = _core_kinematics.JumpDOFTypes
+n_movable_bond_dof_types = _core_kinematics.n_movable_bond_dof_types
+n_movable_jump_dof_types = _core_kinematics.n_movable_jump_dof_types
 
 
 @attrs.define(auto_attribs=True, frozen=True)
@@ -184,35 +189,6 @@ class KinDOF(TensorGroup, ConvertAttrs):
 
     def clone(self):
         return KinDOF(raw=self.raw.clone())
-
-
-class BondDOFTypes(enum.IntEnum):
-    """Indices of bond dof types within KinDOF.raw."""
-
-    phi_p = 0
-    theta = enum.auto()
-    d = enum.auto()
-    phi_c = enum.auto()
-
-
-n_movable_bond_dof_types = 4
-
-
-class JumpDOFTypes(enum.IntEnum):
-    """Indices of jump dof types within KinDOF.raw."""
-
-    RBx = 0
-    RBy = enum.auto()
-    RBz = enum.auto()
-    RBdel_alpha = enum.auto()
-    RBdel_beta = enum.auto()
-    RBdel_gamma = enum.auto()
-    RBalpha = enum.auto()
-    RBbeta = enum.auto()
-    RBgamma = enum.auto()
-
-
-n_movable_jump_dof_types = 6
 
 
 @attrs.define(auto_attribs=True, slots=True, frozen=True)

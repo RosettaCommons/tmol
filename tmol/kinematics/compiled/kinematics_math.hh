@@ -29,6 +29,9 @@ enum JumpDOFidx {
 };
 enum BondDOFidx { DOF_phip = 0, DOF_theta, DOF_D, DOF_phic };
 
+// Derivatives follow TMol's movable-DOF contract: JUMP slots 0:6 and BOND
+// slots 0:4. Jump slots 6:9 are fixed reference angles used by the forward
+// transform; the reverse routine is not their full nine-input Jacobian.
 template <tmol::Device D, typename Real, typename Int>
 struct common {
   // compute JUMP derivatives from f1/f2
