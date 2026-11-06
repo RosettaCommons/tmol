@@ -164,9 +164,10 @@
         "tests/scientific/test_packing_palette.py",
         "tests/scientific/test_opth_sampling.py",
         "tests/scientific/test_correlated_graph.py",
-        "tests/jax/test_pose_imposition.py"
+        "tests/jax/test_pose_imposition.py",
+        "tests/scientific/test_constrained_design.py"
       ],
-      "implementation_status": "Common native CPU/CUDA sampling, sparse scoring, graph construction, annealing and imposition support repacking and selected L/D design choices. Task masks, budgets, bundles, correlation collapse and bump pruning preserve original member identities. Prepared biotin, O-glycan and N-glycan groups have full all-channel energies, physical gradients and native packing checks. Changed-port design and identity changes with attached constraints still reject; complete task/design API parity and corrected-source artifact gates remain open."
+      "implementation_status": "Common native CPU/CUDA sampling, sparse scoring, graph construction, annealing and imposition support repacking and selected L/D design choices. Task masks, budgets, bundles, correlation collapse and bump pruning preserve original member identities. Prepared biotin, O-glycan and N-glycan groups have full all-channel energies, physical gradients and native packing checks. Constrained L/D design preserves unchanged backbone atom identities through compacted atom layouts; independent distance values/gradients pass both CPU backends, and full physical source gradients pass JAX. Changed connection ports or constrained atom indices still reject; complete task/design API parity remains open. Latest constrained-design artifact/CUDA validation is pending."
     },
     {
       "domain": "kinematics",
@@ -199,7 +200,7 @@
         "tests/scientific/test_fragment_attribution.py",
         "tests/jax/test_block_pair_transforms.py"
       ],
-      "implementation_status": "Shared current/legacy fragment-column validation; sparse requested fragment-pair reduction through existing native conformer physics and bounded reusable JAX programs. Exact91f installed CPU and JAX CUDA checks passed. Full9278-atom input/render/fragment-energy/full-coordinate-gradient workflow matches corrected mature d758 at2e-10 in both run orders. Warm ratio0.720-0.724, cold2.108-2.198, peak process memory2.03-2.05M versus1.59MKiB: cold/memory HOLD. This is fragment attribution, not whole-pose angular-gradient equivalence."
+      "implementation_status": "Shared fragment-column validation and sparse requested-pair reduction through common native conformer physics. Exact installed CPU and actual CUDA checks pass. Latest direct-host transfers preserve the full9278-atom input/render/fragment-energy/coordinate-gradient result against corrected mature d758 at2e-10 in both orders. Warm JAX/Torch ratios0.745/0.699, cold1.328/1.085; warm process peak1713936/1606112 versus1585932/1587120KiB. Cold/memory HOLD remains. This is selected-fragment attribution, not whole-protein angular-gradient equivalence or isolated scratch-memory measurement."
     },
     {
       "domain": "structure_io",
@@ -218,7 +219,7 @@
         "tests/scientific/test_metal_placement.py",
         "tests/scientific/test_atom_array_input.py"
       ],
-      "implementation_status": "ResidueBlock, canonical, public AtomArray and PDB/CIF/MOL2/SDF inputs share chemistry, atom mapping, hydrogen/protonation, metal and connectivity preparation. Default missing-sidechain/OptH native packing and fragment imposition retain parameter context. Common AtomArray export has molecular CPU roundtrip checks. Atom37 coordinate overrides and exhaustive public API parity remain gaps; input preparation is eager. Corrected-source artifact/device gates and complete workflow runtime/memory parity remain pending."
+      "implementation_status": "ResidueBlock, canonical, public AtomArray and PDB/CIF/MOL2/SDF inputs share chemistry, atom mapping, hydrogen/protonation, metal and connectivity preparation. Default missing-sidechain/OptH native packing and fragment imposition retain parameter context. Common AtomArray export has molecular CPU roundtrip checks. Prepared and tensor Atom37 coordinate overrides are implemented and validated; exhaustive public API compatibility remains open; input preparation is eager. Corrected-source artifact/device gates and complete workflow runtime/memory parity remain pending."
     },
     {
       "domain": "jit_vmap_reverse_ad",
@@ -292,7 +293,7 @@
       "repro_fixture": [
         "tests/scientific/test_atom_array_input.py"
       ],
-      "implementation_status": "Shared normalization, hydrogen/protonation, strict heavy atom identity, neutral-terminal mapping and reusable custom parameter context. Default missing-sidechain/OptH routing uses shared policy and native packing; noncanonical HYP and D missing-sidechain cases, ligand MOL2/CIF and metal/disulfide CPU workflows have finite full25E/G plus derivative and identity checks in both frameworks. Fragmented imposition, Atom37 and complete metadata round trips remain parity gaps. New input packing is not yet CUDA/package validated."
+      "implementation_status": "Shared normalization, hydrogen/protonation, strict heavy atom identity, neutral-terminal mapping and reusable custom parameter context. Default missing-sidechain/OptH routing uses shared policy and native packing; noncanonical HYP and D missing-sidechain cases, ligand MOL2/CIF and metal/disulfide CPU workflows have finite full25E/G plus derivative and identity checks in both frameworks. Fragmented reconstruction and Atom37 replay use common plans; exact installed CPU and actual CUDA gates cover input packing, source gradients and tested metadata round trips. Complete public API compatibility remains open."
     },
     {
       "domain": "structure_metadata",
@@ -334,7 +335,7 @@
     },
     {
       "domain": "prepared_atom37_input",
-      "torch": "supported_missing_HYP_source_AD_fix_cpu_cuda_validated_Apple_pending",
+      "torch": "supported_missing_HYP_source_AD_fix_cpu_cuda_Apple_validated",
       "jax": "prepared_cpu_values_source_gradients_jit_vmap",
       "repro_fixture": [
         "tests/scientific/test_atom37_input.py",
@@ -343,7 +344,7 @@
         "tests/jax/test_atom37_tensor_transforms.py",
         "tests/scientific/test_atomworks_encoding.py"
       ],
-      "implementation_status": "Shared atom routing; native leaf/H and fixed metal reconstruction; shared input packing and finite-input/frozen-block derivative restoration. Eight molecular first/replay cases, GLN/HIS OptH and four public AtomArray/topology overload cases pass CPU checks in both frameworks. Missing HYP/D-proline native packing and source-energy gradients pass JAX; The native exact-zero-cotangent guard fixes the previously recorded21-NaN Torch HYP source gradient; CPU/CUDA caller gates pass and Apple is pending. Geometry searches for extra disulfides/cycles are off by default; prepared chemistry and sampling choices are fixed. Tensor-only API now shares the validated common routing plan, with custom layouts, explicit bonds and suppressed polymer connections. Seven canonical/noncanonical molecular CPU full source-energy/gradient and directional-difference checks pass both backends; two JAX jit/vmap/invalid-input contracts pass. Frozen cf0e43 tensor/OptH adapters passed exact installed45+380, JAXCUDA48 and TorchCUDA39. Later canonical AtomWorks compatibility input/export, common library-record aliases and the tensor-gap semantics correction have CPU checks but need their final matching artifacts/device gates."
+      "implementation_status": "Shared atom routing; native leaf/H and fixed metal reconstruction; shared input packing and finite-input/frozen-block derivative restoration. Eight molecular first/replay cases, GLN/HIS OptH and four public AtomArray/topology overload cases pass CPU checks in both frameworks. Missing HYP/D-proline native packing and source-energy gradients pass JAX; The native exact-zero-cotangent guard fixes the previously recorded21-NaN Torch HYP source gradient; CPU/CUDA caller gates and bounded actual Apple callers pass. Geometry searches for extra disulfides/cycles are off by default; prepared chemistry and sampling choices are fixed. Tensor-only API now shares the validated common routing plan, with custom layouts, explicit bonds and suppressed polymer connections. Seven canonical/noncanonical molecular CPU full source-energy/gradient and directional-difference checks pass both backends; two JAX jit/vmap/invalid-input contracts pass. Frozen cf0e43 tensor/OptH adapters passed exact installed45+380, JAXCUDA48 and TorchCUDA39. Canonical AtomWorks compatibility input/export, common library-record aliases, tensor-gap semantics and optional identity metadata passed exact installed CPU and actual CUDA gates. These are bounded cases, not exhaustive API parity."
     },
     {
       "domain": "pose_concatenation",
@@ -481,13 +482,13 @@
   "acceptance_gaps": {
     "mature_functionality": [
       "Constructor chain/atom/missing metadata and context precedence have focused CPU evidence. Complete public task/design compatibility still requires implementation or matched validation.",
-      "Standard AtomWorks encoding, tensor gap semantics and shared default chemistry passed exact installed CPU and actual CUDA gates at22fa. Later optional metadata and host transfers have 48 JAX CUDA checks and five full molecular second-device checks; final matching package/Torch gate pending.",
-      "Complete task/design API compatibility, changed-port and constrained-identity imposition",
+      "Standard AtomWorks encoding, tensor-gap semantics, default chemistry and optional constructor metadata passed exact installed CPU and actual CUDA gates. New direct host transfers and palette defaults await their final matching artifacts/device results.",
+      "Complete task/design API compatibility; changed-port and changed-constraint-atom imposition. Mature-supported unchanged constraint atom identities now pass CPU, final artifact/device gates pending.",
       "Mature optimizer checkpoint/API behavior and matched trajectory validation",
       "Exhaustive custom database/public score-option compatibility"
     ],
     "validation_and_performance": [
-      "Frozen22fa has exact matching clean installed CPU and actual JAX/Torch CUDA gates. Later metadata/host-transfer/default-task changes require final matching artifacts and affected device validation.",
+      "Frozen30128 has exact six-artifact clean installed45molecular+390shared gates,48JAXCUDA checks,five fullmolecular CPU/secondGPU comparisons and2TorchCUDA metadata checks. Its first transfer approach regressed warm time; direct transfers at7946 correct that regression with matched before/after evidence. Latest palette defaults are still under final validation.",
       "Matched mature end-to-end cold/warm runtime and peak host/device memory unresolved",
       "Core measured mature molecular minimization regressions remain under investigation",
       "Corrected a0a, focused cf7 and bounded cf0e hydrogen Apple checks passed. Small workflow Metal runtime/memory and earlier biotin/minimization exceptions remain; native hydrogen reconstruction executes CPU even in the Metal scoring/annealing lane.",

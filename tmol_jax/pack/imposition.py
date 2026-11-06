@@ -105,6 +105,24 @@ def _imposed_metadata(pose, old, new, offsets, capacity, blocks):
     return info
 
 
+def _validate_constraint_identities(constraints, old, new, blocks):
+    if constraints is None or not constraints.n_constraints:
+        return
+    atoms = np.unique(np.asarray(constraints.constraint_atoms).reshape(-1, 3), axis=0)
+    atoms = atoms[atoms[:, 0] >= 0]
+    for pose, block, atom in atoms:
+        original, selected = blocks[old[pose, block]], blocks[new[pose, block]]
+        if (
+            atom >= selected.n_atoms
+            or original.atoms[atom].name != selected.atoms[atom].name
+        ):
+            raise NotImplementedError(
+                "design with changed constraint atom identities requires remapping: "
+                f"pose {pose}, block {block}, atom {atom}, "
+                f"{original.name} -> {selected.name}"
+            )
+
+
 def prepare_pose_imposition(pose, rotamers, retained, assignments):
     """Prepare the shared native selection/layout for retained local assignments.
 
@@ -113,7 +131,7 @@ def prepare_pose_imposition(pose, rotamers, retained, assignments):
     Atom layout changes require eager allocation. Fixed-layout coordinates
     remain on their input device, and unchanged layouts preserve gaps/capacity.
     Joint choices expand to original member identities before atom layout.
-    Constraints on a changed identity currently reject.
+    Constraints retain their atom identities; changed constraint atom indices reject.
     """
     if any(isinstance(x, jax.core.Tracer) for x in (pose.coords, assignments)):
         raise TypeError("pose imposition preparation requires eager discrete choices")
@@ -217,13 +235,10 @@ def prepare_pose_imposition(pose, rotamers, retained, assignments):
             block_coord_offset=offsets,
         )
         if compact:
-            if pose.constraint_set is not None and pose.constraint_set.n_constraints:
-                raise NotImplementedError(
-                    "design with constraints requires atom-identity remapping"
-                )
             old, new = np.asarray(pose.block_type_ind), np.asarray(types)
             connections = np.asarray(pose.inter_residue_connections)
             blocks = pose.packed_block_types.active_block_types
+            _validate_constraint_identities(pose.constraint_set, old, new, blocks)
             for q, block, port in zip(*np.nonzero(connections[..., 0] >= 0)):
                 old_bt, new_bt = blocks[old[q, block]], blocks[new[q, block]]
                 old_name = old_bt.connections[port].name

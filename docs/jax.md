@@ -312,8 +312,8 @@ discrete selection eagerly. Its `coordinates(rotamer_coords)` supports `jit`,
 pose. Correlated graph choices expand back to every original member before
 identity and atom-layout reconstruction. Identity changes compact atom storage
 and rebuild bond separation. The
-frontend rejects changed connection-port layouts and identity changes with
-attached constraints. Design selection covers L/D ARG-to-LYS and fixed-amino-acid
+frontend preserves constraints when their atom names and indices are unchanged.
+Changed connection ports or constrained atom indices reject explicitly. Design selection covers L/D ARG-to-LYS and fixed-amino-acid
 alternatives. Register `FixedAAChiSampler()` to generate Gly, Ala, D variants and
 custom amino acids whose only chi are proton chi. It uses the common ideal
 sidechain ownership policy, including both Gly alpha hydrogens. Dunbrack alone
