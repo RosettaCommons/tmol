@@ -98,9 +98,6 @@ class RandomPlacement:
 
     pocket_padding_angstrom: float = 2.0
 
-    def __post_init__(self) -> None:
-        pass
-
 
 _GENE_INDEX_FIELDS = (
     "jump_nodes",

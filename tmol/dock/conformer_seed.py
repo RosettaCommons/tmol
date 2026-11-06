@@ -27,14 +27,6 @@ class ConformerLibrary:
     atom_mapping_is_identity: bool
 
 
-def _validate_parameters(
-    n_conformers: int,
-    energy_window: float,
-    cluster_rmsd: float,
-) -> None:
-    pass
-
-
 def _atom_type_elements(packed_block_types) -> dict[str, str]:
     return {
         atom_type.name: atom_type.element
@@ -194,8 +186,6 @@ def generate_conformer_library(
     ``n_conformers`` is the number of ETKDGv3 embedding attempts. The returned
     library is capped at :data:`MAX_LIBRARY_SIZE` conformers.
     """
-
-    _validate_parameters(n_conformers, energy_window, cluster_rmsd)
 
     path = Path(mol2_path)
     ligand_info = nonstandard_residue_info_from_mol2(path)
