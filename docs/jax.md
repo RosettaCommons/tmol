@@ -217,8 +217,9 @@ Assembly is eager because sampling determines output sizes; it does not support
 `jit`, `vmap` or coordinate differentiation through sampling/initialization. The
 native DOF operations support `jit` and `vmap`. Row copying and chi assignment
 also support JVPs, gradients and higher derivatives using common native index
-plans; mainchain copying and nonlinear measured-chi correction still lack JAX
-derivative rules. Current-only prepared execution preserves input coordinate
+plans. Mainchain copying also preserves ideal DOFs where source values are
+non-finite and supports these derivatives with fresh native selection indices.
+Nonlinear measured-chi correction still lacks JAX derivative rules. Current-only prepared execution preserves input coordinate
 derivatives, including fixed residues and padded batches. A concrete `SetPackerTask` reuses
 validated topology plans while recomputing coordinates. Internal native stages
 now provide sparse graph topology/retention, device load balancing with XLA-owned

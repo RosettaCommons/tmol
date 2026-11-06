@@ -6,66 +6,6 @@
 #include <tmol/score/common/tview_binder.hh>
 
 namespace tmol::jax {
-struct ConformerIndexStage {
-  static int fill(int64_t, size_t) { return 0; }
-  static void validate(
-      const std::vector<ffi::AnyBuffer>& a,
-      const std::vector<ffi::AnyBuffer>& out,
-      int64_t op,
-      int64_t extent,
-      int64_t width) {
-    if ((op != 0 && op != 1) || a.size() != (op == 0 ? 3 : 5) || out.size() != 1
-        || extent < 0 || width < 0)
-      throw std::invalid_argument("invalid conformer index stage");
-    auto i = ffi::DataType::S32;
-    require_shape(a[0], i, {-1});
-    require_shape(a[1], i, {a[0].dimensions()[0]});
-    if (op == 0) {
-      if (width > 1 || (extent && !a[0].dimensions()[0]))
-        throw std::invalid_argument("invalid row-copy index layout");
-      require_shape(a[2], i, {a[0].dimensions()[0] + 1});
-    } else {
-      require_shape(a[2], i, {-1});
-      require_shape(a[3], i, {a[2].dimensions()[0], -1});
-      require_shape(a[4], i, {-1, width});
-      extent = score::common::checked_dispatch_product(
-          a[3].dimensions()[0], a[3].dimensions()[1], "chi indices");
-    }
-    score::common::checked_dispatch_size(extent, "conformer indices");
-    require_shape(out[0], ffi::DataType::U8, {2, extent, 8});
-  }
-  template <template <Device> class Ops, Device D>
-  static void execute(
-      const std::vector<ffi::AnyBuffer>& a,
-      const std::vector<ffi::AnyBuffer>& out,
-      int64_t op,
-      int64_t,
-      int64_t width) {
-    using namespace pack::rotamer;
-    ContextManager mgr;
-    if (op == 0) {
-      ConformerRowIndexPlan<
-          score::common::TViewBinder<D>::template View,
-          int32_t>
-          c{buffer_view<int32_t, 1, D>(a[0]),
-            buffer_view<int32_t, 1, D>(a[1]),
-            buffer_view<int32_t, 1, D>(a[2]),
-            buffer_view<int64_t, 2, D>(out[0])};
-      launch_conformer_row_indices<Ops, D>(mgr, c, static_cast<int>(width));
-    } else {
-      ChiDofIndexPlan<score::common::TViewBinder<D>::template View, int32_t> c{
-          buffer_view<int32_t, 1, D>(a[0]),
-          buffer_view<int32_t, 1, D>(a[1]),
-          buffer_view<int32_t, 1, D>(a[2]),
-          buffer_view<int32_t, 2, D>(a[3]),
-          buffer_view<int32_t, 2, D>(a[4]),
-          buffer_view<int64_t, 2, D>(out[0]),
-          width};
-      launch_chi_dof_indices<Ops, D>(mgr, c);
-    }
-  }
-};
-
 inline ffi::DataType validate_conformer_output(
     const std::vector<ffi::AnyBuffer>& args,
     ffi::AnyBuffer output,
@@ -105,11 +45,10 @@ struct CopyConformerDofsKernel {
     require_shape(args[9], ffi::DataType::S32, {types, -1});
   }
 
-  template <template <Device> class Ops, Device D, typename Real>
-  static void execute(
+  template <Device D, typename Real>
+  static auto plan(
       const std::vector<ffi::AnyBuffer>& args,
       ffi::AnyBuffer output,
-      const ffi::AnyBuffer*,
       int64_t sampler) {
     if (sampler < 0 || sampler >= args[8].dimensions()[0])
       throw std::invalid_argument("conformer sampler index out of range");
@@ -117,7 +56,7 @@ struct CopyConformerDofsKernel {
         score::common::TViewBinder<D>::template View,
         Real,
         int32_t>;
-    Context c{
+    return Context{
         buffer_view<int32_t, 1, D>(args[2]),
         buffer_view<int32_t, 1, D>(args[3]),
         buffer_view<int32_t, 1, D>(args[4]),
@@ -129,8 +68,107 @@ struct CopyConformerDofsKernel {
         buffer_view<Real, 2, D>(args[1]),
         buffer_view<Real, 2, D>(output),
         static_cast<int>(sampler)};
+  }
+  template <template <Device> class Ops, Device D, typename Real>
+  static void execute(
+      const std::vector<ffi::AnyBuffer>& args,
+      ffi::AnyBuffer output,
+      const ffi::AnyBuffer*,
+      int64_t sampler) {
     ContextManager context;
-    pack::rotamer::launch_copy_mainchain_dofs<Ops, D, Real>(context, c);
+    pack::rotamer::launch_copy_mainchain_dofs<Ops, D, Real>(
+        context, plan<D, Real>(args, output, sampler));
+  }
+};
+
+struct ConformerIndexStage {
+  static int fill(int64_t, size_t) { return 0; }
+  static void validate(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out,
+      int64_t op,
+      int64_t extent,
+      int64_t width) {
+    if (op < 0 || op > 2
+        || a.size()
+               != (op == 0   ? 3
+                   : op == 1 ? 5
+                             : 10)
+        || out.size() != 1 || extent < 0 || width < 0)
+      throw std::invalid_argument("invalid conformer index stage");
+    if (op == 2) {
+      CopyConformerDofsKernel::validate(a, a[0], nullptr);
+      auto rows = score::common::checked_dispatch_product(
+          a[2].dimensions()[0], a[7].dimensions()[1], "mainchain index rows");
+      auto scalars = score::common::checked_dispatch_product(
+          rows, 9, "mainchain DOF indices");
+      require_shape(out[0], ffi::DataType::U8, {2, scalars, 8});
+      return;
+    }
+    auto i = ffi::DataType::S32;
+    require_shape(a[0], i, {-1});
+    require_shape(a[1], i, {a[0].dimensions()[0]});
+    if (op == 0) {
+      if (width > 1 || (extent && !a[0].dimensions()[0]))
+        throw std::invalid_argument("invalid row-copy index layout");
+      require_shape(a[2], i, {a[0].dimensions()[0] + 1});
+    } else {
+      require_shape(a[2], i, {-1});
+      require_shape(a[3], i, {a[2].dimensions()[0], -1});
+      require_shape(a[4], i, {-1, width});
+      extent = score::common::checked_dispatch_product(
+          a[3].dimensions()[0], a[3].dimensions()[1], "chi indices");
+    }
+    score::common::checked_dispatch_size(extent, "conformer indices");
+    require_shape(out[0], ffi::DataType::U8, {2, extent, 8});
+  }
+  template <template <Device> class Ops, Device D, typename Real>
+  static void mainchain_indices(
+      const std::vector<ffi::AnyBuffer>& a,
+      ffi::AnyBuffer output,
+      int64_t sampler) {
+    ContextManager context;
+    pack::rotamer::launch_mainchain_dof_indices<Ops, D, Real>(
+        context,
+        CopyConformerDofsKernel::plan<D, Real>(a, a[0], sampler),
+        buffer_view<int64_t, 2, D>(output));
+  }
+  template <template <Device> class Ops, Device D>
+  static void execute(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out,
+      int64_t op,
+      int64_t,
+      int64_t width) {
+    using namespace pack::rotamer;
+    ContextManager mgr;
+    if (op == 2) {
+      if (a[0].element_type() == ffi::DataType::F32)
+        mainchain_indices<Ops, D, float>(a, out[0], width);
+      else
+        mainchain_indices<Ops, D, double>(a, out[0], width);
+      return;
+    }
+    if (op == 0) {
+      ConformerRowIndexPlan<
+          score::common::TViewBinder<D>::template View,
+          int32_t>
+          c{buffer_view<int32_t, 1, D>(a[0]),
+            buffer_view<int32_t, 1, D>(a[1]),
+            buffer_view<int32_t, 1, D>(a[2]),
+            buffer_view<int64_t, 2, D>(out[0])};
+      launch_conformer_row_indices<Ops, D>(mgr, c, static_cast<int>(width));
+    } else {
+      ChiDofIndexPlan<score::common::TViewBinder<D>::template View, int32_t> c{
+          buffer_view<int32_t, 1, D>(a[0]),
+          buffer_view<int32_t, 1, D>(a[1]),
+          buffer_view<int32_t, 1, D>(a[2]),
+          buffer_view<int32_t, 2, D>(a[3]),
+          buffer_view<int32_t, 2, D>(a[4]),
+          buffer_view<int64_t, 2, D>(out[0]),
+          width};
+      launch_chi_dof_indices<Ops, D>(mgr, c);
+    }
   }
 };
 

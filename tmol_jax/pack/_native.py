@@ -174,17 +174,48 @@ def _conformer_dofs(
     )(dofs, *arguments, **attributes)
 
 
+@partial(jax.custom_jvp, nondiff_argnums=(3,))
+def _copy_dofs(dofs, source, metadata, sampler):
+    return _conformer_dofs(
+        dofs, (source, *metadata), target="tmol_copy_conformer_dofs", sampler=sampler
+    )
+
+
+@_copy_dofs.defjvp
+def _copy_dofs_jvp(sampler, primals, tangents):
+    dofs, source, metadata = primals
+    dd, ds, _ = tangents
+    extent = metadata[0].size * metadata[5].shape[1] * 9
+    if extent:
+        # The common finite predicate selects source vs ideal independently
+        # per scalar DOF. Refresh this discrete mask whenever source values change.
+        origin, destination = _conformer_indices(
+            (jax.lax.stop_gradient(dofs), jax.lax.stop_gradient(source), *metadata),
+            operation=2,
+            extent=extent,
+            width=sampler,
+        )
+        updates = ds.reshape(-1)[jnp.maximum(origin, 0)]
+        dd = (
+            dd.reshape(-1)
+            .at[jnp.where(destination >= 0, destination, dd.size)]
+            .set(updates, mode="drop", unique_indices=True)
+            .reshape(dofs.shape)
+        )
+    return _copy_dofs(*primals, sampler), dd
+
+
 def copy_conformer_dofs(dofs, source, *metadata, sampler):
     """Transfer finite retained-atom DOFs using shared native chemistry maps.
 
     The input remains immutable; XLA owns the aliased output allocation. This
-    initializes independent conformers and has no coordinate autodiff rule.
+    preserves source/ideal gradients using the common finite-value selection.
     """
     from tmol_jax.score._native import register
 
     target = "tmol_copy_conformer_dofs"
     register(target)
-    return _conformer_dofs(dofs, (source, *metadata), target=target, sampler=sampler)
+    return _copy_dofs(dofs, source, metadata, sampler)
 
 
 def assign_conformer_chi(dofs, chi, *metadata):

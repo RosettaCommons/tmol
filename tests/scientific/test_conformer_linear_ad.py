@@ -6,7 +6,7 @@ import pytest
 
 
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
-@pytest.mark.parametrize("operation", ("rows", "chi", "reset"))
+@pytest.mark.parametrize("operation", ("rows", "chi", "reset", "mainchain"))
 def test_native_conformer_linear_value_gradient_and_curvature(
     backend, dtype, operation
 ):
@@ -101,6 +101,45 @@ def test_native_conformer_linear_value_gradient_and_curvature(
                 )
                 return result
 
+        elif operation == "mainchain":
+            source = np.arange(27, dtype=dtype).reshape(3, 9) / 4
+            source[2, 4:7] = (np.nan, np.inf, -np.inf)
+            metadata = tuple(
+                array(x, True)
+                for x in (
+                    [0, 0, 1],
+                    [0, 0, 0],
+                    [1, 1, 1],
+                    [2, 4, 0],
+                    [0, -1],
+                    [[0, 1], [-1, -1]],
+                    [[[[-1, -1], [1, -1]]]],
+                    [[1, 0], [0, 1]],
+                )
+            )
+            components = np.asarray([0, 1, 2, 3, 7, 8])
+            destination = np.ix_([4, 6], components)
+            inputs = (array(target), array(source))
+            wanted = target.copy()
+            wanted[destination] = source[2, components]
+            expected = [2 * target, np.zeros_like(source)]
+            expected[0][destination] = 0
+            expected[1][2, components] = 4 * source[2, components]
+            curvature = [np.full_like(target, 0.5), np.zeros_like(source)]
+            curvature[0][destination] = 0
+            curvature[1][2, components] = 1
+
+            def apply(t, s):
+                if b.framework == "jax":
+                    from tmol_jax.pack._native import copy_conformer_dofs
+
+                    return copy_conformer_dofs(t, s, *metadata, sampler=0)
+                from tmol.pack.rotamer._conformer_execution import copy_mainchain_dofs
+
+                result = t.clone()
+                copy_mainchain_dofs(*(a.long() for a in metadata), s, result, 0)
+                return result
+
         else:
             from types import SimpleNamespace
 
@@ -176,3 +215,22 @@ def test_native_conformer_linear_value_gradient_and_curvature(
             np.testing.assert_array_equal(b.numpy(actual), want)
         for actual, want in zip(hvp, curvature):
             np.testing.assert_array_equal(b.numpy(actual), want)
+        if operation == "mainchain":
+            _check_repaired_mainchain_mask(b, source, inputs[0], array, apply)
+
+
+def _check_repaired_mainchain_mask(b, source, target, array, apply):
+    # The finite-value mask must change with the input, even when the
+    # topology and compiled program are reused.
+    repaired = np.nan_to_num(source, nan=0.75, posinf=0.75, neginf=0.75)
+    if b.framework == "jax":
+        grad = b.module.grad(lambda x: (apply(target, x) ** 2).sum())
+        changed = b.module.jit(grad)(array(repaired))
+    else:
+        x = array(repaired).requires_grad_()
+        changed = b.module.autograd.grad(apply(target, x).square().sum(), x)[
+            0
+        ]
+    expected_source = np.zeros_like(repaired)
+    expected_source[2] = 4 * repaired[2]
+    np.testing.assert_array_equal(b.numpy(changed), expected_source)
