@@ -13,44 +13,25 @@ import numpy as np
 from .score_types import ScoreType
 from ._execution import render_execution
 
+from tmol_core.scoring.channels import TERM_CHANNELS
+
 _TERM_TYPES = {
-    "ljlk": ("LJLKEnergyTerm", ("fa_ljatr", "fa_ljrep", "fa_lk")),
-    "elec": ("ElecEnergyTerm", ("fa_elec",)),
-    "hbond": ("HBondEnergyTerm", ("hbond",)),
-    "cartbonded": (
-        "CartBondedEnergyTerm",
-        (
-            "cart_lengths",
-            "cart_angles",
-            "cart_torsions",
-            "cart_impropers",
-            "cart_hxltorsions",
-        ),
-    ),
-    "constraint": ("ConstraintEnergyTerm", ("constraint",)),
-    "disulfide": ("DisulfideEnergyTerm", ("disulfide",)),
-    "backbone_torsion": ("BackboneTorsionEnergyTerm", ("omega", "rama")),
-    "dunbrack": (
-        "DunbrackEnergyTerm",
-        (
-            "dunbrack_rot",
-            "dunbrack_rotdev",
-            "dunbrack_semirot",
-        ),
-    ),
-    "lk_ball": (
-        "LKBallEnergyTerm",
-        (
-            "lk_ball_iso",
-            "lk_ball",
-            "lk_bridge",
-            "lk_bridge_uncpl",
-        ),
-    ),
-    "ref": ("RefEnergyTerm", ("ref",)),
-    "genbonded": ("GenBondedEnergyTerm", ("gen_torsions",)),
-    "metal": ("MetalCoordinationEnergyTerm", ("metal_coordination",)),
-    "na_torsion": ("NaTorsionEnergyTerm", ("na_torsion", "na_torsion_well")),
+    module: (name, TERM_CHANNELS[module])
+    for module, name in {
+        "ljlk": "LJLKEnergyTerm",
+        "elec": "ElecEnergyTerm",
+        "hbond": "HBondEnergyTerm",
+        "cartbonded": "CartBondedEnergyTerm",
+        "constraint": "ConstraintEnergyTerm",
+        "disulfide": "DisulfideEnergyTerm",
+        "backbone_torsion": "BackboneTorsionEnergyTerm",
+        "dunbrack": "DunbrackEnergyTerm",
+        "lk_ball": "LKBallEnergyTerm",
+        "ref": "RefEnergyTerm",
+        "genbonded": "GenBondedEnergyTerm",
+        "metal": "MetalCoordinationEnergyTerm",
+        "na_torsion": "NaTorsionEnergyTerm",
+    }.items()
 }
 _TERM_FOR_TYPE = {
     ScoreType[name]: (module, class_name)
