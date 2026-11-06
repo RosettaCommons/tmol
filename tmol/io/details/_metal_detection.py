@@ -29,6 +29,7 @@ def _find_metal_geometries(
         canonical_ordering, chemical_db, table
     )
     if not tables.ion_for_class and not tables.cluster_for_class:
+        _common.validate_required_donors([], required_donors)
         return torch.zeros_like(res_types, dtype=torch.int32), []
     variants, assignments = _common.find_metal_geometries(
         canonical_ordering,
@@ -81,10 +82,13 @@ def _with_donor_patches(pbt: PackedBlockTypes, patches) -> PackedBlockTypes:
 
 def _translated(metal, offset, wide):
     if wide:
+        # MPS does not support float64; the fixed-fit translation remains
+        # differentiable through the CPU conversion and return to its device.
+        source = metal.cpu() if metal.device.type == "mps" else metal
         return (
-            metal.double()
-            + torch.as_tensor(offset, dtype=torch.float64, device=metal.device)
-        ).to(metal.dtype)
+            source.double()
+            + torch.as_tensor(offset, dtype=torch.float64, device=source.device)
+        ).to(device=metal.device, dtype=metal.dtype)
     return metal + metal.new_tensor(offset)
 
 

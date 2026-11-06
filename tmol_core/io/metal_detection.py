@@ -12,6 +12,7 @@ import numpy
 
 from tmol_core.chemical.metal_donors import _metal_donor_patch
 from tmol_core.chemical import (
+    GEOMETRY_NAMES,
     _ideal_distances,
     _is_metal_cluster,
     _metal_geometry_variant_index,
@@ -621,11 +622,13 @@ def find_metal_geometries(
     tables = _build_canonical_metal_tables(canonical_ordering, chemical_db, table)
     variants = numpy.zeros(numpy.shape(res_types), dtype=numpy.int32)
     if not tables.ion_for_class and not tables.cluster_for_class:
+        validate_required_donors([], required_donors)
         return variants, []
 
     rt = numpy.asarray(res_types)
     is_metal_class = numpy.isin(rt, [*tables.ion_for_class, *tables.cluster_for_class])
     if not is_metal_class.any():
+        validate_required_donors([], required_donors)
         return variants, []
     # the choice is discrete, so coordinates enter it without gradient
     xyz = numpy.asarray(coords() if callable(coords) else coords)
@@ -718,6 +721,7 @@ def find_metal_geometries(
         variants[pose, res] = _metal_geometry_variant_index(geometry)
         got = attr.evolve(got, donor_atoms=tuple(donor_atoms[i] for i in got.donors))
         assignments.append(((int(pose), int(res)), got))
+    validate_required_donors(assignments, required_donors)
     return variants, assignments
 
 
@@ -877,3 +881,43 @@ def metal_virtual_placements(
         metal = bt.atom_to_idx[site.metal_atom]
         for vertex, name in zip(vertices @ rotation.T, site.site_virts):
             yield pose, res, bt.atom_to_idx[name], metal, vertex * distance[name], False
+
+
+def declared_metal_sites(metal_sites, metal_coordination):
+    """Geometry, filled vertices and required donors from already-compacted rows."""
+    geometry_for = {
+        (pose, metal): GEOMETRY_NAMES[geometry]
+        for pose, metal, geometry in (
+            metal_sites.tolist() if metal_sites is not None else []
+        )
+    }
+    filled, required = {}, {}
+    for pose, metal, site, donor, atom in (
+        metal_coordination.tolist() if metal_coordination is not None else []
+    ):
+        if (pose, metal) in geometry_for and site >= 0:
+            filled.setdefault((pose, metal), []).append((site, donor, atom))
+        else:
+            required.setdefault((pose, metal), set()).add((donor, atom))
+    declared = {
+        key: (geometry, tuple(filled.get(key, ())))
+        for key, geometry in geometry_for.items()
+    }
+    return declared, required
+
+
+def validate_required_donors(assignments, required):
+    """Reject unresolved explicit donor bonds instead of silently dropping them."""
+    if not required:
+        return
+    observed = {key: set(got.donor_atoms) for key, got in assignments}
+    missing = [
+        (*key, *donor)
+        for key in sorted(required)
+        for donor in sorted(required[key] - observed.get(key, set()))
+    ]
+    if missing:
+        raise ValueError(
+            "Explicit metal coordination could not be resolved "
+            "(pose, metal, donor residue, donor atom): " + str(missing)
+        )

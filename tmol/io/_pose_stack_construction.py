@@ -5,7 +5,6 @@ from tmol.types._torch import Tensor
 from tmol.types._array import NDArray
 from tmol.types._functional import _validate_args
 from typing import Optional
-from tmol.database.chemical import GEOMETRY_NAMES
 from tmol.pose._pdb_info import PDBInfo, DEFAULT_ATOM_OCCUPANCY, DEFAULT_ATOM_B_FACTOR
 from tmol.pose._pose_stack import PoseStack
 from tmol.pose._packed_block_types import PackedBlockTypes
@@ -488,22 +487,9 @@ def _declared_metal_sites(res_types, metal_sites, metal_coordination):
             metal_coordination = _left_justify_residue_indices(
                 res_types, metal_coordination, (1, 3)
             )
-    geometry_for = {
-        (pose, metal): GEOMETRY_NAMES[geometry]
-        for pose, metal, geometry in (
-            metal_sites.tolist() if metal_sites is not None else []
-        )
-    }
-    filled, required = {}, {}
-    for pose, metal, site, donor, atom in (
-        metal_coordination.tolist() if metal_coordination is not None else []
-    ):
-        if (pose, metal) in geometry_for and site >= 0:
-            filled.setdefault((pose, metal), []).append((site, donor, atom))
-        else:
-            required.setdefault((pose, metal), set()).add((donor, atom))
-    declared = {
-        key: (geometry, tuple(filled.get(key, ())))
-        for key, geometry in geometry_for.items()
-    }
-    return declared, required
+    from tmol_core.io.metal_detection import declared_metal_sites
+
+    return declared_metal_sites(
+        None if metal_sites is None else metal_sites.cpu().numpy(),
+        None if metal_coordination is None else metal_coordination.cpu().numpy(),
+    )
