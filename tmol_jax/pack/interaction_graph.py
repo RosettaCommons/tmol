@@ -30,6 +30,11 @@ def _valid_entries(values, indices, pose_for_rotamer, pose_counts):
     return jnp.stack((valid, same_pose))
 
 
+@jax.jit
+def _neighbor_prefix(counts):
+    return prefix_offsets_and_total(counts[:-1], include_total=True)
+
+
 def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
     """Build native background, one-body and chunked two-body energy tables.
 
@@ -100,7 +105,8 @@ def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
         common = (indices, rotamers.block_ind_for_rot, mapping)
         adjacency = entries(0, (*common, counts), integer(p, m, (m + 31) // 32))
         neighbor_counts = topology(1, (adjacency,), wide(p * m + 1))
-        rows, n_edges = prefix(neighbor_counts[:-1], include_total=True)
+        rows, total = _neighbor_prefix(neighbor_counts)
+        n_edges = int(np.asarray(total).copy().view(np.int64)[0])
         neighbors, pair_counts = topology(
             2, (counts, adjacency, rows), (integer(n_edges), wide(n_edges))
         )
