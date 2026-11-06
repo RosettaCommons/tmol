@@ -11,7 +11,7 @@ from tmol.ligand._conjugate_model import _iter_capped_conjugate_models
 from tmol.ligand._conjugation_patches import CONNECTION_PREFIX
 from tmol.ligand._parameter_replacements import _baseline_charges
 
-CONTEXT_PREFIX = "context_"
+from tmol_core.io.canonical import CONTEXT_PREFIX
 
 
 def _model_attachment_contexts(model):

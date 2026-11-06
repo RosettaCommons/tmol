@@ -9,10 +9,8 @@ from tmol.types._torch import Tensor
 from tmol.types._array import NDArray
 from tmol.types._functional import _validate_args
 from tmol.database.chemical import (
-    N_VARIANT_INDICES,
     NEUTRAL_TERMINUS_VAR_BASE,
     _site_connections,
-    _special_case_variant_index,
 )
 from tmol.io._canonical_ordering import CanonicalOrdering
 from tmol.pose._inter_block_bondsep import InterBlockBondsep
@@ -21,6 +19,13 @@ from tmol.pose._packed_block_types import (
     _annotate_packed_block_types_w_dslf_conn_inds,
 )
 from tmol.pose._pose_stack_builder import PoseStackBuilder
+
+from tmol_core.io import canonical as _canonical
+from tmol_core.io.canonical import (  # noqa: F401
+    _map_term_to_int,
+    _term_and_spcase_var_candidate_lists,
+    _assign_var_inds_for_bt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -955,282 +960,48 @@ class CanonicalOrderingAnnotation:
     bt_canonical_atom_ind_map: Tensor[torch.int64][:, :]
 
 
-def _map_term_to_int(is_down_term, is_up_term):
-    if is_down_term and is_up_term:
-        return 3
-    if is_down_term:
-        return 0
-    if is_up_term:
-        return 2
-    return 1
+def _get_co_equiv_class_is_polymeric(*args):
+    host = _canonical._get_co_equiv_class_is_polymeric(*args)
+    return torch.as_tensor(host)
 
 
-def _term_and_spcase_var_candidate_lists(max_n_term, max_n_spcase):
-    return [[[] for _ in range(max_n_spcase)] for _ in range(max_n_term)]
+def _collect_var_combo_candidates(*args):
+    host = _canonical._collect_var_combo_candidates(*args)
+    return tuple(torch.as_tensor(value) for value in host)
 
 
-def _assign_var_inds_for_bt(co, bt):
-    bt_vars = bt.name.split(":")
-    # Caps are intrinsically terminal: their base type has only one polymer
-    # connection and needs no terminal patch. Connection topology also agrees
-    # with the terminal status of ordinary patched polymer types.
-    is_polymer = bt.properties.polymer.is_polymer
-    bt_is_down_term = is_polymer and bt.down_connection_ind < 0
-    bt_is_up_term = is_polymer and bt.up_connection_ind < 0
-    bt_is_non_default_term = False
-    for var_name in bt_vars[1:]:
-        if var_name in co.down_termini_patches:
-            bt_is_down_term = True
-            if var_name != co.restypes_default_termini_mapping[bt.io_equiv_class][0]:
-                bt_is_non_default_term = True
-        if var_name in co.up_termini_patches:
-            bt_is_up_term = True
-            if var_name != co.restypes_default_termini_mapping[bt.io_equiv_class][1]:
-                bt_is_non_default_term = True
-    term_ind = _map_term_to_int(bt_is_down_term, bt_is_up_term)
-    spcase_var_ind = _special_case_variant_index(bt)
-    return term_ind, spcase_var_ind, bt_is_non_default_term
+def _note_atoms_present_and_absent_from_variants(*args):
+    host = _canonical._note_atoms_present_and_absent_from_variants(*args)
+    return tuple(torch.as_tensor(value) for value in host)
 
 
-def _get_co_equiv_class_is_polymeric(co, n_co_io_equiv_classes, bts_for_equiv_class):
-    # We will consider the entire IO equivalence class to be
-    # polymeric if a single block type within that equivalence class
-    # is polymeric.
-    co_equiv_class_is_polymeric = torch.zeros(
-        (n_co_io_equiv_classes,), dtype=torch.bool, device=torch.device("cpu")
-    )
-    for i, io_equiv_class in enumerate(co.restype_io_equiv_classes):
-        for bt in bts_for_equiv_class[io_equiv_class]:
-            if bt.properties.polymer.is_polymer:
-                co_equiv_class_is_polymeric[i] = True
-    return co_equiv_class_is_polymeric
-
-
-def _collect_var_combo_candidates(
-    co,
-    max_n_termini_types,
-    max_n_special_case_aa_variant_types,
-    max_n_candidates_for_var_combo,
-    pbt_io_equiv_class_candidates,
-):
-    n_co_io_equiv_classes = co.n_restype_io_equiv_classes
-    var_combo_candidate_bt_index = torch.full(
-        (
-            n_co_io_equiv_classes,
-            max_n_termini_types,
-            max_n_special_case_aa_variant_types,
-            max_n_candidates_for_var_combo,
-        ),
-        -1,
-        dtype=torch.int64,
-        device=torch.device("cpu"),
-    )
-    var_combo_is_real_candidate = torch.zeros(
-        (
-            n_co_io_equiv_classes,
-            max_n_termini_types,
-            max_n_special_case_aa_variant_types,
-            max_n_candidates_for_var_combo,
-        ),
-        dtype=torch.bool,
-        device=torch.device("cpu"),
-    )
-
-    for i, bt_name3 in enumerate(co.restype_io_equiv_classes):
-        if bt_name3 not in pbt_io_equiv_class_candidates:
-            continue
-        for j in range(max_n_termini_types):
-            for k in range(max_n_special_case_aa_variant_types):
-                for candidate, (bt, bt_ind) in enumerate(
-                    pbt_io_equiv_class_candidates[bt_name3][j][k]
-                ):
-                    var_combo_candidate_bt_index[i, j, k, candidate] = bt_ind
-                    var_combo_is_real_candidate[i, j, k, candidate] = True
-    return var_combo_candidate_bt_index, var_combo_is_real_candidate
-
-
-def _note_atoms_present_and_absent_from_variants(co, pbt: PackedBlockTypes):
-    # For bt i and canonical atom j, is canonical atom j absent from bt i?
-    # needed so we can compute p & ~b[i]
-    bt_canonical_atom_is_absent = torch.ones(
-        (
-            pbt.n_types,
-            co.max_n_canonical_atoms,
-        ),
-        dtype=torch.bool,
-        device=torch.device("cpu"),
-    )
-    # For bt i and  canonical atom j, is canonical atom j present in bt i
-    # and not put there by a termini variant?
-    bt_non_term_patch_added_canonical_atom_is_present = torch.zeros(
-        (
-            pbt.n_types,
-            co.max_n_canonical_atoms,
-        ),
-        dtype=torch.bool,
-        device=torch.device("cpu"),
-    )
-    for i, bt in enumerate(pbt.active_block_types):
-        bt_at_names = set([at.name for at in bt.atoms])
-        # first mark all atoms that are present as not absent
-        # including the termini atoms
-        for at_name in bt_at_names:
-            can_ind = co.restypes_atom_index_mapping[bt.name3][at_name]
-            bt_canonical_atom_is_absent[i, can_ind] = False
-
-        # now we will go and strike out all the atoms that were not
-        # added by termini patches so we can mark them as present
-        for variant in bt.name.split(":")[1:]:
-            bt_at_names.difference_update(
-                co.termini_patch_added_atoms.get((bt.base_name, variant), ())
-            )
-
-        for at_name in bt_at_names:
-            can_ind = co.restypes_atom_index_mapping[bt.io_equiv_class][at_name]
-            bt_non_term_patch_added_canonical_atom_is_present[i, can_ind] = True
-            bt_canonical_atom_is_absent[i, can_ind] = False
-
-    return (
-        bt_canonical_atom_is_absent,
-        bt_non_term_patch_added_canonical_atom_is_present,
-    )
-
-
-def _create_bt_to_canonical_atom_mapping(co, pbt: PackedBlockTypes):
-    bt_ind_to_canonical_ind = torch.tensor(
-        [
-            co.restype_io_equiv_classes.index(bt.io_equiv_class)
-            for bt in pbt.active_block_types
-        ],
-        dtype=torch.int64,
-    )
-    bt_canonical_atom_ind = numpy.full(
-        (pbt.n_types, pbt.max_n_atoms), -1, dtype=numpy.int64
-    )
-    for i, bt in enumerate(pbt.active_block_types):
-        assert bt.io_equiv_class in co.restypes_ordered_atom_names
-        i_canonical_ordering = co.restypes_ordered_atom_names[bt.io_equiv_class]
-        for j, at in enumerate(bt.atoms):
-            # probably this would be faster if we used a pandas indexer
-            # but this is done only once, so, for now, use the slow form
-            bt_canonical_atom_ind[i, j] = i_canonical_ordering.index(at.name.strip())
-    bt_canonical_atom_ind = torch.tensor(bt_canonical_atom_ind, dtype=torch.int64)
-    return bt_ind_to_canonical_ind, bt_canonical_atom_ind
+def _create_bt_to_canonical_atom_mapping(*args):
+    host = _canonical._create_bt_to_canonical_atom_mapping(*args)
+    return tuple(torch.as_tensor(value) for value in host)
 
 
 @_validate_args
 def _annotate_packed_block_types_w_canonical_res_order(
     canonical_ordering, pbt: PackedBlockTypes
 ):
-    co = canonical_ordering
-
-    if hasattr(pbt, "canonical_ordering_annotation"):
+    if getattr(pbt, "_canonical_ordering_source", None) is canonical_ordering:
         return
-
-    max_n_termini_types = 4  # 0=down-term, 1=mid, 2=up-term, 3=down+up
-    # layout in tmol.database.chemical: sidechain states, then metal geometries
-    max_n_special_case_aa_variant_types = N_VARIANT_INDICES
-
-    pbt_io_equiv_class_name_set = set(
-        [bt.io_equiv_class for bt in pbt.active_block_types]
-    )
-
-    pbt_io_equiv_class_candidates = {
-        io_equiv_class: _term_and_spcase_var_candidate_lists(
-            max_n_termini_types, max_n_special_case_aa_variant_types
-        )
-        for io_equiv_class in pbt_io_equiv_class_name_set
-    }
-    bt_is_non_default_terminus = torch.zeros((pbt.n_types,), dtype=torch.bool)
-
-    # the number of base types in this PBT, which may represent a subset
-    # of the base types in the ChemicalDatabase from which the CO was
-    # derived
-    n_co_io_equiv_classes = co.n_restype_io_equiv_classes
-
     _annotate_packed_block_types_w_conjugations(pbt)
-    for i, bt in enumerate(pbt.active_block_types):
-        # a conjugated form is chosen from the bonds the input declares, never
-        #    by which atoms are present: it differs from its base by a hydrogen
-        #    that a structure need not model, so it would always look the
-        #    better match
-        # A user-defined ligand fragment already names its final chemistry.
-        # Its cut-bond connections are restored by apply_fragment_connections;
-        # there is no unconjugated fragment type to select first.
-        if pbt.conjugation_atoms_for_bt[i] and not bt.is_ligand_fragment:
-            continue
-        term_ind, spcase_var_ind, bt_is_non_default_term = _assign_var_inds_for_bt(
-            co, bt
-        )
-        pbt_io_equiv_class_candidates[bt.io_equiv_class][term_ind][
-            spcase_var_ind
-        ].append((bt, i))
-        bt_is_non_default_terminus[i] = bt_is_non_default_term
-
-    max_n_candidates_for_var_combo = max(
-        len(pbt_io_equiv_class_candidates[bt][i][j])
-        for bt in pbt_io_equiv_class_candidates
-        for i in range(max_n_termini_types)
-        for j in range(max_n_special_case_aa_variant_types)
-        if len(pbt_io_equiv_class_candidates[bt][i][j]) > 0
+    host = _canonical.prepare_canonical_selection(
+        canonical_ordering, pbt.active_block_types, pbt.max_n_atoms
     )
-
-    bts_for_equiv_class = defaultdict(list)
-    for bt in pbt.active_block_types:
-        bts_for_equiv_class[bt.io_equiv_class].append(bt)
-
-    # We will consider the entire IO equivalence class to be
-    # polymeric if a single block type within that equivalence class
-    # is polymeric.
-    co_equiv_class_is_polymeric = _get_co_equiv_class_is_polymeric(
-        co, n_co_io_equiv_classes, bts_for_equiv_class
+    pbt.canonical_ordering_annotation = CanonicalOrderingAnnotation(
+        **{
+            field.name: (
+                torch.as_tensor(value, device=pbt.device)
+                if isinstance(value, numpy.ndarray)
+                else value
+            )
+            for field in attr.fields(type(host))
+            for value in (getattr(host, field.name),)
+        }
     )
-
-    var_combo_candidate_bt_index, var_combo_is_real_candidate = (
-        _collect_var_combo_candidates(
-            co,
-            max_n_termini_types,
-            max_n_special_case_aa_variant_types,
-            max_n_candidates_for_var_combo,
-            pbt_io_equiv_class_candidates,
-        )
-    )
-
-    bt_canonical_atom_is_absent, bt_non_term_patch_added_canonical_atom_is_present = (
-        _note_atoms_present_and_absent_from_variants(co, pbt)
-    )
-
-    bt_ind_to_canonical_ind, bt_canonical_atom_ind = (
-        _create_bt_to_canonical_atom_mapping(co, pbt)
-    )
-
-    def _d(x):
-        return x.to(pbt.device)
-
-    ann = CanonicalOrderingAnnotation(
-        max_n_candidates_for_var_combo=max_n_candidates_for_var_combo,
-        co_equiv_class_is_polymeric=_d(co_equiv_class_is_polymeric),
-        co_polymer_connection_atoms=torch.tensor(
-            list(
-                zip(
-                    co.polymer_conn_inds.down_atom_for_co_restype,
-                    co.polymer_conn_inds.up_atom_for_co_restype,
-                )
-            ),
-            dtype=torch.int64,
-            device=pbt.device,
-        ),
-        var_combo_is_real_candidate=_d(var_combo_is_real_candidate),
-        var_combo_candidate_bt_index=_d(var_combo_candidate_bt_index),
-        bt_canonical_atom_is_absent=_d(bt_canonical_atom_is_absent),
-        bt_non_term_patch_added_canonical_atom_is_present=_d(
-            bt_non_term_patch_added_canonical_atom_is_present
-        ),
-        bt_is_non_default_terminus=_d(bt_is_non_default_terminus),
-        bt_ind_to_canonical_io_equiv_class_ind=_d(bt_ind_to_canonical_ind),
-        bt_canonical_atom_ind_map=_d(bt_canonical_atom_ind),
-    )
-    setattr(pbt, "canonical_ordering_annotation", ann)
+    pbt._canonical_ordering_source = canonical_ordering
 
 
 @_validate_args
@@ -1492,50 +1263,10 @@ def _apply_metal_connections(
 
 
 def _annotate_packed_block_types_w_conjugations(pbt: PackedBlockTypes):
-    """Annotate per block type its attachments (connections but up, down, disulfide and
-    metal sites) as (is_metal, atom), its name without them, and the reverse lookup."""
     if hasattr(pbt, "conjugation_atoms_for_bt"):
         return
     _annotate_packed_block_types_w_dslf_conn_inds(pbt)
-    dslf = pbt.canonical_dslf_conn_ind.cpu().numpy()
-
-    atoms_for_bt, base_for_bt = [], []
-    by_base_and_atoms = {}
-    contextual = {}
-    for i, bt in enumerate(pbt.active_block_types):
-        structural = {bt.down_connection_ind, bt.up_connection_ind, int(dslf[i])}
-        structural |= {
-            bt.connection_to_cidx[name]
-            for site in bt.metal_sites
-            for name in site.site_connections
-        }
-        conjugations = [
-            conn for ind, conn in enumerate(bt.connections) if ind not in structural
-        ]
-        # a multiset: an atom bridging two metals carries two connections;
-        #   a donor's metal connections are named metal<k>_<atom>
-        atoms = tuple(
-            sorted((conn.name.startswith("metal"), conn.atom) for conn in conjugations)
-        )
-        atoms_for_bt.append(atoms)
-        # the variant tags to drop are the connections' own names
-        tags = {conn.name for conn in conjugations}
-        combined = {"nterm"} if "conj_N" in tags else set()
-        base = ":".join(
-            part for part in bt.name.split(":") if part not in tags | combined
-        )
-        base_for_bt.append(base)
-        if bt.conjugation_context:
-            from tmol.ligand._conjugate_context import CONTEXT_PREFIX
-
-            source = ":".join(
-                p for p in bt.name.split(":") if not p.startswith(CONTEXT_PREFIX)
-            )
-            contextual.setdefault(source, {})[bt.conjugation_context] = i
-            continue
-        by_base_and_atoms[(base, atoms)] = i
-
-    setattr(pbt, "conjugation_atoms_for_bt", atoms_for_bt)
-    setattr(pbt, "conjugation_base_for_bt", base_for_bt)
-    setattr(pbt, "conjugated_bt_for_base_and_atoms", by_base_and_atoms)
-    setattr(pbt, "contextual_conjugates", contextual)
+    for name, value in vars(
+        _canonical.prepare_conjugations(pbt.active_block_types)
+    ).items():
+        setattr(pbt, name, value)
