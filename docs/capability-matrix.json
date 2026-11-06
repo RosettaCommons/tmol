@@ -151,7 +151,7 @@
         "tests/jax/test_optimization.py",
         "tests/scientific/test_molecular_minimization.py"
       ],
-      "implementation_status": "Complete 25-channel objectives decrease for ligand, noncanonical, D, modified-DNA, metal and mixed cases on CPU/CUDA. Frozen atoms and input immutability tested; optimizer trajectories need not match Torch."
+      "implementation_status": "Complete 25-channel objectives decrease for ligand, noncanonical, D, modified-DNA, metal and mixed cases on CPU/CUDA. Frozen atoms and input immutability tested; optimizer trajectories need not match Torch. Independent per-pose Armijo behavior is a parity gap: current JAX minimization uses one summed batch objective."
     },
     {
       "domain": "packing_design_mutation",
@@ -182,11 +182,12 @@
     {
       "domain": "fast_relax",
       "torch": "supported",
-      "jax": "absent",
+      "jax": "shared_protocol_with_optimizer_parity_gaps",
       "repro_fixture": [
-        "tmol/relax/_fast_relax.py"
+        "tests/scientific/test_fast_relax_execution.py",
+        "tmol/tests/relax/test_fast_relax.py"
       ],
-      "implementation_status": "Absent. run_cart_relax is a no-pack repulsive-weight ramp."
+      "implementation_status": "Shared mature schedules, actual packing/minimization stages, task callbacks, release hooks and per-pose best acceptance. Ligand, connected noncanonical, D-peptide and mixed CPU workflows pass both backends. CUDA and full conjugated workflows pending. JAX strong-Wolfe summed-batch minimization differs from mature per-pose Armijo; performance and memory parity remain unestablished."
     },
     {
       "domain": "fragment_interactions",
@@ -273,7 +274,7 @@
       "implementation_status": "Shared selection and result structure preserve atom identity, paired requests and missing-neighbor NaN behavior. Native double measurement returns coordinate precision. Public scalar/name-dictionary/pose-block results; no differentiable host-query claim."
     }
   ],
-  "validation": "Published99ec0e05cb matching six CPU artifacts pass45 molecular+227 shared installed checks without Torch, strict docs pass;25 affected CUDA input checks pass using470 nativeartifact withidentical native sources. Nativepolicy470 exactCPU/CUDA artifacts pass6checks per framework/backend; HIS2c5 passes4per framework/backend. Generalcanonical7e nine molecular cases passCPU/CUDA per framework; contextce40JAX+8TorchCUDA pass. Canonical CUDA atomic scoring differences remain within existing3e-5 bounds while input coordinates/topology are exact. Expandedpalette reindexesinternaltypes; matched physicalidentity is exact. Six complete-coordinate molecular input cases matchTorch bothorders withJAX/Torch runtime ratiosCPU.572-.740,CUDA.659-.848; setup/compile/threads/RSS/device memory recorded. Smallprotein inputregressions against earlierJAX remain explicit. Privatehydrogen53JAXCPU+8TorchCPU checks pass including parameter/coordinate gradients andsecondreverse derivatives; newGPU/artifacts pending. Wholeinput/API coverage, graphperformance andoverallcode reduction remain gates; PR629draft, rootownsfinalMetal.",
+  "validation": "PR629 remains draft. Matching c378 ABI3 CPU wheels pass installed molecular checks with Torch absent and source/native hash verification; H200 affected JAX checks pass137 cases. New increments require their own matching package/CUDA gates. Mature e29 complete warm workflow parity remains unresolved; constructor-only or earlier-JAX speedups do not establish readiness.",
   "score_terms": {
     "nonbonded": {
       "torch": "implemented",

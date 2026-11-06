@@ -409,3 +409,11 @@ block_index)` and `get_named_torsions(pose, poses=None, blocks=None, names=None,
 degrees=True)`. They share selection and result conventions with Torch, including
 paired selections and NaN for absent neighboring atoms. These eager queries
 return host values; coordinate differentiation uses scoring primitives.
+
+FastRelax uses the shared mature schedule, packing/minimization stages, release
+hooks, and per-pose acceptance policy. Import `fast_relax` from `tmol_jax` and
+pass an explicit `seed`; `tmol_jax.relax.DefaultCartesianMinimizer(max_iter=...)`
+and `DefaultKinematicMinimizer` configure minimization. Existing packing
+capability limits apply. JAX's strong-Wolfe L-BFGS currently minimizes the summed
+batch objective; Torch's independent per-pose Armijo behavior and optimizer
+performance are still parity gaps.
