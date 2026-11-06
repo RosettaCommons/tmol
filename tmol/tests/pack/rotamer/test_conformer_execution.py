@@ -76,3 +76,81 @@ def test_current_conformer_construction_preserves_coordinate_derivatives(
             size = int(poses.packed_block_types.n_atoms[kind])
             expected[pose, start : start + size] = coords[pose, start : start + size]
     torch.testing.assert_close(gradient, expected, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_chi_assignment_preserves_parameter_and_untouched_derivatives(dtype):
+    from tmol.pack.rotamer._conformer_execution import assign_chi_dofs
+
+    chi = torch.tensor([[0.2, 0.9], [0.4, 0.7]], dtype=dtype, requires_grad=True)
+    corrections = (
+        torch.linspace(0.01, 0.06, 6, dtype=dtype).reshape(2, 3).requires_grad_()
+    )
+    original = torch.linspace(0.1, 0.9, 90, dtype=dtype).reshape(10, 9).requires_grad_()
+    out = original.clone()
+    assign_chi_dofs(
+        torch.tensor([1, 1]),
+        torch.tensor([1, 4]),
+        torch.tensor([1, 0]),
+        torch.tensor([[1, -1], [0, 2]], dtype=torch.int32),
+        chi,
+        torch.tensor([[0, 1, 2], [2, 1, 0]]),
+        corrections,
+        out,
+    )
+    # Three independent torsions replace phi at rows 6,4,2. Padding does not
+    # touch row zero and must contribute no sampled-angle derivative.
+    destinations = torch.tensor([6 * 9 + 3, 4 * 9 + 3, 2 * 9 + 3])
+    sources = torch.tensor([0, 2, 3])
+    parameter = torch.tensor([4, 3, 5])
+    weights = torch.linspace(0.2, 0.8, 90, dtype=dtype)
+    gradients = torch.autograd.grad(
+        (weights * out.flatten().square() / 2).sum(),
+        (chi, corrections, original),
+        create_graph=True,
+        allow_unused=True,
+    )
+    assert all(g is not None for g in gradients)
+    values = chi.flatten()[sources] - corrections.flatten()[parameter]
+    gvalues = weights[destinations] * values
+    expected_chi = (
+        torch.zeros(4, dtype=dtype).index_add(0, sources, gvalues).reshape_as(chi)
+    )
+    expected_parameters = (
+        torch.zeros(6, dtype=dtype)
+        .index_add(0, parameter, -gvalues)
+        .reshape_as(corrections)
+    )
+    expected_original = (
+        (weights * original.flatten())
+        .index_fill(0, destinations, 0)
+        .reshape_as(original)
+    )
+    for actual, expected in zip(
+        gradients, (expected_chi, expected_parameters, expected_original)
+    ):
+        torch.testing.assert_close(actual, expected)
+    directions = (
+        torch.cos(chi.detach()),
+        torch.sin(corrections.detach()),
+        torch.cos(original.detach()),
+    )
+    hvps = torch.autograd.grad(
+        sum((g * d).sum() for g, d in zip(gradients, directions)),
+        (chi, corrections, original),
+    )
+    values_direction = (
+        directions[0].flatten()[sources] - directions[1].flatten()[parameter]
+    )
+    hvalues = weights[destinations] * values_direction
+    expected_hvps = (
+        torch.zeros(4, dtype=dtype).index_add(0, sources, hvalues).reshape_as(chi),
+        torch.zeros(6, dtype=dtype)
+        .index_add(0, parameter, -hvalues)
+        .reshape_as(corrections),
+        (weights * directions[2].flatten())
+        .index_fill(0, destinations, 0)
+        .reshape_as(original),
+    )
+    for actual, expected in zip(hvps, expected_hvps):
+        torch.testing.assert_close(actual, expected)

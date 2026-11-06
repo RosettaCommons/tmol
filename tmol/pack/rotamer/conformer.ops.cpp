@@ -234,7 +234,47 @@ Tensor conformer_row_indices(
       }));
   return result;
 }
+Tensor chi_dof_indices(
+    Tensor types,
+    Tensor offsets,
+    Tensor conformers,
+    Tensor atoms,
+    Tensor kinematic_index,
+    int64_t correction_width) {
+  TORCH_CHECK(
+      atoms.dim() == 2 && atoms.size(0) == conformers.numel(),
+      "Conformer chi index axes differ");
+  TORCH_CHECK(
+      correction_width >= 0, "Conformer correction width must be nonnegative");
+  int n = score::common::checked_dispatch_product(
+      atoms.size(0), atoms.size(1), "conformer chi indices");
+  Tensor result;
+  TMOL_DISPATCH_INDEX_DEVICE(types.options(), "chi_dof_indices", ([&] {
+                               using Kernels = ConformerDofKernels<
+                                   score::common::DeviceOperations,
+                                   device_t,
+                                   float,
+                                   int64_t>;
+                               auto indices =
+                                   TPack<int64_t, 2, device_t>::empty({2, n});
+                               typename Kernels::ChiIndices c{
+                                   TCAST(types),
+                                   TCAST(offsets),
+                                   TCAST(conformers),
+                                   TCAST(atoms),
+                                   TCAST(kinematic_index),
+                                   indices.view,
+                                   correction_width};
+                               Kernels::chi_indices(conformer_context, c);
+                               result = indices.tensor;
+                             }));
+  return result;
+}
 TMOL_LIBRARY(tmol_conformer_dofs, m) {
+  m.def(
+      "chi_dof_indices(Tensor types, Tensor offsets, Tensor conformers, Tensor "
+      "atoms, Tensor kinematic_index, int correction_width) -> Tensor",
+      TMOL_FN(&chi_dof_indices));
   m.def(
       "conformer_row_indices(Tensor source, Tensor target, Tensor packed, int "
       "n_rows, int shift) -> Tensor",

@@ -277,7 +277,7 @@ def _assign_chi_dofs_from_samples(
     )
 
     if pbt.device.type != "mps":
-        from tmol.pack.rotamer._conformer_compiled import assign_chi_dofs
+        from tmol.pack.rotamer._conformer_execution import assign_chi_dofs
 
         assign_chi_dofs(
             block_type_ind_for_rot,

@@ -23,3 +23,5 @@ opth_sampling_fill = _ops.opth_sampling_fill
 opth_sampling_proton = _ops.opth_sampling_proton
 
 conformer_row_indices = _ops.conformer_row_indices
+
+chi_dof_indices = _ops.chi_dof_indices

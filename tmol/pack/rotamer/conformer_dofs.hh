@@ -72,16 +72,47 @@ struct ChiDofAssignment {
   View<Real, 2> ring_corrections, dofs;
 };
 
+struct ChiDofIndices {
+  int64_t destination, type;
+  int atom;
+};
+template <typename Ctx>
+TMOL_DEVICE_FUNC ChiDofIndices chi_dof_lookup(Ctx const& c, int index) {
+  int width = c.atoms.size(1), row = index / width, column = index % width;
+  int atom = c.atoms[row][column];
+  if (atom < 0) return {-1, -1, -1};
+  auto conformer = c.conformers[row], type = c.types[conformer];
+  return {c.kinematic_index[type][atom] + c.offsets[conformer] + 1, type, atom};
+}
 template <typename Real, typename Ctx>
 TMOL_DEVICE_FUNC void assign_chi_dof(Ctx const& c, int index) {
-  int const width = c.atoms.size(1);
-  int const row = index / width, column = index % width;
-  int const atom = c.atoms[row][column];
-  if (atom < 0) return;
-  auto conformer = c.conformers[row];
-  auto type = c.types[conformer];
-  auto destination = c.kinematic_index[type][atom] + c.offsets[conformer] + 1;
-  c.dofs[destination][3] = c.chi[row][column] - c.ring_corrections[type][atom];
+  auto i = chi_dof_lookup(c, index);
+  if (i.destination < 0) return;
+  int width = c.atoms.size(1);
+  c.dofs[i.destination][3] =
+      c.chi[index / width][index % width] - c.ring_corrections[i.type][i.atom];
+}
+
+template <template <typename, int> class View, typename Int>
+struct ChiDofIndexPlan {
+  View<Int, 1> types, offsets, conformers;
+  View<int32_t, 2> atoms;
+  View<Int, 2> kinematic_index;
+  View<int64_t, 2> indices;
+  int64_t correction_width;
+};
+template <template <Device> class Ops, Device D, typename Context, typename Ctx>
+void launch_chi_dof_indices(Context& context, Ctx c) {
+  LAUNCH_BOX_128;
+  int n = score::common::checked_dispatch_product(
+      c.atoms.size(0), c.atoms.size(1), "conformer chi indices");
+  Ops<D>::template forall<launch_t>(
+      context, n, [=] TMOL_DEVICE_FUNC(int index) {
+        auto i = chi_dof_lookup(c, index);
+        c.indices[0][index] = i.destination < 0 ? -1 : i.destination * 9 + 3;
+        c.indices[1][index] =
+            i.atom < 0 ? -1 : i.type * c.correction_width + i.atom;
+      });
 }
 
 template <
