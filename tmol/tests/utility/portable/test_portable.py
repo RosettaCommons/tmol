@@ -368,3 +368,11 @@ def test_dihedral_precision_near_planar_geometry(tmp_path):
     assert proc.returncode == 0, proc.stderr
     proc = subprocess.run([str(binary)], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+@requires_cxx
+def test_native_armijo_without_torch(tmp_path):
+    proc = _compile(HERE / "native_armijo.cc", tmp_path / "armijo", run=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    run = subprocess.run([str(tmp_path / "armijo")], capture_output=True, text=True)
+    assert run.returncode == 0, run.stdout + run.stderr

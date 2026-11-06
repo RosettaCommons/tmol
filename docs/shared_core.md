@@ -163,3 +163,10 @@ compressed/binary CIF, MOL2/SDF, alternate locations, CCD supplements, supplied
 bonds, metal coordination, author identities and unresolved-atom placeholders.
 The default polymer-port policy uses only shared chemical/canonical metadata.
 Torch retains pose tensor conversion and its existing public file APIs.
+
+The mature segmented Armijo optimizer now shares its native state transitions,
+compact H0=I direction, circular history, restart/retirement and independent
+convergence policy. Torch retains parameter storage, segmented reductions and
+linear-algebra execution. The common policy imports neither framework; a JAX
+executor must explicitly preserve per-pose objectives and failure semantics.
+This boundary alone does not establish JAX optimizer or full-workflow parity.
