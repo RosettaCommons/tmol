@@ -34,7 +34,7 @@ def pose_stack_from_canonical_aa_atom37(
     residue_type: torch.Tensor,
     chain_iid: torch.Tensor,
     **kwargs,
-) -> PoseStack:
+) -> PoseStack | tuple[PoseStack, dict]:
     """Build a PoseStack from atomworks UNIFIED_ATOM37_ENCODING tensors.
 
     This is the **tensor-only** Atom37 entry point. Residue identity comes from
@@ -65,7 +65,9 @@ def pose_stack_from_canonical_aa_atom37(
 
     Returns
     -------
-    PoseStack
+    PoseStack or (PoseStack, dict)
+        Optional canonical return flags include chain indices, atom mappings,
+        or missing-atom masks in the dictionary.
 
     Raises
     ------
