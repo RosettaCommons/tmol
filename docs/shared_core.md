@@ -8,6 +8,11 @@ imports under `tmol.database.chemical`, `tmol.database._patched_chemdb`, and
 `tmol_jax.database.chemical` remain available. JAX's patched database additionally
 refines the shared raw records into its host topology arrays.
 
+`tmol_core.database.scoring.load_scoring_parameters` assembles the standard
+scoring records and generated overlays. Frontends supply archive readers for
+Dunbrack, Rama and omega tables and optionally adapt the raw HBond representation;
+required-file validation and parameter precedence stay in the common loaders.
+
 The `tmol` distribution retains the public Torch API and native CPU/CUDA/Metal
 bindings. Renaming it to `tmol-torch` would require installation and metadata
 migration without improving this dependency boundary; `import tmol` is unchanged.

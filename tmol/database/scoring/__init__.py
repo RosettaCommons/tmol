@@ -30,11 +30,7 @@ __all__ = [
     "RamaDatabase",
 ]
 
-from tmol_core.database.generated import (
-    GENERATED_ELEC_FILES,
-    GENERATED_CARTBONDED_FILES,
-    GENERATED_REF_FILES,
-)
+from tmol_core.database.scoring import load_scoring_parameters
 
 
 @attr.s(auto_attribs=True, slots=True, frozen=True)
@@ -61,34 +57,18 @@ class ScoringDatabase:
         """Load all scoring-term databases rooted at ``path``."""
 
         return cls(
-            cartbonded=CartBondedDatabase.from_file(
-                os.path.join(path, "cartbonded.yaml"),
-                generated=[os.path.join(path, f) for f in GENERATED_CARTBONDED_FILES],
-            ),
-            genbonded=GenBondedDatabase.from_file(os.path.join(path, "genbonded.yaml")),
-            disulfide=DisulfideDatabase.from_file(os.path.join(path, "disulfide.yaml")),
-            metal_coordination=MetalCoordinationDatabase.from_file(
-                os.path.join(path, "metal_coordination.yaml")
-            ),
-            na_torsion=NaTorsionDatabase.from_file(
-                os.path.join(path, "na_torsion.yaml")
-            ),
-            dun=DunbrackRotamerLibrary.from_file(
-                os.path.join(path, "dunbrack.bin"),
-                lookup=os.path.join(path, "dunbrack.yaml"),
-            ),
-            elec=ElecDatabase.from_file(
-                os.path.join(path, "elec.yaml"),
-                generated=[os.path.join(path, f) for f in GENERATED_ELEC_FILES],
-            ),
-            hbond=HBondDatabase.from_file(os.path.join(path, "hbond.yaml")),
-            ljlk=LJLKDatabase.from_file(os.path.join(path, "ljlk.yaml")),
-            omega_bbdep=OmegaBBDepDatabase.from_file(
-                os.path.join(path, "omega_bbdep.zip")
-            ),
-            rama=RamaDatabase.from_file(os.path.join(path, "rama.zip")),
-            ref=RefDatabase.from_file(
-                os.path.join(path, "ref.yaml"),
-                generated=[os.path.join(path, f) for f in GENERATED_REF_FILES],
-            ),
+            **load_scoring_parameters(
+                path,
+                dun_loader=lambda root: DunbrackRotamerLibrary.from_file(
+                    os.path.join(root, "dunbrack.bin"),
+                    lookup=os.path.join(root, "dunbrack.yaml"),
+                ),
+                rama_loader=lambda root: RamaDatabase.from_file(
+                    os.path.join(root, "rama.zip")
+                ),
+                omega_loader=lambda root: OmegaBBDepDatabase.from_file(
+                    os.path.join(root, "omega_bbdep.zip")
+                ),
+                hbond_converter=HBondDatabase.from_raw_hbond_db,
+            )
         )

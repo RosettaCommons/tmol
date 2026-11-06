@@ -124,3 +124,41 @@ def test_generated_cartesian_records_and_connection_identity(tmp_path):
     assert extended.connection_params[0].connection2 == "other"
     assert plain.hash != extended.hash
     assert "CUSTOM:variant" not in plain.residue_params
+
+
+def test_scoring_root_preserves_custom_overlays_and_required_files(tmp_path):
+    import shutil
+    from tmol_core.database.scoring import load_scoring_parameters
+
+    source = Path(__file__).resolve().parents[2] / "tmol/database/default/scoring"
+    for filename in source.glob("*.yaml"):
+        shutil.copyfile(filename, tmp_path / filename.name)
+    # Custom generated parameters must survive assembly without changing the
+    # original database or requiring a particular binary table representation.
+    (tmp_path / "ref_d_amino_acids.yaml").write_text("weights: {CUSTOM: -3.5}\n")
+    (tmp_path / "elec_metal_ions.yaml").write_text(
+        "atom_charge_parameters: [{res: CUSTOM, atom: ZN, charge: 1.75}]\n"
+    )
+    tables = [object(), object(), object()]
+
+    def provider(table):
+        def load(root):
+            assert root == tmp_path
+            return table
+
+        return load
+
+    providers = dict(
+        zip(("dun_loader", "rama_loader", "omega_loader"), map(provider, tables))
+    )
+    scoring = load_scoring_parameters(tmp_path, **providers)
+    assert [scoring[k] for k in ("dun", "rama", "omega_bbdep")] == tables
+    assert scoring["ref"].weights["CUSTOM"] == -3.5
+    assert any(
+        (r.res, r.atom, r.charge) == ("CUSTOM", "ZN", 1.75)
+        for r in scoring["elec"].atom_charge_parameters
+    )
+    assert "CUSTOM" not in RefDatabase.from_file(source / "ref.yaml").weights
+    (tmp_path / "hbond.yaml").unlink()
+    with pytest.raises(FileNotFoundError, match="hbond.yaml"):
+        load_scoring_parameters(tmp_path, **providers)
