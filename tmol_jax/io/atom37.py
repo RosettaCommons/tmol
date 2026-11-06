@@ -181,13 +181,16 @@ class PreparedAtom37PoseBuilder:
             jnp.all(valid), base.at[:, residues, atoms].set(source), jnp.nan
         )
 
+    def _mapped_source(self, coords):
+        return coords[:, self.routing[0], self.routing[1]]
+
     def prepare(self, example_coords, *, opt_h=False, seed=None):
         if isinstance(example_coords, jax.core.Tracer):
             raise ValueError("prepare Atom37 chemistry outside JAX transformations")
         from .pose_stack_construction import pose_stack_from_canonical_form
 
         canonical = self._canonical_coords(example_coords)
-        source = np.asarray(example_coords)[:, self.routing[0], self.routing[1]]
+        source = np.asarray(self._mapped_source(example_coords))
         if not np.all(np.isfinite(source).all(-1) | np.isnan(source).all(-1)):
             raise Atom37MappingError("mapped triplets must be wholly finite or all NaN")
         for residue, atom, name in self.mainchain:
@@ -358,3 +361,106 @@ def pose_stack_from_atom37_and_topology(
     builder.template.update(canonical_options)
     pose = builder(atom37_coords, opt_h=not no_optH, seed=packer_seed)
     return (pose, context) if return_context else pose
+
+
+class _TensorAtom37Builder(PreparedAtom37PoseBuilder):
+    def __init__(self, context, template, routing, n_slots):
+        super().__init__(context, template, routing, None, ())
+        self.n_slots = n_slots
+
+    def _mapped_source(self, coords):
+        return coords[self.routing.source_indices]
+
+    def _canonical_coords(self, coords):
+        expected = (*self.routing.canonical_shape[:2], self.n_slots, 3)
+        if coords.shape != expected:
+            raise ValueError(f"Atom37 coordinates must have shape {expected}")
+        if coords.dtype != jnp.float32:
+            raise TypeError("atom37_coords must have dtype float32")
+        device = self.context.packed_block_types.n_atoms.device
+        if not isinstance(coords, jax.core.Tracer) and coords.device != device:
+            raise ValueError("atom37_coords and context must be on the same device")
+        source = self._mapped_source(coords)
+        valid = jnp.isfinite(source).all(-1) | jnp.isnan(source).all(-1)
+        base = jax.device_put(
+            np.full((*self.routing.canonical_shape, 3), np.nan, np.float32), device
+        )
+        return jnp.where(
+            jnp.all(valid), base.at[self.routing.target_indices].set(source), jnp.nan
+        )
+
+
+def prepare_atom37_tensor_builder(
+    res_types,
+    chain_id,
+    context,
+    *,
+    n_slots=37,
+    slot_map=None,
+    disulfides=None,
+    cyclic_bonds=None,
+    covalent_bonds=None,
+    res_not_connected=None,
+):
+    """Prepare static tensor topology using the common validated slot routing.
+
+    Residue indices refer to the context's canonical ordering. The default layout
+    covers standard proteins; other chemistry requires an explicit slot map.
+    Call ``builder.prepare(example_coords)`` outside transformations, then reuse
+    its returned callable with float32 coordinates of the same shape.
+    """
+    from tmol_core.io.atom37 import prepare_atom37_routing
+
+    types, chains = np.asarray(res_types), np.asarray(chain_id)
+    if chains.shape != types.shape or not np.issubdtype(chains.dtype, np.integer):
+        raise ValueError(
+            "chain_id must have the same shape as res_types and integer dtype"
+        )
+    routing = prepare_atom37_routing(
+        types, slot_map, n_slots, context.canonical_ordering
+    )
+    template = dict(
+        coords=np.full((*routing.canonical_shape, 3), np.nan, np.float32),
+        res_types=types.astype(np.int32),
+        chain_id=chains.astype(np.int32),
+        disulfides=disulfides,
+        cyclic_bonds=cyclic_bonds,
+        covalent_bonds=covalent_bonds,
+        res_not_connected=(
+            np.zeros((*types.shape, 2), bool)
+            if res_not_connected is None
+            else np.asarray(res_not_connected)
+        ),
+        find_additional_disulfides=False,
+        find_additional_cyclic_closures=False,
+    )
+    return _TensorAtom37Builder(context, template, routing, n_slots)
+
+
+def pose_stack_from_atom37(
+    atom37_coords,
+    res_types,
+    chain_id,
+    context,
+    *,
+    slot_map=None,
+    disulfides=None,
+    cyclic_bonds=None,
+    covalent_bonds=None,
+    res_not_connected=None,
+    no_optH=True,
+    packer_seed=None,
+):
+    """Build eagerly from residue/chain tensors and authoritative slot coordinates."""
+    builder = prepare_atom37_tensor_builder(
+        res_types,
+        chain_id,
+        context,
+        n_slots=atom37_coords.shape[-2],
+        slot_map=slot_map,
+        disulfides=disulfides,
+        cyclic_bonds=cyclic_bonds,
+        covalent_bonds=covalent_bonds,
+        res_not_connected=res_not_connected,
+    )
+    return builder(atom37_coords, opt_h=not no_optH, seed=packer_seed)

@@ -470,7 +470,13 @@ coordinate derivatives. Missing sampled sidechains follow the same boundary.
 Prepare again to reselect packing choices after coordinate motion.
 `pose_stack_from_atom37_and_topology()` and
 `pose_stack_from_atom_array(atom37_coords=...)` provide eager entry points.
-The tensor-only topology constructor remains a gap.
+`pose_stack_from_atom37(coords, res_types, chain_id, context, slot_map=...)`
+accepts tensor-only topology. Its standard layout covers canonical proteins;
+custom layouts route arbitrary chemistry through the same shared validation.
+For transformed execution, use `prepare_atom37_tensor_builder(..., n_slots=...)`
+and its `prepare(example_coords)` method. Explicit disulfides, cyclic/covalent
+bonds and suppressed polymer connections are retained. Unknown residue layouts
+raise instead of replacing measured coordinates with ideal geometry.
 
 AtomWorks 3.0.4's optional ML registration currently imports Torch when it is
 installed, including during ordinary structure preparation. Clean JAX package

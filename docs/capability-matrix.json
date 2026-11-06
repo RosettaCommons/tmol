@@ -338,19 +338,21 @@
       "jax": "prepared_cpu_values_source_gradients_jit_vmap",
       "repro_fixture": [
         "tests/scientific/test_atom37_input.py",
-        "tests/jax/test_atom37_transforms.py"
+        "tests/jax/test_atom37_transforms.py",
+        "tests/scientific/test_atom37_tensor_input.py",
+        "tests/jax/test_atom37_tensor_transforms.py"
       ],
-      "implementation_status": "Shared atom routing; native leaf/H and fixed metal reconstruction; shared input packing and finite-input/frozen-block derivative restoration. Six molecular first/replay cases, GLN/HIS OptH and four public AtomArray/topology overload cases pass CPU checks in both frameworks. Missing HYP/D-proline native packing and source-energy gradients pass JAX; Torch HYP currently produces21 NaN source-gradient components despite finite output-coordinate gradients and remains a failing regression. Geometry searches for extra disulfides/cycles are off by default; prepared chemistry and sampling choices are fixed. Tensor-only API remains pending. Newest adapters require matching CUDA/install gates."
+      "implementation_status": "Shared atom routing; native leaf/H and fixed metal reconstruction; shared input packing and finite-input/frozen-block derivative restoration. Eight molecular first/replay cases, GLN/HIS OptH and four public AtomArray/topology overload cases pass CPU checks in both frameworks. Missing HYP/D-proline native packing and source-energy gradients pass JAX; Torch HYP currently produces21 NaN source-gradient components despite finite output-coordinate gradients and remains a failing regression. Geometry searches for extra disulfides/cycles are off by default; prepared chemistry and sampling choices are fixed. Tensor-only API now shares the validated common routing plan, with custom layouts, explicit bonds and suppressed polymer connections. Seven canonical/noncanonical molecular CPU full source-energy/gradient and directional-difference checks pass both backends; two JAX jit/vmap/invalid-input contracts pass. Newest adapters require matching CUDA/install gates."
     },
     {
       "domain": "pose_concatenation",
       "torch": "supported",
       "jax": "shared_policy_cpu_validated",
       "repro_fixture": "tests/scientific/test_pose_concatenation.py",
-      "implementation_status": "Common exact chemical-prefix identity, merged palettes, metadata and fragment maps; JAX buffer copying preserves coordinate dtype/derivatives, sparse bond distances and constraints. Four CPU checks per backend cover mixed ligand/noncanonical/D batches, all26 per-term values/gradients, distinct palettes and repeated fragment identity. Exact CUDA/install and full workflow runtime/memory pending."
+      "implementation_status": "Common exact chemical-prefix identity, merged palettes, metadata and fragment maps; JAX buffer copying preserves coordinate dtype/derivatives, sparse bond distances and constraints. Four CPU checks per backend cover mixed ligand/noncanonical/D batches, all26 per-term values/gradients, distinct palettes and repeated fragment identity. Exact71c9 CUDA/install gates passed; complete workflow runtime/memory parity remains pending."
     }
   ],
-  "validation": "PR629 remains OPEN DRAFT at corrected a0a9f43. Exact private91f CPU45+344,JAXCUDA41,TorchCUDA42 passed. Frozen71c9 clean installed CPU45+361 and JAXCUDA33 passed; its TorchCUDA gate is pending. Later input-completion adapters have additional CPU evidence but need matching artifacts/CUDA. Corrected a0a Apple209 tests/48 full E/G and focused cf7 header40 tests passed, with unsupported MPS routes and runtime/memory holds retained. Complete supported mature functionality and matched cold/warm/peak-memory acceptance remain incomplete.",
+  "validation": "PR629 remains OPEN DRAFT at corrected a0a9f43. Exact private91f CPU45+344,JAXCUDA41,TorchCUDA42 passed. Frozen71c9 clean installed CPU45+361 and JAXCUDA33/TorchCUDA26 passed. Later input-completion adapters have additional CPU evidence but need matching artifacts/CUDA. Corrected a0a Apple209 tests/48 full E/G and focused cf7 header40 tests passed, with unsupported MPS routes and runtime/memory holds retained. Complete supported mature functionality and matched cold/warm/peak-memory acceptance remain incomplete.",
   "score_terms": {
     "nonbonded": {
       "torch": "implemented",
@@ -478,7 +480,7 @@
   "acceptance_gaps": {
     "mature_functionality": [
       "Latest Atom37/pose-concatenation adapters require exact artifact/CUDA gates; fragment-attribution cold/memory gaps remain measured",
-      "Tensor-only Atom37 topology API and remaining constructor options; failing mature HYP missing-sidechain source-gradient regression under repair",
+      "Latest tensor-only Atom37 API gates and remaining constructor options; failing mature HYP missing-sidechain source-gradient regression under repair",
       "Complete task/design API compatibility, changed-port and constrained-identity imposition",
       "Mature optimizer checkpoint/API behavior and matched trajectory validation",
       "Exhaustive custom database/public score-option compatibility"

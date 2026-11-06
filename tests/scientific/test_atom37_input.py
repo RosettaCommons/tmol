@@ -19,9 +19,10 @@ CASES.update(
 
 
 def atom37_fixture(backend, name, count=2):
-    b = backend.molecule(CASES[name], terms=())
+    case = CASES.get(name, BACKBONE_CASES.get(name))
+    b = backend.molecule(case, terms=())
     frontend = import_module("tmol_jax" if b.framework == "jax" else "tmol")
-    atoms = bonded_array(b, CASES[name])
+    atoms = bonded_array(b, case)
     ordinary, context = frontend.pose_stack_from_atom_array(
         atoms,
         b.device,
