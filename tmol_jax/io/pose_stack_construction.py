@@ -178,45 +178,6 @@ def _build_name3_special_case_lookup(pbt: Any) -> Dict[str, Dict[str, str]]:
     return out
 
 
-def _canonical_to_variant_map(
-    co_atom_names: Tuple[str, ...],
-    co_aliases: Dict[str, str],
-    bt_atoms: Tuple[str, ...],
-    bt_aliases: Dict[str, str],
-) -> np.ndarray:
-    """Map each canonical atom-slot index to the variant block-type's
-    atom-slot index (``-1`` when the canonical atom doesn't exist in
-    the variant).
-
-    ``co_atom_names`` gives the canonical atom name at each canonical
-    slot (this is ``CanonicalOrdering.restypes_ordered_atom_names[n3]``).
-    ``co_aliases`` maps alternate canonical names to the canonical
-    name (used when callers query via an alias).
-
-    ``bt_atoms`` is the variant block type's own atom-name ordering;
-    ``bt_aliases`` is its ``aliases_map``. The returned array has
-    length ``len(bt_atoms)``, and each entry tells us which canonical
-    slot to read from for that variant-atom position.
-    """
-    can_name_to_idx: Dict[str, int] = {n: i for i, n in enumerate(co_atom_names)}
-    # Aliases: make the canonical name for each alias resolve to the
-    # same slot; don't override existing mappings.
-    for alias, canonical in co_aliases.items():
-        if alias not in can_name_to_idx and canonical in can_name_to_idx:
-            can_name_to_idx[alias] = can_name_to_idx[canonical]
-
-    n_bt_atoms = len(bt_atoms)
-    variant_to_canonical = np.full(n_bt_atoms, -1, dtype=np.int32)
-    for j, name in enumerate(bt_atoms):
-        if name in can_name_to_idx:
-            variant_to_canonical[j] = can_name_to_idx[name]
-        elif name in bt_aliases:
-            canon_name = bt_aliases[name]
-            if canon_name in can_name_to_idx:
-                variant_to_canonical[j] = can_name_to_idx[canon_name]
-    return variant_to_canonical
-
-
 def _resolve_his_spcase(
     res_name: str,
     co_atom_names: Tuple[str, ...],
@@ -345,70 +306,6 @@ def _resolve_disulfide_pairs(
             paired[best_j] = 1
             pairs.append((k_i, best_j))
     return paired, pairs
-
-
-def _is_leaf_atom_for_bt(bt: Any) -> np.ndarray:
-    """Return ``bool[n_atoms]`` marking each atom as "leaf" in the icoor
-    tree (i.e. not a parent of any other atom).
-
-    Mirrors upstream's ``_annotate_block_type_atom_is_leaf_atom``:
-    an atom is a leaf iff nothing else uses it as a parent/grandparent.
-    We also mark any atom that serves as the fourth atom of a named
-    dihedral (e.g. OE1 on GLU) as non-leaf so the upstream behaviour of
-    refusing to build a missing chi-defining atom is preserved -- but
-    only for heavy atoms; hydroxyl hydrogens are still leaves.
-    """
-    atoms = list(bt.atoms)
-    n = len(atoms)
-    atom_name_to_idx = {a.name: i for i, a in enumerate(atoms)}
-
-    is_parent = np.zeros(n, dtype=bool)
-    icoors = list(getattr(bt, "icoors", ()) or ())
-    # Only the *immediate* parent link makes an atom non-leaf (mirrors
-    # upstream's ``icoors_ancestors[:, 0]`` indexing). Grandparent /
-    # great-grandparent references are just coordinate-frame anchors
-    # and don't imply that the referenced atom has a dependent.
-    for ic in icoors:
-        p = getattr(ic, "parent", None)
-        if p is None:
-            continue
-        # Skip self-referential root records (parent == name).
-        if p == getattr(ic, "name", None):
-            continue
-        if p in atom_name_to_idx:
-            is_parent[atom_name_to_idx[p]] = True
-
-    # Fourth torsion atom on dihedrals (GLU OE1 / ASP OD1 / ...); upstream
-    # counts these as non-leaf because rebuilding them with a 180-degree
-    # guess gives nonsense energies. Hydrogens are the exception because
-    # the hydroxyl-dihedral build is already fuzzy.
-    torsions = getattr(bt, "torsions", None) or getattr(bt, "ordered_torsions", None)
-    is_hydrogen = np.array(
-        [
-            (getattr(a, "element", None) == "H")
-            or (getattr(a, "atom_type", "") in ("Hpol", "Hapo", "HN", "Haro"))
-            # fallback: atom name starts with H (robust across type-lib variants)
-            or str(getattr(a, "name", "")).startswith("H")
-            for a in atoms
-        ],
-        dtype=bool,
-    )
-    if torsions is not None:
-        for tors in torsions:
-            fourth = getattr(tors, "d", None)
-            if fourth is None:
-                continue
-            fname = getattr(fourth, "atom", None) or getattr(fourth, "name", None)
-            if fname is not None and fname in atom_name_to_idx:
-                idx = atom_name_to_idx[fname]
-                if not is_hydrogen[idx]:
-                    is_parent[idx] = True
-
-    is_leaf = np.logical_not(is_parent)
-    # Fewer than 3 atoms -> we can't build anything from ideal coords.
-    if n <= 3:
-        is_leaf[:] = False
-    return is_leaf
 
 
 def _fill_missing_from_icoors(
@@ -569,21 +466,13 @@ def _choose_residue_types(pbt, names, coords, present, starts, ends, co):
     return np.asarray(indices, dtype=np.int32), disulfides
 
 
-def _map_residue_atoms(residue, source, present, co):
-    names = co.restypes_ordered_atom_names[residue.name3]
-    aliases = {
-        alias: names[index]
-        for alias, index in co.restypes_atom_index_mapping[residue.name3].items()
-        if alias not in names
-    }
-    mapping = _canonical_to_variant_map(
-        names, aliases, tuple(atom.name for atom in residue.atoms), residue.aliases_map
-    )
+def _map_residue_atoms(residue, source, present, mapping, leaf):
+    mapping = mapping[: residue.n_atoms]
     valid = (mapping >= 0) & (mapping < source.shape[0])
     safe = np.where(valid, mapping, 0)
     available = valid & present[safe]
     coords = np.where(available[:, None], source[safe], 0).astype(np.float32)
-    missing = ~available & ~_is_leaf_atom_for_bt(residue)
+    missing = ~available & ~leaf[: residue.n_atoms]
     if missing.any():
         atoms = ", ".join(
             residue.atoms[index].name for index in np.flatnonzero(missing)
@@ -607,10 +496,12 @@ def _connection_coordinates(index, residues, coords, present, starts, ends):
     return result
 
 
-def _reconstruct_pose_atoms(residues, source, present, starts, ends, co):
+def _reconstruct_pose_atoms(residues, source, present, starts, ends, mappings, leaves):
     mapped = [
-        _map_residue_atoms(residue, xyz, mask, co)
-        for residue, xyz, mask in zip(residues, source, present)
+        _map_residue_atoms(residue, xyz, mask, mapping, leaf)
+        for residue, xyz, mask, mapping, leaf in zip(
+            residues, source, present, mappings, leaves
+        )
     ]
     coordinates, available = map(list, zip(*mapped))
     for index, residue in enumerate(residues):
@@ -687,6 +578,13 @@ def pose_stack_from_canonical_form(
     ):
         raise ValueError("atom_is_present must match finite canonical coordinates")
     co = cf.get("canonical_ordering") or default_canonical_ordering()
+    from tmol_core.io.canonical import prepare_canonical_selection
+    from tmol_core.io.missing_atoms import prepare_leaf_atom_flags
+
+    prepared = prepare_canonical_selection(co, pbt.active_block_types, pbt.max_n_atoms)
+    leaves = prepare_leaf_atom_flags(
+        pbt.active_block_types, np.asarray(pbt.atom_is_hydrogen), pbt.max_n_atoms
+    ).is_leaf_atom
     names = _normalise_res_names(dict(cf, canonical_ordering=co), *shape)
     if len(names) != shape[0] or any(len(row) != shape[1] for row in names):
         raise ValueError("residue names must match the canonical coordinate shape")
@@ -754,7 +652,8 @@ def pose_stack_from_canonical_form(
                 present[pose, indices],
                 linked_starts,
                 linked_ends,
-                co,
+                prepared.bt_canonical_atom_ind_map[selected],
+                leaves[selected],
             )
         )
         types.append(selected)
