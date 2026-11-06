@@ -8,6 +8,7 @@
 
 #include <tmol/score/unresolved_atom_types.hh>
 #include <tmol/score/common/diamond_macros.hh>
+#include <tmol/score/common/rotamer_correlation.hh>
 
 namespace tmol {
 namespace score {
@@ -101,7 +102,8 @@ TMOL_DEVICE_FUNC auto resolve_local_rotamer_atom_ind_from_uaid(
     int other_block_type_index =
         first_rot_block_type[pose_index][other_block_index];
 
-    if (other_rotamer_index < 0 || other_block_type_index < 0 || other_connection_index < 0) {
+    if (other_rotamer_index < 0 || other_block_type_index < 0
+        || other_connection_index < 0) {
       return {-1, -1};
     }
 
@@ -132,8 +134,9 @@ TMOL_DEVICE_FUNC auto resolve_local_rotamer_pair_atom_ind_from_uaid(
     TView<Int, 2, D> first_rot_for_block,
     TView<Int, 2, D> first_rot_block_type,
     ConnTView pose_stack_inter_block_connections,
-    TView<Int, 3, D> block_type_atom_downstream_of_conn)
-    -> std::tuple<Int, Int> {
+    TView<Int, 3, D> block_type_atom_downstream_of_conn,
+    TView<Int, 2, D> lockstep_group_for_block = {},
+    TView<Int, 1, D> block_type_ind_for_rot = {}) -> std::tuple<Int, Int> {
   // Resolve an unresolved atom ID and return the rotamer- and
   // atom-within-the-rotamer indices
 
@@ -166,6 +169,36 @@ TMOL_DEVICE_FUNC auto resolve_local_rotamer_pair_atom_ind_from_uaid(
       other_rotamer_index = first_rot_for_block[pose_index][other_block_index];
       other_block_type_index =
           first_rot_block_type[pose_index][other_block_index];
+      if (other_rotamer_index < 0 || other_block_type_index < 0) {
+        return {-1, -1};
+      }
+      // A connected third member follows the selected state of either pair
+      // endpoint in its group. Callers validate equal active group counts and
+      // local-state correspondence before launching. Independent neighbors
+      // retain the mature fixed-background convention.
+      int source_block = -1;
+      int source_rotamer = -1;
+      if (same_rotamer_group(
+              lockstep_group_for_block,
+              pose_index,
+              other_block_index,
+              block_index1)) {
+        source_block = block_index1;
+        source_rotamer = rotamer_index1;
+      } else if (
+          same_rotamer_group(
+              lockstep_group_for_block,
+              pose_index,
+              other_block_index,
+              block_index2)) {
+        source_block = block_index2;
+        source_rotamer = rotamer_index2;
+      }
+      if (source_block >= 0) {
+        other_rotamer_index +=
+            source_rotamer - first_rot_for_block[pose_index][source_block];
+        other_block_type_index = block_type_ind_for_rot[other_rotamer_index];
+      }
     }
 
     int idx = block_type_atom_downstream_of_conn[other_block_type_index]
@@ -263,7 +296,9 @@ TMOL_DEVICE_FUNC int resolve_rotamer_pair_atom_from_uaid(
     TView<Int, 2, D> first_rot_for_block,
     TView<Int, 2, D> first_rot_block_type,
     ConnTView pose_stack_inter_block_connections,
-    TView<Int, 3, D> block_type_atom_downstream_of_conn) {
+    TView<Int, 3, D> block_type_atom_downstream_of_conn,
+    TView<Int, 2, D> lockstep_group_for_block = {},
+    TView<Int, 1, D> block_type_ind_for_rot = {}) {
   // Resolve an unresolved atom ID and return its rotamer-set-wide index
   auto resolved_atom_tuple = resolve_local_rotamer_pair_atom_ind_from_uaid(
       uaid,
@@ -276,7 +311,9 @@ TMOL_DEVICE_FUNC int resolve_rotamer_pair_atom_from_uaid(
       first_rot_for_block,
       first_rot_block_type,
       pose_stack_inter_block_connections,
-      block_type_atom_downstream_of_conn);
+      block_type_atom_downstream_of_conn,
+      lockstep_group_for_block,
+      block_type_ind_for_rot);
   int resolved_atom_rotamer_index = std::get<0>(resolved_atom_tuple);
   int resolved_atom_index = std::get<1>(resolved_atom_tuple);
   if (resolved_atom_rotamer_index == -1 || resolved_atom_index == -1) {

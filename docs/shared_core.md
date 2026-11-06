@@ -96,3 +96,7 @@ an explicit database path still creates fresh chemistry. The bounded weak-owner
 cache is framework neutral, while the Torch adapter retains CUDA stream readiness.
 These host policies import neither framework. Ligand conformer optimization and
 the complete public ligand preparation pipeline still require further extraction.
+
+Correlated backbone resolution uses the selected matching conformer for a
+third member in the same joint group and scatters its derivatives to that
+member. Independent third varying blocks remain outside pairwise packing.
