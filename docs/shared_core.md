@@ -127,5 +127,23 @@ assignment, custom residue identities, metal coordination and explicit termini.
 The default patched chemistry is shared with the Torch parameter context; loading
 an explicit database path still creates fresh chemistry. The bounded weak-owner
 cache is framework neutral, while the Torch adapter retains CUDA stream readiness.
-These host policies import neither framework. Ligand conformer optimization and
-the complete public ligand preparation pipeline still require further extraction.
+These host policies import neither framework.
+
+The optional `tmol-core[ligand]` dependencies provide structure chemistry and
+ligand preparation without installing either framework.
+
+`tmol_core.ligand` owns ligand typing, protonation routing, charge overrides,
+parameter-file loading/writing, residue registration, polymer/conjugate chemistry
+and chemical fragmentation. Preparation accepts an explicit parameter context
+and preserves its subtype. File entry points take an atom-array reader; structure
+arrays and prepared parameter files need no reader. Torch supplies its public
+default database and converts returned canonical ordering to its existing class.
+Pose tensor assembly remains in the Torch adapter.
+
+Distance-geometry preparation shares ideal targets, bounds, planar embedding,
+random seeds and restart selection. Its `ConformerExecution` protocol supplies
+planar refinement, chiral annealing and final stress refinement. The Torch adapter
+retains its existing objectives, dtypes and LBFGS execution. Supplying complete
+MOL2 coordinates and authoritative charges needs no executor; regeneration
+requires one explicitly. This boundary does not establish JAX conformer-generation
+support or optimizer parity until that adapter and complete workflows are tested.
