@@ -31,6 +31,7 @@ def stage_native_headers(root, stage):
         "score/lk_ball/potentials",
         "kinematics/compiled",
         "pack/rotamer",
+        "pack/compiled",
         "utility/portable",
         "utility/tensor",
         "numeric",

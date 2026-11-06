@@ -12,6 +12,7 @@
 #include <tmol/score/common/counting.hh>
 
 #include "annealer.hh"
+#include "interaction_graph_topology.hh"
 
 namespace tmol {
 namespace pack {
@@ -838,12 +839,6 @@ auto InteractionGraphBuilder<DeviceDispatch, D, Real, Int>::f(
   auto respair_is_adjacent_tp = TPack<int32_t, 3, D>::zeros(
       {n_poses, max_n_molten_blocks, adjacency_words_per_row});
   auto respair_is_adjacent = respair_is_adjacent_tp.view;
-  auto blocks_are_adjacent =
-      ([=] TMOL_DEVICE_FUNC(int pose, int block, int neighbor) {
-        int const word = neighbor / 32;
-        int32_t const mask = int32_t(uint32_t(1) << (neighbor % 32));
-        return (respair_is_adjacent[pose][block][word] & mask) != 0;
-      });
 
   auto note_adjacent_respairs = ([=] TMOL_DEVICE_FUNC(int index) {
     int const pose = sparse_inds[0][index];
@@ -877,17 +872,8 @@ auto InteractionGraphBuilder<DeviceDispatch, D, Real, Int>::f(
   auto n_neighbors_for_block_tp =
       TPack<int64_t, 1, D>::zeros({n_pose_molten_block_cells + 1});
   auto n_neighbors_for_block = n_neighbors_for_block_tp.view;
-  auto count_neighbors_for_block = ([=] TMOL_DEVICE_FUNC(int row) {
-    int const pose = row / max_n_molten_blocks;
-    int const block = row % max_n_molten_blocks;
-    int64_t count = 0;
-    for (int neighbor = 0; neighbor < max_n_molten_blocks; ++neighbor) {
-      count += blocks_are_adjacent(pose, block, neighbor) ? 1 : 0;
-    }
-    n_neighbors_for_block[row] = count;
-  });
-  DeviceDispatch<D>::template forall<launch_t>(
-      mgr, n_pose_molten_block_cells, count_neighbors_for_block);
+  launch_ig_count_neighbors<DeviceDispatch, D>(
+      mgr, respair_is_adjacent, n_neighbors_for_block);
 
   auto neighbor_row_offsets_tp =
       TPack<int64_t, 1, D>::zeros({n_pose_molten_block_cells + 1});
@@ -917,7 +903,7 @@ auto InteractionGraphBuilder<DeviceDispatch, D, Real, Int>::f(
     int64_t output = neighbor_row_offsets[row];
     int const n_chunks = n_chunks_for_block[pose][block];
     for (int neighbor = 0; neighbor < max_n_molten_blocks; ++neighbor) {
-      if (!blocks_are_adjacent(pose, block, neighbor)) {
+      if (!ig_blocks_are_adjacent(respair_is_adjacent, pose, block, neighbor)) {
         continue;
       }
       neighbor_blocks[output] = neighbor;

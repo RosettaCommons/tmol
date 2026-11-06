@@ -300,3 +300,10 @@ def test_conformer_dofs_preserve_missing_geometry_and_ring_offsets(tmp_path):
     assert proc.returncode == 0, proc.stderr
     run = subprocess.run([str(binary)], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
+
+
+def test_native_interaction_graph_without_torch(tmp_path):
+    proc = _compile(
+        HERE / "native_interaction_graph.cc", tmp_path / "interaction_graph", run=True
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
