@@ -403,6 +403,7 @@ def _annotate_packed_block_types_w_h_completion(pbt: PackedBlockTypes):
     host = _common.prepare_h_completion_metadata(
         pbt.active_block_types, pbt.atom_is_hydrogen.cpu().numpy(), pbt.max_n_atoms
     )
+    pbt.has_h_geometric_completion = bool(host.eligible.any())
     pbt.h_completion_ann = PackedBlockTypesHCompletionAnnotation(
         **{
             field.name: torch.as_tensor(getattr(host, field.name), device=pbt.device)
@@ -425,55 +426,28 @@ def _apply_h_geometric_completion(
     Only touches H flagged eligible by _determine_h_completion_for_block_type
     that were actually rebuilt.
     """
-    ann = pbt.h_completion_ann
-    real = block_types >= 0
-    bt64 = block_types.to(torch.int64).clamp_min(0)
+    from ._hydrogen_completion import complete_hydrogens
 
-    # (n_poses, max_n_blocks, max_n_atoms): eligible & rebuilt in a real block
-    elig = ann.eligible[bt64] & block_leaf_atom_is_missing & real.unsqueeze(-1)
-    idx = torch.nonzero(elig)
-    if idx.shape[0] == 0:
+    if not getattr(pbt, "has_h_geometric_completion", True):
         return pose_coords
-
-    p, b, a = idx.unbind(1)
-    types = bt64[p, b]
-    offsets = block_coord_offset[p, b].long()
-    parent = pose_coords[p, offsets + ann.parent[types, a]]
-    slots = torch.arange(ann.neigh.shape[-1], device=pose_coords.device)
-
-    def directions(positions, valid):
-        # Mask before normalization: padded zero/NaN vectors must contribute
-        # neither a direction nor undefined gradients to the real coordinates.
-        vectors = positions - parent[:, None]
-        vectors = torch.where(valid[..., None], vectors, torch.ones_like(vectors))
-        unit = vectors / torch.linalg.vector_norm(vectors, dim=-1, keepdim=True)
-        return torch.where(valid[..., None], unit, 0).sum(dim=1)
-
-    local = ann.neigh[types, a]
-    acc = directions(
-        pose_coords[p[:, None], offsets[:, None] + local.clamp_min(0)],
-        slots < ann.n_neigh[types, a, None],
-    )
-    if inter_residue_connections.shape[2]:
-        connections = ann.par_conn[types, a]
-        partners = inter_residue_connections[
-            p[:, None], b[:, None], connections.clamp_min(0)
-        ].long()
-        other_block, other_port = partners.unbind(-1)
-        other_type = bt64[p[:, None], other_block.clamp_min(0)]
-        other_atom = pbt.conn_atom[other_type, other_port.clamp_min(0)].long()
-        valid = (
-            (slots < ann.n_par_conn[types, a, None])
-            & (other_block >= 0)
-            & (other_port >= 0)
-            & (other_atom >= 0)
-        )
-        other_offset = block_coord_offset[p[:, None], other_block.clamp_min(0)].long()
-        acc = acc + directions(
-            pose_coords[p[:, None], other_offset + other_atom.clamp_min(0)], valid
-        )
-    new_coords = pose_coords.clone()
-    new_coords[p, offsets + a] = parent - ann.dist[
-        types, a, None
-    ] * acc / torch.linalg.vector_norm(acc, dim=-1, keepdim=True)
-    return new_coords
+    if pose_coords.device.type == "cpu" and not block_leaf_atom_is_missing.any():
+        return pose_coords
+    ann = pbt.h_completion_ann
+    inputs = [
+        pose_coords,
+        block_types,
+        block_coord_offset,
+        inter_residue_connections,
+        pbt.conn_atom,
+        block_leaf_atom_is_missing,
+        ann.eligible,
+        ann.parent,
+        ann.neigh,
+        ann.n_neigh,
+        ann.dist.to(pose_coords.dtype),
+        ann.par_conn,
+        ann.n_par_conn,
+    ]
+    if pose_coords.device.type == "mps":
+        inputs = [x.cpu() for x in inputs]
+    return complete_hydrogens(*inputs).to(pose_coords.device)

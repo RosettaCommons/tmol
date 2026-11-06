@@ -443,3 +443,27 @@ def prepare_leaf_atom_metadata(block_types, atom_is_hydrogen, max_n_atoms):
             block_types, atom_is_hydrogen, max_n_atoms
         ),
     )
+
+
+LIGAND_HYDROGEN_MODES = ("input", "names", "rebuild")
+BONDED_H_TOLERANCE = 0.4
+
+
+def validate_ligand_hydrogens(mode):
+    if mode not in LIGAND_HYDROGEN_MODES:
+        raise ValueError(
+            f"ligand_hydrogens must be one of {LIGAND_HYDROGEN_MODES}, not {mode!r}"
+        )
+
+
+def prepare_hydrogen_parents(active_types, is_hydrogen, max_n_atoms):
+    """A named hydrogen's heavy parent and its recorded ideal bond distance."""
+    parent = numpy.full((len(active_types), max_n_atoms), -1, dtype=numpy.int64)
+    length = numpy.zeros(parent.shape, dtype=numpy.float32)
+    for i, bt in enumerate(active_types):
+        for a0, a1 in bt.bond_indices:
+            h, heavy = int(a1), int(a0)
+            if is_hydrogen[i, h] and not is_hydrogen[i, heavy]:
+                parent[i, h] = heavy
+                length[i, h] = bt.icoors[bt.icoors_index[bt.atoms[h].name]].d
+    return parent, length
