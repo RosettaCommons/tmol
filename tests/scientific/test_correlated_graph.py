@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from tmol_core.pack.correlation import CorrelatedBlockGroup
+from tmol_core.pack.correlation import CorrelatedBlockGroup, correlation_indices
 
 
 def joint_fixture(backend):
@@ -29,6 +29,9 @@ def joint_fixture(backend):
         **{name: tensor(value) for name, value in fields.items()},
         correlated_groups=(CorrelatedBlockGroup(0, (0, 2)),),
         device=backend.device,
+    )
+    rots.group_for_block = tensor(
+        correlation_indices(counts.shape, rots.correlated_groups, counts)
     )
     rows, values = [], []
     for state in range(2):

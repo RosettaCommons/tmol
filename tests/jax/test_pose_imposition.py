@@ -12,7 +12,10 @@ from tmol_jax.pack.imposition import prepare_pose_imposition
 
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
-def test_joint_design_expands_original_member_identity_before_atom_layout(platform):
+@pytest.mark.parametrize("bump", (False, True))
+def test_joint_design_expands_original_member_identity_before_atom_layout(
+    platform, bump
+):
     from tests.scientific.molecules import MolecularCase
     from tests.scientific.test_correlated_graph import joint_fixture
     from tmol_jax.pack.interaction_graph import build_interaction_graph
@@ -46,11 +49,20 @@ def test_joint_design_expands_original_member_identity_before_atom_layout(platfo
         r.coord_offset_for_rot = jnp.asarray(offsets)
         r.block_type_ind_for_rot = jnp.asarray(types)
         r.context = ConformerContext(pose)
-        graph = build_interaction_graph(r, values, indices, chunk_size=2)
+        if bump:
+            # Prune state zero so the fixed joint survivor has a nonzero original
+            # identity; both member types and atom counts must follow state one.
+            values = (values * 0.01).at[0].add(100)
+        graph = build_interaction_graph(
+            r, values, indices, chunk_size=2, bump_check=bump
+        )
         original = np.asarray(pose.coords).copy()
-        for state in range(2):
+        for state in ((1,) if bump else range(2)):
             for external in range(2):
-                choices = jnp.asarray([[[state, external]], [[0, 0]]], jnp.int32)
+                choices = jnp.asarray(
+                    [[[external]], [[0]]] if bump else [[[state, external]], [[0, 0]]],
+                    jnp.int32,
+                )
                 plan = prepare_pose_imposition(pose, r, graph["retained"], choices)
                 out = plan.apply(r.coords)
                 selected = [state, 2 + external, 4 + state]
