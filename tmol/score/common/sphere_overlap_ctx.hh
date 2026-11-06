@@ -13,7 +13,6 @@
 // which cannot include the torch tensor layer at all -- instantiates with
 // tmol::portable::MetalView.
 
-#include <tmol/backends/metal/score/common/mps_layout.hh>
 #include <tmol/utility/portable/device.hh>
 #include <tmol/utility/portable/matrix.hh>
 

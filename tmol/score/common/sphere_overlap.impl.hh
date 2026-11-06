@@ -19,6 +19,7 @@
 #include <tmol/score/common/sphere_overlap_dispatch.hh>
 #include <tmol/score/common/sphere_overlap_preparation.hh>
 #include <tmol/score/common/sphere_overlap_kernels.hh>
+#include <tmol/score/common/rotamer_dispatch.hh>
 #include <tmol/score/common/tview_binder.hh>
 #include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
@@ -74,8 +75,6 @@ struct compute_rot_spheres {
       TView<Int, 1, D> block_type_ind_for_rot,
       TView<Int, 1, D> block_type_n_atoms,
       TView<Real, 2, D> rot_spheres) {
-    LAUNCH_BOX_32;
-
     // One context, three backends: the generic launch captures it in a device
     // lambda, the Metal launch binds its views as buffers, and both reach the
     // same body in sphere_overlap_kernels.hh.
@@ -98,12 +97,7 @@ struct compute_rot_spheres {
           rot_coord_offset.size(0),
           true);
     } else {
-      auto compute_spheres = ([=] TMOL_DEVICE_FUNC(int cta) {
-        compute_rot_spheres_body<DeviceDispatch, D, Real, Int, launch_t>(
-            ctx, cta);
-      });
-      DeviceDispatch<D>::template foreach_independent_workgroup<launch_t>(
-          mgr, rot_coord_offset.size(0), compute_spheres);
+      launch_rotamer_spheres<DeviceDispatch, D, Real, Int>(mgr, ctx);
     }
   }
 };
@@ -625,8 +619,6 @@ struct compute_block_spheres_from_rot_spheres {
       TView<Int, 2, D> rot_offset_for_block,  // [n_poses, max_n_blocks] global
       TView<Real, 3, D> block_spheres         // [n_poses, max_n_blocks, 4] out
   ) {
-    LAUNCH_BOX_32;
-
     int const n_poses = n_rots_for_block.size(0);
     int const max_n_blocks = n_rots_for_block.size(1);
     int const n_pose_blocks = common::checked_dispatch_product(
@@ -651,11 +643,8 @@ struct compute_block_spheres_from_rot_spheres {
           n_pose_blocks,
           false);
     } else {
-      auto compute = ([=] TMOL_DEVICE_FUNC(int ind) {
-        compute_block_spheres_from_rot_body<D, Real, Int>(ctx, ind);
-      });
-      DeviceDispatch<D>::template forall_independent<launch_t>(
-          mgr, n_pose_blocks, compute);
+      launch_blocks_from_rotamer_spheres<DeviceDispatch, D, Real, Int>(
+          mgr, ctx);
     }
   }
 };
@@ -717,25 +706,12 @@ struct rot_neighbor_indices_from_block_neighbors {
       Real reach,
       int64_t candidate_begin = 0,
       int64_t candidate_count = -1) -> TPack<Int, 2, D> {
-    LAUNCH_BOX_32;
-
     int const n_poses = pose_stack_block_type.size(0);
     int const max_n_blocks = pose_stack_block_type.size(1);
-    int const block_pairs_per_pose = common::checked_triangular_size(
-        max_n_blocks, true, "rotamer block-pair dispatch candidates per pose");
-    int const total_candidates = common::checked_dispatch_product(
-        n_poses,
-        block_pairs_per_pose,
-        "rotamer block-pair dispatch candidates");
-    if (candidate_count < 0) {
-      candidate_count = int64_t(total_candidates) - candidate_begin;
-    }
-    if (candidate_begin < 0 || candidate_count < 0
-        || candidate_begin + candidate_count > total_candidates) {
-      throw std::out_of_range("rotamer block-pair dispatch window is invalid");
-    }
-    int const n_candidates = common::checked_dispatch_size(
-        candidate_count, "rotamer block-pair dispatch window");
+    auto const window = rotamer_pair_window(
+        n_poses, max_n_blocks, candidate_begin, candidate_count);
+    int const block_pairs_per_pose = window.block_pairs_per_pose;
+    int const n_candidates = window.n_candidates;
     if (n_candidates == 0) {
       return TPack<Int, 2, D>::empty({3, 0});
     }
@@ -778,11 +754,7 @@ struct rot_neighbor_indices_from_block_neighbors {
           n_candidates,
           false);
     } else {
-      auto compute_counts = ([=] TMOL_DEVICE_FUNC(int candidate) {
-        rot_pair_counts_body<D, Real, Int>(ctx, candidate);
-      });
-      DeviceDispatch<D>::template forall_independent<launch_t>(
-          mgr, n_candidates, compute_counts);
+      launch_rotamer_pair_counts<DeviceDispatch, D, Real, Int>(mgr, ctx);
     }
 
     // Step 2: check an int64 reduction before scanning int32 offsets. This
@@ -817,11 +789,7 @@ struct rot_neighbor_indices_from_block_neighbors {
           n_candidates,
           false);
     } else {
-      auto fill = ([=] TMOL_DEVICE_FUNC(int candidate) {
-        rot_pair_fill_body<D, Real, Int>(ctx, candidate);
-      });
-      DeviceDispatch<D>::template forall_independent<launch_t>(
-          mgr, n_candidates, fill);
+      launch_rotamer_pair_fill<DeviceDispatch, D, Real, Int>(mgr, ctx);
     }
 
     return indices_t;

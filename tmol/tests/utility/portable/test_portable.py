@@ -328,3 +328,10 @@ def test_native_graph_retention_without_torch(tmp_path):
         HERE / "native_graph_retention.cc", tmp_path / "graph_retention", run=True
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_native_rotamer_dispatch_without_torch(tmp_path):
+    proc = _compile(
+        HERE / "native_rotamer_dispatch.cc", tmp_path / "rotamer_dispatch", run=True
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
