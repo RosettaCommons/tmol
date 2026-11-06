@@ -96,6 +96,10 @@ an explicit database path still creates fresh chemistry. The bounded weak-owner
 cache is framework neutral, while the Torch adapter retains CUDA stream readiness.
 These host policies import neither framework.
 
+Score indices and per-term output lanes are defined in
+`tmol_core.scoring.channels`. Frontend enums retain their existing types and
+serialization paths; native output order is distinct from global score indices.
+
 The core installs its structure chemistry dependencies without either framework.
 The optional `tmol-core[ligand]` extra adds OpenBabel for ligand preparation paths
 that require its charge models or protonation fallback.

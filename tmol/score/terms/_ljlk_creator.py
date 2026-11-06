@@ -1,5 +1,5 @@
 from tmol.score.terms._term_creator import TermCreator, _score_term_creator
-from tmol.score._score_types import ScoreType
+from tmol.score._score_types import _score_types_for_term
 from tmol.database import ParameterDatabase
 import torch
 
@@ -8,7 +8,7 @@ import torch
 class LJLKTermCreator(TermCreator):
     """Create the Lennard-Jones and Lazaridis-Karplus energy term."""
 
-    _score_types = [ScoreType.fa_ljatr, ScoreType.fa_ljrep, ScoreType.fa_lk]
+    _score_types = _score_types_for_term("ljlk")
 
     @classmethod
     def create_term(cls, param_db: ParameterDatabase, device: torch.device):

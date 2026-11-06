@@ -1,5 +1,5 @@
 from tmol.score.terms._term_creator import TermCreator, _score_term_creator
-from tmol.score._score_types import ScoreType
+from tmol.score._score_types import _score_types_for_term
 from tmol.database import ParameterDatabase
 import torch
 
@@ -8,7 +8,7 @@ import torch
 class MetalCoordinationTermCreator(TermCreator):
     """Create the metal coordination term."""
 
-    _score_types = [ScoreType.metal_coordination]
+    _score_types = _score_types_for_term("metal")
 
     @classmethod
     def create_term(cls, param_db: ParameterDatabase, device: torch.device):
