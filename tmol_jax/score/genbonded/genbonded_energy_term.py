@@ -13,7 +13,7 @@ class GenBondedEnergyTerm(EnergyTerm):
     def score_types_provided(self):
         return [ScoreType.gen_torsions]
 
-    def setup_for_pose_stack(self, pose_stack, pbt=None):
+    def setup_for_pose_stack(self, pose_stack, pbt=None, *, include_empty=False):
         pbt = pose_stack.packed_block_types if pbt is None else pbt
         prep = GenBondedPreparation(
             self.param_db.chemical, self.param_db.scoring.genbonded
@@ -21,7 +21,7 @@ class GenBondedEnergyTerm(EnergyTerm):
         types = pbt.active_block_types
         blocks = [prep.prepare_block(bt) for bt in types]
         # Decide interaction ownership from the common parameters, not names.
-        if all(
+        if not include_empty and all(
             atom.atom_type in prep.gen_database.rosetta_typed
             for bt in types
             for atom in bt.atoms

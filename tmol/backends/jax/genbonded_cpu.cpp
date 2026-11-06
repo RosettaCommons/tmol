@@ -20,6 +20,7 @@
 #include "rotamer_nonbonded_ffi.hh"
 #include "graph_prefix_ffi.hh"
 #include "load_balance_ffi.hh"
+#include "rotamer_genbonded_ffi.hh"
 #include "annealer_ffi.hh"
 #include "forward_kinematics_ffi.hh"
 #include <tmol/score/common/serial_cpu_operations.hh>
@@ -783,3 +784,26 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<int64_t>("operation")
         .Attr<int64_t>("extent")
         .Attr<int64_t>("width"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_connected_rotamer_dispatch,
+    tmol::jax::run_graph_stage<tmol::jax::ConnectedRotamerStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_rotamer_genbonded,
+    (tmol::jax::run_graph_stage<tmol::jax::RotamerGenBondedStage, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width")
+        .Attr<double>("reach"));

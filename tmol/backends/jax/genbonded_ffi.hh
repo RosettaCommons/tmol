@@ -5,6 +5,7 @@
 #include <limits>
 #include <stdexcept>
 #include <vector>
+#include <tuple>
 #include "xla/ffi/api/ffi.h"
 #include <tmol/score/genbonded/potentials/genbonded_pose_kernels.hh>
 
@@ -49,6 +50,46 @@ TView<T, Rank, D> buffer_view(ffi::AnyBuffer buffer) {
   return contiguous_view<T, Rank, D>(buffer.untyped_data(), sizes);
 }
 
+inline void validate_genbonded_tables(
+    const std::vector<ffi::AnyBuffer>& a, ffi::DataType real, int64_t ports) {
+  auto integer = ffi::DataType::S32;
+  require_shape(a[7], integer, {-1});
+  auto types = a[7].dimensions()[0];
+  require_shape(a[5], integer, {types, ports, 13, 3});
+  require_shape(a[6], integer, {-1, 5});
+  require_shape(a[8], real, {a[6].dimensions()[0], 5});
+  require_shape(a[9], integer, {types, -1, 5});
+  auto atoms = a[9].dimensions()[1];
+  require_shape(a[10], integer, {types, atoms});
+  require_shape(a[11], integer, {types, ports, a[5].dimensions()[2] + 1});
+  require_shape(a[12], integer, {types, ports});
+  require_shape(a[13], integer, {types, atoms});
+  require_shape(a[14], integer, {types});
+  require_shape(a[15], integer, {-1, 6});
+  require_shape(a[16], real, {-1, 5});
+  require_shape(a[17], integer, {-1, 5});
+  require_shape(a[18], real, {-1, 5});
+}
+template <Device D, typename Real>
+auto genbonded_tables(const std::vector<ffi::AnyBuffer>& a) {
+  using I = int32_t;
+  return std::make_tuple(
+      buffer_view<Vec<I, 3>, 3, D>(a[5]),
+      buffer_view<Vec<I, 5>, 1, D>(a[6]),
+      buffer_view<I, 1, D>(a[7]),
+      buffer_view<Vec<Real, 5>, 1, D>(a[8]),
+      buffer_view<Vec<I, 5>, 2, D>(a[9]),
+      buffer_view<I, 2, D>(a[10]),
+      buffer_view<I, 3, D>(a[11]),
+      buffer_view<I, 2, D>(a[12]),
+      buffer_view<I, 2, D>(a[13]),
+      buffer_view<I, 1, D>(a[14]),
+      buffer_view<Vec<I, 6>, 1, D>(a[15]),
+      buffer_view<Vec<Real, 5>, 1, D>(a[16]),
+      buffer_view<Vec<I, 5>, 1, D>(a[17]),
+      buffer_view<Vec<Real, 5>, 1, D>(a[18]));
+}
+
 // All topology buffers are prepared and validated on the host before tracing.
 // Validate their dimensions again at the ABI boundary before creating views.
 inline void validate_genbonded(
@@ -71,22 +112,7 @@ inline void validate_genbonded(
   require_shape(a[2], integer, {poses, blocks});
   require_shape(a[4], integer, {poses, blocks, -1, 2});
   auto ports = a[4].dimensions()[2];
-  require_shape(a[7], integer, {-1});
-  auto types = a[7].dimensions()[0];
-  require_shape(a[5], integer, {types, ports, 13, 3});
-  require_shape(a[6], integer, {-1, 5});
-  require_shape(a[8], real, {a[6].dimensions()[0], 5});
-  require_shape(a[9], integer, {types, -1, 5});
-  auto atoms = a[9].dimensions()[1];
-  require_shape(a[10], integer, {types, atoms});
-  require_shape(a[11], integer, {types, ports, a[5].dimensions()[2] + 1});
-  require_shape(a[12], integer, {types, ports});
-  require_shape(a[13], integer, {types, atoms});
-  require_shape(a[14], integer, {types});
-  require_shape(a[15], integer, {-1, 6});
-  require_shape(a[16], real, {-1, 5});
-  require_shape(a[17], integer, {-1, 5});
-  require_shape(a[18], real, {-1, 5});
+  validate_genbonded_tables(a, real, ports);
   require_shape(energy, real, {poses});
   if (gradient) {
     require_shape(*gradient, real, {poses, a[0].dimensions()[1], 3});
@@ -110,31 +136,22 @@ void execute_genbonded(
       gradient ? gradient->untyped_data() : nullptr,
       {1, gradient ? poses * atoms : 0});
   ContextManager context;
-  score::genbonded::potentials::genbonded_pose_forward<Ops, D, Real, I>(
-      context,
-      xyz,
-      buffer_view<I, 1, D>(a[1]),
-      buffer_view<I, 2, D>(a[2]),
-      buffer_view<I, 2, D>(a[3]),
-      buffer_view<Vec<I, 2>, 3, D>(a[4]),
-      buffer_view<Vec<I, 3>, 3, D>(a[5]),
-      buffer_view<Vec<I, 5>, 1, D>(a[6]),
-      buffer_view<I, 1, D>(a[7]),
-      buffer_view<Vec<Real, 5>, 1, D>(a[8]),
-      buffer_view<Vec<I, 5>, 2, D>(a[9]),
-      buffer_view<I, 2, D>(a[10]),
-      buffer_view<I, 3, D>(a[11]),
-      buffer_view<I, 2, D>(a[12]),
-      buffer_view<I, 2, D>(a[13]),
-      buffer_view<I, 1, D>(a[14]),
-      buffer_view<Vec<I, 6>, 1, D>(a[15]),
-      buffer_view<Vec<Real, 5>, 1, D>(a[16]),
-      buffer_view<Vec<I, 5>, 1, D>(a[17]),
-      buffer_view<Vec<Real, 5>, 1, D>(a[18]),
-      false,
-      gradient != nullptr,
-      e,
-      g);
+  std::apply(
+      [&](auto... tables) {
+        score::genbonded::potentials::genbonded_pose_forward<Ops, D, Real, I>(
+            context,
+            xyz,
+            buffer_view<I, 1, D>(a[1]),
+            buffer_view<I, 2, D>(a[2]),
+            buffer_view<I, 2, D>(a[3]),
+            buffer_view<Vec<I, 2>, 3, D>(a[4]),
+            tables...,
+            false,
+            gradient != nullptr,
+            e,
+            g);
+      },
+      genbonded_tables<D, Real>(a));
 }
 
 inline std::vector<ffi::AnyBuffer> native_arguments(ffi::RemainingArgs args) {

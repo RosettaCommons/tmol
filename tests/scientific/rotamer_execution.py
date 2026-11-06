@@ -39,13 +39,15 @@ class RotamerExecution:
             from tmol_jax.pack.scoring import prepare_rotamer_nonbonded
             from tmol_jax.pack.dunbrack_scoring import prepare_rotamer_dunbrack
             from tmol_jax.pack.lk_ball_scoring import prepare_rotamer_lk_ball
+            from tmol_jax.pack.bonded_scoring import prepare_rotamer_genbonded
 
             with backend.module.default_device(backend.device):
                 arguments = (backend.pose, self.rotamers, backend.parameter_database)
-                if self.family in ("dunbrack", "lk_ball"):
+                if self.family in ("dunbrack", "lk_ball", "genbonded"):
                     prepare = {
                         "dunbrack": prepare_rotamer_dunbrack,
                         "lk_ball": prepare_rotamer_lk_ball,
+                        "genbonded": prepare_rotamer_genbonded,
                     }[self.family]
                     self.state = prepare(*arguments)
                 else:
@@ -58,6 +60,7 @@ class RotamerExecution:
                 ElecEnergyTerm,
                 DunbrackEnergyTerm,
                 LKBallEnergyTerm,
+                GenBondedEnergyTerm,
             )
 
             cls = {
@@ -65,6 +68,7 @@ class RotamerExecution:
                 "ljlk": LJLKEnergyTerm,
                 "dunbrack": DunbrackEnergyTerm,
                 "lk_ball": LKBallEnergyTerm,
+                "genbonded": GenBondedEnergyTerm,
             }[self.family]
             term = cls(param_db=backend.parameter_database, device=backend.device)
             for block in backend.pose.packed_block_types.active_block_types:
@@ -85,6 +89,10 @@ class RotamerExecution:
         x = self.array(coords)
         if self.backend.framework == "torch":
             return self.scorer(x)
+        if self.family == "genbonded":
+            from tmol_jax.pack.bonded_scoring import sparse_genbonded_scores
+
+            return sparse_genbonded_scores(x, self.state)
         if self.family == "dunbrack":
             from tmol_jax.pack.dunbrack_scoring import sparse_dunbrack_scores
 
@@ -120,7 +128,11 @@ class RotamerExecution:
         _, indices = self.scores(coords)
 
         def weighted(x):
-            if self.family == "dunbrack":
+            if self.family == "genbonded":
+                from tmol_jax.pack.bonded_scoring import sparse_genbonded_scores
+
+                values = sparse_genbonded_scores(x, self.state)[0]
+            elif self.family == "dunbrack":
                 from tmol_jax.pack.dunbrack_scoring import sparse_dunbrack_scores
 
                 values = sparse_dunbrack_scores(x, self.state)[0]

@@ -5,24 +5,29 @@ from contextlib import nullcontext
 import numpy as np
 import pytest
 
-from .molecules import DOMAIN_CASES
+from .molecules import CASES, DOMAIN_CASES
 from .rotamer_execution import RotamerExecution
 
 
 @pytest.mark.parametrize(
-    "case_name",
-    (
-        "ligand",
-        "connected_noncanonical",
-        "d_peptide",
-        "modified_dna",
-        "metal_mixed",
-        "mixed_batch",
-    ),
+    "family,case_name",
+    [
+        (family, name)
+        for family in ("ljlk", "elec", "lk_ball")
+        for name in (
+            "ligand",
+            "connected_noncanonical",
+            "d_peptide",
+            "modified_dna",
+            "metal_mixed",
+            "mixed_batch",
+        )
+    ]
+    + [("genbonded", name) for name in CASES],
 )
-@pytest.mark.parametrize("family", ("ljlk", "elec", "lk_ball"))
 def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, family):
     terms = {
+        "genbonded": ("gen_torsions",),
         "elec": ("fa_elec",),
         "ljlk": ("fa_ljatr", "fa_ljrep", "fa_lk"),
         "lk_ball": ("lk_ball_iso", "lk_ball", "lk_bridge", "lk_bridge_uncpl"),
@@ -65,7 +70,7 @@ def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, 
         np.testing.assert_array_equal(backend.numpy(execution.rotamers.coords), coords)
 
 
-@pytest.mark.parametrize("family", ("ljlk", "lk_ball"))
+@pytest.mark.parametrize("family", ("ljlk", "lk_ball", "genbonded"))
 def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
     import attrs
 
@@ -78,7 +83,11 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
         original = RotamerExecution(backend, family=family)
         coords = backend.numpy(original.rotamers.coords).astype(np.float64)
         first, indices = map(backend.numpy, original.scores(coords))
-        scaled_channels, factor = (2, 4) if family == "ljlk" else (3, 2)
+        scaled_channels, factor = {
+            "ljlk": (2, 4),
+            "lk_ball": (3, 2),
+            "genbonded": (1, 2),
+        }[family]
         weights = np.broadcast_to(
             (np.arange(first.shape[0]) < scaled_channels)[:, None], first.shape
         ).astype(np.float64)
@@ -88,21 +97,41 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
         database = backend.parameter_database
         # Fourfold well depth doubles its float32 square-root table exactly;
         # this keeps the analytic scaling check free of parameter quantization.
-        parameters = tuple(
-            attrs.evolve(
-                p,
-                **(
-                    {"lj_wdepth": 4 * p.lj_wdepth}
-                    if family == "ljlk"
-                    else {"lk_dgfree": 2 * p.lk_dgfree}
+        if family == "genbonded":
+            source = database.scoring.genbonded
+            changed = attrs.evolve(
+                source,
+                torsions=tuple(
+                    attrs.evolve(
+                        p,
+                        **{
+                            k: 2 * getattr(p, k)
+                            for k in ("k1", "k2", "k3", "k4", "offset")
+                        },
+                    )
+                    for p in source.torsions
                 ),
+                impropers=tuple(attrs.evolve(p, k=2 * p.k) for p in source.impropers),
             )
-            for p in database.scoring.ljlk.atom_type_parameters
-        )
-        ljlk = attrs.evolve(database.scoring.ljlk, atom_type_parameters=parameters)
-        modified = attrs.evolve(
-            database, scoring=attrs.evolve(database.scoring, ljlk=ljlk)
-        )
+            modified = attrs.evolve(
+                database, scoring=attrs.evolve(database.scoring, genbonded=changed)
+            )
+        else:
+            parameters = tuple(
+                attrs.evolve(
+                    p,
+                    **(
+                        {"lj_wdepth": 4 * p.lj_wdepth}
+                        if family == "ljlk"
+                        else {"lk_dgfree": 2 * p.lk_dgfree}
+                    ),
+                )
+                for p in database.scoring.ljlk.atom_type_parameters
+            )
+            ljlk = attrs.evolve(database.scoring.ljlk, atom_type_parameters=parameters)
+            modified = attrs.evolve(
+                database, scoring=attrs.evolve(database.scoring, ljlk=ljlk)
+            )
         backend.molecule(case, terms=("ref",), parameter_database=modified)
         changed = RotamerExecution(backend, family=family)
         actual, actual_gradient, actual_indices = changed.value_and_grad(
@@ -138,13 +167,14 @@ def test_sparse_dunbrack_preserves_library_free_conformer_identity(backend):
 
 
 @pytest.mark.parametrize("case_name", ("l_peptide", "mixed_batch"))
-@pytest.mark.parametrize("family", ("ljlk", "elec", "dunbrack", "lk_ball"))
+@pytest.mark.parametrize("family", ("ljlk", "elec", "dunbrack", "lk_ball", "genbonded"))
 def test_sampled_ensemble_selection_conserves_energy_and_forces(
     backend, case_name, family
 ):
     from .dunbrack_molecules import DUNBRACK_CASES
 
     terms = {
+        "genbonded": ("gen_torsions",),
         "elec": ("fa_elec",),
         "ljlk": ("fa_ljatr", "fa_ljrep", "fa_lk"),
         "dunbrack": ("dunbrack_rot", "dunbrack_rotdev", "dunbrack_semirot"),

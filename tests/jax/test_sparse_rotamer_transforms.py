@@ -14,7 +14,7 @@ from tmol_jax.pack.scoring import sparse_nonbonded_values, nonbonded_candidate_p
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
-@pytest.mark.parametrize("family", ("ljlk", "elec", "dunbrack", "lk_ball"))
+@pytest.mark.parametrize("family", ("ljlk", "elec", "dunbrack", "lk_ball", "genbonded"))
 def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
     b = Execution("jax-" + platform)
     with jax.enable_x64(dtype == np.float64):
@@ -24,7 +24,7 @@ def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
         coords = jax.device_put(
             np.asarray(execute.rotamers.coords, dtype=dtype), b.device
         )
-        if family != "dunbrack":
+        if family not in ("dunbrack", "genbonded"):
             indices = nonbonded_candidate_pairs(
                 execute.rotamers,
                 b.pose.packed_block_types,
@@ -34,7 +34,11 @@ def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
         before = np.asarray(coords).copy()
 
         def total(x):
-            if family == "dunbrack":
+            if family == "genbonded":
+                from tmol_jax.pack.bonded_scoring import sparse_genbonded_scores
+
+                values = sparse_genbonded_scores(x, execute.state)[0]
+            elif family == "dunbrack":
                 from tmol_jax.pack.dunbrack_scoring import sparse_dunbrack_scores
 
                 values = sparse_dunbrack_scores(x, execute.state)[0]
