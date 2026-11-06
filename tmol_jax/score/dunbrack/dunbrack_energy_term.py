@@ -36,12 +36,26 @@ class DunbrackEnergyTerm(EnergyTerm):
 
     def setup_for_pose_stack(self, pose_stack, pbt=None):
         pbt = pose_stack.packed_block_types if pbt is None else pbt
-        if not hasattr(self, "_tables"):
-            self._tables = prepare_dunbrack_tables(
+        parameters = self._prepared(
+            "device_parameters",
+            lambda: self._packed_parameters(pbt),
+            *pbt.active_block_types,
+            settings=(pbt.max_n_atoms, pbt.max_n_conn, pbt.n_atoms.device),
+        )
+        if not parameters:
+            return DunbrackTermState(())
+        return DunbrackTermState(
+            tuple(jnp.asarray(a) for a in pose_arguments(pose_stack)) + parameters
+        )
+
+    def _packed_parameters(self, pbt):
+        tables = self._prepared(
+            "tables",
+            lambda: prepare_dunbrack_tables(
                 self.param_db.scoring.dunbrack,
                 lambda tables: [fit_bspline_coefficients(t) for t in tables],
-            )
-        tables = self._tables
+            ),
+        )
         lookup = (
             tables.all_table_indices,
             tables.rotameric_table_indices,
@@ -54,10 +68,9 @@ class DunbrackEnergyTerm(EnergyTerm):
             ]
         )
         if not np.any(blocks["rotamer_table_set"] >= 0):
-            return DunbrackTermState(())
+            return ()
         register("tmol_dunbrack")
         arrays = (
-            *pose_arguments(pose_stack),
             atom_downstream_of_conn(pbt),
             *tables.scoring_db.values(),
             *blocks.values(),
@@ -73,7 +86,7 @@ class DunbrackEnergyTerm(EnergyTerm):
                     raise ValueError("native Dunbrack indices exceed int32")
                 array = array.astype(np.int32)
             parameters.append(jnp.asarray(array))
-        return DunbrackTermState(tuple(parameters))
+        return tuple(parameters)
 
     def __call__(self, pose_stack, term_state, coords_override=None):
         coords = pose_stack.coords if coords_override is None else coords_override
