@@ -136,3 +136,21 @@ def _build_ideal_coords(
     # tree provided in the icoors.
 
     return _build_coords_from_icoors(restype.icoors_ancestors, restype.icoors_geom)
+
+
+def full_ideal_coords(restype) -> dict[str, numpy.ndarray]:
+    icoor_index = {icoor.name: i for i, icoor in enumerate(restype.icoors)}
+    ancestors = numpy.empty((len(restype.icoors), 3), dtype=numpy.int32)
+    geom = numpy.empty((len(restype.icoors), 3), dtype=numpy.float64)
+    for i, icoor in enumerate(restype.icoors):
+        ancestors[i] = (
+            icoor_index[icoor.parent],
+            icoor_index[icoor.grand_parent],
+            icoor_index[icoor.great_grand_parent],
+        )
+        geom[i] = (icoor.phi, icoor.theta, icoor.d)
+    coords = _build_coords_from_icoors(ancestors, geom)
+    return {
+        icoor.name: coords[i].astype(numpy.float64)
+        for i, icoor in enumerate(restype.icoors)
+    }

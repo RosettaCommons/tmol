@@ -15,7 +15,7 @@ from typing import Mapping, Sequence
 import biotite.structure as struc
 import numpy as np
 
-from tmol.chemical._ideal_coords import _build_coords_from_icoors
+from tmol_core.chemical.ideal_coords import full_ideal_coords as _full_ideal_coords
 from tmol.database.chemical import Connection, Icoor, RawResidueType
 from tmol.ligand._icoor_tree import _signed_dihedral_angle, _vertex_angle
 from tmol.ligand._registry import LigandPreparation
@@ -160,24 +160,6 @@ def _bond_type_name(bond: tuple) -> str:
     return {1: "SINGLE", 2: "DOUBLE", 3: "TRIPLE", 4: "AROMATIC"}.get(
         int(value), "SINGLE"
     )
-
-
-def _full_ideal_coords(restype: RawResidueType) -> dict[str, np.ndarray]:
-    icoor_index = {icoor.name: i for i, icoor in enumerate(restype.icoors)}
-    ancestors = np.empty((len(restype.icoors), 3), dtype=np.int32)
-    geom = np.empty((len(restype.icoors), 3), dtype=np.float64)
-    for i, icoor in enumerate(restype.icoors):
-        ancestors[i] = (
-            icoor_index[icoor.parent],
-            icoor_index[icoor.grand_parent],
-            icoor_index[icoor.great_grand_parent],
-        )
-        geom[i] = (icoor.phi, icoor.theta, icoor.d)
-    coords = _build_coords_from_icoors(ancestors, geom)
-    return {
-        icoor.name: coords[i].astype(np.float64)
-        for i, icoor in enumerate(restype.icoors)
-    }
 
 
 def _angle(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
