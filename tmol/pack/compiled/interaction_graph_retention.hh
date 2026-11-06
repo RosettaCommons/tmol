@@ -5,7 +5,7 @@
 // without bump checking); fixed-block assignments start at -1. Prefix maps
 // are exclusive scans performed by the adapter between stages. Counts and
 // offsets start at zero, including padding and leading/trailing empty poses.
-// The mature strict 5 kcal/mol threshold is preserved here.
+// Reject a clash only when its block has a strictly favorable alternative.
 #include <tmol/score/common/counting.hh>
 #include <tmol/score/common/diamond_macros.hh>
 #include <tmol/score/common/launch_box_macros.hh>
@@ -39,7 +39,7 @@ void launch_ig_keep_rotamers(
     int const pose = pose_for_rot[rot];
     auto energy_for_rot = best_energy_for_rot[rot];
     auto best_energy_for_block = best_energy_per_block[pose][block];
-    if (energy_for_rot < 5.0 || best_energy_for_block > 5.0) {
+    if (energy_for_rot <= 5.0 || best_energy_for_block >= 5.0) {
       keep_rotamer[rot] = 1;
     }
   });
