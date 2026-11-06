@@ -16,6 +16,8 @@
 #include "constraint_torsion_ffi.hh"
 #include "kinematics_ffi.hh"
 #include "conformer_ffi.hh"
+#include "graph_topology_ffi.hh"
+#include "graph_prefix_ffi.hh"
 #include "forward_kinematics_ffi.hh"
 #include "sampling_ffi.hh"
 
@@ -36,6 +38,30 @@ template <Device D>
 struct CudaOps;
 template <>
 struct CudaOps<Device::CUDA> {
+  template <portable::scan_type Scan, typename T, typename I, typename Op>
+  static void segmented_scan_into(
+      ContextManager&,
+      T* source,
+      I* starts,
+      T* destination,
+      int count,
+      int segments,
+      Op op,
+      T identity,
+      score::common::SegmentedScanWorkspace<T, Device::CUDA> workspace) {
+    KinematicStream context(active_stream);
+    score::common::segmented_scan_into_cuda<Scan>(
+        context,
+        source,
+        starts,
+        destination,
+        count,
+        segments,
+        op,
+        identity,
+        workspace);
+  }
+
   template <typename Launch, typename F>
   static void foreach_pose_workgroup(
       ContextManager&, int poses, int groups, F f) {
@@ -341,6 +367,35 @@ ffi::Error run(
     return ffi::Error::Internal(error.what());
   }
 }
+ffi::Error run_graph_topology(
+    cudaStream_t stream,
+    ffi::RemainingArgs args,
+    ffi::RemainingRets rets,
+    int64_t operation,
+    int64_t chunk_size) {
+  auto previous = active_stream;
+  try {
+    auto inputs = native_arguments(args);
+    auto outputs = native_results(rets);
+    validate_graph_topology(inputs, outputs, operation, chunk_size);
+    if (operation != 6) {
+      int fill = operation == 0 ? 255 : 0;
+      for (auto result : outputs)
+        if (result.size_bytes())
+          check_cuda(cudaMemsetAsync(
+              result.untyped_data(), fill, result.size_bytes(), stream));
+    }
+    active_stream = stream;
+    execute_graph_topology<CudaOps, Device::CUDA>(
+        inputs, outputs, operation, chunk_size);
+    active_stream = previous;
+    check_cuda(cudaPeekAtLastError());
+    return ffi::Error::Success();
+  } catch (const std::exception& error) {
+    active_stream = previous;
+    return ffi::Error::InvalidArgument(error.what());
+  }
+}
 }  // namespace
 }  // namespace tmol::jax
 
@@ -611,6 +666,27 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_correct_conformer_chi,
     tmol::jax::run<tmol::jax::CorrectConformerChiKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets(),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_graph_topology,
+    tmol::jax::run_graph_topology,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("chunk_size"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_graph_prefix,
+    tmol::jax::run<tmol::jax::GraphPrefixKernel>,
     xla::ffi::Ffi::Bind()
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()

@@ -14,7 +14,11 @@
 #include "constraint_torsion_ffi.hh"
 #include "kinematics_ffi.hh"
 #include "conformer_ffi.hh"
+#include "graph_topology_ffi.hh"
+#include "graph_prefix_ffi.hh"
+#include "annealer_ffi.hh"
 #include "forward_kinematics_ffi.hh"
+#include <tmol/score/common/serial_cpu_operations.hh>
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
@@ -27,7 +31,7 @@ thread_local ffi::ThreadPool* active_pool = nullptr;
 template <Device D>
 struct CpuOps;
 template <>
-struct CpuOps<Device::CPU> {
+struct CpuOps<Device::CPU> : score::common::SerialCPUOperations {
   template <typename Launch, typename F>
   static void foreach_pose_workgroup(
       ContextManager&, int poses, int groups, F f) {
@@ -161,6 +165,34 @@ ffi::Error run(
           buffers, *energy, outputs, attributes...);
     }
     active_pool = previous;
+    return ffi::Error::Success();
+  } catch (const std::exception& error) {
+    active_pool = previous;
+    return ffi::Error::InvalidArgument(error.what());
+  }
+}
+ffi::Error run_graph_topology(
+    ffi::ThreadPool pool,
+    ffi::RemainingArgs args,
+    ffi::RemainingRets rets,
+    int64_t operation,
+    int64_t chunk_size) {
+  auto previous = active_pool;
+  try {
+    auto inputs = native_arguments(args);
+    auto outputs = native_results(rets);
+    validate_graph_topology(inputs, outputs, operation, chunk_size);
+    if (operation != 6) {
+      int fill = operation == 0 ? 255 : 0;
+      for (auto result : outputs)
+        if (result.size_bytes())
+          std::memset(result.untyped_data(), fill, result.size_bytes());
+    }
+    active_pool = &pool;
+    execute_graph_topology<CpuOps, Device::CPU>(
+        inputs, outputs, operation, chunk_size);
+    active_pool = previous;
+
     return ffi::Error::Success();
   } catch (const std::exception& error) {
     active_pool = previous;
@@ -588,6 +620,46 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_correct_conformer_chi,
     tmol::jax::run<tmol::jax::CorrectConformerChiKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets());
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_anneal_cpu,
+    tmol::jax::anneal_cpu,
+    xla::ffi::Ffi::Bind()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("chunk_size")
+        .Attr<int64_t>("seed"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_graph_topology,
+    tmol::jax::run_graph_topology,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("chunk_size"));
+
+extern "C" uint64_t tmol_graph_prefix_workspace_bytes(
+    int64_t count, int bits, int) {
+  try {
+    if (count < 0 || count >= INT32_MAX || bits != 64)
+      throw std::invalid_argument("invalid graph prefix workspace dimensions");
+    return tmol::jax::GraphPrefixWorkspace<tmol::Device::CPU>(count)
+        .storage.size_bytes();
+  } catch (...) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_graph_prefix,
+    tmol::jax::run<tmol::jax::GraphPrefixKernel>,
     xla::ffi::Ffi::Bind()
         .Ctx<xla::ffi::ThreadPool>()
         .RemainingArgs()
