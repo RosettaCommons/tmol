@@ -525,3 +525,26 @@ def test_cuda_annealer_sparse_transposes_have_exact_minimum(
         )
         expected.append(energy)
     assert torch.equal(scores, scores.new_tensor(expected)[:, None].expand_as(scores))
+
+
+@pytest.mark.parametrize("energies", [[5.0, 5.0], [5.0, 6.0], [4.0, 5.0]])
+def test_bump_threshold_retains_available_conformers(torch_device, energies):
+    # Bump rejection requires BOTH a strictly unfavorable candidate and a
+    # strictly favorable alternative. Equality must not delete the residue.
+    metadata = graph_metadata([[2]], torch_device)
+    indices = torch.tensor(
+        [[0, 0], [0, 1], [0, 1]], dtype=torch.int32, device=torch_device
+    )
+    graph = _build_interaction_graph(
+        True,
+        32,
+        1,
+        *metadata,
+        indices,
+        torch.tensor(energies, dtype=torch.float32, device=torch_device),
+        -1,
+        False,
+    )
+    assert graph[8].tolist() == [0, 1]
+    assert graph[4].tolist() == [[2]]
+    torch.testing.assert_close(graph[10], torch.tensor(energies, device=torch_device))
