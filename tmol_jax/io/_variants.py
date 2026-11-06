@@ -15,6 +15,7 @@ from tmol_core.io.metal_detection import (
 )
 from tmol_core.io.protonation import (
     prepare_protonation_plan,
+    protonation_is_identity,
     required_donor_rows,
     neutral_terminus_patches,
 )
@@ -25,8 +26,7 @@ from ._metal import grow_palette
 logger = logging.getLogger(__name__)
 
 
-def _protonation_arrays(pbt, co, types):
-    plan = prepare_protonation_plan(co, pbt.chem_db, types)
+def _protonation_arrays(pbt, plan):
     cached = getattr(pbt, "_protonation_execution", None)
     device = pbt.n_atoms.device
     if cached is None or cached[0] is not plan or cached[1] != device:
@@ -84,23 +84,26 @@ def resolve_input_variants(co, pbt, cf, types, coords, present, bonds):
             present,
             atoms,
         )
-    variants, unresolved = run(
-        _native.canonical_protonation,
-        types,
-        variants,
-        present,
-        _protonation_arrays(pbt, co, types),
-        _wide(bonds),
-        _wide(required_donor_rows(assignments)),
-    )
-    if np.any(np.asarray(unresolved)):
-        message = (
-            "no chemical form can satisfy requested metal donors at "
-            f"{np.argwhere(np.asarray(unresolved)).tolist()}"
+    plan = prepare_protonation_plan(co, pbt.chem_db, types)
+    required_rows = required_donor_rows(assignments)
+    if not protonation_is_identity(plan, types, variants, present, required_rows):
+        variants, unresolved = run(
+            _native.canonical_protonation,
+            types,
+            variants,
+            present,
+            _protonation_arrays(pbt, plan),
+            _wide(bonds),
+            _wide(required_rows),
         )
-        if cf.get("require_all_metal_donors", False):
-            raise ValueError(message)
-        logger.warning(message)
+        if np.any(np.asarray(unresolved)):
+            message = (
+                "no chemical form can satisfy requested metal donors at "
+                f"{np.argwhere(np.asarray(unresolved)).tolist()}"
+            )
+            if cf.get("require_all_metal_donors", False):
+                raise ValueError(message)
+            logger.warning(message)
     explicit = cf.get("protonation_variants")
     if explicit is not None:
         explicit = np.asarray(explicit, np.int32).copy()
