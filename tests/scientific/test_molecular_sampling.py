@@ -149,6 +149,32 @@ def test_custom_libraryless_chi_preserves_parameter_context_and_unsampled_atoms(
                 # it has no defining atom and is not a frozen sampled torsion.
                 np.testing.assert_array_equal(atoms[choices == row, 0], -1)
 
+        # Changing a custom database must change reconstructed coordinates,
+        # preserving each requested torsion and the untouched upstream chi.
+        from .test_conformer_coordinates import coordinate_dihedral
+
+        if backend.framework == "jax":
+            from tmol_jax.pack.rotamers import build_rotamers
+        else:
+            from tmol.pack import build_rotamers
+        _, rotamers = build_rotamers(backend.pose, fixed, database.chemical)
+        xyz = backend.numpy(rotamers.coords)
+        offsets = backend.numpy(rotamers.coord_offset_for_rot)
+        block = backend.pose.packed_block_types.active_block_types[0]
+        for i, row in enumerate(choices):
+            indices = np.asarray(block.torsion_to_uaids[f"chi{2 if gapped else 1}"])[
+                :, 0
+            ]
+            measured = coordinate_dihedral(xyz[offsets[i] + indices])
+            error = measured - chi[i, int(gapped)]
+            assert abs(np.arctan2(np.sin(error), np.cos(error))) < 2e-5
+            if gapped:
+                indices = np.asarray(block.torsion_to_uaids["chi1"])[:, 0]
+                measured = coordinate_dihedral(xyz[offsets[i] + indices])
+                expected = coordinate_dihedral(backend.coords()[row, indices])
+                error = measured - expected
+                assert abs(np.arctan2(np.sin(error), np.cos(error))) < 2e-5
+
 
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
 def test_task_budget_freezes_distal_chi_at_the_input_conformation(backend, dtype):

@@ -179,7 +179,21 @@ and an input-coordinate copy marker. Register either sampler explicitly.
 Fallback accepts `built_rotamer_counts=counts` aggregated from earlier samplers;
 it retains fixed residues and fills uncovered positions. Coverage includes all
 identities at a position, so a sampled design choice does not reintroduce the
-original identity. These selectors do not yet assemble rotamer coordinates.
+original identity. `build_rotamers(pose, task, parameter_database.chemical)` assembles their coordinates
+and sampled Dunbrack/explicit amino-acid chi using common native kernels. It returns
+`(pose, rotamer_set)` with atom, residue and pose identities. Register
+`FallbackSampler()` explicitly to preserve fixed and uncovered residues. Input
+conformers are copied exactly; sampled coordinates preserve retained atoms and
+requested adjustable torsions. Custom chemical databases remain attached to the
+pose's packed types.
+
+Assembly is eager because sampling determines output sizes; it does not support
+`jit`, `vmap` or coordinate differentiation through sampling/initialization. The
+native DOF operations support `jit` and `vmap`. A concrete `SetPackerTask` reuses
+validated topology plans while recomputing coordinates. Interaction graphs,
+annealing, mutation/design execution, optH/conjugated samplers and FastRelax are
+still unfinished. Float64 JAX assembly preserves dtype; this does not establish
+float64 support for Torch's complete packing pipeline.
 
 For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
 a batch of `ResidueBlock(residue_type, atom_names, coords)` records and explicit
