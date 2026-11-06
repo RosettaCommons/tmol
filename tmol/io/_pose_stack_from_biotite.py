@@ -1,5 +1,5 @@
 import copy
-from collections import defaultdict
+from collections import defaultdict  # noqa: F401
 from typing import TYPE_CHECKING
 
 import attr
@@ -11,7 +11,7 @@ import biotite.structure
 import logging
 import warnings
 
-from tmol_core.io.atom_array import (
+from tmol_core.io.atom_array import (  # noqa: F401
     METAL_ORIGIN,
     template_array as _template_array,
     is_metal as _is_metal,
@@ -26,20 +26,22 @@ from tmol.chemical import ResidueTypeSet
 from tmol.chemical._restypes import BondType as ChemBondType
 from tmol.chemical._bond_orders import _chemical_bond_orders
 from tmol.database import ParameterDatabase
-from tmol.database.chemical import _metal_table, _site_connections
-from tmol.io._atomworks_reader import (
+from tmol.database.chemical import _metal_table, _site_connections  # noqa: F401
+from tmol.io._atomworks_reader import (  # noqa: F401
     INFERRED_POLYMER_BOND,
     _renumbered_decreasing_chains,
 )
 from tmol.io._input_geometry import _rebuild_coincident_hydrogens
-from tmol.io.details._select_from_canonical import _validate_ligand_hydrogens
-from tmol.io._input_termini import (
+from tmol.io.details._select_from_canonical import (  # noqa: F401
+    _validate_ligand_hydrogens,
+)  # noqa: F401
+from tmol.io._input_termini import (  # noqa: F401
     EXPLICIT_TERMINI,
     _validate_connection_hydrogens,
     _with_stated_termini,
 )
 from tmol.io._canonical_ordering import _only_coordinates_a_metal, CanonicalOrdering
-from tmol.io._protonation import (
+from tmol.io._protonation import (  # noqa: F401
     PROTONATION_VARIANT,
     _database_forms,
     _residues_lacking_hydrogens,
@@ -53,6 +55,8 @@ from tmol.pose._pose_stack import PoseStack
 from tmol.pose._pdb_info import DEFAULT_ATOM_B_FACTOR, DEFAULT_ATOM_OCCUPANCY
 from tmol.utility._biotite_util import _get_all_residue_positions
 from tmol.utility import resolve_device
+
+from tmol_core.io import structure_context as _structure_context
 
 logger = logging.getLogger(__name__)
 
@@ -558,87 +562,45 @@ def build_context_from_atom_array(
         types, parameter database, and residue type set.
     """
     torch_device = resolve_device(torch_device)
-    _validate_ligand_hydrogens(ligand_hydrogens)
-    # aliased names are resolved before ligand detection, or the residue the
-    #    alias points at would be prepared as a nonstandard one
-    if ligand_params_files and not prepare_ligands:
-        from tmol.ligand import inject_params_files
 
-        param_db = inject_params_files(
-            param_db or ParameterDatabase.get_default(),
-            ligand_params_files,
-            strict_atom_types=strict_atom_types,
-        )
-    chemdb = (param_db or ParameterDatabase.get_default()).chemical
-    biotite_structure = _normalize_input_identifiers(
+    def _prepare_ligands(*args, **kwargs):
+        from tmol.ligand import prepare_ligands as prepare
+
+        return prepare(*args, **kwargs)
+
+    prepared = _structure_context.prepare_structure_context(
         biotite_structure,
-        {alias.name3: alias.read_as for alias in chemdb.name3_aliases},
+        parameter_database=param_db,
+        default_database=ParameterDatabase.get_default,
+        prepare_ligands=prepare_ligands,
+        ligand_ph=ligand_ph,
+        strict_atom_types=strict_atom_types,
+        strict_ligands=strict_ligands,
+        ligand_params_files=ligand_params_files,
+        chem_comp_types=chem_comp_types,
+        ligand_seed=ligand_seed,
+        ligand_hydrogens=ligand_hydrogens,
+        input_hydrogens=_with_input_hydrogens,
+        ligand_preparer=_prepare_ligands,
     )
-    biotite_structure = _with_input_chemistry_normalized(
-        biotite_structure, _metal_atom_names(chemdb=chemdb)
-    )
+    if prepared.use_default_context:
+        return _default_pose_build_context_for(prepared.structure, torch_device)
+    db = prepared.parameter_database
     if prepare_ligands:
-        biotite_structure = _with_input_hydrogens(
-            biotite_structure, ligand_ph, None, chemdb, True
-        )
-    biotite_structure, coordinating_atoms = _without_metal_coordination_bonds(
-        biotite_structure
-    )
-    if prepare_ligands:
-        from tmol.ligand import prepare_ligands as _prepare_ligands
-
-        using_default_database = param_db is None
-        if param_db is None:
-            param_db = ParameterDatabase.get_default()
-
-        # Take the names preparation cut a covalent bond to. A ligand skipped
-        # under strict_ligands=False loses its bonds there, and building the
-        # pose from the original graph would reject the dangling partner the
-        # caller was told would simply be dropped.
-        param_db, co, fragment_definitions, cut_partners = _prepare_ligands(
-            biotite_structure,
-            param_db=param_db,
-            ph=ligand_ph,
-            strict_atom_types=strict_atom_types,
-            params_files=ligand_params_files,
-            strict_ligands=strict_ligands,
-            return_fragment_definitions=True,
-            return_cut_partners=True,
-            chem_comp_types=chem_comp_types,
-            seed=ligand_seed,
-            coordinating_atoms=coordinating_atoms,
-            input_hydrogen_names=ligand_hydrogens != "rebuild",
-        )
-        if (
-            using_default_database
-            and param_db is _paramdb_for_biotite()
-            and not fragment_definitions
-        ):
-            return _default_pose_build_context_for(biotite_structure, torch_device)
-
-        rts = _restype_set_sharing_default(param_db.chemical)
+        co = prepared.canonical_ordering
+        rts = _restype_set_sharing_default(db.chemical)
         pbt = PackedBlockTypes.from_restype_list(
             rts.chem_db, rts, rts.residue_types, torch_device
         )
-        return PoseBuildContext(
-            cut_covalent_partners=cut_partners,
-            canonical_ordering=co,
-            packed_block_types=pbt,
-            parameter_database=param_db,
-            restype_set=rts,
-            fragment_definitions=fragment_definitions,
-        )
-
-    if param_db is None:
-        return _default_pose_build_context_for(biotite_structure, torch_device)
-
-    db = param_db
-    co, rts, pbt = _derived_types_for_param_db(db, torch_device)
+    else:
+        co, rts, pbt = _derived_types_for_param_db(db, torch_device)
     return PoseBuildContext(
         canonical_ordering=co,
         packed_block_types=pbt,
         parameter_database=db,
         restype_set=rts,
+        fragment_definitions=prepared.fragment_definitions,
+        cut_covalent_partners=prepared.cut_covalent_partners,
     )
 
 
@@ -1422,89 +1384,13 @@ def _renumbered_for_cif(structure):
     return structure
 
 
-def _without_metal_coordination_bonds(structure):
-    """(structure without its metal coordination bonds, which ligand preparation does
-    not read, {residue name: its atoms with a declared metal bond})."""
-    if structure.bonds is None:
-        return structure, {}
-    bonds, coordination = _metal_coordination_bond_mask(structure)
-    if not coordination.any():
-        return structure, {}
-    template = _template_array(structure)
-    is_metal = _is_metal(template)
-    bound = defaultdict(set)
-    for i in bonds[coordination, :2].ravel():
-        if not is_metal[i]:
-            bound[str(template.res_name[i])].add(str(template.atom_name[i]))
-    structure = structure.copy()
-    structure.bonds = biotite.structure.BondList(
-        template.array_length(), bonds[~coordination]
-    )
-    return structure, {name: frozenset(atoms) for name, atoms in bound.items()}
+_without_metal_coordination_bonds = _structure_context._without_metal_coordination_bonds
 
 
-def _metal_atom_names(chemdb=None, co=None):
-    """The metal atom of each ion residue class, by name3."""
-    if chemdb is not None:
-        return {
-            r.io_equiv_class: r.metal_sites[0].metal_atom
-            for r in chemdb.residues
-            if r.metal_sites
-        }
-    out = {}
-    for ion in _metal_table()["ions"]:
-        names = co.restypes_ordered_atom_names.get(ion["name3"])
-        if names:
-            virtual = co.restypes_virtual_atoms.get(ion["name3"], frozenset())
-            out[ion["name3"]] = next(n for n in names if n and n not in virtual)
-    return out
+_metal_atom_names = _structure_context._metal_atom_names
 
 
-def _chelated_metals(template, metal_atom):
-    """{atom: (ion, atom name)} for resolved supported metals bonded only to N/O/S of a
-    component that stays one organic molecule without them (a heme's Fe, not a cluster).
-    """
-    ion_for_element = {}
-    for ion in _metal_table()["ions"]:
-        element = ion["element"].upper()
-        ion_for_element.setdefault((element, 0), ion["name3"])
-        ion_for_element[element, ion["oxidation_state"]] = ion["name3"]
-    elements = numpy.char.upper(template.element.astype(str))
-    charge = getattr(template, "charge", numpy.zeros(len(template), dtype=int))
-    starts = biotite.structure.get_residue_starts(template, add_exclusive_stop=True)
-    bonds = template.bonds
-    moved = {}
-    for start, stop in zip(starts[:-1], starts[1:]):
-        if stop - start < 2:
-            continue
-        members = set(range(start, stop))
-        metals = [i for i in members if (elements[i], 0) in ion_for_element]
-        rest = members - set(metals)
-        if not metals or "C" not in elements[list(rest)]:
-            continue
-        # bonds to other residues are ordinary coordination; within, only N/O/S
-        partners = {i: set(bonds.get_bonds(i)[0].tolist()) & rest for i in metals}
-        if not all(partners.values()):
-            continue
-        if not all(
-            elements[j] in ("N", "O", "S") for p in partners.values() for j in p
-        ):
-            continue
-        # the remainder must be one molecule
-        seen, stack = set(), [min(rest)]
-        while stack:
-            i = stack.pop()
-            if i in seen:
-                continue
-            seen.add(i)
-            stack.extend(j for j in bonds.get_bonds(i)[0].tolist() if j in rest)
-        if seen != rest:
-            continue
-        for i in metals:
-            name3 = ion_for_element.get((elements[i], int(charge[i])))
-            if name3 in metal_atom and numpy.isfinite(template.coord[i]).all():
-                moved[i] = (name3, metal_atom[name3])
-    return moved
+_chelated_metals = _structure_context._chelated_metals
 
 
 # per atom: "res_id<TAB>ins_code<TAB>res_name<TAB>atom_name" of the component
@@ -1514,187 +1400,25 @@ def _chelated_metals(template, metal_atom):
 RESIDUE_ANNOTATIONS = ("hetero", "is_polymer", "chain_type")
 
 
-def _residue_annotations(structure):
-    """Per residue, the input's RESIDUE_ANNOTATIONS as one structured array."""
-    names = [
-        name
-        for name in RESIDUE_ANNOTATIONS
-        if name in structure.get_annotation_categories()
-    ]
-    if not names:
-        return None
-    starts = biotite.structure.get_residue_starts(structure)
-    values = [structure.get_annotation(name)[starts] for name in names]
-    # object strings, so poses from different inputs share one dtype
-    values = [v.astype(object) if v.dtype.kind in "US" else v for v in values]
-    return numpy.rec.fromarrays(values, names=names).view(numpy.ndarray)
+_residue_annotations = _structure_context._residue_annotations
 
 
-def _metal_origins(structure):
-    """Per residue, (res label, ins code, res name, atom name) a metal came from."""
-    if METAL_ORIGIN not in structure.get_annotation_categories():
-        return None
-    starts = biotite.structure.get_residue_starts(structure)
-    out = numpy.full(len(starts), None, dtype=object)
-    for r, value in enumerate(structure.get_annotation(METAL_ORIGIN)[starts]):
-        if value:
-            res_id, ins, name, atom = str(value).split("\t")
-            out[r] = (int(res_id), ins, name, atom)
-    return out if any(o is not None for o in out) else None
+_metal_origins = _structure_context._metal_origins
 
 
-def _with_peptide_tautomers(structure):
-    """Rewrite an inter-residue C=N link whose C carries a single-bonded, uncharged
-    terminal O/S as the amide (C=X, hydrogens on X dropped), as 1MRO's GL3 reads."""
-    template = _template_array(structure)
-    if template.bonds is None or template.array_length() == 0:
-        return structure
-    bonds = template.bonds.as_array()
-    elements = numpy.char.upper(template.element.astype(str))
-    residue = biotite.structure.get_residue_positions(
-        template, numpy.arange(template.array_length())
-    )
-    double = bonds[:, 2] == biotite.structure.BondType.DOUBLE
-    charge = (
-        template.charge
-        if "charge" in template.get_annotation_categories()
-        else numpy.zeros(template.array_length(), dtype=int)
-    )
-    rewrites, dropped = [], set()
-    for a, b, _ in bonds[double & (residue[bonds[:, 0]] != residue[bonds[:, 1]])]:
-        carbon, nitrogen = (a, b) if elements[a] == "C" else (b, a)
-        if elements[carbon] != "C" or elements[nitrogen] != "N":
-            continue
-        for x, order in zip(*template.bonds.get_bonds(carbon)):
-            if (
-                elements[x] not in ("O", "S")
-                or order != biotite.structure.BondType.SINGLE
-                or charge[x] != 0
-            ):
-                continue
-            partners = template.bonds.get_bonds(x)[0]
-            hydrogens = [h for h in partners if elements[h] in ("H", "D")]
-            if len(partners) - len(hydrogens) == 1:
-                rewrites.append((carbon, nitrogen, x))
-                dropped.update(hydrogens)
-                break
-    if not rewrites:
-        return structure
-    orders = {}
-    for carbon, nitrogen, x in rewrites:
-        orders[frozenset((carbon, nitrogen))] = biotite.structure.BondType.SINGLE
-        orders[frozenset((carbon, x))] = biotite.structure.BondType.DOUBLE
-    for row in bonds:
-        order = orders.get(frozenset((int(row[0]), int(row[1]))))
-        if order is not None:
-            row[2] = order
-    structure = structure.copy()
-    structure.bonds = biotite.structure.BondList(template.array_length(), bonds)
-    keep = numpy.ones(template.array_length(), dtype=bool)
-    keep[list(dropped)] = False
-    if isinstance(structure, biotite.structure.AtomArrayStack):
-        return structure[:, keep]
-    return structure[keep]
+_with_peptide_tautomers = _structure_context._with_peptide_tautomers
 
 
-def _with_input_chemistry_normalized(structure, metal_atom):
-    """Input chemistry as tmol models it: amide peptide links, chelated metals split."""
-    return _with_chelated_metals_split(_with_peptide_tautomers(structure), metal_atom)
+_with_input_chemistry_normalized = _structure_context._with_input_chemistry_normalized
 
 
-def _with_chelated_metals_split(structure, metal_atom):
-    """Move each chelated metal into an ion residue of its own, bonded by coordination;
-    METAL_ORIGIN keeps where it sat, for export to put it back."""
-    template = _template_array(structure)
-    if template.bonds is None:
-        return structure
-    moved = _chelated_metals(template, metal_atom)
-    if not moved:
-        return structure
-    starts = biotite.structure.get_residue_starts(template, add_exclusive_stop=True)
-    structure = structure.copy()
-    template = _template_array(structure)
-    bonds = template.bonds.as_array()
-    touches = numpy.isin(bonds[:, 0], list(moved)) | numpy.isin(
-        bonds[:, 1], list(moved)
-    )
-    bonds[touches, 2] = biotite.structure.BondType.COORDINATION
-    bond_list = biotite.structure.BondList(template.array_length(), bonds)
-
-    next_id = {}
-    for chain in numpy.unique(structure.chain_id):
-        next_id[chain] = int(structure.res_id[structure.chain_id == chain].max()) + 1
-    origin = numpy.full(template.array_length(), "", dtype=object)
-    if METAL_ORIGIN in structure.get_annotation_categories():
-        origin[:] = structure.get_annotation(METAL_ORIGIN)
-    for i, (name3, atom_name) in sorted(moved.items()):
-        origin[i] = "\t".join(
-            str(a[i])
-            for a in (
-                structure.res_id,
-                structure.ins_code,
-                structure.res_name,
-                structure.atom_name,
-            )
-        )
-        chain = structure.chain_id[i]
-        structure.res_name[i] = name3
-        structure.atom_name[i] = atom_name
-        structure.res_id[i] = next_id[chain]
-        next_id[chain] += 1
-        structure.hetero[i] = True
-    structure.bonds = bond_list
-    structure.set_annotation(METAL_ORIGIN, origin.astype(str))
-    # each ion follows the component it came from, so residues stay contiguous
-    order, components = [], set()
-    for start, stop in zip(starts[:-1], starts[1:]):
-        members = range(start, stop)
-        order += [i for i in members if i not in moved]
-        order += [i for i in members if i in moved]
-        kept = [i for i in members if i not in moved]
-        if kept and len(kept) < len(members):
-            components.add(str(template.res_name[kept[0]]))
-    registry = getattr(structure, "_custom_ccd_registry", None)
-    if isinstance(structure, biotite.structure.AtomArrayStack):
-        structure = structure[:, order]
-    else:
-        structure = structure[order]
-    if registry:
-        structure._custom_ccd_registry = _without_chelated_metals(
-            registry, components, _ion_elements(metal_atom)
-        )
-    return structure
+_with_chelated_metals_split = _structure_context._with_chelated_metals_split
 
 
-def _ion_elements(metal_atom):
-    """Elements of the ions a chelated metal can become."""
-    return {
-        ion["element"].upper()
-        for ion in _metal_table()["ions"]
-        if ion["name3"] in metal_atom
-    }
+_ion_elements = _structure_context._ion_elements
 
 
-def _without_chelated_metals(registry, components, elements):
-    """Component templates as their split residues are: no metal, and no declared
-    stereo on its partners (a heme pyrrole N is planar without it)."""
-    out = dict(registry)
-    for name in components:
-        template = registry.get(name)
-        if template is None:
-            continue
-        is_metal = numpy.isin(
-            numpy.char.upper(template.element.astype(str)), list(elements)
-        )
-        if not is_metal.any():
-            continue
-        template = template.copy()
-        if "stereo" in template.get_annotation_categories():
-            for i in numpy.flatnonzero(is_metal):
-                for j in template.bonds.get_bonds(i)[0]:
-                    template.stereo[j] = "N"
-        out[name] = template[~is_metal]
-    return out
+_without_chelated_metals = _structure_context._without_chelated_metals
 
 
 def _bonds_for_poses(bonds, n_poses, torch_device):
@@ -1714,202 +1438,17 @@ def _bonds_for_poses(bonds, n_poses, torch_device):
     )
 
 
-def _res_names_for_structure(
-    biotite_structure: biotite.structure.AtomArray | biotite.structure.AtomArrayStack,
-):
-    if isinstance(biotite_structure, biotite.structure.AtomArrayStack):
-        return biotite_structure[0].res_name
-    return biotite_structure.res_name
+_res_names_for_structure = _structure_context._res_names_for_structure
 
 
-def _validate_filtered_covalent_partners(
-    array, co, atom_res, valid_res, res_names, cut_partners=frozenset()
-):
-    """Allow sequential backbone gaps, but not a dangling chemical partner.
-
-    This runs only when a non-water residue is removed. Complete structures
-    and ordinary water filtering need no extra bond-table scan.
-    """
-    if array.bonds is None:
-        return
-    # A residue whose covalent bond ligand preparation already cut, because the
-    # caller passed strict_ligands=False, is a partner it was told to drop.
-    removed = (
-        ~valid_res & (res_names != "HOH") & ~numpy.isin(res_names, list(cut_partners))
-    )
-    if not numpy.any(removed):
-        return
-    bonds = array.bonds.as_array()
-    if not len(bonds):
-        return
-    ends = atom_res[bonds[:, :2]]
-    crosses = (removed[ends[:, 0]] & valid_res[ends[:, 1]]) | (
-        removed[ends[:, 1]] & valid_res[ends[:, 0]]
-    )
-    type_indices = {name: i for i, name in enumerate(co.restype_io_equiv_classes)}
-    connections = co.polymer_conn_inds
-    for first, second, order in bonds[crosses]:
-        if order == biotite.structure.BondType.COORDINATION:
-            continue
-        first_res, second_res = atom_res[[first, second]]
-        # Orient the candidate in input residue order, preserving insertion codes.
-        if first_res > second_res:
-            first, second = second, first
-            first_res, second_res = second_res, first_res
-        first_name, second_name = array.res_name[[first, second]]
-        first_type = type_indices.get(first_name)
-        second_type = type_indices.get(second_name)
-        if (
-            second_res == first_res + 1
-            and array.chain_id[first] == array.chain_id[second]
-            and first_type is not None
-            and second_type is not None
-        ):
-            first_atom = co.restypes_atom_index_mapping[first_name].get(
-                array.atom_name[first], -1
-            )
-            second_atom = co.restypes_atom_index_mapping[second_name].get(
-                array.atom_name[second], -1
-            )
-            if (
-                first_atom >= 0
-                and second_atom >= 0
-                and (
-                    (
-                        first_atom == connections.up_atom_for_co_restype[first_type]
-                        and second_atom
-                        == connections.down_atom_for_co_restype[second_type]
-                    )
-                    or (
-                        # Reordering an explicitly numbered chain does not turn
-                        # an ordinary gap into a cyclic/crosslinked attachment.
-                        # Require the source sequence direction; a backward link
-                        # in forward residue order still closes a cycle.
-                        first_atom == connections.down_atom_for_co_restype[first_type]
-                        and second_atom
-                        == connections.up_atom_for_co_restype[second_type]
-                        and (array.res_id[first], array.ins_code[first])
-                        > (array.res_id[second], array.ins_code[second])
-                    )
-                )
-            ):
-                continue
-
-        def label(index):
-            return (
-                f"{array.res_name[index]} {array.chain_id[index]}:"
-                f"{array.res_id[index]}{array.ins_code[index]}"
-                f"/{array.atom_name[index]}"
-            )
-
-        raise ValueError(
-            "Cannot discard an incomplete or unsupported residue while retaining "
-            "its covalent partner: declared bond "
-            f"{label(first)} -- {label(second)} would be lost. "
-            "Supply the required backbone coordinates/chemical definition, or "
-            "explicitly select a complete covalent component before construction."
-        )
+_validate_filtered_covalent_partners = (
+    _structure_context._validate_filtered_covalent_partners
+)
 
 
-def _filter_supported_atoms_and_connectivity(  # noqa: C901
-    biotite_structure: biotite.structure.AtomArray | biotite.structure.AtomArrayStack,
-    co: CanonicalOrdering,
-    *,
-    filter_missing_mainchain: bool = True,
-    cut_partners: frozenset[str] = frozenset(),
-):
-    biotite_residues = biotite.structure.get_residues(biotite_structure)[1]
-    to_remove = {"HOH"}
-    known_residue_names = set(co.restype_io_equiv_classes)
-    for i_3lc in biotite_residues:
-        if i_3lc in to_remove:
-            continue
-        if i_3lc not in known_residue_names:
-            logger.warning("Unrecognized 3lc %s", i_3lc)
-            to_remove.add(i_3lc)
-
-    res_names = _res_names_for_structure(biotite_structure)
-    biotite_residue_starts = biotite.structure.get_residue_starts(biotite_structure)
-    valid_res = numpy.array([name not in to_remove for name in res_names], dtype=bool)[
-        biotite_residue_starts
-    ]
-
-    # Filter residues missing mainchain atoms required for rotamer building.
-    # Only atoms present in every variant count as required, so an atom a terminus
-    # patch removes (the DNA 5' phosphate) does not disqualify the residue.
-    # Residues with no mainchain definition (non-polymer) are skipped.
-    n_missing_mainchain = 0
-    if filter_missing_mainchain:
-        atom_names = biotite_structure.atom_name
-        if isinstance(biotite_structure, biotite.structure.AtomArrayStack):
-            coords = biotite_structure.coord  # (n_poses, n_atoms, 3)
-        else:
-            coords = biotite_structure.coord[numpy.newaxis, :]  # (1, n_atoms, 3)
-        residue_ends = numpy.append(
-            biotite_residue_starts[1:], biotite_structure.array_length()
-        )
-        for i in range(len(valid_res)):
-            if not valid_res[i]:
-                continue
-            start, end = biotite_residue_starts[i], residue_ends[i]
-            res_name3 = biotite_structure.res_name[start]
-            required = co.restypes_required_mainchain_atoms.get(res_name3)
-            if not required:
-                continue
-            mapping = co.restypes_atom_index_mapping[res_name3]
-            resolved = numpy.isfinite(coords[:, start:end, :]).all(axis=(0, 2))
-            present = {
-                mapping[name]
-                for name in atom_names[start:end][resolved]
-                if name in mapping
-            }
-            missing = {name for name in required if mapping[name] not in present}
-            if missing:
-                logger.warning(
-                    "Residue %s %s %d is missing mainchain atoms %s; skipping",
-                    biotite_structure.chain_id[start],
-                    res_name3,
-                    biotite_structure.res_id[start],
-                    sorted(missing),
-                )
-                valid_res[i] = False
-                n_missing_mainchain += 1
-    if n_missing_mainchain and not valid_res.any():
-        # 1A1D: a CA-only trace leaves no residue with its mainchain
-        raise ValueError(
-            f"No residue remains: {n_missing_mainchain} polymer residues lack "
-            "mainchain atoms (a CA-only or P-only trace model?) and were dropped. "
-            "A PoseStack needs resolved backbones; rebuild them first or pass "
-            "complete coordinates."
-        )
-
-    atom_res = _get_all_residue_positions(biotite_structure)
-    _validate_filtered_covalent_partners(
-        _template_array(biotite_structure),
-        co,
-        atom_res,
-        valid_res,
-        biotite_residues,
-        cut_partners,
-    )
-    valid_atoms = valid_res[atom_res]
-
-    # A kept residue whose neighbor was dropped has an unknown connection on
-    # that side; the ends of the kept set are termini, so they are marked after
-    # filtering
-    lower = numpy.roll(valid_res, 1)[valid_res]
-    upper = numpy.roll(valid_res, -1)[valid_res]
-    if lower.size:
-        lower[0] = True
-        upper[-1] = True
-    not_connected = numpy.invert(numpy.column_stack((lower, upper)))
-
-    if isinstance(biotite_structure, biotite.structure.AtomArrayStack):
-        biotite_structure = biotite_structure[:, valid_atoms]
-    else:
-        biotite_structure = biotite_structure[valid_atoms]
-
-    return biotite_structure, not_connected
+_filter_supported_atoms_and_connectivity = (
+    _structure_context._filter_supported_atoms_and_connectivity
+)
 
 
 def _break_polymer_gaps(
@@ -1933,50 +1472,7 @@ from tmol_core.io.polymer_gaps import (  # noqa: E402
     orient_polymer_gap_flags as _orient_polymer_gap_flags,
 )
 
-
-def _extract_residue_metadata(
-    biotite_structure: biotite.structure.AtomArray | biotite.structure.AtomArrayStack,
-    not_connected,
-):
-    biotite_residue_starts = biotite.structure.get_residue_starts(biotite_structure)
-
-    # Residue labels are not chain identities. Biotite's get_chain_starts also
-    # splits whenever res_id decreases, turning a reversed chain into one chain
-    # per residue. Work at residue granularity and retain explicit symmetry IDs.
-    # Author chain labels can be shared by a polymer and separate ligand
-    # entities. That must not hide the polymer's terminal boundary.
-    keys = ["chain_id"]
-    if "label_entity_id" in biotite_structure.get_annotation_categories():
-        keys.append("label_entity_id")
-    if "sym_id" in biotite_structure.get_annotation_categories():
-        keys.append("sym_id")
-    boundaries = numpy.zeros(max(0, len(biotite_residue_starts) - 1), dtype=bool)
-    for key in keys:
-        values = biotite_structure.get_annotation(key)[biotite_residue_starts]
-        boundaries |= values[1:] != values[:-1]
-    biotite_chain_id_for_res = numpy.cumsum(numpy.r_[0, boundaries])[
-        : len(biotite_residue_starts)
-    ]
-
-    if len(biotite_chain_id_for_res) > 1:
-        res_is_disconnected_from_neighbor = (
-            biotite_chain_id_for_res[1:] != biotite_chain_id_for_res[:-1]
-        )
-        not_connected[1:, 0] &= ~res_is_disconnected_from_neighbor
-        not_connected[:-1, 1] &= ~res_is_disconnected_from_neighbor
-
-    biotite_chain_labels = biotite_structure.chain_id[biotite_residue_starts]
-    biotite_insertion_codes = biotite_structure.ins_code[biotite_residue_starts]
-    biotite_residue_labels, biotite_residues = biotite.structure.get_residues(
-        biotite_structure
-    )
-    return (
-        biotite_chain_id_for_res,
-        biotite_chain_labels,
-        biotite_insertion_codes,
-        biotite_residue_labels,
-        biotite_residues,
-    )
+_extract_residue_metadata = _structure_context._extract_residue_metadata
 
 
 def _populate_canonical_coords(
@@ -2288,154 +1784,58 @@ def _populate_canonical_coords_from_atom37(
     return reference_coords, n_poses
 
 
-@_validate_args
-def _normalize_input_identifiers(biotite_structure, name3_aliases):
-    """Resolve residue aliases and AtomWorks assembly instances without mutation.
-
-    An aliased residue is read as the one it names, so nothing downstream --
-    atom mapping, restype lookup, nonstandard-residue detection -- ever sees
-    the input name. Atom names follow through the target's atom aliases.
-    """
-    from atomworks.io.utils.atom_array import chain_identifier
-
-    chains = chain_identifier(biotite_structure)
-    names = biotite_structure.res_name
-    rename_residues = bool(name3_aliases) and any(
-        name in name3_aliases for name in numpy.unique(names)
-    )
-    if not rename_residues and (
-        chains is biotite_structure.chain_id
-        or numpy.array_equal(chains, biotite_structure.chain_id)
-    ):
-        return biotite_structure
-    renamed = biotite_structure.copy()
-    renamed.chain_id = chains.copy()
-    if rename_residues:
-        renamed.res_name = numpy.array([name3_aliases.get(n, n) for n in names])
-    return renamed
+_normalize_input_identifiers = _structure_context._normalize_input_identifiers
 
 
 def _with_input_hydrogens(biotite_structure, ph, co, chemdb, find_metal_coordination):
-    """The input with AtomWorks' protonation of residues lacking hydrogens (only
-    ``co``'s if given), seeing detected metal bonds and ``chemdb`` backbone links."""
-    biotite_structure = _with_stated_termini(biotite_structure, chemdb, co)
-    _validate_connection_hydrogens(biotite_structure, chemdb)
-    aliases = {a.name3: a.read_as for a in chemdb.name3_aliases}
-    names = None
-    if co is not None:
-        names = set(co.restype_io_equiv_classes)
-        names |= {alias for alias, name in aliases.items() if name in names}
-    template = _template_array(biotite_structure)
-    forms = _database_forms(chemdb)
-    if PROTONATION_VARIANT in template.get_annotation_categories() or (
-        EXPLICIT_TERMINI not in template.get_annotation_categories()
-        and not _residues_lacking_hydrogens(biotite_structure, names, forms)[1].any()
-    ):
-        return biotite_structure
-    metal_atom = _metal_atom_names(chemdb=chemdb)
-    biotite_structure = _with_input_chemistry_normalized(
-        _normalize_input_identifiers(biotite_structure, aliases), metal_atom
-    )
-    coordination = None
-    res_name = _template_array(biotite_structure).res_name
-    if find_metal_coordination and numpy.isin(res_name, list(metal_atom)).any():
-        coordination = _detected_metal_bonds(
-            biotite_structure, co or _canonical_ordering_for_biotite(), chemdb
-        )
-    backbone = {}
-    for residue in chemdb.residues:
-        connection = {c.name: c.atom for c in residue.connections}
-        up, down = backbone.get(residue.io_equiv_class, (None, None))
-        backbone[residue.io_equiv_class] = (
-            up or connection.get("up"),
-            down or connection.get("down"),
-        )
-    return _with_atomworks_hydrogens(
+    return _structure_context._with_input_hydrogens(
         biotite_structure,
-        ph=ph,
-        residue_names=names,
-        coordination=coordination,
-        backbone=backbone,
-        forms=forms,
+        ph,
+        co,
+        chemdb,
+        find_metal_coordination,
+        detect_metal_bonds=_detected_metal_bonds,
+        default_canonical_ordering=_canonical_ordering_for_biotite,
     )
 
 
 def _detected_metal_bonds(biotite_structure, co, chemdb):
-    """(metal atom, donor atom) index pairs metal detection bonds in the input."""
-    from tmol.io._pose_stack_construction import _declared_metal_sites
-    from tmol.io.details._disulfide_search import _find_disulfides
-    from tmol.io.details._metal_detection import _find_metal_geometries
+    """Canonical storage conversion around common metal-input chemistry."""
+    from types import SimpleNamespace
 
     template = _template_array(biotite_structure)
     known = numpy.isin(
-        template.res_name,
-        [*co.restype_io_equiv_classes, *co.name3_aliases],
+        template.res_name, [*co.restype_io_equiv_classes, *co.name3_aliases]
     )
     cf = canonical_form_from_biotite(
         biotite_structure if known.all() else template[known],
         torch.device("cpu"),
         co=co,
     )
-    if not bool((cf.res_types >= 0).all()):
-        return None
-    declared, required = _declared_metal_sites(
-        cf.res_types, cf.metal_sites, cf.metal_coordination
+    fields = (
+        "res_types",
+        "coords",
+        "metal_sites",
+        "metal_coordination",
+        "disulfides",
+        "chain_labels",
+        "res_labels",
+        "residue_insertion_codes",
     )
-    _, disulfide_variants = _find_disulfides(
-        co, cf.res_types.to(torch.int32), cf.coords, cf.disulfides, True
-    )
-    _, assignments = _find_metal_geometries(
-        co,
-        chemdb,
-        cf.res_types.to(torch.int32),
-        cf.coords,
-        excluded_donor_residues=disulfide_variants != 0,
-        declared_sites=declared,
-        find_additional=True,
-        required_donors=required,
-    )
-    ins = template.ins_code
-    index = {
-        key: i
-        for i, key in enumerate(
-            zip(template.chain_id, template.res_id, ins, template.atom_name)
-        )
-    }
-    metallic = numpy.isin(
-        numpy.char.upper(template.element.astype(str)),
-        [e.upper() for e in _ion_elements(_metal_atom_names(chemdb=chemdb))],
-    )
-
-    def atom_of(pose, res, atom):
-        name = co.restypes_ordered_atom_names[
-            co.restype_io_equiv_classes[int(cf.res_types[pose, res])]
-        ][atom]
-        return index.get(
-            (
-                cf.chain_labels[pose, res],
-                int(cf.res_labels[pose, res]),
-                str(cf.residue_insertion_codes[pose, res] or ""),
-                name,
+    values = {name: getattr(cf, name) for name in fields}
+    host = SimpleNamespace(
+        **{
+            name: (
+                value.detach().cpu().numpy()
+                if isinstance(value, torch.Tensor)
+                else value
             )
-        )
-
-    pairs = []
-    for (pose, metal), got in assignments:
-        if pose != 0:
-            continue
-        chain, res_id = cf.chain_labels[0, metal], int(cf.res_labels[0, metal])
-        metals = numpy.flatnonzero(
-            metallic & (template.chain_id == chain) & (template.res_id == res_id)
-        )
-        for res, atom in got.donor_atoms:
-            donor = atom_of(0, res, atom)
-            if donor is None or not len(metals):
-                continue
-            dist = numpy.linalg.norm(
-                template.coord[metals] - template.coord[donor], axis=-1
-            )
-            pairs.append((int(metals[numpy.argmin(dist)]), donor))
-    return numpy.array(pairs, dtype=numpy.int64).reshape(-1, 2)
+            for name, value in values.items()
+        }
+    )
+    return _structure_context.detected_metal_bonds_for_canonical(
+        biotite_structure, co, chemdb, host
+    )
 
 
 def canonical_form_from_biotite(
