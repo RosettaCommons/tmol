@@ -113,3 +113,134 @@ def test_float64_coordinates_are_preserved_or_rejected_explicitly(database):
         np.testing.assert_array_equal(pose.coords[0], inputs[0][0].coords[::-1])
     with jax.enable_x64(False), pytest.raises(ValueError, match="float64"):
         pose_stack_from_residue_blocks(inputs, parameter_database=database)
+
+
+@pytest.mark.parametrize(
+    "case_name",
+    ("ligand", "connected_noncanonical", "d_peptide", "modified_dna", "mixed_batch"),
+)
+@pytest.mark.parametrize("dtype", (np.float32, np.float64))
+def test_explicit_missing_leaf_input_preserves_chemistry_and_observations(
+    case_name, dtype
+):
+    from tests.scientific.execution import Execution
+    from tests.scientific.molecules import DOMAIN_CASES
+    from tmol_core.io.missing_atoms import prepare_leaf_atom_metadata
+
+    case = DOMAIN_CASES[case_name]
+    terms = {
+        "ligand": "gen_torsions",
+        "connected_noncanonical": "cart_lengths",
+        "d_peptide": "fa_elec",
+        "modified_dna": "na_torsion",
+        "mixed_batch": "gen_torsions",
+    }
+    lane = "jax-cuda" if jax.devices()[0].platform == "gpu" else "jax-cpu"
+    b = Execution(lane).molecule(case, terms=(terms[case_name],))
+    with jax.enable_x64(dtype == np.float64), jax.default_device(b.device):
+        complete = [
+            [ResidueBlock(*record) for record in row]
+            for row in case.blocks(b.parameter_database, dtype)
+        ]
+        expected, context = pose_stack_from_residue_blocks(
+            complete,
+            parameter_database=b.parameter_database,
+            connections=case.connections(),
+            return_context=True,
+        )
+        pbt = context.packed_block_types
+        info = prepare_leaf_atom_metadata(
+            pbt.active_block_types, np.asarray(pbt.atom_is_hydrogen), pbt.max_n_atoms
+        )
+        incomplete, observed, targets = [], np.asarray(expected.atom_is_real).copy(), []
+        for p, row in enumerate(complete):
+            prepared = []
+            for r, block in enumerate(row):
+                t = int(expected.block_type_ind[p, r])
+                n = len(block.atom_names)
+                eligible = np.flatnonzero(
+                    info.is_leaf_atom[t, :n]
+                    & np.asarray(pbt.atom_is_hydrogen[t, :n])
+                    & np.all(info.icoors.anc_uaids[t, :n, :, 0] >= 0, axis=1)
+                )
+                keep = np.ones(n, bool)
+                if eligible.size:
+                    atom = int(eligible[0])
+                    keep[atom] = False
+                    offset = int(expected.block_coord_offset[p, r])
+                    observed[p, offset + atom] = False
+                    targets.append(
+                        (
+                            p,
+                            offset + atom,
+                            offset + info.icoors.anc_uaids[t, atom, 0, 0],
+                            info.icoors.geom[t, atom, 2],
+                        )
+                    )
+                prepared.append(
+                    ResidueBlock(
+                        block.residue_type,
+                        np.asarray(block.atom_names)[keep][::-1],
+                        block.coords[keep][::-1],
+                    )
+                )
+            incomplete.append(prepared)
+        assert targets, f"{case_name} must exercise missing molecular hydrogens"
+        with pytest.raises(ValueError, match="atoms must match"):
+            pose_stack_from_residue_blocks(
+                incomplete, context=context, connections=case.connections()
+            )
+        actual, returned = pose_stack_from_residue_blocks(
+            incomplete,
+            context=context,
+            connections=case.connections(),
+            return_context=True,
+            build_missing_leaf_atoms=True,
+        )
+        assert returned is context and actual.packed_block_types is pbt
+        assert actual.coords.dtype == dtype
+        np.testing.assert_array_equal(
+            actual.coords[observed], expected.coords[observed]
+        )
+        np.testing.assert_array_equal(actual.block_type_ind, expected.block_type_ind)
+        np.testing.assert_array_equal(
+            actual.inter_residue_connections, expected.inter_residue_connections
+        )
+        for p, atom, parent, distance in targets:
+            np.testing.assert_allclose(
+                np.linalg.norm(
+                    np.asarray(actual.coords[p, atom] - actual.coords[p, parent])
+                ),
+                distance,
+                rtol=2e-6 if dtype == np.float32 else 2e-12,
+                atol=2e-6 if dtype == np.float32 else 2e-12,
+            )
+        b.pose = actual.to(b.device)
+        energy, gradient = b.value_and_grad(b.coords())
+        assert np.isfinite(energy).all() and np.isfinite(gradient).all()
+        assert np.any(energy != 0) and np.linalg.norm(gradient) > 0
+        # Opting into leaf reconstruction must not hide a missing core atom.
+        first = incomplete[0][0]
+        nonleaf = np.flatnonzero(
+            ~info.is_leaf_atom[0, : len(complete[0][0].atom_names)]
+        )[0]
+        atom = complete[0][0].atom_names[nonleaf]
+        keep = np.asarray(first.atom_names) != atom
+        invalid = [
+            [
+                dataclasses.replace(
+                    first,
+                    atom_names=np.asarray(first.atom_names)[keep],
+                    coords=first.coords[keep],
+                ),
+                *incomplete[0][1:],
+            ],
+            *incomplete[1:],
+        ]
+        with pytest.raises(ValueError, match="missing non-leaf"):
+            pose_stack_from_residue_blocks(
+                invalid,
+                context=context,
+                connections=case.connections(),
+                build_missing_leaf_atoms=True,
+            )

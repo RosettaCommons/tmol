@@ -296,8 +296,11 @@ reconstruction are being shared with Torch.
 
 For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
 a batch of `ResidueBlock(residue_type, atom_names, coords)` records and explicit
-named connection ports. Full residue names include variants; every atom must be
-present exactly once. The loader preserves atom identity and floating precision,
+named connection ports. Full residue names include variants; by default every atom must be
+present exactly once. Set `build_missing_leaf_atoms=True` to reconstruct omitted
+leaf atoms from common chemical frames and native geometry. Observed atoms remain
+exact; missing non-leaf atoms and unavailable frames raise. This option does not
+generate ligands or infer bonds. The loader preserves atom identity and floating precision,
 and does not infer bonds or change chemistry. `return_context=True` returns the
 pose and a context whose `parameter_database` must be used for scoring. Molecular
 input support does not imply complete scoring support: see the current

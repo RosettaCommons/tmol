@@ -197,11 +197,11 @@
       "jax": "partial",
       "repro_fixture": [
         "tests/jax/test_residue_blocks.py",
-        "tests/scientific/test_canonical_candidates.py",
+        "tests/jax/test_protein.py",
         "tests/scientific/test_leaf_reconstruction.py",
-        "tests/jax/test_molecular_output.py"
+        "tests/scientific/test_canonical_topology.py"
       ],
-      "implementation_status": "Explicit ResidueBlock input preserves complete named atoms, exact types, dtype and database context. Canonical PDB/Biotite loading remains protein-only. Shared candidate selection and leaf reconstruction have native JAX bindings and CPU scientific tests; public general loader integration and CUDA validation pending. CIF, generated ligands, automatic metal inference and general input annotations remain absent."
+      "implementation_status": "Explicit ResidueBlock input preserves named atoms, exact types, dtype and database context; opt-in shared native missing-leaf reconstruction retains observed coordinates and rejects missing non-leaf atoms. Canonical PDB/Biotite loading remains protein-only, now with common native leaf reconstruction and preserved custom atom ordering. Candidate/chain/terminal native bindings pass CPU/CUDA; general loader, context-heavy-atom completion, CIF, generated ligands and automatic metal inference remain unfinished."
     },
     {
       "domain": "jit_vmap_reverse_ad",
@@ -250,7 +250,7 @@
       "implementation_status": "Shared MoveMap and native chemical DOF resolution with JAX L-BFGS; molecular objective decrease and frozen-DOF invariants tested CPU/CUDA. Full optimizer API parity remains incomplete."
     }
   ],
-  "validation": "Exact58a7cc8053 matching core/JAX/native wheels and sdists pass45 molecular+181 shared installed checks without Torch. Exact native CPU/CUDA artifacts pass329 JAX checks; d87 corrects a float32 finite-difference oracle without changing step/tolerance (8CPU+8CUDA pass). New shared Torch CUDA checks35 pass. Native I/O b80 has17 shared CPU checks per framework; CUDA pending. Final Metal is owned by root. Full input/API coverage, performance and overall code reduction remain acceptance gates; PR629 stays draft.",
+  "validation": "Exact48ab41104d matching core/JAX/native wheels and sdists pass45 molecular+206 shared installed checks without Torch. Exact48 CPU/CUDA native artifacts pass5 JAX topology,49 affected public-input and5 Torch topology GPU checks. Earlier exact58 passes329 JAX runtime checks; d87 fixes float32 FD cancellation without changing step/tolerance. New explicit optional leaf reconstruction has21 CPU frontend checks; GPU pending. Final Metal is owned by root. Full input/API coverage, graph performance and overall code reduction remain acceptance gates; PR629 stays draft.",
   "score_terms": {
     "nonbonded": {
       "torch": "implemented",
