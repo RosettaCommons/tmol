@@ -1,3 +1,6 @@
+#include <tmol/pack/rotamer/na_sampling_torch.hh>
+#include <tmol/score/common/device_operations.hh>
+#include <tmol/utility/function_dispatch/aten.hh>
 #include <tmol/utility/tensor/native_library.hh>
 
 #include "na_torsion_pose_score.hh"
@@ -266,7 +269,59 @@ NARotamerTopologyOutput na_rotamer_topology(
       bt_down);
 }
 
+Tensor na_sampling_pucker(
+    Tensor coords, Tensor rings, Tensor valid, double temperature) {
+  static ContextManager mgr;
+  Tensor result;
+  TMOL_DISPATCH_FLOATING_DEVICE(
+      coords.options(), "na_sampling_pucker", ([&] {
+        result = tmol::pack::rotamer::NaSamplingTorchDispatch<
+            tmol::score::common::DeviceOperations,
+            device_t>::pucker(mgr, coords, rings, valid, temperature);
+      }));
+  return result;
+}
+Tensor na_sampling_counts(
+    std::vector<Tensor> inputs,
+    bool syn,
+    int64_t nbase,
+    double maxwell,
+    double mean) {
+  TORCH_CHECK(!inputs.empty(), "NA sampler needs input buffers");
+  static ContextManager mgr;
+  Tensor result;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[0].options(), "na_sampling_counts", ([&] {
+        result = tmol::pack::rotamer::NaSamplingTorchDispatch<
+            tmol::score::common::DeviceOperations,
+            device_t>::counts(mgr, inputs, syn, nbase, maxwell, mean);
+      }));
+  return result;
+}
+std::tuple<Tensor, Tensor, Tensor, Tensor> na_sampling_fill(
+    std::vector<Tensor> inputs,
+    Tensor counts,
+    int64_t nrot,
+    bool syn,
+    int64_t nbase,
+    double maxwell,
+    double mean) {
+  TORCH_CHECK(!inputs.empty(), "NA sampler needs input buffers");
+  static ContextManager mgr;
+  std::tuple<Tensor, Tensor, Tensor, Tensor> result;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[0].options(), "na_sampling_fill", ([&] {
+        result = tmol::pack::rotamer::NaSamplingTorchDispatch<
+            tmol::score::common::DeviceOperations,
+            device_t>::
+            fill(mgr, inputs, counts, nrot, syn, nbase, maxwell, mean);
+      }));
+  return result;
+}
 TMOL_LIBRARY(tmol_na_torsion, m) {
+  m.def("na_sampling_pucker", TMOL_FN(&na_sampling_pucker));
+  m.def("na_sampling_counts", TMOL_FN(&na_sampling_counts));
+  m.def("na_sampling_fill", TMOL_FN(&na_sampling_fill));
   m.def("na_rotamer_topology", TMOL_FN(&na_rotamer_topology));
   m.def("na_torsion_native_score", TMOL_FN(&na_torsion_native_score));
   m.def("na_torsion_pose_score", TMOL_FN(&na_torsion_pose_score));

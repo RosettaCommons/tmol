@@ -5,7 +5,6 @@ import attr
 from typing import Tuple
 
 from tmol.types._torch import Tensor
-from tmol.utility.tensor._common_operations import _exclusive_cumsum1d
 
 from tmol.database import ParameterDatabase
 from tmol.chemical import RefinedResidueType
@@ -27,9 +26,8 @@ from tmol.pack.rotamer._conformer_sampler import _sc_roots_for_chis
 from tmol.score.na_torsion._params import (
     NaTorsionParams,
     N_PUCKER,
-    POLYMER_IND,
     SYN_MEAN,
-    _polymer_index,
+    N_BASE_PER_POLYMER,
 )
 from tmol.score.na_torsion import pucker_weights
 from tmol.utility import resolve_device
@@ -177,6 +175,12 @@ class NaChiRotamerSampler(ChiSampler):
         index = (offset + ring_local).clamp_min(0)
         max_n_atoms = poses.coords.shape[1]
         flat = pose_indices.unsqueeze(-1) * max_n_atoms + index
+        if poses.device.type in ("cpu", "cuda"):
+            from tmol.score.na_torsion.potentials._compiled import _na_sampling_pucker
+
+            return _na_sampling_pucker(
+                poses.coords.reshape(-1, 3), flat, ok, self.params.pucker_temperature
+            )
         xyz = poses.coords.reshape(-1, 3)[flat.reshape(-1)].reshape(*index.shape, 3)
         xyz = torch.where(ok.unsqueeze(-1), xyz, torch.zeros_like(xyz))
         w = pucker_weights(
@@ -230,93 +234,115 @@ class NaChiRotamerSampler(ChiSampler):
                 cache,
             )
             pucker[active_gbt] = unique_pucker[inverse]
-        base = cache["base"][task.cons_bt_block_type]
-        active = active & (pucker >= 0)
-
-        n_chi = cache["n_chi"]
-        n_gbt = active.shape[0]
-        bt_for_gbt = task.cons_bt_block_type
-        p = self.params
-
-        # how many chi1 values each block gets: the anti mode always, the syn
-        # mode when the well is shallow enough and the polymer is RNA
-        steps = torch.tensor(
-            CHI_STEPS[self.chi_sample_level], dtype=torch.float32, device=poses.device
-        )
-        n_steps = steps.shape[0]
-        safe_base = base.clamp_min(0)
-        poly = _polymer_index(base)
-        syn_ok = (
-            active
-            & (poly == POLYMER_IND["rna"])
-            & (p.well_chi_syn[1, pucker.clamp_min(0), safe_base] <= MAX_SYN_WELL)
-        )
-        if not self.sample_syn:
-            syn_ok = torch.zeros_like(syn_ok)
-        n_modes = torch.where(syn_ok, 2, 1)
-        n_combos = cache["n_combos"][bt_for_gbt]
-        # Preserve an out-of-range sentinel while bounding the int64 product.
-        # Chi levels have at most five steps and two modes. Narrow only after
-        # validating both the individual counts and their total.
-        bounded_combos = n_combos.clamp(-1, torch.iinfo(torch.int32).max + 1)
-        counts = torch.where(
-            active, n_modes * n_steps * bounded_combos, torch.zeros_like(n_combos)
-        )
-
+        from tmol.score.na_torsion.potentials._compiled import _na_sampling_counts
         from tmol.pack.rotamer._chi_budget import _checked_sample_count
 
+        execution_device = (
+            poses.device
+            if poses.device.type in ("cpu", "cuda")
+            else torch.device("cpu")
+        )
+        inputs = [
+            value.to(execution_device)
+            for value in (
+                task.cons_bt_block_type,
+                cache["base"],
+                pucker,
+                cache["n_combos"],
+                active,
+                cache["chi_atom"],
+                cache["proton"],
+                self.params.well_chi_syn,
+                self.params.chi_means,
+                self.params.sdev_chi,
+                torch.tensor(
+                    CHI_STEPS[self.chi_sample_level],
+                    dtype=torch.float32,
+                    device=poses.device,
+                ),
+            )
+        ]
+        policy = (self.sample_syn, N_BASE_PER_POLYMER, MAX_SYN_WELL, SYN_MEAN)
+        counts = _na_sampling_counts(inputs, *policy)
         n_rots = _checked_sample_count(
             counts, self.chi_sample_expanded_limit, self.chi_sample_limit
         )
-        n_rots_for_gbt = counts.to(torch.int32)
+        owners, atoms, chi = _NaChiSampleValues.apply(*inputs, counts, n_rots, policy)
+        return tuple(
+            value.to(poses.device)
+            for value in (counts.to(torch.int32), owners, atoms, chi)
+        )
 
-        if n_rots == 0:
-            return (
-                n_rots_for_gbt,
-                torch.zeros((0,), dtype=torch.int32, device=poses.device),
-                torch.zeros((0, n_chi), dtype=torch.int32, device=poses.device),
-                torch.zeros((0, n_chi), dtype=torch.float32, device=poses.device),
+
+class _NaChiSampleValues(torch.autograd.Function):
+    """Native linear sample values with differentiable parameter gathers."""
+
+    @staticmethod
+    def forward(ctx, *args):
+        from tmol.score.na_torsion.potentials._compiled import _na_sampling_fill
+
+        inputs, counts, n_rots, policy = args[:11], args[11], args[12], args[13]
+        owners, atoms, chi, offsets = _na_sampling_fill(
+            list(inputs), counts, n_rots, *policy
+        )
+        ctx.save_for_backward(*inputs, owners, offsets)
+        ctx.bases_per_polymer = policy[1]
+        ctx.mark_non_differentiable(owners, atoms)
+        return owners, atoms, chi
+
+    @staticmethod
+    def backward(ctx, grad_owners, grad_atoms, grad_chi):
+        # Transpose of linear lookup at selected discrete samples. Torch
+        # scatter preserves higher derivatives of learnable parameter tables.
+        (
+            types,
+            base,
+            pucker,
+            n_combos,
+            active,
+            atoms,
+            proton,
+            wells,
+            means,
+            sdev,
+            steps,
+            owners,
+            offsets,
+        ) = ctx.saved_tensors
+        result = [None] * 14
+        if grad_chi is None:
+            return tuple(result)
+        type_for_rot = types[owners]
+        local = (
+            torch.arange(len(owners), device=owners.device, dtype=torch.int64)
+            - offsets[owners]
+        )
+        combo = local % n_combos[type_for_rot]
+        slot = torch.div(local, n_combos[type_for_rot], rounding_mode="floor")
+        base_for_rot = base[type_for_rot]
+        angle_grad = grad_chi[:, 0] * (torch.pi / 180.0)
+        if ctx.needs_input_grad[8]:
+            anti = slot < len(steps)
+            index = base_for_rot * means.shape[1] + pucker[owners]
+            result[8] = (
+                torch.zeros_like(means)
+                .flatten()
+                .index_add(0, index, angle_grad * anti)
+                .reshape_as(means)
             )
-
-        gbt_for_rotamer = torch.repeat_interleave(
-            torch.arange(n_gbt, dtype=torch.int32, device=poses.device),
-            counts,
-            output_size=n_rots,
-        )
-        # index of each rotamer within its own block
-        local = torch.arange(
-            n_rots, dtype=torch.int32, device=poses.device
-        ) - torch.repeat_interleave(
-            _exclusive_cumsum1d(counts), counts, output_size=n_rots
-        )
-
-        combos_per_rot = n_combos[gbt_for_rotamer]
-        chi1_slot = torch.div(local, combos_per_rot, rounding_mode="floor")
-        combo_slot = local % combos_per_rot
-        mode = torch.div(chi1_slot, n_steps, rounding_mode="floor")
-        step_ind = chi1_slot % n_steps
-
-        rot_base = safe_base[gbt_for_rotamer]
-        rot_pucker = pucker.clamp_min(0)[gbt_for_rotamer]
-        sdev = p.sdev_chi[poly[gbt_for_rotamer]]
-        center = torch.where(
-            mode == 0,
-            p.chi_means[rot_base, rot_pucker],
-            torch.full_like(sdev, SYN_MEAN),
-        )
-        chi1 = center + steps[step_ind] * sdev
-
-        rot_bt = bt_for_gbt[gbt_for_rotamer]
-        chi = torch.cat(
-            [
-                torch.deg2rad(chi1).unsqueeze(-1),
-                cache["proton"][rot_bt, combo_slot],
-            ],
-            dim=-1,
-        )
-        return (
-            n_rots_for_gbt,
-            gbt_for_rotamer,
-            cache["chi_atom"][rot_bt],
-            chi,
-        )
+        if ctx.needs_input_grad[9]:
+            polymer = torch.div(
+                base_for_rot, ctx.bases_per_polymer, rounding_mode="floor"
+            )
+            result[9] = torch.zeros_like(sdev).index_add(
+                0, polymer, angle_grad * steps[slot % len(steps)]
+            )
+        if ctx.needs_input_grad[6]:
+            index = type_for_rot * proton.shape[1] + combo
+            result[6] = (
+                torch.zeros_like(proton)
+                .reshape(proton.shape[0] * proton.shape[1], proton.shape[2])
+                .index_add(0, index, grad_chi[:, 1:])
+                .reshape_as(proton)
+            )
+        return tuple(result)

@@ -15,3 +15,7 @@ _na_torsion_pose_score = _ops.na_torsion_pose_score
 
 _na_rotamer_topology = _ops.na_rotamer_topology
 _na_torsion_native_score = _ops.na_torsion_native_score
+
+_na_sampling_pucker = _ops.na_sampling_pucker
+_na_sampling_counts = _ops.na_sampling_counts
+_na_sampling_fill = _ops.na_sampling_fill
