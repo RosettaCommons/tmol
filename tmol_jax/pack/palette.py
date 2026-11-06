@@ -18,6 +18,11 @@ class PackerPalette:
         self.noncanonical_design = bool(noncanonical_design)
         self._prepared = None
 
+    def default_conformer_samplers(self):
+        from .current import FallbackSampler
+
+        return [FallbackSampler()]
+
     def _data(self, pbt, orig):
         indices = np.asarray(orig)
         if indices.ndim != 2 or not np.issubdtype(indices.dtype, np.integer):

@@ -181,8 +181,8 @@ library/explicit-chi metadata on the palette's device. `prepare_atom_copy_plan(p
 samplers)` preserves sampler-owned retained atom identities.
 
 Public chi sampling uses the same chemical requests and native CPU/CUDA sampler
-as Torch. Register samplers explicitly; the JAX task currently has no default
-fallback sampler for uncovered residues:
+as Torch. Tasks inherit their palette's default fallback sampler. Register
+additional sampling policies explicitly:
 
 ```python
 from tmol_jax.pack import PackerTask, PackerPalette, DunbrackChiSampler
@@ -230,14 +230,15 @@ checks pass. This does not provide gradients through discrete sample selection.
 
 `IncludeCurrentSampler` and `FallbackSampler` expose
 `create_samples_for_poses(pose, concrete_task)`, returning counts, choice indices
-and an input-coordinate copy marker. Register either sampler explicitly.
+and an input-coordinate copy marker. Register `IncludeCurrentSampler` explicitly;
+the default palette supplies `FallbackSampler`.
 Fallback accepts `built_rotamer_counts=counts` aggregated from earlier samplers;
 it retains fixed residues and fills uncovered positions. Coverage includes all
 identities at a position, so a sampled design choice does not reintroduce the
 original identity. `build_rotamers(pose, task, parameter_database.chemical)` assembles their coordinates
 and sampled Dunbrack, explicit amino-acid, NA and OptH chi using common native kernels. It returns
-`(pose, rotamer_set)` with atom, residue and pose identities. Register
-`FallbackSampler()` explicitly to preserve fixed and uncovered residues. Input
+`(pose, rotamer_set)` with atom, residue and pose identities. The default
+fallback preserves fixed and uncovered residues. Input
 conformers are copied exactly; sampled coordinates preserve retained atoms and
 requested adjustable torsions. Custom chemical databases remain attached to the
 pose's packed types.
@@ -291,8 +292,8 @@ including fixed survivors and holes left by removed conformers.
 
 `tmol_jax.pack.pack_rotamers(pose, score_function, task, seed=123)` runs the
 complete sparse score, common interaction graph, native annealer and native
-pose imposition. It requires float32 coordinates and explicit task samplers,
-including fallback for uncovered residues. Ligand, noncanonical, D-peptide,
+pose imposition. It requires float32 coordinates; tasks inherit palette defaults
+and accept additional samplers. Ligand, noncanonical, D-peptide,
 mixed and DNA repacking fixtures check selected coordinates, immutable chemistry
 and the resulting whole-pose energy. CPU and CUDA retain their different mature
 search schedules. CUDA phase seeds come from a local NumPy PCG64 generator;

@@ -16,7 +16,7 @@ def current_samplers(backend):
 
 
 def ensure_fallback_sampler(backend, task):
-    """Match the explicit JAX and default Torch fallback configuration."""
+    """Return the fallback policy, registering it for a custom palette if absent."""
     for sampler in task.conformer_samplers:
         if sampler.sampler_name() == "FallbackSampler":
             return sampler

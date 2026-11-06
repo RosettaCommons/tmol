@@ -13,8 +13,8 @@ from .palette import PackerPalette
 class PackerTask:
     """Select residue choices and samplers for a pose.
 
-    Task construction and mutation are eager host operations. Samplers must be
-    registered explicitly, including fallback coverage for uncovered residues.
+    Task construction and mutation are eager host operations. Palette defaults
+    provide fallback coverage; additional samplers may be registered explicitly.
     Concrete tasks feed public conformer construction and native packing.
     """
 
@@ -39,6 +39,12 @@ class PackerTask:
         self.restrict_to_repacking_masks = palette.create_restrict_to_repacking_mask(
             self.pbt, systems.block_type_ind
         )
+        self.conformer_samplers = list(
+            {id(s): s for s in palette.default_conformer_samplers()}.values()
+        )
+        self.conformer_sampler_index = {
+            id(s): i for i, s in enumerate(self.conformer_samplers)
+        }
         with jax.default_device(self.device):
             self.per_block_is_block_type_allowed = jnp.ones_like(
                 self.per_block_considered_block_types, dtype=bool
@@ -46,11 +52,9 @@ class PackerTask:
             self.per_block_chi_expansion = jnp.zeros(
                 self.per_block_considered_block_types.shape + (4,), dtype=jnp.int32
             )
-            self.per_block_conformer_sampler_allowed = jnp.zeros(
-                self.is_real_block.shape + (0,), dtype=bool
+            self.per_block_conformer_sampler_allowed = jnp.ones(
+                self.is_real_block.shape + (len(self.conformer_samplers),), dtype=bool
             )
-        self.conformer_samplers = []
-        self.conformer_sampler_index = {}
         self.chi_sample_budget = None
         self.bump_check = False
 

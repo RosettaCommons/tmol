@@ -12,7 +12,6 @@ from tmol_jax.pack import (
     DunbrackChiSampler,
     FixedAAChiSampler,
     IncludeCurrentSampler,
-    FallbackSampler,
     NaChiRotamerSampler,
     pack_rotamers,
 )
@@ -145,7 +144,6 @@ class _JaxRelaxExecution:
             DunbrackChiSampler.from_database(sfxn.param_db),
             FixedAAChiSampler(),
             IncludeCurrentSampler(),
-            FallbackSampler(),
         ]
         if any(
             bt.properties.polymer.backbone_type in ("dna", "rna")

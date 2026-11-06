@@ -480,14 +480,14 @@
   },
   "acceptance_gaps": {
     "mature_functionality": [
-      "Remaining constructor return options and complete public task/design compatibility require implementation or matched validation; current Atom37 and concatenation cases have exact installed CPU and actual CUDA coverage.",
-      "Latest standard AtomWorks encoding, tensor gap semantics and shared default chemistry have focused CPU evidence; matching artifact/CUDA gates pending. HYP missing-sidechain source-gradient regression is fixed and validated on CPU/CUDA plus bounded Apple callers.",
+      "Constructor chain/atom/missing metadata and context precedence have focused CPU evidence. Complete public task/design compatibility still requires implementation or matched validation.",
+      "Standard AtomWorks encoding, tensor gap semantics and shared default chemistry passed exact installed CPU and actual CUDA gates at22fa. Later optional metadata and host transfers have 48 JAX CUDA checks and five full molecular second-device checks; final matching package/Torch gate pending.",
       "Complete task/design API compatibility, changed-port and constrained-identity imposition",
       "Mature optimizer checkpoint/API behavior and matched trajectory validation",
       "Exhaustive custom database/public score-option compatibility"
     ],
     "validation_and_performance": [
-      "Frozen cf0e43 has exact matching clean installed CPU and actual JAX/Torch CUDA gates; later canonical/default adapters require their own artifact/device gates.",
+      "Frozen22fa has exact matching clean installed CPU and actual JAX/Torch CUDA gates. Later metadata/host-transfer/default-task changes require final matching artifacts and affected device validation.",
       "Matched mature end-to-end cold/warm runtime and peak host/device memory unresolved",
       "Core measured mature molecular minimization regressions remain under investigation",
       "Corrected a0a, focused cf7 and bounded cf0e hydrogen Apple checks passed. Small workflow Metal runtime/memory and earlier biotin/minimization exceptions remain; native hydrogen reconstruction executes CPU even in the Metal scoring/annealing lane.",
@@ -508,5 +508,11 @@
       "tests/scientific/test_soft_repulsion.py"
     ],
     "implementation_status": "Common versioned .sfxn parser; explicit reference overrides and soft_rep reach whole-pose, block-pair and packing preparation. Four ligand/noncanonical/D/mixed full beta_soft cases compare all 25 values and coordinate gradients to actual Torch at float64 2e-10. Whole/pair conservation and independent directional derivatives tested. Unknown options reject."
+  },
+  "task_sampler_defaults": {
+    "torch": "supported",
+    "jax": "cpu_validated",
+    "repro_fixture": "tests/scientific/test_task_sampler_defaults.py",
+    "implementation_status": "Tasks inherit palette defaults with sampler-instance deduplication and independent masks. Ligand, D-peptide and DNA default packing preserve coordinates/topology and all 25 per-term values and gradients on CPU. Custom palette instance ownership tested on both backends; new artifact/CUDA gate pending."
   }
 }

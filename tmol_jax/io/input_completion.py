@@ -7,7 +7,6 @@ from tmol_core.pack.input_completion import prepare_input_completion_task
 from tmol_jax.pack import (
     PackerTask,
     FixedAAChiSampler,
-    FallbackSampler,
     OptHSampler,
     pack_rotamers,
 )
@@ -40,7 +39,6 @@ def complete_input(pose, missing, context, *, no_optH, seed, return_frozen=False
         supported_blocks=_supported_blocks,
         any_block=lambda mask: bool(np.asarray(mask).any()),
     )
-    task.add_conformer_sampler(FallbackSampler())
     score = (
         context._packing_score_function if has_missing else context._opth_score_function
     )
