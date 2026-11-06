@@ -344,6 +344,10 @@ def test_a_stated_thiol_hydrogen_keeps_the_cysteine_off_the_metal():
     assert all(d != cys for d, _ in metal_bonds(pose_stack).values())
     others = [residue_index(pose_stack, "A", r) for r in (9, 39, 42)]
     assert all(names[r].startswith("CYS_DEP") for r in others)
+    with pytest.raises(ValueError, match="Explicit metal coordination"):
+        pose_stack_from_atom_array(
+            with_hg, torch.device("cpu"), no_optH=True, require_all_metal_donors=True
+        )
 
 
 def labeled_metal_bonds(pose_stack):

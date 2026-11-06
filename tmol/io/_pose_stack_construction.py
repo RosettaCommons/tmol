@@ -37,6 +37,7 @@ def _pose_stack_from_canonical_form(  # noqa: C901
     find_additional_disulfides: Optional[bool] = True,
     find_additional_cyclic_closures: Optional[bool] = True,
     find_additional_metal_coordination: bool = True,
+    require_all_metal_donors: bool = False,
     return_chain_ind: bool = False,
     return_atom_mapping: bool = False,
     return_block_has_missing_atoms: bool = False,
@@ -76,6 +77,9 @@ def _pose_stack_from_canonical_form(  # noqa: C901
             into GEOMETRY_NAMES. A listed metal is not detected.
         metal_coordination: Explicit ``[pose, metal, site, donor, atom]`` rows
             for listed metals, atom in canonical ordering.
+        require_all_metal_donors: Reject a requested coordination bond absent
+            from the final assignments. By default, supplied hydrogens and
+            protonation retain precedence over imported graph requests.
         metal_origins: Per residue, where a metal split out of a component
             sat, kept in pdb_info so export can put it back.
         residue_annotations: Per residue, input annotations such as
@@ -261,6 +265,7 @@ def _pose_stack_from_canonical_form(  # noqa: C901
         declared_sites=declared_metal_sites,
         find_additional=find_additional_metal_coordination,
         required_donors=required_metal_donors,
+        require_all_donors=require_all_metal_donors,
     )
     res_type_variants = torch.where(
         metal_variants != 0, metal_variants, res_type_variants
