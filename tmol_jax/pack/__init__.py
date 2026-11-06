@@ -8,6 +8,7 @@ from .fixed_amino_acid import FixedAAChiSampler
 from .opth import OptHSampler
 from .fingerprint import prepare_atom_copy_plan
 from .task import PackerTask, SetPackerTask
+from .conjugated import ConjugatedChiSampler, add_conjugated_group_sampler
 from .current import IncludeCurrentSampler, FallbackSampler
 from .rotamers import build_rotamers
 from .rotamer_set import RotamerSet
@@ -16,6 +17,8 @@ from .imposition import prepare_pose_imposition, impose_top_rotamer_assignments
 
 __all__ = [
     "PackerPalette",
+    "ConjugatedChiSampler",
+    "add_conjugated_group_sampler",
     "pack_rotamers",
     "prepare_pose_imposition",
     "impose_top_rotamer_assignments",

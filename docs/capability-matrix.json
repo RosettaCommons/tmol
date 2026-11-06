@@ -165,7 +165,7 @@
         "tests/scientific/test_correlated_graph.py",
         "tests/jax/test_pose_imposition.py"
       ],
-      "implementation_status": "Common native CPU/CUDA sampling, sparse scoring, graph construction, annealing and imposition support repacking and selected L/D design choices. Task identity masks, budgets and bundles tested. Producer-declared joint groups now share graph collapse and original-member identity expansion, tested against both native graph backends. Complete correlated scoring/sampling, bump pruning and full design policy remain unfinished."
+      "implementation_status": "Common native CPU/CUDA sampling, sparse scoring, graph construction, annealing and imposition support repacking and selected L/D design choices. Task identity masks, budgets and bundles tested. Producer-declared joint groups now share graph collapse and original-member identity expansion, tested against both native graph backends. Prepared conjugated groups now fold with common native kinematics and emit correlated member coordinates. Automatic ligand preparation, complete correlated scoring, bump pruning and full design policy remain unfinished."
     },
     {
       "domain": "kinematics",

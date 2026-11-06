@@ -275,8 +275,11 @@ including fallback for uncovered residues. Ligand, noncanonical, D-peptide,
 mixed and DNA repacking fixtures check selected coordinates, immutable chemistry
 and the resulting whole-pose energy. CPU and CUDA retain their different mature
 search schedules. CUDA phase seeds come from a local NumPy PCG64 generator;
-packing leaves global random state unchanged. Bump pruning, correlated groups,
-conjugated sampling and FastRelax remain unfinished.
+packing leaves global random state unchanged. For already parameterized covalent
+groups, `ConjugatedChiSampler` and `add_conjugated_group_sampler` share task masks,
+chi budgets and correlation declarations with Torch; native joint kinematics
+preserve attachment geometry. Full correlated scoring, bump pruning, automatic
+ligand preparation and FastRelax remain unfinished.
 
 `prepare_pose_imposition(pose, rotamers, graph["retained"], assignments)` prepares
 discrete selection eagerly. Its `coordinates(rotamer_coords)` supports `jit`,

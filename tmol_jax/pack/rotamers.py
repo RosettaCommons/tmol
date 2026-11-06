@@ -92,6 +92,17 @@ def _validate_payloads(samples, coordinates):
         if fields == {"copy_input_coordinates"}:
             if payload["copy_input_coordinates"] is not True:
                 raise ValueError("input-coordinate payload requires a true copy marker")
+        elif fields == {"conformer_coordinates"}:
+            value = payload["conformer_coordinates"]
+            if (
+                value.ndim != 2
+                or value.shape[1] != 3
+                or value.dtype != coordinates.dtype
+                or value.device != coordinates.device
+            ):
+                raise ValueError(
+                    "conformer coordinates must match pose dtype/device and xyz shape"
+                )
         elif fields == {"chi_for_rotamers", "chi_defining_atom_for_rotamer"}:
             chi, atoms = (
                 payload["chi_for_rotamers"],
@@ -131,6 +142,17 @@ def build_rotamers(poses, task, chem_db=None):
         raise ValueError("conformer chemistry must match the pose parameter context")
     samplers, samples, choices, destinations, groups = _sample_conformers(poses, task)
     copy_input = tuple(s[2].get("copy_input_coordinates", False) for s in samples)
+    direct = tuple("conformer_coordinates" in s[2] for s in samples)
+    atom_counts = np.asarray(poses.packed_block_types.n_atoms)
+    for sample, enabled in zip(samples, direct):
+        if enabled:
+            kinds = np.asarray(task.cons_bt_block_type)[np.asarray(sample[1])]
+            if sample[2]["conformer_coordinates"].shape[0] != int(
+                atom_counts[kinds].sum()
+            ):
+                raise ValueError(
+                    "conformer coordinate rows must cover every selected atom"
+                )
     opth = tuple(s[2].get("opth_dof_initialization", False) for s in samples)
     opth_options = tuple(
         (s.flip_NHQ, task.chi_sample_budget or s.budget) if enabled else None
@@ -140,6 +162,7 @@ def build_rotamers(poses, task, chem_db=None):
         poses.coords.dtype,
         tuple(map(id, samplers)),
         copy_input,
+        direct,
         opth_options,
         groups,
     )
@@ -164,7 +187,7 @@ def build_rotamers(poses, task, chem_db=None):
         )
     ):
         execute, fields = _assembly_plan(
-            poses, task, samplers, copy_input, opth_options, identities, groups
+            poses, task, samplers, copy_input, direct, opth_options, identities, groups
         )
         previous = (
             key,
@@ -178,11 +201,15 @@ def build_rotamers(poses, task, chem_db=None):
             ()
             if copy
             else (
-                sample[2]["chi_for_rotamers"],
-                sample[2]["chi_defining_atom_for_rotamer"],
+                sample[2]["conformer_coordinates"]
+                if coordinates
+                else (
+                    sample[2]["chi_for_rotamers"],
+                    sample[2]["chi_defining_atom_for_rotamer"],
+                )
             )
         )
-        for copy, sample in zip(copy_input, samples)
+        for copy, coordinates, sample in zip(copy_input, direct, samples)
     )
     # Empty assembly can be constant-folded, removing all device-bearing inputs.
     # Keep its output on the pose device even when another backend is default.
@@ -191,7 +218,58 @@ def build_rotamers(poses, task, chem_db=None):
     return poses, RotamerSet(coords=coordinates, **previous[3])
 
 
-def _assembly_plan(poses, task, samplers, copy_input, opth_options, identities, groups):
+def _copy_coordinate_payloads(coordinates, payloads, plans):
+    for payload, plan in zip(payloads, plans):
+        if plan is not None:
+            source, target, prefix, rows = plan
+            coordinates = copy_conformer_rows(
+                coordinates,
+                payload,
+                source,
+                target,
+                prefix,
+                n_rows=rows,
+                root_shift=0,
+            )
+    return coordinates
+
+
+def _coordinate_row_plan(enabled, layout, selected, integer):
+    if not enabled:
+        return None
+    prefix = np.r_[0, np.cumsum(layout.n_atoms[selected], dtype=np.int64)]
+    return (
+        integer(prefix[:-1]),
+        integer(layout.offsets[selected]),
+        integer(prefix),
+        int(prefix[-1]),
+    )
+
+
+def _chi_copy_plan(
+    enabled,
+    selected,
+    source_residues,
+    source_types,
+    source_offsets,
+    types,
+    layout,
+    integer,
+):
+    if not enabled:
+        return None
+    source = source_residues[selected]
+    return (
+        integer(source_types[source]),
+        integer(source_offsets[source]),
+        integer(types[selected]),
+        integer(layout.offsets[selected]),
+    )
+
+
+def _assembly_plan(
+    poses, task, samplers, copy_input, direct, opth_options, identities, groups
+):
     """Bind immutable native layouts and compile one coordinate execution graph."""
     pbt, device = poses.packed_block_types, poses.device
     packed = prepare_rotamer_kinematics(pbt)
@@ -255,9 +333,25 @@ def _assembly_plan(poses, task, samplers, copy_input, opth_options, identities, 
         )
 
     copy_plans, chi_plans, copied, opth_metadata = [], [], [], []
-    for sampler, copy, opt, selected in zip(
-        samplers, copy_input, opth_options, destinations
+    coordinate_plans = []
+    for sampler, copy, coordinates, opt, selected in zip(
+        samplers, copy_input, direct, opth_options, destinations
     ):
+        coordinate_plans.append(
+            _coordinate_row_plan(coordinates, layout, selected, integer)
+        )
+        chi_plans.append(
+            _chi_copy_plan(
+                not (copy or coordinates),
+                selected,
+                source_residues,
+                source_types,
+                source_offsets,
+                types,
+                layout,
+                integer,
+            )
+        )
         if copy or opt is not None:
             plan = current_conformer_copy_plan(
                 integer(source_types.reshape(shape)),
@@ -281,25 +375,22 @@ def _assembly_plan(poses, task, samplers, copy_input, opth_options, identities, 
                 raise ValueError(
                     "input conformers must retain their original chemical identity"
                 )
-            chi_plans.append(None)
             copied.append(selected)
-        else:
-            source = source_residues[selected]
-            chi_plans.append(
-                (
-                    integer(source_types[source]),
-                    integer(source_offsets[source]),
-                    integer(types[selected]),
-                    integer(layout.offsets[selected]),
-                )
-            )
     copied_rows = (
         row_plan(np.concatenate(copied), coordinate_offsets) if copied else None
     )
     selections = tuple(integer(s) for s in destinations)
-    has_chi = not all(copy_input)
+    dof_selections = tuple(
+        (i, selected) for i, selected in enumerate(selections) if not direct[i]
+    )
+    chi_samplers = tuple(
+        not (copy or coordinates) for copy, coordinates in zip(copy_input, direct)
+    )
+    has_chi = any(chi_samplers)
     if has_chi:
-        fingerprints = prepare_atom_copy_plan(pbt, samplers)
+        fingerprints = prepare_atom_copy_plan(
+            pbt, [s for s, chi in zip(samplers, chi_samplers) if chi]
+        )
         kinematic_index = integer(packed.kinforest_idx)
         chi_atoms = integer(
             chi4_by_defining_atom(pbt.active_block_types, pbt.max_n_atoms)
@@ -313,10 +404,10 @@ def _assembly_plan(poses, task, samplers, copy_input, opth_options, identities, 
         sampler_indices = tuple(
             (
                 fingerprints.sampler_mapping[id(s)]
-                if not copy and len(selected) and fingerprints.atom_mapping.shape[1]
+                if chi and len(selected) and fingerprints.atom_mapping.shape[1]
                 else -1
             )
-            for s, copy, selected in zip(samplers, copy_input, destinations)
+            for s, chi, selected in zip(samplers, chi_samplers, destinations)
         )
 
     def copy_rows(target, source, plan, root_shift):
@@ -335,15 +426,15 @@ def _assembly_plan(poses, task, samplers, copy_input, opth_options, identities, 
     def execute(coords, payloads):
         if not has_chi:
             coordinates = jnp.zeros((layout.total, 3), coords.dtype)
-            return (
-                coordinates
-                if copied_rows is None
-                else copy_rows(coordinates, coords.reshape(-1, 3), copied_rows, 0)
-            )
+            if copied_rows is not None:
+                coordinates = copy_rows(
+                    coordinates, coords.reshape(-1, 3), copied_rows, 0
+                )
+            return _copy_coordinate_payloads(coordinates, payloads, coordinate_plans)
         dofs = ideal
         source_dofs = source_geometry.inverse(coords)
-        for i, (copy, selected) in enumerate(zip(copy_input, selections)):
-            if copy:
+        for i, selected in dof_selections:
+            if copy_input[i]:
                 dofs = copy_rows(dofs, source_dofs, copy_plans[i], 1)
             else:
                 if opth_options[i] is not None:
@@ -381,26 +472,25 @@ def _assembly_plan(poses, task, samplers, copy_input, opth_options, identities, 
                     kinematic_index,
                     ring_corrections,
                 )
-        if has_chi:
-            trial = geometry.forward(dofs)
-            for i, (copy, selected) in enumerate(zip(copy_input, selections)):
-                if not copy:
-                    angles, defining = payloads[i]
-                    dofs = correct_conformer_chi(
-                        dofs,
-                        angles,
-                        trial,
-                        type_indices,
-                        target_offsets,
-                        selected,
-                        defining,
-                        chi_atoms,
-                        kinematic_index,
-                    )
+        trial = geometry.forward(dofs)
+        for i, (copy, selected) in enumerate(zip(copy_input, selections)):
+            if chi_samplers[i]:
+                angles, defining = payloads[i]
+                dofs = correct_conformer_chi(
+                    dofs,
+                    angles,
+                    trial,
+                    type_indices,
+                    target_offsets,
+                    selected,
+                    defining,
+                    chi_atoms,
+                    kinematic_index,
+                )
         coordinates = geometry.forward(dofs)
         if copied_rows is not None:
             coordinates = copy_rows(coordinates, coords.reshape(-1, 3), copied_rows, 0)
-        return coordinates
+        return _copy_coordinate_payloads(coordinates, payloads, coordinate_plans)
 
     origins = prepare_conformer_origins(shape, pose_of, block_of, choices)
     counts_pose, offsets_pose, counts_block, offsets_block, rot_pose, rot_block = map(
