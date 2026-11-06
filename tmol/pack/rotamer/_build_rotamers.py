@@ -131,6 +131,22 @@ def _correct_phi_c_from_measured_chi(
         if chi_intended.shape[0] == 0:
             continue
 
+        if pbt.device.type != "mps":
+            from ._conformer_compiled import correct_chi_dofs
+
+            correct_chi_dofs(
+                block_type_ind_for_conformer_torch,
+                n_atoms_offset_for_conformer_torch,
+                new_ind_for_sampler_rotamer[i],
+                cda_rto,
+                chi_intended,
+                trial_coords_rto,
+                chi4_by_atom,
+                kfidx,
+                conf_dofs_kto,
+            )
+            continue
+
         # per-rotamer metadata for every (samp_rot, chi) pair
         g_rot = new_ind_for_sampler_rotamer[i]
         bt_idx = block_type_ind_for_conformer_torch[g_rot][:, None]
