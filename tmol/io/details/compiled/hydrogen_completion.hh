@@ -151,6 +151,12 @@ void launch_hydrogen_completion(
        distance_direction,
        weight_output] TMOL_DEVICE_FUNC(int p, int b, int a, Int type) {
         auto h = c.offsets[p][b] + a;
+        if constexpr (Mode == 1) {
+          auto w = weights[p][h];
+          // Packing can discard an unbuildable intermediate. Its zero
+          // cotangent contributes nothing, even when its frame is undefined.
+          if (w[0] == Real(0) && w[1] == Real(0) && w[2] == Real(0)) return;
+        }
         auto nb = hydrogen_neighbors(c, p, b, a, type);
         auto parent = c.coordinates[p][nb.parent];
         Vec<Real, 3> delta[6], unit[6], sum_local{0, 0, 0},

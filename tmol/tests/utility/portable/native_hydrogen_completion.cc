@@ -75,6 +75,19 @@ void check() {
     assert(out[a].norm() < tol);
     assert((jvp[a] - velocity[a]).norm() < tol);
   }
+  // Unused rebuilt hydrogens may have undefined intermediate geometry before
+  // packing replaces them. Their zero cotangent must not poison retained atoms.
+  xyz[1] = xyz[0];
+  weights[3] = Vec<Real, 3>{0, 0, 0};
+  run.template operator()<0>();
+  assert(std::isnan(out[3][0]));
+  run.template operator()<1>();
+  for (int a = 0; a < 5; ++a) assert((out[a] - weights[a]).isZero());
+  for (auto g : dg) assert(g == Real(0));
+  // Do not suppress active singular geometry, even for a very small cotangent.
+  weights[3] = Vec<Real, 3>::Constant(Real(1e-30));
+  run.template operator()<1>();
+  assert(!std::isfinite(out[0][0]) && !std::isfinite(dg[3]));
   // Strict retention tolerance, absent parent, NaNs and padded residues.
   Int input_types[] = {0, 0, 0, 0, -1};
   Vec<Real, 3> input_xyz[10];
