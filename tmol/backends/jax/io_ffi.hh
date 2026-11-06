@@ -2,6 +2,7 @@
 #pragma once
 #include "graph_topology_ffi.hh"
 #include "io_policy_ffi.hh"
+#include "io_protonation_ffi.hh"
 #include "io_hydrogen_ffi.hh"
 #include <tmol/io/details/compiled/leaf_atom_kernels.hh>
 #include <tmol/io/details/compiled/canonical_candidates.hh>
@@ -251,7 +252,9 @@ struct HistidineStage {
     graph_wide(a[3]);
     graph_wide(a[4], a[3].dimensions()[0]);
     require_shape(a[5], b, {p, r, n});
-    require_shape(a[6], i, {1, 8});
+    require_shape(a[6], i, {-1, 8});
+    if (a[6].dimensions()[0] < 1)
+      throw std::invalid_argument("histidine atom table cannot be empty");
     require_shape(out[0], i, {p, r});
     require_shape(out[1], w, {p, r, n, 8});
     require_shape(out[2], w, {p, r, 8});

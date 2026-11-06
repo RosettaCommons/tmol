@@ -279,6 +279,10 @@ TMOL_JAX_STAGE(
     tmol_hydrogen_completion,
     tmol::jax::run_graph_stage<tmol::jax::HydrogenStage>, );
 
+TMOL_JAX_STAGE(
+    tmol_protonation,
+    tmol::jax::run_graph_stage<tmol::jax::ProtonationStage>, );
+
 #undef TMOL_JAX_STAGE
 #undef TMOL_JAX_ENERGY
 #undef TMOL_JAX_TRAITS

@@ -92,13 +92,18 @@ def _map_residue_atoms(residue, source, present, mapping, leaf, allow_nonleaf=Fa
     safe = np.where(valid, mapping, 0)
     available = valid & present[safe]
     coords = np.where(available[:, None], source[safe], 0)
+    if not allow_nonleaf:
+        _require_rebuildable(residue, available, leaf)
+    return coords, available
+
+
+def _require_rebuildable(residue, available, leaf):
     missing = ~available & ~leaf[: residue.n_atoms]
-    if missing.any() and not allow_nonleaf:
+    if missing.any():
         atoms = ", ".join(
             residue.atoms[index].name for index in np.flatnonzero(missing)
         )
         raise ValueError(f"missing non-leaf atoms on {residue.name}: {atoms}")
-    return coords, available
 
 
 def _compact_palette(pbt, used):
@@ -165,7 +170,9 @@ def pose_stack_from_canonical_form(
     ligands and mixed batches. Missing leaf atoms use shared construction frames;
     missing non-leaf atoms raise unless ``build_missing_context=True`` selects
     the shared anchored context reconstruction. Explicit disulfides, cycles and
-    prepared covalent connections use common chemistry and port validation.
+    covalent and metal connections use common chemistry and port validation.
+    Metal donors grow the palette; protonation uses observed hydrogen evidence
+    and optional explicit states. Missing metal sites use shared placement plans.
 
     ``res_not_connected`` retains the JAX input convention of a terminated chain
     break; ``res_gap`` suppresses bonds without forcing terminal chemistry.
@@ -193,7 +200,6 @@ def pose_stack_from_canonical_form(
     co = cf.get("canonical_ordering") or default_canonical_ordering()
     coords, present = _canonical_coordinates(cf, co)
     shape = coords.shape[:2]
-    prepared, leaves = _canonical_metadata(pbt, co)
     names = _normalise_res_names(dict(cf, canonical_ordering=co), *shape)
     if len(names) != shape[0] or any(len(row) != shape[1] for row in names):
         raise ValueError("residue names must match the canonical coordinate shape")
@@ -236,6 +242,8 @@ def pose_stack_from_canonical_form(
         ("cyclic_bonds", 3, (1, 2)),
         ("covalent_bonds", 5, (1, 3)),
         ("metal_connections", 5, (1, 3)),
+        ("metal_sites", 3, (1,)),
+        ("metal_coordination", 5, (1, 3)),
     ):
         if cf.get(key) is not None:
             from ._selection import _rows
@@ -250,6 +258,19 @@ def pose_stack_from_canonical_form(
     def gather(array):
         index = order[(...,) + (None,) * (array.ndim - 2)]
         return np.take_along_axis(array, index, axis=1)
+
+    if cf.get("protonation_variants") is not None:
+        state = np.asarray(cf["protonation_variants"])
+        if (
+            state.shape != shape
+            or state.dtype.kind not in "iu"
+            or np.any(state > np.iinfo(np.int32).max)
+            or (state.dtype.kind == "i" and np.any(state < -1))
+        ):
+            raise ValueError(
+                "protonation_variants requires int32 states or -1 with the residue shape"
+            )
+        cf["protonation_variants"] = gather(state).astype(np.int32)
 
     types, coords, present, chains, labels, numbers, disconnected, gaps = map(
         gather, (types, coords, present, chains, labels, numbers, disconnected, gaps)
@@ -271,9 +292,10 @@ def pose_stack_from_canonical_form(
         - 1
     )
     chain_indices[~real] = -1
-    selected, connections, coords, present = select_and_connect(
-        co, pbt, prepared, cf, types, chain_indices, coords, present, gaps
+    selected, connections, coords, present, pbt, assignments = select_and_connect(
+        co, pbt, cf, types, chain_indices, coords, present, gaps
     )
+    prepared, leaves = _canonical_metadata(pbt, co)
     rows, xyz, masks, authors, residue_numbers, residue_names, chain_rows = (
         [] for _ in range(7)
     )
@@ -287,7 +309,7 @@ def pose_stack_from_canonical_form(
                 present[p, r],
                 prepared.bt_canonical_atom_ind_map[kind],
                 leaves[kind],
-                allow_nonleaf=build_missing_context,
+                allow_nonleaf=build_missing_context or bool(assignments),
             )
             for r, kind in zip(indices, kinds)
         ]
@@ -314,6 +336,15 @@ def pose_stack_from_canonical_form(
         residue_names,
         _connection_table=table,
     )
+    from ._metal import prepare_metal_completion
+
+    result, masks = prepare_metal_completion(result, masks, assignments)
+    if assignments and not build_missing_context:
+        for p, row in enumerate(rows):
+            for r, kind in enumerate(row):
+                _require_rebuildable(
+                    pbt.active_block_types[kind], masks[p][r], leaves[kind]
+                )
     masks = apply_input_policy(result, masks, mode)
     result = complete_missing_atoms(result, masks, build_context=build_missing_context)
     return result.replace(pdb_info=attrs.evolve(result.pdb_info, chain_id=authors))

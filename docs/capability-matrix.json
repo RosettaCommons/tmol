@@ -85,9 +85,11 @@
         "tests/scientific/test_cartbonded.py",
         "tests/scientific/test_molecular_nonbonded.py",
         "tests/scientific/test_metal_coordination.py",
-        "tests/scientific/test_complete_preset.py"
+        "tests/scientific/test_complete_preset.py",
+        "tests/scientific/test_canonical_molecular_input.py",
+        "tests/scientific/test_metal_placement.py"
       ],
-      "implementation_status": "Explicit zinc, calcium, bridging donors and iron-sulfur clusters use shared native coordination values/gradients; custom width/depth scaling tested. Automatic input geometry/donor inference remains absent."
+      "implementation_status": "Explicit zinc, calcium, bridging donors and iron-sulfur clusters use shared native coordination values/gradients; custom width/depth scaling tested. Canonical input now consumes common geometry/donor inference, donor-palette growth and virtual placement. Declared real-system CPU topology/energy/gradient and missing-site translation tests pass; newly integrated public policy CUDA checks pending."
     },
     {
       "domain": "disconnected_components",
@@ -203,9 +205,11 @@
         "tests/scientific/test_canonical_molecular_input.py",
         "tests/scientific/test_canonical_connections.py",
         "tests/scientific/test_histidine_input.py",
-        "tests/scientific/test_context_reconstruction.py"
+        "tests/scientific/test_context_reconstruction.py",
+        "tests/scientific/test_protonation_input.py",
+        "tests/scientific/test_metal_placement.py"
       ],
-      "implementation_status": "Explicit ResidueBlock input preserves named atoms, exact types, dtype and database context; optional native leaf reconstruction has CPU/CUDA checks. General canonical input consumes shared candidate/chain/termini/HIS/cycle/wiring/disulfide/attachment policies, with nine real molecular CPU/CUDA fixtures preserving coordinates, topology, per-term energies and full gradients. The default palette now covers ordinary database residues and variants; custom chemistry uses its own ordering and palette. Opt-in shared context-heavy reconstruction passes29 public JAX CPU checks plus8 shared Torch CPU checks, and40 affected JAX CUDA plus8 Torch CUDA checks. Context cache identity includes custom atom types. Generated-H names/rebuild/input-parent policies and native geometric completion now have53 affected JAX CPU checks and8 shared Torch CPU checks, including coordinate/bond-length gradients and second reverse derivatives. Hydrogen CUDA and matching installed artifacts remain pending; protonation/metal inference and CIF remain unfinished."
+      "implementation_status": "Explicit ResidueBlock and general canonical input preserve named atoms, selected chemistry, dtype, topology and database context. Canonical selection, termini, HIS/CYS, cycles, protonation and connectivity use common policy/native kernels; metal donors grow the palette. Shared context-heavy and generated-hydrogen completion support real ligands/noncanonical polymers. Generated-H CPU/CUDA value/gradient and second-reverse tests pass. New metal/protonation/custom-slot public CPU tests pass; matching combined CUDA and installed-artifact validation pending. Input preparation is eager; native stages support jit/vmap. General CIF/AtomWorks input remains absent."
     },
     {
       "domain": "jit_vmap_reverse_ad",

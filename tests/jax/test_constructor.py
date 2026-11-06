@@ -81,11 +81,17 @@ def test_unknown_input_atom_is_not_silently_dropped():
         ("protonation_variants", np.zeros((1, 3), np.int32)),
     ),
 )
-def test_unimplemented_input_inference_is_explicit(option, value):
+def test_input_inference_preserves_ordinary_protein(option, value):
     canonical = _three_residues()
+    pbt = default_packed_block_types()
+    expected = pose_stack_from_canonical_form(canonical, pbt)
     canonical[option] = value
-    with pytest.raises(NotImplementedError):
-        pose_stack_from_canonical_form(canonical, default_packed_block_types())
+    actual = pose_stack_from_canonical_form(canonical, pbt)
+    np.testing.assert_array_equal(actual.coords, expected.coords)
+    np.testing.assert_array_equal(actual.block_type_ind, expected.block_type_ind)
+    np.testing.assert_array_equal(
+        actual.inter_residue_connections, expected.inter_residue_connections
+    )
 
 
 def test_conflicting_canonical_residue_identities_are_rejected():

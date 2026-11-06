@@ -8,18 +8,40 @@ import pytest
 from .molecules import MolecularCase
 
 
-@pytest.mark.parametrize("name", ("HIS", "DHIS"))
+@pytest.mark.parametrize("name", ("HIS", "DHIS", "DHIS_reordered"))
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
 def test_histidine_protonation_and_alias_identity(backend, name, dtype):
     from tmol_core.io.canonical_ordering import CanonicalOrdering
 
+    reordered = name.endswith("_reordered")
+    name = name.removesuffix("_reordered")
     b = backend.molecule(MolecularCase((), ((name,),), ((1,),)), terms=("ref",))
-    co = CanonicalOrdering.from_chemdb(b.parameter_database.chemical)
+    chemistry = b.parameter_database.chemical
+    if reordered:
+        import attrs
+
+        chemistry = attrs.evolve(
+            chemistry,
+            residues=tuple(
+                (
+                    attrs.evolve(r, atoms=r.atoms[1:] + r.atoms[:1])
+                    if r.io_equiv_class == "DHI"
+                    else r
+                )
+                for r in chemistry.residues
+            ),
+        )
+    co = CanonicalOrdering.from_chemdb(chemistry)
+    from tmol_core.io.canonical_ordering import histidine_atom_indices
+
+    atom_table = histidine_atom_indices(co.his_inds)
+    if reordered:
+        assert atom_table.shape[0] > 1
     residue = b.pose.block_type(0, 0)
     equiv = residue.io_equiv_class
     atom_map = co.restypes_atom_index_mapping[equiv]
     fields = ("ND1", "NE2", "HD1", "HE2", "HN", "NH", "NN", "CG")
-    nd, ne, hd, he, hn, nh, nn, cg = indices = [atom_map[a] for a in fields]
+    nd, ne, hd, he, hn, nh, nn, cg = [atom_map[a] for a in fields]
     xyz = np.zeros((1, 9, co.max_n_canonical_atoms, 3), dtype)
     present = np.zeros(xyz.shape[:-1], bool)
     for i, atom in enumerate(residue.atoms):
@@ -86,7 +108,7 @@ def test_histidine_protonation_and_alias_identity(backend, name, dtype):
                         wide(selected_poses),
                         wide(selected_residues),
                         present,
-                        np.array([indices], np.int32),
+                        atom_table,
                     ),
                 )
             )
@@ -123,7 +145,7 @@ def test_histidine_protonation_and_alias_identity(backend, name, dtype):
                 array(selected_poses),
                 array(selected_residues),
                 array(present),
-                array(np.array([indices], np.int32)),
+                array(atom_table),
                 mapping,
             )
             actual_variants, mapping, states = map(

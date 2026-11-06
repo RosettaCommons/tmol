@@ -292,8 +292,8 @@ sampled values and coordinate gradients agree on those raw ensembles.
 
 `pose_stack_from_canonical_form()` accepts a supplied chemical ordering and
 palette for ligands, noncanonical/D polymers, nucleic acids and mixed batches.
-It uses common native candidate, terminus, histidine, cycle and connection
-policies, plus shared disulfide and covalent-attachment preparation. Observed
+It uses common native candidate, terminus, histidine, protonation, cycle and
+connection policies, plus shared disulfide, metal and covalent-attachment preparation. Observed
 coordinates retain their dtype and atom identities; missing leaf atoms use the
 common native frames. Explicit bonds refer to canonical residue/atom indices,
 including when the input contains padding. Interior padding breaks chains by
@@ -303,9 +303,15 @@ the individual native decision stages support `jit` and `vmap`.
 
 The default PDB/Biotite palette includes all ordinary residues and variants in
 the chemical database, including D residues and nucleic acids. Custom ligands
-use the supplied chemical ordering and palette. Standalone metal sites still
-require an explicitly prepared palette. General metal geometry/donor inference and protonation-state inference remain
-unfinished. `ligand_hydrogens="input"` (the JAX default) retains generated named
+use the supplied chemical ordering and palette. Metal geometry and donor inference
+use the common chemical policy and grow donor variants in that palette. Explicit
+`metal_sites` and `metal_coordination` rows retain declared geometry and connectivity;
+missing virtual sites use shared placement plans. `protonation_variants` supplies
+explicit states (`-1` means infer), while observed hydrogen evidence and required
+donors select chemical forms through the common native kernel. Disulfide states
+remain authoritative. These decisions use the supplied database, including custom
+L/D histidine and cysteine atom orderings. General CIF/AtomWorks input remains
+unimplemented. `ligand_hydrogens="input"` (the JAX default) retains generated named
 hydrogens only when their observed heavy parent and bond distance are consistent
 with the common policy. `"names"` and `"rebuild"` reconstruct generated hydrogens.
 Common native geometry reorients eligible rebuilt hydrogens from heavy neighbors,
@@ -313,7 +319,7 @@ including connected residues. Its fixed-topology primitive supports `jit`, `vmap
 and first/second reverse derivatives in coordinates and ideal bond lengths;
 forward-mode and third derivatives are not implemented. Comparisons to Torch
 must request matching input policies. Missing non-leaf atoms raise unless `build_missing_context=True` enables
-the shared context planner. Unsupported declared inference options raise. Use exact residue blocks for prepared metal states.
+the shared context planner. Unresolved declared donor bonds raise.
 `res_not_connected` retains the JAX terminated-break convention; `res_gap`
 suppresses bonds without forcing terminal variants.
 

@@ -262,3 +262,29 @@ def histidine_coordinates(coords, types, variants, poses, residues, present, ato
         jax.numpy.take_along_axis(coords, indices[..., None], axis=2),
         jax.numpy.take_along_axis(present, indices, axis=2),
     )
+
+
+@jax.jit
+def canonical_protonation(types, variants, present, metadata, bonds, donors):
+    """Execute shared hydrogen-evidence and required-donor variant selection."""
+    from tmol_core.chemical import DEPROTONATED_VAR_IND
+
+    register("tmol_protonation")
+    return jax.ffi.ffi_call(
+        "tmol_protonation",
+        (
+            jax.ShapeDtypeStruct(types.shape, np.int32),
+            jax.ShapeDtypeStruct(types.shape, np.bool_),
+        ),
+        vmap_method="sequential",
+    )(
+        types,
+        variants,
+        present,
+        *metadata,
+        bonds,
+        donors,
+        operation=np.int64(0),
+        extent=np.int64(DEPROTONATED_VAR_IND),
+        width=np.int64(0),
+    )

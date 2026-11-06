@@ -11,7 +11,6 @@ from tmol_core.io.connections import (
     prepare_covalent_connections,
     prepare_metal_connections,
 )
-from tmol_core.io.disulfides import prepare_disulfide_search, resolve_disulfides
 
 from . import _native
 
@@ -76,7 +75,7 @@ def _execution_metadata(pbt, prepared):
     return arrays, conjugations
 
 
-def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, gaps):
+def select_and_connect(co, pbt, cf, types, chains, coords, present, gaps):
     """Materialize the shared discrete input decisions on the palette's device.
 
     This preparation boundary intentionally inspects results on the host; its
@@ -88,9 +87,14 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
     def put(values):
         return jax.device_put(values, device)
 
-    def run(function, *values, **options):
-        return function(*put(values), **options)
+    from ._variants import resolve_input_variants
+    from .pose_stack_construction import _canonical_metadata
 
+    bonds = _rows(cf, "covalent_bonds", 5, types.shape, (1, 3))
+    pbt, disulfides, variants, coords, present, assignments, metal_rows = (
+        resolve_input_variants(co, pbt, cf, types, coords, present, bonds)
+    )
+    prepared, _ = _canonical_metadata(pbt, co)
     (
         metadata,
         class_polymeric,
@@ -102,54 +106,7 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
         dslf,
     ), conjugations = _execution_metadata(pbt, prepared)
     real = types >= 0
-    if cf.get("find_additional_metal_coordination", False):
-        raise NotImplementedError(
-            "automatic canonical metal coordination is not implemented"
-        )
-    for name in ("metal_sites", "metal_coordination", "protonation_variants"):
-        if cf.get(name) is not None:
-            raise NotImplementedError(
-                f"canonical {name} resolution is not implemented; use exact residue blocks and named ports"
-            )
-    disulfides = _rows(cf, "disulfides", 3, types.shape, (1, 2))
-    plan = prepare_disulfide_search(
-        co.cys_inds.cys_co_aa_inds,
-        types,
-        disulfides if "disulfides" in cf else None,
-        cf.get("find_additional_disulfides", True),
-    )
-    disulfides, variants = resolve_disulfides(
-        plan,
-        np.where(present[..., None], coords, np.nan),
-        co.cys_inds.sg_atom_for_co_cys,
-    )
-    disulfides = disulfides.astype(np.int32)
-    resolved = None
-    his_rows = np.nonzero(np.isin(types, co.his_inds.his_co_aa_inds))
-    if len(his_rows[0]):
-        inds = co.his_inds
-        atoms = np.array(
-            [
-                [
-                    getattr(inds, "his_" + name + "_in_co")
-                    for name in ("ND1", "NE2", "HD1", "HE2", "HN", "NH", "NN", "CG")
-                ]
-            ],
-            np.int32,
-        )
-        resolved = run(
-            _native.histidine_coordinates,
-            np.where(present[..., None], coords, np.nan),
-            types,
-            variants,
-            _wide(his_rows[0]),
-            _wide(his_rows[1]),
-            present,
-            atoms,
-        )
-        variants = resolved[0]
     cycles = _rows(cf, "cyclic_bonds", 3, types.shape, (1, 2))
-    bonds = _rows(cf, "covalent_bonds", 5, types.shape, (1, 3))
     explicit_ports = np.zeros((*types.shape, 2), bool)
     if len(bonds):
         for col in (1, 3):
@@ -164,12 +121,8 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
             (
                 types,
                 chains,
-                (
-                    np.where(present[..., None], coords, np.nan)
-                    if resolved is None
-                    else resolved[1]
-                ),
-                present if resolved is None else resolved[2],
+                coords,
+                present,
                 gaps,
                 real,
                 variants,
@@ -240,17 +193,20 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
     covalent = prepare_covalent_connections(
         co, pbt.active_block_types, conjugations, selected, bonds
     )
-    # Explicit prepared metal connections use the same structural port policy.
-    # Geometry inference and donor patch generation are guarded above.
     metal = prepare_metal_connections(
         co,
         pbt.active_block_types,
         conjugations,
         covalent.block_types,
-        _rows(cf, "metal_connections", 5, types.shape, (1, 3)),
+        np.concatenate(
+            (metal_rows, _rows(cf, "metal_connections", 5, types.shape, (1, 3)))
+        ),
     )
-    for message in (*covalent.warnings, *metal.warnings):
-        logger.warning(message)
+    if covalent.warnings or metal.warnings:
+        raise ValueError(
+            "canonical declared connections could not be retained: "
+            + "; ".join((*covalent.warnings, *metal.warnings))
+        )
     selected = metal.block_types.astype(np.int32)
     edges = np.asarray(covalent.connections + metal.connections, np.int32).reshape(
         -1, 5
@@ -274,6 +230,11 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
         raise ValueError(
             f"invalid canonical connection topology (per-pose status {np.asarray(status).tolist()})"
         )
-    if resolved is not None:
-        coords, present = map(np.asarray, resolved[1:])
-    return selected, np.asarray(connections), coords, present
+    return (
+        selected,
+        np.asarray(connections),
+        np.asarray(coords),
+        np.asarray(present),
+        pbt,
+        assignments,
+    )

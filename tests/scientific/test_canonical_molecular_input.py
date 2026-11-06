@@ -3,7 +3,8 @@
 import numpy as np
 import pytest
 
-from .molecules import DOMAIN_CASES, BACKBONE_CASES
+from .molecules import DOMAIN_CASES, BACKBONE_CASES, MolecularCase
+from .metal_molecules import METAL_CASES
 
 CASES = {
     key: DOMAIN_CASES[key]
@@ -19,6 +20,13 @@ CASES = {
     )
 }
 CASES["cyclic"] = BACKBONE_CASES["cyclic"]
+CASES.update({"metal_" + key: value for key, value in METAL_CASES.items()})
+CASES.update(
+    {
+        "protonation_" + name: MolecularCase((), ((name,),), ((1,),))
+        for name in ("CYS_DEP", "DCYS_DEP", "TYR_DEP", "DTYR_DEP", "HIS_POS")
+    }
+)
 
 
 def canonical_input(case, database):
@@ -54,6 +62,37 @@ def canonical_input(case, database):
         ],
         np.int32,
     ).reshape(-1, 3)
+    from tmol_core.chemical import GEOMETRY_NAMES, _site_connections
+
+    metal_sites, coordination = [], []
+    for p, row in enumerate(rows):
+        for r, (name, _, _) in enumerate(row):
+            residue = refined_from_raw(raw[name])
+            if residue.metal_sites:
+                metal_sites.append(
+                    (p, r, GEOMETRY_NAMES.index(residue.metal_sites[0].geometry))
+                )
+        for metal, port, donor, donor_port in case.extra_connections()[p]:
+            if port in ("up", "down"):
+                continue
+            metal_type = refined_from_raw(raw[row[metal][0]])
+            donor_type = refined_from_raw(raw[row[donor][0]])
+            if port not in _site_connections(metal_type):
+                continue
+            atom = donor_type.connections[
+                donor_type.connection_to_cidx[donor_port]
+            ].atom
+            coordination.append(
+                (
+                    p,
+                    metal,
+                    _site_connections(metal_type).index(port),
+                    donor,
+                    co.restypes_atom_index_mapping[donor_type.io_equiv_class][atom],
+                )
+            )
+    metal_sites = np.array(metal_sites, np.int32).reshape(-1, 3)
+    coordination = np.array(coordination, np.int32).reshape(-1, 5)
     if shape[1] > 1:
         # Internal padding must not change polymer adjacency or declared cycles.
         coords = np.insert(coords, 1, np.nan, axis=1)
@@ -61,12 +100,16 @@ def canonical_input(case, database):
         chains = np.insert(chains, 1, -1, axis=1)
         gaps = np.insert(gaps, 1, False, axis=1)
         cycles[:, 1:] += cycles[:, 1:] >= 1
+        metal_sites[:, 1] += metal_sites[:, 1] >= 1
+        coordination[:, [1, 3]] += coordination[:, [1, 3]] >= 1
     return co, dict(
         coords=coords,
         res_types=types,
         chain_id=chains,
         res_gap=gaps,
         cyclic_bonds=cycles,
+        metal_sites=metal_sites,
+        metal_coordination=coordination,
         find_additional_cyclic_closures=False,
     )
 
@@ -95,7 +138,10 @@ def physical_edges(b):
 
 @pytest.mark.parametrize("case", tuple(CASES))
 def test_canonical_input_retains_molecular_state(backend, case):
-    b = backend.molecule(CASES[case], terms=("gen_torsions", "cart_lengths", "fa_elec"))
+    terms = ("gen_torsions", "cart_lengths", "fa_elec")
+    if case.startswith("metal_"):
+        terms += ("metal_coordination",)
+    b = backend.molecule(CASES[case], terms=terms)
     expected_coords = b.coords().copy()
     expected_edges = physical_edges(b)
     expected_names = [
@@ -106,39 +152,7 @@ def test_canonical_input_retains_molecular_state(backend, case):
         expected_coords
     )
     co, cf = canonical_input(CASES[case], b.parameter_database)
-    if b.framework == "jax":
-        from tmol_jax.io import pose_stack_from_canonical_form
-        from tmol_jax.pose.packed_block_types import PackedBlockTypes
-
-        with b.module.default_device(b.device):
-            b.pose = pose_stack_from_canonical_form(
-                dict(cf, canonical_ordering=co),
-                PackedBlockTypes.default(b.parameter_database.chemical),
-                compact_padding=True,
-            )
-        b.pose = b.pose.to(b.device)
-    else:
-        from tmol.io._pose_stack_construction import _pose_stack_from_canonical_form
-        from tmol.io._canonical_ordering import CanonicalOrdering
-
-        co = CanonicalOrdering.from_chemdb(b.parameter_database.chemical)
-        b.pose = _pose_stack_from_canonical_form(
-            co,
-            b.pose.packed_block_types,
-            b.module.as_tensor(cf["chain_id"], device=b.device),
-            b.module.as_tensor(cf["res_types"], device=b.device),
-            b.module.as_tensor(cf["coords"], device=b.device),
-            None,
-            None,
-            None,
-            res_not_connected=b.module.as_tensor(cf["res_gap"], device=b.device),
-            cyclic_bonds=b.module.as_tensor(
-                cf["cyclic_bonds"].astype(np.int64), device=b.device
-            ),
-            find_additional_cyclic_closures=False,
-            ligand_hydrogens="input",
-        )
-        b._render_torch()
+    rebuild_canonical(b, co, cf, unpatched_metals=case.startswith("metal_"))
     np.testing.assert_array_equal(b.coords(), expected_coords)
     assert physical_edges(b) == expected_edges
     assert [
@@ -159,3 +173,68 @@ def test_canonical_input_retains_molecular_state(backend, case):
     assert np.any(channels != 0)
     if case in ("ligand", "connected_noncanonical", "mixed_batch"):
         assert np.max(np.abs(channels[b.channel_names().index("gen_torsions")])) > 1e-3
+
+
+def rebuild_canonical(b, co, cf, *, unpatched_metals=False):
+    if b.framework == "jax":
+        from tmol_jax.io import pose_stack_from_canonical_form
+        from tmol_jax.pose.packed_block_types import PackedBlockTypes
+
+        chemistry = b.parameter_database.chemical
+        if unpatched_metals:
+            from tmol_jax.database import ParameterDatabase
+
+            chemistry = ParameterDatabase.get_default().chemical
+            assert not any("metal_OD1" in r.name for r in chemistry.residues)
+        with b.module.default_device(b.device):
+            b.pose = pose_stack_from_canonical_form(
+                dict(cf, canonical_ordering=co),
+                PackedBlockTypes.default(chemistry),
+                compact_padding=True,
+            )
+        b.pose = b.pose.to(b.device)
+    else:
+        from tmol.io._pose_stack_construction import _pose_stack_from_canonical_form
+        from tmol.io._canonical_ordering import CanonicalOrdering
+
+        co = CanonicalOrdering.from_chemdb(b.parameter_database.chemical)
+        pbt = b.pose.packed_block_types
+        if unpatched_metals:
+            from tmol import ParameterDatabase, PackedBlockTypes
+            from tmol.chemical._restypes import ResidueTypeSet
+
+            chemistry = ParameterDatabase.get_default().chemical
+            restypes = ResidueTypeSet.from_database(chemistry)
+            pbt = PackedBlockTypes.from_restype_list(
+                chemistry, restypes, restypes.residue_types, b.device
+            )
+        b.pose = _pose_stack_from_canonical_form(
+            co,
+            pbt,
+            b.module.as_tensor(cf["chain_id"], device=b.device),
+            b.module.as_tensor(cf["res_types"], device=b.device),
+            b.module.as_tensor(cf["coords"], device=b.device),
+            None,
+            None,
+            None,
+            res_not_connected=b.module.as_tensor(cf["res_gap"], device=b.device),
+            cyclic_bonds=b.module.as_tensor(
+                cf["cyclic_bonds"].astype(np.int64), device=b.device
+            ),
+            find_additional_cyclic_closures=False,
+            ligand_hydrogens="input",
+            protonation_variants=(
+                None
+                if cf.get("protonation_variants") is None
+                else b.module.as_tensor(
+                    cf["protonation_variants"].astype(np.int64), device=b.device
+                )
+            ),
+            metal_sites=b.module.as_tensor(
+                cf["metal_sites"].astype(np.int64), device=b.device
+            ),
+            metal_coordination=b.module.as_tensor(
+                cf["metal_coordination"].astype(np.int64), device=b.device
+            ),
+        )
+        b._render_torch()

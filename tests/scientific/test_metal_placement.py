@@ -130,3 +130,37 @@ def _check_placement(b, name, dtype):
     predicted = np.sum(gradient.astype(np.float64) * direction)
     actual = np.sum((shifted.astype(np.float64) - output) * b.numpy(weights))
     np.testing.assert_allclose(predicted, actual, rtol=2e-6, atol=2e-6)
+
+
+@pytest.mark.parametrize("name", ("zinc_site", "cluster_bridge"))
+def test_public_metal_input_reconstructs_missing_sites(backend, name):
+    from .test_canonical_molecular_input import physical_edges, rebuild_canonical
+
+    b = backend.molecule(METAL_CASES[name], terms=("metal_coordination", "fa_elec"))
+    expected = b.coords().copy()
+    edges = physical_edges(b)
+    co, cf = canonical_input(METAL_CASES[name], b.parameter_database)
+    observed = np.ones(expected.shape[:2], bool)
+    for r in range(b.pose.block_type_ind.shape[1]):
+        residue = b.pose.block_type(0, r)
+        start = int(b.numpy(b.pose.block_coord_offset)[0, r])
+        canonical_residue = r + (r >= 1)
+        index = co.restypes_atom_index_mapping[residue.io_equiv_class]
+        for site in residue.metal_sites:
+            for atom in site.site_virts:
+                observed[0, start + residue.atom_to_idx[atom]] = False
+                cf["coords"][0, canonical_residue, index[atom]] = np.nan
+    assert not observed.all()
+    rebuild_canonical(b, co, cf, unpatched_metals=True)
+    rebuilt = b.coords().copy()
+    np.testing.assert_array_equal(rebuilt[observed], expected[observed])
+    assert np.isfinite(rebuilt).all() and physical_edges(b) == edges
+    energy, gradient = b.channel_values_and_gradients(rebuilt)
+    assert np.isfinite(energy).all() and np.isfinite(gradient).all()
+    assert np.max(np.abs(energy[b.channel_names().index("metal_coordination")])) > 1e-3
+    assert np.linalg.norm(gradient) > 0
+    shift = np.array([0.25, -0.5, 1.0], np.float32)
+    rebuild_canonical(
+        b, co, dict(cf, coords=cf["coords"] + shift), unpatched_metals=True
+    )
+    np.testing.assert_allclose(b.coords(), rebuilt + shift, rtol=2e-6, atol=2e-6)
