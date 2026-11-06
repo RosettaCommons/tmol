@@ -141,4 +141,26 @@ void execute_graph_topology(
 #undef IN
 #undef OUT
 }
+struct GraphTopologyStage {
+  static int fill(int64_t operation, size_t) {
+    return operation == 6 ? -1 : operation == 0 ? 255 : 0;
+  }
+  static void validate(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out,
+      int64_t operation,
+      int64_t,
+      int64_t width) {
+    validate_graph_topology(a, out, operation, width);
+  }
+  template <template <Device> class Ops, Device D>
+  static void execute(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out,
+      int64_t operation,
+      int64_t,
+      int64_t width) {
+    execute_graph_topology<Ops, D>(a, out, operation, width);
+  }
+};
 }  // namespace tmol::jax

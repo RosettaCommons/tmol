@@ -15,6 +15,7 @@
 #include "kinematics_ffi.hh"
 #include "conformer_ffi.hh"
 #include "graph_topology_ffi.hh"
+#include "graph_retention_ffi.hh"
 #include "graph_prefix_ffi.hh"
 #include "annealer_ffi.hh"
 #include "forward_kinematics_ffi.hh"
@@ -171,26 +172,28 @@ ffi::Error run(
     return ffi::Error::InvalidArgument(error.what());
   }
 }
-ffi::Error run_graph_topology(
+template <typename Stage>
+ffi::Error run_graph_stage(
     ffi::ThreadPool pool,
     ffi::RemainingArgs args,
     ffi::RemainingRets rets,
     int64_t operation,
-    int64_t chunk_size) {
+    int64_t extent,
+    int64_t width) {
   auto previous = active_pool;
   try {
     auto inputs = native_arguments(args);
     auto outputs = native_results(rets);
-    validate_graph_topology(inputs, outputs, operation, chunk_size);
-    if (operation != 6) {
-      int fill = operation == 0 ? 255 : 0;
-      for (auto result : outputs)
-        if (result.size_bytes())
-          std::memset(result.untyped_data(), fill, result.size_bytes());
+    Stage::validate(inputs, outputs, operation, extent, width);
+    for (size_t i = 0; i < outputs.size(); ++i) {
+      int fill = Stage::fill(operation, i);
+      auto result = outputs[i];
+      if (fill >= 0 && result.size_bytes())
+        std::memset(result.untyped_data(), fill, result.size_bytes());
     }
     active_pool = &pool;
-    execute_graph_topology<CpuOps, Device::CPU>(
-        inputs, outputs, operation, chunk_size);
+    Stage::template execute<CpuOps, Device::CPU>(
+        inputs, outputs, operation, extent, width);
     active_pool = previous;
 
     return ffi::Error::Success();
@@ -637,13 +640,25 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_graph_topology,
-    tmol::jax::run_graph_topology,
+    tmol::jax::run_graph_stage<tmol::jax::GraphTopologyStage>,
     xla::ffi::Ffi::Bind()
         .Ctx<xla::ffi::ThreadPool>()
         .RemainingArgs()
         .RemainingRets()
         .Attr<int64_t>("operation")
-        .Attr<int64_t>("chunk_size"));
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_graph_retention,
+    tmol::jax::run_graph_stage<tmol::jax::GraphRetentionStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"));
 
 extern "C" uint64_t tmol_graph_prefix_workspace_bytes(
     int64_t count, int bits, int) {

@@ -17,6 +17,7 @@
 #include "kinematics_ffi.hh"
 #include "conformer_ffi.hh"
 #include "graph_topology_ffi.hh"
+#include "graph_retention_ffi.hh"
 #include "graph_prefix_ffi.hh"
 #include "forward_kinematics_ffi.hh"
 #include "sampling_ffi.hh"
@@ -367,27 +368,29 @@ ffi::Error run(
     return ffi::Error::Internal(error.what());
   }
 }
-ffi::Error run_graph_topology(
+template <typename Stage>
+ffi::Error run_graph_stage(
     cudaStream_t stream,
     ffi::RemainingArgs args,
     ffi::RemainingRets rets,
     int64_t operation,
-    int64_t chunk_size) {
+    int64_t extent,
+    int64_t width) {
   auto previous = active_stream;
   try {
     auto inputs = native_arguments(args);
     auto outputs = native_results(rets);
-    validate_graph_topology(inputs, outputs, operation, chunk_size);
-    if (operation != 6) {
-      int fill = operation == 0 ? 255 : 0;
-      for (auto result : outputs)
-        if (result.size_bytes())
-          check_cuda(cudaMemsetAsync(
-              result.untyped_data(), fill, result.size_bytes(), stream));
+    Stage::validate(inputs, outputs, operation, extent, width);
+    for (size_t i = 0; i < outputs.size(); ++i) {
+      int fill = Stage::fill(operation, i);
+      auto result = outputs[i];
+      if (fill >= 0 && result.size_bytes())
+        check_cuda(cudaMemsetAsync(
+            result.untyped_data(), fill, result.size_bytes(), stream));
     }
     active_stream = stream;
-    execute_graph_topology<CudaOps, Device::CUDA>(
-        inputs, outputs, operation, chunk_size);
+    Stage::template execute<CudaOps, Device::CUDA>(
+        inputs, outputs, operation, extent, width);
     active_stream = previous;
     check_cuda(cudaPeekAtLastError());
     return ffi::Error::Success();
@@ -675,13 +678,26 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_graph_topology,
-    tmol::jax::run_graph_topology,
+    tmol::jax::run_graph_stage<tmol::jax::GraphTopologyStage>,
     xla::ffi::Ffi::Bind()
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()
         .RemainingRets()
         .Attr<int64_t>("operation")
-        .Attr<int64_t>("chunk_size"),
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_graph_retention,
+    tmol::jax::run_graph_stage<tmol::jax::GraphRetentionStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"),
     {xla::ffi::Traits::kCmdBufferCompatible});
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
