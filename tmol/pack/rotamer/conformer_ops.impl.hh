@@ -15,10 +15,9 @@ void ConformerDofKernels<Ops, D, Real, Int>::rows(
     ContextManager& mgr, Rows c, int64_t n_rows, int root_shift) {
   launch_copy_conformer_rows<Ops, D>(mgr, c, n_rows, root_shift);
 }
-template <Device>
-class Ops, Device D, typename Real,
-    typename Int > void ConformerDofKernels<Ops, D, Real, Int>::correct(
-        ContextManager& mgr, Correction c) {
+template <template <Device> class Ops, Device D, typename Real, typename Int>
+void ConformerDofKernels<Ops, D, Real, Int>::correct(
+    ContextManager& mgr, Correction c) {
   launch_correct_chi_dofs<Ops, D, Real>(mgr, c);
 }
 }  // namespace tmol::pack::rotamer
