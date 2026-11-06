@@ -3,6 +3,7 @@
 #include <tmol/utility/function_dispatch/aten.hh>
 #include <tmol/score/common/device_operations.hh>
 #include <tmol/pack/rotamer/conformer_ops.hh>
+#include <tmol/pack/rotamer/pose_imposition_torch.hh>
 namespace tmol::pack::rotamer {
 using tmol::native::Tensor;
 ContextManager conformer_context;
@@ -144,7 +145,36 @@ void correct_chi_dofs(
                                 }));
 }
 
+Tensor select_pose_rotamers(std::vector<Tensor> inputs) {
+  TORCH_CHECK(!inputs.empty(), "Pose imposition requires inputs");
+  Tensor output;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[0].options(), "select_pose_rotamers", ([&] {
+        output =
+            PoseImpositionTorch<score::common::DeviceOperations, device_t>::
+                select(conformer_context, inputs);
+      }));
+  return output;
+}
+std::vector<Tensor> plan_pose_imposition(
+    std::vector<Tensor> inputs, int64_t capacity, int64_t ncoords) {
+  TORCH_CHECK(!inputs.empty(), "Pose imposition requires inputs");
+  std::vector<Tensor> output;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[0].options(), "plan_pose_imposition", ([&] {
+        output =
+            PoseImpositionTorch<score::common::DeviceOperations, device_t>::
+                plan(conformer_context, inputs, capacity, ncoords);
+      }));
+  return output;
+}
 TMOL_LIBRARY(tmol_conformer_dofs, m) {
+  m.def(
+      "select_pose_rotamers(Tensor[] inputs) -> Tensor", &select_pose_rotamers);
+  m.def(
+      "plan_pose_imposition(Tensor[] inputs, int capacity, int ncoords) -> "
+      "Tensor[]",
+      &plan_pose_imposition);
   m.def(
       "correct_chi_dofs(Tensor types, Tensor offsets, Tensor conformers, "
       "Tensor atoms, Tensor chi, Tensor trial_coords, Tensor chi_atoms, Tensor "
