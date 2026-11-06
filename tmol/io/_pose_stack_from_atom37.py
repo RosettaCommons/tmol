@@ -13,6 +13,7 @@ Nothing here inspects an ``AtomArray``. Callers that have one should use it to
 
 from typing import Mapping, Optional, Sequence
 
+import numpy
 import torch
 
 from tmol.io._build_context import PoseBuildContext
@@ -118,8 +119,13 @@ def _canonical_form_from_atom37(
         atom37_coords.shape[2],
         canonical_ordering,
     )
-    source = tuple(torch.as_tensor(x, device=device) for x in routing.source_indices)
-    target = tuple(torch.as_tensor(x, device=device) for x in routing.target_indices)
+    # Routing preserves pose/token indices; transfer each unique vector once.
+    pose, token, slot, atom = torch.as_tensor(
+        numpy.stack((*routing.source_indices, routing.target_indices[2])),
+        device=device,
+    ).unbind(0)
+    source = (pose, token, slot)
+    target = (pose, token, atom)
     coords = torch.full(
         (*routing.canonical_shape, 3),
         float("nan"),
