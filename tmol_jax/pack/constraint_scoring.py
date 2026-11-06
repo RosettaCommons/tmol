@@ -12,18 +12,16 @@ from tmol_jax.score.constraint.constraint_energy_term import (
     ConstraintEnergyTerm,
     _prepare_geometric_constraints,
 )
-from tmol_jax.score._native import register
 from .graph import prefix_counts, load_balance
 from .scoring import validate_rotamer_context
+
+from ._ffi import stage
 
 
 @partial(jax.jit, static_argnames=("operation", "outputs"))
 def _stage(arguments, *, operation, outputs):
     target = "tmol_constraint_rotamer_topology"
-    register(target)
-    return jax.ffi.ffi_call(target, outputs, vmap_method="sequential")(
-        *arguments, operation=np.int64(operation), extent=np.int64(0), width=np.int64(0)
-    )
+    return stage(arguments, target, outputs, operation)
 
 
 def _geometric_constraints(pose):

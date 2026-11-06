@@ -6,22 +6,17 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_jax.score._native import register
 from tmol_jax.score.disulfide.disulfide_energy_term import DisulfideEnergyTerm
 from tmol_jax.score.metal.metal_energy_term import MetalCoordinationEnergyTerm
 from .graph import prefix_counts
 from .scoring import validate_rotamer_context, sparse_nonbonded_values
 
+from ._ffi import stage
+
 
 @partial(jax.jit, static_argnames=("target", "operation", "outputs", "extent", "width"))
 def _stage(arguments, *, target, operation, outputs, extent=0, width=0):
-    register(target)
-    return jax.ffi.ffi_call(target, outputs, vmap_method="sequential")(
-        *arguments,
-        operation=np.int64(operation),
-        extent=np.int64(extent),
-        width=np.int64(width),
-    )
+    return stage(arguments, target, outputs, operation, extent, width)
 
 
 def prepare_rotamer_connection(pose, rotamers, database, *, metal=False):

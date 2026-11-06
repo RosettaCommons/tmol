@@ -6,19 +6,20 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_jax.score._native import register
 from .graph import prefix_counts
+
+from ._ffi import stage
 
 
 @partial(jax.jit, static_argnames=("operation", "outputs", "begin", "count", "reach"))
 def _stage(arguments, *, operation, outputs, begin=0, count=0, reach=0.0):
-    target = "tmol_rotamer_dispatch"
-    register(target)
-    return jax.ffi.ffi_call(target, outputs, vmap_method="sequential")(
-        *arguments,
-        operation=np.int64(operation),
-        extent=np.int64(begin),
-        width=np.int64(count),
+    return stage(
+        arguments,
+        "tmol_rotamer_dispatch",
+        outputs,
+        operation,
+        extent=begin,
+        width=count,
         reach=np.float64(reach),
     )
 

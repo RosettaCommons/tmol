@@ -129,3 +129,14 @@ def test_native_graph_empty_entries_and_fixed_blocks(platform, counts):
         )
         assert graph["energy1b"].shape == graph["energy2b"].shape == (0,)
         np.testing.assert_array_equal(graph["background"], np.zeros(counts.shape[0]))
+
+
+@pytest.mark.parametrize("platform", ("cpu", "cuda"))
+def test_graph_rejects_energy_between_alternatives_of_one_block(platform):
+    device = Execution("jax-" + platform).device
+    with jax.default_device(device):
+        rotamers = synthetic_rotamers([[2, 1]], device)
+        with pytest.raises(ValueError, match="distinct alternatives of one block"):
+            build_interaction_graph(
+                rotamers, jnp.array([-100.0]), jnp.array([[0], [0], [1]], jnp.int32)
+            )

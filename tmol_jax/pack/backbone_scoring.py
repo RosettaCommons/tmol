@@ -5,7 +5,6 @@ from functools import partial
 import jax
 import numpy as np
 
-from tmol_jax.score._native import register
 from tmol_jax.score.backbone_torsion.backbone_torsion_energy_term import (
     BackboneTorsionEnergyTerm,
 )
@@ -13,14 +12,13 @@ from .graph import prefix_counts, load_balance
 from .scoring import validate_rotamer_context
 from .bonded_scoring import sparse_bonded_scores
 
+from ._ffi import stage
+
 
 @partial(jax.jit, static_argnames=("operation", "outputs"))
 def _stage(arguments, *, operation, outputs):
     target = "tmol_backbone_rotamer_topology"
-    register(target)
-    return jax.ffi.ffi_call(target, outputs, vmap_method="sequential")(
-        *arguments, operation=np.int64(operation), extent=np.int64(0), width=np.int64(0)
-    )
+    return stage(arguments, target, outputs, operation)
 
 
 def prepare_rotamer_backbone(pose, rotamers, database):

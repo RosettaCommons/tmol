@@ -9,6 +9,8 @@ import numpy as np
 
 from tmol_jax.score._native import libraries, register, workspace_sizes
 
+from ._ffi import stage
+
 
 @partial(jax.jit, static_argnames=("operation", "outputs", "chunk_size"))
 def topology_stage(arguments, *, operation, outputs, chunk_size=16):
@@ -18,18 +20,13 @@ def topology_stage(arguments, *, operation, outputs, chunk_size=16):
     exactly with either JAX precision setting. Dynamic graph allocation belongs
     to the caller. Sentinel updates return a new array, preserving input offsets.
     """
-    target = "tmol_graph_topology"
-    register(target)
-    return jax.ffi.ffi_call(
-        target,
+    return stage(
+        arguments,
+        "tmol_graph_topology",
         outputs,
-        input_output_aliases={1: 0} if operation == 6 else None,
-        vmap_method="sequential",
-    )(
-        *arguments,
-        operation=np.int64(operation),
-        extent=np.int64(0),
-        width=np.int64(chunk_size),
+        operation,
+        width=chunk_size,
+        aliases={1: 0} if operation == 6 else None,
     )
 
 
@@ -66,18 +63,14 @@ def retention_stage(arguments, *, operation, outputs, extent=0, width=0):
     ``extent`` is the total retained block/rotamer count; ``width`` is the
     original block width (stages 9/10) or compact block width (stage 8).
     """
-    target = "tmol_graph_retention"
-    register(target)
-    return jax.ffi.ffi_call(
-        target,
+    return stage(
+        arguments,
+        "tmol_graph_retention",
         outputs,
-        input_output_aliases={2: 0} if operation == 1 else None,
-        vmap_method="sequential",
-    )(
-        *arguments,
-        operation=np.int64(operation),
-        extent=np.int64(extent),
-        width=np.int64(width),
+        operation,
+        extent=extent,
+        width=width,
+        aliases={2: 0} if operation == 1 else None,
     )
 
 

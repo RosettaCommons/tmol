@@ -8,10 +8,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_jax.score._native import register
 from .graph import prefix_counts, load_balance
 from .dispatch import _narrow_prefix
 from .scoring import validate_rotamer_context
+
+from ._ffi import stage
 
 
 @jax.jit
@@ -33,13 +34,8 @@ def _gather_coordinates(coords, source, target, *, shape):
 
 @partial(jax.jit, static_argnames=("operation", "outputs", "extent", "compact"))
 def _stage(arguments, *, operation, outputs, extent=0, compact=False):
-    register("tmol_pose_imposition")
-    return jax.ffi.ffi_call("tmol_pose_imposition", outputs, vmap_method="sequential")(
-        *arguments,
-        operation=np.int64(operation),
-        extent=np.int64(extent),
-        width=np.int64(compact),
-    )
+    target = "tmol_pose_imposition"
+    return stage(arguments, target, outputs, operation, extent, compact)
 
 
 def _check_errors(errors):

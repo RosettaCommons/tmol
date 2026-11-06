@@ -6,7 +6,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_jax.score._native import register
 from .graph import (
     retained_topology,
     topology_stage,
@@ -15,25 +14,26 @@ from .graph import (
     _integer,
 )
 
+from ._ffi import stage
+
 
 @partial(jax.jit, static_argnames=("operation", "outputs", "extent", "chunk_size"))
 def entry_stage(arguments, *, operation, outputs, extent=0, chunk_size=16):
-    register("tmol_graph_entries")
-    return jax.ffi.ffi_call("tmol_graph_entries", outputs, vmap_method="sequential")(
-        *arguments,
-        operation=np.int64(operation),
-        extent=np.int64(extent),
-        width=np.int64(chunk_size),
-    )
+    target = "tmol_graph_entries"
+    return stage(arguments, target, outputs, operation, extent, chunk_size)
 
 
 @jax.jit
-def _valid_entries(values, indices, pose_for_rotamer, pose_counts):
+def _valid_entries(values, indices, pose_for_rotamer, block_for_rotamer, pose_counts):
     valid = jnp.all(jnp.isfinite(values)) & jnp.all(indices >= 0)
     valid &= jnp.all(indices[0] < pose_counts.shape[0])
     valid &= jnp.all(indices[1:] < pose_for_rotamer.size)
     same_pose = jnp.all(pose_for_rotamer[indices[1:]] == indices[0])
-    return jnp.stack((valid, same_pose))
+    compatible = jnp.all(
+        (indices[1] == indices[2])
+        | (block_for_rotamer[indices[1]] != block_for_rotamer[indices[2]])
+    )
+    return jnp.stack((valid, same_pose, compatible))
 
 
 @partial(jax.jit, static_argnames=("chunk_size",))
@@ -111,7 +111,8 @@ def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
     """Build native background, one-body and chunked two-body energy tables.
 
     Inputs are uncoalesced scalar entries and [3, entries] pose/rotamer indices.
-    Duplicate entries accumulate. All conformers are retained; bump pruning and
+    Duplicate entries accumulate. Distinct alternatives of one block cannot
+    share an energy entry. All conformers are retained; bump pruning and
     correlated-group collapse are not implemented here. Discrete allocation is
     eager and energy-table construction currently has no AD rule.
     """
@@ -131,15 +132,23 @@ def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
         raise ValueError("interaction graph inputs must share the conformer device")
     p = rotamers.n_rots_for_block.shape[0]
     if values.size:
-        valid, same_pose = np.asarray(
+        valid, same_pose, compatible = np.asarray(
             _valid_entries(
-                values, indices, rotamers.pose_for_rot, rotamers.n_rots_for_block
+                values,
+                indices,
+                rotamers.pose_for_rot,
+                rotamers.block_ind_for_rot,
+                rotamers.n_rots_for_block,
             )
         )
         if not bool(valid):
             raise ValueError("invalid energy or sparse conformer index")
         if not same_pose:
             raise ValueError("sparse entries cannot join different poses")
+        if not compatible:
+            raise ValueError(
+                "sparse entries cannot join distinct alternatives of one block"
+            )
     shape = jax.ShapeDtypeStruct
 
     def total(value):

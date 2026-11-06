@@ -5,23 +5,18 @@ from functools import partial
 import jax
 import numpy as np
 
-from tmol_jax.score._native import register
 from tmol_jax.score.genbonded.genbonded_energy_term import GenBondedEnergyTerm
 from tmol_jax.score.cartbonded.cartbonded_energy_term import CartBondedEnergyTerm
 from .graph import prefix_counts, load_balance
 from .scoring import validate_rotamer_context, sparse_nonbonded_values
 
+from ._ffi import stage
+
 
 @partial(jax.jit, static_argnames=("operation", "outputs"))
 def _connected_stage(arguments, *, operation, outputs):
     target = "tmol_connected_rotamer_dispatch"
-    register(target)
-    return jax.ffi.ffi_call(target, outputs, vmap_method="sequential")(
-        *arguments,
-        operation=np.int64(operation),
-        extent=np.int64(0),
-        width=np.int64(0),
-    )
+    return stage(arguments, target, outputs, operation)
 
 
 def connected_candidates(pose, rotamers):

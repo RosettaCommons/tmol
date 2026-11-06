@@ -22,16 +22,13 @@ from .imposition import _wide
 from .dispatch import _narrow_prefix
 from .graph import prefix_counts, load_balance
 
+from ._ffi import stage
+
 
 @partial(jax.jit, static_argnames=("operation", "outputs", "flip"))
 def _stage(arguments, *, operation, outputs, flip):
-    register("tmol_opth_sampling")
-    return jax.ffi.ffi_call("tmol_opth_sampling", outputs, vmap_method="sequential")(
-        *arguments,
-        operation=np.int64(operation),
-        extent=np.int64(0),
-        width=np.int64(flip),
-    )
+    target = "tmol_opth_sampling"
+    return stage(arguments, target, outputs, operation, 0, flip)
 
 
 @partial(jax.jit, static_argnames=("flip", "total"))

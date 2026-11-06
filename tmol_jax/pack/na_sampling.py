@@ -19,22 +19,23 @@ from tmol_core.pack.kinematics import annotate_residue_rotamer_kinematics
 from tmol_core.scoring.na_torsion import N_BASE_PER_POLYMER, SYN_MEAN
 from tmol_core.scoring.na_torsion_params import prepare_na_torsion_parameters
 from tmol_jax.kinematics._host import NativePosePlanner
-from tmol_jax.score._native import register
 from ._native import _sampling_put
 from .dispatch import _wide_nonnegative, _narrow_prefix
 from .graph import prefix_counts, load_balance
 from .task import PackerTask, SetPackerTask
 
+from ._ffi import stage
+
 
 @partial(jax.jit, static_argnames=("operation", "outputs", "policy"))
 def _stage(arguments, *, operation, outputs, policy):
     temperature, syn = policy
-    register("tmol_na_sampling")
-    return jax.ffi.ffi_call("tmol_na_sampling", outputs, vmap_method="sequential")(
-        *arguments,
-        operation=np.int64(operation),
-        extent=np.int64(0),
-        width=np.int64(N_BASE_PER_POLYMER),
+    return stage(
+        arguments,
+        "tmol_na_sampling",
+        outputs,
+        operation,
+        width=N_BASE_PER_POLYMER,
         temperature=np.float64(temperature),
         sample_syn=np.int64(syn),
         max_syn_well=np.float64(MAX_SYN_WELL),

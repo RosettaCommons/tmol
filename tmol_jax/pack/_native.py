@@ -8,21 +8,13 @@ import jax.numpy as jnp
 import numpy as np
 
 from tmol_jax._host import invoke
+from ._ffi import stage
 
 
 @partial(jax.jit, static_argnames=("operation", "outputs", "flip", "width"))
 def _copy_plan_stage(arguments, *, operation, outputs, flip=False, width=0):
-    from tmol_jax.score._native import register
-
-    register("tmol_conformer_copy_plan")
-    return jax.ffi.ffi_call(
-        "tmol_conformer_copy_plan", outputs, vmap_method="sequential"
-    )(
-        *arguments,
-        operation=np.int64(operation),
-        extent=np.int64(flip),
-        width=np.int64(width),
-    )
+    target = "tmol_conformer_copy_plan"
+    return stage(arguments, target, outputs, operation, flip, width)
 
 
 @jax.jit
