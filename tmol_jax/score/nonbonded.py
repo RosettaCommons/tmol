@@ -3,6 +3,7 @@
 import jax.numpy as jnp
 import numpy as np
 
+from tmol_core.cache import AnnotationKey, PreparationCache
 from tmol_core.scoring.atom_types import atom_type_parameters
 from tmol_core.scoring.count_pair import packed_ljlk_distances
 from tmol_core.scoring.elec import prepare_electrostatic_parameters
@@ -69,13 +70,29 @@ def _ljlk_parameters(pose, database):
 def _electrostatic_parameters(pose, database):
     pbt = pose.packed_block_types
     types = pbt.active_block_types
-    return prepare_electrostatic_parameters(
-        types,
-        pbt.max_n_atoms,
-        database.scoring.elec,
-        database.scoring.genbonded.rosetta_typed,
-        charge_overrides=tuple(
-            getattr(bt, "elec_partial_charges", None) for bt in types
+    overrides = tuple(getattr(bt, "elec_partial_charges", None) for bt in types)
+    key = AnnotationKey.from_sources(
+        database,
+        *types,
+        settings=(
+            pbt.max_n_atoms,
+            tuple(
+                None if row is None else tuple(sorted(row.items())) for row in overrides
+            ),
+        ),
+    )
+    cache = getattr(pbt, "_electrostatic_preparations", None)
+    if cache is None:
+        cache = pbt._electrostatic_preparations = PreparationCache()
+    return cache.get_or_create(
+        "parameters",
+        key,
+        lambda: prepare_electrostatic_parameters(
+            types,
+            pbt.max_n_atoms,
+            database.scoring.elec,
+            database.scoring.genbonded.rosetta_typed,
+            charge_overrides=overrides,
         ),
     )
 
