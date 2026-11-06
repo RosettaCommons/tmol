@@ -1,5 +1,9 @@
 from concurrent.futures import ThreadPoolExecutor
+import contextlib
+import ctypes
+import functools
 from functools import partial
+import itertools
 import logging
 import os
 import sys
@@ -49,7 +53,6 @@ SFXN_FORMAT_VERSION: str = "1.0"
 _CUDA_ROTAMER_LAYOUT_DEDUP_MIN_BYTES = 16 * 1024 * 1024
 _CPU_ROTAMER_SORTED_LAYOUT_MIN_NNZ = 4096
 _MAX_CPU_SCORE_TERM_WORKERS = 4
-_MAX_CPU_FUSED_SCORE_WORKERS = 16
 _CPU_PARALLEL_SCORE_BACKWARD_MIN_COORD_ELEMENTS = 8192
 # Independent CUDA terms overlap profitably for one large pose or a wide batch,
 # but stream setup and coordination cost more than they save for small poses.
@@ -66,8 +69,21 @@ _CUDA_WEIGHTED_FUSED_MIN_GRAD_COORD_ELEMENTS = 64 * 1024
 # Bound dispatch scratch while amortizing CUDA launches across block pairs.
 _PACK_ROTAMER_BLOCK_PAIR_WINDOW = 32 * 1024
 _PACK_FUSED_ROTAMER_SCORE_WINDOW = 4 * 1024 * 1024
-_CPU_SCORE_TERM_EXECUTORS: dict[int, ThreadPoolExecutor] = {}
+_CPU_SCORE_TERM_EXECUTORS: dict[tuple[int, int | None], ThreadPoolExecutor] = {}
 _CPU_SCORE_TERM_EXECUTOR_LOCK = threading.Lock()
+_BOUND_WORKER_STARTS = itertools.count()
+# On macOS, capping each pool worker at an equal share of the thread budget
+# starves the expensive terms while the cheap ones idle; it made Metal-offloaded
+# minimization ~45% slower per evaluation and CPU-only ~18% slower. Workers
+# there keep the whole budget; _single_openmp_thread still applies.
+_CAP_CPU_SCORE_WORKER_THREADS = sys.platform != "darwin"
+# Terms whose every call repeats costly setup (hbond bases; lk_ball waters and
+# their backward), so each neighbor-list shard pays it again. Uncapped macOS
+# workers already run each such term on the whole thread budget, so sharding it
+# there only adds that setup: minimization measured ~10% slower per evaluation.
+_UNSHARDED_PAIR_TERMS = (
+    frozenset(("HBond", "LKBall")) if sys.platform == "darwin" else frozenset()
+)
 _ScoreCallResult = TypeVar("_ScoreCallResult")
 
 
@@ -115,16 +131,147 @@ def _rotamer_dispatch_cutoff_compatible(
     )
 
 
-def _cpu_score_term_executor(n_workers: int) -> ThreadPoolExecutor:
-    """Return a process-local executor shared by rendered CPU scorers."""
+def _loaded_library_paths() -> set[str]:
+    """Paths of the shared libraries loaded into this process, where knowable."""
+    try:
+        with open("/proc/self/maps") as maps:
+            return {line.split()[-1] for line in maps if ".so" in line}
+    except OSError:
+        pass
+    if sys.platform == "darwin":
+        # No /proc on macOS; dyld lists its loaded images instead.
+        libc = ctypes.CDLL(None)
+        libc._dyld_image_count.restype = ctypes.c_uint32
+        libc._dyld_get_image_name.argtypes = [ctypes.c_uint32]
+        libc._dyld_get_image_name.restype = ctypes.c_char_p
+        return {
+            os.fsdecode(libc._dyld_get_image_name(i))
+            for i in range(libc._dyld_image_count())
+        }
+    return set()
+
+
+@functools.cache
+def _openmp_runtime() -> ctypes.CDLL | None:
+    """The OpenMP runtime torch already loaded, or None if there is none."""
+    paths = _loaded_library_paths()
+    for path in sorted(paths):
+        if os.path.basename(path).startswith(("libgomp", "libiomp", "libomp")):
+            return ctypes.CDLL(path, mode=os.RTLD_NOLOAD)
+    return None
+
+
+@functools.cache
+def _openmp_place_cpus() -> frozenset[int]:
+    """CPUs of all OpenMP places; empty when OpenMP binding is off."""
+    runtime = _openmp_runtime()
+    if runtime is None or not hasattr(runtime, "omp_get_num_places"):
+        return frozenset()
+    cpus = set()
+    for place in range(runtime.omp_get_num_places()):
+        ids = (ctypes.c_int * runtime.omp_get_place_num_procs(place))()
+        runtime.omp_get_place_proc_ids(place, ids)
+        cpus.update(ids)
+    return frozenset(cpus)
+
+
+def _init_cpu_score_worker(n_threads: int | None) -> None:
+    """Executor initializer: run on every bound CPU, then cap the OpenMP team.
+
+    Under OpenMP binding new threads inherit the main thread's single CPU, and a
+    thread that starts an OpenMP team is pinned to the first place with its team
+    after it. So under binding a worker takes every CPU of the places, starting
+    on a CPU of its own, and never starts a team.
+
+    Every thread that enters an OpenMP region gets its own team, sized by that
+    thread's OpenMP setting, so uncapped workers oversubscribe the CPU. With
+    n_threads the worker is capped at its share; the setting is per thread, so
+    the caller's budget is unchanged. Query torch first: it seeds a new thread's
+    setting on first use.
+    """
+    cpus = _openmp_place_cpus()
+    if cpus:
+        if hasattr(os, "sched_setaffinity"):
+            # Widening alone leaves the worker on the main thread's CPU; start
+            # it on its own CPU, counting down from the main team's places.
+            ordered = sorted(cpus)
+            start = ordered[-1 - next(_BOUND_WORKER_STARTS) % len(ordered)]
+            os.sched_setaffinity(0, {start})
+            os.sched_setaffinity(0, cpus)
+        n_threads = 1
+    if n_threads is None:
+        return
+    torch.get_num_threads()
+    runtime = _openmp_runtime()
+    if runtime is not None:
+        runtime.omp_set_num_threads(n_threads)
+
+
+@contextlib.contextmanager
+def _single_openmp_thread():
+    """Run the enclosed ops on this thread alone, without an OpenMP team."""
+    runtime = _openmp_runtime()
+    if runtime is None:
+        yield
+        return
+    n_threads = torch.get_num_threads()
+    runtime.omp_set_num_threads(1)
+    try:
+        yield
+    finally:
+        runtime.omp_set_num_threads(n_threads)
+
+
+def _cpu_score_term_executor(
+    n_workers: int, share_threads: bool = True
+) -> ThreadPoolExecutor:
+    """Return a process-local executor shared by rendered CPU scorers.
+
+    With ``share_threads`` each worker gets an equal share of the thread budget.
+    Without it each worker may use the whole budget, which suits a few large
+    tasks that parallelize internally and finish at different times. Workers
+    are never capped on macOS (see _CAP_CPU_SCORE_WORKER_THREADS).
+    """
+    threads_per_worker = (
+        max(1, torch.get_num_threads() // n_workers)
+        if share_threads and _CAP_CPU_SCORE_WORKER_THREADS
+        else None
+    )
+    key = (n_workers, threads_per_worker)
     with _CPU_SCORE_TERM_EXECUTOR_LOCK:
-        executor = _CPU_SCORE_TERM_EXECUTORS.get(n_workers)
+        executor = _CPU_SCORE_TERM_EXECUTORS.get(key)
         if executor is None:
             executor = ThreadPoolExecutor(
-                max_workers=n_workers, thread_name_prefix="tmol-score"
+                max_workers=n_workers,
+                thread_name_prefix="tmol-score",
+                initializer=_init_cpu_score_worker,
+                initargs=(threads_per_worker,),
             )
-            _CPU_SCORE_TERM_EXECUTORS[n_workers] = executor
+            _CPU_SCORE_TERM_EXECUTORS[key] = executor
         return executor
+
+
+def _split_block_neighbors(
+    block_neighbors: torch.Tensor, n_shards: int
+) -> list[torch.Tensor]:
+    """Split a compact ``[count, pair...]`` neighbor list into contiguous shards.
+
+    Each shard keeps the compact layout and the original ascending pair order.
+    """
+    n_neighbors = int(block_neighbors[0])
+    shards = []
+    for shard in range(n_shards):
+        begin = n_neighbors * shard // n_shards
+        end = n_neighbors * (shard + 1) // n_shards
+        shards.append(
+            torch.cat(
+                (
+                    block_neighbors.new_tensor([end - begin]),
+                    block_neighbors[1 + begin : 1 + end],
+                )
+            )
+        )
+    return shards
 
 
 def _cpu_score_term_worker_count(n_terms: int, device: torch.device) -> int:
@@ -278,12 +425,14 @@ class _ParallelScoreTerms(torch.autograd.Function):
                 _score_grad_in_thread(*grad_input) for grad_input in term_grad_inputs
             ]
 
+        # Small adds: a team-wide OpenMP region per add can stall on busy cores.
         grad_coords = None
-        for term_grad in term_grads:
-            if term_grad is not None:
-                grad_coords = (
-                    term_grad if grad_coords is None else grad_coords + term_grad
-                )
+        with _single_openmp_thread():
+            for term_grad in term_grads:
+                if term_grad is not None:
+                    grad_coords = (
+                        term_grad if grad_coords is None else grad_coords + term_grad
+                    )
         return grad_coords, None, None, None, None, None, None
 
 
@@ -1140,18 +1289,26 @@ class WholePoseScoringModule:
                     weight_begin + self._execution_modules[fused_index].n_score_types,
                 )
         cpu_threads = torch.get_num_threads() if weights.device.type == "cpu" else 1
+        # Terms that traverse the shared block-neighbor list are split into
+        # neighbor-list shards so one large term cannot serialize a CPU call.
         # Use the same compact execution policy for single- and multi-pose
         # scorers so batching cannot perturb nonlinear minimization trajectories.
-        self._cpu_fused_shards = (
+        self._cpu_sharded_term_indices = tuple(
+            index
+            for index, term in enumerate(self._execution_modules)
+            if getattr(term, "block_neighbor_cutoff", None) is not None
+            and getattr(term, "classname", None) not in _UNSHARDED_PAIR_TERMS
+        )
+        self._cpu_pair_shards = (
             min(8, max(2, cpu_threads // 2))
-            if self._fused_ljlk_elec_module_index is not None and cpu_threads >= 2
+            if self._cpu_sharded_term_indices and cpu_threads >= 2
             else 0
         )
-        self._cpu_fused_workers = min(
-            _MAX_CPU_FUSED_SCORE_WORKERS,
-            cpu_threads,
-            self._cpu_fused_shards + max(0, len(self._execution_modules) - 1),
+        n_sharded_calls = len(self._cpu_sharded_term_indices) * self._cpu_pair_shards
+        n_other_calls = len(self._execution_modules) - len(
+            self._cpu_sharded_term_indices
         )
+        self._cpu_sharded_workers = min(cpu_threads, n_sharded_calls + n_other_calls)
         self._cuda_term_streams: tuple[torch.cuda.Stream, ...] | None = None
         self._shared_neighbor_term_indices = tuple(
             index
@@ -1276,13 +1433,13 @@ class WholePoseScoringModule:
         ):
             return False
         # The generic CPU parallel autograd wrapper expects canonical term-lane
-        # widths. One-thread CPU, the explicit fused-shard path, and all CUDA
+        # widths. One-thread CPU, the explicit sharded path, and all CUDA
         # execution paths can consume the compact weighted lane directly.
         if coords.device.type == "cuda" or self._cpu_term_workers < 2:
             return True
-        if self._cpu_fused_shards < 2:
+        if self._cpu_pair_shards < 2:
             return False
-        return needs_gradient or self._cpu_fused_shards <= 2
+        return needs_gradient or self._cpu_pair_shards <= 2
 
     def _reduce_weighted_fused_lanes(self, score_lanes: torch.Tensor) -> torch.Tensor:
         """Combine one already-weighted fused lane in one native reduction."""
@@ -1400,18 +1557,18 @@ class WholePoseScoringModule:
         if torch.is_grad_enabled() and self._has_trainable_term_parameters:
             cpu_workers = 0
         if (
-            self._cpu_fused_shards >= 2
+            self._cpu_pair_shards >= 2
             and not self._has_trainable_term_parameters
             and shared_block_neighbors is not None
         ):
-            fused_scores = self._parallel_cpu_fused_scores(
+            sharded_scores = self._parallel_cpu_sharded_scores(
                 coords,
                 needs_grad,
                 shared_block_neighbors,
                 fused_score_weights,
             )
-            if fused_scores is not None:
-                return fused_scores
+            if sharded_scores is not None:
+                return sharded_scores
         if cpu_workers < 2:
             flat_coords = (
                 None
@@ -1472,60 +1629,55 @@ class WholePoseScoringModule:
         ]
         return torch.cat([future.result() for future in futures], dim=0)
 
-    def _parallel_cpu_fused_scores(
+    def _parallel_cpu_sharded_scores(
         self,
         coords: torch.Tensor,
         needs_grad: bool,
         shared_block_neighbors: torch.Tensor,
         fused_score_weights: torch.Tensor | None = None,
     ) -> torch.Tensor | None:
-        """Shard a fused pair traversal while other CPU terms run concurrently."""
-        fused_index = self._fused_ljlk_elec_module_index
-        if fused_index is None or self._cpu_fused_workers < 2:
+        """Shard pair-list terms by neighbor list; run every piece concurrently."""
+        if self._cpu_sharded_workers < 2:
             return None
         n_neighbors = int(shared_block_neighbors[0])
-        desired_shards = self._cpu_fused_shards
+        desired_shards = self._cpu_pair_shards
         if coords.numel() < 16 * 1024:
             desired_shards = min(desired_shards, 4)
         n_shards = min(desired_shards, max(1, n_neighbors))
         if n_shards < 2 and fused_score_weights is None:
             return None
+        neighbor_shards = _split_block_neighbors(shared_block_neighbors, n_shards)
 
-        neighbor_shards = []
-        for shard in range(n_shards):
-            begin = n_neighbors * shard // n_shards
-            end = n_neighbors * (shard + 1) // n_shards
-            neighbor_shards.append(
-                torch.cat(
-                    (
-                        shared_block_neighbors.new_tensor([end - begin]),
-                        shared_block_neighbors[1 + begin : 1 + end],
-                    )
-                )
+        # One call per (term, shard); unsharded terms get the whole list.
+        calls = []
+        n_pieces = []
+        for index, term in enumerate(self._execution_modules):
+            pieces = (
+                neighbor_shards
+                if index in self._cpu_sharded_term_indices
+                else [shared_block_neighbors]
             )
+            weights = (
+                fused_score_weights
+                if index == self._fused_ljlk_elec_module_index
+                else None
+            )
+            calls.extend(
+                partial(
+                    self._call_term,
+                    term,
+                    shared_block_neighbors=piece,
+                    fused_score_weights=weights,
+                )
+                for piece in pieces
+            )
+            n_pieces.append(len(pieces))
 
-        executor = _cpu_score_term_executor(self._cpu_fused_workers)
+        executor = _cpu_score_term_executor(self._cpu_sharded_workers)
         autocast_context = (
             torch.is_autocast_enabled("cpu"),
             torch.get_autocast_dtype("cpu"),
             torch.is_autocast_cache_enabled(),
-        )
-        fused_term = self._execution_modules[fused_index]
-        fused_call = (
-            partial(fused_term.forward_weighted, score_weights=fused_score_weights)
-            if fused_score_weights is not None
-            else fused_term
-        )
-        calls = [
-            partial(fused_call, shared_block_neighbors=shard)
-            for shard in neighbor_shards
-        ]
-        calls.extend(
-            partial(
-                self._call_term, term, shared_block_neighbors=shared_block_neighbors
-            )
-            for index, term in enumerate(self._execution_modules)
-            if index != fused_index
         )
         if needs_grad:
             # Forward completion order must not determine gradient accumulation.
@@ -1546,14 +1698,21 @@ class WholePoseScoringModule:
                 for call in calls
             ]
             combined = torch.cat([future.result() for future in futures], dim=0)
-        width = 1 if fused_score_weights is not None else fused_term.n_score_types
-        fused_end = n_shards * width
-        fused_scores = combined[:fused_end].reshape(n_shards, width, -1).sum(dim=0)
-        offset = sum(
-            term.n_score_types for term in self._execution_modules[:fused_index]
-        )
-        other = combined[fused_end:]
-        return torch.cat((other[:offset], fused_scores, other[offset:]), dim=0)
+
+        # Sum each term's shards back into that term's lanes, in term order.
+        term_scores = []
+        row = 0
+        for index, (term, pieces) in enumerate(zip(self._execution_modules, n_pieces)):
+            width = (
+                1
+                if fused_score_weights is not None
+                and index == self._fused_ljlk_elec_module_index
+                else term.n_score_types
+            )
+            rows = combined[row : row + pieces * width]
+            term_scores.append(rows.reshape(pieces, width, -1).sum(dim=0))
+            row += pieces * width
+        return torch.cat(term_scores, dim=0)
 
     def _parallel_cuda_scores(
         self,
@@ -2483,9 +2642,17 @@ class RotamerScoringModule:
         )
         use_fused = self._use_fused_ljlk_elec(coords)
         execution_terms = self._execution_terms(use_fused)
-        parallel = self._cpu_term_workers >= 2 and not differentiable
+        # Under OpenMP binding workers cannot run teams; the terms' own OpenMP
+        # loops on this thread use every core instead.
+        parallel = (
+            self._cpu_term_workers >= 2
+            and not differentiable
+            and not _openmp_place_cpus()
+        )
         if parallel:
-            executor = _cpu_score_term_executor(self._cpu_term_workers)
+            executor = _cpu_score_term_executor(
+                self._cpu_term_workers, share_threads=False
+            )
             context = (
                 torch.is_grad_enabled(),
                 torch.is_inference_mode_enabled(),

@@ -49,6 +49,7 @@ def independent_minimum_tables(counts, chunk_size, device):
         torch.tensor(chunk_offsets, dtype=torch.int64),
         energy1b,
         torch.tensor(energies, dtype=torch.float32),
+        128,  # high-temperature trajectories; 80 survive to the full quench
     )
     return tuple(x.to(device) if isinstance(x, torch.Tensor) else x for x in values)
 
@@ -69,8 +70,8 @@ def test_cuda_annealer_assignment_cache_boundaries(chunk_size, n_res):
     inputs = independent_minimum_tables(counts, chunk_size, torch.device("cuda"))
     torch.manual_seed(20260911)
     scores, assignments = _pack_anneal(*inputs)
-    assert scores.shape == (2, 312)
-    assert assignments.shape == (2, 312, n_res)
+    assert scores.shape == (2, 80)
+    assert assignments.shape == (2, 80, n_res)
     # Every pair contribution and one-body term has its unique minimum at zero.
     # Full quenching must find it for every trajectory, including the fallback
     # above the shared-cache capacity and dynamic chunk sizes.

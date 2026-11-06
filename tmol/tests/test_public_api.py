@@ -74,15 +74,18 @@ def test_documented_fragment_interaction_helper_is_public():
     assert "calculate_fragment_interactions" in tmol.__all__
 
 
-def test_default_relax_minimizers_are_public():
+def test_relax_minimizers_are_public():
+    import tmol
     from tmol import relax
     from tmol.relax._fast_relax import (
-        DefaultCartesianMinimizer,
-        DefaultKinematicMinimizer,
+        CartesianRelaxMinimizer,
+        KinematicRelaxMinimizer,
     )
 
-    assert relax.DefaultCartesianMinimizer is DefaultCartesianMinimizer
-    assert relax.DefaultKinematicMinimizer is DefaultKinematicMinimizer
-    assert {"DefaultCartesianMinimizer", "DefaultKinematicMinimizer"} <= set(
-        relax.__all__
-    )
+    names = {"CartesianRelaxMinimizer", "KinematicRelaxMinimizer"}
+    assert names <= set(relax.__all__)
+    assert names <= set(tmol.__all__)
+    assert relax.CartesianRelaxMinimizer is CartesianRelaxMinimizer
+    assert relax.KinematicRelaxMinimizer is KinematicRelaxMinimizer
+    assert tmol.CartesianRelaxMinimizer is CartesianRelaxMinimizer
+    assert tmol.KinematicRelaxMinimizer is KinematicRelaxMinimizer
