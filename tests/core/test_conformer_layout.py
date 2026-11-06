@@ -20,16 +20,20 @@ def test_conformer_roots_are_shared_but_coordinate_offsets_stay_external():
         frame_y=ids,
         frame_z=ids,
     )
-    forest = compact_conformer_forest(
+    forest, ideal_indices = compact_conformer_forest(
         data,
         3,
         np.array([0, 1], np.int32),
         5,
         np.array([2, 3], np.int32),
         np.array([7, 30], np.int64),
+        return_ideal_indices=True,
     )
     np.testing.assert_array_equal(forest[0], [-1, 7, 8, 30, 31, 32])
     np.testing.assert_array_equal(forest[2], [0, 0, 1, 0, 3, 4])
+    # Ideal rows are per-type KFO rows, independent of external RTO offsets.
+    np.testing.assert_array_equal(ideal_indices, [0, 1, 3, 4, 5])
+    assert ideal_indices.dtype == np.int64
     assert forest.dtype == np.int32
     assert forest.flags.c_contiguous
     np.testing.assert_array_equal(data.parent, parent)
@@ -57,6 +61,7 @@ def test_empty_layout_and_atom_budget_guard_before_allocation():
     result = prepare_conformer_layout(
         data, 0, np.empty(0, np.int32), np.empty(0, np.int32)
     )
+    assert result.ideal_indices.shape == (0,)
     assert result.total == 0 and result.forest.shape == (6, 1)
     assert result.forest[0, 0] == -1
     assert result.offsets.shape == result.nodes.shape == result.scans.shape == (0,)
