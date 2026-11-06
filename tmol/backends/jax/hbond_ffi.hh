@@ -46,7 +46,7 @@ struct HBondKernel {
     for (int i : {1, 4, 5}) require_shape(a[i], integer, {rots});
     require_shape(a[6], integer, {poses, blocks, -1, 2});
     auto ports = a[6].dimensions()[2];
-    if (ports > MAX_N_CONN)
+    if (ports > score::hbond::potentials::MAX_N_CONN)
       throw std::invalid_argument("HBond native connection capacity exceeded");
     require_shape(a[7], integer, {poses, blocks, -1, 2});
     auto slots = a[7].dimensions()[2];
@@ -222,22 +222,3 @@ struct HBondKernel {
   }
 };
 }  // namespace tmol::jax
-
-// Keep legacy kernel macros inside this adapter.
-#undef MAX_N_CONN
-#undef TILE_SIZE
-#undef HBOND_ATOM_ENERGY
-#undef SCORE_INTER_HBOND_ATOM_PAIR
-#undef SCORE_INTRA_HBOND_ATOM_PAIR
-#undef LOAD_TILE_INVARIANT_INTERRES_DATA
-#undef LOAD_INTERRES1_TILE_DATA_TO_SHARED
-#undef LOAD_INTERRES2_TILE_DATA_TO_SHARED
-#undef LOAD_INTERRES_DATA_FROM_SHARED
-#undef EVAL_INTERRES_ATOM_PAIR_SCORES
-#undef STORE_POSE_CALCULATED_ENERGIES
-#undef STORE_ROTAMER_CALCULATED_ENERGIES
-#undef LOAD_TILE_INVARIANT_INTRARES_DATA
-#undef LOAD_INTRARES1_TILE_DATA_TO_SHARED
-#undef LOAD_INTRARES2_TILE_DATA_TO_SHARED
-#undef LOAD_INTRARES_DATA_FROM_SHARED
-#undef EVAL_INTRARES_ATOM_PAIR_SCORES
