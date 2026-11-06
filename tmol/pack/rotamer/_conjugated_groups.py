@@ -23,7 +23,7 @@ from tmol.pose._conjugated_groups import (  # noqa: F401
 )
 
 
-from tmol_core.pack.conjugated import (
+from tmol_core.pack.conjugated import (  # noqa: F401 legacy import paths
     GroupSamplingTopology,  # noqa: F401 legacy import path
     GroupSamplingPlan,  # noqa: F401 legacy import path
     group_atom_context,
