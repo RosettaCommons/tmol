@@ -14,3 +14,4 @@ _ops = _load_ops(
 _na_torsion_pose_score = _ops.na_torsion_pose_score
 
 _na_rotamer_topology = _ops.na_rotamer_topology
+_na_torsion_native_score = _ops.na_torsion_native_score

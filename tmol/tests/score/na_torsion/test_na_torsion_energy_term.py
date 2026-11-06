@@ -338,8 +338,8 @@ def test_rotamer_energies_match_the_pose_energies(protein_dna_pdb, torch_device)
     rotamer_scorer = sfxn.render_rotamer_scoring_module(ps, rotamer_set)
     per_rot_sparse = rotamer_scorer(rotamer_set.coords).coalesce()
     if torch_device.type == "cuda":
-        # Requiring coordinate gradients selects the eager reference path;
-        # ordinary search/packing inference uses the native CUDA row kernel.
+        # Inference and differentiable scoring use the shared native kernel;
+        # requesting gradients must preserve the sparse values and indices.
         eager = rotamer_scorer(
             rotamer_set.coords.detach().clone().requires_grad_(True)
         ).coalesce()
