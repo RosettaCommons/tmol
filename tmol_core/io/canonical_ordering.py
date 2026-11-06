@@ -10,6 +10,17 @@ from tmol_core.chemical import _l_base_name
 from tmol_core.chemical.patching import PatchedChemicalDatabase
 
 
+def only_coordinates_a_metal(restype) -> bool:
+    """Whether this type is an ion or cluster: a non-polymer whose connections are all
+    non-kinematic (a capped cystine's disulfide is too, so polymers are kept)."""
+    if restype.properties.polymer.is_polymer:
+        return False
+    connections = restype.connections
+    return bool(connections) and not any(
+        connection.kinematic for connection in connections
+    )
+
+
 class ordered_set:
     def __init__(self, input_values=None):
         self.ordered_vals = []
