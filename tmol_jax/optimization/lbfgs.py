@@ -15,49 +15,28 @@ import jax.numpy as jnp
 from tmol_jax.optimization.line_search import strong_wolfe_line_search
 
 
-def _two_loop_recursion(
-    g: jnp.ndarray,
-    s_history: jnp.ndarray,
-    y_history: jnp.ndarray,
-    rho_history: jnp.ndarray,
-    hist_count: int,
-) -> jnp.ndarray:
-    """Nocedal two-loop recursion returning ``d = -H * g``.
+@jax.jit
+def _two_loop_recursion(g, s_history, y_history, rho_history, hist_count):
+    """Execute the limited-memory inverse Hessian in one compiled operation."""
+    alphas = jnp.zeros((s_history.shape[0],), dtype=g.dtype)
 
-    Operates on the valid prefix of the history (indices
-    ``0 .. hist_count-1``); later rows are ignored. If ``hist_count == 0``
-    the method degenerates to steepest descent (``d = -g``).
-    """
-    q = -g
-    if hist_count == 0:
-        return q
+    def backward(offset, state):
+        q, coefficients = state
+        i = hist_count - 1 - offset
+        alpha = rho_history[i] * jnp.dot(s_history[i], q)
+        return q - alpha * y_history[i], coefficients.at[i].set(alpha)
 
-    s_valid = s_history[:hist_count]
-    y_valid = y_history[:hist_count]
-    rho_valid = rho_history[:hist_count]
+    q, alphas = jax.lax.fori_loop(0, hist_count, backward, (-g, alphas))
+    last = jnp.maximum(hist_count - 1, 0)
+    ys = jnp.dot(s_history[last], y_history[last])
+    yy = jnp.dot(y_history[last], y_history[last])
+    gamma = jnp.where(yy > 0.0, ys / yy, jnp.asarray(1.0, dtype=g.dtype))
 
-    # First loop: right-to-left in history order, rolling back the action
-    # of each secant pair. ``alpha`` is saved for the forward sweep.
-    alphas = jnp.zeros((hist_count,), dtype=q.dtype)
-    for i in range(hist_count - 1, -1, -1):
-        alpha_i = rho_valid[i] * jnp.dot(s_valid[i], q)
-        alphas = alphas.at[i].set(alpha_i)
-        q = q - alpha_i * y_valid[i]
+    def forward(i, r):
+        beta = rho_history[i] * jnp.dot(y_history[i], r)
+        return r + (alphas[i] - beta) * s_history[i]
 
-    # Initial inverse-Hessian scaling. Nocedal recommends
-    # ``gamma = <s_k, y_k> / <y_k, y_k>`` using the most recent pair.
-    y_last = y_valid[-1]
-    s_last = s_valid[-1]
-    ys = jnp.dot(s_last, y_last)
-    yy = jnp.dot(y_last, y_last)
-    gamma = jnp.where(yy > 0.0, ys / yy, jnp.asarray(1.0, dtype=q.dtype))
-    r = gamma * q
-
-    # Second loop: left-to-right forward sweep.
-    for i in range(hist_count):
-        beta_i = rho_valid[i] * jnp.dot(y_valid[i], r)
-        r = r + (alphas[i] - beta_i) * s_valid[i]
-    return r
+    return jax.lax.fori_loop(0, hist_count, forward, gamma * q)
 
 
 def lbfgs_minimize(  # noqa: C901

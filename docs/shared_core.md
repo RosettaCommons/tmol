@@ -109,11 +109,14 @@ Pose tensor assembly remains in the Torch adapter.
 
 Distance-geometry preparation shares ideal targets, bounds, planar embedding,
 random seeds and restart selection. Its `ConformerExecution` protocol supplies
-planar refinement, chiral annealing and final stress refinement. The Torch adapter
-retains its existing objectives, dtypes and LBFGS execution. Supplying complete
+planar refinement, chiral annealing and final stress refinement. The common refinement objectives use six array primitives. Torch retains its
+existing dtypes and LBFGS execution; JAX supplies compiled differentiation and
+its own L-BFGS execution. Supplying complete
 MOL2 coordinates and authoritative charges needs no executor; regeneration
-requires one explicitly. This boundary does not establish JAX conformer-generation
-support or optimizer parity until that adapter and complete workflows are tested.
+requires an executor explicitly at the core boundary. Both frontends supply
+default executors. Shared molecular tests cover generated L/D ligands and aspirin
+and supplied MOL2 through full scoring derivatives and minimization. This does
+not establish equal optimizer trajectories or end-to-end runtime/memory parity.
 
 FastRelax schedule normalization, score-weight ramps, stage lifetime hooks,
 default task registration, and per-pose acceptance live in `tmol_core.relax`.

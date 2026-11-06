@@ -17,7 +17,8 @@ from tmol_jax.score import ScoreFunction, ScoreType
 from tmol_jax.score.constraint import ConstraintSet
 
 
-def test_lbfgs_quadratic_and_mask():
+@pytest.mark.parametrize("history", (1, 5, 50))
+def test_lbfgs_quadratic_and_mask(history):
     target = jnp.asarray([2.0, -3.0, 4.0])
 
     def objective(x):
@@ -27,6 +28,7 @@ def test_lbfgs_quadratic_and_mask():
         objective,
         jnp.asarray([0.0, 5.0, 9.0]),
         grad_mask=jnp.asarray([1.0, 0.0, 1.0]),
+        history=history,
     )
     assert result["converged"]
     result_x = np.asarray(result["x"])

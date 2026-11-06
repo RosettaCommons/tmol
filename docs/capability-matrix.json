@@ -50,9 +50,10 @@
       "repro_fixture": [
         "tests/scientific/test_cartbonded.py",
         "tests/scientific/test_molecular_nonbonded.py",
-        "tests/scientific/test_complete_preset.py"
+        "tests/scientific/test_complete_preset.py",
+        "tests/scientific/test_ligand_preparation.py"
       ],
-      "implementation_status": "Explicit LG1 and other prepared ligands support complete preset values/gradients, including nonzero genbonded and hydrogen bonds. Ligand generation and general canonical loading are absent."
+      "implementation_status": "Complete preset and nonzero genbonded on prepared ligands. Shared public SMILES generation and MOL2 preparation now retain caller database subtype and charge identity; generated L/D ligands, aspirin and supplied MOL2 pass CPU channel-gradient and minimization contracts. Full automatic structure preparation, fresh package/CUDA validation and matched mature runtime/memory parity remain pending."
     },
     {
       "domain": "protein_ligand_mixed",
@@ -272,6 +273,15 @@
         "tests/core/test_named_torsion_query.py"
       ],
       "implementation_status": "Shared selection and result structure preserve atom identity, paired requests and missing-neighbor NaN behavior. Native double measurement returns coordinate precision. Public scalar/name-dictionary/pose-block results; no differentiable host-query claim."
+    },
+    {
+      "domain": "ligand_preparation",
+      "torch": "supported",
+      "jax": "smiles_and_mol2_cpu_workflows",
+      "repro_fixture": [
+        "tests/scientific/test_ligand_preparation.py"
+      ],
+      "implementation_status": "Common typing, protonation, bounds, objectives, restart and parameter injection; thin execution adapters. Torch original seeded conformers unchanged in extraction checks. JAX public generating/supplied workflows run with Torch imports blocked. CIF requires explicit reader; integrated automatic mixed/modified structure input and final installed/CUDA validation remain pending. Optimization trajectories and end-to-end cold/warm/peak-memory parity are unestablished."
     }
   ],
   "validation": "PR629 remains draft. Matching c378 ABI3 CPU wheels pass installed molecular checks with Torch absent and source/native hash verification; H200 affected JAX checks pass137 cases. New increments require their own matching package/CUDA gates. Mature e29 complete warm workflow parity remains unresolved; constructor-only or earlier-JAX speedups do not establish readiness.",

@@ -7,11 +7,23 @@ topology and native CPU/CUDA scoring physics are shared with Torch through
 D residues, variants, nucleic acids, metals and mixed systems retain their input
 identities and parameter context. Existing `tmol` imports remain available.
 
-This is experimental: automatic ligand preparation, complete correlated
-packing and full design/FastRelax APIs remain unfinished.
+This is experimental: general structure-file preparation, complete correlated
+packing, full design policies and optimizer parity remain unfinished.
 Native molecular scoring and selected packing paths have CPU/CUDA and Torch-free
 package validation; final Metal validation is tracked separately. See the [capability matrix](capability-matrix.json) for
 implemented behavior and evidence rather than assuming full TMol parity.
+
+`tmol_jax.ligand` exposes the common ligand preparation and parameter-file APIs.
+SMILES generation uses the shared distance-geometry bounds, chirality/planarity
+objectives and restart policy with JAX differentiation and optimization. MOL2
+`mode="keep"` retains supplied geometry and charges. The returned database keeps
+the caller's subtype and must be used for subsequent pose construction and scoring.
+Optional preparation dependencies are available as `tmol-core[ligand]`.
+CIF preparation currently requires an explicit `atom_array_reader`; automatic
+mixed-structure preparation is not yet integrated into JAX input loading.
+Preparation runs eagerly on the host, with compiled numerical refinement; it is
+not a `jit`/`vmap` frontend. Generated conformers need not follow Torch's optimizer
+trajectory, and matched cold/warm preparation and peak-memory parity are pending.
 
 ## Install
 
@@ -280,8 +292,10 @@ search schedules. CUDA phase seeds come from a local NumPy PCG64 generator;
 packing leaves global random state unchanged. For already parameterized covalent
 groups, `ConjugatedChiSampler` and `add_conjugated_group_sampler` share task masks,
 chi budgets and correlation declarations with Torch; native joint kinematics
-preserve attachment geometry. Full correlated backbone scoring, automatic
-ligand preparation and FastRelax remain unfinished.
+preserve attachment geometry. Full correlated backbone scoring and automatic
+structure-file ligand preparation remain unfinished. FastRelax shares the mature
+schedule, task callbacks and per-pose acceptance; its JAX optimizer retains the
+minimization limitations described above.
 
 `prepare_pose_imposition(pose, rotamers, graph["retained"], assignments)` prepares
 discrete selection eagerly. Its `coordinates(rotamer_coords)` supports `jit`,
