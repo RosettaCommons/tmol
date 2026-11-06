@@ -9,7 +9,7 @@ class TermCreator:
 
     To add a new term,
 
-      - add one or more new entries to the tmol.score._score_types enumeration
+      - append channels in tmol_core.scoring.channels without renumbering existing ones
       - derive a new subclass of TermCreator and put it in this directory
         (the term itself should be implemented in a different directory)
       - the new TermCreator subclass needs to define two methods,
