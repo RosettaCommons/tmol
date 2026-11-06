@@ -47,31 +47,6 @@ def _format_atom_name(name: str) -> str:
     return "{0:<4}".format(name)
 
 
-def _element_from_atom(bt: Any, atom_ind: int) -> str:
-    """Derive a 2-char element symbol for a block-type atom.
-
-    We inspect the ``Atom.element`` field when present (available on the
-    ``tmol_jax.chemical.restypes`` port); otherwise we try to extract
-    it from the atom name. A blank 2-col string is returned as
-    a safe fallback.
-    """
-    try:
-        atom = bt.atoms[atom_ind]
-    except (AttributeError, IndexError):
-        return "  "
-
-    elem = getattr(atom, "element", None)
-    if elem:
-        return f"{str(elem).strip():>2}"
-
-    # Fall back to the first letter of the atom name (strip digits).
-    name = str(getattr(atom, "name", "")).strip()
-    for ch in name:
-        if ch.isalpha():
-            return f"{ch.upper():>2}"
-    return "  "
-
-
 # --------------------------------------------------------------------------- #
 # atom_records_from_pose_stack                                                 #
 # --------------------------------------------------------------------------- #
@@ -94,9 +69,12 @@ def atom_records_from_pose_stack(
     """
 
     pbt = pose_stack.packed_block_types
+    elements = {
+        atom_type.name: atom_type.element for atom_type in pbt.chem_db.atom_types
+    }
     bti = np.asarray(pose_stack.block_type_ind)
     n_poses, max_n_blocks = bti.shape
-    coords = np.asarray(pose_stack.coords, dtype=np.float32)
+    coords = np.asarray(pose_stack.coords)
     block_coord_offset = np.asarray(pose_stack.block_coord_offset, dtype=np.int32)
     n_atoms_per_bt = np.asarray(pbt.n_atoms, dtype=np.int32)
 
@@ -166,13 +144,9 @@ def atom_records_from_pose_stack(
 
             start = int(block_coord_offset[p, r])
             for a in range(n_atoms):
-                atom = None
-                try:
-                    atom = bt.atoms[a]
-                except (AttributeError, IndexError):
-                    pass
-                atomn = str(getattr(atom, "name", "")) if atom is not None else ""
-                element = _element_from_atom(bt, a)
+                atom = bt.atoms[a]
+                atomn = atom.name
+                element = elements[atom.atom_type]
 
                 # Determine ATOM vs HETATM record type
                 record_name = "ATOM  "
