@@ -20,7 +20,7 @@ objectives and restart policy with JAX differentiation and optimization. MOL2
 the caller's subtype and must be used for subsequent pose construction and scoring.
 Optional preparation dependencies are available as `tmol-core[ligand]`.
 CIF preparation currently requires an explicit `atom_array_reader`; automatic
-mixed-structure preparation is not yet integrated into JAX input loading.
+mixed-structure input uses the shared chemistry/context preparation described below.
 Preparation runs eagerly on the host, with compiled numerical refinement; it is
 not a `jit`/`vmap` frontend. Generated conformers need not follow Torch's optimizer
 trajectory, and matched cold/warm preparation and peak-memory parity are pending.
@@ -431,3 +431,13 @@ and `DefaultKinematicMinimizer` configure minimization. Existing packing
 capability limits apply. JAX's strong-Wolfe L-BFGS currently minimizes the summed
 batch objective; Torch's independent per-pose Armijo behavior and optimizer
 performance are still parity gaps.
+
+`tmol_jax.build_context_from_atom_array()` prepares reusable chemistry and
+parameters. `tmol_jax.pose_stack_from_atom_array(..., return_context=True)`
+accepts prepared ligands, noncanonical/D residues and metal coordination using
+the common normalization and hydrogen policies. Use the returned context for
+scoring. This incremental frontend currently defaults to `no_optH=True`;
+`no_optH=False` and fragmented-ligand imposition raise explicitly. Mature
+default input packing, file loading and complete metadata round trips remain
+parity gaps. Four public CPU cases check physical heavy-atom identity and all
+25 score-channel derivatives; this does not establish complete input parity.

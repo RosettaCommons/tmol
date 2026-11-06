@@ -47,3 +47,17 @@ __all__ = [
     "ScoreType",
     "beta2016_score_function",
 ]
+
+
+_STRUCTURE_INPUT = {"build_context_from_atom_array", "pose_stack_from_atom_array"}
+__all__ += sorted(_STRUCTURE_INPUT)
+
+
+def __getattr__(name):
+    if name in _STRUCTURE_INPUT:
+        from importlib import import_module
+
+        value = getattr(import_module(".io.structure", __name__), name)
+        globals()[name] = value
+        return value
+    raise AttributeError(name)

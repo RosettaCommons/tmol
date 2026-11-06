@@ -282,6 +282,15 @@
         "tests/scientific/test_ligand_preparation.py"
       ],
       "implementation_status": "Common typing, protonation, bounds, objectives, restart and parameter injection; thin execution adapters. Torch original seeded conformers unchanged in extraction checks. JAX public generating/supplied workflows run with Torch imports blocked. CIF requires explicit reader; integrated automatic mixed/modified structure input and final installed/CUDA validation remain pending. Optimization trajectories and end-to-end cold/warm/peak-memory parity are unestablished."
+    },
+    {
+      "domain": "public_atom_array_context",
+      "torch": "supported_including_default_input_packing_and_fragments",
+      "jax": "incremental_shared_preparation_no_opth_or_fragments",
+      "repro_fixture": [
+        "tests/scientific/test_atom_array_input.py"
+      ],
+      "implementation_status": "Shared normalization, hydrogen/protonation, metal mapping and reusable custom parameter context. Four physical-heavy-identity and 25-channel derivative CPU cases pass both frameworks. Default OptH/sidechain packing, fragmented imposition, Atom37 and complete metadata round trips remain parity gaps."
     }
   ],
   "validation": "PR629 remains draft. Matching c378 ABI3 CPU wheels pass installed molecular checks with Torch absent and source/native hash verification; H200 affected JAX checks pass137 cases. New increments require their own matching package/CUDA gates. Mature e29 complete warm workflow parity remains unresolved; constructor-only or earlier-JAX speedups do not establish readiness.",

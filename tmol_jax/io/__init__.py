@@ -31,3 +31,17 @@ __all__ = [
     "atom_records_from_pose_stack",
     "write_pose_stack_pdb",
 ]
+
+
+_STRUCTURE_INPUT = {"build_context_from_atom_array", "pose_stack_from_atom_array"}
+__all__ += sorted(_STRUCTURE_INPUT)
+
+
+def __getattr__(name):
+    if name in _STRUCTURE_INPUT:
+        from importlib import import_module
+
+        value = getattr(import_module(".structure", __name__), name)
+        globals()[name] = value
+        return value
+    raise AttributeError(name)

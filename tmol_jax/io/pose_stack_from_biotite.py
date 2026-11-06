@@ -13,7 +13,12 @@ from .pose_stack_construction import pose_stack_from_canonical_form
 
 
 def canonical_form_from_biotite(
-    atoms, *, canonical_ordering=None, missing_density_distance_threshold=2.4
+    atoms,
+    *,
+    canonical_ordering=None,
+    missing_density_distance_threshold=2.4,
+    prepare_input=False,
+    cut_partners=frozenset(),
 ):
     """Convert an AtomArray or same-topology AtomArrayStack to canonical form."""
     from tmol_core.io.atom_array import (
@@ -24,6 +29,19 @@ def canonical_form_from_biotite(
     from tmol_core.io.polymer_gaps import break_polymer_gaps, orient_polymer_gap_flags
 
     co = canonical_ordering or default_canonical_ordering()
+    initial_gaps = None
+    if prepare_input:
+        from tmol_core.io import structure_context as common
+
+        atoms = common._normalize_input_identifiers(atoms, co.name3_aliases)
+        atoms = common._with_input_chemistry_normalized(
+            atoms, common._metal_atom_names(co=co)
+        )
+        atoms, initial_gaps = common._filter_supported_atoms_and_connectivity(
+            atoms,
+            co,
+            cut_partners=cut_partners,
+        )
     atoms = with_metal_coordination_typed(atoms)
     models = list(atoms) if isinstance(atoms, struc.AtomArrayStack) else [atoms]
     if not models:
@@ -42,6 +60,27 @@ def canonical_form_from_biotite(
         key: np.concatenate([form[key] for form in forms], axis=0) for key in forms[0]
     }
     residues, valid, slots = mapped[0][1]
+    if prepare_input:
+        chain_ids, chain_labels, insertion_codes, labels, _ = (
+            common._extract_residue_metadata(atoms, initial_gaps)
+        )
+        count = len(models)
+        for name, values in (
+            ("chain_id", chain_ids),
+            ("chain_labels", chain_labels),
+            ("res_ins_codes", insertion_codes),
+            ("res_num", labels),
+        ):
+            combined[name] = np.broadcast_to(values, (count, len(values))).copy()
+        from tmol_core.io.protonation_input import PROTONATION_VARIANT
+
+        if PROTONATION_VARIANT in atoms.get_annotation_categories():
+            values = atoms.get_annotation(PROTONATION_VARIANT)[
+                struc.get_residue_starts(atoms)
+            ]
+            combined["protonation_variants"] = np.broadcast_to(
+                values, (count, len(values))
+            ).copy()
     types, chains = combined["res_types"][0], combined["chain_id"][0]
     bonds, disulfides, inferred = covalent_bonds_from_biotite(
         models[0],
@@ -51,7 +90,7 @@ def canonical_form_from_biotite(
         valid,
         slots,
     )
-    gaps = np.zeros((len(types), 2), bool)
+    gaps = np.zeros((len(types), 2), bool) if initial_gaps is None else initial_gaps
     bonds = break_polymer_gaps(
         gaps,
         bonds,
