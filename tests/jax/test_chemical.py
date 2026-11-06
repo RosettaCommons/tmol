@@ -35,3 +35,25 @@ def test_ideal_coordinates_follow_atom_names_when_atom_order_changes():
         residue.icoors[residue.icoors_index["CA"]].d,
         atol=1e-6,
     )
+
+
+def test_legacy_patched_database_keeps_shared_extension_operations():
+    import attrs
+    from tmol_jax.database.chemical import ChemicalDatabase
+    from tmol_jax.chemical.patched_chemdb import PatchedChemicalDatabase
+    from tmol_jax.pose.packed_block_types import PackedBlockTypes
+
+    raw = ChemicalDatabase.get_default()
+    original = PatchedChemicalDatabase.from_chem_db(raw)
+    alanine = next(residue for residue in raw.residues if residue.name == "ALA")
+    custom = attrs.evolve(
+        alanine, name="UXA", base_name="UXA", name3="UXA", io_equiv_class="UXA"
+    )
+    extended = original.with_added_residues((custom,))
+    assert isinstance(extended, PatchedChemicalDatabase)
+    assert not any(r.name == "UXA" for r in original.residues)
+    palette = PackedBlockTypes.default(extended)
+    names = {r.name for r in palette.active_block_types}
+    assert {"UXA", "UXA:nterm", "UXA:cterm"} <= names
+    base = next(r for r in palette.active_block_types if r.name == "UXA")
+    assert tuple(a.name for a in base.atoms) == tuple(a.name for a in alanine.atoms)

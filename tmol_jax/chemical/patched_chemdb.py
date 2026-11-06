@@ -35,15 +35,8 @@ from tmol_core.chemical.patching import (  # noqa: F401
 from tmol_jax.chemical.restypes import _refined_from_raw
 
 
-@attr.s(auto_attribs=True)
-class PatchedChemicalDatabase:
+class PatchedChemicalDatabase(_PatchedChemicalDatabase):
     """Patched records materialized as JAX host residue types."""
-
-    element_types: tuple
-    atom_types: tuple
-    residues: tuple
-    variants: tuple
-    name3_aliases: tuple = ()
 
     @classmethod
     def from_chem_db(cls, chemdb):
