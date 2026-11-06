@@ -1,5 +1,7 @@
 import torch
 import attr
+from types import SimpleNamespace
+from tmol.utility.weak_identity_cache import WeakIdentityLRU
 import numpy
 
 from typing import Tuple
@@ -46,6 +48,9 @@ from tmol.pose._pose_stack import PoseStack
 
 def _host_array(value):
     return value.detach().cpu().numpy()
+
+
+_sampling_precision_cache = WeakIdentityLRU(capacity=4)
 
 
 @attr.s(auto_attribs=True, eq=False)
@@ -213,7 +218,7 @@ class DunbrackChiSampler(ChiSampler):
         Tensor[torch.int32][:],  # n_rots_for_rt
         Tensor[torch.int32][:],  # rt_for_rotamer
         Tensor[torch.int32][:, :],  # chi_defining_atom_for_rotamer
-        Tensor[torch.float32][:, :],  # chi_for_rotamers
+        torch.Tensor,  # chi_for_rotamers preserves coordinate dtype
     ]:
         configured, task = _sampler_for_task(self, task)
         if configured is not self:
@@ -237,6 +242,11 @@ class DunbrackChiSampler(ChiSampler):
             _host_array(task.is_cons_bt_allowed),
             _host_array(task.per_block_conformer_sampler_allowed[:, :, sampler_index]),
             _host_array(task.per_block_chi_expansion),
+            real_dtype=(
+                numpy.float64
+                if pose_stack.coords.dtype == torch.float64
+                else numpy.float32
+            ),
         )
         if not request.has_allowed:
             empty_chi = torch.zeros((0, 4), dtype=torch.int32, device=self.device)
@@ -244,7 +254,7 @@ class DunbrackChiSampler(ChiSampler):
                 torch.zeros(request.n_gbt, dtype=torch.int32, device=self.device),
                 torch.zeros(0, dtype=torch.int32, device=self.device),
                 empty_chi,
-                empty_chi.float(),
+                empty_chi.to(dtype=pose_stack.coords.dtype),
             )
         measured = numpy.empty(0, dtype=numpy.float64)
         if request.frozen_requests:
@@ -257,7 +267,11 @@ class DunbrackChiSampler(ChiSampler):
         apply_frozen_chi(request, measured)
 
         def device_array(value):
-            result = torch.tensor(value, device=self.device)
+            result = torch.tensor(
+                value,
+                device=self.device,
+                dtype=pose_stack.coords.dtype if value.dtype.kind == "f" else None,
+            )
             # NumPy empty arrays can retain zero strides even after copying.
             # Native vector views require positive consumed-axis strides.
             if not result.numel():
@@ -311,6 +325,26 @@ class DunbrackChiSampler(ChiSampler):
         )
         return torch.tensor(indices[:, :, bb_dihedral_ind], device=self.device)
 
+    def _sampling_database_for_dtype(self, dtype):
+        resolver = self.dun_param_resolver
+        if dtype == resolver.sampling_db.rotameric_prob_tables.dtype:
+            return resolver.sampling_db
+
+        def convert():
+            return {
+                field.name: (
+                    value.to(dtype=dtype) if value.is_floating_point() else value
+                )
+                for field in attr.fields(type(resolver.sampling_db))
+                for value in (getattr(resolver.sampling_db, field.name),)
+            }
+
+        # Cache containers expose tensors to the existing CUDA stream-readiness
+        # protocol. Resolver identity is weak, and private budget samplers reuse
+        # the same immutable converted tables.
+        values = _sampling_precision_cache.get_or_create(resolver, dtype, convert)
+        return SimpleNamespace(**values)
+
     def launch_rotamer_building(
         self,
         coords,
@@ -327,36 +361,37 @@ class DunbrackChiSampler(ChiSampler):
     ):
         from ._compiled import _dun_sample_chi
 
+        database = self._sampling_database_for_dtype(coords.dtype)
         return _dun_sample_chi(
             coords,
-            self.dun_param_resolver.sampling_db.rotameric_prob_tables,
-            self.dun_param_resolver.sampling_db.rotprob_table_sizes,
-            self.dun_param_resolver.sampling_db.rotprob_table_strides,
-            self.dun_param_resolver.sampling_db.rotameric_mean_tables,
-            self.dun_param_resolver.sampling_db.rotameric_sdev_tables,
-            self.dun_param_resolver.sampling_db.rotmean_table_sizes,
-            self.dun_param_resolver.sampling_db.rotmean_table_strides,
-            self.dun_param_resolver.sampling_db.rotameric_meansdev_tableset_offsets,
-            self.dun_param_resolver.sampling_db.rotameric_bb_start,
-            self.dun_param_resolver.sampling_db.rotameric_bb_step,
-            self.dun_param_resolver.sampling_db.rotameric_bb_periodicity,
-            self.dun_param_resolver.sampling_db.rotameric_bb_source_start,
-            self.dun_param_resolver.sampling_db.rotameric_bb_is_mirrored,
-            self.dun_param_resolver.sampling_db.semirotameric_tables,
-            self.dun_param_resolver.sampling_db.semirot_table_sizes,
-            self.dun_param_resolver.sampling_db.semirot_table_strides,
-            self.dun_param_resolver.sampling_db.semirot_start,
-            self.dun_param_resolver.sampling_db.semirot_step,
-            self.dun_param_resolver.sampling_db.semirot_periodicity,
-            self.dun_param_resolver.sampling_db.rotameric_rotind2tableind,
-            self.dun_param_resolver.sampling_db.semirotameric_rotind2tableind,
-            self.dun_param_resolver.sampling_db.all_chi_rotind2tableind,
-            self.dun_param_resolver.sampling_db.all_chi_rotind2tableind_offsets,
-            self.dun_param_resolver.sampling_db.n_rotamers_for_tableset,
-            self.dun_param_resolver.sampling_db.n_rotamers_for_tableset_offsets,
-            self.dun_param_resolver.sampling_db.sorted_rotamer_2_rotamer,
-            self.dun_param_resolver.sampling_db.nchi_for_table_set,
-            self.dun_param_resolver.sampling_db.rotwells,
+            database.rotameric_prob_tables,
+            database.rotprob_table_sizes,
+            database.rotprob_table_strides,
+            database.rotameric_mean_tables,
+            database.rotameric_sdev_tables,
+            database.rotmean_table_sizes,
+            database.rotmean_table_strides,
+            database.rotameric_meansdev_tableset_offsets,
+            database.rotameric_bb_start,
+            database.rotameric_bb_step,
+            database.rotameric_bb_periodicity,
+            database.rotameric_bb_source_start,
+            database.rotameric_bb_is_mirrored,
+            database.semirotameric_tables,
+            database.semirot_table_sizes,
+            database.semirot_table_strides,
+            database.semirot_start,
+            database.semirot_step,
+            database.semirot_periodicity,
+            database.rotameric_rotind2tableind,
+            database.semirotameric_rotind2tableind,
+            database.all_chi_rotind2tableind,
+            database.all_chi_rotind2tableind_offsets,
+            database.n_rotamers_for_tableset,
+            database.n_rotamers_for_tableset_offsets,
+            database.sorted_rotamer_2_rotamer,
+            database.nchi_for_table_set,
+            database.rotwells,
             ndihe_for_res,
             dihedral_offset_for_res,
             dihedral_atom_inds,
