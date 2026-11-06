@@ -15,3 +15,5 @@ _ops = _load_ops(
 
 _gen_pose_leaf_atoms = _ops.gen_pose_leaf_atoms
 _resolve_his_taut = _ops.resolve_his_taut
+
+_select_canonical_candidates = _ops.select_canonical_candidates
