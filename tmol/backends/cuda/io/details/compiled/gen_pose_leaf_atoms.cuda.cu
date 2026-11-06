@@ -33,3 +33,15 @@ template struct CanonicalCandidates<
     Device::CUDA,
     int64_t>;
 }  // namespace tmol::io::details::compiled
+
+#include <tmol/io/details/compiled/canonical_topology.impl.hh>
+namespace tmol::io::details::compiled {
+template struct CanonicalTopology<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    int32_t>;
+template struct CanonicalTopology<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    int64_t>;
+}  // namespace tmol::io::details::compiled
