@@ -603,7 +603,6 @@ auto ElecRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
   }
   auto output = output_t.view;
   // Optimal launch box on v100 and a100 is nt=32, vt=1
-  LAUNCH_BOX_32;
   // Define nt and reduce_t
   // State the kernel bodies read, named explicitly rather than
   // captured implicitly by [=].
@@ -633,13 +632,6 @@ auto ElecRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
   // they must not be left uninitialized.
   ctx.max_n_upper_triangle_inds = 0;
   ctx.use_shared_compact_block_neighbors = false;
-  auto eval_energies_by_block = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    elec_eval_energies_by_block<DeviceDispatch, D, Real, Int, launch_t>(
-        ctx, shared, cta);
-  });
   // Each pair writes its own score; backward recomputes its derivatives.
   if (D == tmol::Device::MPS) {
     // As in the whole-pose path: Metal has nowhere for a closure to live, so
@@ -654,8 +646,7 @@ auto ElecRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
         dispatch_indices.size(1),
         true);
   } else {
-    DeviceDispatch<D>::template foreach_independent_workgroup<launch_t>(
-        mgr, dispatch_indices.size(1), eval_energies_by_block);
+    elec_rotamer_forward_native<DeviceDispatch, D, Real, Int>(mgr, ctx);
   }
   return {output_t, dV_dcoords_t, dispatch_indices_t};
 }  // namespace potentials
@@ -757,7 +748,6 @@ auto ElecRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
   auto dV_dcoords_t = TPack<Vec<Real, 3>, 2, D>::zeros({1, n_atoms});
   auto dV_dcoords = dV_dcoords_t.view;
   // Optimal launch box on v100 and a100 is nt=32, vt=1
-  LAUNCH_BOX_32;
   // Define nt and reduce_t
   // State the kernel bodies read, named explicitly rather than
   // captured implicitly by [=].
@@ -782,16 +772,7 @@ auto ElecRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
   ctx.dTdV = dTdV;
   ctx.dV_dcoords = dV_dcoords;
   ctx.max_n_blocks = max_n_blocks;
-  auto eval_derivs = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    elec_eval_derivs<DeviceDispatch, D, Real, Int, launch_t>(ctx, shared, cta);
-  });
-  // Since we have the sphere overlap results from the forward pass,
-  // there's only a single kernel launch here
-  DeviceDispatch<D>::template foreach_workgroup<launch_t>(
-      mgr, dispatch_indices.size(1), eval_derivs);
+  elec_rotamer_backward_native<DeviceDispatch, D, Real, Int>(mgr, ctx);
   return dV_dcoords_t;
 }
 }  // namespace potentials

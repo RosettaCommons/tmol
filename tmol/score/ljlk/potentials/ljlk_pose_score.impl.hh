@@ -838,9 +838,7 @@ auto LJLKRotamerScoreDispatch<DeviceOperations, D, Real, Int>::forward(
   auto output = output_t.view;
 
   // Optimal launch box on v100 and a100 is nt=32, vt=1
-  LAUNCH_BOX_32;
   // Define nt and reduce_t
-  CTA_REAL_REDUCE_T_TYPEDEF;
 
   // State the kernel body reads, named explicitly rather than captured
   // implicitly by [=], so the Metal entry point can be handed the same
@@ -877,32 +875,6 @@ auto LJLKRotamerScoreDispatch<DeviceOperations, D, Real, Int>::forward(
   ctx.use_shared_compact_block_neighbors = false;
   ctx.require_gradient = false;
 
-  // Only the whole-pose CPU path accumulates in double; the rotamer path
-  // writes one cell per workgroup.
-  double* cpu_pose_accum = nullptr;
-
-  auto eval_energies_by_block = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    ljlk_eval_rotamer_energies_by_block<
-        DeviceOperations,
-        D,
-        Real,
-        Int,
-        launch_t>(ctx, shared, cta, cpu_pose_accum);
-  });
-
-  ///////////////////////////////////////////////////////////////////////
-
-  // Three steps
-  // 0: setup
-  // 1: launch a kernel to find a small bounding sphere surrounding the blocks
-  // 2: launch a kernel to look for spheres that are within striking distance of
-  // each other
-  // 3: launch a kernel to evaluate lj/lk between pairs of blocks
-  // within striking distance
-
   assert(output_block_pair_energies);
   // Each pair writes its own score; backward recomputes its derivatives.
   if (D == tmol::Device::MPS) {
@@ -915,8 +887,7 @@ auto LJLKRotamerScoreDispatch<DeviceOperations, D, Real, Int>::forward(
         dispatch_indices.size(1),
         true);
   } else {
-    DeviceOperations<D>::template foreach_independent_workgroup<launch_t>(
-        mgr, dispatch_indices.size(1), eval_energies_by_block);
+    ljlk_rotamer_forward_native<DeviceOperations, D, Real, Int>(mgr, ctx);
   }
 
   return {output_t, dV_dcoords_t, dispatch_indices_t};
