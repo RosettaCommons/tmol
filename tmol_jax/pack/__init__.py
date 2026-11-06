@@ -1,4 +1,4 @@
-"""Shared residue choices and conformer assembly; packing search is unfinished."""
+"""Shared chemistry and native conformer assembly, scoring and CPU packing."""
 
 from .palette import PackerPalette
 from .kinematics import prepare_rotamer_kinematics, prepare_block_group_kinematics
@@ -9,9 +9,14 @@ from .task import PackerTask, SetPackerTask
 from .current import IncludeCurrentSampler, FallbackSampler
 from .rotamers import build_rotamers
 from .rotamer_set import RotamerSet
+from .packing import pack_rotamers
+from .imposition import prepare_pose_imposition, impose_top_rotamer_assignments
 
 __all__ = [
     "PackerPalette",
+    "pack_rotamers",
+    "prepare_pose_imposition",
+    "impose_top_rotamer_assignments",
     "build_rotamers",
     "RotamerSet",
     "PackerTask",

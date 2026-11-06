@@ -65,7 +65,7 @@ class PackerTask:
             or pose.coords.shape != self._coordinate_shape
             or pose.coords.device != self.device
             or any(
-                not np.array_equal(expected, actual)
+                expected is not actual and not np.array_equal(expected, actual)
                 for expected, actual in zip(
                     self._topology,
                     (

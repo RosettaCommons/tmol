@@ -89,8 +89,14 @@ class PoseStack:
     def atom_is_real(self):
         """Mask packed atoms by topology, independent of their positions."""
         n_atoms = self.packed_block_types.n_atoms[jnp.maximum(self.block_type_ind, 0)]
-        counts = jnp.where(self.block_type_ind >= 0, n_atoms, 0).sum(axis=1)
-        return jnp.arange(self.coords.shape[1])[None, :] < counts[:, None]
+        real = self.block_type_ind >= 0
+        counts = jnp.where(real, n_atoms, 0)
+        starts = jnp.maximum(self.block_coord_offset, 0)
+        pose = jnp.arange(self.n_poses)[:, None]
+        edges = jnp.zeros((self.n_poses, self.coords.shape[1] + 1), jnp.int32)
+        edges = edges.at[pose, starts].add(real.astype(jnp.int32))
+        edges = edges.at[pose, starts + counts].add(-real.astype(jnp.int32))
+        return jnp.cumsum(edges[:, :-1], axis=1) > 0
 
     @property
     def device(self):

@@ -6,6 +6,7 @@
 #include "metal_ffi.hh"
 #include "na_torsion_ffi.hh"
 #include "na_sampling_ffi.hh"
+#include "pose_imposition_ffi.hh"
 #include "workspace_ffi.hh"
 #include "lk_ball_ffi.hh"
 #include "hbond_ffi.hh"
@@ -1011,3 +1012,14 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<int64_t>("sample_syn")
         .Attr<double>("max_syn_well")
         .Attr<double>("syn_mean"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_pose_imposition,
+    tmol::jax::run_graph_stage<tmol::jax::PoseImpositionStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"));

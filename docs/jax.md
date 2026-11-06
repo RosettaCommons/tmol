@@ -235,12 +235,29 @@ consumes these entries and shares background, one-body and chunked two-body
 accumulation with Torch. Bump pruning and correlated-group collapse remain absent
 from this JAX graph frontend.
 
-Complete packing, CUDA annealing, mutation/design, optH/conjugated samplers and FastRelax
-remain unfinished. Float64 JAX assembly preserves dtype; this does not establish
+`tmol_jax.pack.pack_rotamers(pose, score_function, task, seed=123)` runs the
+complete sparse score, common interaction graph, native CPU annealer and native
+pose imposition. It requires float32 CPU coordinates and explicit task samplers,
+including fallback for uncovered residues. Ligand, noncanonical, D-peptide,
+mixed and DNA repacking fixtures check selected coordinates, immutable chemistry
+and the resulting whole-pose energy. CUDA search, bump pruning, correlated groups,
+optH/conjugated samplers and FastRelax remain unfinished.
+
+`prepare_pose_imposition(pose, rotamers, graph["retained"], assignments)` prepares
+discrete selection eagerly. Its `coordinates(rotamer_coords)` supports `jit`,
+`vmap`, coordinate gradients, JVPs and higher derivatives; `apply` returns a new
+pose. Identity changes compact atom storage and rebuild bond separation. The
+frontend rejects changed connection-port layouts and identity changes with
+attached constraints. Design selection has L/D ARG-to-LYS coverage; complete
+design support, including zero-chi alternatives, remains unfinished.
+
+Float64 JAX assembly preserves dtype; this does not establish
 float64 support for Torch's complete packing pipeline. Float32 reconstructed NA
-backbones can differ slightly from exact input copies; sparse NA neighbor
-references use the first conformer, so mixed sampled/current ensembles carry
-that reconstruction error.
+backbones can differ slightly across conformers and from exact input copies;
+sparse NA neighbor references use the first conformer. Exact whole-pose
+conservation therefore requires identical fixed backbone and sugar coordinates;
+raw float32 ensembles carry reconstruction error. Independent native Torch/JAX
+sampled values and coordinate gradients agree on those raw ensembles.
 
 For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
 a batch of `ResidueBlock(residue_type, atom_names, coords)` records and explicit

@@ -85,8 +85,8 @@ def sparse_nonbonded_values(coords, state, indices, *, workspace=None):
     def evaluate(x, args, weights=None, *, backward=False):
         return _evaluate(
             x,
-            args,
-            indices,
+            args[:-1],
+            args[-1],
             weights,
             target=target,
             channels=channels,
@@ -95,7 +95,9 @@ def sparse_nonbonded_values(coords, state, indices, *, workspace=None):
             workspace=workspace,
         )
 
-    return coordinate_vjp(coords, parameters, evaluate)
+    # Candidate identities are dynamic device operands. Carry them through the
+    # reverse rule explicitly so nested jit/vmap never captures a tracer.
+    return coordinate_vjp(coords, (*parameters, indices), evaluate)
 
 
 def validate_rotamer_context(pose, rotamers):

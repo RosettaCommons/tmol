@@ -369,6 +369,33 @@ def test_sampled_ensemble_selection_conserves_energy_and_forces(
         counts = backend.numpy(r.n_rots_for_block)
         starts = backend.numpy(r.rot_offset_for_block)
         assert counts.max() > 2
+        if family == "na_torsion":
+            # Sparse NA uses the neighbor's first conformer for the fixed
+            # backbone and sugar. Float32 assembly may round these coordinates
+            # differently across conformers, even on the same device. Check the
+            # existing assembly bound, then test exact fixed-backbone scoring
+            # with identical physical inputs; retain the tight float64 bounds.
+            offsets = backend.numpy(r.coord_offset_for_rot)
+            types = backend.numpy(r.block_type_ind_for_rot)
+            fixed_names = ("P", "O5'", "C5'", "C4'", "C3'", "O3'", "O4'", "C1'", "C2'")
+            for pose, block in np.argwhere(counts > 0):
+                first = starts[pose, block]
+                bt = e.packed_block_types.active_block_types[types[first]]
+                atoms = [
+                    bt.atom_to_idx[name]
+                    for name in fixed_names
+                    if name in bt.atom_to_idx
+                ]
+                for rot in range(first, first + counts[pose, block]):
+                    np.testing.assert_allclose(
+                        xyz[offsets[rot] + np.asarray(atoms, np.int32)],
+                        xyz[offsets[first] + np.asarray(atoms, np.int32)],
+                        rtol=0,
+                        atol=2e-5,
+                    )
+                    xyz[offsets[rot] + np.asarray(atoms, np.int32)] = xyz[
+                        offsets[first] + np.asarray(atoms, np.int32)
+                    ]
         values, indices = map(backend.numpy, e.scores(xyz))
         if family == "hbond":
             assert np.any(values < -0.1)

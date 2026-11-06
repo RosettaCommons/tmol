@@ -108,6 +108,7 @@ class RotamerScorer:
                     state = prepare(pose, rotamers, score_function.param_db)
                 entries.append((provided, selected, weights, evaluate, state, spatial))
         self.entries = tuple(entries)
+        self._evaluate = self._compiled_evaluator()
 
     def prepare(self, coords):
         """Select discrete neighbors eagerly and return values/indices callable."""
@@ -117,7 +118,7 @@ class RotamerScorer:
             raise ValueError(f"expected finite coordinates with shape {self.shape}")
         if coords.device != self.rotamers.device:
             raise ValueError("coordinates and conformers must be on the same device")
-        candidates, prepared = {}, []
+        candidates, prepared_indices = {}, []
         with jax.default_device(self.rotamers.device):
             for provided, selected, weights, evaluate, state, spatial in self.entries:
                 indices = None
@@ -131,15 +132,36 @@ class RotamerScorer:
                             coords=coords,
                         )
                     indices = candidates[reach]
-                prepared.append((provided, selected, weights, evaluate, state, indices))
+                prepared_indices.append(indices)
+        return partial(
+            self._evaluate, arrays=self._arrays, candidates=tuple(prepared_indices)
+        )
+
+    def _compiled_evaluator(self):
+        # Floating tables remain explicit device operands, avoiding duplicate
+        # embedded constants while compiling all runtime tensor operations once.
+        leaves, tree = jax.tree.flatten(tuple(entry[4] for entry in self.entries))
+        positions = tuple(
+            i for i, leaf in enumerate(leaves) if isinstance(leaf, jax.Array)
+        )
+        self._arrays = tuple(leaves[i] for i in positions)
+        template = tuple(
+            None if i in positions else leaf for i, leaf in enumerate(leaves)
+        )
         channels = self.score_types
         sum_terms, apply_weights, shape = self.sum_terms, self.apply_weights, self.shape
 
-        def score(x):
+        @jax.jit
+        def score(x, arrays, candidates):
             if x.shape != shape or x.dtype not in (jnp.float32, jnp.float64):
                 raise ValueError(f"expected float32/64 coordinates with shape {shape}")
+            state_leaves = list(template)
+            for i, value in zip(positions, arrays):
+                state_leaves[i] = value
+            states = tree.unflatten(state_leaves)
             all_values, all_indices = [], []
-            for provided, selected, weights, evaluate, state, indices in prepared:
+            for entry, state, indices in zip(self.entries, states, candidates):
+                provided, selected, weights, evaluate = entry[:4]
                 if indices is None:
                     values, ids = evaluate(x, state)
                 else:

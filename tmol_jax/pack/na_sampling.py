@@ -42,6 +42,85 @@ def _stage(arguments, *, operation, outputs, policy):
     )
 
 
+@partial(jax.jit, static_argnames=("policy", "sampler_index"))
+def _prepare_inputs(
+    coords,
+    types,
+    offsets,
+    choice_poses,
+    choice_blocks,
+    choice_types,
+    choice_allowed,
+    sampler_allowed,
+    cache,
+    parameters,
+    steps,
+    *,
+    policy,
+    sampler_index,
+):
+    # Measure each physical block once, then gather to considered types.
+    # These are runtime indices; the shared chemistry provides ring order.
+    rings = (
+        cache["ring32"][jnp.maximum(types, 0)]
+        if cache["ring32"].shape[0]
+        else jnp.full((*types.shape, 5), -1, jnp.int32)
+    )
+    valid = (rings >= 0) & (types[..., None] >= 0)
+    flat = (
+        jnp.maximum(offsets[..., None] + rings, 0)
+        + jnp.arange(types.shape[0], dtype=jnp.int32)[:, None, None] * coords.shape[1]
+    )
+    pucker = _stage(
+        (
+            coords.reshape(-1, 3),
+            _wide_nonnegative(flat.reshape(-1, 5)),
+            valid.reshape(-1, 5),
+        ),
+        operation=0,
+        outputs=jax.ShapeDtypeStruct((types.size, 8), np.uint8),
+        policy=policy,
+    )
+    rows = choice_poses * types.shape[1] + choice_blocks
+    allowed = sampler_allowed[..., sampler_index]
+    active = (
+        allowed[choice_poses, choice_blocks]
+        & choice_allowed
+        & cache["builds_bt"][choice_types]
+    )
+    inputs = (
+        _wide_nonnegative(choice_types),
+        cache["base"],
+        pucker[rows],
+        cache["n_combos"],
+        active,
+        cache["chi_atom"],
+        cache["proton"],
+        *parameters,
+        steps,
+    )
+    counts = _stage(
+        inputs,
+        operation=1,
+        outputs=jax.ShapeDtypeStruct((rows.size, 8), np.uint8),
+        policy=policy,
+    )
+    return inputs, counts, prefix_counts(counts)[:-1]
+
+
+@partial(jax.jit, static_argnames=("total", "policy"))
+def _sample_values(inputs, counts, offsets, *, total, policy):
+    owners = load_balance(offsets, total=total)
+    outputs = (
+        jax.ShapeDtypeStruct((total, inputs[5].shape[1]), np.int32),
+        jax.ShapeDtypeStruct((total, inputs[5].shape[1]), np.float32),
+    )
+    atoms, chi = _stage(
+        (*inputs, offsets, owners), operation=2, outputs=outputs, policy=policy
+    )
+    return _narrow_prefix(counts), owners, atoms, chi
+
+
 class PreparedNaSamples:
     """Fixed native sample identities with differentiable floating parameters.
 
@@ -135,6 +214,12 @@ class NaChiRotamerSampler:
         self.chi_sample_level, self.sample_syn = chi_sample_level, bool(sample_syn)
         self.expanded_limit, self.limit = chi_sample_budget(expanded_limit, limit)
         self._parameter_database = None
+        self._annotations = {}
+        self._storage = None
+        self._steps = {}
+        for value in self.params.values():
+            if isinstance(value, np.ndarray):
+                value.setflags(write=False)
 
     @classmethod
     def from_database(cls, parameter_database, **options):
@@ -151,13 +236,41 @@ class NaChiRotamerSampler:
         return "NaChiRotamerSampler"
 
     def annotate_residue_type(self, restype, budget=None):
-        inverse = NativePosePlanner().inverse_kinematics
-        return annotate_na_sampler_residue(
-            restype,
-            self.element_for_atom_type,
-            *(budget or (self.expanded_limit, self.limit)),
-            lambda rt: annotate_residue_rotamer_kinematics(rt, inverse),
-        )
+        budget = budget or (self.expanded_limit, self.limit)
+        key = (id(restype), budget)
+        if key not in self._annotations:
+            inverse = NativePosePlanner().inverse_kinematics
+            self._annotations[key] = (
+                restype,
+                annotate_na_sampler_residue(
+                    restype,
+                    self.element_for_atom_type,
+                    *budget,
+                    lambda rt: annotate_residue_rotamer_kinematics(rt, inverse),
+                ),
+            )
+        return self._annotations[key][1]
+
+    def _device_metadata(self, pbt, device, budget):
+        if self._storage is None or self._storage[:3] != (id(pbt), device, budget):
+            host = pack_na_sampler_params(
+                [
+                    self.annotate_residue_type(bt, budget)
+                    for bt in pbt.active_block_types
+                ]
+            )
+            cache = {
+                name: _sampling_put(value, device)
+                for name, value in host.items()
+                if isinstance(value, np.ndarray) and name != "ring"
+            }
+            cache["ring32"] = jax.device_put(host["ring"].astype(np.int32), device)
+            parameters = tuple(
+                jax.device_put(self.params[name], device)
+                for name in ("well_chi_syn", "chi_means", "sdev_chi")
+            )
+            self._storage = (id(pbt), device, budget, pbt, cache, parameters)
+        return self._storage[4:]
 
     def defines_rotamers_for_rt(self, restype):
         return self.annotate_residue_type(restype)["base"] >= 0
@@ -167,8 +280,7 @@ class NaChiRotamerSampler:
             restype, ("chi1",) + tuple(c.chi_dihedral for c in restype.chi_samples)
         )
 
-    def prepare_chi_for_poses(self, pose, task):
-        """Measure input sugars and allocate native sample identities eagerly."""
+    def _prepare(self, pose, task):
         if isinstance(pose.coords, jax.core.Tracer):
             raise TypeError("dynamic NA sampling requires eager coordinates")
         if isinstance(task, PackerTask):
@@ -185,68 +297,29 @@ class NaChiRotamerSampler:
                 "sampler database does not match the pose chemistry context"
             )
         budget = task.chi_sample_budget or (self.expanded_limit, self.limit)
-        host = pack_na_sampler_params(
-            [self.annotate_residue_type(bt, budget) for bt in pbt.active_block_types]
-        )
         policy = (float(self.params["pucker_temperature"]), self.sample_syn)
+        cache, parameters = self._device_metadata(pbt, device, budget)
         with jax.default_device(device):
-            cache = {
-                name: _sampling_put(value, device)
-                for name, value in host.items()
-                if isinstance(value, np.ndarray)
-            }
-            types = pose.block_type_ind
-            # Measure each physical block once, then gather to considered types.
-            # These are runtime indices; the shared chemistry provides ring order.
-            rings = (
-                jnp.asarray(host["ring"], jnp.int32)[jnp.maximum(types, 0)]
-                if len(host["ring"])
-                else jnp.full((*types.shape, 5), -1, jnp.int32)
-            )
-            valid = (rings >= 0) & (types[..., None] >= 0)
-            flat = (
-                jnp.maximum(pose.block_coord_offset[..., None] + rings, 0)
-                + jnp.arange(pose.n_poses, dtype=jnp.int32)[:, None, None]
-                * pose.coords.shape[1]
-            )
-            pucker = _stage(
-                (
-                    pose.coords.reshape(-1, 3),
-                    _wide_nonnegative(flat.reshape(-1, 5)),
-                    valid.reshape(-1, 5),
-                ),
-                operation=0,
-                outputs=jax.ShapeDtypeStruct((types.size, 8), np.uint8),
+            key = (device, self.chi_sample_level)
+            if key not in self._steps:
+                self._steps[key] = jnp.asarray(
+                    CHI_STEPS[self.chi_sample_level], jnp.float32
+                )
+            steps = self._steps[key]
+            inputs, counts, offsets = _prepare_inputs(
+                pose.coords,
+                pose.block_type_ind,
+                pose.block_coord_offset,
+                task.cons_bt_pose,
+                task.cons_bt_block,
+                task.cons_bt_block_type,
+                task.is_cons_bt_allowed,
+                task.per_block_conformer_sampler_allowed,
+                cache,
+                parameters,
+                steps,
                 policy=policy,
-            )
-            rows = task.cons_bt_pose * pose.max_n_blocks + task.cons_bt_block
-            allowed = task.per_block_conformer_sampler_allowed[
-                ..., task.conformer_sampler_index[id(self)]
-            ]
-            active = (
-                allowed[task.cons_bt_pose, task.cons_bt_block]
-                & task.is_cons_bt_allowed
-                & cache["builds_bt"][task.cons_bt_block_type]
-            )
-            inputs = (
-                _wide_nonnegative(task.cons_bt_block_type),
-                cache["base"],
-                pucker[rows],
-                cache["n_combos"],
-                active,
-                cache["chi_atom"],
-                cache["proton"],
-                *(
-                    jnp.asarray(self.params[name])
-                    for name in ("well_chi_syn", "chi_means", "sdev_chi")
-                ),
-                jnp.asarray(CHI_STEPS[self.chi_sample_level], jnp.float32),
-            )
-            counts = _stage(
-                inputs,
-                operation=1,
-                outputs=jax.ShapeDtypeStruct((rows.size, 8), np.uint8),
-                policy=policy,
+                sampler_index=task.conformer_sampler_index[id(self)],
             )
             host_counts = np.asarray(counts).copy().view(np.int64).reshape(-1)
             # Shared allocation/budget policy; no coordinates or floating tables
@@ -260,14 +333,21 @@ class NaChiRotamerSampler:
                 int(host_counts.max(initial=0)),
                 *budget,
             )
-            offsets = prefix_counts(counts)[:-1]
+            return inputs, counts, offsets, total, policy
+
+    def prepare_chi_for_poses(self, pose, task):
+        """Measure input sugars and allocate native sample identities eagerly."""
+        inputs, counts, offsets, total, policy = self._prepare(pose, task)
+        with jax.default_device(pose.device):
             owners = load_balance(offsets, total=total)
             return PreparedNaSamples(
                 inputs, offsets, _narrow_prefix(counts), owners, policy
             )
 
     def sample_chi_for_poses(self, pose, task):
-        return self.prepare_chi_for_poses(pose, task).samples()
+        inputs, counts, offsets, total, policy = self._prepare(pose, task)
+        with jax.default_device(pose.device):
+            return _sample_values(inputs, counts, offsets, total=total, policy=policy)
 
     def create_samples_for_poses(self, pose, task):
         counts, choices, atoms, chi = self.sample_chi_for_poses(pose, task)
