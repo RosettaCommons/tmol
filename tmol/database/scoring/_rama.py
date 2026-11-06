@@ -4,17 +4,9 @@ import torch
 from typing import Tuple
 
 from tmol.types._torch import Tensor
+from tmol_core.database.library_records import RamaMappingParams
 
 from ._content_hash import _content_hash
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class RamaMappingParams:
-    table_id: str
-    res_middle: str
-    res_upper: str = "_"
-    invert_phi: bool = False
-    invert_psi: bool = False
 
 
 @attr.s(auto_attribs=True, frozen=True, slots=True)
@@ -42,6 +34,7 @@ class RamaDatabase:
                 RamaTables,
                 (RamaTables, f"{_OLD}.RamaTables"),
                 RamaMappingParams,
+                (RamaMappingParams, "tmol.database.scoring._rama.RamaMappingParams"),
                 (RamaMappingParams, f"{_OLD}.RamaMappingParams"),
             ]
         ):
