@@ -16,8 +16,11 @@ from .io.canonical_ordering import CanonicalOrdering
 from .pack import PackerPalette, PackerTask, pack_rotamers
 from .pose import ConstraintSet, PoseStack, PoseStackBuilder, PackedBlockTypes, PDBInfo
 from .score import ScoreFunction, ScoreType, beta2016_score_function
+from .pose import get_named_torsions, get_torsion_names
 
 __all__ = [
+    "get_named_torsions",
+    "get_torsion_names",
     "pose_stack_from_pdb",
     "pose_stack_from_residue_blocks",
     "ResidueBlock",

@@ -398,3 +398,9 @@ per residue; larger port counts reject explicitly. Connection atom indices use
 the full native integer range. The frontend does not change global JAX precision settings.
 The initial implementation derives from
 [tudorcotet/jtmol](https://github.com/tudorcotet/jtmol); see `tmol_jax/NOTICE`.
+
+Named geometry queries are available as `get_torsion_names(pose, pose_index,
+block_index)` and `get_named_torsions(pose, poses=None, blocks=None, names=None,
+degrees=True)`. They share selection and result conventions with Torch, including
+paired selections and NaN for absent neighboring atoms. These eager queries
+return host values; coordinate differentiation uses scoring primitives.
