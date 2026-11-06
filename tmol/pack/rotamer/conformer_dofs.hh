@@ -5,6 +5,7 @@
 #include <tmol/score/common/launch_box_macros.hh>
 #include <tmol/utility/portable/device.hh>
 #include <cmath>
+#include <tmol/score/common/accumulate.hh>
 
 namespace tmol::pack::rotamer {
 // Static topology and caller-owned DOFs. All indices address compact forests
@@ -136,6 +137,92 @@ void launch_copy_conformer_rows(
   Ops<D>::template forall<launch_t>(
       context, count, [=] TMOL_DEVICE_FUNC(int i) {
         copy_conformer_row(c, i, root_shift);
+      });
+}
+
+// Projected-vector atan2 definition used by tmol.numeric.coord_dihedrals.
+// The existing implementation credits the Praxeolitic construction:
+// https://stackoverflow.com/questions/20305272
+TMOL_HOST_DEVICE_FUNC double conformer_coordinate_dihedral(
+    double const xyz[4][3]) {
+  double ba[3], bc[3], cd[3], axis[3], v[3], w[3];
+  double length2 = 0, ba_axis = 0, cd_axis = 0;
+  for (int i = 0; i < 3; ++i) {
+    ba[i] = xyz[0][i] - xyz[1][i];
+    bc[i] = xyz[2][i] - xyz[1][i];
+    cd[i] = xyz[3][i] - xyz[2][i];
+    length2 += bc[i] * bc[i];
+  }
+  double length = std::sqrt(length2);
+  for (int i = 0; i < 3; ++i) {
+    axis[i] = bc[i] / length;
+    ba_axis += ba[i] * axis[i];
+    cd_axis += cd[i] * axis[i];
+  }
+  for (int i = 0; i < 3; ++i) {
+    v[i] = ba[i] - ba_axis * axis[i];
+    w[i] = cd[i] - cd_axis * axis[i];
+  }
+  double x = 0, y = 0;
+  for (int i = 0; i < 3; ++i) {
+    int j = (i + 1) % 3, k = (i + 2) % 3;
+    x += v[i] * w[i];
+    y += (axis[j] * v[k] - axis[k] * v[j]) * w[i];
+  }
+  return std::atan2(y, x);
+}
+
+template <template <typename, int> class View, typename Real, typename Int>
+struct ChiDofCorrection {
+  View<Int, 1> types, offsets, conformers;
+  View<int32_t, 2> atoms;
+  View<Real, 2> chi, trial_coords;
+  View<Int, 3> chi_atoms;
+  View<Int, 2> kinematic_index;
+  View<Real, 2> dofs;
+};
+
+template <Device D, typename Real, typename Ctx>
+TMOL_DEVICE_FUNC void correct_chi_dof(Ctx const& c, int index) {
+  int width = c.atoms.size(1), row = index / width, column = index % width;
+  int atom = c.atoms[row][column];
+  if (atom < 0) return;
+  auto conformer = c.conformers[row], type = c.types[conformer];
+  auto offset = c.offsets[conformer];
+  double xyz[4][3];
+  for (int point = 0; point < 4; ++point) {
+    auto local = c.chi_atoms[type][atom][point];
+    if (local < 0) return;
+    for (int component = 0; component < 3; ++component)
+      xyz[point][component] = double(c.trial_coords[offset + local][component]);
+  }
+  // Float32 reconstruction historically computes geometry in double and
+  // rounds the measured angle before forming its double-precision delta.
+  // Float64 reconstruction retains the measured double precision.
+  Real measured = Real(conformer_coordinate_dihedral(xyz));
+  double delta = double(c.chi[row][column]) - double(measured);
+  constexpr double pi = 3.14159265358979323846;
+  double wrapped = std::fmod(delta + pi, 2 * pi);
+  if (wrapped < 0) wrapped += 2 * pi;
+  delta = wrapped - pi;
+  auto destination = c.kinematic_index[type][atom] + offset + 1;
+  Real correction = Real(delta);
+  score::common::accumulate<D, Real>::add(c.dofs[destination][3], correction);
+}
+
+template <
+    template <Device> class Ops,
+    Device D,
+    typename Real,
+    typename Context,
+    typename Ctx>
+void launch_correct_chi_dofs(Context& context, Ctx c) {
+  LAUNCH_BOX_128;
+  int count = score::common::checked_dispatch_product(
+      c.atoms.size(0), c.atoms.size(1), "conformer chi correction");
+  Ops<D>::template forall<launch_t>(
+      context, count, [=] TMOL_DEVICE_FUNC(int i) {
+        correct_chi_dof<D, Real>(c, i);
       });
 }
 

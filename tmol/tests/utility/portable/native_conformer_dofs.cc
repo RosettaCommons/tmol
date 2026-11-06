@@ -110,7 +110,59 @@ void check_rows() {
     }
 }
 
+template <typename Real, typename Int>
+void check_correction() {
+  tmol::ContextManager mgr;
+  constexpr double pi = 3.14159265358979323846;
+  double xyz[4][3] = {{1, 0, 0}, {0, 0, 0}, {0, 1, 0}, {0, 1, 1}};
+  assert(std::abs(conformer_coordinate_dihedral(xyz) + pi / 2) < 1e-15);
+  // A proper rotation and translation preserve the signed quarter turn.
+  for (auto& point : xyz) {
+    double x = point[0];
+    point[0] = -point[1] + 11;
+    point[1] = x - 7;
+    point[2] += 3;
+  }
+  assert(std::abs(conformer_coordinate_dihedral(xyz) + pi / 2) < 1e-15);
+  Int types[] = {0}, offsets[] = {2}, conformers[] = {0};
+  int32_t atoms[] = {3, -1, 2};
+  Int chi_atoms[16];
+  std::fill(chi_atoms, chi_atoms + 16, Int(-1));
+  for (int i = 0; i < 4; ++i) chi_atoms[12 + i] = Int(i);
+  Int kfo[] = {3, 0, 2, 1};
+  Real chi[] = {0, 7, 8}, coords[18] = {}, dofs[63];
+  std::fill(dofs, dofs + 63, Real(.25));
+  for (int i = 0; i < 4; ++i)
+    for (int j = 0; j < 3; ++j) coords[(i + 2) * 3 + j] = Real(xyz[i][j]);
+  ChiDofCorrection<Binder::template View, Real, Int> c{
+      view(types, {1}),
+      view(offsets, {1}),
+      view(conformers, {1}),
+      view(atoms, {1, 3}),
+      view(chi, {1, 3}),
+      view(coords, {6, 3}),
+      view(chi_atoms, {1, 4, 4}),
+      view(kfo, {1, 4}),
+      view(dofs, {7, 9})};
+  launch_correct_chi_dofs<tmol_test::SerialOps, tmol::Device::CPU, Real>(
+      mgr, c);
+  for (int i = 0; i < 63; ++i) {
+    Real expected = i == 4 * 9 + 3 ? Real(.25) + Real(pi / 2) : Real(.25);
+    assert(
+        std::abs(dofs[i] - expected)
+        <= 2 * std::numeric_limits<Real>::epsilon());
+  }
+  assert(chi[0] == Real(0) && chi[1] == Real(7));
+  c.atoms = view(atoms, {0, 0});
+  launch_correct_chi_dofs<tmol_test::SerialOps, tmol::Device::CPU, Real>(
+      mgr, c);
+}
 int main() {
+  check_correction<float, int32_t>();
+  check_correction<float, int64_t>();
+  check_correction<double, int32_t>();
+  check_correction<double, int64_t>();
+
   check_rows<float, int32_t>();
   check_rows<float, int64_t>();
   check_rows<double, int32_t>();

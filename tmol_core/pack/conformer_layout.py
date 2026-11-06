@@ -15,6 +15,7 @@ class ConformerLayout:
     nodes: numpy.ndarray
     scans: numpy.ndarray
     gens: numpy.ndarray
+    ideal_indices: numpy.ndarray
 
 
 def prepare_conformer_layout(
@@ -23,7 +24,9 @@ def prepare_conformer_layout(
     """Plan arbitrary residue conformers behind one shared virtual root.
 
     Optional coordinate offsets address an existing pose layout; the forest's
-    internal atom numbering remains compact. No coordinate physics is executed.
+    internal atom numbering remains compact. ``ideal_indices`` addresses flattened
+    per-type KFO ideal-DOF rows, excluding the virtual root. No coordinate physics
+    is executed.
     """
     types = numpy.asarray(conformer_type, dtype=numpy.int32)
     n_atoms = numpy.asarray(n_atoms_by_type, dtype=numpy.int32)[types]
@@ -36,11 +39,19 @@ def prepare_conformer_layout(
     offsets = ends - n_atoms
     if coordinate_offsets is None:
         coordinate_offsets = offsets
-    forest = compact_conformer_forest(
-        metadata, max_n_atoms, types, total, n_atoms, coordinate_offsets
+    forest, ideal_indices = compact_conformer_forest(
+        metadata,
+        max_n_atoms,
+        types,
+        total,
+        n_atoms,
+        coordinate_offsets,
+        return_ideal_indices=True,
     )
     nodes, scans, gens = construct_conformer_scans(metadata, types, offsets)
-    return ConformerLayout(n_atoms, offsets, total, forest, nodes, scans, gens)
+    return ConformerLayout(
+        n_atoms, offsets, total, forest, nodes, scans, gens, ideal_indices
+    )
 
 
 def _update_nodes(
@@ -179,6 +190,8 @@ def compact_conformer_forest(
     n_atoms_total,
     n_atoms_for_conf,
     block_offset_for_conf,
+    *,
+    return_ideal_indices=False,
 ):
     """Construct a KinForest for a set of conformers by stringing
     together the kinforest data for individual conformers.
@@ -206,4 +219,4 @@ def compact_conformer_forest(
             compact[i, 1:] += offsets
     compact[0, 0] = -1
     compact[2, starts[n_atoms_for_conf > 0] + 1] = 0
-    return compact
+    return (compact, source) if return_ideal_indices else compact
