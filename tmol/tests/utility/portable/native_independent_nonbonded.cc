@@ -29,3 +29,15 @@ auto lr32 =
     &ljlk_backward_native<true, SerialOps, tmol::Device::CPU, float, int>;
 auto lr64 =
     &ljlk_backward_native<true, SerialOps, tmol::Device::CPU, double, int>;
+auto sparse_lj32 =
+    &ljlk_rotamer_forward_native<SerialOps, tmol::Device::CPU, float, int>;
+auto sparse_lj64 =
+    &ljlk_rotamer_forward_native<SerialOps, tmol::Device::CPU, double, int>;
+auto sparse_e32 =
+    &elec_rotamer_forward_native<SerialOps, tmol::Device::CPU, float, int>;
+auto sparse_e64 =
+    &elec_rotamer_forward_native<SerialOps, tmol::Device::CPU, double, int>;
+auto sparse_eb32 =
+    &elec_rotamer_backward_native<SerialOps, tmol::Device::CPU, float, int>;
+auto sparse_eb64 =
+    &elec_rotamer_backward_native<SerialOps, tmol::Device::CPU, double, int>;

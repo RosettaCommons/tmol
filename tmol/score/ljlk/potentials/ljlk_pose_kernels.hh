@@ -26,15 +26,19 @@ template <
     tmol::Device D,
     typename Real,
     typename Int,
-    typename Launch>
+    typename Launch,
+    bool Rotamer = false>
 struct LJLKPoseEvaluator {
-  LJLKCtx<Real, Int, D> ctx;
+  LJLKCtx<Real, Int, D, Rotamer ? 2 : 4> ctx;
   double* cpu_pose_accum;
   TMOL_DEVICE_FUNC void operator()(
       int cta, int shard = 0, int partitions = 1) const {
     SHARED_MEMORY LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, Launch>
         shared;
-    if constexpr (Grad)
+    if constexpr (Rotamer)
+      ljlk_eval_rotamer_energies_by_block<Ops, D, Real, Int, Launch>(
+          ctx, shared, cta, cpu_pose_accum);
+    else if constexpr (Grad)
       ljlk_eval_energies<Ops, D, Real, Int, Launch>(
           ctx, shared, cta, cpu_pose_accum, {}, shard, partitions);
     else
@@ -163,6 +167,22 @@ void ljlk_backward_native(
   else
     Ops<D>::template foreach_pose_workgroup<launch_t>(
         mgr, n_poses, ctx.max_n_upper_triangle_inds, evaluate);
+}
+
+// Caller owns sparse candidates and zeroed [3, n_pairs] output. The same
+// chemistry/count-pair kernel is used by Torch and other native bindings.
+template <
+    template <tmol::Device> class Ops,
+    tmol::Device D,
+    typename Real,
+    typename Int>
+void ljlk_rotamer_forward_native(
+    ContextManager& mgr, LJLKCtx<Real, Int, D, 2> ctx) {
+  LAUNCH_BOX_32;
+  LJLKPoseEvaluator<false, Ops, D, Real, Int, launch_t, true> energy{
+      ctx, nullptr};
+  Ops<D>::template foreach_independent_workgroup<launch_t>(
+      mgr, ctx.dispatch_indices.size(1), energy);
 }
 
 }  // namespace potentials

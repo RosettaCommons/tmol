@@ -24,14 +24,21 @@ template <
     tmol::Device D,
     typename Real,
     typename Int,
-    typename Launch>
+    typename Launch,
+    bool Rotamer = false>
 struct ElecPoseEvaluator {
-  ElecCtx<Real, Int, D> ctx;
+  ElecCtx<Real, Int, D, Rotamer ? 2 : 4> ctx;
   TMOL_DEVICE_FUNC void operator()(
       int cta, int shard = 0, int partitions = 1) const {
     SHARED_MEMORY ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, Launch>
         shared;
-    if constexpr (Mode == 0)
+    if constexpr (Rotamer) {
+      if constexpr (Mode == 0)
+        elec_eval_energies_by_block<Ops, D, Real, Int, Launch>(
+            ctx, shared, cta);
+      else
+        elec_eval_derivs<Ops, D, Real, Int, Launch>(ctx, shared, cta);
+    } else if constexpr (Mode == 0)
       elec_eval_energies_by_block_2<Ops, D, Real, Int, Launch>(
           ctx, shared, cta, {}, shard, partitions);
     else if constexpr (Mode == 1)
@@ -118,6 +125,33 @@ void elec_pose_backward_native(
   Ops<D>::template foreach_pose_workgroup<launch_t>(
       mgr, n_poses, ctx.max_n_upper_triangle_inds, deriv);
 }
+// Caller supplies sparse candidates, chemical charge overrides and zeroed
+// output/coordinate derivatives. No allocation or framework runtime is used.
+template <
+    template <tmol::Device> class Ops,
+    tmol::Device D,
+    typename Real,
+    typename Int>
+void elec_rotamer_forward_native(
+    ContextManager& mgr, ElecCtx<Real, Int, D, 2> ctx) {
+  LAUNCH_BOX_32;
+  ElecPoseEvaluator<0, Ops, D, Real, Int, launch_t, true> energy{ctx};
+  Ops<D>::template foreach_independent_workgroup<launch_t>(
+      mgr, ctx.dispatch_indices.size(1), energy);
+}
+template <
+    template <tmol::Device> class Ops,
+    tmol::Device D,
+    typename Real,
+    typename Int>
+void elec_rotamer_backward_native(
+    ContextManager& mgr, ElecCtx<Real, Int, D, 2> ctx) {
+  LAUNCH_BOX_32;
+  ElecPoseEvaluator<2, Ops, D, Real, Int, launch_t, true> deriv{ctx};
+  Ops<D>::template foreach_workgroup<launch_t>(
+      mgr, ctx.dispatch_indices.size(1), deriv);
+}
+
 }  // namespace potentials
 }  // namespace elec
 }  // namespace score
