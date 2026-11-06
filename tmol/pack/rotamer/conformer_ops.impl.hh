@@ -60,4 +60,19 @@ void ConformerDofKernels<Ops, D, Real, Int>::mainchain_rows(
     ContextManager& mgr, MainchainIndices c, ValueIndices indices) {
   launch_mainchain_row_indices<Ops, D>(mgr, c, indices);
 }
+template <template <Device> class Ops, Device D, typename Real, typename Int>
+void ConformerDofKernels<Ops, D, Real, Int>::correction_indices(
+    ContextManager& mgr,
+    CorrectionIndices c,
+    typename Binder::template View<int64_t, 2> indices) {
+  launch_chi_correction_indices<Ops, D>(mgr, c, indices);
+}
+template <template <Device> class Ops, Device D, typename Real, typename Int>
+void ConformerDofKernels<Ops, D, Real, Int>::correction_derivatives(
+    ContextManager& mgr, CorrectionDerivatives c, bool second) {
+  if (second)
+    launch_chi_correction_derivatives<Ops, D, Real, true>(mgr, c);
+  else
+    launch_chi_correction_derivatives<Ops, D, Real, false>(mgr, c);
+}
 }  // namespace tmol::pack::rotamer

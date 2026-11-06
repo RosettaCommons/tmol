@@ -327,3 +327,108 @@ class _CopyMainchainDofs(torch.autograd.Function):
         if ctx.needs_input_grad[9]:
             result[9] = gradient.flatten().index_fill(0, target, 0).reshape_as(gradient)
         return tuple(result)
+
+
+def correct_chi_dofs(
+    types, offsets, conformers, atoms, chi, coords, chi_atoms, kinematic_index, dofs
+):
+    from ._conformer_compiled import correct_chi_dofs as native_correct
+
+    if dofs.device.type not in ("cpu", "cuda"):
+        from tmol.numeric import coord_dihedrals
+        from ._conformer_compiled import chi_correction_indices
+
+        metadata = [types, offsets, conformers, atoms, chi_atoms, kinematic_index]
+        indices = chi_correction_indices([v.cpu() for v in metadata]).to(dofs.device)
+        active = indices[0] >= 0
+        destination = indices[0, active]
+        xyz = coords[indices[1:, active]].double()
+        measured = coord_dihedrals(*xyz, output_dtype=chi.dtype)
+        delta = chi.flatten()[active].double() - measured.double()
+        delta = (delta + torch.pi) % (2 * torch.pi) - torch.pi
+        dofs.view(-1).index_add_(0, destination, delta.to(dofs.dtype))
+        return
+    operation = (
+        _CorrectChiDofs.apply
+        if torch.is_grad_enabled() and any(v.requires_grad for v in (chi, coords, dofs))
+        else native_correct
+    )
+    operation(
+        types, offsets, conformers, atoms, chi, coords, chi_atoms, kinematic_index, dofs
+    )
+
+
+class _CorrectChiDofs(torch.autograd.Function):
+    @staticmethod
+    def forward(
+        ctx,
+        types,
+        offsets,
+        conformers,
+        atoms,
+        chi,
+        coords,
+        chi_atoms,
+        kinematic_index,
+        dofs,
+    ):
+        from ._conformer_compiled import correct_chi_dofs, chi_correction_indices
+
+        indices = chi_correction_indices(
+            [types, offsets, conformers, atoms, chi_atoms, kinematic_index]
+        )
+        ctx.save_for_backward(coords, indices)
+        ctx.chi_shape = chi.shape
+        ctx.chi_size = chi.numel()
+        ctx.mark_dirty(dofs)
+        correct_chi_dofs(
+            types,
+            offsets,
+            conformers,
+            atoms,
+            chi,
+            coords,
+            chi_atoms,
+            kinematic_index,
+            dofs,
+        )
+        return dofs
+
+    @staticmethod
+    def backward(ctx, gradient):
+        coords, indices = ctx.saved_tensors
+        result = [None] * 9
+        if ctx.needs_input_grad[4]:
+            active = indices[0] >= 0
+            result[4] = (
+                gradient.new_zeros(ctx.chi_size)
+                .masked_scatter(active, gradient.flatten()[indices[0, active]])
+                .reshape(ctx.chi_shape)
+            )
+        if ctx.needs_input_grad[5]:
+            result[5] = _ChiCorrectionCoordinateGradient.apply(
+                coords, indices, gradient.contiguous()
+            )
+        if ctx.needs_input_grad[8]:
+            result[8] = gradient
+        return tuple(result)
+
+
+class _ChiCorrectionCoordinateGradient(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, coords, indices, weights):
+        from ._conformer_compiled import chi_correction_derivatives
+
+        ctx.save_for_backward(coords, indices, weights)
+        return chi_correction_derivatives(indices, coords, weights, coords, False)[0]
+
+    @staticmethod
+    @torch.autograd.function.once_differentiable
+    def backward(ctx, direction):
+        from ._conformer_compiled import chi_correction_derivatives
+
+        coords, indices, weights = ctx.saved_tensors
+        grad_coords, grad_weights = chi_correction_derivatives(
+            indices, coords, weights, direction.contiguous(), True
+        )
+        return grad_coords, None, grad_weights

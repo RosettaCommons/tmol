@@ -32,3 +32,6 @@ opth_reset_plan = _ops.opth_reset_plan
 mainchain_dof_indices = _ops.mainchain_dof_indices
 
 mainchain_row_indices = _ops.mainchain_row_indices
+
+chi_correction_indices = _ops.chi_correction_indices
+chi_correction_derivatives = _ops.chi_correction_derivatives

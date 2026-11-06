@@ -195,6 +195,64 @@ void check_correction() {
         <= 2 * std::numeric_limits<Real>::epsilon());
   }
   assert(chi[0] == Real(0) && chi[1] == Real(7));
+  int64_t indices[15];
+  launch_chi_correction_indices<tmol_test::SerialOps, tmol::Device::CPU>(
+      mgr, c, view(indices, {5, 3}));
+  assert(indices[0] == 39 && indices[1] == -1 && indices[2] == -1);
+  for (int p = 0; p < 4; ++p) assert(indices[(p + 1) * 3] == p + 2);
+  Real weights[63] = {}, direction[18], gradient[18] = {}, curvature[18] = {},
+       weight_gradient[63] = {};
+  weights[39] = Real(1.7);
+  for (int i = 0; i < 18; ++i) direction[i] = Real(std::sin(i) * .2);
+  ChiCorrectionDerivatives<Binder::template View, Real> d{
+      view(indices, {5, 3}),
+      view(coords, {6, 3}),
+      view(weights, {7, 9}),
+      view(direction, {6, 3}),
+      view(gradient, {6, 3}),
+      view(weight_gradient, {7, 9})};
+  launch_chi_correction_derivatives<
+      tmol_test::SerialOps,
+      tmol::Device::CPU,
+      Real,
+      false>(mgr, d);
+  d.grad_coords = view(curvature, {6, 3});
+  launch_chi_correction_derivatives<
+      tmol_test::SerialOps,
+      tmol::Device::CPU,
+      Real,
+      true>(mgr, d);
+  double epsilon = 1e-5, product = 0;
+  using V = tmol::portable::Vec<double, 3>;
+  using Geometry = tmol::score::common::dihedral_angle<double>;
+  V plus[4], minus[4];
+  for (int p = 0; p < 4; ++p)
+    for (int k = 0; k < 3; ++k) {
+      plus[p][k] = xyz[p][k] + epsilon * direction[(p + 2) * 3 + k];
+      minus[p][k] = xyz[p][k] - epsilon * direction[(p + 2) * 3 + k];
+      double original = xyz[p][k];
+      xyz[p][k] = original + epsilon;
+      double hi = conformer_coordinate_dihedral(xyz);
+      xyz[p][k] = original - epsilon;
+      double lo = conformer_coordinate_dihedral(xyz);
+      xyz[p][k] = original;
+      double expected = -double(weights[39]) * (hi - lo) / (2 * epsilon);
+      assert(std::abs(double(gradient[(p + 2) * 3 + k]) - expected) < 2e-6);
+      product += double(gradient[(p + 2) * 3 + k]) * direction[(p + 2) * 3 + k]
+                 / weights[39];
+    }
+  auto gp = Geometry::V_dV(plus[0], plus[1], plus[2], plus[3]);
+  auto gm = Geometry::V_dV(minus[0], minus[1], minus[2], minus[3]);
+  V hp[4] = {gp.dV_dI, gp.dV_dJ, gp.dV_dK, gp.dV_dL};
+  V hm[4] = {gm.dV_dI, gm.dV_dJ, gm.dV_dK, gm.dV_dL};
+  for (int p = 0; p < 4; ++p)
+    for (int k = 0; k < 3; ++k) {
+      double expected =
+          -double(weights[39]) * (hp[p][k] - hm[p][k]) / (2 * epsilon);
+      assert(std::abs(double(curvature[(p + 2) * 3 + k]) - expected) < 2e-6);
+    }
+  assert(std::abs(double(weight_gradient[39]) - product) < 2e-6);
+  for (int i = 0; i < 6; ++i) assert(gradient[i] == 0 && curvature[i] == 0);
   c.atoms = view(atoms, {0, 0});
   launch_correct_chi_dofs<tmol_test::SerialOps, tmol::Device::CPU, Real>(
       mgr, c);
