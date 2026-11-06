@@ -3,6 +3,8 @@
 from collections import deque
 from typing import Tuple
 import attr
+import itertools
+import math
 import networkx
 import numpy
 from tmol_core.kinematics.chemical import _block_group_kinforest_data
@@ -292,3 +294,145 @@ def sampled_group_chi(
     )
 
     return [(owners[index], cs) for index, cs in kept]
+
+
+def group_conformer_grid(
+    sampling_plan,
+    anchor_entry,
+    expanded_limit,
+    limit,
+    *,
+    include_anchor=False,
+    reserve_current=False,
+):
+    """Enumerate coupled library/sample states with shared topology and budgets."""
+    group, topology = sampling_plan.group, sampling_plan.topology
+    block_types, offsets, partners = (
+        topology.block_types,
+        topology.offsets,
+        topology.partners,
+    )
+    anchor_cols = []
+    lib = numpy.empty((1, 0), dtype=numpy.float32)
+    entry = anchor_entry
+    if entry is not None and entry[0].shape[0]:
+        anchor_atoms, anchor_values = entry
+        anchor_bt = block_types[0]
+        atom_to_chi = {
+            int(uaids[2][0]): (name, uaids[1][0], uaids[2][0])
+            for name, uaids in anchor_bt.torsion_to_uaids.items()
+            if name.startswith("chi") and uaids[1][0] >= 0 and uaids[2][0] >= 0
+        }
+        keep_cols = []
+        for j in range(anchor_atoms.shape[1]):
+            atom = int(anchor_atoms[0, j])
+            if atom < 0 or atom not in atom_to_chi:
+                continue
+            name, ab, ac = atom_to_chi[atom]
+            axis = frozenset((int(ab), int(ac)))
+            if axis not in topology.movable_axes or any(
+                axis == frozenset(c[2:]) for c in anchor_cols
+            ):
+                continue
+            anchor_cols.append((0, name, ab, ac))
+            keep_cols.append(j)
+        if anchor_cols:
+            lib = anchor_values[:, keep_cols]
+            if len(keep_cols) < anchor_values.shape[1]:
+                # Projecting away constrained angles can make library
+                # rows identical. Preserve the first occurrence order.
+                _, first = numpy.unique(lib, axis=0, return_index=True)
+                lib = lib[numpy.sort(first)]
+
+    kept = sampled_group_chi(
+        group,
+        topology,
+        expanded_limit,
+        limit,
+        library_size=lib.shape[0],
+        reserve_current=reserve_current,
+        exclude_axes={frozenset(c[2:]) for c in anchor_cols},
+        include_anchor=include_anchor,
+        sampled_members=len(sampling_plan.owners),
+    )
+    columns, per_chi = [], []
+    for owner, cs in kept:
+        bt = block_types[owner]
+        uaids = bt.torsion_to_uaids[cs.chi_dihedral]
+        axis = [
+            resolve_group_atom(u, owner, block_types, offsets, partners)
+            for u in uaids[1:3]
+        ]
+        if min(axis) < 0:
+            raise ValueError(f"Cannot resolve group torsion {cs.chi_dihedral}")
+        # Central atoms use group-wide numbering, including connections.
+        columns.append((owner, cs.chi_dihedral, *axis))
+        values = []
+        for value in cs.samples:
+            values.append(value)
+            for expansion in cs.expansions:
+                values.extend((value - expansion, value + expansion))
+        per_chi.append([math.radians(v) for v in values])
+    # The empty product is one state, not an absent group: the anchor
+    # can still move while all child chi are frozen.
+    tree = numpy.array(list(itertools.product(*per_chi)), dtype=numpy.float32)
+    conformers = numpy.concatenate(
+        [numpy.repeat(lib, len(tree), axis=0), numpy.tile(tree, (len(lib), 1))],
+        axis=1,
+    )
+    columns = anchor_cols + columns
+    return columns, conformers
+
+
+def append_current_conformer(conformers, current_angles):
+    """Append the measured state only when every requested torsion is finite."""
+    width = conformers.shape[1]
+    if width == 0:
+        return conformers
+    current = numpy.empty((1, width), dtype=numpy.float32)
+    count = 0
+    for count, value in enumerate(current_angles, 1):
+        if count > width:
+            raise ValueError("Current group torsions exceed the conformer columns")
+        if not math.isfinite(value):
+            return conformers
+        current[0, count - 1] = value
+    if count != width:
+        raise ValueError("Current group torsions do not cover the conformer columns")
+    return numpy.concatenate([conformers, current], axis=0)
+
+
+def registration_masks(groups, pose_shape, with_anchor):
+    """Masks for group-owned sampling and exclusion of independent samplers."""
+    sampled = numpy.zeros(pose_shape, dtype=bool)
+    members = numpy.zeros_like(sampled)
+    for group in groups:
+        members[group.pose, list(group.blocks)] = True
+        for block in group.blocks if with_anchor else group.blocks[1:]:
+            sampled[group.pose, block] = True
+
+    return sampled, members
+
+
+def group_torsion_nodes(rot_kf, columns, n_atoms):
+    """Locate each torsion's child using the actual joint tree orientation."""
+    kfo_for_atom = numpy.full(n_atoms + 1, -1, dtype=numpy.int64)
+    for kfo, orig in enumerate(rot_kf.id):
+        kfo_for_atom[int(orig)] = kfo + 1
+
+    parent_of = {int(k) + 1: int(p) + 1 for k, p in enumerate(rot_kf.parent)}
+    nodes = []
+    for owner, chi_name, atom_b, atom_c in columns:
+        nb = int(kfo_for_atom[int(atom_b)])
+        nc = int(kfo_for_atom[int(atom_c)])
+        if parent_of.get(nc) == nb:
+            node = nc
+        elif parent_of.get(nb) == nc:
+            node = nb
+        else:
+            raise ValueError(
+                f"{chi_name} of group block {owner} turns a bond that this "
+                "group's kinforest does not contain"
+            )
+        nodes.append(node)
+    return numpy.asarray(nodes, dtype=numpy.int64)

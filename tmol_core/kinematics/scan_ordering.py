@@ -346,3 +346,45 @@ def scan_ordering_from_forward(parent, nodes, scans, gens):
         _reverse_plan(forward.nodes, forward.scans, forward.gens)
     )
     return ScanOrdering(forward, backward)
+
+
+def repeat_local_kinforest(rot_kf, count):
+    """Repeat a local tree; copies share only the global root."""
+    n_atoms = len(rot_kf.id)
+    local = numpy.stack(
+        [
+            rot_kf.id,
+            rot_kf.doftype,
+            rot_kf.parent + 1,
+            rot_kf.frame_x + 1,
+            rot_kf.frame_y + 1,
+            rot_kf.frame_z + 1,
+        ],
+        axis=1,
+    )
+    repeated = numpy.broadcast_to(local, (count, n_atoms, 6)).copy()
+    offsets = numpy.arange(count, dtype=numpy.int32)[:, None] * n_atoms
+    repeated[:, :, 0] += offsets
+    repeated[:, :, 2:] += numpy.where(local[None, :, 2:] > 0, offsets[:, :, None], 0)
+    root = numpy.array([[-1, 0, 0, 0, 0, 0]], dtype=numpy.int32)
+    return numpy.asarray(
+        numpy.concatenate([root, repeated.reshape(-1, 6)]), dtype=numpy.int32
+    )
+
+
+def repeat_local_scan_plan(rot_kf, count):
+    """Repeat the generation-major forward scan plan for independent trees."""
+    n_atoms = len(rot_kf.id)
+    offsets = numpy.arange(count, dtype=numpy.int32)[:, None] * n_atoms
+    node_parts, scan_parts = [], []
+    for (n0, s0), (n1, s1) in zip(rot_kf.gens[:-1], rot_kf.gens[1:]):
+        nodes = rot_kf.nodes[n0:n1]
+        node_parts.append((nodes + numpy.where(nodes > 0, offsets, 0)).ravel())
+        scan_parts.append(
+            (rot_kf.scans[s0:s1] + numpy.arange(count)[:, None] * (n1 - n0)).ravel()
+        )
+    return (
+        numpy.asarray(numpy.concatenate(node_parts), dtype=numpy.int32),
+        numpy.asarray(numpy.concatenate(scan_parts), dtype=numpy.int32),
+        numpy.asarray(rot_kf.gens * count, dtype=numpy.int32),
+    )

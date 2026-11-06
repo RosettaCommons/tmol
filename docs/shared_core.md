@@ -91,3 +91,11 @@ unused LJ/LK types retain explicit NaN rows; padding is not a valid real type.
 Hydrogen-bond polynomial preparation retains the canonical float64 coefficients
 and validates complete family-pair coverage before a backend chooses its numeric
 representation. Torch keeps its public tensor containers and device caches.
+
+Conjugated sampling shares library projection, joint chi enumeration, budgets,
+current-state eligibility, and sampler ownership masks in `tmol_core.pack.conjugated`.
+Repeated local tree/scan plans and torsion-child lookup also use common host
+metadata. Frontends measure input torsions and execute the existing native
+forward/inverse transforms. This preserves coupled group geometry; it does not
+provide a ring-closure solver or establish support in a frontend that has not
+integrated the complete workflow.
