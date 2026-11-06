@@ -528,4 +528,4 @@ extern "C" uint64_t tmol_rotamer_hbond_workspace_bytes(
   }
 }
 
-#include "ffi_handlers.hh"
+#include "handlers_ffi.hh"
