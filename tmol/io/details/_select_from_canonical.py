@@ -3,14 +3,12 @@ import torch
 import attr
 import logging
 
-from collections import defaultdict
 from typing import Optional, Tuple
 from tmol.types._torch import Tensor
 from tmol.types._array import NDArray
 from tmol.types._functional import _validate_args
 from tmol.database.chemical import (
     NEUTRAL_TERMINUS_VAR_BASE,
-    _site_connections,
 )
 from tmol.io._canonical_ordering import CanonicalOrdering
 from tmol.pose._inter_block_bondsep import InterBlockBondsep
@@ -21,6 +19,7 @@ from tmol.pose._packed_block_types import (
 from tmol.pose._pose_stack_builder import PoseStackBuilder
 
 from tmol_core.io import canonical as _canonical
+from tmol_core.io import connections as _connections
 from tmol_core.io.canonical import (  # noqa: F401
     _map_term_to_int,
     _term_and_spcase_var_candidate_lists,
@@ -752,269 +751,58 @@ def _annotate_packed_block_types_w_canonical_res_order(
     pbt._canonical_ordering_source = canonical_ordering
 
 
+def _apply_connection_plan(pbt, block_type_ind64, plan):
+    block_type_ind64.copy_(
+        torch.tensor(plan.block_type_rows, dtype=torch.int64, device=pbt.device)
+    )
+    for message in plan.warnings:
+        logger.warning(message)
+    return plan.connections
+
+
 @_validate_args
-def _apply_conjugated_variants(  # noqa: C901
+def _apply_conjugated_variants(
     canonical_ordering, pbt, block_type_ind64, covalent_bonds64
 ):
-    """Swap in the conjugated form of each residue an input bond attaches to.
-
-    Returns the connections the bonds ask for, as
-    ``(pose, res1, conn1, res2, conn2)``; the block types are edited in place.
-    Which form a residue takes depends on the sites *that instance* is attached
-    at, so two copies of one sugar in a glycan can differ.
-    """
-    from tmol.ligand._conjugate_model import _is_polymer_link
-
     if covalent_bonds64 is None or covalent_bonds64.shape[0] == 0:
         return []
     _annotate_packed_block_types_w_conjugations(pbt)
-
-    names_for_class = canonical_ordering.restypes_ordered_atom_names
-    bonds = covalent_bonds64.cpu().tolist()
-    block_types = block_type_ind64.cpu().tolist()
-
-    def atom_name(bt_ind, canonical_atom):
-        equiv = pbt.active_block_types[bt_ind].io_equiv_class
-        return names_for_class[equiv][canonical_atom]
-
-    def is_polymer_pair(pose_ind, res1, atom1, res2, atom2):
-        endpoints = []
-        for res, atom in ((res1, atom1), (res2, atom2)):
-            bt = pbt.active_block_types[block_types[pose_ind][res]]
-            name = atom_name(block_types[pose_ind][res], atom)
-            endpoints.append(
-                {
-                    connection.name
-                    for connection in bt.connections
-                    if connection.atom == name
-                }
-            )
-        return any(
-            _is_polymer_link(first, second)
-            for first in endpoints[0]
-            for second in endpoints[1]
-        )
-
-    # the sites each residue is attached at, from the bonds themselves
-    sites, contexts = {}, {}
-    for pose_ind, res1, atom1, res2, atom2 in bonds:
-        if (
-            block_types[pose_ind][res1] < 0
-            or block_types[pose_ind][res2] < 0
-            or is_polymer_pair(pose_ind, res1, atom1, res2, atom2)
-        ):
-            continue
-        for res, atom, partner, partner_atom in (
-            (res1, atom1, res2, atom2),
-            (res2, atom2, res1, atom1),
-        ):
-            bt_ind = block_types[pose_ind][res]
-            partner_ind = block_types[pose_ind][partner]
-            if bt_ind < 0 or partner_ind < 0:
-                continue
-            sites.setdefault((pose_ind, res), set()).add(atom_name(bt_ind, atom))
-            contexts.setdefault((pose_ind, res), []).append(
-                (
-                    atom_name(bt_ind, atom),
-                    pbt.active_block_types[partner_ind].io_equiv_class,
-                    atom_name(partner_ind, partner_atom),
-                )
-            )
-
-    for (pose_ind, res), atoms in sites.items():
-        bt_ind = block_types[pose_ind][res]
-        bt = pbt.active_block_types[bt_ind]
-        # Explicitly constructed types, including ligand fragments, may
-        # already declare the requested site. Keep the caller's bond between
-        # these block instances; equal component names do not make it a cut
-        # bond handled elsewhere. Fragment expansion removes exact cut bonds.
-        atoms = atoms - {
-            connection.atom
-            for connection in bt.connections
-            if connection.name not in ("up", "down")
-        }
-        if not atoms:
-            continue
-        base = bt.name
-        key = (base, tuple(sorted((False, atom) for atom in atoms)))
-        conjugated = pbt.conjugated_bt_for_base_and_atoms.get(key)
-        if conjugated is None:
-            raise ValueError(
-                f"no residue type for {base} attached at {sorted(atoms)}; the "
-                "component was prepared without a connection at every site the "
-                "input bonds it through"
-            )
-        block_types[pose_ind][res] = conjugated
-
-    for (pose_ind, res), context in contexts.items():
-        name = pbt.active_block_types[block_types[pose_ind][res]].name
-        choices = pbt.contextual_conjugates.get(name)
-        if choices is not None:
-            target = choices.get(tuple(sorted(context)))
-            if target is None:
-                raise ValueError(
-                    f"No prepared attachment context for {name}: {context}"
-                )
-            block_types[pose_ind][res] = target
-
-    connections, occupied = [], {}
-
-    def endpoint_label(pose_ind, endpoint):
-        res, conn = endpoint
-        bt = pbt.active_block_types[block_types[pose_ind][res]]
-        site = bt.connections[conn]
-        return f"residue {res} {bt.name}.{site.atom} ({site.name})"
-
-    for pose_ind, res1, atom1, res2, atom2 in bonds:
-        candidates = []
-        for res, atom in ((res1, atom1), (res2, atom2)):
-            bt = pbt.active_block_types[block_types[pose_ind][res]]
-            name = names_for_class[bt.io_equiv_class][atom]
-            choices = [
-                i
-                for i, connection in enumerate(bt.connections)
-                if connection.atom == name
-            ]
-            if not choices:
-                raise ValueError(
-                    f"{bt.name} has no connection at {name} for a declared bond"
-                )
-            candidates.append((res, choices))
-        polymer_pair = next(
-            (
-                (first, second)
-                for first in candidates[0][1]
-                for second in candidates[1][1]
-                if {
-                    pbt.active_block_types[block_types[pose_ind][res1]]
-                    .connections[first]
-                    .name,
-                    pbt.active_block_types[block_types[pose_ind][res2]]
-                    .connections[second]
-                    .name,
-                }
-                == {"up", "down"}
-            ),
-            None,
-        )
-        selected = (
-            polymer_pair
-            if polymer_pair is not None
-            else tuple(
-                next(
-                    (
-                        choice
-                        for choice in choices
-                        if pbt.active_block_types[block_types[pose_ind][res]]
-                        .connections[choice]
-                        .name.startswith("conj_")
-                    ),
-                    choices[0],
-                )
-                for res, choices in candidates
-            )
-        )
-        resolved = [(candidates[side][0], selected[side]) for side in (0, 1)]
-        for endpoint, partner in (resolved, resolved[::-1]):
-            previous = occupied.setdefault((pose_ind, *endpoint), partner)
-            if previous != partner:
-                raise ValueError(
-                    f"pose {pose_ind}: {endpoint_label(pose_ind, endpoint)} has "
-                    f"multiple declared partners: {endpoint_label(pose_ind, previous)} "
-                    f"and {endpoint_label(pose_ind, partner)}. Each connection accepts "
-                    "one partner; resolve the input bond graph."
-                )
-        connections.append((pose_ind, *resolved[0], *resolved[1]))
-    block_type_ind64.copy_(
-        torch.tensor(block_types, dtype=torch.int64, device=pbt.device)
+    return _apply_connection_plan(
+        pbt,
+        block_type_ind64,
+        _connections.prepare_covalent_connections(
+            canonical_ordering,
+            pbt.active_block_types,
+            pbt._conjugation_metadata,
+            block_type_ind64.cpu().tolist(),
+            covalent_bonds64.cpu().tolist(),
+        ),
     )
-    return connections
 
 
 def _apply_metal_connections(
     canonical_ordering, pbt, block_type_ind64, metal_connections
 ):
-    """Swap in each donor's coordinating form and join it to its metal's site.
-
-    Returns the connections as ``(pose, metal, site conn, donor, donor conn)``;
-    the block types are edited in place.
-    """
     if not metal_connections:
         return []
     _annotate_packed_block_types_w_conjugations(pbt)
-    names_for_class = canonical_ordering.restypes_ordered_atom_names
-    block_types = block_type_ind64.cpu().tolist()
-
-    def atom_name(pose, res, atom):
-        bt = pbt.active_block_types[block_types[pose][res]]
-        return names_for_class[bt.io_equiv_class][atom]
-
-    rows = [
-        (int(pose), int(metal), int(site), int(res), int(atom))
-        for pose, metal, site, res, atom in metal_connections
-        if block_types[pose][metal] >= 0 and block_types[pose][res] >= 0
-    ]
-    donated = defaultdict(list)
-    for pose, _, _, res, atom in rows:
-        donated[(pose, res)].append(atom_name(pose, res, atom))
-    uncoordinated = set()
-    for (pose, res), atoms in donated.items():
-        bt_ind = block_types[pose][res]
-        attached = (*pbt.conjugation_atoms_for_bt[bt_ind], *((True, a) for a in atoms))
-        key = (pbt.conjugation_base_for_bt[bt_ind], tuple(sorted(attached)))
-        coordinating = pbt.conjugated_bt_for_base_and_atoms.get(key)
-        if coordinating is None:
-            # 6YV5 A:45: the given protonation state wins; a neutral TYR's OH has no
-            #    donor form (TYR_DEP has), so its metal bond is dropped
-            logger.warning(
-                "pose %d: %s %d cannot coordinate a metal at %s in its given "
-                "protonation state; left uncoordinated",
-                pose,
-                pbt.active_block_types[bt_ind].name,
-                res,
-                sorted(atoms),
-            )
-            uncoordinated.add((pose, res))
-            continue
-        block_types[pose][res] = coordinating
-    rows = [row for row in rows if (row[0], row[3]) not in uncoordinated]
-
-    connections, filled = [], set()
-    for pose, metal, site, res, atom in rows:
-        metal_bt = pbt.active_block_types[block_types[pose][metal]]
-        donor_bt = pbt.active_block_types[block_types[pose][res]]
-        sites = _site_connections(metal_bt)
-        name = atom_name(pose, res, atom)
-        if site >= len(sites):
-            logger.warning(
-                "%s has %d sites; %s %s left uncoordinated",
-                metal_bt.name,
-                len(sites),
-                donor_bt.name,
-                name,
-            )
-            continue
-        # an atom bridging several metals has a connection for each
-        donor_conn = next(
-            i
-            for i, c in enumerate(donor_bt.connections)
-            if c.atom == name and not c.kinematic and (pose, res, i) not in filled
-        )
-        filled.add((pose, res, donor_conn))
-        metal_conn = metal_bt.connection_to_cidx[sites[site]]
-        connections.append((pose, metal, metal_conn, res, donor_conn))
-
-    block_type_ind64.copy_(
-        torch.tensor(block_types, dtype=torch.int64, device=pbt.device)
+    return _apply_connection_plan(
+        pbt,
+        block_type_ind64,
+        _connections.prepare_metal_connections(
+            canonical_ordering,
+            pbt.active_block_types,
+            pbt._conjugation_metadata,
+            block_type_ind64.cpu().tolist(),
+            metal_connections,
+        ),
     )
-    return connections
 
 
 def _annotate_packed_block_types_w_conjugations(pbt: PackedBlockTypes):
-    if hasattr(pbt, "conjugation_atoms_for_bt"):
+    if hasattr(pbt, "_conjugation_metadata"):
         return
     _annotate_packed_block_types_w_dslf_conn_inds(pbt)
-    for name, value in vars(
-        _canonical.prepare_conjugations(pbt.active_block_types)
-    ).items():
+    pbt._conjugation_metadata = _canonical.prepare_conjugations(pbt.active_block_types)
+    for name, value in vars(pbt._conjugation_metadata).items():
         setattr(pbt, name, value)
