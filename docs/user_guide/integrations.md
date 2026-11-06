@@ -141,7 +141,8 @@ and batch shape. The default `opt_h=False` preserves finite supplied protein
 hydrogens and builds missing atoms. Pass `opt_h=True` when polar-hydrogen
 optimization is part of your preparation protocol. For one-off conversion,
 `pose_stack_from_atom37_and_topology(atom37_coords, atom_array, context)` remains
-available.
+available. Metal-containing inputs refit site geometry and detect donors on
+every call; they do not use the fixed leaf-atom topology cache.
 
 A single `AtomArray` may provide topology for a batch of coordinate tensors. An
 `AtomArrayStack` must either have the same number of models as the tensor batch
