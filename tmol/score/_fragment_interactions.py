@@ -1,54 +1,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import torch
 
-from tmol.pose._split_block_mapping import SplitBlockEntry, SplitBlockMapping
+from tmol.pose._split_block_mapping import SplitBlockMapping
 from tmol.types._torch import Tensor
+from tmol_core.scoring.fragment_interactions import (  # noqa: F401
+    FragmentInteractionScores,
+    FragmentRecord,
+    _LegacyFragmentRecord,
+    _LegacyFragmentMapping,
+    _NormalizedFragmentRecord,
+    fragment_mapping_plan,
+    fragments_per_chunk,
+)
 
 if TYPE_CHECKING:
     from tmol.pose._pose_stack import PoseStack
     from tmol.score._score_function import ScoreFunction
 
 
-class _LegacyFragmentRecord(Protocol):
-    """Fields consumed from the compatibility ligand mapping."""
-
-    pose_index: int
-    block_index: int
-    pose_residue_label: int
-
-
-class _LegacyFragmentMapping(Protocol):
-    """Structural type for the compatibility fragmented-ligand mapping."""
-
-    blocks: tuple[_LegacyFragmentRecord, ...]
-
-
-FragmentRecord = SplitBlockEntry | _LegacyFragmentRecord
-
-
 _FRAGMENT_REDUCTION_WORKSPACE_BYTES = 256 * 1024 * 1024
-
-
-@dataclass(frozen=True)
-class FragmentInteractionScores:
-    """Per-fragment interactions with an explicitly selected partner."""
-
-    scores: torch.Tensor
-    mapping: tuple[FragmentRecord, ...]
-
-
-@dataclass(frozen=True)
-class _NormalizedFragmentRecord:
-    """Common indexing fields for current and compatibility mappings."""
-
-    pose_index: int
-    block_index: int
-    column_key: tuple[int, ...]
-    source: FragmentRecord
 
 
 @dataclass(frozen=True)
@@ -75,72 +49,18 @@ def _fragment_mapping_data(
     ):
         return cached
 
-    if isinstance(mapping, SplitBlockMapping):
-        records = tuple(
-            _NormalizedFragmentRecord(
-                pose_index=entry.pose_ind,
-                block_index=entry.block_ind,
-                column_key=(entry.block_ind,),
-                source=entry,
-            )
-            for entry in mapping.entries
-        )
-        require_pose_zero_record = True
-    else:
-        records = tuple(
-            _NormalizedFragmentRecord(
-                pose_index=record.pose_index,
-                block_index=record.block_index,
-                column_key=(record.pose_residue_label, record.block_index),
-                source=record,
-            )
-            for record in mapping.blocks
-        )
-        require_pose_zero_record = False
-
-    records_by_pose: list[list[_NormalizedFragmentRecord]] = [
-        [] for _ in range(pose_stack.n_poses)
-    ]
-    for record in records:
-        if not (
-            0 <= record.pose_index < pose_stack.n_poses
-            and 0 <= record.block_index < pose_stack.max_n_blocks
-        ):
-            raise ValueError(
-                "Fragment mapping entry is outside the pose stack: "
-                f"pose {record.pose_index}, block {record.block_index}"
-            )
-        records_by_pose[record.pose_index].append(record)
-
-    pose_zero_records = tuple(
-        sorted(records_by_pose[0], key=lambda record: record.block_index)
-    )
-    if require_pose_zero_record and not pose_zero_records:
-        raise ValueError("split_block_mapping has no entries for pose 0")
-
-    expected_columns = {record.column_key for record in pose_zero_records}
-    for pose_records in records_by_pose:
-        pose_columns = {record.column_key for record in pose_records}
-        if len(pose_columns) != len(pose_records):
-            raise ValueError("Fragment mapping contains duplicate columns in one pose")
-        if pose_columns != expected_columns:
-            raise ValueError(
-                "Fragment mappings must use identical block topology in every pose"
-            )
+    plan = fragment_mapping_plan(mapping, pose_stack.n_poses, pose_stack.max_n_blocks)
 
     data = _FragmentMappingData(
         source_mapping=mapping,
-        fragment_records=tuple(record.source for record in pose_zero_records),
+        fragment_records=plan.fragment_records,
         record_linear_indices=torch.tensor(
-            [
-                record.pose_index * pose_stack.max_n_blocks + record.block_index
-                for record in records
-            ],
+            plan.record_linear_indices,
             dtype=torch.int64,
             device=tensor_device,
         ),
         fragment_block_indices=torch.tensor(
-            [record.block_index for record in pose_zero_records],
+            plan.fragment_block_indices,
             dtype=torch.int64,
             device=tensor_device,
         ),
@@ -180,14 +100,17 @@ def _sum_fragment_partner_scores(
         zero_scores = block_pair_scores.sum(dim=(-2, -1)).unsqueeze(-1)
         return zero_scores.expand(n_terms, n_poses, n_fragments)
 
-    bytes_per_fragment = (
-        2 * n_terms * n_poses * n_blocks * block_pair_scores.element_size()
+    chunk_size = fragments_per_chunk(
+        n_terms,
+        n_poses,
+        n_blocks,
+        block_pair_scores.element_size(),
+        max_workspace_bytes,
     )
-    fragments_per_chunk = max(1, max_workspace_bytes // bytes_per_fragment)
     partner_weights = partner_mask.to(dtype=block_pair_scores.dtype)
 
     partials = []
-    for fragment_indices in fragment_block_indices.split(fragments_per_chunk):
+    for fragment_indices in fragment_block_indices.split(chunk_size):
         selected_scores = torch.index_select(block_pair_scores, 2, fragment_indices)
         selected_scores.add_(
             torch.index_select(block_pair_scores, 3, fragment_indices).transpose(-1, -2)
