@@ -161,3 +161,30 @@ def required_donor_rows(assignments):
         [(p, r, a) for (p, _), got in assignments for r, a in got.donor_atoms],
         dtype=numpy.int64,
     ).reshape(-1, 3)
+
+
+def protonation_is_identity(plan, residue_types, variants, present, required_rows):
+    """Prove the native selector leaves variants unchanged, or require execution.
+
+    This is conservative: incomplete hydrogen evidence and protected covalent
+    parents may also yield identity, but still run the native decision policy.
+    Required donors always run it, preserving unresolved-donor diagnostics.
+    Inputs are host arrays already prepared for structure construction.
+    """
+    if len(required_rows):
+        return False
+    if not plan.expecting.any():
+        return True
+    types = numpy.asarray(residue_types)
+    variants = numpy.asarray(variants)
+    active = (types >= 0) & (types < plan.expecting.shape[0])
+    active &= (variants >= 0) & (variants < plan.expecting.shape[1])
+    t, v = types[active], variants[active]
+    expecting = plan.expecting[t, v]
+    if not expecting.any():
+        return True
+    t = t[expecting]
+    evidence = numpy.asarray(present)[active][expecting]
+    supplied_h = (evidence & plan.hydrogen[t]).any(axis=-1)
+    supplied_titratable = (evidence & plan.titratable[t]).any(axis=-1)
+    return not numpy.any(supplied_h & ~supplied_titratable)
