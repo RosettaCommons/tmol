@@ -153,7 +153,58 @@ std::tuple<Tensor, Tensor> na_torsion_pose_score(
   return {result[0], result[1]};
 }
 
+NARotamerTopologyOutput na_rotamer_topology(
+    tmol::native::Tensor types,
+    tmol::native::Tensor poses,
+    tmol::native::Tensor blocks,
+    tmol::native::Tensor offsets,
+    tmol::native::Tensor first,
+    tmol::native::Tensor first_type,
+    tmol::native::Tensor connections,
+    tmol::native::Tensor downstream,
+    tmol::native::Tensor bt_base,
+    tmol::native::Tensor bt_uaids,
+    tmol::native::Tensor bt_ring,
+    tmol::native::Tensor bt_down) {
+  static ContextManager mgr;
+#ifdef WITH_CUDA
+  if (types.is_cuda())
+    return na_rotamer_topology_cuda(
+        mgr,
+        types,
+        poses,
+        blocks,
+        offsets,
+        first,
+        first_type,
+        connections,
+        downstream,
+        bt_base,
+        bt_uaids,
+        bt_ring,
+        bt_down);
+#endif
+  TORCH_CHECK(
+      types.device().is_cpu(),
+      "NA topology requires CPU or CUDA input buffers");
+  return na_rotamer_topology_cpu(
+      mgr,
+      types,
+      poses,
+      blocks,
+      offsets,
+      first,
+      first_type,
+      connections,
+      downstream,
+      bt_base,
+      bt_uaids,
+      bt_ring,
+      bt_down);
+}
+
 TMOL_LIBRARY(tmol_na_torsion, m) {
+  m.def("na_rotamer_topology", TMOL_FN(&na_rotamer_topology));
   m.def("na_torsion_pose_score", TMOL_FN(&na_torsion_pose_score));
 }
 

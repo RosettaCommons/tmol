@@ -1,3 +1,5 @@
+#include <tmol/backends/cpu/score/common/device_operations.cpu.impl.hh>
+#include <tmol/score/na_torsion/potentials/na_rotamer_topology.impl.hh>
 #include <tmol/utility/tensor/native.hh>
 #include <tmol/utility/function_dispatch/aten.hh>
 #include <tmol/score/na_torsion/potentials/na_torsion_pose_kernels.hh>
@@ -160,6 +162,37 @@ tmol::native::Tensor na_torsion_pose_score_backward_cpu(
   return grad_coords;
 }
 
+NARotamerTopologyOutput na_rotamer_topology_cpu(
+    ContextManager& mgr,
+    tmol::native::Tensor types,
+    tmol::native::Tensor poses,
+    tmol::native::Tensor blocks,
+    tmol::native::Tensor offsets,
+    tmol::native::Tensor first,
+    tmol::native::Tensor first_type,
+    tmol::native::Tensor connections,
+    tmol::native::Tensor downstream,
+    tmol::native::Tensor bt_base,
+    tmol::native::Tensor bt_uaids,
+    tmol::native::Tensor bt_ring,
+    tmol::native::Tensor bt_down) {
+  return na_rotamer_topology_dispatch<
+      tmol::score::common::DeviceOperations,
+      tmol::Device::CPU>(
+      mgr,
+      types,
+      poses,
+      blocks,
+      offsets,
+      first,
+      first_type,
+      connections,
+      downstream,
+      bt_base,
+      bt_uaids,
+      bt_ring,
+      bt_down);
+}
 }  // namespace potentials
 }  // namespace na_torsion
 }  // namespace score

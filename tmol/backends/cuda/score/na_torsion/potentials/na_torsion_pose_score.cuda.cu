@@ -1,3 +1,5 @@
+#include <tmol/backends/cuda/score/common/device_operations.cuda.impl.cuh>
+#include <tmol/score/na_torsion/potentials/na_rotamer_topology.impl.hh>
 #include <tmol/utility/tensor/native_cuda.hh>
 #include <tmol/utility/function_dispatch/aten.hh>
 
@@ -252,6 +254,38 @@ tmol::native::Tensor na_torsion_pose_score_backward_cuda(
   return grad_coords;
 }
 
+NARotamerTopologyOutput na_rotamer_topology_cuda(
+    ContextManager& mgr,
+    tmol::native::Tensor types,
+    tmol::native::Tensor poses,
+    tmol::native::Tensor blocks,
+    tmol::native::Tensor offsets,
+    tmol::native::Tensor first,
+    tmol::native::Tensor first_type,
+    tmol::native::Tensor connections,
+    tmol::native::Tensor downstream,
+    tmol::native::Tensor bt_base,
+    tmol::native::Tensor bt_uaids,
+    tmol::native::Tensor bt_ring,
+    tmol::native::Tensor bt_down) {
+  native::CUDAGuard guard(types.device());
+  return na_rotamer_topology_dispatch<
+      tmol::score::common::DeviceOperations,
+      tmol::Device::CUDA>(
+      mgr,
+      types,
+      poses,
+      blocks,
+      offsets,
+      first,
+      first_type,
+      connections,
+      downstream,
+      bt_base,
+      bt_uaids,
+      bt_ring,
+      bt_down);
+}
 }  // namespace potentials
 }  // namespace na_torsion
 }  // namespace score
