@@ -10,7 +10,7 @@ template <typename Real>
 struct HBondWorkspace {
   ByteWorkspace storage;
   Real *spheres, *derived_coords;
-  int32_t *neighbors, *derived_indices;
+  int32_t* neighbors;
   size_t neighbor_capacity;
   HBondWorkspace(
       size_t poses, size_t blocks, size_t atoms, void* data = nullptr)
@@ -23,7 +23,6 @@ struct HBondWorkspace {
     spheres = storage.take<Real>(poses * blocks * 4);
     neighbors = storage.take<int32_t>(neighbor_capacity);
     derived_coords = storage.take<Real>(poses * atoms * 9);
-    derived_indices = storage.take<int32_t>(poses * atoms * 3);
   }
 };
 
@@ -35,8 +34,8 @@ struct HBondKernel {
       const std::vector<ffi::AnyBuffer>& a,
       ffi::AnyBuffer energy,
       const ffi::AnyBuffer* gradient) {
-    if (a.size() != 27)
-      throw std::invalid_argument("HBond expects 27 operands");
+    if (a.size() != 28)
+      throw std::invalid_argument("HBond expects 28 operands");
     auto real = a[0].element_type();
     if (real != ffi::DataType::F32 && real != ffi::DataType::F64)
       throw std::invalid_argument("HBond coordinates must be float32/64");
@@ -81,6 +80,7 @@ struct HBondKernel {
       throw std::invalid_argument(
           "HBond polynomial storage is not double-aligned");
     require_shape(a[26], real, {1, 6});
+    require_shape(a[27], integer, {poses * atoms, 3});
     require_shape(energy, real, {poses});
     if (gradient) require_shape(*gradient, real, {poses, atoms, 3});
     if (poses * atoms > INT32_MAX / 9 || rots > INT32_MAX)
@@ -121,19 +121,12 @@ struct HBondKernel {
         work.neighbors, {int64_t(work.neighbor_capacity)});
     auto derived =
         contiguous_view<Vec<Real, 3>, 2, D>(work.derived_coords, {count, 3});
-    auto indices = contiguous_view<I, 2, D>(work.derived_indices, {count, 3});
+    auto indices = buffer_view<I, 2, D>(a[27]);
     ContextManager context;
     LAUNCH_BOX_32;
-    auto coordinates = work.derived_coords;
-    auto sources = work.derived_indices;
     auto neighbor_data = work.neighbors;
     Ops<D>::template forall<launch_t>(
-        context, std::max<int64_t>(count * 9, 1), [=] TMOL_DEVICE_FUNC(int i) {
-          if (i == 0) neighbor_data[0] = 0;
-          if (i < count * 9)
-            coordinates[i] = std::numeric_limits<Real>::quiet_NaN();
-          if (i < count * 3) sources[i] = -1;
-        });
+        context, 1, [=] TMOL_DEVICE_FUNC(int) { neighbor_data[0] = 0; });
     score::common::sphere_overlap::
         compute_block_spheres_native<Ops, D, Real, I>(
             context,
@@ -177,7 +170,7 @@ struct HBondKernel {
     bases.block_type_tile_hybridization = buffer_view<I, 3, D>(a[23]);
     bases.derived_coords = derived;
     bases.derived_atom_inds = indices;
-    launch_hbond_bases<Ops, D, Real, I>(context, bases);
+    gather_hbond_bases<Ops, D, Real>(context, bases);
 
     HBondCtx<Real, I, D, 4, 3, 2> score{};
     score.rot_coords = xyz;

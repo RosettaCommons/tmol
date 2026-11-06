@@ -14,7 +14,6 @@
 #include "constraint_torsion_ffi.hh"
 #include "kinematics_ffi.hh"
 #include "forward_kinematics_ffi.hh"
-#include "host_pose_ffi.hh"
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
@@ -170,7 +169,10 @@ ffi::Error run(
 }  // namespace
 }  // namespace tmol::jax
 
-extern "C" int tmol_jax_native_abi_version() { return 1; }
+// Host setup reuses the execution policy above for topology-only kernels.
+#include "host_pose_ffi.hh"
+
+extern "C" int tmol_jax_native_abi_version() { return 2; }
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_genbonded,
     tmol::jax::run<tmol::jax::GenBondedKernel>,
