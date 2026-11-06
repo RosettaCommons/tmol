@@ -12,3 +12,8 @@ template struct ConformerDofKernels<
     double,
     int64_t>;
 }  // namespace tmol::pack::rotamer
+
+#include <tmol/pack/rotamer/pose_imposition_torch.impl.hh>
+template struct tmol::pack::rotamer::PoseImpositionTorch<
+    tmol::score::common::DeviceOperations,
+    tmol::Device::CPU>;

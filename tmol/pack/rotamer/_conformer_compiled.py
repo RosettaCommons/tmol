@@ -12,3 +12,6 @@ assign_chi_dofs = _ops.assign_chi_dofs
 copy_conformer_rows = _ops.copy_conformer_rows
 
 correct_chi_dofs = _ops.correct_chi_dofs
+
+select_pose_rotamers = _ops.select_pose_rotamers
+plan_pose_imposition = _ops.plan_pose_imposition

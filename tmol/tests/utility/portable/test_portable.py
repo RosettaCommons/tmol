@@ -340,6 +340,7 @@ def test_native_rotamer_dispatch_without_torch(tmp_path):
         "native_metal_rotamer.cc",
         "native_na_rotamer_topology.cc",
         "native_na_sampling.cc",
+        "native_pose_imposition.cc",
     ],
 )
 def test_native_candidate_invariants_without_frameworks(tmp_path, source):
