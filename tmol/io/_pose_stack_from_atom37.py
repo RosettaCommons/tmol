@@ -53,28 +53,9 @@ def atom37_slot_map_for_ordering(
       >>> slot_map.shape[1]
       37
     """
-    n_slots = max((len(names) for names in atom_names_by_slot.values()), default=0)
-    slot_map = torch.full(
-        (canonical_ordering.n_restype_io_equiv_classes, n_slots),
-        -1,
-        dtype=torch.int64,
-    )
-    for restype_index, name3 in enumerate(canonical_ordering.restype_io_equiv_classes):
-        names = atom_names_by_slot.get(name3)
-        if names is None:
-            continue
-        # Per residue type, not pooled: H1, H2 and H3 are terminus-only on an
-        # amino acid but ordinary base atoms of DG, DA, DT and water, and a
-        # pooled set would leave those unrouted and silently rebuilt.
-        terminus_atoms = canonical_ordering.termini_only_atoms_by_class.get(name3, ())
-        atom_index = canonical_ordering.restypes_atom_index_mapping[name3]
-        for slot, atom_name in enumerate(names):
-            if not atom_name or atom_name in terminus_atoms:
-                continue
-            canonical_atom = atom_index.get(atom_name)
-            if canonical_atom is not None:
-                slot_map[restype_index, slot] = canonical_atom
-    return slot_map.to(device=device)
+    from tmol_core.io.atom37 import atom37_slot_map_for_ordering as plan
+
+    return torch.as_tensor(plan(canonical_ordering, atom_names_by_slot), device=device)
 
 
 def _default_slot_map(

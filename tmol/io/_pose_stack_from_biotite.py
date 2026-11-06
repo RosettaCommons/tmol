@@ -58,6 +58,11 @@ from tmol.utility._biotite_util import _get_all_residue_positions
 from tmol.utility import resolve_device
 
 from tmol_core.io import structure_context as _structure_context
+from tmol_core.io.atom37 import (
+    Atom37MappingError,
+    atom37_mapping as _atom37_mapping,
+    required_mainchain_entries as _required_mainchain_entries,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +78,6 @@ def _clone_pose_topology(pose_stack: PoseStack) -> PoseStack:
     result.pdb_info = copy.deepcopy(pose_stack.pdb_info)
     result.split_block_mapping = copy.deepcopy(pose_stack.split_block_mapping)
     return result
-
-
-class Atom37MappingError(ValueError):
-    """An AtomArray cannot be routed unambiguously into an Atom37 tensor."""
 
 
 @attr.s(auto_attribs=True, frozen=True, slots=True)
@@ -1390,29 +1391,6 @@ def _validate_mapped_atom37_triplets(
     )
 
 
-def _required_mainchain_entries(
-    biotite_structure: biotite.structure.AtomArray | biotite.structure.AtomArrayStack,
-    co: CanonicalOrdering,
-) -> tuple[tuple[int, int, str], ...]:
-    """Describe canonical mainchain atoms required for pose construction."""
-    starts = biotite.structure.get_residue_starts(biotite_structure)
-    residue_names = biotite.structure.get_residues(biotite_structure)[1]
-    entries = []
-    for residue, (start, residue_name) in enumerate(zip(starts, residue_names)):
-        required = co.restypes_required_mainchain_atoms.get(residue_name) or ()
-        mapping = co.restypes_atom_index_mapping[residue_name]
-        label = (
-            f"{residue_name} {biotite_structure.chain_id[start]}:"
-            f"{biotite_structure.res_id[start]}"
-            f"{biotite_structure.ins_code[start]}"
-        )
-        entries.extend(
-            (residue, mapping[atom_name], f"{label}/{atom_name}")
-            for atom_name in required
-        )
-    return tuple(entries)
-
-
 def _validate_effective_mainchain_coords(
     canonical_coords: torch.Tensor,
     required_mainchain_entries: tuple[tuple[int, int, str], ...],
@@ -1454,62 +1432,6 @@ def _validate_effective_mainchain_coords(
         + ". Supply a wholly finite mapped Atom37 triplet or, for an unmapped "
         "atom, a finite Biotite reference coordinate. Mapped all-NaN triplets "
         "are missing and never fall back to the reference."
-    )
-
-
-def _atom37_mapping(
-    biotite_structure: biotite.structure.AtomArray | biotite.structure.AtomArrayStack,
-    valid_atom_mask: numpy.ndarray,
-    valid_res_inds: numpy.ndarray,
-    valid_atom_inds: numpy.ndarray,
-    max_n_tokens: int | None = None,
-) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray, numpy.ndarray]:
-    """Validate and return source/target indices for Atom37 routing."""
-    categories = set(biotite_structure.get_annotation_categories())
-    missing = {"token_id", "atom37_slot"} - categories
-    if missing:
-        raise Atom37MappingError(
-            "atom37 coordinate routing requires integer Biotite annotation(s): "
-            + ", ".join(sorted(missing))
-        )
-
-    token_id = numpy.asarray(biotite_structure.token_id)
-    slot = numpy.asarray(biotite_structure.atom37_slot)
-    if not numpy.issubdtype(token_id.dtype, numpy.integer):
-        raise Atom37MappingError(
-            "Biotite token_id annotation must have an integer dtype"
-        )
-    if not numpy.issubdtype(slot.dtype, numpy.integer):
-        raise Atom37MappingError(
-            "Biotite atom37_slot annotation must have an integer dtype"
-        )
-
-    token_id = token_id.astype(numpy.int64, copy=False)[valid_atom_mask]
-    slot = slot.astype(numpy.int64, copy=False)[valid_atom_mask]
-    mapped = (token_id >= 0) & (slot >= 0)
-    if numpy.any(slot[mapped] >= 37):
-        maximum = int(slot[mapped].max())
-        raise Atom37MappingError(
-            f"atom37_slot values must be less than 37; got {maximum}"
-        )
-    if not numpy.any(mapped):
-        raise Atom37MappingError("No supported Biotite atoms map to atom37_coords")
-    if max_n_tokens is not None and numpy.any(token_id[mapped] >= max_n_tokens):
-        maximum = int(token_id[mapped].max())
-        raise Atom37MappingError(
-            f"token_id {maximum} exceeds atom37_coords token count {max_n_tokens}"
-        )
-
-    source_pairs = numpy.column_stack((token_id[mapped], slot[mapped]))
-    if numpy.unique(source_pairs, axis=0).shape[0] != source_pairs.shape[0]:
-        raise Atom37MappingError(
-            "Each mapped Biotite atom must use a unique (token_id, atom37_slot) pair"
-        )
-    return (
-        token_id[mapped],
-        slot[mapped],
-        numpy.asarray(valid_res_inds)[mapped],
-        numpy.asarray(valid_atom_inds)[mapped],
     )
 
 
