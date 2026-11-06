@@ -7,8 +7,8 @@ topology and native CPU/CUDA scoring physics are shared with Torch through
 D residues, variants, nucleic acids, metals and mixed systems retain their input
 identities and parameter context. Existing `tmol` imports remain available.
 
-This is experimental: fragment interaction decomposition, Atom37 contracts,
-full design policies and optimizer parity remain unfinished.
+This is experimental: Atom37 contracts, complete design/API compatibility and
+optimizer/runtime/memory parity remain unfinished.
 Native molecular scoring and selected packing paths have CPU/CUDA and Torch-free
 package validation; final Metal validation is tracked separately. See the [capability matrix](capability-matrix.json) for
 implemented behavior and evidence rather than assuming full TMol parity.
@@ -456,8 +456,8 @@ plans preserve coordinate dtype, coordinate derivatives, per-atom observations
 and constraint atoms. CPU checks cover real protein–ligand and repeated-ligand
 systems, all 25 term values and physical gradients against the uncut molecule,
 default hydrogen packing and ligand minimization. Fresh CUDA and installed-package
-validation remain pending for this integration. Public fragment interaction
-attribution remains a separate gap.
+validation remain pending for this integration. Fragment interaction attribution is available through the common original-column
+policy and existing native pair kernels.
 
 `atom_array_from_pose_stack` uses the common host exporter. It preserves declared
 chemical and coordination bonds, per-atom observations, source residue annotations
@@ -468,3 +468,22 @@ is eager host I/O and detaches coordinates from differentiation. Real zinc,
 covalent modified residues, isopeptides, glycans and repeated ligands have CPU
 roundtrip checks including all-term gradients. CUDA and clean installed validation
 for this latest export integration remain pending.
+
+
+`score_function.render_block_pair_scoring_module(pose)` retains directed block
+entries, with the same weighted/unweighted and summed/per-term options as Torch.
+Summing both block axes recovers the whole-pose physical energies and gradients.
+Reference tables retain their mature float32 accumulation precision. Dense output
+has quadratic block storage; all physical pair identities remain candidates so
+coordinate motion cannot invalidate a captured neighbor list. Rendering is eager;
+execution supports `jit`, `vmap` and first reverse coordinate derivatives.
+
+`calculate_fragment_interactions(pose, partner_mask, sfxn=score_function)` returns
+per-fragment partner scores and original column records. The Boolean partner mask
+must exclude every ligand fragment. For transformed or repeated execution, prepare
+`render_fragment_interactions(...)` once and call the returned scorer on coordinates;
+its `mapping` describes the columns. These APIs retain both block orientations and
+exclude fragment-fragment attribution. Real protein-ligand and repeated-ligand CPU
+checks compare all channels and physical gradients to the uncut molecules. CUDA,
+installed artifacts and matched mature runtime/peak-memory parity for these new
+APIs remain pending.

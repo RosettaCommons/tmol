@@ -277,6 +277,12 @@ class ScoreFunction:
         """Compile execution; reuse its program across fresh prepared states."""
         return self.render_whole_pose_scoring_module(pose_stack).jitted()
 
+    def render_block_pair_scoring_module(self, pose_stack, *, interaction_only=False):
+        """Retain weighted pair energies; interaction-only output omits diagonals."""
+        from .block_pair import BlockPairScorer
+
+        return BlockPairScorer(self, pose_stack, interaction_only=interaction_only)
+
     def render_rotamer_scoring_module(
         self, pose_stack, rotamer_set, *, sum_terms=True, apply_weights=True
     ):

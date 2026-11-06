@@ -193,11 +193,13 @@
     {
       "domain": "fragment_interactions",
       "torch": "supported",
-      "jax": "absent",
+      "jax": "cpu_block_pair_and_original_fragment_attribution",
       "repro_fixture": [
-        "tmol/score/_fragment_interactions.py"
+        "tests/scientific/test_block_pair_scoring.py",
+        "tests/scientific/test_fragment_attribution.py",
+        "tests/jax/test_block_pair_transforms.py"
       ],
-      "implementation_status": "Input, original-block reconstruction and AtomArray export have common CPU checks; public JAX fragment interaction decomposition remains absent."
+      "implementation_status": "Shared current/legacy fragment-column validation and bounded reduction policy. JAX uses existing native conformer physics for directed block-pair matrices. Ten molecular domains compare all-term values/gradients; real single/repeated protein-ligand fragmentation preserves uncut partner energies and physical gradients. Coordinate motion, jit/vmap and arbitrary pair-cotangent reverse derivatives have CPU checks. Dense output is quadratic; final CUDA/package and mature runtime/peak memory gates are pending."
     },
     {
       "domain": "structure_io",
@@ -458,7 +460,7 @@
   },
   "acceptance_gaps": {
     "mature_functionality": [
-      "Fragment interaction attribution and full block-pair public scoring API",
+      "New block-pair/fragment public APIs await exact CUDA/package and matched mature runtime/memory gates",
       "Atom37 coordinate overrides and remaining public input contracts",
       "Complete task/design API compatibility, changed-port and constrained-identity imposition",
       "Mature optimizer checkpoint/API behavior and matched trajectory validation",

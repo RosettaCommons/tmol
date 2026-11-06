@@ -6,6 +6,11 @@ from .energy_term import EnergyTerm
 from .score_function import ScoreFunction
 from .score_types import ScoreType
 
+from .fragment_interactions import (
+    calculate_fragment_interactions,
+    render_fragment_interactions,
+)
+
 
 def beta2016_score_function(param_db=None):
     """Load every shared beta2016 weight using the supplied parameter context.
@@ -27,6 +32,8 @@ def beta2016_score_function(param_db=None):
 
 
 __all__ = [
+    "calculate_fragment_interactions",
+    "render_fragment_interactions",
     "ScoreFunction",
     "ScoreType",
     "EnergyTerm",

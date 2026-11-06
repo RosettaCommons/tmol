@@ -19,7 +19,14 @@ from .score import ScoreFunction, ScoreType, beta2016_score_function
 from .pose import get_named_torsions, get_torsion_names
 from .relax import fast_relax
 
+from .score.fragment_interactions import (
+    calculate_fragment_interactions,
+    render_fragment_interactions,
+)
+
 __all__ = [
+    "calculate_fragment_interactions",
+    "render_fragment_interactions",
     "fast_relax",
     "get_named_torsions",
     "get_torsion_names",
