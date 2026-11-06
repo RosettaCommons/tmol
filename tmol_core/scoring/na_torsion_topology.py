@@ -33,13 +33,15 @@ def prepare_na_torsion_topology(
         inter_residue_connections,
         atom_downstream_of_conn,
     )
-    torsion_indices = np.maximum(pose * max_n_atoms + index, 0)
+    torsion_indices = np.where(
+        ok & is_na[..., None, None], pose * max_n_atoms + index, 0
+    )
     torsion_ok = ok.all(-1) & is_na[..., None]
     ring_local = bt_ring.astype(np.int64)[bt_safe]
     ring_pose = np.arange(n_poses).reshape(n_poses, 1, 1)
     ring_index = block_coord_offset[..., None] + ring_local
-    ring_indices = np.maximum(ring_pose * max_n_atoms + ring_index, 0)
     ring_ok = (ring_local >= 0) & is_na[..., None]
+    ring_indices = np.where(ring_ok, ring_pose * max_n_atoms + ring_index, 0)
     down = bt_down.astype(np.int64)[bt_safe]
     prev_block = np.take_along_axis(
         inter_residue_connections[..., 0], np.maximum(down, 0)[..., None], axis=2
