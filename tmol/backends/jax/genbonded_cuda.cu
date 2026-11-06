@@ -9,6 +9,7 @@
 #include "na_torsion_ffi.hh"
 #include "na_sampling_ffi.hh"
 #include "pose_imposition_ffi.hh"
+#include "opth_sampling_ffi.hh"
 #include "workspace_ffi.hh"
 #include "lk_ball_ffi.hh"
 #include "hbond_ffi.hh"
@@ -20,6 +21,7 @@
 #include "constraint_torsion_ffi.hh"
 #include "kinematics_ffi.hh"
 #include "conformer_ffi.hh"
+#include "conformer_copy_plan_ffi.hh"
 #include "graph_topology_ffi.hh"
 #include "graph_entries_ffi.hh"
 #include "constraint_topology_ffi.hh"
@@ -539,6 +541,16 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_constraint_torsion,
     tmol::jax::run<tmol::jax::ConstraintTorsionKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets(),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_precise_torsion,
+    tmol::jax::run<tmol::jax::PreciseTorsionKernel>,
     xla::ffi::Ffi::Bind()
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()
@@ -1069,6 +1081,42 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_pose_imposition,
     tmol::jax::run_graph_stage<tmol::jax::PoseImpositionStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_conformer_copy_plan,
+    tmol::jax::run_graph_stage<tmol::jax::ConformerCopyPlanStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_conformer_indices,
+    tmol::jax::run_graph_stage<tmol::jax::ConformerIndexStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_opth_sampling,
+    tmol::jax::run_graph_stage<tmol::jax::OptHSamplingStage>,
     xla::ffi::Ffi::Bind()
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()

@@ -4,7 +4,8 @@
 #include <tmol/score/common/geom.hh>
 
 namespace tmol::jax {
-struct ConstraintTorsionKernel {
+template <bool DoublePrecision = false>
+struct TorsionKernel {
   static void validate(
       const std::vector<ffi::AnyBuffer>& args,
       ffi::AnyBuffer energy,
@@ -36,17 +37,26 @@ struct ConstraintTorsionKernel {
     ContextManager context;
     LAUNCH_BOX_32;
     auto score = [=] TMOL_DEVICE_FUNC(int i) {
-      auto result = score::common::dihedral_angle<Real>::V_dV(
-          xyz[i][0], xyz[i][1], xyz[i][2], xyz[i][3]);
+      using Compute = std::conditional_t<DoublePrecision, double, Real>;
+      Vec<Compute, 3> local[4];
+      for (int atom = 0; atom < 4; ++atom)
+        for (int axis = 0; axis < 3; ++axis)
+          local[atom][axis] = xyz[i][atom][axis];
+      auto result = score::common::dihedral_angle<Compute>::V_dV(
+          local[0], local[1], local[2], local[3]);
       value[i] = result.V;
       if (derivatives) {
-        deriv[i][0] = result.dV_dI;
-        deriv[i][1] = result.dV_dJ;
-        deriv[i][2] = result.dV_dK;
-        deriv[i][3] = result.dV_dL;
+        for (int axis = 0; axis < 3; ++axis) {
+          deriv[i][0][axis] = result.dV_dI[axis];
+          deriv[i][1][axis] = result.dV_dJ[axis];
+          deriv[i][2][axis] = result.dV_dK[axis];
+          deriv[i][3][axis] = result.dV_dL[axis];
+        }
       }
     };
     Ops<D>::template forall<launch_t>(context, xyz.size(0), score);
   }
 };
+using ConstraintTorsionKernel = TorsionKernel<>;
+using PreciseTorsionKernel = TorsionKernel<true>;
 }  // namespace tmol::jax

@@ -47,13 +47,16 @@ def test_current_conformer_assembly_preserves_molecular_atoms(backend, case_name
     fixed[0, 0] = True
     task.disable_packing_by_block_mask(block_mask(backend, fixed))
     original = backend.coords().copy()
+    if backend.framework == "torch":
+        backend.pose.coords = backend.pose.coords.detach().requires_grad_()
+    concrete = SetPackerTask.from_packer_task(task)
     poses, result = build_rotamers(
         backend.pose,
-        SetPackerTask.from_packer_task(task),
+        concrete,
         backend.parameter_database.chemical,
     )
     assert poses is backend.pose
-    assert result.coords.device == backend.device
+    assert result.coords.device == backend.pose.coords.device
     np.testing.assert_array_equal(backend.coords(), original)
     counts = backend.numpy(result.n_rots_for_block)
     np.testing.assert_array_equal(
@@ -87,6 +90,35 @@ def test_current_conformer_assembly_preserves_molecular_atoms(backend, case_name
         )
     # Each fixed residue is represented by the input, despite no allowed type.
     assert counts[0, 0] == 1
+    # Every real atom occurs once, including fixed residues. Padding must have
+    # zero derivative; the known quadratic has curvature two on real atoms.
+    expected = np.zeros_like(original)
+    curvature = np.zeros_like(original)
+    for pose, block in np.argwhere(block_types >= 0):
+        offset = offsets[pose, block]
+        size = pbt.active_block_types[block_types[pose, block]].n_atoms
+        expected[pose, offset : offset + size] = (
+            2 * original[pose, offset : offset + size]
+        )
+        curvature[pose, offset : offset + size] = 0.5
+    if backend.framework == "jax":
+        jax = backend.module
+        # Cardinality preparation is eager; differentiate its fixed execution
+        # plan, the same graph consumed by subsequent build_rotamers calls.
+        execute = concrete._assembly_execution[2]
+        payloads = tuple(() for _ in concrete.conformer_samplers)
+        grad = jax.grad(lambda x: (execute(x, payloads) ** 2).sum())
+        gradient, hvp = jax.jit(
+            lambda x: jax.jvp(grad, (x,), (jax.numpy.full_like(x, 0.25),))
+        )(backend.pose.coords)
+    else:
+        torch = backend.module
+        gradient = torch.autograd.grad(
+            result.coords.square().sum(), backend.pose.coords, create_graph=True
+        )[0]
+        hvp = torch.autograd.grad((gradient * 0.25).sum(), backend.pose.coords)[0]
+    np.testing.assert_array_equal(backend.numpy(gradient), expected)
+    np.testing.assert_array_equal(backend.numpy(hvp), curvature)
 
 
 @pytest.mark.parametrize(
@@ -94,7 +126,6 @@ def test_current_conformer_assembly_preserves_molecular_atoms(backend, case_name
 )
 def test_sampled_conformer_coordinates_match_requested_dihedrals(backend, case_name):
     from .dunbrack_molecules import DUNBRACK_CASES
-    from tmol_core.pack.chi import chi_moves_fourth_atom
     from .test_molecular_sampling import sampling_task
 
     backend.molecule(DUNBRACK_CASES[case_name], terms=("ref",))
@@ -112,6 +143,18 @@ def test_sampled_conformer_coordinates_match_requested_dihedrals(backend, case_n
         from tmol.pack import build_rotamers
     original = backend.coords().copy()
     _, result = build_rotamers(backend.pose, fixed, backend.parameter_database.chemical)
+    checked = check_sampled_dihedrals(
+        backend, fixed, result, counts, choices, defining, angles, original
+    )
+    assert checked > 10
+
+
+def check_sampled_dihedrals(
+    backend, fixed, result, counts, choices, defining, angles, original
+):
+    """Measure public chemical torsions and retained backbone independently."""
+    from tmol_core.pack.chi import chi_moves_fourth_atom
+
     coordinates = backend.numpy(result.coords)
     assert np.isfinite(coordinates).all()
     np.testing.assert_array_equal(backend.coords(), original)
@@ -159,13 +202,13 @@ def test_sampled_conformer_coordinates_match_requested_dihedrals(backend, case_n
                 assert abs(error) < 2e-5, (residue.name, column, error)
                 checked += 1
             # Repacking preserves the input backbone in its original frame.
-            names = residue.properties.polymer.mainchain_atoms
+            names = residue.properties.polymer.mainchain_atoms or ()
             retained = [residue.atom_to_idx[name] for name in names]
             source_offset = backend.numpy(backend.pose.block_coord_offset)[pose, block]
             np.testing.assert_allclose(
                 xyz[retained],
-                original[pose, source_offset + np.asarray(retained)],
+                original[pose, source_offset + np.asarray(retained, dtype=np.int32)],
                 atol=2e-5,
                 rtol=0,
             )
-    assert checked > 10
+    return checked

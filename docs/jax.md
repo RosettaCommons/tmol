@@ -187,6 +187,18 @@ sugar-pucker and sample choices eagerly; `plan.chi_values(proton, means, sdev)`
 accepts optional float32 table overrides and supports `jit`, `vmap`, JVPs and
 higher parameter derivatives. It does not differentiate the discrete preparation.
 
+`OptHSampler(flip_NHQ=True)` samples proton chi in supported protein,
+noncanonical, ligand and nucleic-acid chemistry, and optionally ASN/GLN/HIS
+flips. Its common native assembly copies input DOFs, resets NHQ downstream
+atoms, and applies sampled torsions. Enable OptH and Dunbrack on different
+blocks; assigning both to one block raises an error. `sampler.prepare(pose, task)`
+fixes discrete samples eagerly. The plan's `chi_values(proton_samples, flip_values)`
+supports optional float32 parameter overrides, `jit`, `vmap`, JVPs and higher
+parameter derivatives. `measure_flip_values(coords)` supports first coordinate
+derivatives; higher coordinate derivatives through native torsions are absent.
+CPU molecular sampling and built-coordinate checks pass; combined CUDA validation
+is pending.
+
 `IncludeCurrentSampler` and `FallbackSampler` expose
 `create_samples_for_poses(pose, concrete_task)`, returning counts, choice indices
 and an input-coordinate copy marker. Register either sampler explicitly.
@@ -194,7 +206,7 @@ Fallback accepts `built_rotamer_counts=counts` aggregated from earlier samplers;
 it retains fixed residues and fills uncovered positions. Coverage includes all
 identities at a position, so a sampled design choice does not reintroduce the
 original identity. `build_rotamers(pose, task, parameter_database.chemical)` assembles their coordinates
-and sampled Dunbrack, explicit amino-acid and NA chi using common native kernels. It returns
+and sampled Dunbrack, explicit amino-acid, NA and OptH chi using common native kernels. It returns
 `(pose, rotamer_set)` with atom, residue and pose identities. Register
 `FallbackSampler()` explicitly to preserve fixed and uncovered residues. Input
 conformers are copied exactly; sampled coordinates preserve retained atoms and
@@ -203,7 +215,11 @@ pose's packed types.
 
 Assembly is eager because sampling determines output sizes; it does not support
 `jit`, `vmap` or coordinate differentiation through sampling/initialization. The
-native DOF operations support `jit` and `vmap`. A concrete `SetPackerTask` reuses
+native DOF operations support `jit` and `vmap`. Row copying and chi assignment
+also support JVPs, gradients and higher derivatives using common native index
+plans; mainchain copying and nonlinear measured-chi correction still lack JAX
+derivative rules. Current-only prepared execution preserves input coordinate
+derivatives, including fixed residues and padded batches. A concrete `SetPackerTask` reuses
 validated topology plans while recomputing coordinates. Internal native stages
 now provide sparse graph topology/retention, device load balancing with XLA-owned
 scratch, sphere-based candidate enumeration, and the mature CPU annealing schedule.
@@ -243,7 +259,7 @@ mixed and DNA repacking fixtures check selected coordinates, immutable chemistry
 and the resulting whole-pose energy. CPU and CUDA retain their different mature
 search schedules. CUDA phase seeds come from a local NumPy PCG64 generator;
 packing leaves global random state unchanged. Bump pruning, correlated groups,
-optH/conjugated samplers and FastRelax remain unfinished.
+conjugated sampling and FastRelax remain unfinished.
 
 `prepare_pose_imposition(pose, rotamers, graph["retained"], assignments)` prepares
 discrete selection eagerly. Its `coordinates(rotamer_coords)` supports `jit`,

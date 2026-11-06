@@ -5,6 +5,7 @@ from .kinematics import prepare_rotamer_kinematics, prepare_block_group_kinemati
 from .dunbrack import DunbrackChiSampler
 from .na_sampling import NaChiRotamerSampler
 from .fixed_amino_acid import FixedAAChiSampler
+from .opth import OptHSampler
 from .fingerprint import prepare_atom_copy_plan
 from .task import PackerTask, SetPackerTask
 from .current import IncludeCurrentSampler, FallbackSampler
@@ -29,5 +30,6 @@ __all__ = [
     "DunbrackChiSampler",
     "NaChiRotamerSampler",
     "FixedAAChiSampler",
+    "OptHSampler",
     "prepare_atom_copy_plan",
 ]

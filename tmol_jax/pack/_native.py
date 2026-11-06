@@ -4,9 +4,159 @@ import ctypes
 from functools import lru_cache, partial
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 
 from tmol_jax._host import invoke
+
+
+@partial(jax.jit, static_argnames=("operation", "outputs", "flip", "width"))
+def _copy_plan_stage(arguments, *, operation, outputs, flip=False, width=0):
+    from tmol_jax.score._native import register
+
+    register("tmol_conformer_copy_plan")
+    return jax.ffi.ffi_call(
+        "tmol_conformer_copy_plan", outputs, vmap_method="sequential"
+    )(
+        *arguments,
+        operation=np.int64(operation),
+        extent=np.int64(flip),
+        width=np.int64(width),
+    )
+
+
+@jax.jit
+def current_conformer_copy_plan(
+    original, natoms, considered, global_blocks, types, offsets, selected
+):
+    """Common compact source forest and selected-conformer copy segments."""
+    from .dispatch import _narrow_prefix
+    from .graph import prefix_counts
+
+    wide = jax.ShapeDtypeStruct((original.size, 8), np.uint8)
+    counts, _ = _copy_plan_stage((original, natoms), operation=0, outputs=(wide, wide))
+    sources = prefix_counts(counts)[:-1]
+    segments = _copy_plan_stage(
+        (
+            original,
+            natoms,
+            considered,
+            global_blocks,
+            types,
+            offsets,
+            selected,
+            sources,
+        ),
+        operation=1,
+        outputs=jax.ShapeDtypeStruct((3, selected.size, 8), np.uint8),
+    )
+    prefix = _narrow_prefix(prefix_counts(segments[0]))
+    narrow = _narrow_prefix(segments.reshape(-1, 8)).reshape(3, selected.size)
+    return narrow[1], narrow[2], prefix
+
+
+@partial(jax.jit, static_argnames=("flip",))
+def reset_opth_dofs(
+    dofs, ideal, types, offsets, selected, atoms, downstream, counts, *, flip
+):
+    """Apply the shared NHQ reset plan; inactive slots leave DOFs untouched."""
+    from .dispatch import _narrow_prefix
+
+    if not flip or not selected.size or not downstream.shape[1]:
+        return dofs
+    n = selected.size * downstream.shape[1]
+    indices = _copy_plan_stage(
+        (types, offsets, selected, atoms, downstream, counts),
+        operation=2,
+        outputs=jax.ShapeDtypeStruct((2, n, 8), np.uint8),
+        flip=flip,
+        width=ideal.shape[1],
+    )
+    source, target = _narrow_prefix(indices.reshape(-1, 8)).reshape(2, n)
+    values = ideal.reshape(-1, 9)[jnp.maximum(source, 0)]
+    # Active downstream atoms are distinct within each disjoint conformer.
+    return dofs.at[jnp.where(target >= 0, target, dofs.shape[0])].set(
+        values, mode="drop", unique_indices=True
+    )
+
+
+@partial(jax.jit, static_argnames=("operation", "extent", "width"))
+def _conformer_indices(arguments, *, operation, extent, width):
+    from tmol_jax.score._native import register
+    from .dispatch import _narrow_prefix
+
+    register("tmol_conformer_indices")
+    output = jax.ShapeDtypeStruct((2, extent, 8), np.uint8)
+    indices = jax.ffi.ffi_call(
+        "tmol_conformer_indices", output, vmap_method="sequential"
+    )(
+        *arguments,
+        operation=np.int64(operation),
+        extent=np.int64(extent),
+        width=np.int64(width),
+    )
+    return _narrow_prefix(indices.reshape(-1, 8)).reshape(2, extent)
+
+
+@jax.custom_jvp
+def _assign_chi(
+    dofs, chi, types, offsets, selected, atoms, kinematic_index, corrections
+):
+    return _conformer_dofs(
+        dofs,
+        (chi, types, offsets, selected, atoms, kinematic_index, corrections),
+        target="tmol_assign_conformer_chi",
+    )
+
+
+@_assign_chi.defjvp
+def _assign_chi_jvp(primals, tangents):
+    dofs, chi, types, offsets, selected, atoms, kinematic_index, corrections = primals
+    dd, dchi, *_, dc = tangents
+    if atoms.size:
+        destination, parameter = _conformer_indices(
+            (types, offsets, selected, atoms, kinematic_index),
+            operation=1,
+            extent=atoms.size,
+            width=corrections.shape[1],
+        )
+        valid = destination >= 0
+        updates = dchi.reshape(-1) - dc.reshape(-1)[jnp.maximum(parameter, 0)]
+        # Each active chi owns one DOF. Inactive entries are dropped; they do
+        # not participate in the uniqueness contract used by the transpose.
+        dd = (
+            dd.reshape(-1)
+            .at[jnp.where(valid, destination, dd.size)]
+            .set(updates, mode="drop", unique_indices=True)
+            .reshape(dofs.shape)
+        )
+    return _assign_chi(*primals), dd
+
+
+@partial(jax.custom_jvp, nondiff_argnums=(5, 6))
+def _copy_rows(
+    values, source, source_offsets, target_offsets, packed_offsets, n_rows, root_shift
+):
+    return _conformer_dofs(
+        values,
+        (source, source_offsets, target_offsets, packed_offsets),
+        target="tmol_copy_conformer_rows",
+        n_rows=n_rows,
+        root_shift=root_shift,
+    )
+
+
+@_copy_rows.defjvp
+def _copy_rows_jvp(n_rows, root_shift, primals, tangents):
+    values, source, *metadata = primals
+    dv, ds, *_ = tangents
+    rows = _conformer_indices(
+        tuple(metadata), operation=0, extent=n_rows, width=root_shift
+    )
+    # Source rows may repeat, but conformers occupy disjoint target rows.
+    return _copy_rows(*primals, n_rows, root_shift), dv.at[rows[1]].set(
+        ds[rows[0]], unique_indices=True
+    )
 
 
 @partial(jax.jit, static_argnames=("target", "sampler", "n_rows", "root_shift"))
@@ -43,7 +193,7 @@ def assign_conformer_chi(dofs, chi, *metadata):
 
     target = "tmol_assign_conformer_chi"
     register(target)
-    return _conformer_dofs(dofs, (chi, *metadata), target=target)
+    return _assign_chi(dofs, chi, *metadata)
 
 
 def correct_conformer_chi(dofs, chi, trial_coordinates, *metadata):
@@ -70,12 +220,14 @@ def copy_conformer_rows(
 
     target = "tmol_copy_conformer_rows"
     register(target)
-    return _conformer_dofs(
+    return _copy_rows(
         values,
-        (source, source_offsets, target_offsets, packed_offsets),
-        target=target,
-        n_rows=n_rows,
-        root_shift=root_shift,
+        source,
+        source_offsets,
+        target_offsets,
+        packed_offsets,
+        n_rows,
+        root_shift,
     )
 
 

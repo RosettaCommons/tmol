@@ -26,6 +26,8 @@ from ._native import (
     copy_conformer_dofs,
     assign_conformer_chi,
     correct_conformer_chi,
+    current_conformer_copy_plan,
+    reset_opth_dofs,
 )
 
 
@@ -83,6 +85,10 @@ def _indices(value, *, device):
 def _validate_payloads(samples, coordinates):
     for counts, choices, payload in samples:
         fields = set(payload) - {"correlated_gbts"}
+        if "opth_dof_initialization" in fields:
+            if payload["opth_dof_initialization"] is not True:
+                raise ValueError("OptH DOF initialization requires a true marker")
+            fields.remove("opth_dof_initialization")
         if fields == {"copy_input_coordinates"}:
             if payload["copy_input_coordinates"] is not True:
                 raise ValueError("input-coordinate payload requires a true copy marker")
@@ -125,7 +131,18 @@ def build_rotamers(poses, task, chem_db=None):
         raise ValueError("conformer chemistry must match the pose parameter context")
     samplers, samples, choices, destinations, groups = _sample_conformers(poses, task)
     copy_input = tuple(s[2].get("copy_input_coordinates", False) for s in samples)
-    key = (poses.coords.dtype, tuple(map(id, samplers)), copy_input, groups)
+    opth = tuple(s[2].get("opth_dof_initialization", False) for s in samples)
+    opth_options = tuple(
+        (s.flip_NHQ, task.chi_sample_budget or s.budget) if enabled else None
+        for s, enabled in zip(samplers, opth)
+    )
+    key = (
+        poses.coords.dtype,
+        tuple(map(id, samplers)),
+        copy_input,
+        opth_options,
+        groups,
+    )
     identities = tuple(
         np.asarray(value)
         for value in (
@@ -147,7 +164,7 @@ def build_rotamers(poses, task, chem_db=None):
         )
     ):
         execute, fields = _assembly_plan(
-            poses, task, samplers, copy_input, identities, groups
+            poses, task, samplers, copy_input, opth_options, identities, groups
         )
         previous = (
             key,
@@ -174,7 +191,7 @@ def build_rotamers(poses, task, chem_db=None):
     return poses, RotamerSet(coords=coordinates, **previous[3])
 
 
-def _assembly_plan(poses, task, samplers, copy_input, identities, groups):
+def _assembly_plan(poses, task, samplers, copy_input, opth_options, identities, groups):
     """Bind immutable native layouts and compile one coordinate execution graph."""
     pbt, device = poses.packed_block_types, poses.device
     packed = prepare_rotamer_kinematics(pbt)
@@ -237,8 +254,26 @@ def _assembly_plan(poses, task, samplers, copy_input, identities, groups):
             int(prefix[-1]),
         )
 
-    copy_plans, chi_plans, copied = [], [], []
-    for copy, selected in zip(copy_input, destinations):
+    copy_plans, chi_plans, copied, opth_metadata = [], [], [], []
+    for sampler, copy, opt, selected in zip(
+        samplers, copy_input, opth_options, destinations
+    ):
+        if copy or opt is not None:
+            plan = current_conformer_copy_plan(
+                integer(source_types.reshape(shape)),
+                integer(n_atoms_by_type),
+                integer(choices),
+                integer(global_blocks),
+                type_indices,
+                target_offsets,
+                integer(selected),
+            )
+            copy_plans.append((*plan, int(layout.n_atoms[selected].sum())))
+        else:
+            copy_plans.append(None)
+        opth_metadata.append(
+            sampler._metadata(pbt, device, opt[1])[0] if opt is not None else None
+        )
         if copy:
             if not np.array_equal(
                 source_types[source_residues[selected]], types[selected]
@@ -246,7 +281,6 @@ def _assembly_plan(poses, task, samplers, copy_input, identities, groups):
                 raise ValueError(
                     "input conformers must retain their original chemical identity"
                 )
-            copy_plans.append(row_plan(selected, source_offsets))
             chi_plans.append(None)
             copied.append(selected)
         else:
@@ -259,7 +293,6 @@ def _assembly_plan(poses, task, samplers, copy_input, identities, groups):
                     integer(layout.offsets[selected]),
                 )
             )
-            copy_plans.append(None)
     copied_rows = (
         row_plan(np.concatenate(copied), coordinate_offsets) if copied else None
     )
@@ -300,13 +333,33 @@ def _assembly_plan(poses, task, samplers, copy_input, identities, groups):
 
     @jax.jit
     def execute(coords, payloads):
+        if not has_chi:
+            coordinates = jnp.zeros((layout.total, 3), coords.dtype)
+            return (
+                coordinates
+                if copied_rows is None
+                else copy_rows(coordinates, coords.reshape(-1, 3), copied_rows, 0)
+            )
         dofs = ideal
         source_dofs = source_geometry.inverse(coords)
         for i, (copy, selected) in enumerate(zip(copy_input, selections)):
             if copy:
                 dofs = copy_rows(dofs, source_dofs, copy_plans[i], 1)
             else:
-                if len(selected) and fingerprints.atom_mapping.shape[1]:
+                if opth_options[i] is not None:
+                    dofs = copy_rows(dofs, source_dofs, copy_plans[i], 1)
+                    dofs = reset_opth_dofs(
+                        dofs,
+                        packed.dofs_ideal.astype(coords.dtype),
+                        type_indices,
+                        target_offsets,
+                        selected,
+                        payloads[i][1],
+                        opth_metadata[i]["nhq_downstream_kfo"],
+                        opth_metadata[i]["nhq_downstream_count"],
+                        flip=opth_options[i][0],
+                    )
+                elif len(selected) and fingerprints.atom_mapping.shape[1]:
                     dofs = copy_conformer_dofs(
                         dofs,
                         source_dofs,

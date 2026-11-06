@@ -150,7 +150,7 @@
     {
       "domain": "packing_design_mutation",
       "torch": "supported",
-      "jax": "native_cpu_repacking_and_partial_design",
+      "jax": "native_cpu_cuda_repacking_and_partial_design",
       "repro_fixture": [
         "tests/scientific/test_packing_palette.py",
         "tests/scientific/test_molecular_rotamer_geometry.py",
@@ -177,9 +177,12 @@
         "tests/scientific/test_pose_imposition.py",
         "tests/jax/test_pose_imposition.py",
         "tests/scientific/test_fixed_amino_acid_sampling.py",
-        "tests/jax/test_native_cuda_annealing.py"
+        "tests/jax/test_native_cuda_annealing.py",
+        "tests/scientific/test_opth_sampling.py",
+        "tests/scientific/test_conformer_linear_ad.py",
+        "tests/jax/test_opth_transforms.py"
       ],
-      "implementation_status": "Shared chemistry, task/request preparation and native assembly support current/fallback, FixedAA, Dunbrack/explicit amino-acid chi and NA conformers. NA CPU/CUDA independent sampling/metadata/assembled coordinates match Torch exactly in 120 arrays; 20 sampled per-channel value/full-gradient comparisons match exactly. Fixed-plan NA parameter AD and custom databases are tested. Raw float32 NA backbone reconstruction varies across conformers: exact sparse/whole conservation requires identical fixed-backbone inputs. All 25 sparse score channels use shared native physics and preserve named channels and coordinate VJPs. Complete graph CPU/CUDA checks and 15 independent molecular graph comparisons pass; complete pipeline orchestration performance remains slower than Torch. The CPU float32 pack_rotamers frontend composes assembly, full scoring, graph construction, mature native search and imposition; five shared molecular repacking cases pass on Torch and JAX. Native imposition covers eight ligand/noncanonical/D/NA/disulfide/metal/mixed/design selections; fixed selection supports coordinate jit/vmap/JVP/HVP. Identity mutation compacts storage and recomputes separation, but changed port layouts or attached constraints reject explicitly. OptH/conjugated sampling, bump pruning, lockstep dispatch/collapse, backbone two-residue cycles and general native sparse JVP/higher derivatives remain gaps. Task APIs remain a subset; FastRelax is absent. Float64 JAX assembly does not establish Torch float64 packing support. Combined-source imposition/NA/composition54 CPU/CUDA checks and five fixed-backbone conservation checks pass. FixedAA shared sampling/masking/Gly-hydrogen and L/D ARG/ALA/GLY design checks pass CPU. Shared CUDA annealer extraction preserves72 seeded score/assignment/RNG arrays exactly and all measured cases are neutral or faster; new JAX FFI compiled successfully but runtime validation remains pending. Final package checks remain pending."
+      "implementation_status": "Shared chemistry/task preparation and native assembly cover current/fallback, FixedAA, Dunbrack/explicit amino-acid chi, NA and OptH conformers. OptH CPU sampling and assembled-coordinate invariants cover ligand proton chi, L/D proteins, noncanonical residues, modified nucleic acids and mixed batches; combined CUDA validation is pending. Fixed-plan NA/OptH parameter derivatives and custom databases are supported. Native row-copy/chi-assignment value, gradient and curvature invariants pass both CPU frameworks; current-only coordinate derivatives are exact across six domains. Mainchain-copy and nonlinear measured-chi JAX derivatives remain absent. All25 sparse score channels use common native physics with coordinate VJPs. CPU/CUDA complete graph and five molecular packing cases pass; the CUDA annealer has seeded/jit/vmap checks, with independent exact phase-seed comparison pending. FixedAA L/D design and fixed-selection imposition are covered; identity mutation compacts storage and recomputes separation, while changed ports or constrained identity mutation reject. Raw float32 NA reconstruction needs identical fixed-backbone inputs for exact sparse/whole conservation. Remaining gaps include conjugated sampling, bump pruning, lockstep dispatch/collapse, backbone two-residue cycles, general sparse JVP/higher derivatives, complete task/design APIs and FastRelax. End-to-end packing orchestration is slower than Torch; new matched timings and final package/Metal checks are pending. Float64 JAX assembly does not establish Torch float64 packing support. PR629 remains draft."
     },
     {
       "domain": "kinematics",

@@ -1,0 +1,174 @@
+# 1,2-propanediol, public TMol preparation from CC(O)CO; protonate=False, seed=191.
+version: '5.2'
+chemical:
+  residues:
+  - name: OPL
+    base_name: OPL
+    name3: OPL
+    io_equiv_class: OPL
+    atoms:
+    - {name: C1, atom_type: CS3}
+    - {name: C2, atom_type: CSp}
+    - {name: O1, atom_type: Ohx}
+    - {name: C3, atom_type: CSp}
+    - {name: O2, atom_type: Ohx}
+    - {name: HC11, atom_type: HC}
+    - {name: HC12, atom_type: HC}
+    - {name: HC13, atom_type: HC}
+    - {name: HC2, atom_type: HC}
+    - {name: HO1, atom_type: HO}
+    - {name: HC31, atom_type: HC}
+    - {name: HC32, atom_type: HC}
+    - {name: HO2, atom_type: HO}
+    atom_aliases: []
+    bonds:
+    - [C1, C2, SINGLE, false]
+    - [C2, O1, SINGLE, false]
+    - [C2, C3, SINGLE, false]
+    - [C3, O2, SINGLE, false]
+    - [C1, HC11, SINGLE, false]
+    - [C1, HC12, SINGLE, false]
+    - [C1, HC13, SINGLE, false]
+    - [C2, HC2, SINGLE, false]
+    - [O1, HO1, SINGLE, false]
+    - [C3, HC31, SINGLE, false]
+    - [C3, HC32, SINGLE, false]
+    - [O2, HO2, SINGLE, false]
+    connections: []
+    torsions:
+    - name: chi1
+      a: {atom: C1}
+      b: {atom: C2}
+      c: {atom: O1}
+      d: {atom: HO1}
+    - name: chi2
+      a: {atom: C1}
+      b: {atom: C2}
+      c: {atom: C3}
+      d: {atom: O2}
+    - name: chi3
+      a: {atom: C2}
+      b: {atom: C3}
+      c: {atom: O2}
+      d: {atom: HO2}
+    icoors:
+    - {name: C2, phi: 0.0, theta: 0.0, d: 0.0, parent: C2, grand_parent: C2, great_grand_parent: C2}
+    - {name: C1, phi: 0.0, theta: 3.141592653589793, d: 1.5242680694118764, parent: C2,
+      grand_parent: C2, great_grand_parent: C2}
+    - {name: O1, phi: 0.0, theta: 1.2381805613141983, d: 1.4308227006003702, parent: C2,
+      grand_parent: C1, great_grand_parent: C2}
+    - {name: C3, phi: -2.116139689294831, theta: 1.1782666825794064, d: 1.5312670787381506,
+      parent: C2, grand_parent: C1, great_grand_parent: O1}
+    - {name: O2, phi: 1.058554934626941, theta: 1.2074445013619626, d: 1.4279990270863627,
+      parent: C3, grand_parent: C2, great_grand_parent: C1}
+    - {name: HC2, phi: 2.0468484578948107, theta: 1.2318962354184746, d: 1.094742288250995,
+      parent: C2, grand_parent: C1, great_grand_parent: O1}
+    - {name: HC11, phi: 1.0017044296263777, theta: 1.195396508381959, d: 1.0951963390673054,
+      parent: C1, grand_parent: C2, great_grand_parent: O1}
+    - {name: HC12, phi: -2.060259134275603, theta: 1.2180659147874482, d: 1.0955019330287392,
+      parent: C1, grand_parent: C2, great_grand_parent: HC11}
+    - {name: HC13, phi: 2.120385381388699, theta: 1.2003390788558064, d: 1.0941004443241502,
+      parent: C1, grand_parent: C2, great_grand_parent: HC11}
+    - {name: HO1, phi: -0.8682288691191868, theta: 1.2781071662683567, d: 0.9730587464538364,
+      parent: O1, grand_parent: C2, great_grand_parent: C1}
+    - {name: HC31, phi: 2.0835887930610646, theta: 1.209570396265409, d: 1.095555874540287,
+      parent: C3, grand_parent: C2, great_grand_parent: O2}
+    - {name: HC32, phi: -2.097290479730062, theta: 1.207704797055451, d: 1.094125232128109,
+      parent: C3, grand_parent: C2, great_grand_parent: O2}
+    - {name: HO2, phi: 1.4522206845369405, theta: 1.2857207545406442, d: 0.9728259425023402,
+      parent: O2, grand_parent: C3, great_grand_parent: C2}
+    properties:
+      is_canonical: false
+      polymer:
+        is_polymer: false
+        polymer_type: null
+        backbone_type: null
+        mainchain_atoms: null
+        sidechain_chirality: NA
+        termini_variants: []
+      chemical_modifications: []
+      connectivity: []
+      protonation:
+        protonated_atoms: []
+        protonation_state: neutral
+        pH: 7
+      virtual: []
+    chi_samples:
+    - chi_dihedral: chi1
+      samples:
+      - 60.0
+      - -60.0
+      - 180.0
+      expansions:
+      - 20.0
+      is_proton: true
+    - chi_dihedral: chi3
+      samples:
+      - 60.0
+      - -60.0
+      - 180.0
+      expansions:
+      - 20.0
+      is_proton: true
+    default_jump_connection_atom: C2
+    hydrogens_regenerated: true
+    is_ligand_fragment: false
+    rama_reference: null
+    dunbrack_reference: null
+    na_base_reference: null
+    reference_mirrored: false
+    one_letter_code: null
+    conjugation_context: []
+    metal_sites: []
+    io_bond_orders: []
+  atom_type_elements:
+    CS3: C
+    CSp: C
+    Ohx: O
+    HC: H
+    HO: H
+elec:
+  atom_charge_parameters: [{res: OPL, atom: C1, charge: 0.0}, {res: OPL, atom: C2,
+      charge: 0.28}, {res: OPL, atom: O1, charge: -0.68}, {res: OPL, atom: C3, charge: 0.28},
+    {res: OPL, atom: O2, charge: -0.68}, {res: OPL, atom: HC11, charge: 0.0}, {res: OPL,
+      atom: HC12, charge: 0.0}, {res: OPL, atom: HC13, charge: 0.0}, {res: OPL, atom: HC2,
+      charge: 0.0}, {res: OPL, atom: HO1, charge: 0.4}, {res: OPL, atom: HC31, charge: 0.0},
+    {res: OPL, atom: HC32, charge: 0.0}, {res: OPL, atom: HO2, charge: 0.4}]
+cartbonded:
+  residue_params:
+    OPL:
+      length_parameters: [{atm1: C1, atm2: C2, x0: 1.5242680694118764, K: 300.0, type: 0},
+        {atm1: C2, atm2: O1, x0: 1.4308227006003702, K: 300.0, type: 0}, {atm1: C2,
+          atm2: C3, x0: 1.5312670787381506, K: 300.0, type: 0}, {atm1: C3, atm2: O2,
+          x0: 1.4279990270863627, K: 300.0, type: 0}, {atm1: C1, atm2: HC11, x0: 1.0951963390673054,
+          K: 300.0, type: 0}, {atm1: C1, atm2: HC12, x0: 1.0955019330287392, K: 300.0,
+          type: 0}, {atm1: C1, atm2: HC13, x0: 1.0941004443241502, K: 300.0, type: 0},
+        {atm1: C2, atm2: HC2, x0: 1.094742288250995, K: 300.0, type: 0}, {atm1: O1,
+          atm2: HO1, x0: 0.9730587464538364, K: 300.0, type: 0}, {atm1: C3, atm2: HC31,
+          x0: 1.095555874540287, K: 300.0, type: 0}, {atm1: C3, atm2: HC32, x0: 1.094125232128109,
+          K: 300.0, type: 0}, {atm1: O2, atm2: HO2, x0: 0.9728259425023402, K: 300.0,
+          type: 0}]
+      angle_parameters: [{atm1: C2, atm2: C1, atm3: HC11, x0: 1.94619614520807, K: 80.0,
+          type: 1}, {atm1: C2, atm2: C1, atm3: HC12, x0: 1.9235267388025654, K: 80.0,
+          type: 1}, {atm1: C2, atm2: C1, atm3: HC13, x0: 1.9412535747342197, K: 80.0,
+          type: 1}, {atm1: HC11, atm2: C1, atm3: HC12, x0: 1.858571246671071, K: 80.0,
+          type: 1}, {atm1: HC11, atm2: C1, atm3: HC13, x0: 1.8967944961257426, K: 80.0,
+          type: 1}, {atm1: HC12, atm2: C1, atm3: HC13, x0: 1.8949120537146675, K: 80.0,
+          type: 1}, {atm1: C1, atm2: C2, atm3: O1, x0: 1.9034120922757531, K: 80.0,
+          type: 1}, {atm1: C1, atm2: C2, atm3: C3, x0: 1.9633259710105642, K: 80.0,
+          type: 1}, {atm1: C1, atm2: C2, atm3: HC2, x0: 1.9096964181715297, K: 80.0,
+          type: 1}, {atm1: O1, atm2: C2, atm3: C3, x0: 1.9050791814012427, K: 80.0,
+          type: 1}, {atm1: O1, atm2: C2, atm3: HC2, x0: 1.8754560415085477, K: 80.0,
+          type: 1}, {atm1: C3, atm2: C2, atm3: HC2, x0: 1.9048219850610861, K: 80.0,
+          type: 1}, {atm1: C2, atm2: O1, atm3: HO1, x0: 1.8634854873216529, K: 80.0,
+          type: 1}, {atm1: C2, atm2: C3, atm3: O2, x0: 1.9341481522280044, K: 80.0,
+          type: 1}, {atm1: C2, atm2: C3, atm3: HC31, x0: 1.9320222573246093, K: 80.0,
+          type: 1}, {atm1: C2, atm2: C3, atm3: HC32, x0: 1.933887856534569, K: 80.0,
+          type: 1}, {atm1: O2, atm2: C3, atm3: HC31, x0: 1.879030723780461, K: 80.0,
+          type: 1}, {atm1: O2, atm2: C3, atm3: HC32, x0: 1.88898351060499, K: 80.0,
+          type: 1}, {atm1: HC31, atm2: C3, atm3: HC32, x0: 1.894090376465991, K: 80.0,
+          type: 1}, {atm1: C3, atm2: O2, atm3: HO2, x0: 1.85587189904936, K: 80.0,
+          type: 1}]
+      torsion_parameters: []
+      improper_parameters: []
+      hxltorsion_parameters: []
