@@ -1,5 +1,7 @@
 """Device forests for shared conformer layout plans."""
 
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -13,6 +15,7 @@ from tmol_jax.kinematics._native import inverse_coordinates, forward_coordinates
 class ConformerGeometry:
     def __init__(self, layout, device):
         self.total = layout.total
+        self.device = device
         self.ids = jax.device_put(layout.forest[0], device)
         self.forest = jax.device_put(layout.forest.T, device)
         # Inverse order is parent/frame_x/frame_y/frame_z/doftype.
@@ -29,8 +32,9 @@ class ConformerGeometry:
             for plan in (ordering.forward, ordering.backward)
         )
 
+    @partial(jax.jit, static_argnums=0)
     def inverse(self, coordinates):
-        with jax.default_device(coordinates.device):
+        with jax.default_device(self.device):
             gathered = jnp.concatenate(
                 (
                     jnp.zeros((1, 3), coordinates.dtype),
@@ -39,9 +43,10 @@ class ConformerGeometry:
             )
         return inverse_coordinates(gathered, self.inverse_indices)
 
+    @partial(jax.jit, static_argnums=0)
     def forward(self, dofs):
         coordinates = forward_coordinates(dofs, self.forest, *self.plans)
-        with jax.default_device(dofs.device):
+        with jax.default_device(self.device):
             return (
                 jnp.zeros((self.total, 3), dofs.dtype)
                 .at[self.ids[1:]]

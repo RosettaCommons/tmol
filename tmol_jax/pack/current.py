@@ -1,10 +1,32 @@
 """Eager selection of input conformations using the common packing policy."""
 
+from functools import partial
+
+import numpy as np
 import jax
 import jax.numpy as jnp
 
 from tmol_core.pack.conformer_policy import fallback_mask, include_current_mask
 from .task import PackerTask, SetPackerTask
+
+
+@partial(jax.jit, static_argnames=("fallback",))
+def _selection(
+    original, allowed_types, allowed_samplers, rows, sampler, counts, *, fallback
+):
+    allowed = allowed_samplers[rows[0], rows[1], sampler]
+    if not fallback:
+        return include_current_mask(original[rows], allowed_types[rows], allowed)
+    covered = jnp.zeros(original.shape[:2], jnp.int32)
+    if counts is not None:
+        covered = covered.at[rows[:2]].add((counts > 0).astype(jnp.int32))
+    return fallback_mask(
+        original[rows],
+        ~allowed_types.any(axis=-1)[rows[:2]],
+        ~allowed_samplers.any(axis=-1)[rows[:2]],
+        covered[rows[:2]] > 0,
+        allowed,
+    )
 
 
 class IncludeCurrentSampler:
@@ -40,24 +62,30 @@ class IncludeCurrentSampler:
         return (
             task,
             rows,
-            task.per_block_conformer_sampler_allowed[rows[0], rows[1], sampler],
+            sampler,
         )
 
     @staticmethod
     def _result(selected):
         return (
             selected.astype(jnp.int32),
-            jnp.flatnonzero(selected).astype(jnp.int32),
+            jax.device_put(
+                np.flatnonzero(np.asarray(selected)).astype(np.int32), selected.device
+            ),
             {"copy_input_coordinates": True},
         )
 
     def create_samples_for_poses(self, pose_stack, task):
-        task, rows, allowed = self._selection_inputs(pose_stack, task)
+        task, rows, sampler = self._selection_inputs(pose_stack, task)
         return self._result(
-            include_current_mask(
-                task.per_block_considered_block_types_is_orig[rows],
-                task.per_block_is_block_type_allowed[rows],
-                allowed,
+            _selection(
+                task.per_block_considered_block_types_is_orig,
+                task.per_block_is_block_type_allowed,
+                task.per_block_conformer_sampler_allowed,
+                rows,
+                sampler,
+                None,
+                fallback=False,
             )
         )
 
@@ -73,22 +101,23 @@ class FallbackSampler(IncludeCurrentSampler):
     samples_after_other_samplers = True
 
     def create_samples_for_poses(self, pose_stack, task, *, built_rotamer_counts=None):
-        task, rows, allowed = self._selection_inputs(pose_stack, task)
-        with jax.default_device(pose_stack.coords.device):
-            covered = jnp.zeros(task.is_real_block.shape, dtype=jnp.int32)
-            if built_rotamer_counts is not None:
-                counts = jnp.asarray(built_rotamer_counts)
-                if counts.shape != task.cons_bt_pose.shape:
-                    raise ValueError(
-                        "built counts must have one row per considered choice"
-                    )
-                covered = covered.at[rows[:2]].add((counts > 0).astype(jnp.int32))
-            return self._result(
-                fallback_mask(
-                    task.per_block_considered_block_types_is_orig[rows],
-                    ~task.per_block_is_block_type_allowed.any(axis=-1)[rows[:2]],
-                    ~task.per_block_conformer_sampler_allowed.any(axis=-1)[rows[:2]],
-                    covered[rows[:2]] > 0,
-                    allowed,
-                )
+        task, rows, sampler = self._selection_inputs(pose_stack, task)
+        if built_rotamer_counts is not None:
+            with jax.default_device(pose_stack.coords.device):
+                built_rotamer_counts = jnp.asarray(built_rotamer_counts)
+        if (
+            built_rotamer_counts is not None
+            and built_rotamer_counts.shape != task.cons_bt_pose.shape
+        ):
+            raise ValueError("built counts must have one row per considered choice")
+        return self._result(
+            _selection(
+                task.per_block_considered_block_types_is_orig,
+                task.per_block_is_block_type_allowed,
+                task.per_block_conformer_sampler_allowed,
+                rows,
+                sampler,
+                built_rotamer_counts,
+                fallback=True,
             )
+        )
