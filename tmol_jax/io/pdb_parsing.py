@@ -66,5 +66,7 @@ def pose_stack_from_pdb(
     co = canonical_ordering or default_canonical_ordering()
     pbt = packed_block_types or default_packed_block_types()
     return pose_stack_from_canonical_form(
-        canonical_form_from_pdb(pdb_input, co), pbt, **kwargs
+        dict(canonical_form_from_pdb(pdb_input, co), canonical_ordering=co),
+        pbt,
+        **kwargs,
     )

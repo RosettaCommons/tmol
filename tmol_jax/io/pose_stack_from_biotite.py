@@ -31,9 +31,9 @@ def pose_stack_from_biotite(
     atoms, *, canonical_ordering=None, packed_block_types=None, **kwargs
 ):
     """Reconstruct and pack canonical proteins; unsupported chemistry raises."""
-    canonical = canonical_form_from_biotite(
-        atoms, canonical_ordering=canonical_ordering
-    )
+    co = canonical_ordering or default_canonical_ordering()
+    canonical = canonical_form_from_biotite(atoms, canonical_ordering=co)
+    canonical["canonical_ordering"] = co
     return pose_stack_from_canonical_form(
         canonical, packed_block_types or default_packed_block_types(), **kwargs
     )

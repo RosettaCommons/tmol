@@ -198,3 +198,37 @@ def test_disulfide_energy_matches_torch_reference():
     channel = score_function.active_score_types().index(ScoreType.disulfide)
     energy = np.asarray(score(pose.coords))[channel, 0]
     np.testing.assert_allclose(energy, -3.25716, atol=2e-3)
+
+
+def test_custom_canonical_atom_order_survives_public_input_adapters(tmp_path):
+    import attrs
+    from biotite.structure.io.pdb import PDBFile
+    from tmol_jax.io import CanonicalOrdering, default_packed_block_types
+    from tmol_jax.io.pose_stack_from_biotite import pose_stack_from_biotite
+
+    path = _tripeptide_pdb(tmp_path)
+    expected = pose_stack_from_pdb(path)
+    pbt = default_packed_block_types()
+    # A legitimate chemical database may order atom records differently without
+    # changing identities, connectivity or geometry. Canonical slots then differ.
+    reordered = attrs.evolve(
+        pbt.chem_db,
+        residues=tuple(
+            attrs.evolve(residue, atoms=tuple(reversed(residue.atoms)))
+            for residue in pbt.chem_db.residues
+        ),
+    )
+    ordering = CanonicalOrdering.from_chemdb(reordered)
+    atoms = PDBFile.read(path).get_structure(model=1)
+    for source, loader in (
+        (path, pose_stack_from_pdb),
+        (atoms, pose_stack_from_biotite),
+    ):
+        actual = loader(source, canonical_ordering=ordering, packed_block_types=pbt)
+        assert [r.name for r in actual.packed_block_types.active_block_types] == [
+            r.name for r in expected.packed_block_types.active_block_types
+        ]
+        np.testing.assert_array_equal(actual.coords, expected.coords)
+        np.testing.assert_array_equal(
+            actual.inter_residue_connections, expected.inter_residue_connections
+        )
