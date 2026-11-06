@@ -156,3 +156,8 @@ parity remain separate acceptance gates.
 Host PDB metadata and split-block identity maps live in `tmol_core.io`. Torch
 retains its original imports; JAX keeps its legacy label aliases. Both consume
 the same optional atom-annotation projection and packing metadata policy.
+
+Dunbrack probability tables evaluate logarithms in double precision before
+rounding to the library's storage dtype and applying the shared spline prefilter.
+Both frontends consume those same tables. Historical float32 framework logarithms
+can round differently; this does not change table dtypes or spline conventions.
