@@ -6,6 +6,7 @@ They retain observed stereochemistry but no conformers for parameter generation.
 """
 
 from dataclasses import dataclass
+from tmol_core.io.connections import is_polymer_link as _is_polymer_link
 
 import attr
 import biotite.structure as struc
@@ -35,11 +36,6 @@ class CappedConjugateModel:
     # Original input atom indices and declared Biotite bond order.
     connections: tuple[tuple[int, int, int], ...]
     connection_names: tuple[tuple[str, str], ...]
-
-
-def _is_polymer_link(first, second):
-    """A bond links two polymer residues only from one's up port to the other's down port."""
-    return {first, second} == {"up", "down"}
 
 
 def _polymer_connection(residue, atom):
