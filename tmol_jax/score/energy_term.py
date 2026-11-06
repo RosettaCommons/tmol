@@ -2,12 +2,19 @@
 
 from abc import ABC, abstractmethod
 
+from tmol_core.cache import AnnotationKey, PreparationCache
+
 
 class EnergyTerm(ABC):
     """Terms return unweighted channels; ScoreFunction applies their weights."""
 
     def __init__(self, param_db):
         self.param_db = param_db
+        self._preparations = PreparationCache()
+
+    def _prepared(self, name, prepare, *sources, settings=()):
+        key = AnnotationKey.from_sources(self.param_db, *sources, settings=settings)
+        return self._preparations.get_or_create(name, key, prepare)
 
     def set_options(self, options):
         """Configure supported term-specific rendering options."""

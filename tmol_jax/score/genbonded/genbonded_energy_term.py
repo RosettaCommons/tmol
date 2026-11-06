@@ -15,11 +15,16 @@ class GenBondedEnergyTerm(EnergyTerm):
 
     def setup_for_pose_stack(self, pose_stack, pbt=None, *, include_empty=False):
         pbt = pose_stack.packed_block_types if pbt is None else pbt
-        prep = GenBondedPreparation(
-            self.param_db.chemical, self.param_db.scoring.genbonded
+        prep = self._prepared(
+            "resolver",
+            lambda: GenBondedPreparation(
+                self.param_db.chemical, self.param_db.scoring.genbonded
+            ),
         )
         types = pbt.active_block_types
-        blocks = [prep.prepare_block(bt) for bt in types]
+        blocks = self._prepared(
+            "blocks", lambda: [prep.prepare_block(bt) for bt in types], *types
+        )
         # Decide interaction ownership from the common parameters, not names.
         if not include_empty and all(
             atom.atom_type in prep.gen_database.rosetta_typed
@@ -28,7 +33,9 @@ class GenBondedEnergyTerm(EnergyTerm):
         ):
             return ()
         register("tmol_genbonded")
-        packed = list(prep.prepare_packed(types, blocks))
+        packed = list(
+            self._prepared("packed", lambda: prep.prepare_packed(types, blocks), *types)
+        )
         ports = pbt.max_n_conn
         # JAX execution pads connection axes to two, native preparation to one.
         for i in (5, 6):
@@ -41,7 +48,7 @@ class GenBondedEnergyTerm(EnergyTerm):
             for a in (
                 *bonded_pose_arguments(pose_stack, pbt),
                 *packed,
-                *prep.inter_tables(),
+                *self._prepared("inter_tables", prep.inter_tables),
             )
         )
 

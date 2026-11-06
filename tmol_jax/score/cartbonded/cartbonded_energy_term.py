@@ -21,12 +21,15 @@ class CartBondedEnergyTerm(EnergyTerm):
 
     def setup_for_pose_stack(self, pose_stack, pbt=None):
         pbt = pose_stack.packed_block_types if pbt is None else pbt
-        prep = CartBondedPreparation(
-            self.param_db.scoring.cartbonded,
-            self.param_db.scoring.genbonded.rosetta_typed,
+        prep = self._prepared(
+            "resolver",
+            lambda: CartBondedPreparation(
+                self.param_db.scoring.cartbonded,
+                self.param_db.scoring.genbonded.rosetta_typed,
+            ),
         )
         types = pbt.active_block_types
-        host = prep.prepare_packed(types)
+        host = self._prepared("packed", lambda: prep.prepare_packed(types), *types)
         register("tmol_cartbonded")
         return tuple(
             jnp.asarray(a)

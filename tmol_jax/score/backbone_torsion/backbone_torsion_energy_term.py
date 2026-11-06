@@ -32,19 +32,30 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
         pbt = pose_stack.packed_block_types if pbt is None else pbt
         db = self.param_db.scoring
         rama, omega = db.rama, db.omega_bbdep
-        prep = BackboneTorsionPreparation(
-            rama.rama_lookup,
-            omega.bbdep_omega_lookup,
-            [row.table_id for row in rama.rama_tables],
-            [row.table_id for row in omega.bbdep_omega_tables],
+        prep = self._prepared(
+            "resolver",
+            lambda: BackboneTorsionPreparation(
+                rama.rama_lookup,
+                omega.bbdep_omega_lookup,
+                [row.table_id for row in rama.rama_tables],
+                [row.table_id for row in omega.bbdep_omega_tables],
+            ),
         )
-        host = prep.prepare_packed(
-            [prep.prepare_block(bt) for bt in pbt.active_block_types]
+        host = self._prepared(
+            "packed",
+            lambda: prep.prepare_packed(
+                [prep.prepare_block(bt) for bt in pbt.active_block_types]
+            ),
+            *pbt.active_block_types,
         )
-        rt, ot = prepare_backbone_tables(
-            rama.rama_tables,
-            omega.bbdep_omega_tables,
-            fit_bspline_coefficients,
+        rt, ot = self._prepared(
+            "tables",
+            lambda: prepare_backbone_tables(
+                rama.rama_tables,
+                omega.bbdep_omega_tables,
+                fit_bspline_coefficients,
+            ),
+            settings=(fit_bspline_coefficients,),
         )
         register("tmol_backbone_torsion")
         return BackboneTorsionTermState(
