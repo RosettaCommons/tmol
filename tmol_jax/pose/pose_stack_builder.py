@@ -104,6 +104,13 @@ def _validate_rows(block_types, coordinates, chains, numbers, names, disulfides)
 
 class PoseStackBuilder:
     @classmethod
+    def from_poses(cls, pose_stacks, device=None):
+        """Combine molecular batches, retaining source derivatives and metadata."""
+        from .concatenation import from_poses
+
+        return from_poses(pose_stacks, device)
+
+    @classmethod
     def from_block_types_and_coords(
         cls,
         pbt,
