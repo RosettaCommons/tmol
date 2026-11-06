@@ -36,3 +36,16 @@ class EnergyTerm(ABC):
         This evaluation must support jax.jit, differentiation and batching.
         """
         raise NotImplementedError
+
+
+def prepared_palette(pbt, database, name, prepare, *, settings=()):
+    """Owner-local immutable host preparation, shared by terms using a palette."""
+    key = AnnotationKey.from_sources(
+        database,
+        *pbt.active_block_types,
+        settings=(pbt.max_n_atoms, pbt.max_n_conn, *settings),
+    )
+    cache = getattr(pbt, "_scoring_preparations", None)
+    if cache is None:
+        cache = pbt._scoring_preparations = PreparationCache()
+    return cache.get_or_create(name, key, prepare)

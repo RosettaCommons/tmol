@@ -10,6 +10,7 @@ from tmol_core.scoring.hbond import (
     pack_hbond_blocks,
     prepare_hbond_block,
 )
+from tmol_jax.score.energy_term import prepared_palette
 from tmol_jax.score._native import (
     coordinate_energy,
     pose_arguments,
@@ -20,7 +21,22 @@ from tmol_jax.score.nonbonded import _pose_connections, _validate_native_connect
 
 
 def prepare_hbond_metadata(pbt, database):
-    """Consume canonical residue preparation without framework annotations."""
+    """Reuse canonical chemistry only for its live parameter/palette owner."""
+    return prepared_palette(
+        pbt, database, "hbond", lambda: _hbond_metadata(pbt, database)
+    )
+
+
+def prepare_bond_metadata(pbt):
+    return prepared_palette(
+        pbt,
+        pbt.chem_db,
+        "bonds",
+        lambda: pack_bond_topology(pbt.active_block_types, max_n_atoms=pbt.max_n_atoms),
+    )
+
+
+def _hbond_metadata(pbt, database):
     chemistry = HBondChemicalData.from_database(
         database.chemical, database.scoring.hbond
     )
@@ -41,8 +57,13 @@ def prepare_hbond(pose, database, *, rotamers=None):
     pbt = pose.packed_block_types
     _validate_native_connections(pbt)
     _, hb = prepare_hbond_metadata(pbt, database)
-    bonds = pack_bond_topology(pbt.active_block_types, max_n_atoms=pbt.max_n_atoms)
-    params = native_hbond_parameters(database.chemical, database.scoring.hbond)
+    bonds = prepare_bond_metadata(pbt)
+    params = prepared_palette(
+        pbt,
+        database,
+        "hbond_parameters",
+        lambda: native_hbond_parameters(database.chemical, database.scoring.hbond),
+    )
     offsets, first, types, _ = pose_arguments(pose)
     if rotamers is not None:
         offsets = rotamers.coord_offset_for_rot

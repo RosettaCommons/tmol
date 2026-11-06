@@ -3,7 +3,6 @@
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_core.chemical.bonds import pack_bond_topology
 from tmol_core.scoring.atom_types import atom_type_parameters
 from tmol_core.scoring.ljlk import LJLK_FIELDS, ljlk_type_parameters
 from tmol_core.scoring.lk_ball import (
@@ -24,12 +23,11 @@ from tmol_jax.score.nonbonded import (
     _validate_native_connections,
     _validate_atom_type_order,
 )
-from tmol_jax.score.hbond.native import prepare_hbond_metadata
+from tmol_jax.score.hbond.native import prepare_hbond_metadata, prepare_bond_metadata
+from tmol_jax.score.energy_term import prepared_palette
 
 
-def prepare_lk_ball(pose, database):
-    """Consume common H-bond records; all scientific preparation stays shared."""
-    pbt = pose.packed_block_types
+def _lk_ball_metadata(pbt, database):
     hbond_blocks, hbond_packed = prepare_hbond_metadata(pbt, database)
     _validate_native_connections(pbt)
     types = pbt.active_block_types
@@ -49,7 +47,16 @@ def prepare_lk_ball(pose, database):
             for i, (block, hb) in enumerate(zip(types, hbond_blocks, strict=True))
         ]
     )
-    bonds = pack_bond_topology(types, max_n_atoms=pbt.max_n_atoms)
+    return hbond_packed, lk
+
+
+def prepare_lk_ball(pose, database):
+    """Consume common H-bond records; all scientific preparation stays shared."""
+    pbt = pose.packed_block_types
+    hbond_packed, lk = prepared_palette(
+        pbt, database, "lk_ball", lambda: _lk_ball_metadata(pbt, database)
+    )
+    bonds = prepare_bond_metadata(pbt)
     offsets, first, block_types, _ = pose_arguments(pose)
     poses, blocks = block_types.shape
     near, separation = _pose_connections(pose)
