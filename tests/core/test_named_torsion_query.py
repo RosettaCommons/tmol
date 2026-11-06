@@ -31,5 +31,6 @@ assert not any(name in sys.modules for name in ('torch','jax','tmol','tmol_jax')
     subprocess.run(
         [sys.executable, "-c", code],
         check=True,
+        cwd=source,
         env={**os.environ, "PYTHONPATH": source},
     )
