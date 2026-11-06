@@ -42,6 +42,25 @@ Atom37 host routing validates residue/atom ranges and unique source slots;
 frameworks scatter coordinates using its paired indices. The default protein
 encoding is shared data matching AtomWorks 3.0.4 without importing its ML layer.
 
+AtomWorks 3.0.4 can import Torch during structure preparation when Torch is
+installed. Until an upstream release contains the import fix, use the explicit
+commit-qualified constraint at `packages/constraints/atomworks-no-torch.txt`
+for mixed Torch/JAX environments:
+
+```bash
+python -m pip install --upgrade --force-reinstall --no-deps \
+  -r packages/constraints/atomworks-no-torch.txt
+python -m pip install -c packages/constraints/atomworks-no-torch.txt \
+  core-dist/tmol_core-*.whl
+```
+
+The first command replaces an existing same-version AtomWorks installation.
+The second resolves the core's dependencies against the same source archive.
+This temporary personal-fork commit changes optional ML imports; explicit Torch
+conversion and RNG tracking still use Torch. The archive SHA256 is pinned and
+pip records its origin in `direct_url.json`. Ordinary PyPI installation does not
+apply this constraint and does not yet guarantee that Torch stays unloaded.
+
 Build the core before installing a development frontend:
 
 ```bash
