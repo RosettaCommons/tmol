@@ -8,14 +8,9 @@ from typing import Optional, Tuple
 import attr
 import numpy as np
 from tmol_core._yaml import _load_yaml
+from tmol_core.database.library_records import DunMappingParams
 
 from ._structure import structure
-
-
-@attr.s(auto_attribs=True, slots=True, frozen=True)
-class DunMappingParams:
-    dun_table_name: str
-    residue_name: str
 
 
 @attr.s(auto_attribs=True, slots=True, frozen=True)

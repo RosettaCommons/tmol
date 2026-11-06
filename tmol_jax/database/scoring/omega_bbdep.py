@@ -8,18 +8,10 @@ from typing import Tuple
 import attr
 import numpy as np
 from tmol_core._yaml import _load_yaml
+from tmol_core.database.library_records import OmegaBBDepMappingParams
 from tmol_core.database.content_hash import _content_hash
 
 from ._structure import structure
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class OmegaBBDepMappingParams:
-    table_id: str
-    res_middle: str
-    res_upper: str = "_"
-    invert_phi: bool = False
-    invert_psi: bool = False
 
 
 @attr.s(auto_attribs=True, frozen=True, slots=True)
