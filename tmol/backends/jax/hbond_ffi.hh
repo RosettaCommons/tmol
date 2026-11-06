@@ -28,6 +28,9 @@ struct HBondWorkspace {
 };
 
 struct HBondKernel {
+  // Every live scratch element is overwritten below; padding spheres and
+  // unused compact-list entries are never read by the common dispatch.
+  static constexpr bool zero_workspace = false;
   static void validate(
       const std::vector<ffi::AnyBuffer>& a,
       ffi::AnyBuffer energy,
@@ -123,12 +126,14 @@ struct HBondKernel {
     LAUNCH_BOX_32;
     auto coordinates = work.derived_coords;
     auto sources = work.derived_indices;
+    auto neighbor_data = work.neighbors;
     Ops<D>::template forall<launch_t>(
-        context, count * 9, [=] TMOL_DEVICE_FUNC(int i) {
-          coordinates[i] = std::numeric_limits<Real>::quiet_NaN();
+        context, std::max<int64_t>(count * 9, 1), [=] TMOL_DEVICE_FUNC(int i) {
+          if (i == 0) neighbor_data[0] = 0;
+          if (i < count * 9)
+            coordinates[i] = std::numeric_limits<Real>::quiet_NaN();
+          if (i < count * 3) sources[i] = -1;
         });
-    Ops<D>::template forall<launch_t>(
-        context, count * 3, [=] TMOL_DEVICE_FUNC(int i) { sources[i] = -1; });
     score::common::sphere_overlap::
         compute_block_spheres_native<Ops, D, Real, I>(
             context,
