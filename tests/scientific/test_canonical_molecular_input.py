@@ -175,7 +175,9 @@ def test_canonical_input_retains_molecular_state(backend, case):
         assert np.max(np.abs(channels[b.channel_names().index("gen_torsions")])) > 1e-3
 
 
-def rebuild_canonical(b, co, cf, *, unpatched_metals=False):
+def rebuild_canonical(
+    b, co, cf, *, unpatched_metals=False, build_missing_context=False
+):
     if b.framework == "jax":
         from tmol_jax.io import pose_stack_from_canonical_form
         from tmol_jax.pose.packed_block_types import PackedBlockTypes
@@ -191,6 +193,7 @@ def rebuild_canonical(b, co, cf, *, unpatched_metals=False):
                 dict(cf, canonical_ordering=co),
                 PackedBlockTypes.default(chemistry),
                 compact_padding=True,
+                build_missing_context=build_missing_context,
             )
         b.pose = b.pose.to(b.device)
     else:

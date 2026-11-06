@@ -80,33 +80,6 @@ def test_context_heavy_atom_coordinates_and_derivatives(backend, case, dtype):
                 b.pose.replace(coords=x), missing, missing
             )
 
-            if dtype == np.float32:
-                from .test_canonical_molecular_input import canonical_input
-                from tmol_jax.io import pose_stack_from_canonical_form
-
-                co, cf = canonical_input(DOMAIN_CASES[case], b.parameter_database)
-                for p, r in np.argwhere(types >= 0):
-                    residue = pbt.active_block_types[int(types[p, r])]
-                    start = int(offsets[p, r])
-                    target_row = int(r + (r >= 1 and types.shape[1] > 1))
-                    for atom in np.flatnonzero(
-                        missing[p, start : start + residue.n_atoms]
-                    ):
-                        slot = co.restypes_atom_index_mapping[residue.io_equiv_class][
-                            residue.atoms[atom].name
-                        ]
-                        cf["coords"][p, target_row, slot] = np.nan
-                with b.module.default_device(b.device):
-                    loaded = pose_stack_from_canonical_form(
-                        dict(cf, canonical_ordering=co),
-                        pbt,
-                        compact_padding=True,
-                        build_missing_context=True,
-                    )
-                np.testing.assert_allclose(
-                    b.numpy(loaded.coords), b.numpy(out), rtol=2e-6, atol=2e-6
-                )
-
             def run(value):
                 return execute_context_plan(value, plans)
 
@@ -163,6 +136,9 @@ def test_context_heavy_atom_coordinates_and_derivatives(backend, case, dtype):
                     )
                 return result
 
+        if dtype == np.float32:
+            _check_public_context_input(b, case, missing, out)
+
         np.testing.assert_array_equal(built, missing)
         result = b.numpy(out)
         assert np.isfinite(result).all() and result.dtype == dtype
@@ -207,4 +183,62 @@ def test_context_heavy_atom_coordinates_and_derivatives(backend, case, dtype):
             finite_difference,
             rtol=3e-3 if dtype == np.float32 else 2e-6,
             atol=3e-3 if dtype == np.float32 else 2e-6,
+        )
+
+
+def _check_public_context_input(b, case, missing, expected):
+    pbt = b.pose.packed_block_types
+    types, offsets = map(b.numpy, (b.pose.block_type_ind, b.pose.block_coord_offset))
+    is_h = b.numpy(pbt.atom_is_hydrogen).astype(bool)
+    from .test_canonical_molecular_input import (
+        canonical_input,
+        rebuild_canonical,
+    )
+
+    co, cf = canonical_input(DOMAIN_CASES[case], b.parameter_database)
+    for p, r in np.argwhere(types >= 0):
+        residue = pbt.active_block_types[int(types[p, r])]
+        start = int(offsets[p, r])
+        target_row = int(r + (r >= 1 and types.shape[1] > 1))
+        for atom in np.flatnonzero(missing[p, start : start + residue.n_atoms]):
+            slot = co.restypes_atom_index_mapping[residue.io_equiv_class][
+                residue.atoms[atom].name
+            ]
+            cf["coords"][p, target_row, slot] = np.nan
+    if b.framework == "torch" and case != "ligand":
+        # Torch's canonical constructor limits automatic heavy completion
+        # to conformer-backed ligands. Its context primitive below still
+        # supports these residues; JAX exposes an explicit opt-in loader.
+        with pytest.raises(ValueError, match="missing non-leaf atom"):
+            rebuild_canonical(b, co, cf, build_missing_context=True)
+    else:
+        rebuild_canonical(b, co, cf, build_missing_context=True)
+        loaded = b.pose
+        # The public loader also applies input-H policy: generated H
+        # cannot be retained when their heavy parent was absent. The
+        # context primitive itself only reconstructs the requested atoms.
+        regenerated = np.zeros(missing.shape, bool)
+        for p, r in np.argwhere(types >= 0):
+            t, start = int(types[p, r]), int(offsets[p, r])
+            residue = pbt.active_block_types[t]
+            if not residue.hydrogens_regenerated:
+                continue
+            ideal = residue.ideal_coords[residue.at_to_icoor_ind]
+            for h, parent in residue.bond_indices:
+                if is_h[t, h] and missing[p, start + parent]:
+                    regenerated[p, start + h] = True
+                    np.testing.assert_allclose(
+                        np.linalg.norm(
+                            b.numpy(loaded.coords)[p, start + h]
+                            - b.numpy(loaded.coords)[p, start + parent]
+                        ),
+                        np.linalg.norm(ideal[h] - ideal[parent]),
+                        rtol=2e-6,
+                        atol=2e-6,
+                    )
+        np.testing.assert_allclose(
+            b.numpy(loaded.coords)[~regenerated],
+            b.numpy(expected)[~regenerated],
+            rtol=2e-6,
+            atol=2e-6,
         )
