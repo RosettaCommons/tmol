@@ -8,6 +8,8 @@ struct ConformerDofKernels {
   using Binder = score::common::TViewBinder<D>;
   using Copy = MainchainDofCopy<Binder::template View, Real, Int>;
   using Chi = ChiDofAssignment<Binder::template View, Real, Int>;
+  using Rows = ConformerRowCopy<Binder::template View, Real, Int>;
+  static void rows(ContextManager&, Rows, int64_t, int);
   static void copy(ContextManager&, Copy);
   static void assign(ContextManager&, Chi);
 };

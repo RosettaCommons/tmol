@@ -90,6 +90,28 @@ class IncludeCurrentSampler(ConformerSampler):
         if n_rots == 0:
             return
 
+        if pose_stack.device.type != "mps":
+            from ._conformer_execution import copy_conformer_rows
+
+            pbt = pose_stack.packed_block_types
+            types = pose_stack.block_type_ind.reshape(-1).long()
+            counts = pbt.n_atoms[types.clamp_min(0)].long()
+            counts = torch.where(types >= 0, counts, 0)
+            offsets = counts.cumsum(0) - counts
+            considered = gbt_for_conformer[conf_inds_for_sampler]
+            source_residues = task.global_block_ind_for_considered_block_types[
+                considered
+            ]
+            copy_conformer_rows(
+                pbt.n_atoms[block_type_ind_for_conformer[conf_inds_for_sampler]],
+                offsets[source_residues],
+                n_dof_atoms_offset_for_conformer[conf_inds_for_sampler],
+                orig_dofs_kto,
+                conf_dofs_kto,
+                root_shift=1,
+            )
+            return
+
         dst, src = (
             _create_full_dof_inds_to_copy_from_orig_to_rotamers_for_include_current_sampler(
                 pose_stack,
