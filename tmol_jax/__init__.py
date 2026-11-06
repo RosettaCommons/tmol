@@ -50,6 +50,7 @@ __all__ = [
 
 
 _STRUCTURE_INPUT = {
+    "atom_array_from_pose_stack",
     "build_context_from_atom_array",
     "pose_stack_from_atom_array",
     "pose_stack_from_file",
@@ -61,7 +62,12 @@ def __getattr__(name):
     if name in _STRUCTURE_INPUT:
         from importlib import import_module
 
-        value = getattr(import_module(".io.structure", __name__), name)
+        module = (
+            ".io.structure_export"
+            if name == "atom_array_from_pose_stack"
+            else ".io.structure"
+        )
+        value = getattr(import_module(module, __name__), name)
         globals()[name] = value
         return value
     raise AttributeError(name)
