@@ -99,11 +99,11 @@ TMOL_DEVICE_FUNC void accumulate_metal_fan_pair(
 // where the metal-donor-metal angle reaches its minimum with both metals at
 // their ideal donor distances d1 and d2; the width maps the angular width onto
 // the separation there.
-template <typename Real, tmol::Device D>
+template <typename Real, tmol::Device D, typename Int>
 TMOL_DEVICE_FUNC void accumulate_metal_bridge(
     TView<Vec<Real, 3>, 1, D> coords,
-    int a_ind,
-    int b_ind,
+    Int a_ind,
+    Int b_ind,
     Real d1,
     Real d2,
     MetalBridgeParams<Real> const& p,
