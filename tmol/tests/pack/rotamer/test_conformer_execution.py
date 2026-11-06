@@ -154,3 +154,55 @@ def test_chi_assignment_preserves_parameter_and_untouched_derivatives(dtype):
     )
     for actual, expected in zip(hvps, expected_hvps):
         torch.testing.assert_close(actual, expected)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_opth_reset_preserves_ideal_and_untouched_dof_derivatives(dtype):
+    from types import SimpleNamespace
+    from tmol.pack.rotamer._conformer_execution import reset_opth_dofs
+
+    ideal = torch.linspace(0.1, 0.8, 72, dtype=dtype).reshape(2, 4, 9).requires_grad_()
+    original = torch.linspace(0.2, 0.9, 90, dtype=dtype).reshape(10, 9).requires_grad_()
+    out = original.clone()
+    cache = SimpleNamespace(
+        nhq_downstream_kfo=torch.tensor([[-1, -1], [1, 2]], dtype=torch.int32),
+        nhq_downstream_count=torch.tensor([0, 2], dtype=torch.int32),
+    )
+    reset_opth_dofs(
+        torch.tensor([1, 1]),
+        torch.tensor([0, 4]),
+        torch.tensor([0, 1]),
+        torch.tensor([[-1, -1], [2, -1]], dtype=torch.int32),
+        cache,
+        ideal,
+        out,
+        True,
+    )
+    # Only the second conformer has a chi override. Its two downstream rows
+    # come from type 1; the first conformer and all other rows retain input.
+    destination = torch.tensor([6, 7])
+    source = torch.tensor([5, 6])
+    weights = torch.linspace(0.2, 0.8, 90, dtype=dtype).reshape_as(out)
+    gi, go = torch.autograd.grad(
+        (weights * out.square() / 2).sum(), (ideal, original), create_graph=True
+    )
+    expected_i = (
+        torch.zeros_like(ideal)
+        .reshape(-1, 9)
+        .index_add(0, source, weights[destination] * ideal.reshape(-1, 9)[source])
+        .reshape_as(ideal)
+    )
+    expected_o = (weights * original).index_fill(0, destination, 0)
+    torch.testing.assert_close(gi, expected_i)
+    torch.testing.assert_close(go, expected_o)
+    di, do = torch.cos(ideal.detach()), torch.sin(original.detach())
+    hi, ho = torch.autograd.grad((gi * di).sum() + (go * do).sum(), (ideal, original))
+    expected_hi = (
+        torch.zeros_like(ideal)
+        .reshape(-1, 9)
+        .index_add(0, source, weights[destination] * di.reshape(-1, 9)[source])
+        .reshape_as(ideal)
+    )
+    expected_ho = (weights * do).index_fill(0, destination, 0)
+    torch.testing.assert_close(hi, expected_hi)
+    torch.testing.assert_close(ho, expected_ho)

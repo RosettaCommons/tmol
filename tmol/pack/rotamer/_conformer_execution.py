@@ -1,4 +1,4 @@
-"""Torch buffer preparation for the common native conformer row-copy kernel."""
+"""Torch execution and derivatives for common native conformer plans."""
 
 import torch
 
@@ -14,6 +14,18 @@ def copy_conformer_rows(
     packed_offsets = torch.cat((ends.new_zeros(1), ends))
     # Eager sampling already has a dynamic selected-atom count. Resolve it here;
     # the common launch and a JAX FFI call require no allocation or host sync.
+    if target_values.device.type not in ("cpu", "cuda"):
+        from ._conformer_compiled import conformer_row_indices
+
+        indices = conformer_row_indices(
+            source_offsets.cpu(),
+            target_offsets.cpu(),
+            packed_offsets.cpu(),
+            int(ends[-1]),
+            root_shift,
+        ).to(target_values.device)
+        target_values[indices[1]] = source_values[indices[0]]
+        return
     operation = (
         _CopyConformerRows.apply
         if torch.is_grad_enabled()
@@ -78,6 +90,22 @@ def assign_chi_dofs(
 ):
     from ._conformer_compiled import assign_chi_dofs as native_assign
 
+    if dofs.device.type not in ("cpu", "cuda"):
+        from ._conformer_compiled import chi_dof_indices
+
+        indices = chi_dof_indices(
+            types.cpu(),
+            offsets.cpu(),
+            conformers.cpu(),
+            atoms.cpu(),
+            kinematic_index.cpu(),
+            corrections.shape[1],
+        ).to(dofs.device)
+        active = indices[0] >= 0
+        dofs.view(-1)[indices[0, active]] = (
+            chi.flatten()[active] - corrections.flatten()[indices[1, active]]
+        )
+        return
     operation = (
         _AssignChiDofs.apply
         if torch.is_grad_enabled()
@@ -128,3 +156,55 @@ class _AssignChiDofs(torch.autograd.Function):
             gradient.flatten().index_fill(0, destination, 0).reshape_as(gradient)
         )
         return None, None, None, None, grad_chi, None, grad_parameters, grad_dofs
+
+
+def current_conformer_copy_segments(poses, task, considered, types, offsets, selected):
+    from ._conformer_compiled import conformer_copy_plan
+
+    device = (
+        poses.device if poses.device.type in ("cpu", "cuda") else torch.device("cpu")
+    )
+    inputs = [
+        poses.block_type_ind.long(),
+        poses.packed_block_types.n_atoms,
+        considered,
+        task.global_block_ind_for_considered_block_types,
+        types,
+        offsets,
+        selected,
+    ]
+    return conformer_copy_plan([v.to(device).contiguous() for v in inputs])
+
+
+def copy_current_conformer_dofs(
+    poses, task, considered, types, offsets, selected, source, target
+):
+    if selected.numel() == 0:
+        return
+    sizes, origins, destinations = current_conformer_copy_segments(
+        poses, task, considered, types, offsets, selected
+    )
+    copy_conformer_rows(sizes, origins, destinations, source, target, root_shift=1)
+
+
+def reset_opth_dofs(types, offsets, selected, chi_atoms, cache, ideal, target, flip):
+    if not flip or selected.numel() == 0:
+        return
+    from ._conformer_compiled import opth_reset_plan
+
+    device = (
+        target.device if target.device.type in ("cpu", "cuda") else torch.device("cpu")
+    )
+    inputs = [
+        types,
+        offsets,
+        selected,
+        chi_atoms,
+        cache.nhq_downstream_kfo,
+        cache.nhq_downstream_count,
+    ]
+    indices = opth_reset_plan(
+        [v.to(device).contiguous() for v in inputs], ideal.shape[1], flip
+    ).to(target.device)
+    active = indices[0] >= 0
+    target[indices[1, active]] = ideal.reshape(-1, 9)[indices[0, active]]

@@ -30,4 +30,24 @@ void ConformerDofKernels<Ops, D, Real, Int>::chi_indices(
     ContextManager& mgr, ChiIndices c) {
   launch_chi_dof_indices<Ops, D>(mgr, c);
 }
+template <template <Device> class Ops, Device D, typename Real, typename Int>
+void ConformerDofKernels<Ops, D, Real, Int>::copy_plan(
+    ContextManager& mgr, CopyPlan c) {
+  launch_conformer_source_counts<Ops, D>(mgr, c);
+  int n = score::common::checked_dispatch_size(
+      c.source_counts.size(0), "conformer original blocks");
+  if (n)
+    Ops<D>::template scan<portable::scan_type::exclusive>(
+        mgr,
+        c.source_counts.data(),
+        c.source_offsets.data(),
+        n,
+        portable::plus_t<int64_t>());
+  launch_conformer_copy_segments<Ops, D>(mgr, c);
+}
+template <template <Device> class Ops, Device D, typename Real, typename Int>
+void ConformerDofKernels<Ops, D, Real, Int>::opth_reset(
+    ContextManager& mgr, ResetPlan c) {
+  launch_opth_reset_indices<Ops, D>(mgr, c);
+}
 }  // namespace tmol::pack::rotamer

@@ -25,3 +25,6 @@ opth_sampling_proton = _ops.opth_sampling_proton
 conformer_row_indices = _ops.conformer_row_indices
 
 chi_dof_indices = _ops.chi_dof_indices
+
+conformer_copy_plan = _ops.conformer_copy_plan
+opth_reset_plan = _ops.opth_reset_plan
