@@ -7,7 +7,6 @@ import numpy as np
 from tmol_core.scoring.fragment_interactions import (
     FragmentInteractionScores,
     fragment_mapping_plan,
-    fragments_per_chunk,
 )
 
 
@@ -41,33 +40,33 @@ class FragmentScorer:
             np.asarray(plan.fragment_block_indices, np.int32), pose.device
         )
         self.partner_mask = partner_mask
-        self.scorer = sfxn.render_block_pair_scoring_module(pose, interaction_only=True)
+        from .block_pair import BlockPairScorer
+
+        self.scorer = BlockPairScorer(
+            sfxn,
+            pose,
+            interaction_only=True,
+            _partner_mask=np.asarray(partner_mask),
+            _fragment_blocks=plan.fragment_block_indices,
+        )
+        columns = np.full(pose.block_type_ind.shape[1], -1, np.int32)
+        columns[list(plan.fragment_block_indices)] = np.arange(len(self.mapping))
+        self.columns = jax.device_put(columns, pose.device)
         self.sum_terms = sum_terms
 
     def __call__(self, coords):
-        matrix = self.scorer(coords, sum_terms=False)
-        terms, poses, blocks, _ = matrix.shape
-        fragments = self.indices.size
-        if not terms or not poses or not blocks or not fragments:
-            result = jnp.broadcast_to(
-                matrix.sum((-2, -1))[..., None], (terms, poses, fragments)
-            )
-        else:
-            size = fragments_per_chunk(
-                terms, poses, blocks, coords.dtype.itemsize, 256 * 1024 * 1024
-            )
-            chunks = []
-            for start in range(0, fragments, size):
-                ids = self.indices[start : start + size]
-                selected = jnp.take(matrix, ids, axis=2) + jnp.take(
-                    matrix, ids, axis=3
-                ).swapaxes(-1, -2)
-                chunks.append(
-                    jnp.einsum(
-                        "tpfb,pb->tpf", selected, self.partner_mask.astype(coords.dtype)
-                    )
+        values, (poses, left, right) = self.scorer.pair_values(coords)
+        result = jnp.zeros(
+            (len(self.scorer.weights), self.partner_mask.shape[0], self.indices.size),
+            coords.dtype,
+        )
+        if self.indices.size:
+            for fragment, partner in ((left, right), (right, left)):
+                column = self.columns[fragment]
+                selected = (column >= 0) & self.partner_mask[poses, partner]
+                result = result.at[:, poses, jnp.maximum(column, 0)].add(
+                    jnp.where(selected[None], values, 0)
                 )
-            result = jnp.concatenate(chunks, axis=2)
         return result.sum(0) if self.sum_terms else result
 
 

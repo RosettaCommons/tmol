@@ -53,7 +53,15 @@ class BlockPairScorer:
     This dense output API has quadratic block storage.
     """
 
-    def __init__(self, sfxn, pose, *, interaction_only=False):
+    def __init__(
+        self,
+        sfxn,
+        pose,
+        *,
+        interaction_only=False,
+        _partner_mask=None,
+        _fragment_blocks=(),
+    ):
         self.shape = pose.coords.shape
         self.block_shape = pose.block_type_ind.shape
         self.interaction_only = interaction_only
@@ -76,7 +84,22 @@ class BlockPairScorer:
                     np.asarray(rotamers.rot_offset_for_pose),
                 )
             ):
-                i, j = np.triu_indices(int(count))
+                if _partner_mask is None:
+                    i, j = np.triu_indices(int(count))
+                else:
+                    # Attribution only needs named fragment/partner pairs.
+                    # Preserve every such pair after coordinate motion; native
+                    # physics still applies its cutoff at execution time.
+                    blocks = np.flatnonzero(np.asarray(pose.block_type_ind)[p] >= 0)
+                    left, right = np.meshgrid(
+                        np.searchsorted(blocks, _fragment_blocks),
+                        np.flatnonzero(_partner_mask[p, blocks]),
+                        indexing="ij",
+                    )
+                    pairs = np.unique(
+                        np.sort(np.stack((left.ravel(), right.ravel())), axis=0), axis=1
+                    )
+                    i, j = pairs
                 rows.append(np.stack((np.full(i.size, p), i + offset, j + offset)))
             host_pairs = (
                 np.concatenate(rows, axis=1) if rows else np.empty((3, 0), np.int32)
@@ -87,7 +110,8 @@ class BlockPairScorer:
         self.blocks = rotamers.block_ind_for_rot
         self.weights = tuple(sfxn.get_weight(st) for st in sparse.score_types)
 
-    def __call__(self, coords, sum_terms=True, apply_weights=True):
+    def pair_values(self, coords, apply_weights=True):
+        """Return native contributions and physical block identities."""
         if coords.shape != self.shape:
             raise ValueError(f"expected coordinates with shape {self.shape}")
         values, indices = self.sparse._evaluate(
@@ -95,13 +119,17 @@ class BlockPairScorer:
             arrays=self.sparse._arrays,
             candidates=self.candidates,
         )
+        p, i, j = indices
+        i, j = self.blocks[i], self.blocks[j]
+        if self.interaction_only:
+            values = jnp.where((i != j)[None], values, 0)
+        if apply_weights:
+            values *= jnp.asarray(self.weights, coords.dtype)[:, None]
+        return values, (p, i, j)
+
+    def __call__(self, coords, sum_terms=True, apply_weights=True):
+        values, (p, i, j) = self.pair_values(coords, apply_weights)
         poses, blocks = self.block_shape
         matrix = jnp.zeros((len(self.weights), poses, blocks, blocks), coords.dtype)
-        p, i, j = indices
-        matrix = matrix.at[:, p, self.blocks[i], self.blocks[j]].add(values)
-        if self.interaction_only:
-            diagonal = jnp.arange(blocks)
-            matrix = matrix.at[:, :, diagonal, diagonal].set(0)
-        if apply_weights:
-            matrix *= jnp.asarray(self.weights, coords.dtype)[:, None, None, None]
+        matrix = matrix.at[:, p, i, j].add(values)
         return matrix.sum(0) if sum_terms else matrix

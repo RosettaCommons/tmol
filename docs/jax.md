@@ -490,3 +490,8 @@ exclude fragment-fragment attribution. Real protein-ligand and repeated-ligand C
 checks compare all channels and physical gradients to the uncut molecules. CUDA,
 installed artifacts and matched mature runtime/peak-memory parity for these new
 APIs remain pending.
+
+Fragment attribution prepares only the requested fragment/partner pair identities
+and reduces their native contributions directly, without allocating a full
+block-by-block matrix. Coordinate-dependent physical cutoffs remain native.
+The general block-pair API still returns its requested dense matrix.
