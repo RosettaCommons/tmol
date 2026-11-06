@@ -751,77 +751,33 @@ def _eval_na_torsion_for_rotamers(
     if not has_na:
         score = torch.zeros((2, n_rots), dtype=dtype, device=device)
     else:
-        base = rotamer_base
-        is_na = rotamer_is_na
-        if rot_coords.is_cuda and not rot_coords.requires_grad:
-            from .potentials._compiled import _na_torsion_pose_score
-
-            score = _na_torsion_pose_score(
-                rot_coords,
-                base.unsqueeze(1),
-                is_na.unsqueeze(1),
-                rotamer_torsion_indices.unsqueeze(1),
-                rotamer_torsion_ok.unsqueeze(1),
-                rotamer_ring_indices.unsqueeze(1),
-                rotamer_ring_ok.unsqueeze(1),
-                rotamer_prev.unsqueeze(1),
-                backbone_means,
-                backbone_sdev,
-                sugar_means,
-                chi_means,
-                sdev_sugar,
-                sdev_chi,
-                well_pucker,
-                well_alpha_gamma,
-                well_bibii_pucker,
-                well_alphanext_bibii,
-                well_chi_syn,
-                is_north,
-                weight_bb,
-                weight_chi,
-                weight_sugar,
-                pucker_temperature,
-                bin_blend_sdev,
-            )[0]
-        else:
-
-            def gather_coords(index, ok):
-                xyz = rot_coords[index.clamp_min(0).reshape(-1)].reshape(
-                    *index.shape, 3
-                )
-                return torch.where(ok.unsqueeze(-1), xyz, torch.zeros_like(xyz))
-
-            xyz = gather_coords(rotamer_torsion_indices, rotamer_atom_ok)
-            ring_xyz = gather_coords(rotamer_ring_indices, rotamer_ring_ok)
-            e_bb, e_chi, e_sugar, e_well = _subterm_energies(
-                xyz,
-                rotamer_torsion_ok,
-                ring_xyz,
-                base,
-                rotamer_prev,
-                backbone_means,
-                backbone_sdev,
-                sugar_means,
-                chi_means,
-                sdev_sugar,
-                sdev_chi,
-                well_pucker,
-                well_alpha_gamma,
-                well_bibii_pucker,
-                well_alphanext_bibii,
-                well_chi_syn,
-                is_north,
-                pucker_temperature,
-                bin_blend_sdev,
-            )
-            poly = _polymer_index(base)
-            harmonic = (
-                weight_bb[poly] * e_bb
-                + weight_chi[poly] * e_chi
-                + weight_sugar[poly] * e_sugar
-            )
-            score = torch.stack([harmonic, e_well])
-            score = torch.where(is_na.unsqueeze(0), score, torch.zeros_like(score))
+        score = _na_rotamer_score(
+            rot_coords,
+            rotamer_base.unsqueeze(1),
+            rotamer_is_na.unsqueeze(1),
+            rotamer_torsion_indices.unsqueeze(1),
+            rotamer_torsion_ok.unsqueeze(1),
+            rotamer_ring_indices.unsqueeze(1),
+            rotamer_ring_ok.unsqueeze(1),
+            rotamer_prev.unsqueeze(1),
+            backbone_means,
+            backbone_sdev,
+            sugar_means,
+            chi_means,
+            sdev_sugar,
+            sdev_chi,
+            well_pucker,
+            well_alpha_gamma,
+            well_bibii_pucker,
+            well_alphanext_bibii,
+            well_chi_syn,
+            is_north,
+            weight_bb,
+            weight_chi,
+            weight_sugar,
+            pucker_temperature,
+            bin_blend_sdev,
+        )
 
     if output_block_pair_energies:
         # a one-body term: each energy sits on the diagonal of the rotamer pair
@@ -841,3 +797,79 @@ def _finish(scores, output_block_pair_energies):
     if output_block_pair_energies:
         return torch.diag_embed(stacked), None
     return torch.sum(stacked, dim=2), None
+
+
+def _na_rotamer_score_torch(
+    coords,
+    base,
+    is_na,
+    torsion_indices,
+    torsion_ok,
+    ring_indices,
+    ring_ok,
+    prev,
+    *parameters,
+):
+    # Reuse the whole-pose gather and portable equations for higher derivatives
+    # and devices without a native NA kernel. One row represents one candidate.
+    (
+        *energy_params,
+        weight_bb,
+        weight_chi,
+        weight_sugar,
+        pucker_temperature,
+        bin_blend_sdev,
+    ) = parameters
+    bb, chi, sugar, well = _pose_subterms(
+        coords,
+        base,
+        is_na,
+        torsion_indices,
+        torsion_ok,
+        ring_indices,
+        ring_ok,
+        prev,
+        *energy_params,
+        pucker_temperature,
+        bin_blend_sdev,
+    )
+    poly = _polymer_index(base)
+    harmonic = (
+        weight_bb[poly] * bb + weight_chi[poly] * chi + weight_sugar[poly] * sugar
+    )
+    score = torch.stack((harmonic, well))
+    return torch.where(is_na.unsqueeze(0), score, torch.zeros_like(score)).squeeze(-1)
+
+
+class _NativeNaRotamerScore(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, *args):
+        from .potentials._compiled import _na_torsion_native_score
+
+        ctx.save_for_backward(*args[:-2])
+        ctx.constants = args[-2:]
+        # The unused cotangent input avoids an allocation on the forward path.
+        return _na_torsion_native_score(*args, args[0], False)[0]
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        args = (*ctx.saved_tensors, *ctx.constants)
+        if torch.is_grad_enabled():
+            # Preserve higher coordinate derivatives through the portable path.
+            score = _na_rotamer_score_torch(*args)
+            gradient = torch.autograd.grad(
+                score, args[0], grad_output, create_graph=True
+            )[0]
+        else:
+            from .potentials._compiled import _na_torsion_native_score
+
+            gradient = _na_torsion_native_score(*args, grad_output, True)[1]
+        return (gradient,) + (None,) * (len(args) - 1)
+
+
+def _na_rotamer_score(*args):
+    if args[0].device.type in ("cpu", "cuda") and not any(
+        value.requires_grad for value in args[1:-2] if value.is_floating_point()
+    ):
+        return _NativeNaRotamerScore.apply(*args)
+    return _na_rotamer_score_torch(*args)

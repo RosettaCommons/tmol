@@ -34,7 +34,8 @@ na_torsion_pose_score_cpu(
     tmol::native::Tensor weight_sugar,
     double pucker_temperature,
     double bin_blend_sdev,
-    bool compute_derivs);
+    bool compute_derivs,
+    tmol::native::Tensor entry_weights);
 
 tmol::native::Tensor na_torsion_pose_score_backward_cpu(
     tmol::native::Tensor derivatives, tmol::native::Tensor grad_output);
@@ -66,7 +67,8 @@ na_torsion_pose_score_cuda(
     tmol::native::Tensor weight_sugar,
     double pucker_temperature,
     double bin_blend_sdev,
-    bool compute_derivs);
+    bool compute_derivs,
+    tmol::native::Tensor entry_weights);
 
 tmol::native::Tensor na_torsion_pose_score_backward_cuda(
     tmol::native::Tensor derivatives, tmol::native::Tensor grad_output);

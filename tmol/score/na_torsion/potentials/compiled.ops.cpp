@@ -73,7 +73,8 @@ class NaTorsionPoseScoreOp
         weight_sugar,
         pucker_temperature,
         bin_blend_sdev,
-        coords.requires_grad());
+        coords.requires_grad(),
+        Tensor());
     auto score = std::get<0>(result);
     auto derivatives = std::get<1>(result);
     ctx->save_for_backward({derivatives});
@@ -153,6 +154,68 @@ std::tuple<Tensor, Tensor> na_torsion_pose_score(
   return {result[0], result[1]};
 }
 
+std::tuple<Tensor, Tensor> na_torsion_native_score(
+    tmol::native::Tensor coords,
+    tmol::native::Tensor base,
+    tmol::native::Tensor is_na,
+    tmol::native::Tensor torsion_indices,
+    tmol::native::Tensor torsion_ok,
+    tmol::native::Tensor ring_indices,
+    tmol::native::Tensor ring_ok,
+    tmol::native::Tensor prev,
+    tmol::native::Tensor backbone_means,
+    tmol::native::Tensor backbone_sdev,
+    tmol::native::Tensor sugar_means,
+    tmol::native::Tensor chi_means,
+    tmol::native::Tensor sdev_sugar,
+    tmol::native::Tensor sdev_chi,
+    tmol::native::Tensor well_pucker,
+    tmol::native::Tensor well_alpha_gamma,
+    tmol::native::Tensor well_bibii_pucker,
+    tmol::native::Tensor well_alphanext_bibii,
+    tmol::native::Tensor well_chi_syn,
+    tmol::native::Tensor is_north,
+    tmol::native::Tensor weight_bb,
+    tmol::native::Tensor weight_chi,
+    tmol::native::Tensor weight_sugar,
+    double pucker_temperature,
+    double bin_blend_sdev,
+    Tensor entry_weights,
+    bool compute_derivs) {
+  auto kernel = &na_torsion_pose_score_cpu;
+#ifdef WITH_CUDA
+  if (coords.is_cuda()) kernel = &na_torsion_pose_score_cuda;
+#endif
+  return kernel(
+      coords,
+      base,
+      is_na,
+      torsion_indices,
+      torsion_ok,
+      ring_indices,
+      ring_ok,
+      prev,
+      backbone_means,
+      backbone_sdev,
+      sugar_means,
+      chi_means,
+      sdev_sugar,
+      sdev_chi,
+      well_pucker,
+      well_alpha_gamma,
+      well_bibii_pucker,
+      well_alphanext_bibii,
+      well_chi_syn,
+      is_north,
+      weight_bb,
+      weight_chi,
+      weight_sugar,
+      pucker_temperature,
+      bin_blend_sdev,
+      compute_derivs,
+      compute_derivs ? entry_weights : Tensor());
+}
+
 NARotamerTopologyOutput na_rotamer_topology(
     tmol::native::Tensor types,
     tmol::native::Tensor poses,
@@ -205,6 +268,7 @@ NARotamerTopologyOutput na_rotamer_topology(
 
 TMOL_LIBRARY(tmol_na_torsion, m) {
   m.def("na_rotamer_topology", TMOL_FN(&na_rotamer_topology));
+  m.def("na_torsion_native_score", TMOL_FN(&na_torsion_native_score));
   m.def("na_torsion_pose_score", TMOL_FN(&na_torsion_pose_score));
 }
 

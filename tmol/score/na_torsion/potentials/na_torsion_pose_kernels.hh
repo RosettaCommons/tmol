@@ -326,7 +326,7 @@ TMOL_HOST_DEVICE_FUNC DihedralDeriv<Real> dihedral_deriv(
   return result;
 }
 
-template <typename Real, tmol::Device D, typename Int>
+template <typename Real, tmol::Device D, typename Int, bool Combined = false>
 TMOL_HOST_DEVICE_FUNC void add_torsion_gradient(
     Real const* coords,
     Int const* torsion_indices,
@@ -338,6 +338,7 @@ TMOL_HOST_DEVICE_FUNC void add_torsion_gradient(
     int n_atoms,
     Real* derivatives) {
   if (!torsion_ok[flat_block * N_TORSION + torsion]) return;
+  if constexpr (Combined) harmonic_deriv += well_deriv;
   int offset = (flat_block * N_TORSION + torsion) * 4;
   int64_t atom[4];
   Vec3<Real> xyz[4];
@@ -358,16 +359,18 @@ TMOL_HOST_DEVICE_FUNC void add_torsion_gradient(
         *(derivatives + coord + 1), harmonic_deriv * d.y);
     tmol::score::common::accumulate<D, Real>::add(
         *(derivatives + coord + 2), harmonic_deriv * d.z);
-    tmol::score::common::accumulate<D, Real>::add(
-        *(derivatives + n_atoms * 3 + coord), well_deriv * d.x);
-    tmol::score::common::accumulate<D, Real>::add(
-        *(derivatives + n_atoms * 3 + coord + 1), well_deriv * d.y);
-    tmol::score::common::accumulate<D, Real>::add(
-        *(derivatives + n_atoms * 3 + coord + 2), well_deriv * d.z);
+    if constexpr (!Combined) {
+      tmol::score::common::accumulate<D, Real>::add(
+          *(derivatives + n_atoms * 3 + coord), well_deriv * d.x);
+      tmol::score::common::accumulate<D, Real>::add(
+          *(derivatives + n_atoms * 3 + coord + 1), well_deriv * d.y);
+      tmol::score::common::accumulate<D, Real>::add(
+          *(derivatives + n_atoms * 3 + coord + 2), well_deriv * d.z);
+    }
   }
 }
 
-template <typename Real, tmol::Device D, typename Int>
+template <typename Real, tmol::Device D, typename Int, bool Combined = false>
 TMOL_HOST_DEVICE_FUNC void add_pucker_gradient(
     Real const* coords,
     Int const* ring_indices,
@@ -477,7 +480,7 @@ TMOL_HOST_DEVICE_FUNC void add_pucker_gradient(
     int64_t coord = ring_indices[offset] * 3;
 #pragma unroll
     for (int score = 0; score < 2; ++score) {
-      Real* out = derivatives + score * n_atoms * 3 + coord;
+      Real* out = derivatives + (Combined ? 0 : score * n_atoms * 3) + coord;
       tmol::score::common::accumulate<D, Real>::add(
           *(out), ring_gradient[score][atom].x);
       tmol::score::common::accumulate<D, Real>::add(
@@ -495,7 +498,8 @@ template <
     typename Real,
     tmol::Device D,
     bool ComputeDerivatives,
-    typename Int = int64_t>
+    typename Int = int64_t,
+    bool Weighted = false>
 TMOL_HOST_DEVICE_FUNC void na_torsion_block(
     int flat_block,
     Real const* coords,
@@ -528,7 +532,14 @@ TMOL_HOST_DEVICE_FUNC void na_torsion_block(
     int n_atoms,
     int n_bases,
     Real* derivatives,
-    Real* output) {
+    Real* output,
+    Real const* entry_weights = nullptr,
+    int64_t weight_stride_score = 0,
+    int64_t weight_stride_entry = 0) {
+  // Weighted mode applies each entry's cotangent BEFORE scattering to shared
+  // background atoms and writes one [n_atoms,3] buffer. Unweighted mode keeps
+  // the mature two-channel derivative layout. Output may be null for VJPs.
+  static_assert(!Weighted || ComputeDerivatives);
   int n_blocks = n_poses * max_n_blocks;
   if (flat_block >= n_blocks || !is_na[flat_block]) return;
 
@@ -763,15 +774,25 @@ TMOL_HOST_DEVICE_FUNC void na_torsion_block(
     d_angle[1][CHI] += dw_syn * chi_weight_derivative;
   }
 
-  tmol::score::common::accumulate<D, Real>::add(*(output + pose), energy[0]);
-  tmol::score::common::accumulate<D, Real>::add(
-      *(output + n_poses + pose), energy[1]);
-
+  if (output) {
+    tmol::score::common::accumulate<D, Real>::add(*(output + pose), energy[0]);
+    tmol::score::common::accumulate<D, Real>::add(
+        *(output + n_poses + pose), energy[1]);
+  }
   if constexpr (!ComputeDerivatives) return;
+  if constexpr (Weighted) {
+    for (int score = 0; score < 2; ++score) {
+      Real const weight = entry_weights
+          [score * weight_stride_score + flat_block * weight_stride_entry];
+      for (int tor = 0; tor < N_TORSION; ++tor) d_angle[score][tor] *= weight;
+      for (int p = 0; p < N_PUCKER; ++p) d_pucker[score][p] *= weight;
+      for (int t = 0; t < 2; ++t) d_prev[score][t] *= weight;
+    }
+  }
 
 #pragma unroll
   for (int tor = 0; tor < N_TORSION; ++tor) {
-    add_torsion_gradient<Real, D>(
+    add_torsion_gradient<Real, D, Int, Weighted>(
         coords,
         torsion_indices,
         torsion_ok,
@@ -783,7 +804,7 @@ TMOL_HOST_DEVICE_FUNC void na_torsion_block(
         derivatives);
   }
   if (prev_ok) {
-    add_torsion_gradient<Real, D>(
+    add_torsion_gradient<Real, D, Int, Weighted>(
         coords,
         torsion_indices,
         torsion_ok,
@@ -793,7 +814,7 @@ TMOL_HOST_DEVICE_FUNC void na_torsion_block(
         d_prev[1][0],
         n_atoms,
         derivatives);
-    add_torsion_gradient<Real, D>(
+    add_torsion_gradient<Real, D, Int, Weighted>(
         coords,
         torsion_indices,
         torsion_ok,
@@ -804,7 +825,7 @@ TMOL_HOST_DEVICE_FUNC void na_torsion_block(
         n_atoms,
         derivatives);
   }
-  add_pucker_gradient<Real, D>(
+  add_pucker_gradient<Real, D, Int, Weighted>(
       coords,
       ring_indices,
       ring_ok,
