@@ -9,7 +9,6 @@ import toolz
 import biotite
 import biotite.structure
 import logging
-import warnings
 
 from tmol_core.io.atom_metadata import (
     populate_optional_atom_metadata as _populate_optional_atom_metadata,
@@ -26,8 +25,6 @@ from tmol_core.io.atom_array import (  # noqa: F401
 
 from tmol.types._functional import _validate_args
 from tmol.chemical import ResidueTypeSet
-from tmol.chemical._restypes import BondType as ChemBondType
-from tmol.chemical._bond_orders import _chemical_bond_orders
 from tmol.database import ParameterDatabase
 from tmol.database.chemical import _metal_table, _site_connections  # noqa: F401
 from tmol.io._atomworks_reader import (  # noqa: F401
@@ -51,7 +48,9 @@ from tmol.io._protonation import (  # noqa: F401
     _with_atomworks_hydrogens,
 )
 from tmol.io._canonical_form import CanonicalForm
-from tmol.io._pose_stack_deconstruction import _canonical_form_from_pose_stack
+from tmol.io._pose_stack_deconstruction import (  # noqa: F401
+    _canonical_form_from_pose_stack,
+)
 from tmol.io._build_context import PoseBuildContext
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
@@ -1151,32 +1150,28 @@ def atom_array_from_pose_stack(
         bond orders within residues, and chemical bonds between them, metal
         coordination typed COORDINATION.
     """
+    from types import SimpleNamespace
+    from tmol.io._chain_deduction import _chain_inds_for_pose_stack
+    from tmol_core.io.structure_export import atom_array_from_host_pose
+
     if co is None:
         co = _canonical_ordering_for_pose_stack(pose_stack)
-    cf = _canonical_form_from_pose_stack(co, pose_stack)
-    structure, block_for_atom = _biotite_from_canonical_form_impl(
-        cf, co, include_virtual_atoms
+    host = SimpleNamespace(
+        coords=pose_stack.coords.detach().cpu().numpy(),
+        block_type_ind64=pose_stack.block_type_ind64.cpu().numpy(),
+        block_coord_offset=pose_stack.block_coord_offset.cpu().numpy(),
+        inter_residue_connections64=pose_stack.inter_residue_connections64.cpu().numpy(),
+        packed_block_types=pose_stack.packed_block_types,
+        pdb_info=pose_stack.pdb_info,
+        split_block_mapping=pose_stack.split_block_mapping,
     )
-    structure.bonds = _bonds_from_pose_stack(pose_stack, structure, block_for_atom)
-    if "is_polymer" not in structure.get_annotation_categories():
-        # absent input residue annotations, is_polymer follows each block type
-        block_is_polymer = numpy.array(
-            [
-                bt.properties.polymer.is_polymer
-                for bt in pose_stack.packed_block_types.active_block_types
-            ]
-        )[pose_stack.block_type_ind[0].cpu().numpy()]
-        structure.set_annotation("is_polymer", block_is_polymer[block_for_atom])
-    if not include_virtual_atoms and cf.metal_origins is not None:
-        structure = _with_metals_rejoined(
-            structure, block_for_atom, cf.metal_origins[0]
-        )
-    sbm = getattr(pose_stack, "split_block_mapping", None)
-    if merge_fragments and sbm is not None and sbm.entries:
-        from tmol.ligand._fragmentation import recombine_fragmented_ligands
-
-        structure = recombine_fragmented_ligands(structure, pose_stack)
-    return _renumbered_for_cif(structure)
+    return atom_array_from_host_pose(
+        host,
+        co,
+        _chain_inds_for_pose_stack(pose_stack),
+        merge_fragments=merge_fragments,
+        include_virtual_atoms=include_virtual_atoms,
+    )
 
 
 def _canonical_ordering_for_pose_stack(pose_stack: PoseStack) -> CanonicalOrdering:
@@ -1194,116 +1189,21 @@ def _canonical_ordering_for_pose_stack(pose_stack: PoseStack) -> CanonicalOrderi
 
 
 def _with_metals_rejoined(structure, block_for_atom, origins):
-    """Put each split-out metal back in the component it came from."""
-    block_for_atom = numpy.asarray(block_for_atom)
-    after = {}
-    for block in numpy.flatnonzero([o is not None for o in origins]):
-        res_id, ins_code, res_name, atom_name = origins[block]
-        metal = numpy.flatnonzero(block_for_atom == block)
-        if len(metal) != 1:
-            continue
-        metal = int(metal[0])
-        component = numpy.flatnonzero(
-            (structure.chain_id == structure.chain_id[metal])
-            & (structure.res_id == res_id)
-            & (structure.ins_code == ins_code)
-            & (structure.res_name == res_name)
-        )
-        if not len(component):
-            continue
-        structure.res_id[metal] = res_id
-        structure.res_name[metal] = res_name
-        structure.atom_name[metal] = atom_name
-        structure.ins_code[metal] = ins_code
-        structure.hetero[metal] = structure.hetero[component[0]]
-        after[metal] = int(component[-1])
-        # within a residue CIF has no coordination order; the split retypes them
-        bonds = structure.bonds.as_array()
-        inside = ((bonds[:, 0] == metal) & numpy.isin(bonds[:, 1], component)) | (
-            (bonds[:, 1] == metal) & numpy.isin(bonds[:, 0], component)
-        )
-        bonds[inside, 2] = biotite.structure.BondType.SINGLE
-        structure.bonds = biotite.structure.BondList(structure.array_length(), bonds)
-    if not after:
-        return structure
-    order = []
-    for i in range(structure.array_length()):
-        if i in after:
-            continue
-        order.append(i)
-        order += [m for m, last in after.items() if last == i]
-    if isinstance(structure, biotite.structure.AtomArrayStack):
-        return structure[:, order]
-    return structure[order]
+    from tmol_core.io.structure_export import _with_metals_rejoined
+
+    return _with_metals_rejoined(structure, block_for_atom, origins)
 
 
 def _bonds_from_pose_stack(pose_stack, structure, block_for_atom):
-    """The bond table of an exported structure, from the pose's residue types, which
-    every pose of the stack must share; bonds to atoms left out are dropped."""
-    block_types = pose_stack.block_type_ind64
-    connections = pose_stack.inter_residue_connections64
-    if not (
-        torch.equal(block_types, block_types[:1].expand_as(block_types))
-        and torch.equal(connections, connections[:1].expand_as(connections))
-    ):
-        raise ValueError(
-            "poses with different residue types or connections cannot share "
-            "one bond table"
-        )
-    pbt = pose_stack.packed_block_types
-    bt_for_block = block_types[0].tolist()
-    irc = connections[0].tolist()
-    index = {
-        (int(block), str(name)): i
-        for i, (block, name) in enumerate(zip(block_for_atom, structure.atom_name))
-    }
+    from types import SimpleNamespace
+    from tmol_core.io.structure_export import _bonds_from_pose_stack
 
-    sites_for_type = {}
-
-    def metal_bond(bt, bt_ind, conn):
-        if bt_ind not in sites_for_type:
-            sites_for_type[bt_ind] = frozenset(_site_connections(bt))
-        return bt.connections[conn].name in sites_for_type[bt_ind]
-
-    orders_for_type = {}
-    bonds = []
-    for block, bt_ind in enumerate(bt_for_block):
-        if bt_ind < 0:
-            continue
-        bt = pbt.active_block_types[bt_ind]
-        if bt_ind not in orders_for_type:
-            # Only the first block of each type needs this; there are two dozen
-            # types behind hundreds of blocks.
-            orders_for_type[bt_ind] = _chemical_bond_orders(bt, pbt.chem_db)
-        for key, order in orders_for_type[bt_ind].items():
-            a, b = tuple(key)
-            i, j = index.get((block, a)), index.get((block, b))
-            if i is not None and j is not None:
-                bonds.append((i, j, order))
-        for conn, (partner, partner_conn) in enumerate(irc[block]):
-            if partner < 0 or (partner, partner_conn) <= (block, conn):
-                continue
-            other = pbt.active_block_types[bt_for_block[partner]]
-            i = index.get((block, bt.connections[conn].atom))
-            j = index.get((partner, other.connections[partner_conn].atom))
-            if i is None or j is None:
-                continue
-            if metal_bond(bt, bt_ind, conn) or metal_bond(
-                other, bt_for_block[partner], partner_conn
-            ):
-                bonds.append((i, j, "COORDINATION"))
-            else:
-                order = ChemBondType(bt.connection_bond_types[conn]).name
-                bonds.append((i, j, "SINGLE" if order == "AROMATIC" else order))
-
-    bond_array = numpy.array(
-        [
-            (i, j, int(getattr(biotite.structure.BondType, order)))
-            for i, j, order in bonds
-        ],
-        dtype=numpy.int64,
-    ).reshape(-1, 3)
-    return biotite.structure.BondList(structure.array_length(), bond_array)
+    pose = SimpleNamespace(
+        block_type_ind64=pose_stack.block_type_ind64.cpu().numpy(),
+        inter_residue_connections64=pose_stack.inter_residue_connections64.cpu().numpy(),
+        packed_block_types=pose_stack.packed_block_types,
+    )
+    return _bonds_from_pose_stack(pose, structure, block_for_atom)
 
 
 from tmol_core.io.canonical_atom_mapping import (  # noqa: E402
@@ -1313,30 +1213,9 @@ from tmol_core.io.canonical_atom_mapping import (  # noqa: E402
 
 
 def _renumbered_for_cif(structure):
-    """Renumber, with a warning, the chains biotite's CIF round trip cannot carry.
+    from tmol_core.io.structure_export import _renumbered_for_cif
 
-    biotite reads a label_seq_id of -1 as missing, and atomworks rejects numbering
-    that decreases within a chain: the first is shifted to start at 1, the second 1..N.
-    """
-    template = _template_array(structure)
-    res_id, ins_code, decreasing = _renumbered_decreasing_chains(template)
-    reasons = dict.fromkeys(decreasing, "numbering that decreases within a chain")
-    for chain in dict.fromkeys(template.chain_id.tolist()):
-        in_chain = template.chain_id == chain
-        if chain not in reasons and (res_id[in_chain] == -1).any():
-            reasons[chain] = "a residue id of -1"
-            res_id[in_chain] += 1 - res_id[in_chain].min()
-    for chain, reason in reasons.items():
-        warnings.warn(
-            f"Renumbering chain {chain} of the output AtomArray: biotite's CIF "
-            f"writer does not support {reason}"
-        )
-    if not reasons:
-        return structure
-    structure = structure.copy()
-    structure.res_id = res_id
-    structure.ins_code = ins_code
-    return structure
+    return _renumbered_for_cif(structure)
 
 
 _without_metal_coordination_bonds = _structure_context._without_metal_coordination_bonds
@@ -2116,124 +1995,45 @@ def _biotite_from_canonical_form(
 
 
 def _biotite_from_canonical_form_impl(cf, co, include_virtual_atoms):
-    """The exported structure, and the canonical residue of each of its atoms."""
-    import biotite.structure as struc
+    from tmol_core.io.structure_export import _biotite_from_canonical_form_impl
 
-    if co is None:
-        co = _canonical_ordering_for_biotite()
-    n_poses, n_residues, max_atoms = cf.coords.shape[:3]
-    if n_poses > 1 and not _poses_have_identical_metadata(cf):
-        raise ValueError(
-            "Cannot convert CanonicalForm with multiple poses to biotite structure: "
-            "poses have different metadata. Only coordinate differences are allowed "
-            "for multi-pose conversion."
-        )
+    return _biotite_from_canonical_form_impl(
+        _host_export_canonical_form(cf),
+        co if co is not None else _canonical_ordering_for_biotite(),
+        include_virtual_atoms,
+    )
 
-    coords = cf.coords.detach().cpu().numpy()
-    res_types = cf.res_types[0].cpu().numpy()
-    present = ~numpy.isnan(coords).any(axis=-1)
-    atom_mask = present.any(axis=0)
-    names, elements, rows, columns = [], [], [], []
-    for res_id in numpy.flatnonzero(res_types >= 0):
-        res_name = co.restype_io_equiv_classes[res_types[res_id]]
-        atom_names = co.restypes_ordered_atom_names[res_name][:max_atoms]
-        virtual = (
-            frozenset()
-            if include_virtual_atoms
-            else co.restypes_virtual_atoms.get(res_name, frozenset())
-        )
-        indices = [
-            i
-            for i in numpy.flatnonzero(atom_mask[res_id, : len(atom_names)])
-            if atom_names[i] not in virtual
-        ]
-        names.extend(atom_names[i] for i in indices)
-        elements.extend(
-            co.restypes_atom_elements[res_name][atom_names[i]] for i in indices
-        )
-        rows.extend([res_id] * len(indices))
-        columns.extend(indices)
-    rows, columns = numpy.asarray(rows, dtype=int), numpy.asarray(columns, dtype=int)
-    result = (
-        struc.AtomArray(len(rows))
-        if n_poses == 1
-        else struc.AtomArrayStack(n_poses, len(rows))
+
+def _poses_have_identical_metadata(cf):
+    from tmol_core.io.structure_export import _poses_have_identical_metadata
+
+    return _poses_have_identical_metadata(_host_export_canonical_form(cf))
+
+
+def _host_export_canonical_form(cf):
+    """Detach only the arrays needed by the common host structure exporter."""
+    from types import SimpleNamespace
+
+    names = (
+        "coords",
+        "res_types",
+        "chain_id",
+        "res_labels",
+        "chain_labels",
+        "residue_insertion_codes",
+        "atom_occupancy",
+        "atom_b_factor",
+        "metal_origins",
+        "residue_annotations",
     )
-    selected = coords[:, rows, columns]
-    selected[~present[:, rows, columns]] = numpy.nan
-    result.coord = selected[0] if n_poses == 1 else selected
-    result.set_annotation("atom_name", numpy.asarray(names, dtype=str))
-    result.set_annotation("element", numpy.asarray(elements, dtype=str))
-    result.set_annotation(
-        "res_name", numpy.asarray(co.restype_io_equiv_classes)[res_types[rows]]
-    )
-    chain_labels = (
-        cf.chain_labels
-        if cf.chain_labels is not None
-        else cf.chain_id.cpu().numpy().astype(str)
-    )
-    res_labels = (
-        cf.res_labels
-        if cf.res_labels is not None
-        else numpy.arange(1, n_residues + 1)[None, :]
-    )
-    result.set_annotation("chain_id", numpy.asarray(chain_labels[0, rows], dtype=str))
-    result.set_annotation("res_id", res_labels[0, rows])
-    if cf.residue_insertion_codes is not None:
-        result.set_annotation(
-            "ins_code", numpy.asarray(cf.residue_insertion_codes[0, rows], dtype=str)
-        )
-    for name, values in (
-        ("b_factor", cf.atom_b_factor),
-        ("occupancy", cf.atom_occupancy),
-    ):
-        if values is not None:
-            result.set_annotation(name, values[0, rows, columns].copy())
-    if cf.residue_annotations is not None:
-        annotations = cf.residue_annotations[0, rows]
-        for name in annotations.dtype.names:
-            values = annotations[name]
-            result.set_annotation(
-                name, values.astype(str) if values.dtype == object else values
+    return SimpleNamespace(
+        **{
+            name: (
+                value.detach().cpu().numpy()
+                if isinstance(value, torch.Tensor)
+                else value
             )
-    return result, rows
-
-
-@_validate_args
-def _poses_have_identical_metadata(cf: CanonicalForm) -> bool:
-    """Check if all poses in the CanonicalForm have identical metadata.
-
-    Returns True if all poses have the same:
-    - chain_id
-    - res_types
-    - res_labels
-    - residue_insertion_codes
-    - chain_labels
-    - atom_occupancy and atom_b_factor
-
-    Only coordinates are allowed to differ between poses.
-    """
-    n_poses = cf.coords.size(0)
-
-    if n_poses <= 1:
-        return True
-
-    if not torch.all(cf.chain_id[0] == cf.chain_id[1:]).item():
-        return False
-
-    if not torch.all(cf.res_types[0] == cf.res_types[1:]).item():
-        return False
-
-    for values in (
-        cf.res_labels,
-        cf.residue_insertion_codes,
-        cf.chain_labels,
-        cf.atom_b_factor,
-        cf.atom_occupancy,
-    ):
-        if values is not None and not all(
-            numpy.array_equal(values[0], row, equal_nan=values.dtype.kind in "fc")
-            for row in values[1:]
-        ):
-            return False
-    return True
+            for name in names
+            for value in (getattr(cf, name),)
+        }
+    )
