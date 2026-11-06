@@ -105,20 +105,37 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend):
         np.testing.assert_array_equal(backend.numpy(original.scores(coords)[0]), first)
 
 
+def test_sparse_dunbrack_preserves_library_free_conformer_identity(backend):
+    backend.molecule(DOMAIN_CASES["ligand"], terms=("ref",))
+    e = RotamerExecution(backend, family="dunbrack")
+    coords = backend.numpy(e.rotamers.coords)
+    values, indices = map(backend.numpy, e.scores(coords))
+    np.testing.assert_array_equal(values, 0)
+    np.testing.assert_array_equal(indices[0], backend.numpy(e.rotamers.pose_for_rot))
+    np.testing.assert_array_equal(indices[1], np.arange(e.rotamers.n_rotamers_total))
+    np.testing.assert_array_equal(indices[2], indices[1])
+    _, gradient, _ = e.value_and_grad(coords, np.ones_like(values))
+    np.testing.assert_array_equal(gradient, np.zeros_like(coords))
+
+
 @pytest.mark.parametrize("case_name", ("l_peptide", "mixed_batch"))
-@pytest.mark.parametrize("electrostatic", (False, True))
+@pytest.mark.parametrize("family", ("ljlk", "elec", "dunbrack"))
 def test_sampled_ensemble_selection_conserves_energy_and_forces(
-    backend, case_name, electrostatic
+    backend, case_name, family
 ):
     from .dunbrack_molecules import DUNBRACK_CASES
 
-    terms = ("fa_elec",) if electrostatic else ("fa_ljatr", "fa_ljrep", "fa_lk")
+    terms = {
+        "elec": ("fa_elec",),
+        "ljlk": ("fa_ljatr", "fa_ljrep", "fa_lk"),
+        "dunbrack": ("dunbrack_rot", "dunbrack_rotdev", "dunbrack_semirot"),
+    }[family]
     backend.molecule(DUNBRACK_CASES[case_name], terms=terms)
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
     )
     with precision:
-        e = RotamerExecution(backend, electrostatic=electrostatic, sampled=True)
+        e = RotamerExecution(backend, family=family, sampled=True)
         r = e.rotamers
         xyz = backend.numpy(r.coords).astype(np.float64)
         counts = backend.numpy(r.n_rots_for_block)

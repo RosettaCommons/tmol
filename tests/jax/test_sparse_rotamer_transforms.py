@@ -7,31 +7,39 @@ import pytest
 
 from tests.scientific.execution import Execution
 from tests.scientific.molecules import DOMAIN_CASES
+from tests.scientific.dunbrack_molecules import DUNBRACK_CASES
 from tests.scientific.rotamer_execution import RotamerExecution
 from tmol_jax.pack.scoring import sparse_nonbonded_values, nonbonded_candidate_pairs
 
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
-@pytest.mark.parametrize("electrostatic", (False, True))
-def test_sparse_values_reverse_batching_and_precision(platform, dtype, electrostatic):
+@pytest.mark.parametrize("family", ("ljlk", "elec", "dunbrack"))
+def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
     b = Execution("jax-" + platform)
     with jax.enable_x64(dtype == np.float64):
-        b.molecule(DOMAIN_CASES["mixed_batch"], terms=("ref",))
-        execute = RotamerExecution(b, electrostatic=electrostatic)
+        cases = DUNBRACK_CASES if family == "dunbrack" else DOMAIN_CASES
+        b.molecule(cases["mixed_batch"], terms=("ref",))
+        execute = RotamerExecution(b, family=family)
         coords = jax.device_put(
             np.asarray(execute.rotamers.coords, dtype=dtype), b.device
         )
-        indices = nonbonded_candidate_pairs(
-            execute.rotamers,
-            b.pose.packed_block_types,
-            reach=execute.state[3],
-            coords=coords,
-        )
+        if family != "dunbrack":
+            indices = nonbonded_candidate_pairs(
+                execute.rotamers,
+                b.pose.packed_block_types,
+                reach=execute.state[3],
+                coords=coords,
+            )
         before = np.asarray(coords).copy()
 
         def total(x):
-            values = sparse_nonbonded_values(x, execute.state, indices)
+            if family == "dunbrack":
+                from tmol_jax.pack.dunbrack_scoring import sparse_dunbrack_scores
+
+                values = sparse_dunbrack_scores(x, execute.state)[0]
+            else:
+                values = sparse_nonbonded_values(x, execute.state, indices)
             return jnp.sum(
                 values
                 * jnp.asarray([0.7, -0.3, 0.6][: values.shape[0]], dtype)[:, None]

@@ -39,6 +39,31 @@ def _evaluate(
     )
 
 
+def coordinate_vjp(coords, parameters, evaluate):
+    """Apply a native coordinate reverse rule with fixed chemistry parameters."""
+    parameters = tuple(
+        jax.lax.stop_gradient(
+            p.astype(coords.dtype) if jnp.issubdtype(p.dtype, jnp.floating) else p
+        )
+        for p in parameters
+    )
+
+    @jax.custom_vjp
+    def value(x, *args):
+        return evaluate(x, args)
+
+    def forward(x, *args):
+        return value(x, *args), (x, args)
+
+    def backward(residual, cotangent):
+        x, args = residual
+        gradient = evaluate(x, args, cotangent, backward=True)
+        return (gradient, *(None for _ in args))
+
+    value.defvjp(forward, backward)
+    return value(coords, *parameters)
+
+
 def sparse_nonbonded_values(coords, state, indices):
     """Score explicit sparse candidate identities with a native coordinate VJP.
 
@@ -48,28 +73,20 @@ def sparse_nonbonded_values(coords, state, indices):
     higher derivatives require additional native rules and are not implemented.
     """
     target, channels, parameters, reach = state
-    parameters = tuple(
-        jax.lax.stop_gradient(
-            p.astype(coords.dtype) if jnp.issubdtype(p.dtype, jnp.floating) else p
+
+    def evaluate(x, args, weights=None, *, backward=False):
+        return _evaluate(
+            x,
+            args,
+            indices,
+            weights,
+            target=target,
+            channels=channels,
+            reach=reach,
+            backward=backward,
         )
-        for p in parameters
-    )
-    attributes = dict(target=target, channels=channels, reach=reach)
 
-    @jax.custom_vjp
-    def value(x, *args):
-        return _evaluate(x, args, indices, **attributes)
-
-    def forward(x, *args):
-        return value(x, *args), (x, args)
-
-    def backward(residual, cotangent):
-        x, args = residual
-        gradient = _evaluate(x, args, indices, cotangent, backward=True, **attributes)
-        return (gradient, *(None for _ in args))
-
-    value.defvjp(forward, backward)
-    return value(coords, *parameters)
+    return coordinate_vjp(coords, parameters, evaluate)
 
 
 def prepare_rotamer_nonbonded(pose, rotamers, database, *, electrostatic=False):

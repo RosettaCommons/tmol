@@ -753,3 +753,15 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets(),
     {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_rotamer_dunbrack,
+    tmol::jax::run_graph_stage<tmol::jax::RotamerDunbrackStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"),
+    {xla::ffi::Traits::kCmdBufferCompatible});

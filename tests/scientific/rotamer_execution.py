@@ -4,12 +4,13 @@ import numpy as np
 
 
 class RotamerExecution:
-    def __init__(self, backend, *, electrostatic=False, sampled=False):
+    def __init__(self, backend, *, electrostatic=False, sampled=False, family=None):
         if backend.requested_device == "mps":
             raise NotImplementedError(
                 "the sparse float64 science adapter requires CPU/CUDA; Metal needs a separate float32 validation"
             )
         self.backend = backend
+        self.family = family or ("elec" if electrostatic else "ljlk")
         self.packed_block_types = backend.pose.packed_block_types
         if backend.framework == "jax":
             from tmol_jax.pack import (
@@ -36,18 +37,25 @@ class RotamerExecution:
         )
         if backend.framework == "jax":
             from tmol_jax.pack.scoring import prepare_rotamer_nonbonded
+            from tmol_jax.pack.dunbrack_scoring import prepare_rotamer_dunbrack
 
             with backend.module.default_device(backend.device):
-                self.state = prepare_rotamer_nonbonded(
-                    backend.pose,
-                    self.rotamers,
-                    backend.parameter_database,
-                    electrostatic=electrostatic,
+                arguments = (backend.pose, self.rotamers, backend.parameter_database)
+                self.state = (
+                    prepare_rotamer_dunbrack(*arguments)
+                    if self.family == "dunbrack"
+                    else prepare_rotamer_nonbonded(
+                        *arguments, electrostatic=self.family == "elec"
+                    )
                 )
         else:
-            from tmol.score import LJLKEnergyTerm, ElecEnergyTerm
+            from tmol.score import LJLKEnergyTerm, ElecEnergyTerm, DunbrackEnergyTerm
 
-            cls = ElecEnergyTerm if electrostatic else LJLKEnergyTerm
+            cls = {
+                "elec": ElecEnergyTerm,
+                "ljlk": LJLKEnergyTerm,
+                "dunbrack": DunbrackEnergyTerm,
+            }[self.family]
             term = cls(param_db=backend.parameter_database, device=backend.device)
             for block in backend.pose.packed_block_types.active_block_types:
                 term.setup_block_type(block)
@@ -67,6 +75,10 @@ class RotamerExecution:
         x = self.array(coords)
         if self.backend.framework == "torch":
             return self.scorer(x)
+        if self.family == "dunbrack":
+            from tmol_jax.pack.dunbrack_scoring import sparse_dunbrack_scores
+
+            return sparse_dunbrack_scores(x, self.state)
         from tmol_jax.pack.scoring import (
             nonbonded_candidate_pairs,
             sparse_nonbonded_values,
@@ -94,7 +106,12 @@ class RotamerExecution:
         _, indices = self.scores(coords)
 
         def weighted(x):
-            values = sparse_nonbonded_values(x, self.state, indices)
+            if self.family == "dunbrack":
+                from tmol_jax.pack.dunbrack_scoring import sparse_dunbrack_scores
+
+                values = sparse_dunbrack_scores(x, self.state)[0]
+            else:
+                values = sparse_nonbonded_values(x, self.state, indices)
             return (values * self.array(weights)).sum(), values
 
         (_, values), gradient = b.module.jit(
