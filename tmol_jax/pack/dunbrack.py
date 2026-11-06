@@ -1,6 +1,7 @@
 """JAX storage for common Dunbrack sampling preparation."""
 
 import attr
+import copy
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -40,12 +41,24 @@ class DunbrackChiSampler:
         expanded_limit=DEFAULT_CHI_SAMPLE_LIMIT,
         limit=DEFAULT_CHI_SAMPLE_LIMIT,
     ):
-        self.tables = tables
+        # A sampler owns a parameter snapshot. Native host/device buffers may
+        # be reused without observing mutable arrays supplied by its caller.
+        self.tables = copy.deepcopy(tables)
+        for mapping in (
+            self.tables.scoring_db,
+            self.tables.scoring_db_aux,
+            self.tables.sampling_db,
+        ):
+            for value in mapping.values():
+                if isinstance(value, np.ndarray):
+                    value.setflags(write=False)
+        self._parameter_database = None
+        self._native_storage = None
         self.expanded_limit, self.limit = chi_sample_budget(expanded_limit, limit)
         self.metadata = DunbrackSamplingMetadata(
-            tables.all_table_indices,
-            tables.scoring_db_aux["nchi_for_table_set"],
-            tables.sampling_db["n_rotamers_for_tableset"],
+            self.tables.all_table_indices,
+            self.tables.scoring_db_aux["nchi_for_table_set"],
+            self.tables.sampling_db["n_rotamers_for_tableset"],
         )
 
     @classmethod
@@ -54,7 +67,9 @@ class DunbrackChiSampler:
             parameter_database.scoring.dunbrack,
             lambda values: [fit_bspline_coefficients(value) for value in values],
         )
-        return cls(tables, **limits)
+        sampler = cls(tables, **limits)
+        sampler._parameter_database = parameter_database
+        return sampler
 
     @classmethod
     def sampler_name(cls):
@@ -102,10 +117,14 @@ class DunbrackChiSampler:
 
     def create_samples_for_poses(self, pose_stack, task):
         counts, choices, atoms, chi = self.sample_chi_for_poses(pose_stack, task)
-        return counts, choices, {
-            "chi_defining_atom_for_rotamer": atoms,
-            "chi_for_rotamers": chi,
-        }
+        return (
+            counts,
+            choices,
+            {
+                "chi_defining_atom_for_rotamer": atoms,
+                "chi_for_rotamers": chi,
+            },
+        )
 
     def sample_chi_for_poses(self, pose_stack, task):
         """Return per-choice counts, choice indices, defining atoms and chi.
@@ -115,7 +134,7 @@ class DunbrackChiSampler:
         ligands without an amino-acid chi sampling policy. No fallback identity
         or conformation is substituted. Returned arrays stay on the pose device.
         """
-        from ._native import sample_chi
+        from ._native import sample_chi, SamplingStorage
         from .task import PackerTask, SetPackerTask
         from tmol_jax.score._native import atom_downstream_of_conn
         from tmol_jax.score.constraint.functions import torsion
@@ -128,13 +147,17 @@ class DunbrackChiSampler:
         if id(self) not in task.conformer_sampler_index:
             raise ValueError("sampler must be registered with the packing task")
         pbt, device = pose_stack.packed_block_types, pose_stack.coords.device
+        if (
+            self._parameter_database is not None
+            and pbt.chem_db is not self._parameter_database.chemical
+        ):
+            raise ValueError(
+                "sampler database does not match the pose chemistry context"
+            )
         configured = self
         if task.chi_sample_budget is not None:
-            configured = type(self)(
-                self.tables,
-                expanded_limit=task.chi_sample_budget[0],
-                limit=task.chi_sample_budget[1],
-            )
+            configured = copy.copy(self)
+            configured.expanded_limit, configured.limit = task.chi_sample_budget
         metadata = configured._host_metadata(pbt)
         sampler_index = task.conformer_sampler_index[id(self)]
         request = prepare_dunbrack_sampling_request(
@@ -174,8 +197,10 @@ class DunbrackChiSampler:
                     jnp.zeros((0, 4), dtype=jnp.int32),
                     jnp.zeros((0, 4), dtype=pose_stack.coords.dtype),
                 )
+            if self._native_storage is None:
+                self._native_storage = SamplingStorage(self.tables)
             counts, _, identities, chi = sample_chi(
-                self.tables,
+                self._native_storage,
                 pose_stack.coords.reshape(-1, 3),
                 *(
                     getattr(request, name)

@@ -119,3 +119,45 @@ def test_reused_assembly_consumes_new_chi_payloads():
         np.testing.assert_allclose(difference, 0.3, atol=2e-5, rtol=0)
         checked += 1
     assert checked > 1
+
+
+def test_sampler_parameter_snapshot_and_chemistry_context():
+    import copy
+    import attrs
+    from tmol_jax.pack import PackerTask, SetPackerTask, DunbrackChiSampler
+
+    b = Execution("jax-cpu")
+    b.molecule(DUNBRACK_CASES["l_peptide"], terms=("ref",))
+    prepared = DunbrackChiSampler.from_database(b.parameter_database)
+    tables = copy.deepcopy(prepared.tables)
+    means = tables.sampling_db["rotameric_mean_tables"].copy()
+    tables.sampling_db["rotameric_mean_tables"] = means
+    sampler = DunbrackChiSampler(tables)
+
+    def sample(current):
+        task = PackerTask(b.pose)
+        task.restrict_to_repacking()
+        task.add_conformer_sampler(current)
+        return tuple(
+            np.asarray(x)
+            for x in current.sample_chi_for_poses(
+                b.pose, SetPackerTask.from_packer_task(task)
+            )
+        )
+
+    first = sample(sampler)
+    means += 0.25
+    retained = sample(sampler)
+    changed = sample(DunbrackChiSampler(tables))
+    for before, after in zip(first, retained):
+        np.testing.assert_array_equal(before, after)
+    for before, after in zip(first[:3], changed[:3]):
+        np.testing.assert_array_equal(before, after)
+    assert np.max(np.abs(changed[3] - first[3])) > 1e-5
+
+    db = b.parameter_database
+    mismatched = DunbrackChiSampler.from_database(
+        attrs.evolve(db, chemical=attrs.evolve(db.chemical))
+    )
+    with pytest.raises(ValueError, match="chemistry context"):
+        sample(mismatched)
