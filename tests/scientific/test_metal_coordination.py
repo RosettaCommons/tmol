@@ -27,11 +27,7 @@ def test_metal_coordination_values_and_coordinate_derivatives(backend, name):
     np.testing.assert_allclose(gradient.sum(axis=1), 0, atol=2e-3)
 
 
-def test_metal_custom_widths_scale_energy_and_coordinate_gradient(backend):
-    case = METAL_CASES["bridging_donor"]
-    backend.molecule(case, terms=("metal_coordination",))
-    values, gradient = backend.value_and_grad(backend.coords())
-    db = backend.parameter_database
+def scaled_metal_database(db):
     params = db.scoring.metal_coordination
     widths = params.global_parameters
     scaled = attrs.evolve(
@@ -60,6 +56,14 @@ def test_metal_custom_widths_scale_energy_and_coordinate_gradient(backend):
     changed = attrs.evolve(
         db, scoring=attrs.evolve(db.scoring, metal_coordination=scaled)
     )
+    return changed
+
+
+def test_metal_custom_widths_scale_energy_and_coordinate_gradient(backend):
+    case = METAL_CASES["bridging_donor"]
+    backend.molecule(case, terms=("metal_coordination",))
+    values, gradient = backend.value_and_grad(backend.coords())
+    changed = scaled_metal_database(backend.parameter_database)
     other = Execution(backend.name).molecule(
         case, terms=("metal_coordination",), parameter_database=changed
     )

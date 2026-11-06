@@ -8,6 +8,8 @@ import pytest
 from .molecules import CASES, DOMAIN_CASES, BACKBONE_CASES
 from .hbond_molecules import HBOND_CASES
 from .na_molecules import NA_CASES
+from .disulfide_molecules import DISULFIDE_CASES
+from .metal_molecules import METAL_CASES
 from .test_cartbonded import CARTESIAN_CASES, TERMS as CART_TERMS
 from .rotamer_execution import RotamerExecution
 
@@ -30,6 +32,8 @@ from .rotamer_execution import RotamerExecution
     + [("hbond", name) for name in HBOND_CASES]
     + [("na_torsion", name) for name in NA_CASES]
     + [("backbone", name) for name in BACKBONE_CASES]
+    + [("disulfide", name) for name in DISULFIDE_CASES]
+    + [("metal", name) for name in METAL_CASES]
     + [
         ("cartbonded", name)
         for name in (
@@ -47,6 +51,8 @@ def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, 
         "genbonded": ("gen_torsions",),
         "cartbonded": CART_TERMS,
         "backbone": ("rama", "omega"),
+        "disulfide": ("disulfide",),
+        "metal": ("metal_coordination",),
         "hbond": ("hbond",),
         "na_torsion": ("na_torsion", "na_torsion_well"),
         "elec": ("fa_elec",),
@@ -58,6 +64,10 @@ def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, 
         cases = NA_CASES
     elif family == "backbone":
         cases = BACKBONE_CASES
+    elif family == "disulfide":
+        cases = DISULFIDE_CASES
+    elif family == "metal":
+        cases = METAL_CASES
     backend.molecule(cases[case_name], terms=terms)
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
@@ -104,7 +114,17 @@ def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, 
 
 @pytest.mark.parametrize(
     "family",
-    ("ljlk", "lk_ball", "genbonded", "hbond", "cartbonded", "na_torsion", "backbone"),
+    (
+        "ljlk",
+        "lk_ball",
+        "genbonded",
+        "hbond",
+        "cartbonded",
+        "na_torsion",
+        "backbone",
+        "disulfide",
+        "metal",
+    ),
 )
 def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
     import attrs
@@ -116,6 +136,10 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
         case = NA_CASES["methylcytosine"]
     elif family == "backbone":
         case = BACKBONE_CASES["hydroxyproline"]
+    elif family == "disulfide":
+        case = DISULFIDE_CASES["ld"]
+    elif family == "metal":
+        case = METAL_CASES["bridging_donor"]
     backend.molecule(case, terms=("ref",))
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
@@ -132,6 +156,8 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
             "hbond": (1, 2),
             "na_torsion": (1, 0.25),
             "backbone": (1, 2),
+            "disulfide": (1, 2),
+            "metal": (1, 0.25),
         }[family]
         weights = np.broadcast_to(
             (np.arange(first.shape[0]) < scaled_channels)[:, None], first.shape
@@ -142,7 +168,15 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
         database = backend.parameter_database
         # Fourfold well depth doubles its float32 square-root table exactly;
         # this keeps the analytic scaling check free of parameter quantization.
-        if family == "backbone":
+        if family == "disulfide":
+            from .test_disulfide import scaled_disulfide_database
+
+            modified = scaled_disulfide_database(database)
+        elif family == "metal":
+            from .test_metal_coordination import scaled_metal_database
+
+            modified = scaled_metal_database(database)
+        elif family == "backbone":
             source = database.scoring.rama
             changed = attrs.evolve(
                 source,
@@ -285,7 +319,9 @@ def test_sparse_dunbrack_preserves_library_free_conformer_identity(backend):
         )
         for case in ("l_peptide", "mixed_batch")
     ]
-    + [("hbond", "sampled_ser_ligand")],
+    + [("hbond", "sampled_ser_ligand")]
+    + [("disulfide", name) for name in ("ld", "mixed_batch")]
+    + [("metal", name) for name in ("zinc_site", "bridging_donor", "mixed_batch")],
 )
 def test_sampled_ensemble_selection_conserves_energy_and_forces(
     backend, case_name, family
@@ -296,6 +332,8 @@ def test_sampled_ensemble_selection_conserves_energy_and_forces(
         "genbonded": ("gen_torsions",),
         "cartbonded": CART_TERMS,
         "backbone": ("rama", "omega"),
+        "disulfide": ("disulfide",),
+        "metal": ("metal_coordination",),
         "hbond": ("hbond",),
         "elec": ("fa_elec",),
         "ljlk": ("fa_ljatr", "fa_ljrep", "fa_lk"),
@@ -303,6 +341,10 @@ def test_sampled_ensemble_selection_conserves_energy_and_forces(
         "lk_ball": ("lk_ball_iso", "lk_ball", "lk_bridge", "lk_bridge_uncpl"),
     }[family]
     cases = HBOND_CASES if family == "hbond" else DUNBRACK_CASES
+    if family == "disulfide":
+        cases = DISULFIDE_CASES
+    elif family == "metal":
+        cases = METAL_CASES
     backend.molecule(cases[case_name], terms=terms)
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()

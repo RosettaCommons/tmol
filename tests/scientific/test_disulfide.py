@@ -61,11 +61,7 @@ def test_disulfide_mirror_and_permutation_invariants(backend, pair):
     )
 
 
-def test_disulfide_custom_weights_scale_energy_and_gradients(backend):
-    case = DISULFIDE_CASES["ld"]
-    backend.molecule(case, terms=("disulfide",))
-    value, gradient = backend.value_and_grad(backend.coords())
-    db = backend.parameter_database
+def scaled_disulfide_database(db):
     params = db.scoring.disulfide.global_parameters
     scaled = attrs.evolve(
         params,
@@ -81,6 +77,14 @@ def test_disulfide_custom_weights_scale_energy_and_gradients(backend):
             disulfide=attrs.evolve(db.scoring.disulfide, global_parameters=scaled),
         ),
     )
+    return changed
+
+
+def test_disulfide_custom_weights_scale_energy_and_gradients(backend):
+    case = DISULFIDE_CASES["ld"]
+    backend.molecule(case, terms=("disulfide",))
+    value, gradient = backend.value_and_grad(backend.coords())
+    changed = scaled_disulfide_database(backend.parameter_database)
     other = Execution(backend.name).molecule(
         case, terms=("disulfide",), parameter_database=changed
     )

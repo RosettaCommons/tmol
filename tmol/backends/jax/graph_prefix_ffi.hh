@@ -19,7 +19,8 @@ struct GraphPrefixWorkspace {
         contiguous_view<int, 1, D>(storage.take<int>(sizes[2]), {sizes[2]})};
   }
 };
-struct GraphPrefixKernel {
+template <bool Maximum>
+struct GraphPrefixKernelT {
   static constexpr bool zero_energy = false, zero_workspace = false;
   static void validate(
       const std::vector<ffi::AnyBuffer>& a,
@@ -48,6 +49,10 @@ struct GraphPrefixKernel {
         score::common::checked_dispatch_size(source.size(0), "graph prefix");
     GraphPrefixWorkspace<D> work(n, workspace.untyped_data());
     ContextManager context;
+    using Op = std::conditional_t<
+        Maximum,
+        portable::maximum_t<int64_t>,
+        portable::plus_t<int64_t>>;
     Ops<D>::template segmented_scan_into<portable::scan_type::exclusive>(
         context,
         source.data(),
@@ -55,13 +60,15 @@ struct GraphPrefixKernel {
         result.data(),
         n,
         1,
-        portable::plus_t<int64_t>(),
+        Op(),
         int64_t(0),
         work.scan);
     LAUNCH_BOX_32;
     Ops<D>::template forall<launch_t>(context, 1, [=] TMOL_DEVICE_FUNC(int) {
-      result[n] = n ? result[n - 1] + source[n - 1] : 0;
+      result[n] = n ? Op()(result[n - 1], source[n - 1]) : 0;
     });
   }
 };
+using GraphPrefixKernel = GraphPrefixKernelT<false>;
+using GraphMaximumKernel = GraphPrefixKernelT<true>;
 }  // namespace tmol::jax

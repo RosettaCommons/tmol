@@ -13,12 +13,12 @@ class MetalCoordinationEnergyTerm(EnergyTerm):
     def score_types_provided(self):
         return [ScoreType.metal_coordination]
 
-    def setup_for_pose_stack(self, pose_stack, pbt=None):
+    def setup_for_pose_stack(self, pose_stack, pbt=None, *, include_empty=False):
         pbt = pose_stack.packed_block_types if pbt is None else pbt
         types = pbt.active_block_types
         indices = np.asarray(pose_stack.block_type_ind)
         used = np.unique(indices[indices >= 0])
-        if all(not types[i].metal_sites for i in used):
+        if not include_empty and all(not types[i].metal_sites for i in used):
             return ()
         prep = MetalCoordinationPreparation(self.param_db.scoring.metal_coordination)
         host = prep.prepare_packed(

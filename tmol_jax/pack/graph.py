@@ -33,16 +33,17 @@ def topology_stage(arguments, *, operation, outputs, chunk_size=16):
     )
 
 
-@jax.jit
-def prefix_counts(counts):
+@partial(jax.jit, static_argnames=("maximum",))
+def prefix_counts(counts, *, maximum=False):
     """Return exact int64 exclusive offsets and total as opaque device bytes.
 
-    Only the final eight-byte row needs a host read for a dynamic allocation.
+    With ``maximum=True``, compute exclusive running maxima of nonnegative
+    counts instead. Only the final eight-byte row needs a host read for a dynamic allocation.
     The common native scan retains all prefix work on the input device.
     """
-    target = "tmol_graph_prefix"
+    target = "tmol_graph_maximum_prefix" if maximum else "tmol_graph_prefix"
     register(target)
-    size = workspace_sizes(target, (counts.shape[0],), 64)[0]
+    size = workspace_sizes("tmol_graph_prefix", (counts.shape[0],), 64)[0]
     shape = jax.ShapeDtypeStruct
     return jax.ffi.ffi_call(
         target,

@@ -4,6 +4,27 @@
 #include <tmol/score/disulfide/potentials/disulfide_pose_kernels.hh>
 
 namespace tmol::jax {
+inline void validate_disulfide_tables(
+    const std::vector<ffi::AnyBuffer>& a, ffi::DataType real, int64_t ports) {
+  auto integer = ffi::DataType::S32;
+  require_shape(a[5], ffi::DataType::PRED, {-1, ports});
+  auto types = a[5].dimensions()[0];
+  require_shape(a[6], integer, {types, ports, -1});
+  if (a[6].dimensions()[2] < 3)
+    throw std::invalid_argument("disulfide requires three downstream atoms");
+  require_shape(a[7], real, {types, 33});
+}
+template <Device D, typename Real>
+auto disulfide_tables(const std::vector<ffi::AnyBuffer>& a) {
+  using I = int32_t;
+  using Params = score::disulfide::potentials::DisulfideGlobalParams<Real>;
+  static_assert(sizeof(Params) == 33 * sizeof(Real));
+  return std::make_tuple(
+      buffer_view<bool, 2, D>(a[5]),
+      buffer_view<I, 3, D>(a[6]),
+      buffer_view<Params, 1, D>(a[7]));
+}
+
 struct DisulfideKernel {
   static void validate(
       const std::vector<ffi::AnyBuffer>& a,
@@ -23,12 +44,7 @@ struct DisulfideKernel {
     require_shape(a[2], integer, {poses, blocks});
     require_shape(a[4], integer, {poses, blocks, -1, 2});
     auto ports = a[4].dimensions()[2];
-    require_shape(a[5], ffi::DataType::PRED, {-1, ports});
-    auto types = a[5].dimensions()[0];
-    require_shape(a[6], integer, {types, ports, -1});
-    if (a[6].dimensions()[2] < 3)
-      throw std::invalid_argument("disulfide requires three downstream atoms");
-    require_shape(a[7], real, {types, 33});
+    validate_disulfide_tables(a, real, ports);
     require_shape(energy, real, {poses});
     if (!gradient)
       throw std::invalid_argument(
@@ -44,8 +60,6 @@ struct DisulfideKernel {
       ffi::AnyBuffer energy,
       const ffi::AnyBuffer* gradient) {
     using I = int32_t;
-    using Params = score::disulfide::potentials::DisulfideGlobalParams<Real>;
-    static_assert(sizeof(Params) == 33 * sizeof(Real));
     auto poses = a[0].dimensions()[0], atoms = a[0].dimensions()[1];
     auto xyz = contiguous_view<Vec<Real, 3>, 1, D>(
         a[0].untyped_data(), {poses * atoms});
@@ -54,19 +68,21 @@ struct DisulfideKernel {
     auto g = contiguous_view<Vec<Real, 3>, 2, D>(
         gradient->untyped_data(), {1, poses * atoms});
     ContextManager context;
-    score::disulfide::potentials::disulfide_pose_forward<Ops, D, Real, I>(
-        context,
-        xyz,
-        buffer_view<I, 1, D>(a[1]),
-        buffer_view<I, 2, D>(a[2]),
-        buffer_view<I, 2, D>(a[3]),
-        buffer_view<Vec<I, 2>, 3, D>(a[4]),
-        buffer_view<bool, 2, D>(a[5]),
-        buffer_view<I, 3, D>(a[6]),
-        buffer_view<Params, 1, D>(a[7]),
-        false,
-        e,
-        g);
+    std::apply(
+        [&](auto... tables) {
+          score::disulfide::potentials::disulfide_pose_forward<Ops, D, Real, I>(
+              context,
+              xyz,
+              buffer_view<I, 1, D>(a[1]),
+              buffer_view<I, 2, D>(a[2]),
+              buffer_view<I, 2, D>(a[3]),
+              buffer_view<Vec<I, 2>, 3, D>(a[4]),
+              tables...,
+              false,
+              e,
+              g);
+        },
+        disulfide_tables<D, Real>(a));
   }
 };
 }  // namespace tmol::jax

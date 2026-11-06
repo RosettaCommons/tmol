@@ -43,7 +43,7 @@ def test_conformer_assembly_reuses_topology_but_not_coordinates(platform):
 
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
-@pytest.mark.parametrize("family", ("genbonded", "na_torsion"))
+@pytest.mark.parametrize("family", ("genbonded", "na_torsion", "disulfide", "metal"))
 def test_conformer_assembly_without_fallback_preserves_empty_selection(
     platform, family
 ):
@@ -67,11 +67,18 @@ def test_conformer_assembly_without_fallback_preserves_empty_selection(
         sparse_na_torsion_scores,
     )
 
-    prepare, score, channels = (
-        (prepare_rotamer_genbonded, sparse_genbonded_scores, 1)
-        if family == "genbonded"
-        else (prepare_rotamer_na_torsion, sparse_na_torsion_scores, 2)
+    from tmol_jax.pack.connection_scoring import (
+        prepare_rotamer_disulfide,
+        prepare_rotamer_metal,
+        sparse_connection_scores,
     )
+
+    prepare, score, channels = {
+        "genbonded": (prepare_rotamer_genbonded, sparse_genbonded_scores, 1),
+        "na_torsion": (prepare_rotamer_na_torsion, sparse_na_torsion_scores, 2),
+        "disulfide": (prepare_rotamer_disulfide, sparse_connection_scores, 1),
+        "metal": (prepare_rotamer_metal, sparse_connection_scores, 1),
+    }[family]
     state = prepare(backend.pose, result, backend.parameter_database)
     values, indices = score(result.coords, state)
     assert values.shape == (channels, 0) and indices.shape == (3, 0)

@@ -9,6 +9,8 @@ from tests.scientific.execution import Execution
 from tests.scientific.molecules import DOMAIN_CASES, BACKBONE_CASES
 from tests.scientific.hbond_molecules import HBOND_CASES
 from tests.scientific.na_molecules import NA_CASES
+from tests.scientific.disulfide_molecules import DISULFIDE_CASES
+from tests.scientific.metal_molecules import METAL_CASES
 from tests.scientific.dunbrack_molecules import DUNBRACK_CASES
 from tests.scientific.rotamer_execution import RotamerExecution
 from tmol_jax.pack.scoring import sparse_nonbonded_values, nonbonded_candidate_pairs
@@ -28,6 +30,8 @@ from tmol_jax.pack.scoring import sparse_nonbonded_values, nonbonded_candidate_p
         "cartbonded",
         "na_torsion",
         "backbone",
+        "disulfide",
+        "metal",
     ),
 )
 def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
@@ -38,6 +42,10 @@ def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
             cases = HBOND_CASES
         elif family == "na_torsion":
             cases = NA_CASES
+        if family == "disulfide":
+            cases = DISULFIDE_CASES
+        elif family == "metal":
+            cases = METAL_CASES
         if family == "backbone":
             cases = {"mixed_batch": BACKBONE_CASES["mixed"]}
         b.molecule(cases["mixed_batch"], terms=("ref",))
@@ -51,6 +59,8 @@ def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
             "cartbonded",
             "na_torsion",
             "backbone",
+            "disulfide",
+            "metal",
         ):
             indices = nonbonded_candidate_pairs(
                 execute.rotamers,
@@ -65,6 +75,10 @@ def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
                 from tmol_jax.pack.bonded_scoring import sparse_bonded_scores
 
                 values = sparse_bonded_scores(x, execute.state)[0]
+            elif family in ("disulfide", "metal"):
+                from tmol_jax.pack.connection_scoring import sparse_connection_scores
+
+                values = sparse_connection_scores(x, execute.state)[0]
             elif family == "na_torsion":
                 from tmol_jax.pack.na_scoring import sparse_na_torsion_scores
 
@@ -198,6 +212,8 @@ def test_connected_dispatch_preserves_lockstep_identities(platform, coupled):
         "cartbonded",
         "na_torsion",
         "backbone",
+        "disulfide",
+        "metal",
     ),
 )
 def test_sparse_preparation_respects_cpu_pose_on_gpu_host(family):
@@ -211,6 +227,10 @@ def test_sparse_preparation_respects_cpu_pose_on_gpu_host(family):
     from tmol_jax.pack.hbond_scoring import prepare_rotamer_hbond
     from tmol_jax.pack.na_scoring import prepare_rotamer_na_torsion
     from tmol_jax.pack.backbone_scoring import prepare_rotamer_backbone
+    from tmol_jax.pack.connection_scoring import (
+        prepare_rotamer_disulfide,
+        prepare_rotamer_metal,
+    )
 
     try:
         gpu = jax.devices("cuda")[0]
@@ -222,6 +242,10 @@ def test_sparse_preparation_respects_cpu_pose_on_gpu_host(family):
         cases = HBOND_CASES
     elif family == "na_torsion":
         cases = NA_CASES
+    elif family == "disulfide":
+        cases = DISULFIDE_CASES
+    elif family == "metal":
+        cases = METAL_CASES
     b.molecule(cases["mixed_batch"], terms=("ref",))
     e = RotamerExecution(b, family=family)
     prepare = {
@@ -232,6 +256,8 @@ def test_sparse_preparation_respects_cpu_pose_on_gpu_host(family):
         "hbond": prepare_rotamer_hbond,
         "na_torsion": prepare_rotamer_na_torsion,
         "backbone": prepare_rotamer_backbone,
+        "disulfide": prepare_rotamer_disulfide,
+        "metal": prepare_rotamer_metal,
     }.get(family, prepare_rotamer_nonbonded)
     with jax.default_device(gpu):
         state = prepare(

@@ -46,6 +46,10 @@ class RotamerExecution:
             from tmol_jax.pack.hbond_scoring import prepare_rotamer_hbond
             from tmol_jax.pack.na_scoring import prepare_rotamer_na_torsion
             from tmol_jax.pack.backbone_scoring import prepare_rotamer_backbone
+            from tmol_jax.pack.connection_scoring import (
+                prepare_rotamer_disulfide,
+                prepare_rotamer_metal,
+            )
 
             with backend.module.default_device(backend.device):
                 arguments = (backend.pose, self.rotamers, backend.parameter_database)
@@ -57,6 +61,8 @@ class RotamerExecution:
                     "cartbonded",
                     "na_torsion",
                     "backbone",
+                    "disulfide",
+                    "metal",
                 ):
                     prepare = {
                         "dunbrack": prepare_rotamer_dunbrack,
@@ -66,6 +72,8 @@ class RotamerExecution:
                         "hbond": prepare_rotamer_hbond,
                         "na_torsion": prepare_rotamer_na_torsion,
                         "backbone": prepare_rotamer_backbone,
+                        "disulfide": prepare_rotamer_disulfide,
+                        "metal": prepare_rotamer_metal,
                     }[self.family]
                     self.state = prepare(*arguments)
                 else:
@@ -83,6 +91,11 @@ class RotamerExecution:
                 HBondEnergyTerm,
                 NaTorsionEnergyTerm,
                 BackboneTorsionEnergyTerm,
+                DisulfideEnergyTerm,
+            )
+
+            from tmol.score.metal._metal_coordination_term import (
+                MetalCoordinationEnergyTerm,
             )
 
             cls = {
@@ -95,6 +108,8 @@ class RotamerExecution:
                 "hbond": HBondEnergyTerm,
                 "na_torsion": NaTorsionEnergyTerm,
                 "backbone": BackboneTorsionEnergyTerm,
+                "disulfide": DisulfideEnergyTerm,
+                "metal": MetalCoordinationEnergyTerm,
             }[self.family]
             term = cls(param_db=backend.parameter_database, device=backend.device)
             for block in backend.pose.packed_block_types.active_block_types:
@@ -119,6 +134,10 @@ class RotamerExecution:
             from tmol_jax.pack.bonded_scoring import sparse_bonded_scores
 
             return sparse_bonded_scores(x, self.state)
+        if self.family in ("disulfide", "metal"):
+            from tmol_jax.pack.connection_scoring import sparse_connection_scores
+
+            return sparse_connection_scores(x, self.state)
         if self.family == "na_torsion":
             from tmol_jax.pack.na_scoring import sparse_na_torsion_scores
 
@@ -168,6 +187,10 @@ class RotamerExecution:
                 from tmol_jax.pack.bonded_scoring import sparse_bonded_scores
 
                 values = sparse_bonded_scores(x, self.state)[0]
+            elif self.family in ("disulfide", "metal"):
+                from tmol_jax.pack.connection_scoring import sparse_connection_scores
+
+                values = sparse_connection_scores(x, self.state)[0]
             elif self.family == "na_torsion":
                 from tmol_jax.pack.na_scoring import sparse_na_torsion_scores
 

@@ -111,7 +111,8 @@ def test_native_graph_adjacency_spans_bitset_words(platform):
 
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
-def test_native_graph_prefix_retains_wide_counts_without_x64(platform):
+@pytest.mark.parametrize("maximum", (False, True))
+def test_native_graph_prefix_retains_wide_counts_without_x64(platform, maximum):
     try:
         device = jax.devices(platform)[0]
     except RuntimeError:
@@ -123,12 +124,21 @@ def test_native_graph_prefix_retains_wide_counts_without_x64(platform):
             )
             opaque = values.view(np.uint8).reshape(count, 8)
             argument = jax.device_put(opaque, device)
-            expected = np.asarray([0, *np.cumsum(values, dtype=np.int64)], np.int64)
-            actual = prefix_counts(argument)
+            reduction = (
+                np.maximum.accumulate(values)
+                if maximum
+                else np.cumsum(values, dtype=np.int64)
+            )
+            expected = np.asarray([0, *reduction], np.int64)
+
+            def prefix(x):
+                return prefix_counts(x, maximum=maximum)
+
+            actual = prefix(argument)
             np.testing.assert_array_equal(
                 np.asarray(actual).view(np.int64).ravel(), expected
             )
-            batched = jax.jit(jax.vmap(prefix_counts))(jnp.stack((argument, argument)))
+            batched = jax.jit(jax.vmap(prefix))(jnp.stack((argument, argument)))
             np.testing.assert_array_equal(
                 np.asarray(batched).copy().view(np.int64).reshape(2, count + 1),
                 np.stack((expected, expected)),
