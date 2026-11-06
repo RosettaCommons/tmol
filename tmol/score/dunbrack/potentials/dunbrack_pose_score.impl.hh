@@ -787,205 +787,53 @@ auto DunbrackRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
 
   auto dV_dx = dV_dx_t.view;
 
-  // Optimal launch box on v100 and a100 is nt=32, vt=1
-  LAUNCH_BOX_32;
-
-  auto func = ([=] TMOL_DEVICE_FUNC(int rotamer_index) {
-    int const pose_index = pose_ind_for_rot[rotamer_index];
-    int const block_index = block_ind_for_rot[rotamer_index];
-    int const block_type_index = block_type_ind_for_rot[rotamer_index];
-    if (block_type_index == -1) {
-      // in non-rotamer scoring (both whole-pose and block-pair scoring)
-      // we will launch n_poses * max_n_blocks_per_pose threads
-      // with some threads being launched for blocks with -1 block type.
-      return;
-    }
-
-    if (block_rotamer_table_set[block_type_index] == -1) return;
-
-    for (int ii = 0; ii < block_n_dihedrals[block_type_index]; ii++) {
-      auto dih_uaids = block_dih_uaids[block_type_index][ii];
-      bool fail = false;
-      for (int jj = 0; jj < DIH_N_ATOMS; jj++) {
-        UnresolvedAtomID<Int> uaid = dih_uaids[jj];
-
-        if (uaid.atom_id == -1 && uaid.conn_id == -1) {  // Dihedral undefined
-          fail = true;
-          break;
-        }
-
-        dihedral_atom_inds[rotamer_index][ii][jj] =
-            resolve_rotamer_atom_from_uaid(
-                uaid,
-                rotamer_index,
-                block_index,
-                pose_index,
-                rot_coord_offset,
-                first_rot_for_block,
-                first_rot_block_type,
-                pose_stack_inter_block_connections,
-                block_type_atom_downstream_of_conn);
-        if (dihedral_atom_inds[rotamer_index][ii][jj] == -1) {
-          // UAID resolution failed
-          fail = true;
-          break;
-        }
-      }
-      if (fail) {  // if the dihedral resolution failed, let's fill the cached
-                   // value with -1s since we might have partially filled it
-                   // above
-        dihedral_atom_inds[rotamer_index][ii] =
-            tmol::portable::Vec<Int, 4>::Constant(-1);
-      }
-
-      // a terminus has no phi or no psi, so a default stands in for it. It is
-      // a torsion like any other and must be negated for a mirrored residue,
-      // or the two forms read different points of the same table.
-      const Real mirror = block_is_mirrored[block_type_index] ? -1.0 : 1.0;
-      const Real PHI_DEFAULT = mirror * -60.0 * M_PI / 180;
-      const Real PSI_DEFAULT = mirror * 60.0 * M_PI / 180;
-
-      Real dih_default = (ii == 0)   ? PHI_DEFAULT
-                         : (ii == 1) ? PSI_DEFAULT
-                                     : 0.0;
-
-      measure_dihedral_V_dV(
-          TensorAccessor<Vec<Real, 3>, 1, D>(rot_coords),
-          dihedral_atom_inds[rotamer_index][ii],
-          dih_default,
-          dihedral_values[rotamer_index][ii],
-          dihedral_deriv[rotamer_index][ii]);
-    }
-
-    Int rotameric_rottable_assignment, semirotameric_rottable_assignment;
-    // Templated on there being 2 backbone dihedrals for canonical aas.
-    classify_rotamer_for_block<2>(
-        dihedral_values[rotamer_index],
-        block_n_rotameric_chi[block_type_index],
-        block_rotamer_index_to_table_index[block_type_index],
-        rotameric_rotind2tableind,
-        semirotameric_rotind2tableind,
-        rotameric_rottable_assignment,
-        semirotameric_rottable_assignment);
-
-    if (block_rotameric_index[block_type_index] != -1) {
-      Real prob = rotameric_chi_probability_for_block(
-          rotameric_neglnprob_tables,
-          rotprob_table_sizes,
-          rotprob_table_strides,
-          rotameric_bb_start,
-          rotameric_bb_step,
-          rotameric_bb_periodicity,
-          block_probability_table_offset[block_type_index],
-          block_rotamer_table_set[block_type_index],
-          dihedral_values[rotamer_index],
-          rotameric_rottable_assignment,
-          dterm_dtor_xyz[rotamer_index],
-          dihedral_deriv[rotamer_index]);
-
-      Vec<Int, DIH_N_ATOMS> phi_ats = dihedral_atom_inds[rotamer_index][0];
-      Vec<Int, DIH_N_ATOMS> psi_ats = dihedral_atom_inds[rotamer_index][1];
-      Real block_weight_0 = dTdV[0][rotamer_index];
-      for (int j = 0; j < DIH_N_ATOMS; ++j) {
-        if (phi_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
-              dV_dx[0][phi_ats[j]],
-              dterm_dtor_xyz[rotamer_index][0].row(j) * block_weight_0);
-        if (psi_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
-              dV_dx[0][psi_ats[j]],
-              dterm_dtor_xyz[rotamer_index][1].row(j) * block_weight_0);
-      }
-    }
-
-    for (int ii = 0; ii < block_n_rotameric_chi[block_type_index]; ii++) {
-      // deviation from chi for chis within this block
-      auto Erotdev = block_deviation_penalty_for_chi(
-          // DB tables
-          rotameric_mean_tables,
-          rotameric_sdev_tables,
-          rotmean_table_sizes,
-          rotmean_table_strides,
-          rotameric_bb_start,
-          rotameric_bb_step,
-          rotameric_bb_periodicity,
-          // Block type info
-          block_rotamer_table_set[block_type_index],
-          block_mean_table_offset[block_type_index],
-          block_n_chi[block_type_index],
-          // Block info
-          dihedral_values[rotamer_index],
-          ii,
-          rotameric_rottable_assignment,
-          // Out
-          dterm_dtor_xyz[rotamer_index],
-          dihedral_deriv[rotamer_index]);
-
-      Real block_weight_1 = dTdV[1][rotamer_index];
-      Vec<Int, DIH_N_ATOMS> tor0_ats = dihedral_atom_inds[rotamer_index][0];
-      Vec<Int, DIH_N_ATOMS> tor1_ats = dihedral_atom_inds[rotamer_index][1];
-      Vec<Int, DIH_N_ATOMS> tor2_ats =
-          dihedral_atom_inds[rotamer_index][2 + ii];
-      for (int j = 0; j < DIH_N_ATOMS; ++j) {
-        if (tor0_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
-              dV_dx[1][tor0_ats[j]],
-              dterm_dtor_xyz[rotamer_index][0].row(j) * block_weight_1);
-        if (tor1_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
-              dV_dx[1][tor1_ats[j]],
-              dterm_dtor_xyz[rotamer_index][1].row(j) * block_weight_1);
-        if (tor2_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
-              dV_dx[1][tor2_ats[j]],
-              dterm_dtor_xyz[rotamer_index][2].row(j) * block_weight_1);
-      }
-    }
-
-    if (block_semirotameric_index[block_type_index] != -1) {
-      auto Esemi = block_semirotameric_energy(
-          semirotameric_tables,
-          semirot_table_sizes,
-          semirot_table_strides,
-          semirot_start,
-          semirot_step,
-          semirot_periodicity,
-
-          block_semirotameric_index[block_type_index],
-          block_semirotameric_tableset_offset[block_type_index],
-          block_n_chi[block_type_index] + 1,
-
-          dihedral_values[rotamer_index],
-          semirotameric_rottable_assignment,
-
-          dterm_dtor_xyz[rotamer_index],
-          dihedral_deriv[rotamer_index]);
-
-      Real block_weight_2 = dTdV[2][rotamer_index];
-
-      int last = block_n_chi[block_type_index] + 1;
-      Vec<Int, DIH_N_ATOMS> tor0_ats = dihedral_atom_inds[rotamer_index][0];
-      Vec<Int, DIH_N_ATOMS> tor1_ats = dihedral_atom_inds[rotamer_index][1];
-      Vec<Int, DIH_N_ATOMS> tor2_ats = dihedral_atom_inds[rotamer_index][last];
-      for (int j = 0; j < DIH_N_ATOMS; ++j) {
-        if (tor0_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
-              dV_dx[2][tor0_ats[j]],
-              dterm_dtor_xyz[rotamer_index][0].row(j) * block_weight_2);
-        if (tor1_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
-              dV_dx[2][tor1_ats[j]],
-              dterm_dtor_xyz[rotamer_index][1].row(j) * block_weight_2);
-        if (tor2_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
-              dV_dx[2][tor2_ats[j]],
-              dterm_dtor_xyz[rotamer_index][2].row(j) * block_weight_2);
-      }
-    }
-  });
-
-  DeviceDispatch<D>::template forall<launch_t>(mgr, n_rots, func);
-
+  dunbrack_pose_backward<DeviceDispatch, D, Real, Int, int64_t, 2>(
+      mgr,
+      rot_coords,
+      rot_coord_offset,
+      first_rot_for_block,
+      first_rot_block_type,
+      pose_stack_inter_block_connections,
+      block_type_atom_downstream_of_conn,
+      rotameric_neglnprob_tables,
+      rotprob_table_sizes,
+      rotprob_table_strides,
+      rotameric_mean_tables,
+      rotameric_sdev_tables,
+      rotmean_table_sizes,
+      rotmean_table_strides,
+      rotameric_bb_start,
+      rotameric_bb_step,
+      rotameric_bb_periodicity,
+      rotameric_rotind2tableind,
+      semirotameric_rotind2tableind,
+      semirotameric_tables,
+      semirot_table_sizes,
+      semirot_table_strides,
+      semirot_start,
+      semirot_step,
+      semirot_periodicity,
+      block_n_dihedrals,
+      block_dih_uaids,
+      block_rotamer_table_set,
+      block_rotameric_index,
+      block_semirotameric_index,
+      block_n_chi,
+      block_n_rotameric_chi,
+      block_probability_table_offset,
+      block_mean_table_offset,
+      block_rotamer_index_to_table_index,
+      block_semirotameric_tableset_offset,
+      block_is_mirrored,
+      dTdV,
+      dV_dx,
+      dihedral_atom_inds,
+      dihedral_values,
+      dihedral_deriv,
+      dterm_dtor_xyz,
+      pose_ind_for_rot,
+      block_ind_for_rot,
+      block_type_ind_for_rot);
   return dV_dx_t;
 }
 

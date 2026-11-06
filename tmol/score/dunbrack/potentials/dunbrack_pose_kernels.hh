@@ -469,12 +469,22 @@ void dunbrack_pose_forward(
   }
 }
 
+template <size_t Rank, typename Real, Device D>
+TMOL_HOST_DEVICE_FUNC Real dunbrack_score_weight(
+    TView<Real, Rank, D> weights, int term, int pose, int block, int rotamer) {
+  if constexpr (Rank == 2)
+    return weights[term][rotamer];
+  else
+    return weights[term][pose][block][block];
+}
+
 template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
     typename Real,
     typename Int,
-    typename SizeInt = int64_t>
+    typename SizeInt = int64_t,
+    size_t OutRank = 4>
 void dunbrack_pose_backward(
     ContextManager& mgr,
     TView<Vec<Real, 3>, 1, D> rot_coords,
@@ -513,12 +523,16 @@ void dunbrack_pose_backward(
     TView<Int, 1, D> block_rotamer_index_to_table_index,
     TView<Int, 1, D> block_semirotameric_tableset_offset,
     TView<Int, 1, D> block_is_mirrored,
-    TView<Real, 4, D> dTdV,
+    TView<Real, OutRank, D> dTdV,
     TView<Vec<Real, 3>, 2, D> dV_dx,
     TView<Vec<Int, 4>, 2, D> dihedral_atom_inds,
     TView<Real, 2, D> dihedral_values,
     TView<tmol::portable::Mat<Real, 4, 3>, 2, D> dihedral_deriv,
-    TView<tmol::portable::Mat<Real, 4, 3>, 2, D> dterm_dtor_xyz) {
+    TView<tmol::portable::Mat<Real, 4, 3>, 2, D> dterm_dtor_xyz,
+    TView<Int, 1, D> pose_ind_for_rot = {},
+    TView<Int, 1, D> block_ind_for_rot = {},
+    TView<Int, 1, D> block_type_ind_for_rot = {}) {
+  static_assert(OutRank == 4 || OutRank == 2);
   int const n_atoms = rot_coords.size(0);
   int const n_poses = first_rot_for_block.size(0);
   int const n_rots = rot_coord_offset.size(0);
@@ -564,9 +578,15 @@ void dunbrack_pose_backward(
   LAUNCH_BOX_32;
 
   auto func = ([=] TMOL_DEVICE_FUNC(int ind) {
-    int const pose_index = ind / max_n_blocks;
-    int const block_index = ind % max_n_blocks;
-    int const block_type_index = first_rot_block_type[pose_index][block_index];
+    int const pose_index =
+        OutRank == 2 ? pose_ind_for_rot[ind] : ind / max_n_blocks;
+    int const block_index =
+        OutRank == 2 ? block_ind_for_rot[ind] : ind % max_n_blocks;
+    int const block_type_index =
+        OutRank == 2 ? block_type_ind_for_rot[ind]
+                     : first_rot_block_type[pose_index][block_index];
+    int const rotamer_index =
+        OutRank == 2 ? ind : first_rot_for_block[pose_index][block_index];
     if (block_type_index == -1) {
       // in non-rotamer scoring (both whole-pose and block-pair scoring)
       // we will launch n_poses * max_n_blocks_per_pose threads
@@ -574,14 +594,20 @@ void dunbrack_pose_backward(
       return;
     }
 
-    if (dTdV[0][pose_index][block_index][block_index] == 0
-        && dTdV[1][pose_index][block_index][block_index] == 0
-        && dTdV[2][pose_index][block_index][block_index] == 0) {
+    if (OutRank == 4
+        && dunbrack_score_weight(
+               dTdV, 0, pose_index, block_index, rotamer_index)
+               == 0
+        && dunbrack_score_weight(
+               dTdV, 1, pose_index, block_index, rotamer_index)
+               == 0
+        && dunbrack_score_weight(
+               dTdV, 2, pose_index, block_index, rotamer_index)
+               == 0) {
       return;
     }
 
     if (block_rotamer_table_set[block_type_index] == -1) return;
-    int const rotamer_index = first_rot_for_block[pose_index][block_index];
     if (rotamer_index == -1) {
       // This should never happen
       return;
@@ -669,7 +695,8 @@ void dunbrack_pose_backward(
 
       Vec<Int, DIH_N_ATOMS> phi_ats = dihedral_atom_inds[rotamer_index][0];
       Vec<Int, DIH_N_ATOMS> psi_ats = dihedral_atom_inds[rotamer_index][1];
-      Real block_weight_0 = dTdV[0][pose_index][block_index][block_index];
+      Real block_weight_0 = dunbrack_score_weight(
+          dTdV, 0, pose_index, block_index, rotamer_index);
       for (int j = 0; j < DIH_N_ATOMS; ++j) {
         if (phi_ats[j] != -1)
           accumulate<D, Vec<Real, 3>>::add(
@@ -705,7 +732,8 @@ void dunbrack_pose_backward(
           dterm_dtor_xyz[rotamer_index],
           dihedral_deriv[rotamer_index]);
 
-      Real block_weight_1 = dTdV[1][pose_index][block_index][block_index];
+      Real block_weight_1 = dunbrack_score_weight(
+          dTdV, 1, pose_index, block_index, rotamer_index);
       Vec<Int, DIH_N_ATOMS> tor0_ats = dihedral_atom_inds[rotamer_index][0];
       Vec<Int, DIH_N_ATOMS> tor1_ats = dihedral_atom_inds[rotamer_index][1];
       Vec<Int, DIH_N_ATOMS> tor2_ats =
@@ -745,7 +773,8 @@ void dunbrack_pose_backward(
           dterm_dtor_xyz[rotamer_index],
           dihedral_deriv[rotamer_index]);
 
-      Real block_weight_2 = dTdV[2][pose_index][block_index][block_index];
+      Real block_weight_2 = dunbrack_score_weight(
+          dTdV, 2, pose_index, block_index, rotamer_index);
 
       int last = block_n_chi[block_type_index] + 1;
       Vec<Int, DIH_N_ATOMS> tor0_ats = dihedral_atom_inds[rotamer_index][0];
@@ -768,8 +797,11 @@ void dunbrack_pose_backward(
     }
   });
 
-  DeviceDispatch<D>::template forall_grouped<launch_t>(
-      mgr, n_poses, max_n_blocks, func);
+  if constexpr (OutRank == 2)
+    DeviceDispatch<D>::template forall<launch_t>(mgr, n_rots, func);
+  else
+    DeviceDispatch<D>::template forall_grouped<launch_t>(
+        mgr, n_poses, max_n_blocks, func);
 }
 
 }  // namespace potentials
