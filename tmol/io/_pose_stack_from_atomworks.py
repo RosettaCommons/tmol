@@ -14,7 +14,7 @@ from tmol.pose._pose_stack import PoseStack
 
 from tmol_core.io.atomworks_encoding import ATOMWORKS_ATOM37_NAMES  # noqa: F401
 from tmol_core.io.atomworks_encoding import (
-    ATOMWORKS_NAME3S,
+    ATOMWORKS_NAME3S as ATOMWORKS_NAME3S,
     _ATOMWORKS_MIN_PROTEIN_IDX,
     _ATOMWORKS_MAX_PROTEIN_IDX,
     atomworks_restype_map,
@@ -290,21 +290,9 @@ def _paramdb_for_atomworks() -> ParameterDatabase:
     acids together with every tautomer and disulfide form sharing their IO
     equivalence class, and the canonical n- and c-termini patches.
     """
-    covered_equiv_classes = {n for n in ATOMWORKS_NAME3S if n not in ("<M>", "UNK")}
-    chemdb = ParameterDatabase.get_default().chemical
-    # The encoding names residues by IO equivalence class, so ask the database
-    # which unpatched types fall into each rather than listing them here; a
-    # list would silently omit a form the rest of the pipeline can produce.
-    desired_rt_names = sorted(
-        rt.name
-        for rt in chemdb.residues
-        if rt.name == rt.base_name and rt.io_equiv_class in covered_equiv_classes
-    )
-    desired_variants_display_names = ["nterm", "cterm"]
+    from tmol_core.io.atomworks_encoding import atomworks_parameter_database
 
-    return ParameterDatabase.get_default().create_stable_subset(
-        desired_rt_names, desired_variants_display_names
-    )
+    return atomworks_parameter_database(ParameterDatabase.get_default())
 
 
 @toolz.functoolz.memoize
