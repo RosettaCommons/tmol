@@ -102,7 +102,7 @@ integrated the complete workflow.
 
 Native bump pruning shares its preliminary graph and energy bounds through
 `BumpGraphContext` and three allocation-free stages in
-`pack/compiled/interaction_graph_bounds.hh`. Adapters zero count and energy
+`pack/compiled/interaction_graph_bounds.hh`. Adapters zero scratch and energy
 buffers, scan block-pair counts to size chunk storage, then scan chunk sizes to
 size pair-energy storage. Offsets and scan totals use int64; native dispatch
 sizes are checked. Empty block bounds retain the mature sentinel `1234`.
