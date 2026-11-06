@@ -52,6 +52,7 @@ class PackerTask:
         self.conformer_samplers = []
         self.conformer_sampler_index = {}
         self.chi_sample_budget = None
+        self.bump_check = False
 
     def _mask(self, value):
         value = np.asarray(value)
@@ -82,6 +83,9 @@ class PackerTask:
 
     def set_chi_sample_budget(self, expanded_limit, limit):
         self.chi_sample_budget = chi_sample_budget(expanded_limit, limit)
+
+    def or_bump_check(self, setting=True):
+        self.bump_check |= bool(setting)
 
     def restrict_to_repacking(self, block_mask=None):
         restriction = self.restrict_to_repacking_masks

@@ -123,19 +123,10 @@ def test_sparse_custom_callback_curvature_legacy_and_empty():
 
 
 def test_sparse_constraint_explicit_capability_boundaries():
-    import attrs
-    from tmol_core.pack.correlation import CorrelatedBlockGroup
     from tmol_jax.score.constraint import ConstraintEnergyTerm
 
     b = Execution("jax-cpu")
     e, _ = constrained_rotamers(b, "mixed_batch", False)
-    with pytest.raises(NotImplementedError, match="lockstep"):
-        prepare_rotamer_constraints(
-            b.pose,
-            attrs.evolve(
-                e.rotamers, correlated_groups=(CorrelatedBlockGroup(0, (0, 1)),)
-            ),
-        )
     cs = ConstraintSet.create_empty(b.device, b.pose.n_poses).add_constraints(
         ConstraintEnergyTerm.circularharmonic,
         np.array([[[0, 0, 0], [0, 1, 0], [0, 2, 0], [0, 0, 1]]], np.int32),

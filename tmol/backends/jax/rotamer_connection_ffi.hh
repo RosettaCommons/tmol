@@ -40,10 +40,14 @@ struct ConnectionTopologyStage : ConnectionOperands<Metal> {
       int64_t op,
       int64_t extent,
       int64_t width) {
-    if ((op != 0 && op != 1) || a.size() != C::extra + 2 * op
+    if ((op != 0 && op != 1) || a.size() != C::extra + 2 * op + 1
         || out.size() != (op ? 2 : 1))
       throw std::invalid_argument("invalid connection candidate operands");
     C::validate(a);
+    require_shape(
+        a.back(),
+        ffi::DataType::S32,
+        {a[2].dimensions()[0], a[2].dimensions()[1]});
     auto r = a[1].dimensions()[0];
     if (op) {
       graph_wide(a[C::extra], r);
@@ -102,11 +106,15 @@ struct ConnectionTopologyStage : ConnectionOperands<Metal> {
                       OUT(I, 2, 0),
                       OUT(I, 2, 1),
                       extent,
-                      width);
+                      width,
+                      buffer_view<I, 2, D>(a.back()));
             else
               score::metal::potentials::
                   metal_rotamer_count_native<Ops, D, Real, I>(
-                      manager, common..., OUT(int64_t, 1, 0));
+                      manager,
+                      common...,
+                      OUT(int64_t, 1, 0),
+                      buffer_view<I, 2, D>(a.back()));
           },
           args);
     } else {
@@ -130,11 +138,15 @@ struct ConnectionTopologyStage : ConnectionOperands<Metal> {
                       OUT(I, 2, 0),
                       OUT(I, 2, 1),
                       extent,
-                      width);
+                      width,
+                      buffer_view<I, 2, D>(a.back()));
             else
               score::disulfide::potentials::
                   disulfide_rotamer_count_native<Ops, D, Real, I>(
-                      manager, common..., OUT(int64_t, 1, 0));
+                      manager,
+                      common...,
+                      OUT(int64_t, 1, 0),
+                      buffer_view<I, 2, D>(a.back()));
           },
           args);
     }

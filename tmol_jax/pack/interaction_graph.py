@@ -107,13 +107,28 @@ def _graph_chunk_layout(
     return offsets, total
 
 
-def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
+@jax.jit
+def _canonical_indices(indices, block_of):
+    swap = block_of[indices[1]] > block_of[indices[2]]
+    return jnp.stack(
+        (
+            indices[0],
+            jnp.where(swap, indices[2], indices[1]),
+            jnp.where(swap, indices[1], indices[2]),
+        )
+    )
+
+
+def build_interaction_graph(
+    rotamers, values, indices, *, chunk_size=16, bump_check=False
+):
     """Build native background, one-body and chunked two-body energy tables.
 
     Inputs are uncoalesced scalar entries and [3, entries] pose/rotamer indices.
     Duplicate entries accumulate. Distinct alternatives of one block cannot
     share an energy entry. Producer-declared joint conformers are collapsed
-    through the shared correspondence plan. Bump pruning is not implemented.
+    through the shared correspondence plan. Optional bump pruning uses the common
+    native bounds and preserves original retained identities.
     Discrete allocation is
     eager and energy-table construction currently has no AD rule.
     """
@@ -156,23 +171,67 @@ def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
             rotamers, values, indices
         )
 
+    indices = _canonical_indices(indices, rotamers.block_ind_for_rot)
+
     def total(value):
         return int(np.asarray(value).copy().view(np.int64).reshape(-1)[0])
 
     with jax.default_device(rotamers.device):
+        bounds = {}
+        if bump_check:
+            from .bump import bump_bounds
+
+            best_rotamer, best_block = bump_bounds(
+                rotamers, values, indices, chunk_size=chunk_size
+            )
+            bounds = dict(
+                best_energy_for_rotamer=best_rotamer, best_energy_for_block=best_block
+            )
         retained = retained_topology(
             rotamers.n_rots_for_block,
             rotamers.rot_offset_for_block,
             rotamers.rot_offset_for_pose,
             rotamers.pose_for_rot,
             rotamers.block_ind_for_rot,
+            **bounds,
         )
+        source_counts, source_offsets = (
+            rotamers.n_rots_for_block,
+            rotamers.rot_offset_for_block,
+        )
+        source_blocks, fixed = rotamers.block_ind_for_rot, retained["fixed"]
+        if bump_check:
+            from .bump import retained_entry_mapping, compact_entries
+            from .imposition import _wide as wide_values
+
+            keep, entry_keep, mapping, source_offsets, source_counts, new_fixed = (
+                retained_entry_mapping(
+                    retained["inverse_rotamers"],
+                    fixed,
+                    indices,
+                    source_blocks,
+                    source_offsets,
+                    source_counts,
+                )
+            )
+            sizes = np.asarray(jnp.stack((jnp.sum(keep), jnp.sum(entry_keep))))
+            values, indices, source_blocks = compact_entries(
+                values,
+                indices,
+                keep,
+                entry_keep,
+                mapping,
+                source_blocks,
+                rotamers=int(sizes[0]),
+                entries=int(sizes[1]),
+            )
+            fixed = wide_values(new_fixed)
         counts = retained["block_rotamer_counts"]
         mapping, adjacency, rows, size = _graph_adjacency(
-            rotamers.n_rots_for_block,
+            source_counts,
             counts,
             indices,
-            rotamers.block_ind_for_rot,
+            source_blocks,
             chunk_size=chunk_size,
         )
         neighbors, word_offsets, pair_offsets, sizes = _graph_edge_layout(
@@ -184,8 +243,8 @@ def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
         )
         n_words, n_pairs = np.asarray(sizes).copy().view(np.int64).reshape(-1)
         chunk_offsets, size = _graph_chunk_layout(
-            (indices, rotamers.block_ind_for_rot, mapping),
-            rotamers.rot_offset_for_block,
+            (indices, source_blocks, mapping),
+            source_offsets,
             counts,
             rows,
             neighbors,
@@ -201,10 +260,10 @@ def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
             (
                 indices,
                 values,
-                rotamers.block_ind_for_rot,
+                source_blocks,
                 mapping,
-                rotamers.rot_offset_for_block,
-                retained["fixed"],
+                source_offsets,
+                fixed,
                 counts,
                 retained["block_rotamer_offsets"],
                 rows,

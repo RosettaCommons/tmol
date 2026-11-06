@@ -106,6 +106,23 @@ def validate_rotamer_context(pose, rotamers):
     rotamers.context.validate(pose)
     if rotamers.device != pose.device:
         raise ValueError("conformers and pose must be on the same device")
+    sources = (
+        rotamers.n_rots_for_block,
+        rotamers.group_for_block,
+        rotamers.correlated_groups,
+    )
+    prior = getattr(rotamers, "_validated_correspondence", None)
+    if prior is None or any(old is not new for old, new in zip(prior, sources)):
+        from tmol_core.pack.correlation import correlation_indices
+
+        expected = correlation_indices(
+            sources[0].shape, sources[2], np.asarray(sources[0])
+        )
+        if not np.array_equal(expected, sources[1]):
+            raise ValueError(
+                "conformer group indices disagree with declared correspondence"
+            )
+        object.__setattr__(rotamers, "_validated_correspondence", sources)
 
 
 def prepare_rotamer_nonbonded(pose, rotamers, database, *, electrostatic=False):

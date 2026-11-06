@@ -56,10 +56,6 @@ def prepare_rotamer_constraints(pose, rotamers, database=None):
     """Prepare eager candidate identities while preserving callback parameter AD."""
     del database
     validate_rotamer_context(pose, rotamers)
-    if rotamers.correlated_groups:
-        raise NotImplementedError(
-            "sparse constraint lockstep expansion is not implemented"
-        )
     with jax.default_device(pose.device):
         cs = _geometric_constraints(pose)
         if not isinstance(cs, ConstraintSet):
@@ -75,13 +71,15 @@ def prepare_rotamer_constraints(pose, rotamers, database=None):
         )
         shape = jax.ShapeDtypeStruct
         counts = _stage(
-            arguments, operation=0, outputs=shape((2 * cs.n_constraints, 8), np.uint8)
+            (*arguments, rotamers.group_for_block),
+            operation=0,
+            outputs=shape((2 * cs.n_constraints, 8), np.uint8),
         )
         offsets = prefix_counts(counts)
         total = int(np.asarray(offsets[-1]).copy().view(np.int64)[0])
         owners = load_balance(offsets[:-1], total=total)
         sources, atoms, indices = _stage(
-            (*arguments, offsets[:-1], owners),
+            (*arguments, offsets[:-1], owners, rotamers.group_for_block),
             operation=1,
             outputs=(
                 shape((total,), np.int32),

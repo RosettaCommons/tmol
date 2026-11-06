@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-ABI_VERSION = 2
+ABI_VERSION = 3
 
 
 def library_path(platform="cpu") -> Path | None:

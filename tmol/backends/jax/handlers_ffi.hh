@@ -283,6 +283,10 @@ TMOL_JAX_STAGE(
     tmol_protonation,
     tmol::jax::run_graph_stage<tmol::jax::ProtonationStage>, );
 
+TMOL_JAX_STAGE(
+    tmol_graph_bounds,
+    tmol::jax::run_graph_stage<tmol::jax::GraphBoundsStage>, );
+
 #undef TMOL_JAX_STAGE
 #undef TMOL_JAX_ENERGY
 #undef TMOL_JAX_TRAITS

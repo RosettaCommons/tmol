@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-ABI_VERSION = 2
+ABI_VERSION = 3
 
 
 @lru_cache(maxsize=1)

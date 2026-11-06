@@ -279,8 +279,6 @@ def test_sparse_backbone_rejects_unimplemented_dispatch_topologies():
     b = Execution("jax-cpu")
     b.molecule(CyclicPeptideCase((), (("ALA", "PRO"),), ((2,),)), terms=("ref",))
     e = RotamerExecution(b, family="genbonded")
-    with pytest.raises(NotImplementedError, match="two-residue cycle"):
-        prepare_rotamer_backbone(b.pose, e.rotamers, b.parameter_database)
     with pytest.raises(NotImplementedError, match="lockstep"):
         prepare_rotamer_backbone(
             b.pose,

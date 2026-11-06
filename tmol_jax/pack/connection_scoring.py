@@ -21,10 +21,6 @@ def _stage(arguments, *, target, operation, outputs, extent=0, width=0):
 
 def prepare_rotamer_connection(pose, rotamers, database, *, metal=False):
     validate_rotamer_context(pose, rotamers)
-    if rotamers.correlated_groups:
-        raise NotImplementedError(
-            "sparse connection lockstep candidate filtering is not implemented"
-        )
     with jax.default_device(pose.device):
         cls = MetalCoordinationEnergyTerm if metal else DisulfideEnergyTerm
         parameters = cls(database).setup_for_pose_stack(
@@ -52,7 +48,7 @@ def prepare_rotamer_connection(pose, rotamers, database, *, metal=False):
         target = f"tmol_{family}_rotamer_topology"
         shape = jax.ShapeDtypeStruct
         counts = _stage(
-            (rotamers.coords, *count_parameters),
+            (rotamers.coords, *count_parameters, rotamers.group_for_block),
             target=target,
             operation=0,
             outputs=shape((rotamers.n_rotamers_total, 8), np.uint8),
@@ -69,7 +65,13 @@ def prepare_rotamer_connection(pose, rotamers, database, *, metal=False):
                 "connection candidate dispatch exceeds native int32 capacity"
             )
         indices, identities = _stage(
-            (rotamers.coords, *count_parameters, counts, offsets[:-1]),
+            (
+                rotamers.coords,
+                *count_parameters,
+                counts,
+                offsets[:-1],
+                rotamers.group_for_block,
+            ),
             target=target,
             operation=1,
             outputs=(

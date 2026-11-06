@@ -117,7 +117,8 @@ def test_native_graph_energy_for_every_assignment(platform, dtype):
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
 @pytest.mark.parametrize("counts", ([[1, 1], [0, 0]], [[], []], []))
-def test_native_graph_empty_entries_and_fixed_blocks(platform, counts):
+@pytest.mark.parametrize("bump_check", (False, True))
+def test_native_graph_empty_entries_and_fixed_blocks(platform, counts, bump_check):
     device = Execution("jax-" + platform).device
     with jax.default_device(device):
         counts = np.asarray(counts, np.int32)
@@ -125,7 +126,7 @@ def test_native_graph_empty_entries_and_fixed_blocks(platform, counts):
             counts = counts.reshape(0, 0)
         rotamers = synthetic_rotamers(counts, device)
         graph = build_interaction_graph(
-            rotamers, jnp.zeros(0), jnp.zeros((3, 0), jnp.int32)
+            rotamers, jnp.zeros(0), jnp.zeros((3, 0), jnp.int32), bump_check=bump_check
         )
         assert graph["energy1b"].shape == graph["energy2b"].shape == (0,)
         np.testing.assert_array_equal(graph["background"], np.zeros(counts.shape[0]))
@@ -140,3 +141,19 @@ def test_graph_rejects_energy_between_alternatives_of_one_block(platform):
             build_interaction_graph(
                 rotamers, jnp.array([-100.0]), jnp.array([[0], [0], [1]], jnp.int32)
             )
+
+
+@pytest.mark.parametrize("platform", ("cpu", "cuda"))
+def test_bump_bounds_accumulate_duplicate_entries_without_lost_updates(platform):
+    from tmol_jax.pack.bump import bump_bounds
+
+    device = Execution("jax-" + platform).device
+    with jax.default_device(device):
+        rotamers = synthetic_rotamers([[2]], device)
+        # More entries than a CPU dispatch grain, all targeting one location.
+        indices = jnp.zeros((3, 40960), jnp.int32)
+        values = jnp.full(40960, 1 / 4096, jnp.float32)
+        for _ in range(3):
+            bounds, best = bump_bounds(rotamers, values, indices)
+            np.testing.assert_array_equal(bounds, [10, 0])
+            np.testing.assert_array_equal(best, [[0]])

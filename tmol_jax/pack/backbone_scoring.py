@@ -31,21 +31,6 @@ def prepare_rotamer_backbone(pose, rotamers, database):
         parameters = (
             BackboneTorsionEnergyTerm(database).setup_for_pose_stack(pose).parameters
         )
-        # The common sparse kernel currently loses bond direction when two
-        # residues each connect their upper port to the other residue.
-        types = np.asarray(pose.block_type_ind)
-        upper = np.asarray(parameters[8])
-        connections = np.asarray(pose.inter_residue_connections)
-        for p, b in np.argwhere(types >= 0):
-            port = upper[types[p, b]]
-            other = connections[p, b, port, 0] if port >= 0 else -1
-            if other < 0 or types[p, other] < 0:
-                continue
-            other_port = upper[types[p, other]]
-            if other_port >= 0 and connections[p, other, other_port, 0] == b:
-                raise NotImplementedError(
-                    "sparse backbone two-residue cycle direction is not implemented"
-                )
         arguments = (
             rotamers.n_rots_for_block,
             rotamers.first_rot_block_type,
@@ -54,7 +39,7 @@ def prepare_rotamer_backbone(pose, rotamers, database):
         )
         shape = jax.ShapeDtypeStruct
         counts = _stage(
-            arguments,
+            (*arguments, rotamers.group_for_block),
             operation=0,
             outputs=shape((*rotamers.n_rots_for_block.shape, 8), np.uint8),
         )
@@ -67,6 +52,7 @@ def prepare_rotamer_backbone(pose, rotamers, database):
                 rotamers.rot_offset_for_block,
                 offsets[:-1].reshape(counts.shape),
                 owners,
+                rotamers.group_for_block,
             ),
             operation=1,
             outputs=shape((3, total), np.int32),

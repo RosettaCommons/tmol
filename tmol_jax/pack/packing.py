@@ -15,7 +15,8 @@ def pack_rotamers(pose_stack, sfxn, task, *, seed, chunk_size=16):
     Returns a new pose. The task must register its samplers, including fallback
     for uncovered blocks. All enabled score terms are included. This eager,
     discrete operation requires float32 coordinates and an explicit uint64
-    seed. Candidate pruning and correlated-group search are not implemented.
+    seed. Optional task bump checks use the mature native pruning rule.
+    Complete correlated backbone scoring remains unavailable.
     CPU and CUDA use their respective mature search schedules. The CUDA phase
     seeds are drawn locally from NumPy PCG64; no global RNG state is changed.
     """
@@ -30,7 +31,9 @@ def pack_rotamers(pose_stack, sfxn, task, *, seed, chunk_size=16):
     )
     scorer = sfxn.render_rotamer_scoring_module(pose, rotamers)
     values, indices = scorer(rotamers.coords)
-    graph = build_interaction_graph(rotamers, values, indices, chunk_size=chunk_size)
+    graph = build_interaction_graph(
+        rotamers, values, indices, chunk_size=chunk_size, bump_check=task.bump_check
+    )
     r = graph["retained"]
     arguments = tuple(
         r[name]

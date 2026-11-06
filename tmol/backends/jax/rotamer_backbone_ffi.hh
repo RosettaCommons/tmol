@@ -12,12 +12,13 @@ struct BackboneRotamerTopologyStage {
       int64_t op,
       int64_t,
       int64_t) {
-    if ((op != 0 && op != 1) || a.size() != (op ? 7 : 4) || out.size() != 1)
+    if ((op != 0 && op != 1) || a.size() != (op ? 8 : 5) || out.size() != 1)
       throw std::invalid_argument("invalid backbone candidate operands");
     auto i = ffi::DataType::S32;
     require_shape(a[0], i, {-1, -1});
     auto p = a[0].dimensions()[0], b = a[0].dimensions()[1];
     require_shape(a[1], i, {p, b});
+    require_shape(a.back(), i, {p, b});
     require_shape(a[2], i, {p, b, -1, 2});
     require_shape(a[3], i, {-1});
     if (op) {
@@ -50,7 +51,8 @@ struct BackboneRotamerTopologyStage {
           IN(int32_t, 1, 3),
           IN(int64_t, 2, 5),
           IN(int32_t, 1, 6),
-          buffer_view<int32_t, 2, D>(out[0]));
+          buffer_view<int32_t, 2, D>(out[0]),
+          buffer_view<int32_t, 2, D>(a.back()));
     else
       backbone_rotamer_count_native<Ops, D, float, int32_t>(
           manager,
@@ -58,7 +60,8 @@ struct BackboneRotamerTopologyStage {
           IN(int32_t, 2, 1),
           IN(I2, 3, 2),
           IN(int32_t, 1, 3),
-          buffer_view<int64_t, 2, D>(out[0]));
+          buffer_view<int64_t, 2, D>(out[0]),
+          buffer_view<int32_t, 2, D>(a.back()));
 #undef IN
   }
 };

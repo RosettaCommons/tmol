@@ -24,6 +24,7 @@
 #include "conformer_copy_plan_ffi.hh"
 #include "graph_topology_ffi.hh"
 #include "graph_entries_ffi.hh"
+#include "graph_bounds_ffi.hh"
 #include "constraint_topology_ffi.hh"
 #include "graph_retention_ffi.hh"
 #include "rotamer_dispatch_ffi.hh"
@@ -243,7 +244,7 @@ ffi::Error run_graph_stage(
 // Host setup reuses the execution policy above for topology-only kernels.
 #include "host_pose_ffi.hh"
 
-extern "C" int tmol_jax_native_abi_version() { return 2; }
+extern "C" int tmol_jax_native_abi_version() { return 3; }
 
 namespace tmol::jax {
 template <typename Real, size_t Rank>

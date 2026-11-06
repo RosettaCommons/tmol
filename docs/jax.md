@@ -7,8 +7,8 @@ topology and native CPU/CUDA scoring physics are shared with Torch through
 D residues, variants, nucleic acids, metals and mixed systems retain their input
 identities and parameter context. Existing `tmol` imports remain available.
 
-This is experimental: general structure input, conjugated sampling, correlated
-packing groups, bump pruning and full design/FastRelax APIs remain unfinished.
+This is experimental: automatic ligand preparation, complete correlated
+packing and full design/FastRelax APIs remain unfinished.
 Native molecular scoring and selected packing paths have CPU/CUDA and Torch-free
 package validation; final Metal validation is tracked separately. See the [capability matrix](capability-matrix.json) for
 implemented behavior and evidence rather than assuming full TMol parity.
@@ -243,14 +243,14 @@ Sparse LJ/LK, electrostatic, LK-ball, hydrogen-bond, Dunbrack, Cartesian,
 generic-bonded, backbone, nucleic-acid, disulfide and metal values and coordinate VJPs use common native
 physics with `jit`/`vmap` support;
 forward-mode and higher derivatives are not implemented for these sparse entries.
-Backbone and connection candidate scoring currently reject correlated groups;
-backbone also rejects two-residue cycles. These common sparse dispatch paths
-need additional support.
+Backbone candidate scoring still rejects correlated groups because third-neighbor
+context needs additional support. Two-residue cycles preserve both directed
+bonds. Disulfide, metal and constraint candidates use native joint-state filtering.
 Sparse constraints use the same native candidate expansion and preserve physical
 atom order, including A/B/A/B torsions across two blocks. Their JAX callbacks
 support coordinate and parameter derivatives, JVPs and `jit`/`vmap`; parameter
 Hessians remain available with native torsions. Coordinate derivatives beyond
-first order depend on the callback. Constraint lockstep expansion remains absent.
+first order depend on the callback.
 `score_function.render_rotamer_scoring_module(pose, rotamer_set)` composes every
 enabled term, including reference energies and constraints. Calling it eagerly
 returns `(values, indices)` with uncoalesced scalar entries and `[3, entries]`
@@ -266,7 +266,9 @@ JAX transformations rejects explicitly. Native interaction-graph construction
 consumes these entries and shares background, one-body and chunked two-body
 accumulation with Torch. Producer-declared correlated groups use the common
 collapse plan: incompatible joint states are removed and compatible member
-energies accumulate into one choice. Bump pruning remains absent.
+energies accumulate into one choice. `task.or_bump_check()` enables the shared
+native lower-bound pruning rule. Retained indices preserve original choices,
+including fixed survivors and holes left by removed conformers.
 
 `tmol_jax.pack.pack_rotamers(pose, score_function, task, seed=123)` runs the
 complete sparse score, common interaction graph, native annealer and native
@@ -278,7 +280,7 @@ search schedules. CUDA phase seeds come from a local NumPy PCG64 generator;
 packing leaves global random state unchanged. For already parameterized covalent
 groups, `ConjugatedChiSampler` and `add_conjugated_group_sampler` share task masks,
 chi budgets and correlation declarations with Torch; native joint kinematics
-preserve attachment geometry. Full correlated scoring, bump pruning, automatic
+preserve attachment geometry. Full correlated backbone scoring, automatic
 ligand preparation and FastRelax remain unfinished.
 
 `prepare_pose_imposition(pose, rotamers, graph["retained"], assignments)` prepares

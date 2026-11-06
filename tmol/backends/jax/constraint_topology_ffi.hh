@@ -12,7 +12,7 @@ struct ConstraintTopologyStage {
       int64_t op,
       int64_t,
       int64_t) {
-    if ((op != 0 && op != 1) || a.size() != (op ? 8 : 6)
+    if ((op != 0 && op != 1) || a.size() != (op ? 9 : 7)
         || out.size() != (op ? 3 : 1))
       throw std::invalid_argument("invalid constraint candidate operands");
     auto i = ffi::DataType::S32;
@@ -23,6 +23,7 @@ struct ConstraintTopologyStage {
     require_shape(a[3], i, {-1});
     require_shape(a[4], i, {-1, -1});
     require_shape(a[5], i, {a[4].dimensions()[0], a[4].dimensions()[1]});
+    require_shape(a.back(), i, {a[4].dimensions()[0], a[4].dimensions()[1]});
     auto rows = score::common::checked_dispatch_product(
         n, 2, "constraint candidate rows");
     if (op) {
@@ -54,7 +55,8 @@ struct ConstraintTopologyStage {
         IN(I, 1, 3),
         IN(I3, 1, 2),
         IN(I, 2, 4),
-        IN(I, 2, 5)};
+        IN(I, 2, 5),
+        buffer_view<I, 2, D>(a.back())};
     ContextManager manager;
     if (op)
       constraint_candidate_fill_native<Ops, D>(
