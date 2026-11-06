@@ -152,4 +152,48 @@ struct CopyConformerRowsKernel {
         context, c, n_rows, static_cast<int>(root_shift));
   }
 };
+struct CorrectConformerChiKernel {
+  static constexpr bool zero_energy = false;
+  static void validate(
+      const std::vector<ffi::AnyBuffer>& args,
+      ffi::AnyBuffer output,
+      const ffi::AnyBuffer* derivative) {
+    auto real = validate_conformer_output(args, output, derivative, 9);
+    require_shape(args[1], real, {-1, -1});
+    require_shape(args[2], real, {-1, 3});
+    auto rows = args[1].dimensions()[0], width = args[1].dimensions()[1];
+    require_shape(args[3], ffi::DataType::S32, {-1});
+    require_shape(args[4], ffi::DataType::S32, {args[3].dimensions()[0]});
+    require_shape(args[5], ffi::DataType::S32, {rows});
+    require_shape(args[6], ffi::DataType::S32, {rows, width});
+    require_shape(args[7], ffi::DataType::S32, {-1, -1, 4});
+    require_shape(
+        args[8],
+        ffi::DataType::S32,
+        {args[7].dimensions()[0], args[7].dimensions()[1]});
+  }
+
+  template <template <Device> class Ops, Device D, typename Real>
+  static void execute(
+      const std::vector<ffi::AnyBuffer>& args,
+      ffi::AnyBuffer output,
+      const ffi::AnyBuffer*) {
+    using Context = pack::rotamer::ChiDofCorrection<
+        score::common::TViewBinder<D>::template View,
+        Real,
+        int32_t>;
+    Context c{
+        buffer_view<int32_t, 1, D>(args[3]),
+        buffer_view<int32_t, 1, D>(args[4]),
+        buffer_view<int32_t, 1, D>(args[5]),
+        buffer_view<int32_t, 2, D>(args[6]),
+        buffer_view<Real, 2, D>(args[1]),
+        buffer_view<Real, 2, D>(args[2]),
+        buffer_view<int32_t, 3, D>(args[7]),
+        buffer_view<int32_t, 2, D>(args[8]),
+        buffer_view<Real, 2, D>(output)};
+    ContextManager context;
+    pack::rotamer::launch_correct_chi_dofs<Ops, D, Real>(context, c);
+  }
+};
 }  // namespace tmol::jax

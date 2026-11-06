@@ -9,6 +9,7 @@ from tmol_jax.pack._native import (
     copy_conformer_dofs,
     assign_conformer_chi,
     copy_conformer_rows,
+    correct_conformer_chi,
 )
 
 
@@ -119,3 +120,50 @@ def test_conformer_dof_transport_preserves_unselected_state(dtype, platform):
                 ),
                 values,
             )
+
+
+@pytest.mark.parametrize("platform", ("cpu", "gpu"))
+@pytest.mark.parametrize("dtype", (np.float32, np.float64))
+def test_chi_correction_wraps_angles_without_mutating_inputs(dtype, platform):
+    try:
+        device = jax.devices(platform)[0]
+    except RuntimeError:
+        pytest.skip(f"{platform} device unavailable")
+    with jax.enable_x64(), jax.default_device(device):
+
+        def integer(value):
+            return jnp.asarray(value, jnp.int32)
+
+        # This right-handed arrangement has a positive pi/2 torsion. The
+        # requested angle crosses the wrap boundary; unused columns contribute
+        # nothing, including a defining atom with no adjustable torsion.
+        xyz = jnp.asarray([[0, 1, 0], [0, 0, 0], [1, 0, 0], [1, 0, 1]], dtype)
+        initial = jnp.full((5, 9), -2, dtype)
+        chi = jnp.asarray([[4.8, 0.8, 0.2]], dtype)
+        four = np.full((1, 4, 4), -1, np.int32)
+        four[0, 2] = [0, 1, 2, 3]
+
+        def correct(dofs):
+            return correct_conformer_chi(
+                dofs,
+                chi,
+                xyz,
+                integer([0]),
+                integer([0]),
+                integer([0]),
+                integer([[2, -1, 3]]),
+                integer(four),
+                integer([[0, 1, 2, 3]]),
+            )
+
+        delta = float(np.asarray(chi)[0, 0]) - float(dtype(np.pi / 2))
+        expected = np.full((5, 9), -2, dtype)
+        expected[3, 3] += dtype((delta + np.pi) % (2 * np.pi) - np.pi)
+        actual = correct(initial)
+        np.testing.assert_array_equal(actual, expected)
+        np.testing.assert_array_equal(
+            jax.jit(jax.vmap(correct))(jnp.stack((initial, initial))),
+            np.stack((expected, expected)),
+        )
+        np.testing.assert_array_equal(initial, np.full((5, 9), -2, dtype))
+        assert actual.device == device and actual.dtype == dtype

@@ -46,6 +46,15 @@ def assign_conformer_chi(dofs, chi, *metadata):
     return _conformer_dofs(dofs, (chi, *metadata), target=target)
 
 
+def correct_conformer_chi(dofs, chi, trial_coordinates, *metadata):
+    """Correct sampled dihedrals using the common native geometry convention."""
+    from tmol_jax.score._native import register
+
+    target = "tmol_correct_conformer_chi"
+    register(target)
+    return _conformer_dofs(dofs, (chi, trial_coordinates, *metadata), target=target)
+
+
 def copy_conformer_rows(
     values,
     source,
