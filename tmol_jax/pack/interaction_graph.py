@@ -7,7 +7,13 @@ import jax.numpy as jnp
 import numpy as np
 
 from tmol_jax.score._native import register
-from .graph import retained_topology, topology_stage, prefix_offsets_and_total
+from .graph import (
+    retained_topology,
+    topology_stage,
+    prefix_offsets_and_total,
+    _wide,
+    _integer,
+)
 
 
 @partial(jax.jit, static_argnames=("operation", "outputs", "extent", "chunk_size"))
@@ -30,9 +36,75 @@ def _valid_entries(values, indices, pose_for_rotamer, pose_counts):
     return jnp.stack((valid, same_pose))
 
 
-@jax.jit
-def _neighbor_prefix(counts):
-    return prefix_offsets_and_total(counts[:-1], include_total=True)
+@partial(jax.jit, static_argnames=("chunk_size",))
+def _graph_adjacency(
+    original_counts, counts, indices, block_for_rotamer, *, chunk_size
+):
+    p, b = original_counts.shape
+    m = counts.shape[1]
+    mapping = topology_stage(
+        (original_counts,), operation=0, outputs=_wide(p, b), chunk_size=chunk_size
+    )
+    adjacency = entry_stage(
+        (indices, block_for_rotamer, mapping, counts),
+        operation=0,
+        outputs=_integer(p, m, (m + 31) // 32),
+        chunk_size=chunk_size,
+    )
+    neighbors = topology_stage(
+        (adjacency,), operation=1, outputs=_wide(p * m + 1), chunk_size=chunk_size
+    )
+    rows, total = prefix_offsets_and_total(neighbors[:-1], include_total=True)
+    return mapping, adjacency, rows, total
+
+
+@partial(jax.jit, static_argnames=("n_edges", "chunk_size"))
+def _graph_edge_layout(counts, adjacency, rows, *, n_edges, chunk_size):
+    neighbors, pairs = topology_stage(
+        (counts, adjacency, rows),
+        operation=2,
+        outputs=(_integer(n_edges), _wide(n_edges)),
+        chunk_size=chunk_size,
+    )
+    words = topology_stage(
+        (pairs,), operation=3, outputs=_wide(n_edges), chunk_size=chunk_size
+    )
+    wo, nw = prefix_offsets_and_total(words)
+    po, npairs = prefix_offsets_and_total(pairs)
+    return neighbors, wo, po, jnp.stack((nw, npairs))
+
+
+@partial(jax.jit, static_argnames=("n_words", "n_pairs", "chunk_size"))
+def _graph_chunk_layout(
+    common,
+    block_offsets,
+    counts,
+    rows,
+    neighbors,
+    word_offsets,
+    pair_offsets,
+    *,
+    n_words,
+    n_pairs,
+    chunk_size,
+):
+    adjacency = entry_stage(
+        (*common, block_offsets, counts, rows, neighbors, word_offsets),
+        operation=1,
+        outputs=_integer(n_words),
+        chunk_size=chunk_size,
+    )
+    sizes = topology_stage(
+        (counts, rows, neighbors, pair_offsets, word_offsets, adjacency),
+        operation=5,
+        outputs=_wide(n_pairs),
+        chunk_size=chunk_size,
+    )
+    offsets, total = prefix_offsets_and_total(sizes)
+    offsets = topology_stage(
+        (sizes, offsets), operation=6, outputs=_wide(n_pairs), chunk_size=chunk_size
+    )
+    return offsets, total
 
 
 def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
@@ -57,7 +129,7 @@ def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
         raise TypeError("interaction graph indices must be int32 [3, entries]")
     if values.device != rotamers.device or indices.device != rotamers.device:
         raise ValueError("interaction graph inputs must share the conformer device")
-    p, b = rotamers.n_rots_for_block.shape
+    p = rotamers.n_rots_for_block.shape[0]
     if values.size:
         valid, same_pose = np.asarray(
             _valid_entries(
@@ -70,26 +142,8 @@ def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
             raise ValueError("sparse entries cannot join different poses")
     shape = jax.ShapeDtypeStruct
 
-    def wide(*size):
-        return shape((*size, 8), np.uint8)
-
-    def integer(*size):
-        return shape(size, np.int32)
-
-    def prefix(counts, *, include_total=False):
-        offsets, total = prefix_offsets_and_total(counts, include_total=include_total)
-        total = int(np.asarray(total).copy().view(np.int64)[0])
-        return offsets, total
-
-    def topology(op, args, outputs):
-        return topology_stage(
-            args, operation=op, outputs=outputs, chunk_size=chunk_size
-        )
-
-    def entries(op, args, outputs, extent=0):
-        return entry_stage(
-            args, operation=op, outputs=outputs, extent=extent, chunk_size=chunk_size
-        )
+    def total(value):
+        return int(np.asarray(value).copy().view(np.int64).reshape(-1)[0])
 
     with jax.default_device(rotamers.device):
         retained = retained_topology(
@@ -100,48 +154,36 @@ def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
             rotamers.block_ind_for_rot,
         )
         counts = retained["block_rotamer_counts"]
-        m = counts.shape[1]
-        mapping = topology(0, (rotamers.n_rots_for_block,), wide(p, b))
-        common = (indices, rotamers.block_ind_for_rot, mapping)
-        adjacency = entries(0, (*common, counts), integer(p, m, (m + 31) // 32))
-        neighbor_counts = topology(1, (adjacency,), wide(p * m + 1))
-        rows, total = _neighbor_prefix(neighbor_counts)
-        n_edges = int(np.asarray(total).copy().view(np.int64)[0])
-        neighbors, pair_counts = topology(
-            2, (counts, adjacency, rows), (integer(n_edges), wide(n_edges))
+        mapping, adjacency, rows, size = _graph_adjacency(
+            rotamers.n_rots_for_block,
+            counts,
+            indices,
+            rotamers.block_ind_for_rot,
+            chunk_size=chunk_size,
         )
-        words = topology(3, (pair_counts,), wide(n_edges))
-        word_offsets, n_words = prefix(words)
-        pair_offsets, n_pairs = prefix(pair_counts)
-        chunk_adjacency = entries(
-            1,
-            (
-                *common,
-                rotamers.rot_offset_for_block,
-                counts,
-                rows,
-                neighbors,
-                word_offsets,
-            ),
-            integer(n_words),
+        neighbors, word_offsets, pair_offsets, sizes = _graph_edge_layout(
+            counts,
+            adjacency,
+            rows,
+            n_edges=total(size),
+            chunk_size=chunk_size,
         )
-        pair_sizes = topology(
-            5,
-            (
-                counts,
-                rows,
-                neighbors,
-                pair_offsets,
-                word_offsets,
-                chunk_adjacency,
-            ),
-            wide(n_pairs),
+        n_words, n_pairs = np.asarray(sizes).copy().view(np.int64).reshape(-1)
+        chunk_offsets, size = _graph_chunk_layout(
+            (indices, rotamers.block_ind_for_rot, mapping),
+            rotamers.rot_offset_for_block,
+            counts,
+            rows,
+            neighbors,
+            word_offsets,
+            pair_offsets,
+            n_words=int(n_words),
+            n_pairs=int(n_pairs),
+            chunk_size=chunk_size,
         )
-        chunk_offsets, n_energies = prefix(pair_sizes)
-        chunk_offsets = topology(6, (pair_sizes, chunk_offsets), wide(n_pairs))
+        n_energies = total(size)
         n_rotamers = retained["inverse_rotamers"].shape[0]
-        background, one_body, two_body = entries(
-            2,
+        background, one_body, two_body = entry_stage(
             (
                 indices,
                 values,
@@ -156,12 +198,14 @@ def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
                 pair_offsets,
                 chunk_offsets,
             ),
-            (
+            outputs=(
                 shape((p,), values.dtype),
                 shape((n_rotamers,), values.dtype),
                 shape((n_energies,), values.dtype),
             ),
+            operation=2,
             extent=n_rotamers,
+            chunk_size=chunk_size,
         )
     return dict(
         retained=retained,
