@@ -290,9 +290,25 @@ conservation therefore requires identical fixed backbone and sugar coordinates;
 raw float32 ensembles carry reconstruction error. Independent native Torch/JAX
 sampled values and coordinate gradients agree on those raw ensembles.
 
-PDB and Biotite input currently use the canonical protein loader. The general
-canonical loader is unfinished; native candidate selection and missing-leaf
-reconstruction are being shared with Torch.
+`pose_stack_from_canonical_form()` accepts a supplied chemical ordering and
+palette for ligands, noncanonical/D polymers, nucleic acids and mixed batches.
+It uses common native candidate, terminus, histidine, cycle and connection
+policies, plus shared disulfide and covalent-attachment preparation. Observed
+coordinates retain their dtype and atom identities; missing leaf atoms use the
+common native frames. Explicit bonds refer to canonical residue/atom indices,
+including when the input contains padding. Interior padding breaks chains by
+default; `compact_padding=True` removes virtual slots while retaining adjacency,
+matching the Torch canonical-input contract. Input preparation runs on the host;
+the individual native decision stages support `jit` and `vmap`.
+
+The default PDB/Biotite palette still contains canonical proteins. General metal
+geometry/donor inference, protonation-state inference, context-heavy completion,
+and generated-hydrogen rebuilding remain unfinished. This loader preserves
+supplied hydrogen coordinates; comparisons to Torch must request its matching
+`ligand_hydrogens="input"` policy. Missing non-leaf atoms and unsupported declared
+inference options raise. Use exact residue blocks for prepared metal states.
+`res_not_connected` retains the JAX terminated-break convention; `res_gap`
+suppresses bonds without forcing terminal variants.
 
 For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
 a batch of `ResidueBlock(residue_type, atom_names, coords)` records and explicit

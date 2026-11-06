@@ -9,7 +9,7 @@
         "tests/scientific/test_score_contract.py",
         "tests/scientific/test_complete_preset.py"
       ],
-      "implementation_status": "Complete 25-channel preset values and coordinate gradients on molecular fixtures; missing atoms and termini currently use the canonical protein loader."
+      "implementation_status": "Complete 25-channel preset values and coordinate gradients on molecular fixtures; canonical input now executes common native chemistry selection and missing-leaf reconstruction."
     },
     {
       "domain": "noncanonical_polymers",
@@ -20,7 +20,7 @@
         "tests/scientific/test_molecular_nonbonded.py",
         "tests/scientific/test_complete_preset.py"
       ],
-      "implementation_status": "Explicit B3Q/B3D and other prepared identities retain topology and parameters. Complete preset and nonzero per-term gradients tested CPU/CUDA; general canonical input is unfinished."
+      "implementation_status": "Explicit B3Q/B3D identities retain topology/parameters; complete preset and nonzero per-term gradients tested CPU/CUDA. Supplied-palette canonical input has CPU atom/topology and per-term gradient identity coverage; new frontend CUDA validation pending."
     },
     {
       "domain": "d_amino_acids",
@@ -199,9 +199,12 @@
         "tests/jax/test_residue_blocks.py",
         "tests/jax/test_protein.py",
         "tests/scientific/test_leaf_reconstruction.py",
-        "tests/scientific/test_canonical_topology.py"
+        "tests/scientific/test_canonical_topology.py",
+        "tests/scientific/test_canonical_molecular_input.py",
+        "tests/scientific/test_canonical_connections.py",
+        "tests/scientific/test_histidine_input.py"
       ],
-      "implementation_status": "Explicit ResidueBlock input preserves named atoms, exact types, dtype and database context; opt-in shared native missing-leaf reconstruction retains observed coordinates and rejects missing non-leaf atoms. Canonical PDB/Biotite loading remains protein-only, now with common native leaf reconstruction and preserved custom atom ordering. Candidate/chain/terminal native bindings pass CPU/CUDA; general loader, context-heavy-atom completion, CIF, generated ligands and automatic metal inference remain unfinished."
+      "implementation_status": "Explicit ResidueBlock input preserves named atoms, exact types, dtype and database context; optional native leaf reconstruction has CPU/CUDA checks. General canonical input consumes shared candidate/chain/termini/HIS/cycle/wiring/disulfide/attachment policies, with nine real molecular CPU fixtures preserving coordinates, topology, per-term energies and full gradients. PDB/Biotite default palette remains protein-only. General context-heavy completion, generated-H rebuilding, protonation/metal inference and CIF remain unfinished; new canonical frontend CUDA/artifact/performance validation pending."
     },
     {
       "domain": "jit_vmap_reverse_ad",
@@ -250,7 +253,7 @@
       "implementation_status": "Shared MoveMap and native chemical DOF resolution with JAX L-BFGS; molecular objective decrease and frozen-DOF invariants tested CPU/CUDA. Full optimizer API parity remains incomplete."
     }
   ],
-  "validation": "Exact48ab41104d matching core/JAX/native wheels and sdists pass45 molecular+206 shared installed checks without Torch. Exact48 CPU/CUDA native artifacts pass5 JAX topology,49 affected public-input and5 Torch topology GPU checks. Earlier exact58 passes329 JAX runtime checks; d87 fixes float32 FD cancellation without changing step/tolerance. New explicit optional leaf reconstruction has21 CPU frontend checks; GPU pending. Final Metal is owned by root. Full input/API coverage, graph performance and overall code reduction remain acceptance gates; PR629 stays draft.",
+  "validation": "Published48ab41104d matching six artifacts pass45 molecular+206 shared installed checks without Torch. Exact48 CPU/CUDA native artifacts pass59 focused GPU checks; explicit leafd816 has21CPU+21CUDA checks. Cache0ff30CPU+30CUDA PASS, matched repeated-input benchmarks retain64arrays exactly with improved CPU/CUDA latency. HIS2c5 has4CPU+4CUDA checks per framework. New generalized canonical frontend nine molecular CPU tests and nativepolicy six CPU checks per framework pass; exact CUDA/artifacts/performance still pending. Whole input/API coverage, graph performance and overall code reduction remain gates; PR629 stays draft and root owns final Metal.",
   "score_terms": {
     "nonbonded": {
       "torch": "implemented",

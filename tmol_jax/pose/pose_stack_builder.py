@@ -115,6 +115,7 @@ class PoseStackBuilder:
         disulfide_pairs_per_pose=None,
         *,
         connections_per_pose=None,
+        _connection_table=None,
     ):
         """Pack aligned arrays; negative block types denote padding.
 
@@ -171,9 +172,20 @@ class PoseStackBuilder:
                     "coordinate shape does not match the residue atom counts"
                 )
             coords[pose, : totals[pose]] = source
-        connections = _connections(
-            pbt, block_types, chain_id_per_pose, disulfides, connections_per_pose
-        )
+        if _connection_table is None:
+            connections = _connections(
+                pbt, block_types, chain_id_per_pose, disulfides, connections_per_pose
+            )
+        else:
+            if connections_per_pose is not None or disulfide_pairs_per_pose is not None:
+                raise ValueError(
+                    "prevalidated connections cannot be combined with bond declarations"
+                )
+            connections = np.asarray(_connection_table, dtype=np.int32)
+            if connections.shape != (*block_types.shape, pbt.max_n_conn, 2):
+                raise ValueError(
+                    "prevalidated connection table must match the packed layout"
+                )
         distances = _bond_separation(pbt, block_types, connections)
         numbers = np.full(block_types.shape, -1, np.int32)
         for pose, row in enumerate(res_num_per_pose):
