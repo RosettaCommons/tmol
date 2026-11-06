@@ -32,28 +32,19 @@ def _find_cyclic_closures(
     down = torch.as_tensor(connection.down_atom_for_co_restype, device=device)
     if up.numel() == 0:
         return explicit
-    safe_types = res_types.clamp_min(0).long()
-    up_atoms, down_atoms = up[safe_types], down[safe_types]
-    polymer = (res_types >= 0) & (chain_id >= 0) & ((up_atoms >= 0) | (down_atoms >= 0))
-    adjacent = polymer[:, :-1] & polymer[:, 1:] & (chain_id[:, :-1] == chain_id[:, 1:])
-    starts = polymer.clone()
-    ends = polymer.clone()
-    starts[:, 1:] &= ~adjacent
-    ends[:, :-1] &= ~adjacent
-    pose, first = starts.nonzero(as_tuple=True)
-    end_pose, last = ends.nonzero(as_tuple=True)
-    # Starts and ends enumerate the same runs in row-major order.
-    valid = (pose == end_pose) & (first != last)
-    ua, da = up_atoms[pose, last], down_atoms[pose, first]
-    valid &= (ua >= 0) & (da >= 0)
-    delta = coords[pose, last, ua.clamp_min(0)] - coords[pose, first, da.clamp_min(0)]
-    distance2 = delta.square().sum(-1)
-    valid &= torch.isfinite(distance2) & (distance2 < cutoff_dis**2)
-    if explicit.shape[0]:
-        used_up = torch.zeros_like(polymer)
-        used_down = torch.zeros_like(polymer)
-        used_up[explicit[:, 0], explicit[:, 1]] = True
-        used_down[explicit[:, 0], explicit[:, 2]] = True
-        valid &= ~used_up[pose, last] & ~used_down[pose, first]
-    inferred = torch.stack((pose[valid], last[valid], first[valid]), dim=1)
+    from tmol.io.details.compiled._compiled import _canonical_cycles
+
+    inputs = [
+        res_types.to(torch.int64),
+        chain_id,
+        up.to(torch.int64),
+        down.to(torch.int64),
+        coords,
+        explicit,
+    ]
+    if device.type == "mps":
+        inputs = [x.cpu() for x in inputs]
+    partners = _canonical_cycles(inputs, cutoff_dis).to(device)
+    pose, last = (partners >= 0).nonzero(as_tuple=True)
+    inferred = torch.stack((pose, last, partners[pose, last]), dim=1)
     return torch.cat((explicit, inferred), dim=0)
