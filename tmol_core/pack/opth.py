@@ -247,8 +247,11 @@ def opth_builds_residue(cache, flip_NHQ):
 def pack_opth_metadata(caches, max_n_atoms, flip_NHQ):
     """Pack all chemical types into the canonical proton and flip lookup axes."""
     n_types = len(caches)
-    max_n_chi = max([0] + [c.n_chi_total for c in caches])
-    max_n_expanded = max(c.expanded_samples.shape[1] for c in caches)
+    max_n_chi = max(
+        (max(c.n_chi_total, c.nhq_chi_col + 1 if flip_NHQ else 0) for c in caches),
+        default=0,
+    )
+    max_n_expanded = max((c.expanded_samples.shape[1] for c in caches), default=0)
 
     # filled on the host and uploaded once: a write per element into a
     #    device tensor costs a kernel launch or a copy each

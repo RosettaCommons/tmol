@@ -120,3 +120,18 @@ def test_sample_count_policy_checks_capacity_before_wrapped_totals():
             checked_sample_count(n, total, smallest, largest, 2**63, 2**63)
     with pytest.raises(ValueError, match="Sampling budget 2"):
         checked_sample_count(3, 6, 1, 3, 2, 2)
+
+
+def test_opth_empty_types_and_flip_only_chi_axis():
+    from tmol_core.pack.opth import pack_opth_metadata, _build_empty_proton_cache
+
+    # A compact database may contain only one NHQ residue and no proton chis.
+    cache = _build_empty_proton_cache(2, 5, np.arange(4), np.array([6, 7]), False)
+    packed = pack_opth_metadata([cache], 8, True)
+    assert packed.n_samples_for_bt_by_orig_bt[1, 0, 0] == 2
+    assert packed.expanded_samples.shape == (1, 3, 0)
+    assert packed.chi_defining_atom.shape == (1, 3)
+    assert packed.n_samples_per_chi.shape == (1, 3)
+    empty = pack_opth_metadata([], 0, True)
+    assert empty.expanded_samples.shape == (0, 0, 0)
+    assert empty.n_samples_for_bt_by_orig_bt.shape == (2, 0, 0)
