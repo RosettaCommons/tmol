@@ -54,7 +54,9 @@ def neutral_terminus_patches(canonical_ordering, chemical_db, res_types, variant
 
     The database's patch applies to no type, so its forms exist only where needed.
     """
-    asked = numpy.unique(res_types[variants >= NEUTRAL_TERMINUS_VAR_BASE]).tolist()
+    asked = numpy.unique(
+        res_types[(res_types >= 0) & (variants >= NEUTRAL_TERMINUS_VAR_BASE)]
+    ).tolist()
     if not asked:
         return ()
     classes = {canonical_ordering.restype_io_equiv_classes[c] for c in asked}
