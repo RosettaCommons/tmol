@@ -332,3 +332,17 @@ def prepare_scan_ordering(parent):
         return _freeze_generated_plan((nodes, plan.scans, plan.gens))
 
     return ScanOrdering(snapshot(plans.forward), snapshot(plans.backward))
+
+
+def scan_ordering_from_forward(parent, nodes, scans, gens):
+    """Validate an existing forward schedule and derive its reverse schedule.
+
+    The original path and generation order is preserved. This accepts plans
+    assembled from residue-local conformer forests without rebuilding a tree
+    traversal with a different ordering.
+    """
+    forward = validate_scan_plan(parent, nodes, scans, gens)
+    backward = _freeze_generated_plan(
+        _reverse_plan(forward.nodes, forward.scans, forward.gens)
+    )
+    return ScanOrdering(forward, backward)
