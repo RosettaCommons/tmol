@@ -12,6 +12,7 @@ import logging
 import warnings
 
 from tmol_core.io.atom_array import (
+    METAL_ORIGIN,
     template_array as _template_array,
     is_metal as _is_metal,
     metal_coordination_bond_mask as _metal_coordination_bond_mask,
@@ -1508,7 +1509,6 @@ def _chelated_metals(template, metal_atom):
 
 # per atom: "res_id<TAB>ins_code<TAB>res_name<TAB>atom_name" of the component
 #    a split-out metal came from; empty elsewhere
-METAL_ORIGIN = "tmol_metal_origin"
 
 # input annotations a pose keeps per residue and writes back on export
 RESIDUE_ANNOTATIONS = ("hetero", "is_polymer", "chain_type")

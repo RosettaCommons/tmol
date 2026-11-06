@@ -21,6 +21,7 @@ from tmol_core.database.context import (  # noqa: F401
     ParameterDatabase as _ParameterDatabase,
     _inject_residue_params,  # noqa: F401
 )
+from tmol_core.chemical.default import default_patched_chemical_database
 
 
 class ParameterDatabase(_ParameterDatabase):
@@ -34,8 +35,9 @@ class ParameterDatabase(_ParameterDatabase):
     def get_default(cls) -> "ParameterDatabase":
         """Return the process-global cached parameter database (read-only)."""
         if cls.__dict__.get("_ParameterDatabase__default") is None:
-            cls.__default = cls.from_file(
-                os.path.join(os.path.dirname(__file__), "default")
+            cls.__default = cls._from_file_with_chemical(
+                os.path.join(os.path.dirname(__file__), "default"),
+                default_patched_chemical_database(),
             )
         return cls.__default
 
