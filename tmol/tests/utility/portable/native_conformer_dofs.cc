@@ -72,7 +72,49 @@ void check() {
   }
   assert(overflow);
 }
+template <typename Real, typename Int>
+void check_rows() {
+  tmol::ContextManager mgr;
+  Int source_offsets[] = {0, 4, 0, 1, 0}, target_offsets[] = {0, 1, 0, 4, 0};
+  Int packed_offsets[] = {0, 0, 2, 2, 5, 5};
+  for (int width : {3, 9})
+    for (int shift : {0, 1}) {
+      Real source[90], target[90];
+      for (int i = 0; i < 90; ++i) {
+        source[i] = Real(i);
+        target[i] = Real(-7);
+      }
+      source[5 * width + 1] = std::numeric_limits<Real>::quiet_NaN();
+      ConformerRowCopy<Binder::template View, Real, Int> c{
+          view(source_offsets, {5}),
+          view(target_offsets, {5}),
+          view(packed_offsets, {6}),
+          view(source, {10, width}),
+          view(target, {10, width})};
+      launch_copy_conformer_rows<tmol_test::SerialOps, tmol::Device::CPU>(
+          mgr, c, 5, shift);
+      int destinations[] = {1, 2, 4, 5, 6}, origins[] = {4, 5, 1, 2, 3};
+      for (int row = 0; row < 10; ++row)
+        for (int component = 0; component < width; ++component) {
+          Real expected = Real(-7);
+          for (int i = 0; i < 5; ++i)
+            if (row == destinations[i] + shift)
+              expected = source[(origins[i] + shift) * width + component];
+          Real actual = target[row * width + component];
+          assert(
+              actual == expected
+              || (std::isnan(actual) && std::isnan(expected)));
+        }
+      launch_copy_conformer_rows<tmol_test::SerialOps, tmol::Device::CPU>(
+          mgr, c, 0, shift);
+    }
+}
+
 int main() {
+  check_rows<float, int32_t>();
+  check_rows<float, int64_t>();
+  check_rows<double, int32_t>();
+  check_rows<double, int64_t>();
   check<float, int32_t>();
   check<float, int64_t>();
   check<double, int32_t>();

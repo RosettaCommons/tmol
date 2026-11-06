@@ -715,14 +715,28 @@ def build_rotamers(
     if copied:
         copied = torch.cat(copied)
         sizes = n_atoms_for_conformer[copied].long()
-        owner = torch.repeat_interleave(sizes)
-        atom = torch.arange(owner.numel(), device=pbt.device)
-        atom -= (torch.cumsum(sizes, 0) - sizes)[owner]
-        rot = copied[owner]
-        pose = pose_for_rot[rot]
-        source = poses.block_coord_offset[pose, block_ind_for_rot[rot]] + atom
-        destination = n_atoms_offset_for_conformer_torch[rot] + atom
-        rotamer_coords[destination] = poses.coords[pose, source]
+        if pbt.device.type != "mps":
+            from ._conformer_execution import copy_conformer_rows
+
+            pose = pose_for_rot[copied]
+            source = poses.block_coord_offset[pose, block_ind_for_rot[copied]].long()
+            source = source + pose * poses.max_n_pose_atoms
+            copy_conformer_rows(
+                sizes,
+                source,
+                n_atoms_offset_for_conformer_torch[copied],
+                poses.coords.reshape(-1, 3),
+                rotamer_coords,
+            )
+        else:
+            owner = torch.repeat_interleave(sizes)
+            atom = torch.arange(owner.numel(), device=pbt.device)
+            atom -= (torch.cumsum(sizes, 0) - sizes)[owner]
+            rot = copied[owner]
+            pose = pose_for_rot[rot]
+            source = poses.block_coord_offset[pose, block_ind_for_rot[rot]] + atom
+            destination = n_atoms_offset_for_conformer_torch[rot] + atom
+            rotamer_coords[destination] = poses.coords[pose, source]
 
     return (
         poses,
