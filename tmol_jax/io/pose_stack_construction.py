@@ -308,6 +308,26 @@ def _resolve_disulfide_pairs(
     return paired, pairs
 
 
+def _canonical_metadata(pbt, co):
+    """Retain one preparation for live immutable chemistry and ordering sources."""
+    from tmol_core.cache import AnnotationKey
+    from tmol_core.io.canonical import prepare_canonical_selection
+    from tmol_core.io.missing_atoms import prepare_leaf_atom_flags
+
+    key = AnnotationKey.from_sources(
+        co, pbt.chem_db, *pbt.active_block_types, settings=(pbt.max_n_atoms,)
+    )
+    cached = getattr(pbt, "_canonical_input_metadata", None)
+    if cached is not None and cached[0].matches(key):
+        return cached[1:]
+    prepared = prepare_canonical_selection(co, pbt.active_block_types, pbt.max_n_atoms)
+    leaves = prepare_leaf_atom_flags(
+        pbt.active_block_types, np.asarray(pbt.atom_is_hydrogen), pbt.max_n_atoms
+    ).is_leaf_atom
+    object.__setattr__(pbt, "_canonical_input_metadata", (key, prepared, leaves))
+    return prepared, leaves
+
+
 def _canonical_rows(value, shape, default, name):
     array = np.asarray(default if value is None else value, dtype=object)
     if array.ndim == 1:
@@ -427,13 +447,7 @@ def pose_stack_from_canonical_form(
     ):
         raise ValueError("atom_is_present must match finite canonical coordinates")
     co = cf.get("canonical_ordering") or default_canonical_ordering()
-    from tmol_core.io.canonical import prepare_canonical_selection
-    from tmol_core.io.missing_atoms import prepare_leaf_atom_flags
-
-    prepared = prepare_canonical_selection(co, pbt.active_block_types, pbt.max_n_atoms)
-    leaves = prepare_leaf_atom_flags(
-        pbt.active_block_types, np.asarray(pbt.atom_is_hydrogen), pbt.max_n_atoms
-    ).is_leaf_atom
+    prepared, leaves = _canonical_metadata(pbt, co)
     names = _normalise_res_names(dict(cf, canonical_ordering=co), *shape)
     if len(names) != shape[0] or any(len(row) != shape[1] for row in names):
         raise ValueError("residue names must match the canonical coordinate shape")

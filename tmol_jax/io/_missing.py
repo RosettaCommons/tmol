@@ -7,7 +7,7 @@ def complete_missing_atoms(pose, available):
     """Arrange missing masks and execute the shared chemical reconstruction."""
     import jax
     from tmol_core.chemical.packed import PackedBlockTypesData
-    from tmol_core.io.missing_atoms import prepare_leaf_atom_metadata
+    from tmol_core.io.missing_atoms import prepare_leaf_icoor_metadata
     from ._native import generate_leaf_atoms
 
     if all(mask.all() for row in available for mask in row):
@@ -21,9 +21,9 @@ def complete_missing_atoms(pose, available):
             missing[p, r, : len(mask)] = ~mask
             start = offsets[p, r]
             flat_missing[p, start : start + len(mask)] = ~mask
-    info = prepare_leaf_atom_metadata(
+    info = prepare_leaf_icoor_metadata(
         pbt.active_block_types, np.asarray(pbt.atom_is_hydrogen), pbt.max_n_atoms
-    ).icoors
+    )
     downstream = PackedBlockTypesData.join_atom_downstream_of_conn(
         pbt.active_block_types
     )
@@ -46,9 +46,7 @@ def complete_missing_atoms(pose, available):
         info.anc_uaids_backup,
         info.geom_backup.astype(dtype),
     )
-    coords = generate_leaf_atoms(
-        pose.coords, tuple(jax.device_put(a, pose.device) for a in metadata)
-    )
+    coords = generate_leaf_atoms(pose.coords, jax.device_put(metadata, pose.device))
     if not np.isfinite(np.asarray(coords)).all():
         raise ValueError(
             "missing atoms could not be reconstructed from available chemical frames"

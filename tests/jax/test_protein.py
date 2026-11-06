@@ -232,6 +232,7 @@ def test_custom_canonical_atom_order_survives_public_input_adapters(tmp_path):
         np.testing.assert_array_equal(
             actual.inter_residue_connections, expected.inter_residue_connections
         )
+    np.testing.assert_array_equal(pose_stack_from_pdb(path).coords, expected.coords)
 
 
 def test_canonical_reconstruction_preserves_float64_observations(tmp_path):
