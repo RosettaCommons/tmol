@@ -14,7 +14,6 @@ bonded to a sidechain at all, forms no group and is left alone.
 import attr
 from tmol_core.pack.correlation import GroupCollapse, expand_group_assignments
 from collections import OrderedDict
-import numpy
 import torch
 
 from tmol.pose._conjugated_groups import (  # noqa: F401
@@ -30,6 +29,7 @@ from tmol_core.pack.conjugated import (  # noqa: F401 legacy import paths
     group_atom_context,
     group_sampling_topology,
     sampled_group_chi,
+    registration_masks,
     resolve_group_atom as _resolve_group_atom,  # noqa: F401 legacy import path
 )
 
@@ -134,12 +134,9 @@ def _add_conjugated_group_sampler(task, pose_stack, sampler=None, exclude=()):
         sampler = ConjugatedChiSampler(library_sampler=library)
     with_anchor = sampler.library_sampler is not None
 
-    sampled = numpy.zeros((pose_stack.n_poses, pose_stack.max_n_blocks), dtype=bool)
-    members = numpy.zeros_like(sampled)
-    for group in groups:
-        members[group.pose, list(group.blocks)] = True
-        for block in group.blocks if with_anchor else group.blocks[1:]:
-            sampled[group.pose, block] = True
+    sampled, members = registration_masks(
+        groups, (pose_stack.n_poses, pose_stack.max_n_blocks), with_anchor
+    )
 
     def _mask(arr):
         return torch.tensor(arr, dtype=torch.bool, device=pose_stack.device)
