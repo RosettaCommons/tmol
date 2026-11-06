@@ -81,6 +81,100 @@ def retention_stage(arguments, *, operation, outputs, extent=0, width=0):
     )
 
 
+def _wide(*dimensions):
+    return jax.ShapeDtypeStruct((*dimensions, 8), np.uint8)
+
+
+def _integer(*dimensions):
+    return jax.ShapeDtypeStruct(dimensions, np.int32)
+
+
+@jax.jit
+def _retention_prefixes(counts, block_offsets, keep):
+    poses, blocks = counts.shape
+    keep, keep_blocks, fixed = retention_stage(
+        (counts, block_offsets, keep),
+        operation=1,
+        outputs=(_wide(keep.shape[0]), _wide(poses, blocks), _wide(poses, blocks)),
+    )
+    rp, nr = prefix_offsets_and_total(keep)
+    bp, nb = prefix_offsets_and_total(keep_blocks.reshape(-1, 8))
+    return keep, keep_blocks, fixed, rp, bp, jnp.stack((nr, nb))
+
+
+@partial(jax.jit, static_argnames=("total_rotamers", "total_blocks"))
+def _retention_layout(
+    keep, keep_blocks, rp, bp, pose_offsets, *, total_rotamers, total_blocks
+):
+    poses = keep_blocks.shape[0]
+
+    def run(op, args, output, **attributes):
+        return retention_stage(args, operation=op, outputs=output, **attributes)
+
+    inverse_rotamers = run(2, (keep, rp), _wide(total_rotamers))
+    inverse_blocks = run(3, (keep_blocks, bp), _wide(total_blocks))
+    bo = run(4, (keep_blocks, bp), _integer(poses))
+    bc = run(5, (bo,), _integer(poses), extent=total_blocks)
+    ro = run(6, (pose_offsets, rp), _integer(poses), extent=total_rotamers)
+    rc = run(7, (ro,), _integer(poses), extent=total_rotamers)
+    return dict(
+        inverse_rotamers=inverse_rotamers,
+        inverse_blocks=inverse_blocks,
+        block_pose_offsets=bo,
+        block_pose_counts=bc,
+        rotamer_pose_offsets=ro,
+        rotamer_pose_counts=rc,
+    ), jnp.max(bc, initial=0)
+
+
+@partial(jax.jit, static_argnames=("width",))
+def _retention_compact(
+    layout, block_offsets, rp, bp, block_for_rotamer, pose_for_rotamer, *, width
+):
+    poses, blocks = block_offsets.shape
+    total = layout["inverse_rotamers"].shape[0]
+
+    def run(op, args, output, **attributes):
+        return retention_stage(args, operation=op, outputs=output, **attributes)
+
+    offsets = run(
+        8,
+        (layout["inverse_blocks"], layout["block_pose_offsets"], block_offsets, rp),
+        _integer(poses, width),
+        width=width,
+    )
+    counts = run(
+        9,
+        (
+            layout["inverse_blocks"],
+            layout["block_pose_offsets"],
+            layout["block_pose_counts"],
+            offsets,
+            layout["rotamer_pose_offsets"],
+        ),
+        _integer(poses, width),
+        width=blocks,
+        extent=total,
+    )
+    compact_blocks = run(
+        10,
+        (
+            layout["inverse_rotamers"],
+            block_for_rotamer,
+            pose_for_rotamer,
+            bp,
+            layout["block_pose_offsets"],
+        ),
+        _integer(total),
+        width=blocks,
+    )
+    return dict(
+        block_rotamer_offsets=offsets,
+        block_rotamer_counts=counts,
+        block_for_rotamer=compact_blocks,
+    )
+
+
 def retained_topology(
     counts,
     block_offsets,
@@ -91,118 +185,57 @@ def retained_topology(
     best_energy_for_rotamer=None,
     best_energy_for_block=None,
 ):
-    """Allocate and execute common retained/fixed-conformer topology stages.
+    """Run common retained-conformer kernels between two allocation barriers.
 
-    This internal eager preparation retains device arrays throughout native
-    compaction; only totals and compact pose counts cross the allocation barrier.
-    Bump energies must already be prepared by the common packing scorer.
+    Only exact totals and the compact block width cross to the host. Bump
+    energies, when provided, come from the common packing scorer.
     """
     if isinstance(counts, jax.core.Tracer):
         raise TypeError("dynamic retained topology must be prepared outside jit/vmap")
-    poses, blocks = counts.shape
-    rotamers = pose_for_rotamer.size
-    shape = jax.ShapeDtypeStruct
-
-    def wide(*dimensions):
-        return shape((*dimensions, 8), np.uint8)
-
-    def integer(*dimensions):
-        return shape(dimensions, np.int32)
-
-    def run(op, args, outputs, **attributes):
-        return retention_stage(args, operation=op, outputs=outputs, **attributes)
-
-    def compact(mask):
-        offsets, total = prefix_offsets_and_total(mask.reshape(-1, 8))
-        total = int(np.asarray(total).copy().view(np.int64)[0])
-        if total > np.iinfo(np.int32).max:
-            raise OverflowError("retained topology exceeds native int32 capacity")
-        return offsets, total
-
+    if (best_energy_for_rotamer is None) != (best_energy_for_block is None):
+        raise ValueError("bump retention requires both energy arrays")
     with jax.default_device(counts.device):
         if best_energy_for_rotamer is None:
-            if best_energy_for_block is not None:
-                raise ValueError("bump retention requires both energy arrays")
-            ones = np.ones(rotamers, np.int64).view(np.uint8).reshape(-1, 8)
-            keep = jax.device_put(ones, counts.device)
+            keep = jax.device_put(
+                np.ones(pose_for_rotamer.size, np.int64).view(np.uint8).reshape(-1, 8),
+                counts.device,
+            )
         else:
-            if best_energy_for_block is None:
-                raise ValueError("bump retention requires both energy arrays")
-            keep = run(
-                0,
+            keep = retention_stage(
                 (
                     pose_for_rotamer,
                     block_for_rotamer,
                     best_energy_for_rotamer,
                     best_energy_for_block,
                 ),
-                wide(rotamers),
+                operation=0,
+                outputs=_wide(pose_for_rotamer.size),
             )
-        keep, keep_blocks, fixed = run(
-            1,
-            (counts, block_offsets, keep),
-            (wide(rotamers), wide(poses, blocks), wide(poses, blocks)),
+        keep, keep_blocks, fixed, rp, bp, totals = _retention_prefixes(
+            counts, block_offsets, keep
         )
-        rotamer_prefix, total_rotamers = compact(keep)
-        block_prefix, total_blocks = compact(keep_blocks)
-        inverse_rotamers = run(2, (keep, rotamer_prefix), wide(total_rotamers))
-        inverse_blocks = run(3, (keep_blocks, block_prefix), wide(total_blocks))
-        block_pose_offsets = run(4, (keep_blocks, block_prefix), integer(poses))
-        block_pose_counts = run(
-            5, (block_pose_offsets,), integer(poses), extent=total_blocks
+        nr, nb = np.asarray(totals).copy().view(np.int64).reshape(-1)
+        if max(nr, nb) > np.iinfo(np.int32).max:
+            raise OverflowError("retained topology exceeds native int32 capacity")
+        layout, maximum = _retention_layout(
+            keep,
+            keep_blocks,
+            rp,
+            bp,
+            pose_offsets,
+            total_rotamers=int(nr),
+            total_blocks=int(nb),
         )
-        rotamer_pose_offsets = run(
-            6, (pose_offsets, rotamer_prefix), integer(poses), extent=total_rotamers
+        compact = _retention_compact(
+            layout,
+            block_offsets,
+            rp,
+            bp,
+            block_for_rotamer,
+            pose_for_rotamer,
+            width=int(np.asarray(maximum)),
         )
-        rotamer_pose_counts = run(
-            7, (rotamer_pose_offsets,), integer(poses), extent=total_rotamers
-        )
-        width = int(np.asarray(block_pose_counts).max(initial=0))
-        compact_offsets = run(
-            8,
-            (inverse_blocks, block_pose_offsets, block_offsets, rotamer_prefix),
-            integer(poses, width),
-            width=width,
-        )
-        compact_counts = run(
-            9,
-            (
-                inverse_blocks,
-                block_pose_offsets,
-                block_pose_counts,
-                compact_offsets,
-                rotamer_pose_offsets,
-            ),
-            integer(poses, width),
-            width=blocks,
-            extent=total_rotamers,
-        )
-        compact_blocks = run(
-            10,
-            (
-                inverse_rotamers,
-                block_for_rotamer,
-                pose_for_rotamer,
-                block_prefix,
-                block_pose_offsets,
-            ),
-            integer(total_rotamers),
-            width=blocks,
-        )
-    return dict(
-        rotamer_prefix=rotamer_prefix,
-        block_prefix=block_prefix,
-        inverse_rotamers=inverse_rotamers,
-        inverse_blocks=inverse_blocks,
-        fixed=fixed,
-        block_pose_offsets=block_pose_offsets,
-        block_pose_counts=block_pose_counts,
-        rotamer_pose_offsets=rotamer_pose_offsets,
-        rotamer_pose_counts=rotamer_pose_counts,
-        block_rotamer_offsets=compact_offsets,
-        block_rotamer_counts=compact_counts,
-        block_for_rotamer=compact_blocks,
-    )
+    return dict(rotamer_prefix=rp, block_prefix=bp, fixed=fixed, **layout, **compact)
 
 
 @lru_cache(maxsize=None)
