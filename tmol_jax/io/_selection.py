@@ -25,9 +25,14 @@ def _wide(values):
 
 def _rows(cf, name, width, shape, endpoints):
     value = cf.get(name)
-    values = np.asarray(() if value is None else value, dtype=np.int32).reshape(
-        -1, width
-    )
+    source = np.asarray(() if value is None else value)
+    if source.size and (
+        source.dtype.kind not in "iu"
+        or np.any(source > np.iinfo(np.int32).max)
+        or (source.dtype.kind == "i" and np.any(source < np.iinfo(np.int32).min))
+    ):
+        raise ValueError(f"{name} requires integer indices within the int32 range")
+    values = source.astype(np.int32).reshape(-1, width)
     if len(values):
         p = values[:, 0]
         if np.any((p < 0) | (p >= shape[0])):

@@ -93,3 +93,14 @@ def test_conflicting_canonical_residue_identities_are_rejected():
     canonical["res_types"][0, 1] = canonical["res_types"][0, 0]
     with pytest.raises(ValueError, match="residue names and res_types disagree"):
         pose_stack_from_canonical_form(canonical, default_packed_block_types())
+
+
+@pytest.mark.parametrize(
+    "indices",
+    (np.array([[0, 0, 1.5, 1, 1]]), np.array([[0, 0, 2**32, 1, 1]], np.uint64)),
+)
+def test_explicit_bond_indices_cannot_be_truncated_or_wrapped(indices):
+    canonical = _three_residues()
+    canonical["covalent_bonds"] = indices
+    with pytest.raises(ValueError, match="integer indices within the int32 range"):
+        pose_stack_from_canonical_form(canonical, default_packed_block_types())
