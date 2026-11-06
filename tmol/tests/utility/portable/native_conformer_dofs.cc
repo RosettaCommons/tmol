@@ -59,6 +59,20 @@ void check() {
   assert(target[3 * 9 + 3] == Real(.875));
   assert(target[4 * 9 + 3] == Real(1.75));
   assert(target[3] == Real(-7) && chi[0] == Real(.5) && chi[3] == Real(2));
+  int64_t indices[8];
+  ChiDofIndexPlan<Binder::template View, Int> plan{
+      view(target_types, {2}),
+      view(target_offsets, {2}),
+      view(conformers, {2}),
+      view(atoms, {2, 2}),
+      view(kfo, {2, 2}),
+      view(indices, {2, 4}),
+      2};
+  launch_chi_dof_indices<tmol_test::SerialOps, tmol::Device::CPU>(mgr, plan);
+  int64_t destinations[] = {6 * 9 + 3, -1, 3 * 9 + 3, 4 * 9 + 3},
+          parameters[] = {3, -1, 2, 3};
+  for (int i = 0; i < 4; ++i)
+    assert(indices[i] == destinations[i] && indices[4 + i] == parameters[i]);
   a.atoms = view(atoms, {0, 0});
   launch_assign_chi_dofs<tmol_test::SerialOps, tmol::Device::CPU, Real>(mgr, a);
   c.source_types =
@@ -105,6 +119,18 @@ void check_rows() {
               actual == expected
               || (std::isnan(actual) && std::isnan(expected)));
         }
+      int64_t indices[10];
+      ConformerRowIndexPlan<Binder::template View, Int> plan{
+          view(source_offsets, {5}),
+          view(target_offsets, {5}),
+          view(packed_offsets, {6}),
+          view(indices, {2, 5})};
+      launch_conformer_row_indices<tmol_test::SerialOps, tmol::Device::CPU>(
+          mgr, plan, shift);
+      for (int i = 0; i < 5; ++i) {
+        assert(indices[i] == origins[i] + shift);
+        assert(indices[5 + i] == destinations[i] + shift);
+      }
       launch_copy_conformer_rows<tmol_test::SerialOps, tmol::Device::CPU>(
           mgr, c, 0, shift);
     }

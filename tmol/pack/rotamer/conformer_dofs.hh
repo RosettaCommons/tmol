@@ -72,16 +72,47 @@ struct ChiDofAssignment {
   View<Real, 2> ring_corrections, dofs;
 };
 
+struct ChiDofIndices {
+  int64_t destination, type;
+  int atom;
+};
+template <typename Ctx>
+TMOL_DEVICE_FUNC ChiDofIndices chi_dof_lookup(Ctx const& c, int index) {
+  int width = c.atoms.size(1), row = index / width, column = index % width;
+  int atom = c.atoms[row][column];
+  if (atom < 0) return {-1, -1, -1};
+  auto conformer = c.conformers[row], type = c.types[conformer];
+  return {c.kinematic_index[type][atom] + c.offsets[conformer] + 1, type, atom};
+}
 template <typename Real, typename Ctx>
 TMOL_DEVICE_FUNC void assign_chi_dof(Ctx const& c, int index) {
-  int const width = c.atoms.size(1);
-  int const row = index / width, column = index % width;
-  int const atom = c.atoms[row][column];
-  if (atom < 0) return;
-  auto conformer = c.conformers[row];
-  auto type = c.types[conformer];
-  auto destination = c.kinematic_index[type][atom] + c.offsets[conformer] + 1;
-  c.dofs[destination][3] = c.chi[row][column] - c.ring_corrections[type][atom];
+  auto i = chi_dof_lookup(c, index);
+  if (i.destination < 0) return;
+  int width = c.atoms.size(1);
+  c.dofs[i.destination][3] =
+      c.chi[index / width][index % width] - c.ring_corrections[i.type][i.atom];
+}
+
+template <template <typename, int> class View, typename Int>
+struct ChiDofIndexPlan {
+  View<Int, 1> types, offsets, conformers;
+  View<int32_t, 2> atoms;
+  View<Int, 2> kinematic_index;
+  View<int64_t, 2> indices;
+  int64_t correction_width;
+};
+template <template <Device> class Ops, Device D, typename Context, typename Ctx>
+void launch_chi_dof_indices(Context& context, Ctx c) {
+  LAUNCH_BOX_128;
+  int n = score::common::checked_dispatch_product(
+      c.atoms.size(0), c.atoms.size(1), "conformer chi indices");
+  Ops<D>::template forall<launch_t>(
+      context, n, [=] TMOL_DEVICE_FUNC(int index) {
+        auto i = chi_dof_lookup(c, index);
+        c.indices[0][index] = i.destination < 0 ? -1 : i.destination * 9 + 3;
+        c.indices[1][index] =
+            i.atom < 0 ? -1 : i.type * c.correction_width + i.atom;
+      });
 }
 
 template <
@@ -108,9 +139,12 @@ struct ConformerRowCopy {
   View<Real, 2> source_values, target_values;
 };
 
+struct ConformerRowIndices {
+  int64_t source, target;
+};
 template <typename Ctx>
-TMOL_DEVICE_FUNC void copy_conformer_row(
-    Ctx const& c, int row, int root_shift) {
+TMOL_DEVICE_FUNC ConformerRowIndices
+conformer_row_lookup(Ctx const& c, int row, int root_shift) {
   int begin = 0, end = c.source_offsets.size(0);
   // Find the selected conformer containing this packed atom. Equal offsets
   // skip empty conformers, including leading and trailing empty segments.
@@ -122,8 +156,16 @@ TMOL_DEVICE_FUNC void copy_conformer_row(
       end = middle;
   }
   auto local = row - c.packed_offsets[begin];
-  auto source = c.source_offsets[begin] + local + root_shift;
-  auto target = c.target_offsets[begin] + local + root_shift;
+  int64_t source = c.source_offsets[begin] + local + root_shift;
+  int64_t target = c.target_offsets[begin] + local + root_shift;
+  return {source, target};
+}
+
+template <typename Ctx>
+TMOL_DEVICE_FUNC void copy_conformer_row(
+    Ctx const& c, int row, int root_shift) {
+  auto indices = conformer_row_lookup(c, row, root_shift);
+  auto source = indices.source, target = indices.target;
   for (int component = 0; component < c.target_values.size(1); ++component)
     c.target_values[target][component] = c.source_values[source][component];
 }
@@ -138,6 +180,23 @@ void launch_copy_conformer_rows(
       context, count, [=] TMOL_DEVICE_FUNC(int i) {
         copy_conformer_row(c, i, root_shift);
       });
+}
+
+template <template <typename, int> class View, typename Int>
+struct ConformerRowIndexPlan {
+  View<Int, 1> source_offsets, target_offsets, packed_offsets;
+  View<int64_t, 2> indices;
+};
+template <template <Device> class Ops, Device D, typename Context, typename Ctx>
+void launch_conformer_row_indices(Context& context, Ctx c, int root_shift) {
+  LAUNCH_BOX_128;
+  int n = score::common::checked_dispatch_size(
+      c.indices.size(1), "conformer row indices");
+  Ops<D>::template forall<launch_t>(context, n, [=] TMOL_DEVICE_FUNC(int row) {
+    auto i = conformer_row_lookup(c, row, root_shift);
+    c.indices[0][row] = i.source;
+    c.indices[1][row] = i.target;
+  });
 }
 
 // Projected-vector atan2 definition used by tmol.numeric.coord_dihedrals.

@@ -1,5 +1,6 @@
 #include <tmol/utility/tensor/native_library.hh>
 #include <tmol/utility/tensor/TensorCast.h>
+#include <tmol/utility/tensor/TensorPack.h>
 #include <tmol/utility/function_dispatch/aten.hh>
 #include <tmol/score/common/device_operations.hh>
 #include <tmol/pack/rotamer/conformer_ops.hh>
@@ -203,7 +204,81 @@ std::tuple<Tensor, Tensor, Tensor> opth_sampling_proton(
       }));
   return output;
 }
+Tensor conformer_row_indices(
+    Tensor source,
+    Tensor target,
+    Tensor packed,
+    int64_t n_rows,
+    int64_t shift) {
+  TORCH_CHECK(shift == 0 || shift == 1, "Invalid conformer root shift");
+  TORCH_CHECK(
+      source.numel() == target.numel() && packed.numel() == source.numel() + 1,
+      "Conformer row index axes differ");
+  TORCH_CHECK(
+      n_rows == 0 || source.numel() > 0,
+      "Nonempty conformer rows require segments");
+  int n = score::common::checked_dispatch_size(n_rows, "conformer row indices");
+  Tensor result;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      source.options(), "conformer_row_indices", ([&] {
+        using Kernels = ConformerDofKernels<
+            score::common::DeviceOperations,
+            device_t,
+            float,
+            int64_t>;
+        auto indices = TPack<int64_t, 2, device_t>::empty({2, n});
+        typename Kernels::RowIndices c{
+            TCAST(source), TCAST(target), TCAST(packed), indices.view};
+        Kernels::row_indices(conformer_context, c, shift);
+        result = indices.tensor;
+      }));
+  return result;
+}
+Tensor chi_dof_indices(
+    Tensor types,
+    Tensor offsets,
+    Tensor conformers,
+    Tensor atoms,
+    Tensor kinematic_index,
+    int64_t correction_width) {
+  TORCH_CHECK(
+      atoms.dim() == 2 && atoms.size(0) == conformers.numel(),
+      "Conformer chi index axes differ");
+  TORCH_CHECK(
+      correction_width >= 0, "Conformer correction width must be nonnegative");
+  int n = score::common::checked_dispatch_product(
+      atoms.size(0), atoms.size(1), "conformer chi indices");
+  Tensor result;
+  TMOL_DISPATCH_INDEX_DEVICE(types.options(), "chi_dof_indices", ([&] {
+                               using Kernels = ConformerDofKernels<
+                                   score::common::DeviceOperations,
+                                   device_t,
+                                   float,
+                                   int64_t>;
+                               auto indices =
+                                   TPack<int64_t, 2, device_t>::empty({2, n});
+                               typename Kernels::ChiIndices c{
+                                   TCAST(types),
+                                   TCAST(offsets),
+                                   TCAST(conformers),
+                                   TCAST(atoms),
+                                   TCAST(kinematic_index),
+                                   indices.view,
+                                   correction_width};
+                               Kernels::chi_indices(conformer_context, c);
+                               result = indices.tensor;
+                             }));
+  return result;
+}
 TMOL_LIBRARY(tmol_conformer_dofs, m) {
+  m.def(
+      "chi_dof_indices(Tensor types, Tensor offsets, Tensor conformers, Tensor "
+      "atoms, Tensor kinematic_index, int correction_width) -> Tensor",
+      TMOL_FN(&chi_dof_indices));
+  m.def(
+      "conformer_row_indices(Tensor source, Tensor target, Tensor packed, int "
+      "n_rows, int shift) -> Tensor",
+      TMOL_FN(&conformer_row_indices));
   m.def(
       "opth_sampling_counts(Tensor[] inputs, bool flip) -> (Tensor, Tensor)",
       TMOL_FN(&opth_sampling_counts));

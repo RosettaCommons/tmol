@@ -10,6 +10,10 @@ struct ConformerDofKernels {
   using Chi = ChiDofAssignment<Binder::template View, Real, Int>;
   using Rows = ConformerRowCopy<Binder::template View, Real, Int>;
   static void rows(ContextManager&, Rows, int64_t, int);
+  using RowIndices = ConformerRowIndexPlan<Binder::template View, Int>;
+  static void row_indices(ContextManager&, RowIndices, int);
+  using ChiIndices = ChiDofIndexPlan<Binder::template View, Int>;
+  static void chi_indices(ContextManager&, ChiIndices);
   using Correction = ChiDofCorrection<Binder::template View, Real, Int>;
   static void correct(ContextManager&, Correction);
   static void copy(ContextManager&, Copy);
