@@ -1,3 +1,5 @@
+import copy
+
 import torch
 
 from tmol.types._torch import Tensor
@@ -84,4 +86,29 @@ def _build_missing_sidechains(
         any_block=torch.any,
     )
 
-    return pack_rotamers(pose_stack, sfxn, task, verbose=False, seed=seed)
+    if not torch.is_grad_enabled() or not pose_stack.coords.requires_grad:
+        return pack_rotamers(pose_stack, sfxn, task, verbose=False, seed=seed)
+
+    # Input completion selects sampled coordinates as values. Preserve the
+    # differentiable coordinates of frozen blocks, including their built leaves;
+    # sampled chi construction has no inverse-kinematics coordinate derivative.
+    with torch.no_grad():
+        result = pack_rotamers(pose_stack, sfxn, task, verbose=False, seed=seed)
+    frozen = task.is_real_block & ~task.per_block_is_block_type_allowed.any(dim=-1)
+    pose, block = torch.nonzero(frozen, as_tuple=True)
+    types = pose_stack.block_type_ind64[pose, block]
+    source = pose_stack.block_coord_offset64[pose, block]
+    target = result.block_coord_offset64[pose, block]
+    from tmol.pack.rotamer._conformer_execution import copy_conformer_rows
+
+    coords = result.coords.clone()
+    copy_conformer_rows(
+        pose_stack.packed_block_types.n_atoms[types].long(),
+        source + pose * pose_stack.max_n_pose_atoms,
+        target + pose * result.max_n_pose_atoms,
+        pose_stack.coords.reshape(-1, 3),
+        coords.reshape(-1, 3),
+    )
+    result = copy.copy(result)
+    result.coords = coords
+    return result
