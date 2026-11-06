@@ -170,11 +170,11 @@ std::vector<Tensor> plan_pose_imposition(
 }
 TMOL_LIBRARY(tmol_conformer_dofs, m) {
   m.def(
-      "select_pose_rotamers(Tensor[] inputs) -> Tensor", &select_pose_rotamers);
+      "select_pose_rotamers(Tensor[] inputs) -> Tensor", TMOL_FN(&select_pose_rotamers));
   m.def(
       "plan_pose_imposition(Tensor[] inputs, int capacity, int ncoords) -> "
       "Tensor[]",
-      &plan_pose_imposition);
+      TMOL_FN(&plan_pose_imposition));
   m.def(
       "correct_chi_dofs(Tensor types, Tensor offsets, Tensor conformers, "
       "Tensor atoms, Tensor chi, Tensor trial_coords, Tensor chi_atoms, Tensor "
