@@ -244,6 +244,51 @@ void lk_ball_pose_native(
 #endif
 }
 
+// Sparse dispatch consumes prepared candidate/water coordinates. Both outputs
+// start at zero; weights view is [4,n_pairs,1,1] over rank-2 upstream storage.
+// Keep the mature sparse CUDA derivative accumulation policy independent of
+// the whole-pose shared-scratch optimization.
+template <
+    bool Backward,
+    template <tmol::Device> class Ops,
+    tmol::Device D,
+    typename Real,
+    typename Int>
+void lk_ball_rotamer_native(
+    ContextManager& mgr, LKBallCtx<Real, Int, D, 2> ctx) {
+  LAUNCH_BOX_32;
+  auto evaluate = [ctx] TMOL_DEVICE_FUNC(int cta) {
+    using Shared = LKBallSharedMem<
+        Real,
+        lk_tile_size,
+        lk_max_n_water,
+        lk_max_n_conn,
+        launch_t>;
+    SHARED_MEMORY Shared shared;
+    if constexpr (Backward)
+      lk_ball_eval_derivs<
+          Ops,
+          D,
+          Real,
+          Int,
+          launch_t,
+          decltype(ctx),
+          Shared,
+          common::TilePairMode::InterAndIntra,
+          common::TilePairMode::InterAndIntra,
+          true>(ctx, shared, cta);
+    else
+      lk_ball_eval_rotamer_energies_by_block<Ops, D, Real, Int, launch_t>(
+          ctx, shared, cta);
+  };
+  if constexpr (Backward)
+    Ops<D>::template foreach_workgroup<launch_t>(
+        mgr, ctx.dispatch_indices.size(1), evaluate);
+  else
+    Ops<D>::template foreach_independent_workgroup<launch_t>(
+        mgr, ctx.dispatch_indices.size(1), evaluate);
+}
+
 }  // namespace potentials
 }  // namespace lk_ball
 }  // namespace score

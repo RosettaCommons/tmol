@@ -15,6 +15,15 @@ auto b32 = &lk_ball_pose_native<true, SerialOps, tmol::Device::CPU, float, int>;
 auto b64 =
     &lk_ball_pose_native<true, SerialOps, tmol::Device::CPU, double, int>;
 
+auto rf32 =
+    &lk_ball_rotamer_native<false, SerialOps, tmol::Device::CPU, float, int>;
+auto rf64 =
+    &lk_ball_rotamer_native<false, SerialOps, tmol::Device::CPU, double, int>;
+auto rb32 =
+    &lk_ball_rotamer_native<true, SerialOps, tmol::Device::CPU, float, int>;
+auto rb64 =
+    &lk_ball_rotamer_native<true, SerialOps, tmol::Device::CPU, double, int>;
+
 auto wf32 = &water_gen_forward<SerialOps, tmol::Device::CPU, float, int>;
 auto wf64 = &water_gen_forward<SerialOps, tmol::Device::CPU, double, int>;
 auto wb32 = &water_gen_backward<SerialOps, tmol::Device::CPU, float, int>;

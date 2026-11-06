@@ -2,6 +2,7 @@
 #include <tmol/utility/portable/math.hh>
 #include <tmol/utility/tensor/native.hh>
 #pragma once
+#include <tmol/score/common/load_balance.hh>
 
 #ifdef __NVCC__
 error_this_should_not_be_compiled();  // nvcc should not include this file
@@ -154,15 +155,11 @@ struct DeviceOperations<tmol::Device::CPU> : SerialCPUOperations {
         TPack<Int, 1, tmol::Device::CPU>::zeros({n_work_units_total});
     auto gen_for_work_item = gen_for_work_item_t.view;
 
-    for (int i = 0; i < n_generators; ++i) {
-      int64_t i_offset = exc_scan_offsets[i];
-      int64_t i_n_work_units =
-          (i + 1 == n_generators ? n_work_units_total : exc_scan_offsets[i + 1])
-          - i_offset;
-      for (int64_t j = 0; j < i_n_work_units; ++j) {
-        gen_for_work_item[i_offset + j] = i;
-      }
-    }
+    load_balancing_search_into_cpu(
+        n_work_units_total,
+        exc_scan_offsets,
+        n_generators,
+        gen_for_work_item.data());
     return gen_for_work_item_t;
   }
 

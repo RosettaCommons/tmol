@@ -634,7 +634,8 @@ template <
     // See lk_ball_eval_energies_by_block: the backward pass splits the same
     // way, so it takes the same two modes.
     common::TilePairMode PairMode = common::TilePairMode::InterAndIntra,
-    common::TilePairMode IndexMode = PairMode>
+    common::TilePairMode IndexMode = PairMode,
+    bool Rotamer = false>
 TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
@@ -645,22 +646,20 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
   constexpr auto index_mode = IndexMode;
   // The upstream weights are invariant for every atom pair this workgroup
   // handles. Load them once rather than per pair.
-  auto weight_indices = lk_ball_pose_pair_indices<index_mode>(
-      cta, ctx.max_n_blocks, ctx.n_block_pairs);
-  int const w_pose_ind = common::get<0>(weight_indices);
-  int const w_block_ind1 = common::get<1>(weight_indices);
-  int const w_block_ind2 = common::get<2>(weight_indices);
   tmol::portable::Vec<Real, 4> local_dTdV;
-  {
-    int const wb1 = ctx.block_pair_scoring ? w_block_ind1 : 0;
-    int const wb2 = ctx.block_pair_scoring ? w_block_ind2 : 0;
-    for (int i = 0; i < 4; ++i) {
-      local_dTdV[i] = ctx.dTdV[i][w_pose_ind][wb1][wb2];
-    }
-  }
-  if (ctx.block_pair_scoring && local_dTdV[0] == 0 && local_dTdV[1] == 0
-      && local_dTdV[2] == 0 && local_dTdV[3] == 0) {
-    return;
+  if constexpr (Rotamer) {
+    // Rank-2 sparse weights are bound as [4, n_pairs, 1, 1], without copying.
+    for (int i = 0; i < 4; ++i) local_dTdV[i] = ctx.dTdV[i][cta][0][0];
+  } else {
+    auto weight_indices = lk_ball_pose_pair_indices<index_mode>(
+        cta, ctx.max_n_blocks, ctx.n_block_pairs);
+    int const pose = common::get<0>(weight_indices);
+    int const b1 = ctx.block_pair_scoring ? common::get<1>(weight_indices) : 0;
+    int const b2 = ctx.block_pair_scoring ? common::get<2>(weight_indices) : 0;
+    for (int i = 0; i < 4; ++i) local_dTdV[i] = ctx.dTdV[i][pose][b1][b2];
+    if (ctx.block_pair_scoring && local_dTdV[0] == 0 && local_dTdV[1] == 0
+        && local_dTdV[2] == 0 && local_dTdV[3] == 0)
+      return;
   }
 
   auto lk_ball_atom_derivs =
@@ -680,7 +679,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
             lk_max_n_water,
             Real,
             Dev,
-            (Dev == tmol::Device::CUDA)>(
+            (!Rotamer && Dev == tmol::Device::CUDA)>(
             pol_ind,
             occ_ind,
             pol_tile_ind,
@@ -757,33 +756,33 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
 
   int const max_important_bond_separation = 4;
 
-  auto pair_indices = lk_ball_pose_pair_indices<index_mode>(
-      cta, ctx.max_n_blocks, ctx.n_block_pairs);
-  int const pose_ind = common::get<0>(pair_indices);
-  int const block_ind1 = common::get<1>(pair_indices);
-  int const block_ind2 = common::get<2>(pair_indices);
-  if constexpr (pair_mode != index_mode) {
-    if constexpr (pair_mode == common::TilePairMode::Inter) {
-      if (block_ind1 == block_ind2) return;
-    } else {
-      if (block_ind1 != block_ind2) return;
+  int pose_ind, block_ind1, block_ind2, rot_ind1, rot_ind2;
+  if constexpr (Rotamer) {
+    pose_ind = ctx.dispatch_indices[0][cta];
+    rot_ind1 = ctx.dispatch_indices[1][cta];
+    rot_ind2 = ctx.dispatch_indices[2][cta];
+    block_ind1 = ctx.block_ind_for_rot[rot_ind1];
+    block_ind2 = ctx.block_ind_for_rot[rot_ind2];
+  } else {
+    auto pair_indices = lk_ball_pose_pair_indices<index_mode>(
+        cta, ctx.max_n_blocks, ctx.n_block_pairs);
+    pose_ind = common::get<0>(pair_indices);
+    block_ind1 = common::get<1>(pair_indices);
+    block_ind2 = common::get<2>(pair_indices);
+    if constexpr (pair_mode != index_mode) {
+      if constexpr (pair_mode == common::TilePairMode::Inter) {
+        if (block_ind1 == block_ind2) return;
+      } else {
+        if (block_ind1 != block_ind2) return;
+      }
     }
+    if (!ctx.use_shared_compact_block_neighbors
+        && ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0)
+      return;
+    rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
+    rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
+    if (rot_ind1 < 0 || rot_ind2 < 0) return;
   }
-
-  // We still kill CTAs targetting non-neighboring block pairs, though,
-  // and that can be a lot
-  if (!ctx.use_shared_compact_block_neighbors
-      && ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0) {
-    return;
-  }
-  int const rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
-  int const rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
-
-  if (rot_ind1 < 0 || rot_ind2 < 0) {
-    return;
-  }
-  //   printf("Scoring lk ball pose %d block pair %d %d\n", pose_ind,
-  //   block_ind1, block_ind2);
 
   int const block_type1 = ctx.block_type_ind_for_rot[rot_ind1];
   int const block_type2 = ctx.block_type_ind_for_rot[rot_ind2];
