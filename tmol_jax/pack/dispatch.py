@@ -72,7 +72,7 @@ def _candidate_layout(arguments, *, begin, count, reach):
     return counts, _narrow_prefix(offsets[:-1]), info
 
 
-def candidate_pairs(
+def candidate_pair_groups(
     pose_types,
     spheres,
     site_spheres,
@@ -80,7 +80,7 @@ def candidate_pairs(
     offsets,
     groups,
     *,
-    reach,
+    reaches,
     begin=0,
     count=None,
 ):
@@ -99,20 +99,73 @@ def candidate_pairs(
     if not 0 <= begin <= candidates or not 0 <= count <= candidates - begin:
         raise ValueError("invalid conformer candidate window")
     arguments = (site_spheres, pose_types, counts, offsets, spheres, groups)
-    shape = jax.ShapeDtypeStruct
-    pair_counts, pair_offsets, info = _candidate_layout(
-        arguments, begin=begin, count=count, reach=reach
+    reaches = tuple(reaches)
+    if not reaches:
+        return ()
+    layouts, info = _candidate_layouts(
+        arguments, begin=begin, count=count, reaches=reaches
     )
-    overflow, total = np.asarray(info).copy().view(np.int64).reshape(-1)
-    if overflow:
+    information = np.asarray(info).copy().view(np.int64).reshape(-1, 2)
+    if information[:, 0].any():
         raise OverflowError("conformer pair count exceeds native int32 capacity")
-    if total > np.iinfo(np.int32).max:
+    if (information[:, 1] > np.iinfo(np.int32).max).any():
         raise OverflowError("conformer pair indices exceed native int32 capacity")
-    return _stage(
-        (*arguments, pair_counts, pair_offsets),
-        operation=3,
+    return _candidate_fill(
+        arguments,
+        layouts,
         begin=begin,
         count=count,
-        reach=reach,
-        outputs=shape((3, total), np.int32),
+        reaches=reaches,
+        totals=tuple(map(int, information[:, 1])),
     )
+
+
+@partial(jax.jit, static_argnames=("begin", "count", "reaches"))
+def _candidate_layouts(arguments, *, begin, count, reaches):
+    layouts = tuple(
+        _candidate_layout(arguments, begin=begin, count=count, reach=r) for r in reaches
+    )
+    return tuple(row[:2] for row in layouts), jnp.stack(
+        tuple(row[2] for row in layouts)
+    )
+
+
+@partial(jax.jit, static_argnames=("begin", "count", "reaches", "totals"))
+def _candidate_fill(arguments, layouts, *, begin, count, reaches, totals):
+    return tuple(
+        _stage(
+            (*arguments, *layout),
+            operation=3,
+            begin=begin,
+            count=count,
+            reach=reach,
+            outputs=jax.ShapeDtypeStruct((3, total), np.int32),
+        )
+        for layout, reach, total in zip(layouts, reaches, totals)
+    )
+
+
+def candidate_pairs(
+    pose_types,
+    spheres,
+    site_spheres,
+    counts,
+    offsets,
+    groups,
+    *,
+    reach,
+    begin=0,
+    count=None,
+):
+    """Enumerate one reach through the common grouped allocation boundary."""
+    return candidate_pair_groups(
+        pose_types,
+        spheres,
+        site_spheres,
+        counts,
+        offsets,
+        groups,
+        reaches=(reach,),
+        begin=begin,
+        count=count,
+    )[0]

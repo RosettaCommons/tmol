@@ -5,7 +5,12 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from tmol_jax.pack.dispatch import rotamer_spheres, block_spheres, candidate_pairs
+from tmol_jax.pack.dispatch import (
+    rotamer_spheres,
+    block_spheres,
+    candidate_pairs,
+    candidate_pair_groups,
+)
 
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
@@ -82,6 +87,19 @@ def test_native_rotamer_dispatch_geometric_pairs(platform, dtype, correlated):
                     expected.add((1, a, b))
         actual = [tuple(row) for row in np.asarray(result).T]
         assert set(actual) == expected and len(actual) == len(expected)
+        grouped = candidate_pair_groups(
+            jnp.asarray(types),
+            spheres,
+            sites,
+            counts_d,
+            offsets_d,
+            jnp.asarray(groups),
+            reaches=(1.2, 0.0),
+        )
+        np.testing.assert_array_equal(grouped[0], result)
+        assert set(map(tuple, np.asarray(grouped[1]).T)) == (
+            expected if correlated else {(1, r, r) for r in range(5)}
+        )
         paged = [
             pairs(begin=start, count=min(5, 18 - start)) for start in range(0, 18, 5)
         ]
