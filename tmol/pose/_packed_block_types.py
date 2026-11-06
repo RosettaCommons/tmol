@@ -366,11 +366,9 @@ def _annotate_packed_block_types_w_conjugation_conns(pbt: PackedBlockTypes):
     _annotate_packed_block_types_w_kinematic_conns(pbt)
     kinematic = pbt.kinematic_conn.cpu().numpy()
 
-    conjugation_conn = numpy.zeros((pbt.n_types, pbt.max_n_conn), dtype=bool)
-    for i, bt in enumerate(pbt.active_block_types):
-        polymer = {bt.down_connection_ind, bt.up_connection_ind}
-        for ind in range(len(bt.connections)):
-            conjugation_conn[i, ind] = ind not in polymer and kinematic[i, ind]
+    from tmol_core.pack.conjugated import conjugation_connections
+
+    conjugation_conn = conjugation_connections(pbt.active_block_types, kinematic)
     setattr(
         pbt,
         "conjugation_conn",
