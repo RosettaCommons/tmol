@@ -1,5 +1,6 @@
 #pragma once
 #include <tmol/score/disulfide/potentials/disulfide_pose_kernels.hh>
+#include <tmol/score/common/rotamer_correlation.hh>
 namespace tmol::score::disulfide::potentials {
 // Caller-owned sparse entries with explicit connection identity. Counts must
 // start at zero; offsets are exclusive and candidate_dispatch has been checked
@@ -19,7 +20,8 @@ void disulfide_rotamer_count_native(
     TView<Int, 2, D> n_rots_for_block,
     TView<Vec<Int, 2>, 3, D> pose_stack_inter_block_connections,
     TView<bool, 2, D> disulfide_conns,
-    TView<int64_t, 1, D> n_energies_for_rot) {
+    TView<int64_t, 1, D> n_energies_for_rot,
+    TView<Int, 2, D> lockstep_group_for_block = {}) {
   LAUNCH_BOX_32;
   int const max_n_conns = disulfide_conns.size(1);
   auto count_dispatch_indices = ([=] TMOL_DEVICE_FUNC(int rot_ind) {
@@ -49,7 +51,14 @@ void disulfide_rotamer_count_native(
         }
         int const other_block_n_rots =
             n_rots_for_block[pose_ind][other_block_index];
-        n_energies += other_block_n_rots;
+        n_energies += other_block_n_rots > 0
+                              && common::same_rotamer_group(
+                                  lockstep_group_for_block,
+                                  pose_ind,
+                                  block_ind,
+                                  other_block_index)
+                          ? 1
+                          : other_block_n_rots;
       }
     }
     if (n_energies != 0) {
@@ -79,7 +88,8 @@ void disulfide_rotamer_fill_native(
     TView<Int, 2, D> dispatch_indices,
     TView<Int, 2, D> conns_for_dispatch_indices,
     int max_n_energies_for_rot,
-    int candidate_dispatch) {
+    int candidate_dispatch,
+    TView<Int, 2, D> lockstep_group_for_block = {}) {
   LAUNCH_BOX_32;
   int const max_n_conns = disulfide_conns.size(1);
   auto mark_dispatch_indices = ([=] TMOL_DEVICE_FUNC(int ind) {
@@ -118,12 +128,17 @@ void disulfide_rotamer_fill_native(
             pose_stack_inter_block_connections[pose_ind][block_ind1][conn_ind1]
                                               [1];
 
-        int const n_rots2 = n_rots_for_block[pose_ind][block_ind2];
+        int const other_n_rots = n_rots_for_block[pose_ind][block_ind2];
+        bool const coupled = common::same_rotamer_group(
+            lockstep_group_for_block, pose_ind, block_ind1, block_ind2);
+        int const n_rots2 = coupled && other_n_rots > 0 ? 1 : other_n_rots;
         if (local_rot_ind2 < n_rots2) {
           // We have figured out which upper rotamer this
           // index is referring to
           int const rot_ind2 =
-              first_rot_for_block[pose_ind][block_ind2] + local_rot_ind2;
+              first_rot_for_block[pose_ind][block_ind2]
+              + (coupled ? rot_ind1 - first_rot_for_block[pose_ind][block_ind1]
+                         : local_rot_ind2);
           int const sparse_index =
               n_energies_for_rot_offset[rot_ind1] + upper_rot_ind;
 

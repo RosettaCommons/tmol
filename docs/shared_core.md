@@ -66,3 +66,23 @@ metadata. Frontends measure input torsions and execute the existing native
 forward/inverse transforms. This preserves coupled group geometry; it does not
 provide a ring-closure solver or establish support in a frontend that has not
 integrated the complete workflow.
+
+Native bump pruning shares its preliminary graph and energy bounds through
+`BumpGraphContext` and three allocation-free stages in
+`pack/compiled/interaction_graph_bounds.hh`. Adapters zero scratch and energy
+buffers, scan block-pair counts to size chunk storage, then scan chunk sizes to
+size pair-energy storage. Offsets and scan totals use int64; native dispatch
+sizes are checked. Empty block bounds retain the mature sentinel `1234`.
+The allocating Torch controller calls these same stages. The two size-discovery
+barriers remain part of the execution contract; a frontend must implement them
+before claiming support for this packing workflow.
+
+Sparse backbone, disulfide, metal and constraint preparation accepts optional
+per-block correlation groups. Empty metadata preserves independent sampling;
+equal nonnegative IDs select matching local conformer indices. Callers must
+validate equal active counts and correspondence with the shared correlation
+plan. Native preparation preserves connection identity and separate metal bridge
+contributions. A two-residue cycle has one sparse conformer pair whose energy
+and coordinate derivatives include both directed peptide bonds. Dependencies on
+a third independently sampled backbone block still require an explicit workflow
+boundary; pair selection alone cannot represent that higher-body interaction.
