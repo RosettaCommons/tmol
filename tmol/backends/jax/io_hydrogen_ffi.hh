@@ -8,7 +8,8 @@
 
 namespace tmol::jax {
 struct HydrogenStage {
-  static int fill(int64_t, size_t) { return 0; }
+  // Every output is initialized by the shared native launcher.
+  static int fill(int64_t, size_t) { return -1; }
   static void validate(
       const std::vector<ffi::AnyBuffer>& a,
       const std::vector<ffi::AnyBuffer>& out,
