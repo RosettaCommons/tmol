@@ -67,6 +67,11 @@ class ScoringDatabase:
     metal_coordination: MetalCoordinationDatabase
     na_torsion: NaTorsionDatabase
 
+    @property
+    def dun(self):
+        """The common ligand-preparation name for the same rotamer library."""
+        return self.dunbrack
+
     @classmethod
     def from_file(cls, path: Optional[str] = None) -> "ScoringDatabase":
         """Load every scoring sub-database from ``<path>/*.yaml``.

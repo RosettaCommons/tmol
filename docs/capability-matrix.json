@@ -197,7 +197,7 @@
       "repro_fixture": [
         "tmol/score/_fragment_interactions.py"
       ],
-      "implementation_status": "Input and original-block reconstruction have shared CPU checks; public JAX fragment interaction decomposition and AtomArray export remain absent."
+      "implementation_status": "Input, original-block reconstruction and AtomArray export have common CPU checks; public JAX fragment interaction decomposition remains absent."
     },
     {
       "domain": "structure_io",
@@ -300,7 +300,7 @@
         "tests/scientific/test_structure_metadata.py",
         "tests/scientific/test_pose_imposition.py"
       ],
-      "implementation_status": "Common metadata and split-block models; preserves insertion codes, source occupancy/B factors, residue annotations and metal origins during canonical projection. JAX legacy labels retained; design follows mature defaults for changed residue identities. Complete AtomArray/recombined-fragment round trips remain gaps. New metadata integration awaits exact package/CUDA validation."
+      "implementation_status": "Common metadata and split-block models; preserves insertion codes, source occupancy/B factors, residue annotations and metal origins during canonical projection. JAX legacy labels retained; design follows mature defaults for changed residue identities. Common AtomArray export now retains original fragment/metal identity and rejects conflicting multi-model metadata. New metadata integration awaits exact package/CUDA validation."
     },
     {
       "domain": "fragmented_ligand_input_and_reconstruction",
@@ -309,7 +309,7 @@
       "repro_fixture": [
         "tests/scientific/test_fragment_input.py"
       ],
-      "implementation_status": "Common named cut-bond and original-atom plans; independent physical groups for repeated ligands. Real protein-ligand and repeated ligand-only CPU cases preserve all 25 term values and physical gradients against uncut molecules in float64 (2e-6 tolerance), nonzero genbonded, default input packing and ligand minimization. Reconstruction preserves coordinate dtype/autodiff, original author labels, per-atom metadata and constraint atoms. Shared fixes also improve Torch; complete fragment interaction attribution/export and fresh CUDA/package gates remain pending. Externally bonded fragmented-ligand generation is not established by these cases."
+      "implementation_status": "Common named cut-bond and original-atom plans; independent physical groups for repeated ligands. Real protein-ligand and repeated ligand-only CPU cases preserve all 25 term values and physical gradients against uncut molecules in float64 (2e-6 tolerance), nonzero genbonded, default input packing and ligand minimization. Reconstruction preserves coordinate dtype/autodiff, original author labels, per-atom metadata and constraint atoms. Shared fixes also improve Torch; complete fragment interaction attribution and fresh CUDA/package gates remain pending. Externally bonded fragmented-ligand generation is not established by these cases."
     },
     {
       "domain": "mature_segmented_armijo",
@@ -320,9 +320,18 @@
         "tests/jax/test_armijo_native.py"
       ],
       "implementation_status": "Common settings/setup, compact H0=I direction, history, restart/retirement and per-segment convergence; typed shared native Armijo transitions through JAX FFI. Dense/scattered independent objectives, full25-channel molecular objectives and public compact Cartesian/kinematic execution pass CPU invariants in both frameworks. Existing strong-Wolfe default remains; exact CUDA/package, matched trajectories, cold/warm time and peak memory pending. Complete optimizer checkpoint/API parity is not established."
+    },
+    {
+      "domain": "molecular_atomarray_export",
+      "torch": "supported_with_shared_metadata_validation",
+      "jax": "shared_cpu_roundtrip_values_gradients",
+      "repro_fixture": [
+        "tests/scientific/test_structure_export.py"
+      ],
+      "implementation_status": "Shared canonical atom projection, physical-chain graph, Biotite metadata/bonds/metal restoration and original fragment identity. Zinc, PLP/CSD, 2ML isopeptide, repeated glycans and repeated ligand molecules have CPU all-25-term value/gradient roundtrips; source parameters/atom identity preserved. JAX automatic polymer preparation now exposes the common Dunbrack library alias. Conflicting B factors, residue annotations and metal origins in multi-model export reject explicitly. Export is host I/O, not differentiable or jittable. Exact package/CUDA gates pending."
     }
   ],
-  "validation": "PR629 remains draft. Exact e8 ABI4 CPU artifacts pass45 molecular and257 shared checks without Torch. Exact H200 artifacts pass170 JAX and23 Torch CUDA affected checks plus three full prepared-group workflows. Later input/metadata increments need matching package/CUDA gates. Mature Torch complete cold/warm/peak-memory parity and actual final Metal remain unresolved.",
+  "validation": "PR629 remains draft. Published e8 and historical package/CUDA evidence retain C-terminal COO from an incomplete docking rollback. Private chemistry and associated gold data now exactly match docking-free d758; corrected installed CPU/CUDA gates are pending. Mature Torch complete cold/warm/peak-memory parity and actual corrected-chemistry Metal remain unresolved.",
   "score_terms": {
     "nonbonded": {
       "torch": "implemented",

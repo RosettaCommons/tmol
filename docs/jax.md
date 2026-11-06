@@ -7,7 +7,7 @@ topology and native CPU/CUDA scoring physics are shared with Torch through
 D residues, variants, nucleic acids, metals and mixed systems retain their input
 identities and parameter context. Existing `tmol` imports remain available.
 
-This is experimental: fragment interaction decomposition, AtomArray/Atom37 contracts,
+This is experimental: fragment interaction decomposition, Atom37 contracts,
 full design policies and optimizer parity remain unfinished.
 Native molecular scoring and selected packing paths have CPU/CUDA and Torch-free
 package validation; final Metal validation is tracked separately. See the [capability matrix](capability-matrix.json) for
@@ -456,4 +456,14 @@ and constraint atoms. CPU checks cover real protein–ligand and repeated-ligand
 systems, all 25 term values and physical gradients against the uncut molecule,
 default hydrogen packing and ligand minimization. Fresh CUDA and installed-package
 validation remain pending for this integration. Public fragment interaction
-attribution and complete AtomArray export remain separate gaps.
+attribution remains a separate gap.
+
+`atom_array_from_pose_stack` uses the common host exporter. It preserves declared
+chemical and coordination bonds, per-atom observations, source residue annotations
+and original fragmented-ligand/metal identities. `include_virtual_atoms=True`
+retains site virtuals; `merge_fragments=False` keeps fragment labels. Multiple
+models may differ in coordinates, but must share topology and metadata. Export
+is eager host I/O and detaches coordinates from differentiation. Real zinc,
+covalent modified residues, isopeptides, glycans and repeated ligands have CPU
+roundtrip checks including all-term gradients. CUDA and clean installed validation
+for this latest export integration remain pending.
