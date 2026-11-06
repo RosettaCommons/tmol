@@ -106,7 +106,8 @@ struct DunbrackKernel {
     static_assert(sizeof(UAID) == 3 * sizeof(I));
     return std::make_tuple(
         contiguous_view<Vec<Real, 3>, 1, D>(
-            a[0].untyped_data(), {a[0].size_bytes() / sizeof(Vec<Real, 3>)}),
+            a[0].untyped_data(),
+            {static_cast<int64_t>(a[0].size_bytes() / sizeof(Vec<Real, 3>))}),
         buffer_view<I, 1, D>(a[1]),
         buffer_view<I, 2, D>(a[2]),
         buffer_view<I, 2, D>(a[3]),
