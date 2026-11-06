@@ -608,7 +608,7 @@ def block_deviation_penalty_for_chi(
       block_nchi,
 
       dihedrals,
-      chi_ind,
+      Int(chi_ind),
       rotameric_rottable_assignment);
 
   if (compute_derivs) {
