@@ -5,7 +5,7 @@ from contextlib import nullcontext
 import numpy as np
 import pytest
 
-from .molecules import CASES, DOMAIN_CASES
+from .molecules import CASES, DOMAIN_CASES, BACKBONE_CASES
 from .hbond_molecules import HBOND_CASES
 from .na_molecules import NA_CASES
 from .test_cartbonded import CARTESIAN_CASES, TERMS as CART_TERMS
@@ -29,6 +29,7 @@ from .rotamer_execution import RotamerExecution
     + [("genbonded", name) for name in CASES]
     + [("hbond", name) for name in HBOND_CASES]
     + [("na_torsion", name) for name in NA_CASES]
+    + [("backbone", name) for name in BACKBONE_CASES]
     + [
         ("cartbonded", name)
         for name in (
@@ -45,6 +46,7 @@ def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, 
     terms = {
         "genbonded": ("gen_torsions",),
         "cartbonded": CART_TERMS,
+        "backbone": ("rama", "omega"),
         "hbond": ("hbond",),
         "na_torsion": ("na_torsion", "na_torsion_well"),
         "elec": ("fa_elec",),
@@ -54,6 +56,8 @@ def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, 
     cases = HBOND_CASES if family == "hbond" else CARTESIAN_CASES
     if family == "na_torsion":
         cases = NA_CASES
+    elif family == "backbone":
+        cases = BACKBONE_CASES
     backend.molecule(cases[case_name], terms=terms)
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
@@ -66,6 +70,8 @@ def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, 
         whole = backend.scores(
             backend.coords().astype(np.float64), sum_terms=False, apply_weights=False
         )
+        channel_names = backend.channel_names()
+        whole = whole[[channel_names.index(name) for name in terms]]
         aggregated = np.zeros_like(whole)
         for entry, pose in enumerate(indices[0]):
             aggregated[:, pose] += values[:, entry]
@@ -97,7 +103,8 @@ def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, 
 
 
 @pytest.mark.parametrize(
-    "family", ("ljlk", "lk_ball", "genbonded", "hbond", "cartbonded", "na_torsion")
+    "family",
+    ("ljlk", "lk_ball", "genbonded", "hbond", "cartbonded", "na_torsion", "backbone"),
 )
 def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
     import attrs
@@ -107,6 +114,8 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
         case = HBOND_CASES["beta_amino_ligand"]
     elif family == "na_torsion":
         case = NA_CASES["methylcytosine"]
+    elif family == "backbone":
+        case = BACKBONE_CASES["hydroxyproline"]
     backend.molecule(case, terms=("ref",))
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
@@ -122,6 +131,7 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
             "cartbonded": (1, 2),
             "hbond": (1, 2),
             "na_torsion": (1, 0.25),
+            "backbone": (1, 2),
         }[family]
         weights = np.broadcast_to(
             (np.arange(first.shape[0]) < scaled_channels)[:, None], first.shape
@@ -132,7 +142,19 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
         database = backend.parameter_database
         # Fourfold well depth doubles its float32 square-root table exactly;
         # this keeps the analytic scaling check free of parameter quantization.
-        if family == "na_torsion":
+        if family == "backbone":
+            source = database.scoring.rama
+            changed = attrs.evolve(
+                source,
+                rama_tables=tuple(
+                    attrs.evolve(row, table=2 * row.table) for row in source.rama_tables
+                ),
+            )
+            changed = attrs.evolve(changed, uniq_id=changed.content_id())
+            modified = attrs.evolve(
+                database, scoring=attrs.evolve(database.scoring, rama=changed)
+            )
+        elif family == "na_torsion":
             source = database.scoring.na_torsion
             changed = attrs.evolve(
                 source,
@@ -252,7 +274,15 @@ def test_sparse_dunbrack_preserves_library_free_conformer_identity(backend):
     "family,case_name",
     [
         (family, case)
-        for family in ("ljlk", "elec", "dunbrack", "lk_ball", "genbonded", "cartbonded")
+        for family in (
+            "ljlk",
+            "elec",
+            "dunbrack",
+            "lk_ball",
+            "genbonded",
+            "cartbonded",
+            "backbone",
+        )
         for case in ("l_peptide", "mixed_batch")
     ]
     + [("hbond", "sampled_ser_ligand")],
@@ -265,6 +295,7 @@ def test_sampled_ensemble_selection_conserves_energy_and_forces(
     terms = {
         "genbonded": ("gen_torsions",),
         "cartbonded": CART_TERMS,
+        "backbone": ("rama", "omega"),
         "hbond": ("hbond",),
         "elec": ("fa_elec",),
         "ljlk": ("fa_ljatr", "fa_ljrep", "fa_lk"),
@@ -300,9 +331,12 @@ def test_sampled_ensemble_selection_conserves_energy_and_forces(
         aggregated = np.zeros((values.shape[0], len(counts)))
         for entry in np.flatnonzero(chosen):
             aggregated[:, indices[0, entry]] += values[:, entry]
+        channel_names = backend.channel_names()
+        whole = backend.scores(reconstructed, sum_terms=False, apply_weights=False)
+        whole = whole[[channel_names.index(name) for name in terms]]
         np.testing.assert_allclose(
             aggregated,
-            backend.scores(reconstructed, sum_terms=False, apply_weights=False),
+            whole,
             rtol=2e-12,
             atol=2e-9,
         )

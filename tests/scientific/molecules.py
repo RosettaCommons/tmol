@@ -123,9 +123,17 @@ DOMAIN_CASES = {
     "metal_cluster": MolecularCase((), (("SF4",),), ((1,),)),
 }
 
+
 # Backbone fixtures require connected residues: isolated HYP has no backbone
 # interaction. Its committed parameter record explicitly references PRO tables.
+@dataclass(frozen=True)
+class CyclicPeptideCase(MolecularCase):
+    def extra_connections(self):
+        return [((len(sequence) - 1, "up", 0, "down"),) for sequence in self.sequences]
+
+
 BACKBONE_CASES = {
+    "cyclic": CyclicPeptideCase((), (("ALA", "PRO", "VAL"),), ((3,),)),
     "canonical": MolecularCase((), (("ALA", "PRO", "VAL"),), ((3,),)),
     "d_peptide": DOMAIN_CASES["d_peptide"],
     "hydroxyproline": MolecularCase(

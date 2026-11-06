@@ -4,6 +4,7 @@
 #include <moderngpu/loadstore.hxx>
 #include "cartbonded_ffi.hh"
 #include "backbone_torsion_ffi.hh"
+#include "rotamer_backbone_ffi.hh"
 #include "metal_ffi.hh"
 #include "na_torsion_ffi.hh"
 #include "workspace_ffi.hh"
@@ -900,4 +901,29 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<int64_t>("operation")
         .Attr<int64_t>("extent")
         .Attr<int64_t>("width"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_backbone_rotamer_topology,
+    tmol::jax::run_graph_stage<tmol::jax::BackboneRotamerTopologyStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_rotamer_backbone,
+    (tmol::jax::run_graph_stage<tmol::jax::RotamerBackboneStage, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width")
+        .Attr<double>("reach"),
     {xla::ffi::Traits::kCmdBufferCompatible});

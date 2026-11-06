@@ -197,9 +197,11 @@ validated topology plans while recomputing coordinates. Internal native stages
 now provide sparse graph topology/retention, device load balancing with XLA-owned
 scratch, sphere-based candidate enumeration, and the mature CPU annealing schedule.
 Sparse LJ/LK, electrostatic, LK-ball, hydrogen-bond, Dunbrack, Cartesian,
-generic-bonded and nucleic-acid values and coordinate VJPs use common native
+generic-bonded, backbone and nucleic-acid values and coordinate VJPs use common native
 physics with `jit`/`vmap` support;
 forward-mode and higher derivatives are not implemented for these sparse entries.
+Backbone candidate scoring currently rejects correlated groups and two-residue
+cycles because their common sparse dispatch needs additional support.
 Recompute discrete candidates after coordinate changes. Full graph scoring and
 packing, CUDA annealing, mutation/design, NA/optH/conjugated samplers and FastRelax
 remain unfinished. Float64 JAX assembly preserves dtype; this does not establish

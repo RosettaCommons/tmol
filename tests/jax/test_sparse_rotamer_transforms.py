@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from tests.scientific.execution import Execution
-from tests.scientific.molecules import DOMAIN_CASES
+from tests.scientific.molecules import DOMAIN_CASES, BACKBONE_CASES
 from tests.scientific.hbond_molecules import HBOND_CASES
 from tests.scientific.na_molecules import NA_CASES
 from tests.scientific.dunbrack_molecules import DUNBRACK_CASES
@@ -27,6 +27,7 @@ from tmol_jax.pack.scoring import sparse_nonbonded_values, nonbonded_candidate_p
         "hbond",
         "cartbonded",
         "na_torsion",
+        "backbone",
     ),
 )
 def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
@@ -37,12 +38,20 @@ def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
             cases = HBOND_CASES
         elif family == "na_torsion":
             cases = NA_CASES
+        if family == "backbone":
+            cases = {"mixed_batch": BACKBONE_CASES["mixed"]}
         b.molecule(cases["mixed_batch"], terms=("ref",))
         execute = RotamerExecution(b, family=family)
         coords = jax.device_put(
             np.asarray(execute.rotamers.coords, dtype=dtype), b.device
         )
-        if family not in ("dunbrack", "genbonded", "cartbonded", "na_torsion"):
+        if family not in (
+            "dunbrack",
+            "genbonded",
+            "cartbonded",
+            "na_torsion",
+            "backbone",
+        ):
             indices = nonbonded_candidate_pairs(
                 execute.rotamers,
                 b.pose.packed_block_types,
@@ -52,7 +61,7 @@ def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
         before = np.asarray(coords).copy()
 
         def total(x):
-            if family in ("genbonded", "cartbonded"):
+            if family in ("genbonded", "cartbonded", "backbone"):
                 from tmol_jax.pack.bonded_scoring import sparse_bonded_scores
 
                 values = sparse_bonded_scores(x, execute.state)[0]
@@ -188,6 +197,7 @@ def test_connected_dispatch_preserves_lockstep_identities(platform, coupled):
         "hbond",
         "cartbonded",
         "na_torsion",
+        "backbone",
     ),
 )
 def test_sparse_preparation_respects_cpu_pose_on_gpu_host(family):
@@ -200,6 +210,7 @@ def test_sparse_preparation_respects_cpu_pose_on_gpu_host(family):
     )
     from tmol_jax.pack.hbond_scoring import prepare_rotamer_hbond
     from tmol_jax.pack.na_scoring import prepare_rotamer_na_torsion
+    from tmol_jax.pack.backbone_scoring import prepare_rotamer_backbone
 
     try:
         gpu = jax.devices("cuda")[0]
@@ -220,6 +231,7 @@ def test_sparse_preparation_respects_cpu_pose_on_gpu_host(family):
         "cartbonded": prepare_rotamer_cartbonded,
         "hbond": prepare_rotamer_hbond,
         "na_torsion": prepare_rotamer_na_torsion,
+        "backbone": prepare_rotamer_backbone,
     }.get(family, prepare_rotamer_nonbonded)
     with jax.default_device(gpu):
         state = prepare(
@@ -230,3 +242,24 @@ def test_sparse_preparation_respects_cpu_pose_on_gpu_host(family):
         )
     arrays = [x for x in jax.tree.leaves(state) if isinstance(x, jax.Array)]
     assert arrays and all(x.device == b.device for x in arrays)
+
+
+def test_sparse_backbone_rejects_unimplemented_dispatch_topologies():
+    import attrs
+    from tmol_core.pack.correlation import CorrelatedBlockGroup
+    from tests.scientific.molecules import CyclicPeptideCase
+    from tmol_jax.pack.backbone_scoring import prepare_rotamer_backbone
+
+    b = Execution("jax-cpu")
+    b.molecule(CyclicPeptideCase((), (("ALA", "PRO"),), ((2,),)), terms=("ref",))
+    e = RotamerExecution(b, family="genbonded")
+    with pytest.raises(NotImplementedError, match="two-residue cycle"):
+        prepare_rotamer_backbone(b.pose, e.rotamers, b.parameter_database)
+    with pytest.raises(NotImplementedError, match="lockstep"):
+        prepare_rotamer_backbone(
+            b.pose,
+            attrs.evolve(
+                e.rotamers, correlated_groups=(CorrelatedBlockGroup(0, (0, 1)),)
+            ),
+            b.parameter_database,
+        )

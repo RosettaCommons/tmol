@@ -203,6 +203,14 @@ class Execution:
             return value.detach().cpu().numpy()
         return np.asarray(value)
 
+    def channel_names(self):
+        types = (
+            self.score_function.all_score_types()
+            if self.framework == "torch"
+            else self.score_function.active_score_types()
+        )
+        return tuple(term.name for term in types)
+
     def scores(self, coords, *, sum_terms=True, apply_weights=True):
         if self.framework == "torch":
             x = self.module.as_tensor(coords, device=self.device)

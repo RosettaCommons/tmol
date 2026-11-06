@@ -45,6 +45,7 @@ class RotamerExecution:
             )
             from tmol_jax.pack.hbond_scoring import prepare_rotamer_hbond
             from tmol_jax.pack.na_scoring import prepare_rotamer_na_torsion
+            from tmol_jax.pack.backbone_scoring import prepare_rotamer_backbone
 
             with backend.module.default_device(backend.device):
                 arguments = (backend.pose, self.rotamers, backend.parameter_database)
@@ -55,6 +56,7 @@ class RotamerExecution:
                     "hbond",
                     "cartbonded",
                     "na_torsion",
+                    "backbone",
                 ):
                     prepare = {
                         "dunbrack": prepare_rotamer_dunbrack,
@@ -63,6 +65,7 @@ class RotamerExecution:
                         "cartbonded": prepare_rotamer_cartbonded,
                         "hbond": prepare_rotamer_hbond,
                         "na_torsion": prepare_rotamer_na_torsion,
+                        "backbone": prepare_rotamer_backbone,
                     }[self.family]
                     self.state = prepare(*arguments)
                 else:
@@ -79,6 +82,7 @@ class RotamerExecution:
                 CartBondedEnergyTerm,
                 HBondEnergyTerm,
                 NaTorsionEnergyTerm,
+                BackboneTorsionEnergyTerm,
             )
 
             cls = {
@@ -90,6 +94,7 @@ class RotamerExecution:
                 "cartbonded": CartBondedEnergyTerm,
                 "hbond": HBondEnergyTerm,
                 "na_torsion": NaTorsionEnergyTerm,
+                "backbone": BackboneTorsionEnergyTerm,
             }[self.family]
             term = cls(param_db=backend.parameter_database, device=backend.device)
             for block in backend.pose.packed_block_types.active_block_types:
@@ -110,7 +115,7 @@ class RotamerExecution:
         x = self.array(coords)
         if self.backend.framework == "torch":
             return self.scorer(x)
-        if self.family in ("genbonded", "cartbonded"):
+        if self.family in ("genbonded", "cartbonded", "backbone"):
             from tmol_jax.pack.bonded_scoring import sparse_bonded_scores
 
             return sparse_bonded_scores(x, self.state)
@@ -159,7 +164,7 @@ class RotamerExecution:
         _, indices = self.scores(coords)
 
         def weighted(x):
-            if self.family in ("genbonded", "cartbonded"):
+            if self.family in ("genbonded", "cartbonded", "backbone"):
                 from tmol_jax.pack.bonded_scoring import sparse_bonded_scores
 
                 values = sparse_bonded_scores(x, self.state)[0]
