@@ -15,10 +15,13 @@ def test_circular_mean_crosses_angle_boundary():
     assert mean.dtype == np.float32
 
 
-def test_connected_topology_preserves_batch_padding_and_missing_neighbors():
+@pytest.mark.parametrize("padding_offset", [-1, 8])
+def test_connected_topology_preserves_batch_padding_and_missing_neighbors(
+    padding_offset,
+):
     # Two residues in pose zero, a disconnected residue plus padding in pose one.
     types = np.array([[0, 0], [0, -1]], dtype=np.int32)
-    offsets = np.array([[0, 4], [0, -1]], dtype=np.int32)
+    offsets = np.array([[0, 4], [0, padding_offset]], dtype=np.int32)
     connections = np.full((2, 2, 1, 2), -1, dtype=np.int32)
     connections[0, 0, 0] = [1, 0]
     connections[0, 1, 0] = [0, 0]
@@ -44,6 +47,10 @@ def test_connected_topology_preserves_batch_padding_and_missing_neighbors():
     assert not ring_valid[1, 1].any()
     np.testing.assert_array_equal(previous, [[1, 0], [-1, -1]])
     assert torsions.dtype == ring.dtype == previous.dtype == np.int64
+    # Padded blocks may store the end offset. All gather placeholders must be
+    # safe before a frontend applies the scientific masks.
+    assert np.all((torsions >= 0) & (torsions < 16))
+    assert np.all((ring >= 0) & (ring < 16))
 
 
 @pytest.mark.parametrize("shape", [(0, 2), (2, 0)])
