@@ -1,4 +1,5 @@
 #include <tmol/utility/tensor/native_library.hh>
+#include <tmol/utility/tensor/autograd_operator.hh>
 
 #include <tmol/utility/tensor/TensorCast.h>
 #include <tmol/utility/tensor/context_manager.hh>
@@ -80,10 +81,8 @@ class GetTorsionAngleOp : public tmol::native::autograd::Function<
   }
 };
 
-template <template <tmol::Device> class DispatchMethod>
-Tensor get_torsion_angle_op(Tensor coords) {
-  return GetTorsionAngleOp<DispatchMethod>::apply(coords);
-}
+using get_torsion_angle_op_binding =
+    native::AutogradOperator<GetTorsionAngleOp<common::DeviceOperations>>;
 
 std::tuple<Tensor, Tensor, Tensor> expand_constraint_candidates(
     Tensor atoms,
@@ -114,7 +113,7 @@ std::tuple<Tensor, Tensor, Tensor> expand_constraint_candidates(
 // See https://stackoverflow.com/a/3221914
 TMOL_LIBRARY(tmol_constraint, m) {
   m.def("expand_constraint_candidates", TMOL_FN(&expand_constraint_candidates));
-  m.def("get_torsion_angle", TMOL_FN(&get_torsion_angle_op<DeviceOperations>));
+  m.def("get_torsion_angle", TMOL_FN(&get_torsion_angle_op_binding::call));
 }
 
 }  // namespace potentials

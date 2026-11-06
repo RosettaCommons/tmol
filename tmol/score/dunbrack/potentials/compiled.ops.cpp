@@ -1,4 +1,5 @@
 #include <tmol/utility/tensor/native_library.hh>
+#include <tmol/utility/tensor/autograd_operator.hh>
 
 #include <tmol/utility/tensor/TensorCast.h>
 #include <tmol/utility/tensor/context_manager.hh>
@@ -849,116 +850,8 @@ class DunbrackRotamerScoreOp : public tmol::native::autograd::Function<
   }
 };
 
-template <template <tmol::Device> class DispatchMethod>
-std::vector<Tensor> dunbrack_pose_scores_op(
-    // common params
-    Tensor rot_coords,
-    Tensor rot_coord_offset,
-    Tensor pose_ind_for_atom,
-    Tensor first_rot_for_block,
-    Tensor first_rot_block_type,
-    Tensor block_ind_for_rot,
-    Tensor pose_ind_for_rot,
-    Tensor block_type_ind_for_rot,
-    Tensor n_rots_for_pose,
-    Tensor rot_offset_for_pose,
-    Tensor n_rots_for_block,
-    Tensor rot_offset_for_block,
-    int64_t max_n_rots_per_pose,
-
-    Tensor pose_stack_inter_block_connections,
-    Tensor block_type_atom_downstream_of_conn,
-
-    Tensor rotameric_neglnprob_tables,
-    Tensor rotprob_table_sizes,
-    Tensor rotprob_table_strides,
-    Tensor rotameric_mean_tables,
-    Tensor rotameric_sdev_tables,
-    Tensor rotmean_table_sizes,
-    Tensor rotmean_table_strides,
-
-    Tensor rotameric_bb_start,
-    Tensor rotameric_bb_step,
-    Tensor rotameric_bb_periodicity,
-
-    Tensor rotameric_rotind2tableind,
-    Tensor semirotameric_rotind2tableind,
-
-    Tensor semirotameric_tables,
-    Tensor semirot_table_sizes,
-    Tensor semirot_table_strides,
-    Tensor semirot_start,
-    Tensor semirot_step,
-    Tensor semirot_periodicity,
-
-    Tensor res_n_dihedrals,
-    Tensor res_dih_uaids,
-    Tensor res_rotamer_table_set,
-    Tensor res_rotameric_index,
-    Tensor res_semirotameric_index,
-    Tensor res_n_chi,
-    Tensor res_n_rotameric_chi,
-    Tensor res_probability_table_offset,
-    Tensor res_mean_table_offset,
-    Tensor res_rotamer_index_to_table_index,
-    Tensor block_semirotameric_tableset_offset,
-    Tensor block_is_mirrored,
-    bool output_block_pair_energies) {
-  return DunbrackPoseScoreOp<DispatchMethod>::apply(
-      // common params
-      rot_coords,
-      rot_coord_offset,
-      pose_ind_for_atom,
-      first_rot_for_block,
-      first_rot_block_type,
-      block_ind_for_rot,
-      pose_ind_for_rot,
-      block_type_ind_for_rot,
-      n_rots_for_pose,
-      rot_offset_for_pose,
-      n_rots_for_block,
-      rot_offset_for_block,
-      max_n_rots_per_pose,
-
-      pose_stack_inter_block_connections,
-      block_type_atom_downstream_of_conn,
-
-      rotameric_neglnprob_tables,
-      rotprob_table_sizes,
-      rotprob_table_strides,
-      rotameric_mean_tables,
-      rotameric_sdev_tables,
-      rotmean_table_sizes,
-      rotmean_table_strides,
-
-      rotameric_bb_start,
-      rotameric_bb_step,
-      rotameric_bb_periodicity,
-
-      rotameric_rotind2tableind,
-      semirotameric_rotind2tableind,
-
-      semirotameric_tables,
-      semirot_table_sizes,
-      semirot_table_strides,
-      semirot_start,
-      semirot_step,
-      semirot_periodicity,
-
-      res_n_dihedrals,
-      res_dih_uaids,
-      res_rotamer_table_set,
-      res_rotameric_index,
-      res_semirotameric_index,
-      res_n_chi,
-      res_n_rotameric_chi,
-      res_probability_table_offset,
-      res_mean_table_offset,
-      res_rotamer_index_to_table_index,
-      block_semirotameric_tableset_offset,
-      block_is_mirrored,
-      output_block_pair_energies);
-}
+using dunbrack_pose_scores_op_binding =
+    native::AutogradOperator<DunbrackPoseScoreOp<common::DeviceOperations>>;
 
 template <template <tmol::Device> class DispatchMethod>
 std::vector<Tensor> dunbrack_rotamer_scores_op(
@@ -1076,8 +969,7 @@ std::vector<Tensor> dunbrack_rotamer_scores_op(
 // See https://stackoverflow.com/a/3221914
 TMOL_LIBRARY(tmol_dunbrack, m) {
   m.def(
-      "dunbrack_pose_scores",
-      TMOL_FN(&dunbrack_pose_scores_op<DeviceOperations>));
+      "dunbrack_pose_scores", TMOL_FN(&dunbrack_pose_scores_op_binding::call));
   m.def(
       "dunbrack_rotamer_scores",
       TMOL_FN(&dunbrack_rotamer_scores_op<DeviceOperations>));

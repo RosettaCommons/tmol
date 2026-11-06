@@ -1,4 +1,5 @@
 #include <tmol/utility/tensor/native_library.hh>
+#include <tmol/utility/tensor/autograd_operator.hh>
 
 #include <tmol/utility/tensor/TensorCast.h>
 #include <tmol/utility/tensor/context_manager.hh>
@@ -485,60 +486,8 @@ class DisulfideRotamerScoreOp : public tmol::native::autograd::Function<
   }
 };
 
-template <template <tmol::Device> class DispatchMethod>
-std::vector<Tensor> disulfide_pose_scores_op(
-    // common params
-    Tensor rot_coords,
-    Tensor rot_coord_offset,
-    Tensor pose_ind_for_atom,
-    Tensor first_rot_for_block,
-    Tensor first_rot_block_type,
-
-    Tensor block_ind_for_rot,
-    Tensor pose_ind_for_rot,
-    Tensor block_type_ind_for_rot,
-    Tensor n_rots_for_pose,
-    Tensor rot_offset_for_pose,
-
-    Tensor n_rots_for_block,
-    Tensor rot_offset_for_block,
-    int64_t max_n_rots_per_pose,
-
-    // custom params
-    Tensor pose_stack_block_type,
-    Tensor pose_stack_inter_block_connections,
-    Tensor disulfide_conns,
-    Tensor block_type_atom_downstream_of_conn,
-    Tensor global_params,
-
-    bool output_block_pair_energies) {
-  return DisulfidePoseScoreOp<DispatchMethod>::apply(
-      // common params
-      rot_coords,
-      rot_coord_offset,
-      pose_ind_for_atom,
-      first_rot_for_block,
-      first_rot_block_type,
-
-      block_ind_for_rot,
-      pose_ind_for_rot,
-      block_type_ind_for_rot,
-      n_rots_for_pose,
-      rot_offset_for_pose,
-
-      n_rots_for_block,
-      rot_offset_for_block,
-      max_n_rots_per_pose,
-
-      // custom params
-      pose_stack_block_type,
-      pose_stack_inter_block_connections,
-      disulfide_conns,
-      block_type_atom_downstream_of_conn,
-      global_params,
-
-      output_block_pair_energies);
-}
+using disulfide_pose_binding =
+    native::AutogradOperator<DisulfidePoseScoreOp<DeviceOperations>>;
 
 template <template <tmol::Device> class DispatchMethod>
 std::vector<Tensor> disulfide_rotamer_scores_op(
@@ -598,9 +547,7 @@ std::vector<Tensor> disulfide_rotamer_scores_op(
 }
 // See https://stackoverflow.com/a/3221914
 TMOL_LIBRARY(tmol_disulfide, m) {
-  m.def(
-      "disulfide_pose_scores",
-      TMOL_FN(&disulfide_pose_scores_op<DeviceOperations>));
+  m.def("disulfide_pose_scores", TMOL_FN(&disulfide_pose_binding::call));
   m.def(
       "disulfide_rotamer_scores",
       TMOL_FN(&disulfide_rotamer_scores_op<DeviceOperations>));
