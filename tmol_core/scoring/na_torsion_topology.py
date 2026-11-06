@@ -1,41 +1,7 @@
 """Resolve static nucleic-acid atom indices from framework-neutral topology."""
 
 import numpy as np
-
-
-def _resolve_uaids(
-    uaids, block_type, block_coord_offset, inter_res_conn, atom_downstream_of_conn
-):
-    n_poses, max_n_blocks = block_type.shape
-    trailing = uaids.shape[2:-1]
-    shape = (n_poses, max_n_blocks) + trailing
-    n_indices = int(np.prod(trailing))
-    atom, conn, sep = (uaids[..., i].astype(np.int64) for i in range(3))
-    is_inter = conn >= 0
-    self_block = np.broadcast_to(
-        np.arange(max_n_blocks).reshape(1, max_n_blocks, *([1] * len(trailing))),
-        atom.shape,
-    )
-    conn_idx = np.maximum(conn, 0).reshape(n_poses, max_n_blocks, n_indices)
-    other_block, other_conn = (
-        np.take_along_axis(inter_res_conn[..., i], conn_idx, axis=2).reshape(atom.shape)
-        for i in range(2)
-    )
-    target_block = np.where(is_inter, other_block, self_block)
-    ok = np.where(is_inter, other_block >= 0, atom >= 0)
-    target_safe = np.maximum(target_block, 0).reshape(n_poses, max_n_blocks * n_indices)
-    target_bt = np.take_along_axis(block_type, target_safe, axis=1).reshape(shape)
-    ok &= target_bt >= 0
-    local_inter = atom_downstream_of_conn[
-        np.maximum(target_bt, 0), np.maximum(other_conn, 0), np.maximum(sep, 0)
-    ]
-    local = np.where(is_inter, local_inter, atom)
-    ok &= local >= 0
-    offset = np.take_along_axis(block_coord_offset, target_safe, axis=1).reshape(shape)
-    pose = np.broadcast_to(
-        np.arange(n_poses).reshape(n_poses, *([1] * (atom.ndim - 1))), atom.shape
-    )
-    return pose, offset + local, ok
+from tmol_core.chemical.atom_resolution import resolve_uaids as _resolve_uaids
 
 
 def prepare_na_torsion_topology(
