@@ -100,3 +100,15 @@ def test_cuda_annealer_fixed_seed_is_repeatedly_exact(n_res):
         assert torch.equal(scores, expected_scores)
         assert torch.equal(assignments, expected_assignments)
         assert torch.equal(rng_state, expected_rng_state)
+
+
+@pytest.mark.parametrize("counts", [[0, 0], [2, 3]])
+def test_cpu_annealer_empty_pose_has_no_energy(counts):
+    from tmol.pack.compiled._compiled import _pack_anneal
+
+    inputs = independent_minimum_tables(counts, 2, torch.device("cpu"))
+    inputs[-2].add_(3)
+    scores, assignments = _pack_anneal(*inputs)
+    assert scores[0, 0] == 0
+    assert scores[1, 0] == 3 * sum(n > 0 for n in counts)
+    assert assignments.shape == (2, 1, len(counts))
