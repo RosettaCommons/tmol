@@ -31,6 +31,8 @@ class DunbrackChiSampler:
     override sampler defaults without mutating this reusable object.
     """
 
+    samples_after_other_samplers = False
+
     def __init__(
         self,
         tables,
@@ -97,6 +99,13 @@ class DunbrackChiSampler:
                 if isinstance(getattr(host, field.name), np.ndarray)
             },
         )
+
+    def create_samples_for_poses(self, pose_stack, task):
+        counts, choices, atoms, chi = self.sample_chi_for_poses(pose_stack, task)
+        return counts, choices, {
+            "chi_defining_atom_for_rotamer": atoms,
+            "chi_for_rotamers": chi,
+        }
 
     def sample_chi_for_poses(self, pose_stack, task):
         """Return per-choice counts, choice indices, defining atoms and chi.

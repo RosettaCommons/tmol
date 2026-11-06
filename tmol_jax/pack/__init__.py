@@ -5,11 +5,14 @@ from .kinematics import prepare_rotamer_kinematics, prepare_block_group_kinemati
 from .dunbrack import DunbrackChiSampler
 from .fingerprint import prepare_atom_copy_plan
 from .task import PackerTask, SetPackerTask
+from .current import IncludeCurrentSampler, FallbackSampler
 
 __all__ = [
     "PackerPalette",
     "PackerTask",
     "SetPackerTask",
+    "IncludeCurrentSampler",
+    "FallbackSampler",
     "prepare_rotamer_kinematics",
     "prepare_block_group_kinematics",
     "DunbrackChiSampler",

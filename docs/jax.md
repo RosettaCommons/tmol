@@ -173,6 +173,14 @@ require an eager host allocation barrier, so sampling is not differentiable,
 jittable or vmappable. Rotamer coordinate assembly, interaction graphs, annealing,
 FastRelax and design execution remain unavailable.
 
+`IncludeCurrentSampler` and `FallbackSampler` expose
+`create_samples_for_poses(pose, concrete_task)`, returning counts, choice indices
+and an input-coordinate copy marker. Register either sampler explicitly.
+Fallback accepts `built_rotamer_counts=counts` aggregated from earlier samplers;
+it retains fixed residues and fills uncovered positions. Coverage includes all
+identities at a position, so a sampled design choice does not reintroduce the
+original identity. These selectors do not yet assemble rotamer coordinates.
+
 For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
 a batch of `ResidueBlock(residue_type, atom_names, coords)` records and explicit
 named connection ports. Full residue names include variants; every atom must be

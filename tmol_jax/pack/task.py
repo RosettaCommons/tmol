@@ -15,7 +15,7 @@ class PackerTask:
 
     Task construction and mutation are eager host operations. Samplers must be
     registered explicitly; this interface does not yet execute rotamer packing
-    or add a fallback conformation for residues outside a sampler's domain.
+    or automatically add a fallback sampler for uncovered residues.
     """
 
     def __init__(self, systems, palette=None):
