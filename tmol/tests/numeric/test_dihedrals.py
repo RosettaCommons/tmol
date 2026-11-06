@@ -50,3 +50,32 @@ def test_numpy_coord_dihedrals_matches_torch():
     actual = _numpy_coord_dihedrals(*(coords[:, i] for i in range(4)))
 
     numpy.testing.assert_array_equal(actual, expected)
+
+
+def test_explicit_double_dihedrals_match_independent_plane_geometry_and_gradients():
+    generator = numpy.random.default_rng(19)
+    points = generator.normal(size=(100, 4, 3))
+    a, b, c, d = (points[:, i] for i in range(4))
+    axis = c - b
+    normal1 = numpy.cross(b - a, axis)
+    normal2 = numpy.cross(axis, d - c)
+    expected = numpy.arctan2(
+        numpy.sum(numpy.cross(normal1, normal2) * axis, axis=1)
+        / numpy.linalg.norm(axis, axis=1),
+        numpy.sum(normal1 * normal2, axis=1),
+    )
+    coords = torch.tensor(points, dtype=torch.float64)
+    actual = coord_dihedrals(
+        *(coords[:, i] for i in range(4)), output_dtype=torch.float64
+    )
+    host = _numpy_coord_dihedrals(a, b, c, d, output_dtype=numpy.float64)
+    assert actual.dtype == torch.float64 and host.dtype == numpy.float64
+    numpy.testing.assert_allclose(actual.numpy(), expected, rtol=2e-14, atol=2e-14)
+    numpy.testing.assert_allclose(host, expected, rtol=2e-14, atol=2e-14)
+    sample = coords[:2].clone().requires_grad_(True)
+    torch.autograd.gradcheck(
+        lambda x: coord_dihedrals(
+            *(x[:, i] for i in range(4)), output_dtype=torch.float64
+        ),
+        (sample,),
+    )

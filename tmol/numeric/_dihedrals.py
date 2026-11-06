@@ -13,18 +13,27 @@ Angles = Tensor[float][:]
 
 @_validate_args
 def coord_dihedrals(
-    a: Coord64Array, b: Coord64Array, c: Coord64Array, d: Coord64Array
-) -> Angles:
+    a: Coord64Array,
+    b: Coord64Array,
+    c: Coord64Array,
+    d: Coord64Array,
+    *,
+    output_dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
     """Dihedral angle in [-pi, pi] over the planes defined by {a, b, c} & {b, c, d}.
 
     Calculate dihedral angle from four coordinate locations, using the
     "standard" torsion angle definition of two planes defined by the points
     {a, b, c} and {b, c, d}. For a four-atom bond definition, this corrosponds
-    to rotation about the b-c bond.
+    to rotation about the b-c bond. ``output_dtype`` defaults to float32;
+    request float64 to retain the precision of the double-coordinate calculation.
     """
 
     # Implementation derived from the "Praxeolitic" method, described at
     # https://stackoverflow.com/questions/20305272/dihedral-torsion-angle-from-four-points-in-cartesian-coordinates-in-python # noqa
+
+    if output_dtype not in (torch.float32, torch.float64):
+        raise ValueError("Dihedral output dtype must be float32 or float64")
 
     ba = a - b
     bc = c - b
@@ -44,4 +53,4 @@ def coord_dihedrals(
     x = torch.sum(v * w, dim=1)
     y = torch.sum(torch.linalg.cross(ubc, v) * w, dim=1)
 
-    return torch.atan2(y, x).type(torch.float)
+    return torch.atan2(y, x).to(dtype=output_dtype)

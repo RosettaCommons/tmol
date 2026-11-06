@@ -98,4 +98,45 @@ void launch_assign_chi_dofs(Context& context, Ctx c) {
         assign_chi_dof<Real>(c, i);
       });
 }
+// Copy complete current conformers without materializing two per-atom index
+// arrays. Packed offsets delimit only the selected conformers; source and
+// target offsets address their respective coordinate or internal-DOF layouts.
+template <template <typename, int> class View, typename Real, typename Int>
+struct ConformerRowCopy {
+  View<Int, 1> source_offsets, target_offsets, packed_offsets;
+  View<Real, 2> source_values, target_values;
+};
+
+template <typename Ctx>
+TMOL_DEVICE_FUNC void copy_conformer_row(
+    Ctx const& c, int row, int root_shift) {
+  int begin = 0, end = c.source_offsets.size(0);
+  // Find the selected conformer containing this packed atom. Equal offsets
+  // skip empty conformers, including leading and trailing empty segments.
+  while (begin + 1 < end) {
+    int middle = begin + (end - begin) / 2;
+    if (c.packed_offsets[middle] <= row)
+      begin = middle;
+    else
+      end = middle;
+  }
+  auto local = row - c.packed_offsets[begin];
+  auto source = c.source_offsets[begin] + local + root_shift;
+  auto target = c.target_offsets[begin] + local + root_shift;
+  for (int component = 0; component < c.target_values.size(1); ++component)
+    c.target_values[target][component] = c.source_values[source][component];
+}
+
+template <template <Device> class Ops, Device D, typename Context, typename Ctx>
+void launch_copy_conformer_rows(
+    Context& context, Ctx c, int64_t n_rows, int root_shift) {
+  LAUNCH_BOX_128;
+  int count =
+      score::common::checked_dispatch_size(n_rows, "conformer row copy");
+  Ops<D>::template forall<launch_t>(
+      context, count, [=] TMOL_DEVICE_FUNC(int i) {
+        copy_conformer_row(c, i, root_shift);
+      });
+}
+
 }  // namespace tmol::pack::rotamer
