@@ -27,8 +27,9 @@ template <
     template <tmol::Device> class DeviceOps,
     tmol::Device Dev,
     typename Real,
-    typename Int>
-auto GenerateHBondBases<DeviceOps, Dev, Real, Int>::forward(
+    typename Int,
+    bool ComputeCoordinates>
+auto GenerateHBondBases<DeviceOps, Dev, Real, Int, ComputeCoordinates>::forward(
     ContextManager& mgr,
     TView<Vec<Real, 3>, 1, Dev> rot_coords,
     TView<Int, 1, Dev> rot_coord_offset,
@@ -61,7 +62,8 @@ auto GenerateHBondBases<DeviceOps, Dev, Real, Int>::forward(
   NVTXRange _function(__FUNCTION__);
 
   nvtx_range_push("hbond_bases::setup");
-  auto derived_coords_t = TPack<Vec<Real, 3>, 2, Dev>::full({n_atoms, 3}, NAN);
+  auto derived_coords_t = TPack<Vec<Real, 3>, 2, Dev>::full(
+      {ComputeCoordinates ? n_atoms : 0, 3}, NAN);
   auto derived_coords = derived_coords_t.view;
   auto derived_atom_inds_t = TPack<Int, 2, Dev>::full({n_atoms, 3}, -1);
   auto derived_atom_inds = derived_atom_inds_t.view;
@@ -108,11 +110,29 @@ auto GenerateHBondBases<DeviceOps, Dev, Real, Int>::forward(
         int64_t(n_rots),
         true);
   } else {
-    launch_hbond_bases<DeviceOps, Dev, Real, Int>(mgr, ctx);
+    launch_hbond_bases<DeviceOps, Dev, Real, Int, ComputeCoordinates>(mgr, ctx);
   }
   nvtx_range_pop();
 
   return {derived_coords_t, derived_atom_inds_t};
+}
+
+template <
+    template <tmol::Device> class DeviceOps,
+    tmol::Device Dev,
+    typename Real,
+    typename Int>
+auto GatherHBondBases<DeviceOps, Dev, Real, Int>::forward(
+    ContextManager& mgr,
+    TView<Vec<Real, 3>, 1, Dev> coords,
+    TView<Int, 2, Dev> indices) -> TPack<Vec<Real, 3>, 2, Dev> {
+  auto output = TPack<Vec<Real, 3>, 2, Dev>::empty({indices.size(0), 3});
+  HBondBasesCtx<Real, Int, Dev> ctx{};
+  ctx.rot_coords = coords;
+  ctx.derived_atom_inds = indices;
+  ctx.derived_coords = output.view;
+  gather_hbond_bases<DeviceOps, Dev, Real>(mgr, ctx);
+  return output;
 }
 
 #undef HBOND_BASES_GEN_TILE_SIZE
