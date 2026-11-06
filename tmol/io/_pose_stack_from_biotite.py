@@ -445,10 +445,16 @@ def prepare_atom37_pose_builder(
     his_inds = context.canonical_ordering.his_inds
     ambiguous_his = False
     if his_inds.his_co_aa_inds:
-        ambiguous_atom_inds = torch.tensor(
-            [his_inds.his_HN_in_co, his_inds.his_NH_in_co, his_inds.his_NN_in_co],
-            device=device,
+        from tmol.io.details._his_taut_resolution import _his_atom_inds_tensor
+
+        indices = _his_atom_inds_tensor(his_inds, device)[:, 4:7].long()
+        types = canonical_template.res_types
+        rows = (
+            torch.zeros_like(types)
+            if len(indices) == 1
+            else types.clamp(0, len(indices) - 1)
         )
+        ambiguous_atom_inds = indices[rows].clamp_min(0)
         is_his = torch.isin(
             canonical_template.res_types,
             torch.tensor(his_inds.his_co_aa_inds, device=device),
@@ -457,7 +463,11 @@ def prepare_atom37_pose_builder(
             torch.any(
                 is_his.unsqueeze(-1)
                 & torch.isfinite(
-                    canonical_template.coords[:, :, ambiguous_atom_inds]
+                    torch.gather(
+                        canonical_template.coords,
+                        2,
+                        ambiguous_atom_inds.unsqueeze(-1).expand(-1, -1, -1, 3),
+                    )
                 ).all(dim=-1)
             )
         )
@@ -1782,7 +1792,7 @@ def _covalent_bonds_from_biotite(
     atom_canonical_ind[valid_atom_mask] = valid_atom_inds
 
     cys_classes = frozenset(co.cys_inds.cys_co_aa_inds)
-    sg_atom = co.cys_inds.sg_atom_for_co_cys
+    sg_atoms = co.cys_inds.sg_by_class
 
     tags = (
         array.get_annotation(INFERRED_POLYMER_BOND)
@@ -1807,10 +1817,10 @@ def _covalent_bonds_from_biotite(
             continue
         restype1, restype2 = restype_for_res[res1], restype_for_res[res2]
         if (
-            canonical1 == sg_atom
-            and canonical2 == sg_atom
-            and restype1 in cys_classes
+            restype1 in cys_classes
             and restype2 in cys_classes
+            and canonical1 == sg_atoms[restype1]
+            and canonical2 == sg_atoms[restype2]
         ):
             disulfides.append(tuple(sorted((res1, res2))))
             continue

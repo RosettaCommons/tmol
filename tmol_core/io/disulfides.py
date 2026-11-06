@@ -13,10 +13,11 @@ class DisulfideSearchPlan:
     cys_pose: numpy.ndarray
     cys_residue: numpy.ndarray
     search: bool
+    sg_atoms: numpy.ndarray | None = None
 
 
 def prepare_disulfide_search(
-    cys_classes, residue_types, declared=None, find_additional=True
+    cys_classes, residue_types, declared=None, find_additional=True, sg_atoms=None
 ):
     """Prepare metadata without inspecting or transferring coordinates."""
     variants = numpy.zeros(numpy.shape(residue_types), dtype=numpy.int32)
@@ -57,7 +58,15 @@ def prepare_disulfide_search(
         and pose.size
         and (declared is None or numpy.any(variants[pose, residue] != 1))
     )
-    return DisulfideSearchPlan(variants, rows, pose, residue, search)
+    selected_sg = None
+    if sg_atoms is not None:
+        if len(sg_atoms) != len(cys_classes):
+            raise ValueError("Provide one SG slot per cysteine class")
+        if any(atom != sg_atoms[0] for atom in sg_atoms):
+            selected_sg = numpy.empty(len(pose), dtype=numpy.int64)
+            for cls, atom in zip(cys_classes, sg_atoms):
+                selected_sg[residue_types[pose, residue] == cls] = atom
+    return DisulfideSearchPlan(variants, rows, pose, residue, search, selected_sg)
 
 
 def resolve_disulfides(plan, coords, sg_atom, cutoff=2.5):
@@ -73,7 +82,7 @@ def resolve_disulfides(plan, coords, sg_atom, cutoff=2.5):
         found,
         plan.cys_pose,
         plan.cys_residue,
-        sg_atom,
+        sg_atom if plan.sg_atoms is None else plan.sg_atoms,
         cutoff,
         variants,
     )
@@ -100,6 +109,7 @@ def find_disulfide_pairs(
     #    mark the two as now paired
 
     n_cys = cys_pose_ind.shape[0]
+    scalar_sg = isinstance(sg_atom_for_co_cys, (int, numpy.integer))
     already_paired = numpy.zeros(n_cys, dtype=numpy.int32)
     for i in range(n_cys):
         already_paired[i] = restype_variants[cys_pose_ind[i], cys_res_ind[i]]
@@ -114,7 +124,9 @@ def find_disulfide_pairs(
         closest_match = -1
         closest_match_res = -1
         closest_dis2 = -1.0
-        i_coord = coords[i_pose, i_res, sg_atom_for_co_cys]
+        i_coord = coords[
+            i_pose, i_res, sg_atom_for_co_cys if scalar_sg else sg_atom_for_co_cys[i]
+        ]
         for j in range(i + 1, cys_pose_ind.shape[0]):
             j_pose = cys_pose_ind[j]
             if j_pose != i_pose:
@@ -123,7 +135,14 @@ def find_disulfide_pairs(
             if already_paired[j]:
                 continue
             dis2 = numpy.sum(
-                numpy.square(i_coord - coords[j_pose, j_res, sg_atom_for_co_cys])
+                numpy.square(
+                    i_coord
+                    - coords[
+                        j_pose,
+                        j_res,
+                        sg_atom_for_co_cys if scalar_sg else sg_atom_for_co_cys[j],
+                    ]
+                )
             )
             if dis2 < cutoff_dis2 and (closest_dis2 < 0 or dis2 < closest_dis2):
                 closest_dis2 = dis2
