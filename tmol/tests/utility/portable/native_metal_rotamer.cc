@@ -157,7 +157,8 @@ void check_bridge_index_width() {
       view(params, {3, 2, 1}),
       view(internal, {3, 2, 1}),
       view(distances, {3, 2, 1}));
-  assert(external.valid && external.metal1 == high && external.metal2 == high + 7);
+  assert(
+      external.valid && external.metal1 == high && external.metal2 == high + 7);
   auto local = bridge_from_code<Int, Real, tmol::Device::CPU>(
       4,
       0,
