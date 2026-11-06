@@ -765,3 +765,17 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<int64_t>("extent")
         .Attr<int64_t>("width"),
     {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_rotamer_lk_ball,
+    (tmol::jax::
+         run_graph_stage<tmol::jax::RotamerLKBallStage, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width")
+        .Attr<double>("reach"),
+    {xla::ffi::Traits::kCmdBufferCompatible});

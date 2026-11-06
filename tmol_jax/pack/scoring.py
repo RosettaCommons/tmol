@@ -11,7 +11,9 @@ from tmol_jax.score.nonbonded import prepare_independent_nonbonded
 from .dispatch import rotamer_spheres, block_spheres, candidate_pairs
 
 
-@partial(jax.jit, static_argnames=("target", "channels", "reach", "backward"))
+@partial(
+    jax.jit, static_argnames=("target", "channels", "reach", "backward", "workspace")
+)
 def _evaluate(
     coords,
     parameters,
@@ -22,21 +24,27 @@ def _evaluate(
     channels,
     reach,
     backward=False,
+    workspace=None,
 ):
     register(target)
     operands = (coords, *parameters, indices)
     if backward:
         operands += (weights,)
     shape = coords.shape if backward else (channels, indices.shape[1])
-    return jax.ffi.ffi_call(
-        target, jax.ShapeDtypeStruct(shape, coords.dtype), vmap_method="sequential"
-    )(
+    output = jax.ShapeDtypeStruct(shape, coords.dtype)
+    outputs = (
+        output
+        if workspace is None
+        else (output, jax.ShapeDtypeStruct((workspace[backward],), jnp.uint8))
+    )
+    result = jax.ffi.ffi_call(target, outputs, vmap_method="sequential")(
         *operands,
         operation=np.int64(backward),
         extent=np.int64(0),
         width=np.int64(0),
         reach=np.float64(reach),
     )
+    return result if workspace is None else result[0]
 
 
 def coordinate_vjp(coords, parameters, evaluate):
@@ -64,7 +72,7 @@ def coordinate_vjp(coords, parameters, evaluate):
     return value(coords, *parameters)
 
 
-def sparse_nonbonded_values(coords, state, indices):
+def sparse_nonbonded_values(coords, state, indices, *, workspace=None):
     """Score explicit sparse candidate identities with a native coordinate VJP.
 
     The caller supplies current discrete candidates. Only coordinate derivatives
@@ -84,18 +92,23 @@ def sparse_nonbonded_values(coords, state, indices):
             channels=channels,
             reach=reach,
             backward=backward,
+            workspace=workspace,
         )
 
     return coordinate_vjp(coords, parameters, evaluate)
 
 
-def prepare_rotamer_nonbonded(pose, rotamers, database, *, electrostatic=False):
-    """Prepare shared chemistry for sparse LJ/LK or electrostatic execution."""
+def validate_rotamer_context(pose, rotamers):
     if rotamers.context is None:
         raise ValueError("sparse scoring requires conformers with pose provenance")
     rotamers.context.validate(pose)
     if rotamers.device != pose.device:
         raise ValueError("conformers and pose must be on the same device")
+
+
+def prepare_rotamer_nonbonded(pose, rotamers, database, *, electrostatic=False):
+    """Prepare shared chemistry for sparse LJ/LK or electrostatic execution."""
+    validate_rotamer_context(pose, rotamers)
     target, channels, parameters, reach = prepare_independent_nonbonded(
         pose,
         database,

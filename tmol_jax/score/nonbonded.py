@@ -47,11 +47,15 @@ def _pose_connections(pose):
     return _compact_connections(pose.inter_block_bondsep)
 
 
+def _validate_atom_type_order(pbt, names):
+    if tuple(names[:-1]) != tuple(at.name for at in pbt.chem_db.atom_types):
+        raise ValueError("scoring database atom-type order differs from pose chemistry")
+
+
 def _ljlk_parameters(pose, database):
     pbt = pose.packed_block_types
     names, flags = atom_type_parameters(database.chemical.atom_types)
-    if tuple(names[:-1]) != tuple(at.name for at in pbt.chem_db.atom_types):
-        raise ValueError("scoring database atom-type order differs from pose chemistry")
+    _validate_atom_type_order(pbt, names)
     lj = ljlk_type_parameters(names, database.scoring.ljlk)
     active = np.asarray(pose.block_type_ind)
     for index in np.unique(active[active >= 0]):

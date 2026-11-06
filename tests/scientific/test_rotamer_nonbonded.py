@@ -20,17 +20,19 @@ from .rotamer_execution import RotamerExecution
         "mixed_batch",
     ),
 )
-@pytest.mark.parametrize("electrostatic", (False, True))
-def test_sparse_nonbonded_values_and_coordinate_derivatives(
-    backend, case_name, electrostatic
-):
-    terms = ("fa_elec",) if electrostatic else ("fa_ljatr", "fa_ljrep", "fa_lk")
+@pytest.mark.parametrize("family", ("ljlk", "elec", "lk_ball"))
+def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, family):
+    terms = {
+        "elec": ("fa_elec",),
+        "ljlk": ("fa_ljatr", "fa_ljrep", "fa_lk"),
+        "lk_ball": ("lk_ball_iso", "lk_ball", "lk_bridge", "lk_bridge_uncpl"),
+    }[family]
     backend.molecule(DOMAIN_CASES[case_name], terms=terms)
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
     )
     with precision:
-        execution = RotamerExecution(backend, electrostatic=electrostatic)
+        execution = RotamerExecution(backend, family=family)
         coords = backend.numpy(execution.rotamers.coords).astype(np.float64)
         values, indices = map(backend.numpy, execution.scores(coords))
         assert np.isfinite(values).all() and np.any(np.abs(values) > 1e-3)
@@ -63,44 +65,61 @@ def test_sparse_nonbonded_values_and_coordinate_derivatives(
         np.testing.assert_array_equal(backend.numpy(execution.rotamers.coords), coords)
 
 
-def test_sparse_custom_parameters_preserve_existing_scorer(backend):
+@pytest.mark.parametrize("family", ("ljlk", "lk_ball"))
+def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
     import attrs
 
-    backend.molecule(DOMAIN_CASES["ligand"], terms=("ref",))
+    case = DOMAIN_CASES["ligand" if family == "ljlk" else "connected_noncanonical"]
+    backend.molecule(case, terms=("ref",))
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
     )
     with precision:
-        original = RotamerExecution(backend)
+        original = RotamerExecution(backend, family=family)
         coords = backend.numpy(original.rotamers.coords).astype(np.float64)
         first, indices = map(backend.numpy, original.scores(coords))
+        scaled_channels, factor = (2, 4) if family == "ljlk" else (3, 2)
         weights = np.broadcast_to(
-            np.asarray([1.0, 1.0, 0.0])[:, None], first.shape
-        ).copy()
+            (np.arange(first.shape[0]) < scaled_channels)[:, None], first.shape
+        ).astype(np.float64)
+        if family == "lk_ball":
+            assert np.all(np.max(np.abs(first), axis=1) > 1e-4)
         _, gradient, _ = original.value_and_grad(coords, weights)
         database = backend.parameter_database
         # Fourfold well depth doubles its float32 square-root table exactly;
         # this keeps the analytic scaling check free of parameter quantization.
         parameters = tuple(
-            attrs.evolve(p, lj_wdepth=4 * p.lj_wdepth)
+            attrs.evolve(
+                p,
+                **(
+                    {"lj_wdepth": 4 * p.lj_wdepth}
+                    if family == "ljlk"
+                    else {"lk_dgfree": 2 * p.lk_dgfree}
+                ),
+            )
             for p in database.scoring.ljlk.atom_type_parameters
         )
         ljlk = attrs.evolve(database.scoring.ljlk, atom_type_parameters=parameters)
         modified = attrs.evolve(
             database, scoring=attrs.evolve(database.scoring, ljlk=ljlk)
         )
-        backend.molecule(
-            DOMAIN_CASES["ligand"], terms=("ref",), parameter_database=modified
-        )
-        changed = RotamerExecution(backend)
+        backend.molecule(case, terms=("ref",), parameter_database=modified)
+        changed = RotamerExecution(backend, family=family)
         actual, actual_gradient, actual_indices = changed.value_and_grad(
             coords, weights
         )
         np.testing.assert_array_equal(actual_indices, indices)
-        np.testing.assert_allclose(actual[:2], 4 * first[:2], rtol=2e-12, atol=2e-11)
-        np.testing.assert_allclose(actual[2], first[2], rtol=2e-12, atol=2e-11)
         np.testing.assert_allclose(
-            actual_gradient, 4 * gradient, rtol=2e-12, atol=2e-11
+            actual[:scaled_channels],
+            factor * first[:scaled_channels],
+            rtol=2e-12,
+            atol=2e-11,
+        )
+        np.testing.assert_allclose(
+            actual[scaled_channels:], first[scaled_channels:], rtol=2e-12, atol=2e-11
+        )
+        np.testing.assert_allclose(
+            actual_gradient, factor * gradient, rtol=2e-12, atol=2e-11
         )
         np.testing.assert_array_equal(backend.numpy(original.scores(coords)[0]), first)
 
@@ -119,7 +138,7 @@ def test_sparse_dunbrack_preserves_library_free_conformer_identity(backend):
 
 
 @pytest.mark.parametrize("case_name", ("l_peptide", "mixed_batch"))
-@pytest.mark.parametrize("family", ("ljlk", "elec", "dunbrack"))
+@pytest.mark.parametrize("family", ("ljlk", "elec", "dunbrack", "lk_ball"))
 def test_sampled_ensemble_selection_conserves_energy_and_forces(
     backend, case_name, family
 ):
@@ -129,6 +148,7 @@ def test_sampled_ensemble_selection_conserves_energy_and_forces(
         "elec": ("fa_elec",),
         "ljlk": ("fa_ljatr", "fa_ljrep", "fa_lk"),
         "dunbrack": ("dunbrack_rot", "dunbrack_rotdev", "dunbrack_semirot"),
+        "lk_ball": ("lk_ball_iso", "lk_ball", "lk_bridge", "lk_bridge_uncpl"),
     }[family]
     backend.molecule(DUNBRACK_CASES[case_name], terms=terms)
     precision = (

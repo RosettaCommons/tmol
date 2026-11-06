@@ -732,3 +732,32 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<int64_t>("operation")
         .Attr<int64_t>("extent")
         .Attr<int64_t>("width"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_rotamer_lk_ball,
+    (tmol::jax::
+         run_graph_stage<tmol::jax::RotamerLKBallStage, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width")
+        .Attr<double>("reach"));
+
+extern "C" uint64_t tmol_rotamer_lk_ball_workspace_bytes(
+    int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
+  try {
+    if (poses < 0 || blocks < 0 || atoms < 0 || (bits != 32 && bits != 64))
+      throw std::invalid_argument("invalid LK-ball workspace dimensions");
+    return bits == 32 ? tmol::jax::LKBallWorkspace<float, false, true>(
+                            poses, blocks, atoms, derivative)
+                            .storage.size_bytes()
+                      : tmol::jax::LKBallWorkspace<double, false, true>(
+                            poses, blocks, atoms, derivative)
+                            .storage.size_bytes();
+  } catch (...) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+}

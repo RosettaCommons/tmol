@@ -8,15 +8,11 @@ import numpy as np
 
 from tmol_jax.score._native import register, workspace_sizes
 from tmol_jax.score.dunbrack.dunbrack_energy_term import DunbrackEnergyTerm
-from .scoring import coordinate_vjp
+from .scoring import coordinate_vjp, validate_rotamer_context
 
 
 def prepare_rotamer_dunbrack(pose, rotamers, database):
-    if rotamers.context is None:
-        raise ValueError("sparse scoring requires conformers with pose provenance")
-    rotamers.context.validate(pose)
-    if rotamers.device != pose.device:
-        raise ValueError("conformers and pose must be on the same device")
+    validate_rotamer_context(pose, rotamers)
     parameters = DunbrackEnergyTerm(database).setup_for_pose_stack(pose).parameters
     if parameters:
         parameters = (

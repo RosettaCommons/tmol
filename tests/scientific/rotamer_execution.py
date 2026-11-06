@@ -38,23 +38,33 @@ class RotamerExecution:
         if backend.framework == "jax":
             from tmol_jax.pack.scoring import prepare_rotamer_nonbonded
             from tmol_jax.pack.dunbrack_scoring import prepare_rotamer_dunbrack
+            from tmol_jax.pack.lk_ball_scoring import prepare_rotamer_lk_ball
 
             with backend.module.default_device(backend.device):
                 arguments = (backend.pose, self.rotamers, backend.parameter_database)
-                self.state = (
-                    prepare_rotamer_dunbrack(*arguments)
-                    if self.family == "dunbrack"
-                    else prepare_rotamer_nonbonded(
+                if self.family in ("dunbrack", "lk_ball"):
+                    prepare = {
+                        "dunbrack": prepare_rotamer_dunbrack,
+                        "lk_ball": prepare_rotamer_lk_ball,
+                    }[self.family]
+                    self.state = prepare(*arguments)
+                else:
+                    self.state = prepare_rotamer_nonbonded(
                         *arguments, electrostatic=self.family == "elec"
                     )
-                )
         else:
-            from tmol.score import LJLKEnergyTerm, ElecEnergyTerm, DunbrackEnergyTerm
+            from tmol.score import (
+                LJLKEnergyTerm,
+                ElecEnergyTerm,
+                DunbrackEnergyTerm,
+                LKBallEnergyTerm,
+            )
 
             cls = {
                 "elec": ElecEnergyTerm,
                 "ljlk": LJLKEnergyTerm,
                 "dunbrack": DunbrackEnergyTerm,
+                "lk_ball": LKBallEnergyTerm,
             }[self.family]
             term = cls(param_db=backend.parameter_database, device=backend.device)
             for block in backend.pose.packed_block_types.active_block_types:
@@ -90,6 +100,10 @@ class RotamerExecution:
             reach=self.state[3],
             coords=x,
         )
+        if self.family == "lk_ball":
+            from tmol_jax.pack.lk_ball_scoring import sparse_lk_ball_values
+
+            return sparse_lk_ball_values(x, self.state, indices), indices
         return sparse_nonbonded_values(x, self.state, indices), indices
 
     def value_and_grad(self, coords, weights):
@@ -110,6 +124,10 @@ class RotamerExecution:
                 from tmol_jax.pack.dunbrack_scoring import sparse_dunbrack_scores
 
                 values = sparse_dunbrack_scores(x, self.state)[0]
+            elif self.family == "lk_ball":
+                from tmol_jax.pack.lk_ball_scoring import sparse_lk_ball_values
+
+                values = sparse_lk_ball_values(x, self.state, indices)
             else:
                 values = sparse_nonbonded_values(x, self.state, indices)
             return (values * self.array(weights)).sum(), values

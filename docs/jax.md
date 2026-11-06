@@ -192,7 +192,7 @@ Assembly is eager because sampling determines output sizes; it does not support
 native DOF operations support `jit` and `vmap`. A concrete `SetPackerTask` reuses
 validated topology plans while recomputing coordinates. Internal native stages
 now provide sparse graph topology/retention, sphere-based candidate enumeration,
-and the mature CPU annealing schedule. Sparse LJ/LK, electrostatic and Dunbrack values
+and the mature CPU annealing schedule. Sparse LJ/LK, electrostatic, LK-ball and Dunbrack values
 and coordinate VJPs consume explicit candidate indices with `jit`/`vmap` support;
 forward-mode and higher derivatives are not implemented for these sparse entries.
 Recompute discrete candidates after coordinate changes. Full graph scoring and

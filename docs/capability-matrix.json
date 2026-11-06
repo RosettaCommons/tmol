@@ -168,7 +168,7 @@
         "tests/scientific/test_rotamer_nonbonded.py",
         "tests/jax/test_sparse_rotamer_transforms.py"
       ],
-      "implementation_status": "Shared palette, geometry, retained-atom plans, task/request preparation and native DOF assembly. Dunbrack/explicit amino-acid chi and input/fallback coordinates support custom chemistry; six frontend CPU/CUDA comparisons have exact coordinates/identities. Internal CPU/CUDA sparse topology, retention and candidate stages are tested; CPU annealing matches mature seeded molecular calls. Sparse LJ/LK, electrostatic and Dunbrack values/coordinate VJPs pass CPU science, custom parameters and jit/vmap; CUDA scoring validation pending. No complete interaction-graph scoring or packing/design/mutation/FastRelax frontend, CUDA annealer, optH/conjugated/NA samplers, or sparse forward-mode/higher derivatives. Task APIs remain a subset."
+      "implementation_status": "Shared palette, geometry, retained-atom plans, task/request preparation and native DOF assembly. Dunbrack/explicit amino-acid chi and input/fallback coordinates support custom chemistry; six frontend CPU/CUDA comparisons have exact coordinates/identities. Internal CPU/CUDA sparse topology, retention and candidate stages are tested; CPU annealing matches mature seeded molecular calls. Sparse LJ/LK, electrostatic, LK-ball and Dunbrack values/coordinate VJPs pass CPU science, custom parameters and jit/vmap; CUDA scoring validation pending. No complete interaction-graph scoring or packing/design/mutation/FastRelax frontend, CUDA annealer, optH/conjugated/NA samplers, or sparse forward-mode/higher derivatives. Task APIs remain a subset."
     },
     {
       "domain": "kinematics",

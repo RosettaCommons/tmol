@@ -19,7 +19,11 @@ from tmol_jax.score._native import (
     register,
     workspace_sizes,
 )
-from tmol_jax.score.nonbonded import _pose_connections, _validate_native_connections
+from tmol_jax.score.nonbonded import (
+    _pose_connections,
+    _validate_native_connections,
+    _validate_atom_type_order,
+)
 from tmol_jax.score.hbond.native import prepare_hbond_metadata
 
 
@@ -30,6 +34,7 @@ def prepare_lk_ball(pose, database):
     _validate_native_connections(pbt)
     types = pbt.active_block_types
     names, flags = atom_type_parameters(database.chemical.atom_types)
+    _validate_atom_type_order(pbt, names)
     lj = ljlk_type_parameters(names, database.scoring.ljlk)
     for block in types:
         lj.validate_block_type(block)
