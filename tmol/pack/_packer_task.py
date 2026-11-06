@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import torch
 import attr
+from dataclasses import fields
+
+from tmol_core.pack.task import chi_sample_budget, prepare_packing_task_rows
 
 from tmol.types._torch import Tensor
 from tmol_core.pack.chi import (
@@ -282,20 +285,7 @@ class PackerTask:
         The combined count across samplers and allowed types at each physical
         residue must also fit the larger limit before rows/coordinates merge.
         """
-        import operator
-
-        try:
-            if isinstance(expanded_limit, bool) or isinstance(limit, bool):
-                raise TypeError
-            expanded_limit, limit = operator.index(expanded_limit), operator.index(
-                limit
-            )
-        except TypeError:
-            raise ValueError(
-                "chi sample budget limits must be positive integers"
-            ) from None
-        if expanded_limit < 1 or limit < 1:
-            raise ValueError("chi sample budget limits must be positive integers")
+        expanded_limit, limit = chi_sample_budget(expanded_limit, limit)
         self.chi_sample_expanded_limit = expanded_limit
         self.chi_sample_limit = limit
         self.chi_sample_budget = (expanded_limit, limit)
@@ -483,9 +473,6 @@ class SetPackerTask:
         set_task.device = task.device
         set_task.chi_sample_budget = task.chi_sample_budget
         set_task.is_real_block = task.is_real_block
-        set_task.real_block_pose, set_task.real_block_block = torch.nonzero(
-            set_task.is_real_block, as_tuple=True
-        )
 
         set_task.per_block_orig_block_type = task.per_block_orig_block_type
         set_task.per_block_considered_block_types = (
@@ -506,56 +493,17 @@ class SetPackerTask:
         )
         set_task.per_block_chi_expansion = task.per_block_chi_expansion
 
-        max_n_blocks = task.per_block_considered_block_types.shape[1]
-        is_real_cbt = set_task.per_block_considered_block_types != -1
-        cbt_pose, cbt_block, cbt_which_block_type = torch.nonzero(
-            is_real_cbt, as_tuple=True
+        rows = prepare_packing_task_rows(
+            task.is_real_block.detach().cpu().numpy(),
+            task.per_block_considered_block_types.detach().cpu().numpy(),
+            task.per_block_is_block_type_allowed.detach().cpu().numpy(),
         )
-        cbt_block_type = set_task.per_block_considered_block_types[
-            cbt_pose, cbt_block, cbt_which_block_type
-        ]
-
-        # these are the "global block types" that the conformer samplers
-        # will be asked to build rotamers for; note that sometimes
-        # a conformer sampler must build a rotamer for a block type that
-        # is not "allowed." This happens when the user disables all allowed block
-        # types for a particular block. The way tmol's packer works, residues
-        # that are part of the "background" must still have one rotamer for energy
-        # evaluation purposes. The upshot is that if we index on the set of allowed
-        # block types, we would miss the disallowed block types that we must still
-        # build rotamers for. Thus we index on all the _considered_ block types,
-        # and then refine that set by the allowed subset for most conformer samplers.
-        set_task.cons_bt_pose = cbt_pose
-        set_task.cons_bt_block = cbt_block
-        set_task.cons_bt_block_type = cbt_block_type
-        set_task.cons_bt_which_block_type = cbt_which_block_type
-
-        set_task.global_block_ind_for_considered_block_types = (
-            max_n_blocks * cbt_pose + cbt_block
-        )
-
-        # these non-zeros are indices in the n-poses x n-blocks x max-n-considered
-        # tensor.
-        allowed_pose, allowed_block, allowed_which_bt = torch.nonzero(
-            task.per_block_is_block_type_allowed, as_tuple=True
-        )
-        allowed_bt = task.per_block_considered_block_types[
-            allowed_pose, allowed_block, allowed_which_bt
-        ]
-        set_task.allowed_bt_pose = allowed_pose
-        set_task.allowed_bt_block = allowed_block
-        set_task.allowed_bt_which_block_type = allowed_which_bt
-        set_task.allowed_bt_block_type = allowed_bt
-
-        # these non-zeros are indices in a one-dimensional tensor of
-        # all (real) considered block types.
-        set_task.is_cons_bt_allowed = task.per_block_is_block_type_allowed[
-            cbt_pose, cbt_block, cbt_which_block_type
-        ]
-        set_task.allowed_cons_bt = torch.nonzero(
-            set_task.is_cons_bt_allowed,
-            as_tuple=True,
-        )[0]
+        for field in fields(rows):
+            setattr(
+                set_task,
+                field.name,
+                torch.from_numpy(getattr(rows, field.name)).to(task.device),
+            )
         set_task.bump_check = task.bump_check
 
         return set_task
