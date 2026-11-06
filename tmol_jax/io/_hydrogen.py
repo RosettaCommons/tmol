@@ -137,14 +137,19 @@ def apply_input_policy(pose, available, mode):
 
     validate_ligand_hydrogens(mode)
     pbt = pose.packed_block_types
-    generated = np.asarray(
-        [bool(t.hydrogens_regenerated) for t in pbt.active_block_types]
-    )
-    if not generated.any():
-        return available
+    cached = getattr(pbt, "_hydrogen_input_metadata", None)
+    if cached is None:
+        generated = np.asarray(
+            [bool(t.hydrogens_regenerated) for t in pbt.active_block_types]
+        )
+        is_h = np.asarray(pbt.atom_is_hydrogen)
+        cached = generated, is_h
+        object.__setattr__(pbt, "_hydrogen_input_metadata", cached)
+    generated, is_h = cached
     types = np.asarray(pose.block_type_ind)
+    if not np.any(generated[np.maximum(types, 0)] & (types >= 0)):
+        return available
     offsets = np.asarray(pose.block_coord_offset)
-    is_h = np.asarray(pbt.atom_is_hydrogen)
     shape = (*types.shape, pbt.max_n_atoms)
     missing = np.ones(shape, bool)
     block_coords = np.zeros((*shape, 3), pose.coords.dtype)
@@ -156,16 +161,22 @@ def apply_input_policy(pose, available, mode):
             block_coords[p, r, : len(mask)] = coords[p, start : start + len(mask)]
     retained = np.zeros(shape, bool)
     if mode == "input":
-        parents, distances = prepare_hydrogen_parents(
-            pbt.active_block_types, is_h, pbt.max_n_atoms
-        )
+        key = pose.coords.dtype, pose.device
+        cached = getattr(pbt, "_hydrogen_parent_execution", None)
+        if cached is None or cached[0] != key:
+            parents, distances = prepare_hydrogen_parents(
+                pbt.active_block_types, is_h, pbt.max_n_atoms
+            )
+            cached = key, jax.device_put(
+                (_wide(parents), distances.astype(coords.dtype)), pose.device
+            )
+            object.__setattr__(pbt, "_hydrogen_parent_execution", cached)
         args = jax.device_put(
             (
                 block_coords,
-                types,
+                pose.block_type_ind,
                 missing,
-                _wide(parents),
-                distances.astype(coords.dtype),
+                *cached[1],
             ),
             pose.device,
         )
