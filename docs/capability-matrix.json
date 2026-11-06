@@ -291,6 +291,16 @@
         "tests/scientific/test_atom_array_input.py"
       ],
       "implementation_status": "Shared normalization, hydrogen/protonation, strict heavy atom identity, neutral-terminal mapping and reusable custom parameter context. Default missing-sidechain/OptH routing uses shared policy and native packing; noncanonical HYP and D missing-sidechain cases, ligand MOL2/CIF and metal/disulfide CPU workflows have finite full25E/G plus derivative and identity checks in both frameworks. Fragmented imposition, Atom37 and complete metadata round trips remain parity gaps. New input packing is not yet CUDA/package validated."
+    },
+    {
+      "domain": "mature_segmented_armijo",
+      "torch": "supported",
+      "jax": "opt_in_cartesian_kinematic_and_array_minimization_cpu",
+      "repro_fixture": [
+        "tests/scientific/test_armijo_execution.py",
+        "tests/jax/test_armijo_native.py"
+      ],
+      "implementation_status": "Common settings/setup, compact H0=I direction, history, restart/retirement and per-segment convergence; typed shared native Armijo transitions through JAX FFI. Dense/scattered independent objectives, full25-channel molecular objectives and public compact Cartesian/kinematic execution pass CPU invariants in both frameworks. Existing strong-Wolfe default remains; exact CUDA/package, matched trajectories, cold/warm time and peak memory pending. Complete optimizer checkpoint/API parity is not established."
     }
   ],
   "validation": "PR629 remains draft. Matching c378 ABI3 CPU wheels pass installed molecular checks with Torch absent and source/native hash verification; H200 affected JAX checks pass137 cases. New increments require their own matching package/CUDA gates. Mature e29 complete warm workflow parity remains unresolved; constructor-only or earlier-JAX speedups do not establish readiness.",

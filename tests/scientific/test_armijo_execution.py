@@ -111,3 +111,192 @@ def test_compact_direction_matches_dense_bfgs_with_wrapped_partial_history(
         atol=2e-6 if dtype == np.float32 else 2e-12,
         rtol=2e-6 if dtype == np.float32 else 2e-12,
     )
+
+
+def minimize(backend, objective, initial, segment_ids, mask=None, **settings):
+    """Bind the same objective to each frontend's native optimizer execution."""
+    _, array, _, _, _ = _services(backend, np.asarray(initial).dtype)
+    x = array(initial)
+    ids = array(segment_ids, np.int32)
+    if backend.framework == "jax":
+        from tmol_jax.optimization import armijo_minimize
+
+        return armijo_minimize(
+            objective, x, segment_ids=ids, grad_mask=mask, **settings
+        )
+    from tmol.optimization._lbfgs_armijo import LBFGS_Armijo
+
+    x = x.clone().requires_grad_()
+    optimizer = LBFGS_Armijo([x], segment_ids=ids, **settings)
+
+    def closure():
+        optimizer.zero_grad()
+        values = objective(x)
+        values.sum().backward()
+        if mask is not None:
+            x.grad *= array(mask, np.bool_)
+        return values
+
+    initial_value = optimizer.step(closure, lambda: objective(x))
+    state = optimizer.state[x]
+    return dict(
+        x=x.detach(),
+        initial_fun=initial_value.detach(),
+        fun=objective(x).detach().sum(),
+        grad=x.grad.detach(),
+        converged=state["converged"],
+        stalled=state["stalled"],
+        state=state,
+    )
+
+
+@pytest.mark.parametrize("dense", (True, False))
+@pytest.mark.parametrize("value_only", (True, False))
+def test_full_segmented_optimization_matches_independent_objectives(
+    backend, dense, value_only
+):
+    context, array, _, _, _ = _services(backend, np.float64)
+    with context:
+        ids = np.repeat(np.arange(3), 3) if dense else np.array([0, 1, 0, 2, 1, 1, 2])
+        initial = np.linspace(-2, 3, len(ids))
+        target = np.linspace(1, 2, len(ids))
+        initial[ids == 0] = target[ids == 0]
+        stiffness = np.linspace(0.5, 4, len(ids))
+        if backend.framework == "jax":
+            import jax.numpy as xp
+        else:
+            xp = backend.module
+
+        def objective(values, labels=ids, center=target, spring=stiffness):
+            d = values - array(center)
+            terms = 0.5 * array(spring) * d**2 + 0.05 * d**4
+            return xp.stack(
+                [
+                    terms[array(np.flatnonzero(labels == i), np.int32)].sum()
+                    for i in range(int(labels.max()) + 1)
+                ]
+            )
+
+        settings = dict(
+            max_iter=60,
+            history_size=3,
+            rtol=None,
+            atol=None,
+            gradtol=1e-6,
+            value_only_line_search=value_only,
+        )
+        result = minimize(backend, objective, initial, ids, **settings)
+        np.testing.assert_allclose(
+            backend.numpy(result["x"]), target, rtol=0, atol=2e-6
+        )
+        np.testing.assert_array_equal(backend.numpy(result["converged"]), True)
+        np.testing.assert_array_equal(backend.numpy(result["stalled"]), False)
+        for segment in range(3):
+            pick = ids == segment
+            solo = minimize(
+                backend,
+                lambda value: objective(
+                    value, np.zeros(pick.sum(), int), target[pick], stiffness[pick]
+                ),
+                initial[pick],
+                np.zeros(pick.sum(), int),
+                **settings,
+            )
+            np.testing.assert_allclose(
+                backend.numpy(result["x"])[pick],
+                backend.numpy(solo["x"]),
+                rtol=0,
+                atol=1e-10,
+            )
+        assert result["state"]["history_count"] == 3
+        assert result["state"]["history_start"] != 0 or result["state"]["n_iter"] > 4
+
+
+@pytest.mark.parametrize(
+    "name",
+    (
+        "ligand",
+        "connected_noncanonical",
+        "d_peptide",
+        "modified_dna",
+        "metal_mixed",
+        "mixed_batch",
+    ),
+)
+def test_mature_armijo_full_molecular_objective_and_fixed_atoms(backend, name):
+    from .molecules import DOMAIN_CASES
+
+    b = backend.molecule(DOMAIN_CASES[name], terms=())
+    b.use_beta2016()
+    initial = b.coords().copy()
+    mask = np.broadcast_to(
+        b.numpy(b.pose.real_atoms if b.framework == "torch" else b.pose.atom_is_real)[
+            ..., None
+        ],
+        initial.shape,
+    ).copy()
+    mask[:, 0] = False
+    ids = np.broadcast_to(
+        np.arange(initial.shape[0])[:, None, None], initial.shape
+    ).copy()
+    scorer = (
+        b.scorer
+        if b.framework == "torch"
+        else b.score_function.render_whole_pose_scoring_module(b.pose)
+    )
+    result = minimize(
+        b,
+        scorer,
+        initial,
+        ids,
+        mask,
+        max_iter=6,
+        history_size=3,
+        fixed_iterations=True,
+        value_only_line_search=True,
+    )
+    final = b.numpy(result["x"])
+    np.testing.assert_array_equal(final[~mask], initial[~mask])
+    np.testing.assert_array_equal(b.coords(), initial)
+    assert np.isfinite(final).all()
+    assert b.numpy(result["fun"]) < b.numpy(result["initial_fun"]) - 1e-3
+    assert np.linalg.norm(final - initial) > 1e-4
+    channels, gradients = b.channel_values_and_gradients(final)
+    assert np.isfinite(channels).all() and np.isfinite(gradients).all()
+
+
+@pytest.mark.parametrize("kind", ("cartesian", "kinematic"))
+@pytest.mark.parametrize("name", ("ligand", "d_peptide", "mixed_batch"))
+def test_public_molecular_armijo_minimizers(backend, kind, name):
+    from .molecules import DOMAIN_CASES
+
+    b = backend.molecule(DOMAIN_CASES[name], terms=())
+    b.use_beta2016()
+    if b.framework == "jax":
+        import tmol_jax as frontend
+    else:
+        import tmol as frontend
+    settings = dict(
+        max_iter=6, history_size=3, fixed_iterations=True, value_only_line_search=True
+    )
+    options = dict(optimizer_kwargs=settings)
+    if b.framework == "jax":
+        options["optimizer"] = "armijo"
+    before = b.coords().copy()
+    if kind == "cartesian":
+        result = frontend.run_cart_min(b.pose, b.score_function, **options)
+    else:
+        movement = frontend.MoveMap.from_pose_stack(b.pose)
+        movement.move_all_named_torsions = True
+        if b.framework == "jax":
+            result = frontend.run_kin_min(b.pose, b.score_function, movement, **options)
+        else:
+            forest = frontend.FoldForest.reasonable_fold_forest(b.pose)
+            result = frontend.run_kin_min(
+                b.pose, b.score_function, forest, movement, **options
+            )
+    np.testing.assert_array_equal(b.coords(), before)
+    after = b.numpy(result.coords)
+    assert np.isfinite(after).all()
+    assert np.linalg.norm(after - before) > 1e-4
+    assert b.scores(after).sum() < b.scores(before).sum() - 1e-3

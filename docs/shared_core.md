@@ -146,11 +146,9 @@ convergence policy. Shared setup also owns settings validation, legacy checkpoin
 migration, segment layout and history allocation rules. Torch retains parameter
 storage, segmented reductions and
 linear-algebra execution. The common policy imports neither framework; a JAX
-executor must explicitly preserve per-pose objectives and failure semantics.
-This boundary alone does not establish JAX optimizer or full-workflow parity.
-
-FastRelax schedule normalization, score-weight ramps, stage lifetime hooks,
-default task registration, and per-pose acceptance live in `tmol_core.relax`.
-Frontends provide packing/minimization execution and array/metadata selection.
-The public Torch defaults and callback signatures remain available; sharing the
-protocol does not establish equivalence of the frontend optimizers.
+executor supplies functional array storage and native transition calls through
+`tmol_jax.optimization.armijo_minimize`. Complete independent-segment and
+molecular objective checks cover the new execution path. The existing
+strong-Wolfe API remains available; general Cartesian/kinematic defaults have not
+yet switched to Armijo. Matched optimizer trajectories, performance and memory
+parity remain separate acceptance gates.
