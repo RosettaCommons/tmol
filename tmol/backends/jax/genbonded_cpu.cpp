@@ -1,5 +1,6 @@
 // CPU execution policy and XLA registration; science lives in the common
 // kernel.
+#include <initializer_list>
 #include "cartbonded_ffi.hh"
 #include "backbone_torsion_ffi.hh"
 #include "rotamer_backbone_ffi.hh"
@@ -304,99 +305,72 @@ extern "C" int tmol_bspline_coefficients(
   }
 }
 
+namespace {
+// C ABI queries run during shape preparation and never allocate device storage.
+// Keep precision dispatch and exception translation identical for every layout.
+template <typename Query>
+uint64_t workspace_bytes(
+    int bits, std::initializer_list<int64_t> dimensions, Query query) noexcept {
+  for (auto dimension : dimensions)
+    if (dimension < 0 || dimension > INT32_MAX) return UINT64_MAX;
+  try {
+    if (bits == 32) return query(float{});
+    if (bits == 64) return query(double{});
+  } catch (...) {
+  }
+  return UINT64_MAX;
+}
+}  // namespace
+
 extern "C" uint64_t tmol_dunbrack_workspace_bytes(
     int64_t rots, int64_t dihedrals, int bits, int derivative) {
-  try {
-    if (rots < 0 || dihedrals < 0 || rots > INT32_MAX || dihedrals > INT32_MAX)
-      throw std::invalid_argument("invalid Dunbrack workspace extents");
-    if (bits == 32)
-      return tmol::jax::DunbrackWorkspace<float>(rots, dihedrals, derivative)
-          .storage.size_bytes();
-    if (bits == 64)
-      return tmol::jax::DunbrackWorkspace<double>(rots, dihedrals, derivative)
-          .storage.size_bytes();
-  } catch (const std::exception&) {
-  }
-  return std::numeric_limits<uint64_t>::max();
+  return workspace_bytes(bits, {rots, dihedrals}, [&](auto real) -> uint64_t {
+    return tmol::jax::DunbrackWorkspace<decltype(real)>(
+               rots, dihedrals, derivative)
+        .storage.size_bytes();
+  });
 }
 
 extern "C" uint64_t tmol_nonbonded_workspace_bytes(
     int64_t poses, int64_t blocks, int bits, int) {
-  try {
-    if (poses < 0 || blocks < 0 || poses > INT32_MAX || blocks > INT32_MAX)
-      throw std::invalid_argument("invalid nonbonded workspace extents");
-    if (bits == 32)
-      return tmol::jax::NonbondedWorkspace<float>(poses, blocks)
-          .storage.size_bytes();
-    if (bits == 64)
-      return tmol::jax::NonbondedWorkspace<double>(poses, blocks)
-          .storage.size_bytes();
-  } catch (const std::exception&) {
-  }
-  return std::numeric_limits<uint64_t>::max();
+  return workspace_bytes(bits, {poses, blocks}, [&](auto real) -> uint64_t {
+    return tmol::jax::NonbondedWorkspace<decltype(real)>(poses, blocks)
+        .storage.size_bytes();
+  });
 }
 
 extern "C" uint64_t tmol_nonbonded_weighted_workspace_bytes(
     int64_t poses, int64_t blocks, int bits, int) {
-  try {
-    if (poses < 0 || blocks < 0 || poses > INT32_MAX || blocks > INT32_MAX)
-      throw std::invalid_argument("invalid nonbonded workspace extents");
-    if (bits == 32)
-      return tmol::jax::NonbondedWorkspace<float, true>(poses, blocks)
-          .storage.size_bytes();
-    if (bits == 64)
-      return tmol::jax::NonbondedWorkspace<double, true>(poses, blocks)
-          .storage.size_bytes();
-  } catch (const std::exception&) {
-  }
-  return std::numeric_limits<uint64_t>::max();
+  return workspace_bytes(bits, {poses, blocks}, [&](auto real) -> uint64_t {
+    return tmol::jax::NonbondedWorkspace<decltype(real), true>(poses, blocks)
+        .storage.size_bytes();
+  });
 }
 
 extern "C" uint64_t tmol_ljlk_workspace_bytes(
     int64_t poses, int64_t blocks, int bits, int) {
-  try {
-    if (poses < 0 || blocks < 0 || (bits != 32 && bits != 64))
-      throw std::invalid_argument("invalid independent nonbonded workspace");
-    return bits == 32 ? tmol::jax::IndependentNonbondedWorkspace<float, false>(
-                            poses, blocks)
-                            .storage.size_bytes()
-                      : tmol::jax::IndependentNonbondedWorkspace<double, false>(
-                            poses, blocks)
-                            .storage.size_bytes();
-  } catch (...) {
-    return std::numeric_limits<uint64_t>::max();
-  }
+  return workspace_bytes(bits, {poses, blocks}, [&](auto real) -> uint64_t {
+    return tmol::jax::IndependentNonbondedWorkspace<decltype(real), false>(
+               poses, blocks)
+        .storage.size_bytes();
+  });
 }
 
 extern "C" uint64_t tmol_elec_workspace_bytes(
     int64_t poses, int64_t blocks, int bits, int) {
-  try {
-    if (poses < 0 || blocks < 0 || (bits != 32 && bits != 64))
-      throw std::invalid_argument("invalid independent nonbonded workspace");
-    return bits == 32 ? tmol::jax::IndependentNonbondedWorkspace<float, true>(
-                            poses, blocks)
-                            .storage.size_bytes()
-                      : tmol::jax::IndependentNonbondedWorkspace<double, true>(
-                            poses, blocks)
-                            .storage.size_bytes();
-  } catch (...) {
-    return std::numeric_limits<uint64_t>::max();
-  }
+  return workspace_bytes(bits, {poses, blocks}, [&](auto real) -> uint64_t {
+    return tmol::jax::IndependentNonbondedWorkspace<decltype(real), true>(
+               poses, blocks)
+        .storage.size_bytes();
+  });
 }
 
 extern "C" uint64_t tmol_inverse_kinematics_workspace_bytes(
     int64_t nodes, int bits, int) {
-  try {
-    if (bits != 32 && bits != 64)
-      throw std::invalid_argument("invalid kinematic workspace precision");
-    return bits == 32
-               ? tmol::jax::InverseKinematicsKernel::workspace_bytes<float>(
-                     nodes)
-               : tmol::jax::InverseKinematicsKernel::workspace_bytes<double>(
-                     nodes);
-  } catch (...) {
-    return std::numeric_limits<uint64_t>::max();
-  }
+  return workspace_bytes(bits, {nodes}, [&](auto real) -> uint64_t {
+    return tmol::jax::InverseKinematicsKernel::workspace_bytes<decltype(real)>(
+        nodes);
+  });
 }
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
@@ -429,48 +403,31 @@ extern "C" uint64_t tmol_kinematic_scan_workspace_bytes(
 
 extern "C" uint64_t tmol_lk_ball_workspace_bytes(
     int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
-  try {
-    if (poses < 0 || blocks < 0 || atoms < 0 || (bits != 32 && bits != 64))
-      throw std::invalid_argument("invalid LK-ball workspace dimensions");
-    return bits == 32 ? tmol::jax::LKBallWorkspace<float>(
-                            poses, blocks, atoms, derivative)
-                            .storage.size_bytes()
-                      : tmol::jax::LKBallWorkspace<double>(
-                            poses, blocks, atoms, derivative)
-                            .storage.size_bytes();
-  } catch (...) {
-    return std::numeric_limits<uint64_t>::max();
-  }
+  return workspace_bytes(
+      bits, {poses, blocks, atoms}, [&](auto real) -> uint64_t {
+        return tmol::jax::LKBallWorkspace<decltype(real)>(
+                   poses, blocks, atoms, derivative)
+            .storage.size_bytes();
+      });
 }
 
 extern "C" uint64_t tmol_hbond_workspace_bytes(
     int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
-  try {
-    if (poses < 0 || blocks < 0 || atoms < 0 || (bits != 32 && bits != 64))
-      throw std::invalid_argument("invalid HBond workspace dimensions");
-    return bits == 32 ? tmol::jax::HBondWorkspace<float>(poses, blocks, atoms)
-                            .storage.size_bytes()
-                      : tmol::jax::HBondWorkspace<double>(poses, blocks, atoms)
-                            .storage.size_bytes();
-  } catch (...) {
-    return std::numeric_limits<uint64_t>::max();
-  }
+  return workspace_bytes(
+      bits, {poses, blocks, atoms}, [&](auto real) -> uint64_t {
+        return tmol::jax::HBondWorkspace<decltype(real)>(poses, blocks, atoms)
+            .storage.size_bytes();
+      });
 }
 
 extern "C" uint64_t tmol_lk_ball_weighted_workspace_bytes(
     int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
-  try {
-    if (poses < 0 || blocks < 0 || atoms < 0 || (bits != 32 && bits != 64))
-      throw std::invalid_argument("invalid LK-ball workspace dimensions");
-    return bits == 32 ? tmol::jax::LKBallWorkspace<float, true>(
-                            poses, blocks, atoms, derivative)
-                            .storage.size_bytes()
-                      : tmol::jax::LKBallWorkspace<double, true>(
-                            poses, blocks, atoms, derivative)
-                            .storage.size_bytes();
-  } catch (...) {
-    return std::numeric_limits<uint64_t>::max();
-  }
+  return workspace_bytes(
+      bits, {poses, blocks, atoms}, [&](auto real) -> uint64_t {
+        return tmol::jax::LKBallWorkspace<decltype(real), true>(
+                   poses, blocks, atoms, derivative)
+            .storage.size_bytes();
+      });
 }
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
@@ -484,30 +441,21 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 
 extern "C" uint64_t tmol_graph_prefix_workspace_bytes(
     int64_t count, int bits, int) {
-  try {
-    if (count < 0 || count >= INT32_MAX || bits != 64)
-      throw std::invalid_argument("invalid graph prefix workspace dimensions");
+  return workspace_bytes(bits, {count}, [&](auto) -> uint64_t {
+    if (count >= INT32_MAX || bits != 64) return UINT64_MAX;
     return tmol::jax::GraphPrefixWorkspace<tmol::Device::CPU>(count)
         .storage.size_bytes();
-  } catch (...) {
-    return std::numeric_limits<uint64_t>::max();
-  }
+  });
 }
 
 extern "C" uint64_t tmol_rotamer_lk_ball_workspace_bytes(
     int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
-  try {
-    if (poses < 0 || blocks < 0 || atoms < 0 || (bits != 32 && bits != 64))
-      throw std::invalid_argument("invalid LK-ball workspace dimensions");
-    return bits == 32 ? tmol::jax::LKBallWorkspace<float, false, true>(
-                            poses, blocks, atoms, derivative)
-                            .storage.size_bytes()
-                      : tmol::jax::LKBallWorkspace<double, false, true>(
-                            poses, blocks, atoms, derivative)
-                            .storage.size_bytes();
-  } catch (...) {
-    return std::numeric_limits<uint64_t>::max();
-  }
+  return workspace_bytes(
+      bits, {poses, blocks, atoms}, [&](auto real) -> uint64_t {
+        return tmol::jax::LKBallWorkspace<decltype(real), false, true>(
+                   poses, blocks, atoms, derivative)
+            .storage.size_bytes();
+      });
 }
 
 extern "C" double tmol_hbond_neighbor_reach() {
@@ -515,18 +463,13 @@ extern "C" double tmol_hbond_neighbor_reach() {
 }
 extern "C" uint64_t tmol_rotamer_hbond_workspace_bytes(
     int64_t poses, int64_t blocks, int64_t atoms, int bits, int) {
-  try {
-    if (poses < 0 || blocks < 0 || atoms < 0 || atoms > INT32_MAX / 9
-        || (bits != 32 && bits != 64))
-      return UINT64_MAX;
-    return bits == 32
-               ? tmol::jax::HBondWorkspace<float, true>(poses, blocks, atoms)
-                     .storage.size_bytes()
-               : tmol::jax::HBondWorkspace<double, true>(poses, blocks, atoms)
-                     .storage.size_bytes();
-  } catch (...) {
-    return UINT64_MAX;
-  }
+  return workspace_bytes(
+      bits, {poses, blocks, atoms}, [&](auto real) -> uint64_t {
+        if (atoms > INT32_MAX / 9) return UINT64_MAX;
+        return tmol::jax::HBondWorkspace<decltype(real), true>(
+                   poses, blocks, atoms)
+            .storage.size_bytes();
+      });
 }
 
 #include "handlers_ffi.hh"
