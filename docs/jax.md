@@ -74,7 +74,7 @@ across poses. `ConstraintEnergyTerm` provides shared harmonic distance/coordinat
 bounded distance and circular harmonic formulas. JAX callbacks can also supply
 one energy per gathered four-atom row. Parameter arrays remain differentiable;
 pose selection preserves their atom identities. Topology preparation is on the
-host, and constraints spanning more than two block runs reject explicitly.
+host, and constraints spanning more than two distinct blocks reject explicitly.
 Harmonic/bounded arithmetic supports higher derivatives; the shared native
 torsion primitive supports first coordinate derivatives. The earlier coordinate
 restraint container in `tmol_jax.score.constraint` remains available.
@@ -203,6 +203,11 @@ forward-mode and higher derivatives are not implemented for these sparse entries
 Backbone and connection candidate scoring currently reject correlated groups;
 backbone also rejects two-residue cycles. These common sparse dispatch paths
 need additional support.
+Sparse constraints use the same native candidate expansion and preserve physical
+atom order, including A/B/A/B torsions across two blocks. Their JAX callbacks
+support coordinate and parameter derivatives, JVPs and `jit`/`vmap`; parameter
+Hessians remain available with native torsions. Coordinate derivatives beyond
+first order depend on the callback. Constraint lockstep expansion remains absent.
 Recompute discrete candidates after coordinate changes. Full graph scoring and
 packing, CUDA annealing, mutation/design, NA/optH/conjugated samplers and FastRelax
 remain unfinished. Float64 JAX assembly preserves dtype; this does not establish

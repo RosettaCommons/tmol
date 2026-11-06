@@ -204,7 +204,7 @@ def _prepare_geometric_constraints(pose, constraints):
         raise ValueError("a constraint cannot contain atoms from multiple poses")
     if np.any(np.asarray(constraints.constraint_num_unique_blocks) > 2):
         raise NotImplementedError(
-            "constraints spanning more than two block runs are not supported"
+            "constraints spanning more than two blocks are not supported"
         )
     p, b, a = np.moveaxis(atoms, -1, 0)
     if (

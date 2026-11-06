@@ -17,6 +17,7 @@
 #include "kinematics_ffi.hh"
 #include "conformer_ffi.hh"
 #include "graph_topology_ffi.hh"
+#include "constraint_topology_ffi.hh"
 #include "graph_retention_ffi.hh"
 #include "rotamer_dispatch_ffi.hh"
 #include "rotamer_nonbonded_ffi.hh"
@@ -957,3 +958,14 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<int64_t>("extent")
         .Attr<int64_t>("width")
         .Attr<double>("reach"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_constraint_rotamer_topology,
+    tmol::jax::run_graph_stage<tmol::jax::ConstraintTopologyStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"));

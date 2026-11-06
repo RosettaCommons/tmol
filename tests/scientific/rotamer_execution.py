@@ -45,6 +45,7 @@ class RotamerExecution:
             )
             from tmol_jax.pack.hbond_scoring import prepare_rotamer_hbond
             from tmol_jax.pack.na_scoring import prepare_rotamer_na_torsion
+            from tmol_jax.pack.constraint_scoring import prepare_rotamer_constraints
             from tmol_jax.pack.backbone_scoring import prepare_rotamer_backbone
             from tmol_jax.pack.connection_scoring import (
                 prepare_rotamer_disulfide,
@@ -63,6 +64,7 @@ class RotamerExecution:
                     "backbone",
                     "disulfide",
                     "metal",
+                    "constraint",
                 ):
                     prepare = {
                         "dunbrack": prepare_rotamer_dunbrack,
@@ -74,6 +76,7 @@ class RotamerExecution:
                         "backbone": prepare_rotamer_backbone,
                         "disulfide": prepare_rotamer_disulfide,
                         "metal": prepare_rotamer_metal,
+                        "constraint": prepare_rotamer_constraints,
                     }[self.family]
                     self.state = prepare(*arguments)
                 else:
@@ -92,6 +95,7 @@ class RotamerExecution:
                 NaTorsionEnergyTerm,
                 BackboneTorsionEnergyTerm,
                 DisulfideEnergyTerm,
+                ConstraintEnergyTerm,
             )
 
             from tmol.score.metal._metal_coordination_term import (
@@ -110,12 +114,14 @@ class RotamerExecution:
                 "backbone": BackboneTorsionEnergyTerm,
                 "disulfide": DisulfideEnergyTerm,
                 "metal": MetalCoordinationEnergyTerm,
+                "constraint": ConstraintEnergyTerm,
             }[self.family]
             term = cls(param_db=backend.parameter_database, device=backend.device)
             for block in backend.pose.packed_block_types.active_block_types:
                 term.setup_block_type(block)
             term.setup_packed_block_types(backend.pose.packed_block_types)
             term.setup_poses(backend.pose)
+            self.term = term
             self.scorer = term.render_rotamer_scoring_module(
                 backend.pose, self.rotamers
             )
@@ -134,6 +140,10 @@ class RotamerExecution:
             from tmol_jax.pack.bonded_scoring import sparse_bonded_scores
 
             return sparse_bonded_scores(x, self.state)
+        if self.family == "constraint":
+            from tmol_jax.pack.constraint_scoring import sparse_constraint_scores
+
+            return sparse_constraint_scores(x, self.state)
         if self.family in ("disulfide", "metal"):
             from tmol_jax.pack.connection_scoring import sparse_connection_scores
 
@@ -187,6 +197,10 @@ class RotamerExecution:
                 from tmol_jax.pack.bonded_scoring import sparse_bonded_scores
 
                 values = sparse_bonded_scores(x, self.state)[0]
+            elif self.family == "constraint":
+                from tmol_jax.pack.constraint_scoring import sparse_constraint_scores
+
+                values = sparse_constraint_scores(x, self.state)[0]
             elif self.family in ("disulfide", "metal"):
                 from tmol_jax.pack.connection_scoring import sparse_connection_scores
 
@@ -217,3 +231,20 @@ class RotamerExecution:
             b.module.value_and_grad(weighted, has_aux=True)
         )(self.array(coords))
         return np.asarray(values), np.asarray(gradient), np.asarray(indices)
+
+    def constraint_values(self, coords, parameters):
+        """Evaluate new floating parameters without rebuilding the molecule."""
+        if self.backend.framework == "jax":
+            from tmol_jax.pack.constraint_scoring import sparse_constraint_scores
+
+            return sparse_constraint_scores(coords, self.state, parameters)[0]
+        import attrs
+
+        pose = self.backend.pose
+        original = pose.constraint_set
+        try:
+            pose.constraint_set = attrs.evolve(original, constraint_params=parameters)
+            scorer = self.term.render_rotamer_scoring_module(pose, self.rotamers)
+            return scorer(coords)[0]
+        finally:
+            pose.constraint_set = original
