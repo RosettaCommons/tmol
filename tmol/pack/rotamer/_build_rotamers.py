@@ -17,7 +17,6 @@ from typing import Any
 
 from tmol.types._array import NDArray
 from tmol.types._torch import Tensor
-from tmol.types._functional import _validate_args
 from tmol.utility.tensor._common_operations import _exclusive_cumsum1d
 from tmol.database.chemical import ChemicalDatabase
 from tmol.kinematics._datatypes import KinForest
