@@ -159,3 +159,88 @@ def histidine_state(
         extent=np.int64(0),
         width=np.int64(0),
     )
+
+
+@partial(jax.jit, static_argnames=("neutral_base",))
+def canonical_variants(types, variants, termini, valid, *, neutral_base):
+    """Shared neutral-terminus fallback, retaining the supplied state elsewhere."""
+    register("tmol_canonical_policy")
+    return jax.ffi.ffi_call(
+        "tmol_canonical_policy",
+        jax.ShapeDtypeStruct(types.shape, np.int32),
+        vmap_method="sequential",
+    )(
+        types,
+        variants,
+        termini,
+        valid,
+        operation=np.int64(0),
+        extent=np.int64(neutral_base),
+        width=np.int64(0),
+    )
+
+
+@partial(jax.jit, static_argnames=("cutoff",))
+def canonical_cycles(types, chains, up, down, coords, explicit, *, cutoff=2.0):
+    """Common cycle search with a static positive distance cutoff in Angstroms."""
+    if not np.isfinite(cutoff) or cutoff <= 0:
+        raise ValueError("cycle cutoff must be finite and positive")
+    register("tmol_canonical_policy")
+    return jax.ffi.ffi_call(
+        "tmol_canonical_policy",
+        jax.ShapeDtypeStruct(types.shape, np.int32),
+        vmap_method="sequential",
+    )(
+        types,
+        chains,
+        up,
+        down,
+        coords,
+        explicit,
+        operation=np.int64(1),
+        extent=np.float64(cutoff).view(np.int64),
+        width=np.int64(0),
+    )
+
+
+@partial(jax.jit, static_argnames=("max_connections",))
+def canonical_connections(
+    types,
+    polymeric,
+    first,
+    last,
+    disconnected,
+    up,
+    down,
+    disulfide_port,
+    disulfides,
+    cycles,
+    explicit,
+    *,
+    max_connections,
+):
+    """Execute common port wiring and return its per-pose validation status."""
+    register("tmol_canonical_policy")
+    return jax.ffi.ffi_call(
+        "tmol_canonical_policy",
+        (
+            jax.ShapeDtypeStruct((*types.shape, max_connections, 2), np.int32),
+            jax.ShapeDtypeStruct((types.shape[0],), np.int32),
+        ),
+        vmap_method="sequential",
+    )(
+        types,
+        polymeric,
+        first,
+        last,
+        disconnected,
+        up,
+        down,
+        disulfide_port,
+        disulfides,
+        cycles,
+        explicit,
+        operation=np.int64(2),
+        extent=np.int64(0),
+        width=np.int64(max_connections),
+    )

@@ -271,6 +271,10 @@ TMOL_JAX_STAGE(
 TMOL_JAX_STAGE(
     tmol_histidine, tmol::jax::run_graph_stage<tmol::jax::HistidineStage>, );
 
+TMOL_JAX_STAGE(
+    tmol_canonical_policy,
+    tmol::jax::run_graph_stage<tmol::jax::CanonicalPolicyStage>, );
+
 #undef TMOL_JAX_STAGE
 #undef TMOL_JAX_ENERGY
 #undef TMOL_JAX_TRAITS
