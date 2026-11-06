@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from tmol_core.chemical.atom_resolution import torsion_atom_indices
 from tmol_core.pack.dunbrack import DunSamplerPBTCache
@@ -32,7 +33,8 @@ def metadata():
     )
 
 
-def test_task_masks_and_frozen_chi_preserve_chemical_identity():
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_task_masks_and_frozen_chi_preserve_chemical_identity(dtype):
     cache = metadata()
     types = [
         SimpleNamespace(
@@ -55,6 +57,7 @@ def test_task_masks_and_frozen_chi_preserve_chemical_identity():
         np.array([True, True, False, True]),
         np.array([[True, True], [False, False]]),
         np.zeros((2, 2, 2, 2), dtype=np.int32),
+        real_dtype=dtype,
     )
     np.testing.assert_array_equal(request.bbt_to_gbt, [0, 1])
     np.testing.assert_array_equal(
@@ -66,16 +69,16 @@ def test_task_masks_and_frozen_chi_preserve_chemical_identity():
     np.testing.assert_array_equal(request.frozen_destinations, [[0, 0]])
     result = apply_frozen_chi(request, [np.nan])
     np.testing.assert_array_equal(
-        result[:, 0, 0], np.array([0.3, 0.7], dtype=np.float32)
+        result[:, 0, 0], np.array([0.3, 0.7], dtype=np.float32).astype(dtype)
     )
     result = apply_frozen_chi(request, [0.9])
     np.testing.assert_array_equal(
-        result[:, 0, 0], np.array([0.9, 0.7], dtype=np.float32)
+        result[:, 0, 0], np.array([0.9, float(np.float32(0.7))], dtype=dtype)
     )
     # A request owns its mutable sample values; database metadata stays unchanged.
     assert cache.non_dunbrack_samples[0, 0, 1, 0] == np.float32(0.3)
     assert request.dihedral_atom_inds.dtype == np.int32
-    assert result.dtype == np.float32
+    assert result.dtype == dtype
 
 
 def test_backbone_uses_destination_type_and_marks_missing_atoms():

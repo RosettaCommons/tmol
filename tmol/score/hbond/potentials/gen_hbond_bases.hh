@@ -36,7 +36,8 @@ template <
     template <tmol::Device> class DeviceOps,
     tmol::Device Dev,
     typename Real,
-    typename Int>
+    typename Int,
+    bool ComputeCoordinates = true>
 struct GenerateHBondBases {
   static auto forward(
       ContextManager& mgr,
@@ -75,6 +76,18 @@ struct GenerateHBondBases {
       TView<Int, 3, Dev> block_type_tile_hybridization,
       TView<Int, 2, Dev> block_type_atom_is_hydrogen)
       -> std::tuple<TPack<Vec<Real, 3>, 2, Dev>, TPack<Int, 2, Dev> >;
+};
+
+template <
+    template <tmol::Device> class DeviceOps,
+    tmol::Device Dev,
+    typename Real,
+    typename Int>
+struct GatherHBondBases {
+  static auto forward(
+      ContextManager& mgr,
+      TView<Vec<Real, 3>, 1, Dev> coords,
+      TView<Int, 2, Dev> indices) -> TPack<Vec<Real, 3>, 2, Dev>;
 };
 
 }  // namespace potentials
