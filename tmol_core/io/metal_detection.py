@@ -611,9 +611,14 @@ def find_metal_geometries(
     declared_sites: Optional[Dict[Tuple[int, int], tuple]] = None,
     find_additional: bool = True,
     required_donors: Optional[Dict[Tuple[int, int], set]] = None,
+    require_all_donors: bool = False,
 ):
     """Each residue's res_type_variant (0 unless a metal) and each metal's assignment.
     ``geometries``/``declared_sites`` fix geometry/sites; ``required_donors`` stay.
+    Imported graph requests retain the legacy hydrogen/protonation precedence.
+    Set ``require_all_donors=True`` for an explicit required-coordination contract;
+    it rejects a requested bond absent from the final assignments. Metadata bounds
+    and conflicts are always validated, independently of this request policy.
     ``coords`` is a NumPy array or a zero-argument provider evaluated only when
     a metal is present, so frontends can avoid unnecessary device transfers.
     """
@@ -621,14 +626,25 @@ def find_metal_geometries(
     table_vertices = {g["name"]: g["vertices"] for g in table["geometries"]}
     tables = _build_canonical_metal_tables(canonical_ordering, chemical_db, table)
     variants = numpy.zeros(numpy.shape(res_types), dtype=numpy.int32)
+    _validate_metal_inputs(
+        canonical_ordering,
+        numpy.asarray(res_types),
+        tables,
+        table_vertices,
+        declared_sites,
+        required_donors,
+        geometries,
+    )
     if not tables.ion_for_class and not tables.cluster_for_class:
-        validate_required_donors([], required_donors)
+        if require_all_donors:
+            validate_required_donors([], required_donors)
         return variants, []
 
     rt = numpy.asarray(res_types)
     is_metal_class = numpy.isin(rt, [*tables.ion_for_class, *tables.cluster_for_class])
     if not is_metal_class.any():
-        validate_required_donors([], required_donors)
+        if require_all_donors:
+            validate_required_donors([], required_donors)
         return variants, []
     # the choice is discrete, so coordinates enter it without gradient
     xyz = numpy.asarray(coords() if callable(coords) else coords)
@@ -721,7 +737,8 @@ def find_metal_geometries(
         variants[pose, res] = _metal_geometry_variant_index(geometry)
         got = attr.evolve(got, donor_atoms=tuple(donor_atoms[i] for i in got.donors))
         assignments.append(((int(pose), int(res)), got))
-    validate_required_donors(assignments, required_donors)
+    if require_all_donors:
+        validate_required_donors(assignments, required_donors)
     return variants, assignments
 
 
@@ -883,27 +900,105 @@ def metal_virtual_placements(
             yield pose, res, bt.atom_to_idx[name], metal, vertex * distance[name], False
 
 
+def _integer_rows(rows, width, name):
+    if rows is None:
+        return ()
+    rows = numpy.asarray(rows)
+    if rows.size == 0:
+        return ()
+    if rows.ndim != 2 or rows.shape[1] != width or rows.dtype.kind not in "iu":
+        raise ValueError(f"{name} must be an integer array with shape (N, {width})")
+    return rows.tolist()
+
+
 def declared_metal_sites(metal_sites, metal_coordination):
-    """Geometry, filled vertices and required donors from already-compacted rows."""
-    geometry_for = {
-        (pose, metal): GEOMETRY_NAMES[geometry]
-        for pose, metal, geometry in (
-            metal_sites.tolist() if metal_sites is not None else []
-        )
-    }
+    """Validate and interpret geometry/site rows after frontend index compaction."""
+    geometry_for = {}
+    for pose, metal, geometry in _integer_rows(metal_sites, 3, "metal_sites"):
+        if min(pose, metal, geometry) < 0 or geometry >= len(GEOMETRY_NAMES):
+            raise ValueError("Invalid metal geometry or negative residue index")
+        key = (pose, metal)
+        name = GEOMETRY_NAMES[geometry]
+        if key in geometry_for and geometry_for[key] != name:
+            raise ValueError(f"Conflicting metal geometries at {key}")
+        geometry_for[key] = name
     filled, required = {}, {}
-    for pose, metal, site, donor, atom in (
-        metal_coordination.tolist() if metal_coordination is not None else []
+    for pose, metal, site, donor, atom in _integer_rows(
+        metal_coordination, 5, "metal_coordination"
     ):
-        if (pose, metal) in geometry_for and site >= 0:
-            filled.setdefault((pose, metal), []).append((site, donor, atom))
+        if min(pose, metal, donor, atom) < 0 or site < -1:
+            raise ValueError("Invalid metal site or negative donor/residue index")
+        key, identity = (pose, metal), (donor, atom)
+        if key in geometry_for and site >= 0:
+            sites = filled.setdefault(key, {})
+            if site in sites and sites[site] != identity:
+                raise ValueError(f"Conflicting donors at metal {key} site {site}")
+            sites[site] = identity
         else:
-            required.setdefault((pose, metal), set()).add((donor, atom))
+            required.setdefault(key, set()).add(identity)
     declared = {
-        key: (geometry, tuple(filled.get(key, ())))
+        key: (
+            geometry,
+            tuple((site, *donor) for site, donor in filled.get(key, {}).items()),
+        )
         for key, geometry in geometry_for.items()
     }
     return declared, required
+
+
+def _validate_metal_inputs(co, rt, tables, vertices, declared, required, geometries):
+    if not (declared or required or geometries):
+        return
+
+    def residue(pose, res):
+        if not (0 <= pose < rt.shape[0] and 0 <= res < rt.shape[1]):
+            raise ValueError(
+                f"Metal declaration residue {(pose, res)} is out of bounds"
+            )
+        cls = int(rt[pose, res])
+        if not 0 <= cls < len(co.restype_io_equiv_classes):
+            raise ValueError(
+                f"Metal declaration refers to padded residue {(pose, res)}"
+            )
+        return cls
+
+    def donor(pose, res, atom):
+        cls = residue(pose, res)
+        name = co.restype_io_equiv_classes[cls]
+        if not 0 <= atom < len(co.restypes_ordered_atom_names[name]):
+            raise ValueError(
+                f"Canonical donor atom {(pose, res, atom)} is out of bounds"
+            )
+
+    for key in set(declared or {}) | set(required or {}) | set(geometries or {}):
+        pose, metal = key
+        cls = residue(pose, metal)
+        cluster = tables.cluster_for_class.get(cls)
+        if cls not in tables.ion_for_class and cluster is None:
+            raise ValueError(f"Metal declaration refers to a non-metal residue {key}")
+        geometry, filled = (declared or {}).get(key, ((geometries or {}).get(key), ()))
+        if geometry is not None:
+            if geometry not in vertices:
+                raise ValueError(f"Unknown metal geometry {geometry!r}")
+            if cluster is not None and geometry != cluster.geometry:
+                raise ValueError(
+                    f"Declared geometry {geometry!r} conflicts with cluster {key}"
+                )
+        capacity = (
+            cluster.n_sites
+            if cluster is not None
+            else (len(vertices.get(geometry, ())) or None)
+        )
+        seen = {}
+        for site, res, atom in filled:
+            if site < 0 or (capacity is not None and site >= capacity):
+                raise ValueError(f"Metal site {site} is out of bounds at {key}")
+            donor(pose, res, atom)
+            if site in seen and seen[site] != (res, atom):
+                raise ValueError(f"Conflicting donors at metal {key} site {site}")
+            seen[site] = (res, atom)
+        for res, atom in (required or {}).get(key, ()):
+            donor(pose, res, atom)
 
 
 def validate_required_donors(assignments, required):
