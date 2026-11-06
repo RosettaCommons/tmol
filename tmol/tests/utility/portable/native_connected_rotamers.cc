@@ -1,4 +1,5 @@
 #include <tmol/score/genbonded/potentials/genbonded_rotamer_kernels.hh>
+#include <tmol/score/cartbonded/potentials/cartbonded_rotamer_kernels.hh>
 #include "native_test_ops.hh"
 #include <cassert>
 #include <cstdint>
@@ -86,6 +87,22 @@ void instantiate() {
       tmol::Device::CPU,
       Real,
       int32_t>;
+  auto volatile cf =
+      &tmol::score::cartbonded::potentials::cartbonded_rotamer_score_native<
+          false,
+          SerialOps,
+          tmol::Device::CPU,
+          Real,
+          int32_t>;
+  auto volatile cb =
+      &tmol::score::cartbonded::potentials::cartbonded_rotamer_score_native<
+          true,
+          SerialOps,
+          tmol::Device::CPU,
+          Real,
+          int32_t>;
+  (void)cf;
+  (void)cb;
   (void)f;
   (void)b;
 }

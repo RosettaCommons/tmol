@@ -641,54 +641,6 @@ def _subterm_energies(
     return e_bb, e_chi, e_sugar, e_well
 
 
-def _resolve_rotamer_uaids(
-    uaids,
-    pose_ind_for_rot,
-    block_ind_for_rot,
-    rot_coord_offset,
-    first_rot_for_block,
-    first_rot_block_type,
-    inter_res_conn,
-    atom_downstream_of_conn,
-):
-    """Indices into the rotamer coordinate array for unresolved atom ids.
-
-    Atoms reached through a residue connection come from the neighbor's
-    background rotamer: only one block at a time is being rebuilt.
-    """
-    n_rots = uaids.shape[0]
-    trailing = uaids.shape[1:-1]  # (n_torsion, 4)
-    view = (n_rots,) + (1,) * len(trailing)
-
-    atom = uaids[..., 0].to(torch.int64)
-    conn = uaids[..., 1].to(torch.int64)
-    sep = uaids[..., 2].to(torch.int64)
-    is_inter = conn >= 0
-
-    pose = pose_ind_for_rot.to(torch.int64).view(view).expand_as(atom)
-    block = block_ind_for_rot.to(torch.int64).view(view).expand_as(atom)
-
-    other = inter_res_conn.to(torch.int64)[pose, block, conn.clamp_min(0)]
-    other_block = other[..., 0]
-    other_conn = other[..., 1]
-    ok = torch.where(is_inter, other_block >= 0, atom >= 0)
-
-    other_safe = other_block.clamp_min(0)
-    other_rot = first_rot_for_block.to(torch.int64)[pose, other_safe]
-    other_bt = first_rot_block_type.to(torch.int64)[pose, other_safe]
-    ok = ok & (~is_inter | ((other_rot >= 0) & (other_bt >= 0)))
-
-    local_inter = atom_downstream_of_conn.to(torch.int64)[
-        other_bt.clamp_min(0), other_conn.clamp_min(0), sep.clamp_min(0)
-    ]
-    local = torch.where(is_inter, local_inter, atom)
-    ok = ok & (local >= 0)
-
-    self_rot = torch.arange(n_rots, device=uaids.device).view(view).expand_as(atom)
-    rot = torch.where(is_inter, other_rot.clamp_min(0), self_rot)
-    return rot_coord_offset.to(torch.int64)[rot] + local, ok
-
-
 def _rotamer_indices(
     block_type_ind_for_rot,
     pose_ind_for_rot,
@@ -703,52 +655,33 @@ def _rotamer_indices(
     bt_ring,
     bt_down,
 ):
-    """Resolve immutable candidate atom indices for rotamer/search scoring."""
-    bt = block_type_ind_for_rot.to(torch.int64)
-    bt_safe = bt.clamp_min(0)
-    base = torch.where(bt >= 0, bt_base.to(torch.int64)[bt_safe], -1)
-    pose = pose_ind_for_rot.to(torch.int64)
-    block = block_ind_for_rot.to(torch.int64)
+    """Resolve candidate topology with the common native background convention.
 
-    torsion_indices, atom_ok = _resolve_rotamer_uaids(
-        bt_uaids[bt_safe],
-        pose,
-        block,
+    Inactive atom indices use -1; valid indices and masks retain their meaning.
+    Host metadata preparation supports devices without a native topology launch.
+    """
+    from .potentials._compiled import _na_rotamer_topology
+
+    device = block_type_ind_for_rot.device
+    execution_device = device if device.type in ("cpu", "cuda") else torch.device("cpu")
+    inputs = (
+        block_type_ind_for_rot,
+        pose_ind_for_rot,
+        block_ind_for_rot,
         rot_coord_offset,
         first_rot_for_block,
         first_rot_block_type,
         inter_residue_connections,
         atom_downstream_of_conn,
+        bt_base,
+        bt_uaids,
+        bt_ring,
+        bt_down,
     )
-    is_na = base >= 0
-    torsion_ok = atom_ok.all(-1) & is_na.unsqueeze(-1)
-
-    ring_local = bt_ring.to(torch.int64)[bt_safe]
-    ring_ok = (ring_local >= 0) & is_na.unsqueeze(-1)
-    ring_indices = rot_coord_offset.to(torch.int64).unsqueeze(-1) + ring_local
-
-    # A candidate's beta term reads the BI/BII state of the preceding
-    # nucleotide from that block's first (background) rotamer.
-    down = bt_down.to(torch.int64)[bt_safe]
-    prev_block = inter_residue_connections.to(torch.int64)[
-        pose, block, down.clamp_min(0), 0
-    ]
-    has_prev = (down >= 0) & (prev_block >= 0)
-    prev = torch.where(
-        has_prev,
-        first_rot_for_block.to(torch.int64)[pose, prev_block.clamp_min(0)],
-        torch.full_like(prev_block, -1),
+    result = _na_rotamer_topology(
+        *(value.to(device=execution_device, dtype=torch.int64) for value in inputs)
     )
-    return (
-        base,
-        is_na,
-        torsion_indices,
-        atom_ok,
-        torsion_ok,
-        ring_indices,
-        ring_ok,
-        prev,
-    )
+    return tuple(value.to(device=device) for value in result)
 
 
 def _eval_na_torsion_for_rotamers(

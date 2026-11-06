@@ -1,5 +1,6 @@
 #include <tmol/utility/tensor/native.hh>
 #pragma once
+#include <tmol/utility/tensor/context_manager.hh>
 
 namespace tmol {
 namespace score {
@@ -70,6 +71,44 @@ na_torsion_pose_score_cuda(
 tmol::native::Tensor na_torsion_pose_score_backward_cuda(
     tmol::native::Tensor derivatives, tmol::native::Tensor grad_output);
 
+using NARotamerTopologyOutput = std::tuple<
+    tmol::native::Tensor,
+    tmol::native::Tensor,
+    tmol::native::Tensor,
+    tmol::native::Tensor,
+    tmol::native::Tensor,
+    tmol::native::Tensor,
+    tmol::native::Tensor,
+    tmol::native::Tensor>;
+
+NARotamerTopologyOutput na_rotamer_topology_cpu(
+    tmol::ContextManager& mgr,
+    tmol::native::Tensor types,
+    tmol::native::Tensor poses,
+    tmol::native::Tensor blocks,
+    tmol::native::Tensor offsets,
+    tmol::native::Tensor first,
+    tmol::native::Tensor first_type,
+    tmol::native::Tensor connections,
+    tmol::native::Tensor downstream,
+    tmol::native::Tensor bt_base,
+    tmol::native::Tensor bt_uaids,
+    tmol::native::Tensor bt_ring,
+    tmol::native::Tensor bt_down);
+NARotamerTopologyOutput na_rotamer_topology_cuda(
+    tmol::ContextManager& mgr,
+    tmol::native::Tensor types,
+    tmol::native::Tensor poses,
+    tmol::native::Tensor blocks,
+    tmol::native::Tensor offsets,
+    tmol::native::Tensor first,
+    tmol::native::Tensor first_type,
+    tmol::native::Tensor connections,
+    tmol::native::Tensor downstream,
+    tmol::native::Tensor bt_base,
+    tmol::native::Tensor bt_uaids,
+    tmol::native::Tensor bt_ring,
+    tmol::native::Tensor bt_down);
 }  // namespace potentials
 }  // namespace na_torsion
 }  // namespace score

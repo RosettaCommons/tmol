@@ -101,6 +101,10 @@ TMOL_DEVICE_FUNC auto resolve_local_rotamer_atom_ind_from_uaid(
     int other_block_type_index =
         first_rot_block_type[pose_index][other_block_index];
 
+    if (other_rotamer_index < 0 || other_block_type_index < 0 || other_connection_index < 0) {
+      return {-1, -1};
+    }
+
     int idx = block_type_atom_downstream_of_conn[other_block_type_index]
                                                 [other_connection_index]
                                                 [sep];  // The offset within the
