@@ -10,6 +10,7 @@
 #include <tmol/io/details/compiled/canonical_candidates.hh>
 #include <tmol/io/details/compiled/canonical_topology.hh>
 #include <tmol/io/details/compiled/canonical_policies.hh>
+#include <tmol/io/details/compiled/hydrogen_completion.hh>
 #include <tmol/utility/tensor/TensorPack.h>
 #include <tmol/io/details/compiled/resolve_his_taut.hh>
 
@@ -426,7 +427,99 @@ Tensor canonical_connection_errors(Tensor types, Tensor connections) {
   return result;
 }
 
+std::tuple<Tensor, Tensor, Tensor> hydrogen_completion(
+    std::vector<Tensor> inputs,
+    Tensor weights,
+    Tensor coordinate_direction,
+    Tensor distance_direction,
+    int64_t mode) {
+  TORCH_CHECK(
+      inputs.size() == 13 && mode >= 0 && mode <= 2,
+      "Hydrogen completion requires thirteen inputs and mode0/1/2");
+  Tensor result, dist_grad, weight_grad;
+  TMOL_DISPATCH_FLOATING_DEVICE(
+      inputs[0].options(), "hydrogen_completion_coordinates", ([&] {
+        using Real = scalar_t;
+        TMOL_DISPATCH_INDEX_DEVICE(
+            inputs[1].options(), "hydrogen_completion_indices", ([&] {
+              using Int = scalar_t;
+              auto shape =
+                  std::array<int64_t, 2>{inputs[0].size(0), inputs[0].size(1)};
+              auto dshape = std::array<int64_t, 2>{
+                  inputs[10].size(0), inputs[10].size(1)};
+              auto empty = std::array<int64_t, 2>{0, 0};
+              auto out = TPack<Vec<Real, 3>, 2, device_t>::empty(shape);
+              auto gd = TPack<Real, 2, device_t>::empty(mode ? dshape : empty);
+              auto gw = TPack<Vec<Real, 3>, 2, device_t>::empty(
+                  mode == 2 ? shape : empty);
+              HydrogenCompletionContext<Real, Int, device_t> c{
+                  TCAST(inputs[0]),
+                  TCAST(inputs[1]),
+                  TCAST(inputs[2]),
+                  TCAST(inputs[3]),
+                  TCAST(inputs[4]),
+                  TCAST(inputs[5]),
+                  TCAST(inputs[6]),
+                  TCAST(inputs[7]),
+                  TCAST(inputs[8]),
+                  TCAST(inputs[9]),
+                  TCAST(inputs[10]),
+                  TCAST(inputs[11]),
+                  TCAST(inputs[12])};
+              HydrogenCompletion<
+                  score::common::DeviceOperations,
+                  device_t,
+                  Real,
+                  Int>::
+                  f(mgr,
+                    mode,
+                    c,
+                    TCAST(weights),
+                    TCAST(coordinate_direction),
+                    TCAST(distance_direction),
+                    out.view,
+                    gd.view,
+                    gw.view);
+              result = out.tensor;
+              dist_grad = gd.tensor;
+              weight_grad = gw.tensor;
+            }));
+      }));
+  return {result, dist_grad, weight_grad};
+}
+Tensor hydrogen_input(std::vector<Tensor> inputs, double tolerance) {
+  TORCH_CHECK(inputs.size() == 5, "Hydrogen input requires five buffers");
+  Tensor result;
+  TMOL_DISPATCH_FLOATING_DEVICE(
+      inputs[1].options(), "hydrogen_input_coordinates", ([&] {
+        using Real = scalar_t;
+        TMOL_DISPATCH_INDEX_DEVICE(
+            inputs[0].options(), "hydrogen_input_indices", ([&] {
+              using Int = scalar_t;
+              auto out = TPack<bool, 3, device_t>::empty(
+                  {inputs[2].size(0), inputs[2].size(1), inputs[2].size(2)});
+              HydrogenInputContext<Real, Int, device_t> c{
+                  TCAST(inputs[0]),
+                  TCAST(inputs[1]),
+                  TCAST(inputs[2]),
+                  TCAST(inputs[3]),
+                  TCAST(inputs[4]),
+                  Real(tolerance),
+                  out.view};
+              HydrogenInput<
+                  score::common::DeviceOperations,
+                  device_t,
+                  Real,
+                  Int>::f(mgr, c);
+              result = out.tensor;
+            }));
+      }));
+  return result;
+}
+
 TMOL_LIBRARY(tmol_io, m) {
+  m.def("hydrogen_completion", TMOL_FN(&hydrogen_completion));
+  m.def("hydrogen_input", TMOL_FN(&hydrogen_input));
   m.def("canonical_variants", TMOL_FN(&canonical_variants));
   m.def("canonical_cycles", TMOL_FN(&canonical_cycles));
   m.def("canonical_wiring", TMOL_FN(&canonical_wiring));

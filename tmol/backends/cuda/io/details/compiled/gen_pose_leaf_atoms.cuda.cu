@@ -77,3 +77,47 @@ template struct CanonicalCycles<
     double,
     int64_t>;
 }  // namespace tmol::io::details::compiled
+
+#include <tmol/io/details/compiled/hydrogen_completion.impl.hh>
+namespace tmol::io::details::compiled {
+template struct HydrogenCompletion<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    float,
+    int32_t>;
+template struct HydrogenInput<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    float,
+    int32_t>;
+template struct HydrogenCompletion<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    double,
+    int32_t>;
+template struct HydrogenInput<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    double,
+    int32_t>;
+template struct HydrogenCompletion<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    float,
+    int64_t>;
+template struct HydrogenInput<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    float,
+    int64_t>;
+template struct HydrogenCompletion<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    double,
+    int64_t>;
+template struct HydrogenInput<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    double,
+    int64_t>;
+}  // namespace tmol::io::details::compiled

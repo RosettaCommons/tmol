@@ -23,6 +23,12 @@ from tmol.pose._packed_block_types import (
 from tmol.pose._pose_stack_builder import PoseStackBuilder
 
 from tmol_core.io import canonical as _canonical
+from tmol_core.io import missing_atoms as _missing
+from tmol_core.io.missing_atoms import (  # noqa: F401
+    LIGAND_HYDROGEN_MODES,
+    BONDED_H_TOLERANCE as _BONDED_H_TOLERANCE,
+    validate_ligand_hydrogens as _validate_ligand_hydrogens,
+)
 from tmol_core.io import connections as _connections
 from tmol_core.io.canonical import (  # noqa: F401
     _map_term_to_int,
@@ -31,22 +37,6 @@ from tmol_core.io.canonical import (  # noqa: F401
 )
 
 logger = logging.getLogger(__name__)
-
-# Treatment of a generated ligand's input hydrogens: keep names and coordinates,
-# keep names only, or keep neither.
-LIGAND_HYDROGEN_MODES = ("input", "names", "rebuild")
-
-# An input hydrogen is on its parent when within this distance of its ideal
-# bond length (A).
-_BONDED_H_TOLERANCE = 0.4
-
-
-def _validate_ligand_hydrogens(mode: str):
-    """Raise unless mode is one of LIGAND_HYDROGEN_MODES."""
-    if mode not in LIGAND_HYDROGEN_MODES:
-        raise ValueError(
-            f"ligand_hydrogens must be one of {LIGAND_HYDROGEN_MODES}, not {mode!r}"
-        )
 
 
 @_validate_args
@@ -513,35 +503,28 @@ def _annotate_pbt_w_hydrogen_parents(pbt: PackedBlockTypes):
     """Per block type and atom, a hydrogen's bonded heavy atom and its ideal distance."""
     if hasattr(pbt, "hydrogen_parent"):
         return
-    is_h = pbt.atom_is_hydrogen.cpu().numpy().astype(bool)
-    parent = numpy.full((pbt.n_types, pbt.max_n_atoms), -1, dtype=numpy.int64)
-    length = numpy.zeros((pbt.n_types, pbt.max_n_atoms), dtype=numpy.float32)
-    for i, bt in enumerate(pbt.active_block_types):
-        for a0, a1 in bt.bond_indices:
-            h, heavy = int(a1), int(a0)
-            if is_h[i, h] and not is_h[i, heavy]:
-                parent[i, h] = heavy
-                length[i, h] = bt.icoors[bt.icoors_index[bt.atoms[h].name]].d
-    setattr(pbt, "hydrogen_parent", torch.tensor(parent, device=pbt.device))
-    setattr(pbt, "hydrogen_parent_distance", torch.tensor(length, device=pbt.device))
+    parent, length = _missing.prepare_hydrogen_parents(
+        pbt.active_block_types, pbt.atom_is_hydrogen.cpu().numpy(), pbt.max_n_atoms
+    )
+    pbt.hydrogen_parent = torch.tensor(parent, device=pbt.device)
+    pbt.hydrogen_parent_distance = torch.tensor(length, device=pbt.device)
 
 
 def _hydrogens_on_their_parents(pbt, block_types64, block_coords, missing_atoms):
-    """[pose, block, atom] mask of present hydrogens at bond length from their parent."""
+    """Present named hydrogens within the common parent-distance tolerance."""
+    from tmol.io.details.compiled._compiled import _ops
+
     _annotate_pbt_w_hydrogen_parents(pbt)
-    parent = pbt.hydrogen_parent[block_types64]
-    clamped = parent.clamp_min(0)
-    parent_xyz = torch.gather(
-        block_coords, 2, clamped.unsqueeze(-1).expand(-1, -1, -1, 3)
-    )
-    distance = torch.linalg.vector_norm(block_coords - parent_xyz, dim=-1)
-    ideal = pbt.hydrogen_parent_distance[block_types64]
-    return (
-        (parent >= 0)
-        & ~missing_atoms
-        & ~torch.gather(missing_atoms, 2, clamped)
-        & ((distance - ideal).abs() < _BONDED_H_TOLERANCE)
-    )
+    inputs = [
+        block_types64,
+        block_coords,
+        missing_atoms,
+        pbt.hydrogen_parent,
+        pbt.hydrogen_parent_distance.to(block_coords.dtype),
+    ]
+    if block_coords.device.type == "mps":
+        inputs = [x.cpu() for x in inputs]
+    return _ops.hydrogen_input(inputs, _BONDED_H_TOLERANCE).to(block_coords.device)
 
 
 @attr.s(auto_attribs=True, frozen=True)
