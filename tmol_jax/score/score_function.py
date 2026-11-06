@@ -263,6 +263,21 @@ class ScoreFunction:
     def jitted(self, pose_stack):
         return jax.jit(self.render_whole_pose_scoring_module(pose_stack))
 
+    def render_rotamer_scoring_module(
+        self, pose_stack, rotamer_set, *, sum_terms=True, apply_weights=True
+    ):
+        """Render sparse values/indices with an explicit eager preparation step.
+
+        Calling the scorer recomputes spatial candidates. For coordinate AD or
+        jit/vmap, call ``scorer.prepare(coords)`` outside tracing and transform
+        the returned fixed-candidate callable. Refresh candidates after moving
+        conformers. Values are uncoalesced entries, with indices [3, entries];
+        disabling sum_terms returns [active score types, entries].
+        """
+        from tmol_jax.pack.score_function import RotamerScorer
+
+        return RotamerScorer(self, pose_stack, rotamer_set, sum_terms, apply_weights)
+
     def jitted_value_and_grad(self, pose_stack):
         score = self.render_whole_pose_scoring_module(pose_stack)
 

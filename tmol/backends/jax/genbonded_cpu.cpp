@@ -17,6 +17,7 @@
 #include "kinematics_ffi.hh"
 #include "conformer_ffi.hh"
 #include "graph_topology_ffi.hh"
+#include "graph_entries_ffi.hh"
 #include "constraint_topology_ffi.hh"
 #include "graph_retention_ffi.hh"
 #include "rotamer_dispatch_ffi.hh"
@@ -35,11 +36,13 @@
 namespace tmol::jax {
 namespace {
 thread_local ffi::ThreadPool* active_pool = nullptr;
+std::mutex parallel_workgroups;
 
 template <Device D>
 struct CpuOps;
 template <>
 struct CpuOps<Device::CPU> : score::common::SerialCPUOperations {
+  static void bitwise_or(int32_t& target, int32_t value) { target |= value; }
   static void load_balance(
       int total,
       const int64_t* offsets,
@@ -57,7 +60,13 @@ struct CpuOps<Device::CPU> : score::common::SerialCPUOperations {
     auto run = [=](int pose) {
       for (int group = 0; group < groups; ++group) f(pose * groups + group);
     };
-    if (poses <= 1 || !active_pool || active_pool->num_threads() <= 1) {
+    // Concurrent XLA calls may occupy the same pool. Only one call may wait
+    // for child work; competing calls execute their own work without blocking
+    // a pool worker needed by the first call. Keep the uncontended parallel
+    // path, including its caller's share of the work.
+    std::unique_lock<std::mutex> dispatch(parallel_workgroups, std::try_to_lock);
+    if (poses <= 1 || !active_pool || active_pool->num_threads() <= 1
+        || !dispatch.owns_lock()) {
       for (int pose = 0; pose < poses; ++pose) run(pose);
       return;
     }
@@ -962,6 +971,17 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_constraint_rotamer_topology,
     tmol::jax::run_graph_stage<tmol::jax::ConstraintTopologyStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_graph_entries,
+    tmol::jax::run_graph_stage<tmol::jax::GraphEntryStage>,
     xla::ffi::Ffi::Bind()
         .Ctx<xla::ffi::ThreadPool>()
         .RemainingArgs()

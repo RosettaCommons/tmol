@@ -15,15 +15,19 @@ class RefEnergyTerm(EnergyTerm):
     def score_types_provided(self):
         return [ScoreType.ref]
 
-    def setup_for_pose_stack(self, pose_stack, pbt=None):
-        pbt = pose_stack.packed_block_types if pbt is None else pbt
+    def block_type_values(self, pbt):
+        """Resolve the same chemical identities for whole-pose and rotamer scores."""
         weights = (
             getattr(self, "weights_override", None) or self.param_db.scoring.ref.weights
         )
-        values = np.asarray(
+        return np.asarray(
             [reference_weight(block, weights) for block in pbt.active_block_types],
             dtype=np.float32,
         )
+
+    def setup_for_pose_stack(self, pose_stack, pbt=None):
+        pbt = pose_stack.packed_block_types if pbt is None else pbt
+        values = self.block_type_values(pbt)
         indices = np.asarray(pose_stack.block_type_ind)
         per_block = np.where(indices >= 0, values[np.maximum(indices, 0)], 0)
         return jnp.asarray(per_block.sum(axis=1))

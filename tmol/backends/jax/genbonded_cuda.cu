@@ -19,6 +19,7 @@
 #include "kinematics_ffi.hh"
 #include "conformer_ffi.hh"
 #include "graph_topology_ffi.hh"
+#include "graph_entries_ffi.hh"
 #include "constraint_topology_ffi.hh"
 #include "graph_retention_ffi.hh"
 #include "rotamer_dispatch_ffi.hh"
@@ -46,6 +47,7 @@ template <Device D>
 struct CudaOps;
 template <>
 struct CudaOps<Device::CUDA> {
+  __device__ static void bitwise_or(int32_t& target, int32_t value) { atomicOr(&target, value); }
   static void load_balance(
       int total,
       const int64_t* offsets,
@@ -995,6 +997,18 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_constraint_rotamer_topology,
     tmol::jax::run_graph_stage<tmol::jax::ConstraintTopologyStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_graph_entries,
+    tmol::jax::run_graph_stage<tmol::jax::GraphEntryStage>,
     xla::ffi::Ffi::Bind()
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()

@@ -208,8 +208,23 @@ atom order, including A/B/A/B torsions across two blocks. Their JAX callbacks
 support coordinate and parameter derivatives, JVPs and `jit`/`vmap`; parameter
 Hessians remain available with native torsions. Coordinate derivatives beyond
 first order depend on the callback. Constraint lockstep expansion remains absent.
-Recompute discrete candidates after coordinate changes. Full graph scoring and
-packing, CUDA annealing, mutation/design, NA/optH/conjugated samplers and FastRelax
+`score_function.render_rotamer_scoring_module(pose, rotamer_set)` composes every
+enabled term, including reference energies and constraints. Calling it eagerly
+returns `(values, indices)` with uncoalesced scalar entries and `[3, entries]`
+pose/rotamer identities. `sum_terms=False` returns active named channels in
+`ScoreType` order; `apply_weights=False` exposes their unweighted values. Weights
+and options are snapshotted at render time, as for whole-pose scoring.
+
+For coordinate gradients or compiled repeated evaluation, first call
+`fixed = scorer.prepare(rotamer_set.coords)` outside tracing, then use
+`jax.jit(fixed)` or differentiate its values. This fixes the discrete neighbor
+list; refresh it after moving conformers. Calling the eager scorer itself under
+JAX transformations rejects explicitly. Native interaction-graph construction
+consumes these entries and shares background, one-body and chunked two-body
+accumulation with Torch. Bump pruning and correlated-group collapse remain absent
+from this JAX graph frontend.
+
+Complete packing, CUDA annealing, mutation/design, NA/optH/conjugated samplers and FastRelax
 remain unfinished. Float64 JAX assembly preserves dtype; this does not establish
 float64 support for Torch's complete packing pipeline.
 
