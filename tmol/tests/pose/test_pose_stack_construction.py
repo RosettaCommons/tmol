@@ -456,3 +456,13 @@ def test_from_block_type_names_smoke(
     padding = torch.ones_like(ibb, dtype=torch.bool)
     padding[..., :max_n_conn, :max_n_conn] = False
     assert bool((ibb[padding] == MAX_SIG_BOND_SEPARATION).all())
+
+
+def test_sequence_nonpolymer_splits_real_polymer_ports(
+    fresh_default_packed_block_types,
+):
+    pose = PoseStackBuilder.from_block_type_names(
+        fresh_default_packed_block_types, [["ALA", "VRT", "ALA"]], [[3]]
+    )
+    assert torch.all(pose.inter_residue_connections == -1)
+    assert torch.all(pose.chain_id == 0)
