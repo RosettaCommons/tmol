@@ -426,7 +426,8 @@ def prepare_atom37_tensor_builder(
         disulfides=disulfides,
         cyclic_bonds=cyclic_bonds,
         covalent_bonds=covalent_bonds,
-        res_not_connected=(
+        # The public tensor API uses mature suppressed-port semantics.
+        res_gap=(
             np.zeros((*types.shape, 2), bool)
             if res_not_connected is None
             else np.asarray(res_not_connected)

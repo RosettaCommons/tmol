@@ -91,6 +91,7 @@ def test_tensor_atom37_retains_source_and_full_energy_gradient(backend, name):
     with precision:
         scorer = b.score_function.render_whole_pose_scoring_module(pose)
         if b.framework == "jax":
+
             def objective(y):
                 return scorer(bind(y).coords.astype(np.float64)).sum()
 
@@ -99,6 +100,7 @@ def test_tensor_atom37_retains_source_and_full_energy_gradient(backend, name):
                 b.module.grad(lambda shift: bind(x + shift).coords.sum())
             )(b.module.numpy.zeros(3, dtype=np.float32))
         else:
+
             def objective(y):
                 return scorer(bind(y).coords.double()).sum()
 
@@ -127,3 +129,28 @@ def test_tensor_atom37_retains_source_and_full_energy_gradient(backend, name):
         )
         analytic = np.sum(b.numpy(gradient) * direction)
         np.testing.assert_allclose(analytic, finite_difference, rtol=3e-3, atol=3e-3)
+
+
+def test_tensor_atom37_gap_suppresses_bond_without_inventing_termini(backend):
+    b, io, source, topology, context = tensor_fixture(backend, "canonical", True)
+    # Omit explicit exported polymer bonds: those correctly override a gap flag.
+    topology["covalent_bonds"] = None
+    x, plain = bind_tensor(b, io, source, topology, context)
+    expected = plain(x)
+    gaps = np.zeros((*topology["res_types"].shape, 2), bool)
+    gaps[0, 0, 1] = gaps[0, 1, 0] = True
+    topology["res_not_connected"] = gaps
+    x, bind = bind_tensor(b, io, source, topology, context)
+    pose = bind(x)
+    assert [pose.block_type(0, r).name for r in range(3)] == [
+        expected.block_type(0, r).name for r in range(3)
+    ]
+    links = b.numpy(pose.inter_residue_connections)[0]
+    assert not np.any(links[0, :, 0] == 1)
+    assert np.any(links[1, :, 0] == 2)
+    assert np.isfinite(b.numpy(pose.coords)).all()
+    b.pose, b.parameter_database = pose, context.parameter_database
+    b.use_beta2016()
+    energy, gradient = b.channel_values_and_gradients(b.numpy(pose.coords))
+    assert energy.shape == (25, 1)
+    assert np.isfinite(energy).all() and np.isfinite(gradient).all()

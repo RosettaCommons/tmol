@@ -53,7 +53,21 @@ _ATOM37_INPUT = {
 __all__ += sorted(_ATOM37_INPUT)
 
 
+_ATOMWORKS_INPUT = {
+    "prepare_canonical_aa_atom37_builder",
+    "pose_stack_from_canonical_aa_atom37",
+    "atomworks_from_pose_stack",
+}
+__all__ += sorted(_ATOMWORKS_INPUT)
+
+
 def __getattr__(name):
+    if name in _ATOMWORKS_INPUT:
+        from importlib import import_module
+
+        value = getattr(import_module(".atomworks", __name__), name)
+        globals()[name] = value
+        return value
     if name in _ATOM37_INPUT:
         from importlib import import_module
 

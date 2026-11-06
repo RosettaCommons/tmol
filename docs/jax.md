@@ -478,10 +478,22 @@ and its `prepare(example_coords)` method. Explicit disulfides, cyclic/covalent
 bonds and suppressed polymer connections are retained. Unknown residue layouts
 raise instead of replacing measured coordinates with ideal geometry.
 
-AtomWorks 3.0.4's optional ML registration currently imports Torch when it is
-installed, including during ordinary structure preparation. Clean JAX package
-installations work without Torch; a dependency correction for mixed environments
-is being validated. This optional import also affects cold runtime and memory.
+The canonical compatibility functions `pose_stack_from_canonical_aa_atom37`
+and `atomworks_from_pose_stack` use the shared standard protein encoding and
+canonical chemistry subset. Use `prepare_canonical_aa_atom37_builder` before
+transformations. This restricted 1..20 token format is separate from the full
+molecular context API above; nonprotein tokens reject explicitly. Export keeps
+coordinate derivatives, returns float32 slots with zeros for absent atoms, and
+uses JAX int32 identity/chain arrays. Optional canonical-constructor return
+mappings are not implemented.
+
+AtomWorks 3.0.4's published package imports Torch during structure preparation
+when Torch is installed. The [pinned development constraint](shared_core.md)
+selects the tested temporary import fix; ordinary PyPI installation does not yet
+apply it. The normal installed pinned dependency leaves Torch unloaded through
+full molecular JAX input/scoring/gradients and preserves explicit ML/RNG behavior.
+The fix improves cold runtime and memory, but matched mature-Torch cold runtime
+and peak-memory parity remain incomplete.
 
 `PoseStackBuilder.from_poses(stacks, device)` combines compatible chemical
 contexts using the common palette, metadata and fragment-identity plans. It
