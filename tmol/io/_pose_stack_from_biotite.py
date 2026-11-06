@@ -873,7 +873,6 @@ def _pose_stack_from_canonical_form_and_context(
     from tmol.io._pose_stack_construction import _pose_stack_from_canonical_form
     from tmol.pack._build_missing_sidechains import _build_missing_sidechains
     from tmol.pack import FixedAAChiSampler
-    from tmol.pack.rotamer._bfs_sidechain import _bfs_sidechain_atoms
     from tmol.pack.rotamer._single_residue_kinforest import (
         _construct_single_residue_kinforest,
     )
@@ -882,13 +881,9 @@ def _pose_stack_from_canonical_form_and_context(
     samplers = (context._dunbrack_sampler, FixedAAChiSampler())
 
     def packer_atoms(rt):
-        placed = numpy.zeros(rt.n_atoms, dtype=bool)
-        for sampler in samplers:
-            if sampler.defines_rotamers_for_rt(rt):
-                _construct_single_residue_kinforest(rt)
-                roots = [rt.atom_to_idx[a] for a in sampler.first_sc_atoms_for_rt(rt)]
-                placed |= _bfs_sidechain_atoms(rt, roots).astype(bool)
-        return placed
+        from tmol_core.pack.input_completion import packer_atom_mask
+
+        return packer_atom_mask(rt, samplers, _construct_single_residue_kinforest)
 
     if atom37_coords is not None:
         # Both searches are geometric, so leaving either on makes the chemistry
@@ -1309,52 +1304,10 @@ def _bonds_from_pose_stack(pose_stack, structure, block_for_atom):
     return biotite.structure.BondList(structure.array_length(), bond_array)
 
 
-def _map_atoms_to_canonical(co, atom_res_inds, res_names, atom_names, elements):
-    """Map Biotite atom names to canonical ordering indices.
-
-    Returns (valid_atom_mask, valid_atom_inds, valid_res_inds).
-    """
-
-    atom_inds = []
-    valid = []
-    unmapped = set()
-    destinations = set()
-    for i, (resname, atname) in enumerate(zip(res_names, atom_names)):
-        mapping = co.restypes_atom_index_mapping.get(resname, {})
-        idx = mapping.get(atname, -1)
-        atom_inds.append(idx)
-        valid.append(idx >= 0)
-        if idx >= 0:
-            destination = (int(atom_res_inds[i]), idx)
-            if destination in destinations:
-                raise ValueError(
-                    f"Multiple input atoms map to canonical atom {idx} of "
-                    f"{resname} at residue index {destination[0]} ({atname}). "
-                    "Resolve alternate locations and preserve residue identifiers "
-                    "and insertion codes before constructing a pose."
-                )
-            destinations.add(destination)
-        if idx < 0 and str(elements[i]).strip().upper() not in ("H", "D"):
-            unmapped.add((int(atom_res_inds[i]), str(resname), str(atname)))
-
-    if unmapped:
-        details = ", ".join(
-            f"{resname} at residue index {res}: {name}"
-            for res, resname, name in sorted(unmapped)
-        )
-        raise ValueError(
-            "Heavy atoms are absent from the selected chemical definitions: "
-            f"{details}. Supply a matching chemical definition or correct the "
-            "input atom names; these atoms cannot be silently discarded."
-        )
-
-    valid_atom_mask = numpy.array(valid, dtype=bool)
-    atom_inds_arr = numpy.array(atom_inds, dtype=numpy.int64)
-    return (
-        valid_atom_mask,
-        atom_inds_arr[valid_atom_mask],
-        atom_res_inds[valid_atom_mask],
-    )
+from tmol_core.io.canonical_atom_mapping import (  # noqa: E402
+    map_atoms_to_canonical as _map_atoms_to_canonical,
+    map_neutral_terminal_hydrogens,
+)
 
 
 def _renumbered_for_cif(structure):
@@ -1930,19 +1883,15 @@ def canonical_form_from_biotite(
     # The neutral amino patch calls its first H "H1"; CCD inputs call it "H".
     # Map that supplied coordinate into the selected terminal state's slot.
     if PROTONATION_VARIANT in biotite_structure.get_annotation_categories():
-        from tmol.database.chemical import NEUTRAL_TERMINUS_VAR_BASE
-
-        neutral = (
-            biotite_structure.get_annotation(PROTONATION_VARIANT)
-            >= NEUTRAL_TERMINUS_VAR_BASE
+        map_neutral_terminal_hydrogens(
+            co,
+            atom_res_inds,
+            biotite_res_name_for_atom,
+            biotite_name_for_atom,
+            biotite_structure.get_annotation(PROTONATION_VARIANT),
+            valid_atom_mask,
+            valid_atom_inds,
         )
-        for atom in numpy.flatnonzero(neutral & (biotite_name_for_atom == "H")):
-            mapping = co.restypes_atom_index_mapping[biotite_res_name_for_atom[atom]]
-            residue = atom_res_inds == atom_res_inds[atom]
-            if "H1" in mapping and not numpy.any(
-                residue & (biotite_name_for_atom == "H1")
-            ):
-                valid_atom_inds[valid_atom_mask.nonzero()[0] == atom] = mapping["H1"]
     covalent_bonds_np, disulfides_np, inferred_bonds = _covalent_bonds_from_biotite(
         _template_array(biotite_structure),
         co,

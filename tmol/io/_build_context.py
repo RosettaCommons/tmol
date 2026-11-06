@@ -64,15 +64,10 @@ class PoseBuildContext:
         # only on residue identity, disulfide geometry, protein backbone, or
         # nucleic-acid heavy-atom torsions, so they are constant across every
         # OptH candidate and cannot affect the selected assignment.
-        for score_type in (
-            ScoreType.disulfide,
-            ScoreType.omega,
-            ScoreType.rama,
-            ScoreType.ref,
-            ScoreType.na_torsion,
-            ScoreType.na_torsion_well,
-        ):
-            score_function.set_weight(score_type, 0)
+        from tmol_core.pack.input_completion import OPTH_INVARIANT_TERMS
+
+        for name in OPTH_INVARIANT_TERMS:
+            score_function.set_weight(ScoreType[name], 0)
         return score_function
 
     @cached_property

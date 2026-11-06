@@ -67,43 +67,21 @@ def _build_missing_sidechains(
     if has_missing_atoms is None:
         has_missing_atoms = bool(torch.any(block_has_missing_atoms))
 
-    palette = PackerPalette()
-    task = PackerTask(pose_stack, palette)
-    task.restrict_to_repacking()
+    from tmol_core.pack.input_completion import prepare_input_completion_task
 
-    fixed_sampler = FixedAAChiSampler()
-    opth_sampler = None if no_optH else OptHSampler()
-
-    if has_missing_atoms:
-        task.add_conformer_sampler_by_block_mask(
-            dunbrack_sampler, block_has_missing_atoms
-        )
-        task.add_conformer_sampler_by_block_mask(fixed_sampler, block_has_missing_atoms)
-    # An empty sampler mask still makes the general rotamer builder execute the
-    # sampler's setup path. Avoid that overhead for complete protein batches.
-    if na_sampler is not None and has_missing_atoms:
-        block_type_ind = pose_stack.block_type_ind64
-        real_blocks = block_type_ind >= 0
-        na_blocks = na_sampler.defines_rotamers_for_bts(
-            pose_stack.packed_block_types, block_type_ind.clamp_min(0)
-        )
-        missing_na_blocks = block_has_missing_atoms & real_blocks & na_blocks
-        if torch.any(missing_na_blocks):
-            task.add_conformer_sampler_by_block_mask(na_sampler, missing_na_blocks)
-    block_does_not_have_missing_atoms = torch.logical_not(block_has_missing_atoms)
-    if not no_optH:
-        block_type_ind = pose_stack.block_type_ind64
-        real_blocks = block_type_ind >= 0
-        complete_blocks = block_does_not_have_missing_atoms & real_blocks
-        opth_blocks = complete_blocks & opth_sampler.defines_rotamers_for_bts(
-            pose_stack.packed_block_types, block_type_ind.clamp_min(0)
-        )
-        task.add_conformer_sampler_by_block_mask(opth_sampler, opth_blocks)
-        # The fallback sampler would otherwise turn every complete ALA/GLY/etc.
-        # into a one-rotamer molten position. Freezing blocks that OptH cannot
-        # change gives identical coordinates and a smaller interaction graph.
-        task.disable_packing_by_block_mask(complete_blocks & ~opth_blocks)
-    else:
-        task.disable_packing_by_block_mask(block_does_not_have_missing_atoms)
+    task = prepare_input_completion_task(
+        pose_stack,
+        block_has_missing_atoms,
+        task=PackerTask(pose_stack, PackerPalette()),
+        dunbrack=dunbrack_sampler,
+        fixed=FixedAAChiSampler(),
+        opth=None if no_optH else OptHSampler(),
+        nucleic_acid=na_sampler,
+        has_missing_atoms=has_missing_atoms,
+        supported_blocks=lambda sampler, pose: sampler.defines_rotamers_for_bts(
+            pose.packed_block_types, pose.block_type_ind64.clamp_min(0)
+        ),
+        any_block=torch.any,
+    )
 
     return pack_rotamers(pose_stack, sfxn, task, verbose=False, seed=seed)

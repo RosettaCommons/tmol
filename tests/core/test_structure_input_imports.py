@@ -117,6 +117,8 @@ import biotite.structure as struc
 from types import SimpleNamespace
 from tmol_core.chemical.default import default_patched_chemical_database
 from tmol_core.io import structure_context as common
+from tmol_core.io import canonical_atom_mapping
+from tmol_core.pack import input_completion
 from tmol_core.ligand import nonstandard_residue_info_from_mol2
 chemistry = default_patched_chemical_database()
 database = SimpleNamespace(chemical=chemistry)
