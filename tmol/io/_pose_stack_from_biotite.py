@@ -11,6 +11,15 @@ import biotite.structure
 import logging
 import warnings
 
+from tmol_core.io.atom_array import (
+    template_array as _template_array,
+    is_metal as _is_metal,
+    metal_coordination_bond_mask as _metal_coordination_bond_mask,
+    with_metal_coordination_typed as _with_metal_coordination_typed,
+    metal_coordination_from_biotite as _metal_coordination_from_biotite,
+    covalent_bonds_from_biotite as _covalent_bonds_from_biotite,
+)
+
 from tmol.types._functional import _validate_args
 from tmol.chemical import ResidueTypeSet
 from tmol.chemical._restypes import BondType as ChemBondType
@@ -1412,24 +1421,6 @@ def _renumbered_for_cif(structure):
     return structure
 
 
-def _metal_coordination_bond_mask(structure):
-    """Which bond rows are metal coordination: typed COORDINATION (CIF metalc), or from
-    a metal to another residue (PDB CONECT)."""
-    bonds = structure.bonds.as_array()
-    if not len(bonds):
-        return bonds, numpy.zeros(0, dtype=bool)
-    template = _template_array(structure)
-    is_metal = _is_metal(template)
-    residue = biotite.structure.get_residue_positions(
-        template, numpy.arange(template.array_length())
-    )
-    crosses = residue[bonds[:, 0]] != residue[bonds[:, 1]]
-    coordination = (bonds[:, 2] == biotite.structure.BondType.COORDINATION) | (
-        crosses & (is_metal[bonds[:, 0]] | is_metal[bonds[:, 1]])
-    )
-    return bonds, coordination
-
-
 def _without_metal_coordination_bonds(structure):
     """(structure without its metal coordination bonds, which ligand preparation does
     not read, {residue name: its atoms with a declared metal bond})."""
@@ -1706,60 +1697,6 @@ def _without_chelated_metals(registry, components, elements):
     return out
 
 
-def _with_metal_coordination_typed(structure):
-    """Type every metal coordination bond COORDINATION, however it was read."""
-    if structure.bonds is None:
-        return structure
-    bonds, coordination = _metal_coordination_bond_mask(structure)
-    untyped = coordination & (bonds[:, 2] != biotite.structure.BondType.COORDINATION)
-    if not untyped.any():
-        return structure
-    structure = structure.copy()
-    bonds = bonds.copy()
-    bonds[untyped, 2] = biotite.structure.BondType.COORDINATION
-    structure.bonds = biotite.structure.BondList(
-        _template_array(structure).array_length(), bonds
-    )
-    return structure
-
-
-def _metal_coordination_from_biotite(
-    array, atom_res_inds, valid_atom_mask, valid_atom_inds
-):
-    """(metal, -1, donor, donor atom) for each declared metal bond.
-
-    The site is left for detection to choose.
-    """
-    if array.bonds is None:
-        return numpy.zeros((0, 4), dtype=numpy.int64)
-    bonds = array.bonds.as_array()
-    declared = bonds[bonds[:, 2] == biotite.structure.BondType.COORDINATION]
-    if not len(declared):
-        return numpy.zeros((0, 4), dtype=numpy.int64)
-    atom_canonical_ind = numpy.full(array.array_length(), -1, dtype=numpy.int64)
-    atom_canonical_ind[valid_atom_mask] = valid_atom_inds
-    is_metal = _is_metal(array)
-    rows = []
-    for atom1, atom2, _ in declared:
-        if is_metal[atom2] and not is_metal[atom1]:
-            atom1, atom2 = atom2, atom1
-        if not is_metal[atom1] or is_metal[atom2]:
-            continue
-        metal, donor = int(atom_res_inds[atom1]), int(atom_res_inds[atom2])
-        donor_atom = int(atom_canonical_ind[atom2])
-        if metal == donor or donor_atom < 0:
-            continue
-        rows.append((metal, -1, donor, donor_atom))
-    return numpy.array(sorted(set(rows)), dtype=numpy.int64).reshape(-1, 4)
-
-
-def _template_array(structure):
-    """The single AtomArray whose bond table describes every model."""
-    if isinstance(structure, biotite.structure.AtomArrayStack):
-        return structure[0]
-    return structure
-
-
 def _bonds_for_poses(bonds, n_poses, torch_device):
     """Prefix each bond row with its pose index."""
     if bonds is None:
@@ -1774,66 +1711,6 @@ def _bonds_for_poses(bonds, n_poses, torch_device):
         numpy.column_stack((pose_column, repeated)),
         dtype=torch.int64,
         device=torch_device,
-    )
-
-
-def _covalent_bonds_from_biotite(
-    array, co, atom_res_inds, restype_for_res, valid_atom_mask, valid_atom_inds
-):
-    """Declared cross-residue bonds, including nonsequential polymer links.
-
-    Disulfides use the dedicated variant-selection channel, preserving declared
-    bonds even when the sulfur coordinates are unresolved or far apart.
-    """
-    if array.bonds is None:
-        return numpy.zeros((0, 4), dtype=numpy.int64), None, numpy.zeros(0, dtype=bool)
-
-    atom_canonical_ind = numpy.full(array.array_length(), -1, dtype=numpy.int64)
-    atom_canonical_ind[valid_atom_mask] = valid_atom_inds
-
-    cys_classes = frozenset(co.cys_inds.cys_co_aa_inds)
-    sg_atoms = co.cys_inds.sg_by_class
-
-    tags = (
-        array.get_annotation(INFERRED_POLYMER_BOND)
-        if INFERRED_POLYMER_BOND in array.get_annotation_categories()
-        else numpy.full(array.array_length(), "", dtype=object)
-    )
-    found = []
-    disulfides = []
-    for atom1, atom2, order in array.bonds.as_array():
-        # A metal's bonds are retyped COORDINATION upstream. They are not
-        # covalent attachments, and declaring one asks for a residue type that
-        # describes an ion bonded through a named connection. The sibling scan
-        # below skips them for the same reason.
-        if order == biotite.structure.BondType.COORDINATION:
-            continue
-        res1, res2 = int(atom_res_inds[atom1]), int(atom_res_inds[atom2])
-        if res1 == res2:
-            continue
-        canonical1 = int(atom_canonical_ind[atom1])
-        canonical2 = int(atom_canonical_ind[atom2])
-        if canonical1 < 0 or canonical2 < 0:
-            continue
-        restype1, restype2 = restype_for_res[res1], restype_for_res[res2]
-        if (
-            restype1 in cys_classes
-            and restype2 in cys_classes
-            and canonical1 == sg_atoms[restype1]
-            and canonical2 == sg_atoms[restype2]
-        ):
-            disulfides.append(tuple(sorted((res1, res2))))
-            continue
-        if res1 > res2:
-            res1, canonical1, res2, canonical2 = res2, canonical2, res1, canonical1
-        inferred = bool(tags[atom1]) and tags[atom1] == tags[atom2]
-        found.append((res1, canonical1, res2, canonical2, inferred))
-
-    found = numpy.array(sorted(set(found)), dtype=numpy.int64).reshape(-1, 5)
-    return (
-        found[:, :4],
-        numpy.array(sorted(set(disulfides)), dtype=numpy.int64).reshape(-1, 2),
-        found[:, 4].astype(bool),
     )
 
 
@@ -2867,14 +2744,6 @@ def _packed_block_types_for_biotite_with_metals(
 
     return PackedBlockTypes.from_restype_list(
         restype_set.chem_db, restype_set, restype_set.residue_types, device
-    )
-
-
-def _is_metal(structure) -> numpy.ndarray:
-    """Per atom, whether its element is one the metal table coordinates."""
-    metals = [ion["element"].upper() for ion in _metal_table()["ions"]]
-    return numpy.isin(
-        numpy.char.upper(numpy.asarray(structure.element, dtype=str)), metals
     )
 
 
