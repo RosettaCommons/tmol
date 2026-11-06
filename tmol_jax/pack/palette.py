@@ -10,8 +10,8 @@ from tmol_core.pack.palette import prepare_packer_palette
 class PackerPalette:
     """Inspect chemically compatible choices from the shared TMol palette.
 
-    These choices feed public chi sampling. Complete rotamer coordinate assembly
-    and packing execution remain unavailable.
+    These choices feed public sampling, conformer construction and packing.
+    Unsupported task operations raise explicitly.
     """
 
     def __init__(self, noncanonical_design=False):

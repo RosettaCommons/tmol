@@ -295,4 +295,96 @@ struct CorrectConformerChiKernel {
     pack::rotamer::launch_correct_chi_dofs<Ops, D, Real>(context, c);
   }
 };
+
+struct ConformerChiDerivativeStage {
+  static int fill(int64_t, size_t) { return 0; }
+  static void validate(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out,
+      int64_t op,
+      int64_t extent,
+      int64_t width) {
+    if (op < 0 || op > 2
+        || a.size()
+               != (op == 0   ? 6
+                   : op == 1 ? 3
+                             : 4)
+        || out.size() != (op == 2 ? 2 : 1) || extent < 0 || width < 0)
+      throw std::invalid_argument("invalid conformer chi derivative stage");
+    if (op == 0) {
+      auto i = ffi::DataType::S32;
+      require_shape(a[0], i, {-1});
+      require_shape(a[1], i, {a[0].dimensions()[0]});
+      require_shape(a[2], i, {-1});
+      require_shape(a[3], i, {a[2].dimensions()[0], -1});
+      require_shape(a[4], i, {-1, -1, 4});
+      require_shape(a[5], i, {a[4].dimensions()[0], a[4].dimensions()[1]});
+      auto n = score::common::checked_dispatch_product(
+          a[3].dimensions()[0], a[3].dimensions()[1], "chi correction indices");
+      require_shape(out[0], ffi::DataType::U8, {5, n, 8});
+      return;
+    }
+    auto real = a[0].element_type();
+    if (real != ffi::DataType::F32 && real != ffi::DataType::F64)
+      throw std::invalid_argument(
+          "chi correction derivatives require float32 or float64");
+    require_shape(a[0], real, {-1, 3});
+    require_shape(a[1], real, {-1, 9});
+    require_shape(a[2], ffi::DataType::U8, {5, -1, 8});
+    require_shape(out[0], real, {a[0].dimensions()[0], 3});
+    if (op == 2) {
+      require_shape(a[3], real, {a[0].dimensions()[0], 3});
+      require_shape(out[1], real, {a[1].dimensions()[0], 9});
+    }
+  }
+  template <template <Device> class Ops, Device D, typename Real, bool Second>
+  static void derivatives(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out) {
+    pack::rotamer::ChiCorrectionDerivatives<
+        score::common::TViewBinder<D>::template View,
+        Real>
+        c{buffer_view<int64_t, 2, D>(a[2]),
+          buffer_view<Real, 2, D>(a[0]),
+          buffer_view<Real, 2, D>(a[1]),
+          buffer_view<Real, 2, D>(Second ? a[3] : a[0]),
+          buffer_view<Real, 2, D>(out[0]),
+          buffer_view<Real, 2, D>(Second ? out[1] : a[1])};
+    ContextManager context;
+    pack::rotamer::launch_chi_correction_derivatives<Ops, D, Real, Second>(
+        context, c);
+  }
+  template <template <Device> class Ops, Device D>
+  static void execute(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out,
+      int64_t op,
+      int64_t,
+      int64_t) {
+    if (op == 0) {
+      pack::rotamer::ChiCorrectionIndexPlan<
+          score::common::TViewBinder<D>::template View,
+          int32_t>
+          c{buffer_view<int32_t, 1, D>(a[0]),
+            buffer_view<int32_t, 1, D>(a[1]),
+            buffer_view<int32_t, 1, D>(a[2]),
+            buffer_view<int32_t, 2, D>(a[3]),
+            buffer_view<int32_t, 3, D>(a[4]),
+            buffer_view<int32_t, 2, D>(a[5])};
+      ContextManager context;
+      pack::rotamer::launch_chi_correction_indices<Ops, D>(
+          context, c, buffer_view<int64_t, 2, D>(out[0]));
+    } else if (a[0].element_type() == ffi::DataType::F32) {
+      if (op == 1)
+        derivatives<Ops, D, float, false>(a, out);
+      else
+        derivatives<Ops, D, float, true>(a, out);
+    } else {
+      if (op == 1)
+        derivatives<Ops, D, double, false>(a, out);
+      else
+        derivatives<Ops, D, double, true>(a, out);
+    }
+  }
+};
 }  // namespace tmol::jax

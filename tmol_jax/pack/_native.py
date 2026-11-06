@@ -227,13 +227,90 @@ def assign_conformer_chi(dofs, chi, *metadata):
     return _assign_chi(dofs, chi, *metadata)
 
 
-def correct_conformer_chi(dofs, chi, trial_coordinates, *metadata):
-    """Correct sampled dihedrals using the common native geometry convention."""
+@partial(jax.jit, static_argnames=("operation",))
+def _chi_derivative_stage(arguments, *, operation):
     from tmol_jax.score._native import register
 
-    target = "tmol_correct_conformer_chi"
+    target = "tmol_conformer_chi_derivatives"
     register(target)
-    return _conformer_dofs(dofs, (chi, trial_coordinates, *metadata), target=target)
+    if operation == 0:
+        results = (jax.ShapeDtypeStruct((5, arguments[3].size, 8), np.uint8),)
+    else:
+        results = tuple(
+            jax.ShapeDtypeStruct(a.shape, a.dtype)
+            for a in arguments[: 2 if operation == 2 else 1]
+        )
+    return jax.ffi.ffi_call(target, results, vmap_method="sequential")(
+        *arguments, operation=np.int64(operation), extent=np.int64(0), width=np.int64(0)
+    )
+
+
+@jax.custom_vjp
+def _chi_coordinate_gradient(coords, weights, indices):
+    return _chi_derivative_stage((coords, weights, indices), operation=1)[0]
+
+
+def _chi_coordinate_gradient_fwd(coords, weights, indices):
+    return _chi_coordinate_gradient(coords, weights, indices), (
+        coords,
+        weights,
+        indices,
+    )
+
+
+def _chi_coordinate_gradient_bwd(saved, direction):
+    coords, weights, indices = saved
+    gx, gw = _chi_derivative_stage((coords, weights, indices, direction), operation=2)
+    return gx, gw, None
+
+
+_chi_coordinate_gradient.defvjp(
+    _chi_coordinate_gradient_fwd, _chi_coordinate_gradient_bwd
+)
+
+
+@jax.custom_vjp
+def _correct_chi(dofs, chi, trial_coordinates, metadata):
+    return _conformer_dofs(
+        dofs, (chi, trial_coordinates, *metadata), target="tmol_correct_conformer_chi"
+    )
+
+
+def _correct_chi_fwd(dofs, chi, coords, metadata):
+    indices = _chi_derivative_stage(metadata, operation=0)[0]
+    result = _correct_chi(dofs, chi, coords, metadata)
+    return result, (coords, chi, indices)
+
+
+def _correct_chi_bwd(saved, weights):
+    from .dispatch import _narrow_prefix
+
+    coords, chi, indices = saved
+    destination = _narrow_prefix(indices[0])
+    gc = jnp.where(
+        destination >= 0, weights.reshape(-1)[jnp.maximum(destination, 0)], 0
+    )
+    return (
+        weights,
+        gc.reshape(chi.shape),
+        _chi_coordinate_gradient(coords, weights, indices),
+        None,
+    )
+
+
+_correct_chi.defvjp(_correct_chi_fwd, _correct_chi_bwd)
+
+
+def correct_conformer_chi(dofs, chi, trial_coordinates, *metadata):
+    """Shared measured-chi correction, reverse gradients and reverse Hessian products.
+
+    The wrapped-angle discontinuity has no derivative. Forward AD and third
+    derivatives are not implemented by this native execution adapter.
+    """
+    from tmol_jax.score._native import register
+
+    register("tmol_correct_conformer_chi")
+    return _correct_chi(dofs, chi, trial_coordinates, metadata)
 
 
 def copy_conformer_rows(

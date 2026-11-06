@@ -228,9 +228,7 @@ def _check_repaired_mainchain_mask(b, source, target, array, apply):
         changed = b.module.jit(grad)(array(repaired))
     else:
         x = array(repaired).requires_grad_()
-        changed = b.module.autograd.grad(apply(target, x).square().sum(), x)[
-            0
-        ]
+        changed = b.module.autograd.grad(apply(target, x).square().sum(), x)[0]
     expected_source = np.zeros_like(repaired)
     expected_source[2] = 4 * repaired[2]
     np.testing.assert_array_equal(b.numpy(changed), expected_source)

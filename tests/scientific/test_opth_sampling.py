@@ -110,3 +110,102 @@ def test_opth_molecular_samples_and_masks(backend, name, flip):
     )
     empty = sampler.create_samples_for_poses(b.pose, concrete(task))
     assert not b.numpy(empty[0]).any() and b.numpy(empty[1]).size == 0
+
+
+def _sampled_coordinate_function(b, task, sampler):
+    """Small execution adapters around the same molecular construction task."""
+    if b.framework == "jax":
+        from tmol_jax.pack.rotamers import build_rotamers, _sample_conformers
+
+        build_rotamers(b.pose, task, b.parameter_database.chemical)
+        samplers, samples, *_ = _sample_conformers(b.pose, task)
+        payloads = tuple(
+            (
+                ()
+                if s[2].get("copy_input_coordinates", False)
+                else (s[2]["chi_for_rotamers"], s[2]["chi_defining_atom_for_rotamer"])
+            )
+            for s in samples
+        )
+        selected = samplers.index(sampler)
+        execute = task._assembly_execution[2]
+
+        def run(coords, shift):
+            args = list(payloads)
+            angles, atoms = args[selected]
+            args[selected] = (angles + shift, atoms)
+            return execute(coords, tuple(args))
+
+    else:
+        from unittest.mock import patch
+        import attrs
+        from tmol.pack import build_rotamers
+
+        create = type(sampler).create_samples_for_poses
+
+        def run(coords, shift):
+            def samples(instance, *args, **kwargs):
+                counts, owners, payload = create(instance, *args, **kwargs)
+                payload = dict(payload)
+                payload["chi_for_rotamers"] = payload["chi_for_rotamers"] + shift
+                return counts, owners, payload
+
+            with patch.object(type(sampler), "create_samples_for_poses", samples):
+                _, result = build_rotamers(
+                    attrs.evolve(b.pose, coords=coords),
+                    task,
+                    b.parameter_database.chemical,
+                )
+            return result.coords
+
+    return run
+
+
+@pytest.mark.parametrize("name", ("protein", "d_amino", "ligand", "mixed"))
+@pytest.mark.parametrize("flip", (False, True))
+def test_opth_constructed_coordinate_parameter_gradients(backend, name, flip):
+    from .test_current_conformers import ensure_fallback_sampler
+
+    b = backend.molecule(OPTH_CASES[name], terms=("ref",))
+    task, sampler, concrete = opth_task(b, flip=flip)
+    ensure_fallback_sampler(b, task)
+    run = _sampled_coordinate_function(b, concrete(task), sampler)
+    coords = b.pose.coords
+    if b.framework == "jax":
+        shift = b.module.device_put(np.array(0.037, np.float32), b.device)
+    else:
+        shift = b.module.tensor(0.037, device=b.device, requires_grad=True)
+    example = run(coords, shift)
+    weights = (
+        np.sin(
+            np.arange(example.size if b.framework == "jax" else example.numel()) * 0.17
+        )
+        .reshape(example.shape)
+        .astype(np.float32)
+    )
+    weights /= np.sqrt(weights.size)
+    weights = (
+        b.module.device_put(weights, b.device)
+        if b.framework == "jax"
+        else b.module.as_tensor(weights, device=b.device)
+    )
+
+    def loss(value):
+        return (weights * run(coords, value)).sum()
+
+    if b.framework == "jax":
+        gradient = b.module.jit(b.module.grad(loss))(shift)
+    else:
+        gradient = b.module.autograd.grad(loss(shift), shift)[0]
+    epsilon = 0.002
+    finite = (loss(shift + epsilon) - loss(shift - epsilon)) / (2 * epsilon)
+    assert np.isfinite(b.numpy(gradient))
+    np.testing.assert_allclose(
+        b.numpy(gradient), b.numpy(finite), rtol=0.003, atol=0.0001
+    )
+    # Do not silently return a partial derivative through inverse initialization.
+    with pytest.raises(NotImplementedError, match="inverse.*kinematics"):
+        if b.framework == "jax":
+            b.module.grad(lambda x: run(x, shift).sum())(coords)
+        else:
+            run(coords.detach().requires_grad_(), shift)

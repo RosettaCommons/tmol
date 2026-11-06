@@ -219,8 +219,13 @@ native DOF operations support `jit` and `vmap`. Row copying and chi assignment
 also support JVPs, gradients and higher derivatives using common native index
 plans. Mainchain copying also preserves ideal DOFs where source values are
 non-finite and supports these derivatives with fresh native selection indices.
-Nonlinear measured-chi correction still lacks JAX derivative rules. Current-only prepared execution preserves input coordinate
-derivatives, including fixed residues and padded batches. A concrete `SetPackerTask` reuses
+Measured-chi correction supports reverse gradients and reverse Hessian products
+through the common native geometry; forward-mode and third derivatives remain
+unavailable. Fixed-plan assembly supports first derivatives of sampled angles.
+Input-coordinate derivatives through inverse kinematics and higher derivatives
+through forward kinematics remain unavailable. Current-only prepared execution
+preserves input coordinate derivatives, including fixed residues and padded
+batches. A concrete `SetPackerTask` reuses
 validated topology plans while recomputing coordinates. Internal native stages
 now provide sparse graph topology/retention, device load balancing with XLA-owned
 scratch, sphere-based candidate enumeration, and the mature CPU annealing schedule.
