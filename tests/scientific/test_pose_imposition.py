@@ -194,7 +194,7 @@ def test_molecular_imposition_keeps_selected_atoms_and_connectivity(
         backend.numpy(backend.pose.inter_residue_connections),
     )
     assert out.packed_block_types is backend.pose.packed_block_types
-    assert out.coords.device == backend.device
+    assert out.coords.device == backend.pose.coords.device
     if design:
         assert np.any(types != backend.numpy(backend.pose.block_type_ind))
         real_counts = np.where(types >= 0, n_atoms[np.maximum(types, 0)], 0)
