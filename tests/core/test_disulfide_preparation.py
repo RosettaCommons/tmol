@@ -39,3 +39,38 @@ def test_empty_disulfide_palette_has_valid_parameter_extent():
     connections, mirrored = pack_disulfide_connections(())
     assert connections.shape == (0, 0)
     assert native_disulfide_parameters(np.zeros(32), mirrored).shape == (0, 33)
+
+
+def test_disulfide_search_preserves_declared_pairs_and_reuses_metadata():
+    from tmol_core.io.disulfides import prepare_disulfide_search, resolve_disulfides
+
+    types = np.array([[3, 8, 3, 8], [-1, -1, -1, -1]], dtype=np.int32)
+    plan = prepare_disulfide_search((3, 8), types, [[0, 0, 2]])
+    initial = plan.variants.copy()
+    for dtype in (np.float32, np.float64):
+        coords = np.zeros((2, 4, 1, 3), dtype=dtype)
+        coords[0, :, 0, 0] = [0, 1.8, 2.2, 4]
+        observed = coords.copy()
+        for _ in range(2):
+            edges, variants = resolve_disulfides(plan, coords, 0)
+            # Declared 0--2 wins over the shorter 0--1 distance. The remaining
+            # mixed-class pair is inferred, while padding has no variant.
+            np.testing.assert_array_equal(edges, [[0, 0, 2], [0, 1, 3]])
+            np.testing.assert_array_equal(variants, [[1, 1, 1, 1], [0, 0, 0, 0]])
+            assert edges.dtype == np.int64 and variants.dtype == np.int32
+        np.testing.assert_array_equal(coords, observed)
+        np.testing.assert_array_equal(plan.variants, initial)
+
+
+def test_disulfide_search_can_avoid_coordinates_and_rejects_repeated_endpoints():
+    import pytest
+    from tmol_core.io.disulfides import prepare_disulfide_search, resolve_disulfides
+
+    types = np.array([[3, 8, 3, 8]], dtype=np.int32)
+    plan = prepare_disulfide_search((3, 8), types, [[0, 0, 2]], False)
+    assert not plan.search
+    edges, variants = resolve_disulfides(plan, None, 0)
+    np.testing.assert_array_equal(edges, [[0, 0, 2]])
+    np.testing.assert_array_equal(variants, [[1, 0, 1, 0]])
+    with pytest.raises(ValueError, match="only one declared disulfide"):
+        prepare_disulfide_search((3, 8), types, [[0, 0, 2], [0, 1, 2]])
