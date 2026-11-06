@@ -70,3 +70,59 @@ def canonical_candidates(present, real, io_class, terminus, variant, metadata):
         extent=np.int64(0),
         width=np.int64(0),
     )
+
+
+@jax.jit
+def canonical_chain_endings(
+    chains, types, disconnected, real, polymeric, ports, cycles, explicit_ports
+):
+    """Shared polymer/cap/cycle policy with fixed-size framework-owned outputs."""
+    register("tmol_canonical_topology")
+    shape = types.shape
+    return jax.ffi.ffi_call(
+        "tmol_canonical_topology",
+        (
+            jax.ShapeDtypeStruct(shape, np.int32),
+            *(jax.ShapeDtypeStruct(shape, np.bool_) for _ in range(3)),
+        ),
+        vmap_method="sequential",
+    )(
+        chains,
+        types,
+        disconnected,
+        real,
+        polymeric,
+        ports,
+        cycles,
+        explicit_ports,
+        operation=np.int64(0),
+        extent=np.int64(0),
+        width=np.int64(0),
+    )
+
+
+@jax.jit
+def canonical_atom_termini(present, types, variants, termini, broken, real, metadata):
+    """Apply common atom-stated terminal chemistry without dropping heavy atoms."""
+    register("tmol_canonical_topology")
+    return jax.ffi.ffi_call(
+        "tmol_canonical_topology",
+        (
+            jax.ShapeDtypeStruct(types.shape, np.int32),
+            jax.ShapeDtypeStruct((*types.shape, 2, metadata[0].shape[3]), np.int32),
+        ),
+        vmap_method="sequential",
+    )(
+        present,
+        types,
+        variants,
+        termini,
+        broken,
+        real,
+        *metadata,
+        operation=np.int64(1),
+        extent=np.int64(0),
+        width=np.int64(0),
+    )[
+        0
+    ]

@@ -264,6 +264,10 @@ TMOL_JAX_STAGE(
     tmol_canonical_candidates,
     tmol::jax::run_graph_stage<tmol::jax::CanonicalCandidateStage>, );
 
+TMOL_JAX_STAGE(
+    tmol_canonical_topology,
+    tmol::jax::run_graph_stage<tmol::jax::CanonicalTopologyStage>, );
+
 #undef TMOL_JAX_STAGE
 #undef TMOL_JAX_ENERGY
 #undef TMOL_JAX_TRAITS

@@ -3,6 +3,7 @@
 #include "graph_topology_ffi.hh"
 #include <tmol/io/details/compiled/leaf_atom_kernels.hh>
 #include <tmol/io/details/compiled/canonical_candidates.hh>
+#include <tmol/io/details/compiled/canonical_topology.hh>
 
 namespace tmol::jax {
 struct LeafAtomStage {
@@ -138,6 +139,90 @@ struct CanonicalCandidateStage {
     ContextManager manager;
     io::details::compiled::launch_canonical_candidates<Ops, D, int32_t>(
         manager, c);
+  }
+};
+struct CanonicalTopologyStage {
+  static int fill(int64_t, size_t) { return 0; }
+  static void validate(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out,
+      int64_t op,
+      int64_t,
+      int64_t) {
+    if ((op != 0 && op != 1) || a.size() != (op ? 9 : 8)
+        || out.size() != (op ? 2 : 4))
+      throw std::invalid_argument("invalid canonical topology arguments");
+    auto i = ffi::DataType::S32, b = ffi::DataType::PRED;
+    require_shape(a[1], i, {-1, -1});
+    auto p = a[1].dimensions()[0], r = a[1].dimensions()[1];
+    require_shape(out[0], i, {p, r});
+    if (!op) {
+      require_shape(a[0], i, {p, r});
+      require_shape(a[2], b, {p, r, 2});
+      require_shape(a[3], b, {p, r});
+      require_shape(a[4], b, {-1});
+      require_shape(a[5], i, {a[4].dimensions()[0], 2});
+      require_shape(a[6], i, {-1, 3});
+      require_shape(a[7], b, {p, r, 2});
+      for (int k = 1; k < 4; ++k) require_shape(out[k], b, {p, r});
+    } else {
+      require_shape(a[0], b, {p, r, -1});
+      require_shape(a[2], i, {p, r});
+      require_shape(a[3], i, {p, r});
+      require_shape(a[4], b, {p, r, 2});
+      require_shape(a[5], b, {p, r});
+      require_shape(a[6], i, {-1, 4, -1, -1});
+      require_shape(
+          a[7],
+          b,
+          {a[6].dimensions()[0],
+           4,
+           a[6].dimensions()[2],
+           a[6].dimensions()[3]});
+      require_shape(a[8], b, {-1, a[0].dimensions()[2]});
+      require_shape(out[1], i, {p, r, 2, a[6].dimensions()[3]});
+    }
+  }
+  template <template <Device> class Ops, Device D>
+  static void execute(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out,
+      int64_t op,
+      int64_t,
+      int64_t) {
+    ContextManager manager;
+    if (!op) {
+      io::details::compiled::CanonicalChainContext<int32_t, D> c{
+          buffer_view<int32_t, 2, D>(a[0]),
+          buffer_view<int32_t, 2, D>(a[1]),
+          buffer_view<bool, 3, D>(a[2]),
+          buffer_view<bool, 2, D>(a[3]),
+          buffer_view<bool, 1, D>(a[4]),
+          buffer_view<int32_t, 2, D>(a[5]),
+          buffer_view<int32_t, 2, D>(a[6]),
+          buffer_view<bool, 3, D>(a[7]),
+          buffer_view<int32_t, 2, D>(out[0]),
+          buffer_view<bool, 2, D>(out[1]),
+          buffer_view<bool, 2, D>(out[2]),
+          buffer_view<bool, 2, D>(out[3])};
+      io::details::compiled::launch_canonical_chain_endings<Ops, D, int32_t>(
+          manager, c);
+    } else {
+      io::details::compiled::CanonicalTerminusContext<int32_t, D> c{
+          buffer_view<bool, 3, D>(a[0]),
+          buffer_view<int32_t, 2, D>(a[1]),
+          buffer_view<int32_t, 2, D>(a[2]),
+          buffer_view<int32_t, 2, D>(a[3]),
+          buffer_view<bool, 3, D>(a[4]),
+          buffer_view<bool, 2, D>(a[5]),
+          buffer_view<int32_t, 4, D>(a[6]),
+          buffer_view<bool, 4, D>(a[7]),
+          buffer_view<bool, 2, D>(a[8]),
+          buffer_view<int32_t, 4, D>(out[1]),
+          buffer_view<int32_t, 2, D>(out[0])};
+      io::details::compiled::launch_canonical_atom_termini<Ops, D, int32_t>(
+          manager, c);
+    }
   }
 };
 }  // namespace tmol::jax
