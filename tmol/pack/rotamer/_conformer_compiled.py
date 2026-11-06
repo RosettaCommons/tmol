@@ -15,3 +15,9 @@ correct_chi_dofs = _ops.correct_chi_dofs
 
 select_pose_rotamers = _ops.select_pose_rotamers
 plan_pose_imposition = _ops.plan_pose_imposition
+
+opth_sampling_counts = _ops.opth_sampling_counts
+
+opth_sampling_fill = _ops.opth_sampling_fill
+
+opth_sampling_proton = _ops.opth_sampling_proton

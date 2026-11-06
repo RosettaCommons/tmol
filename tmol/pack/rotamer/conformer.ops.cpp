@@ -3,6 +3,7 @@
 #include <tmol/utility/function_dispatch/aten.hh>
 #include <tmol/score/common/device_operations.hh>
 #include <tmol/pack/rotamer/conformer_ops.hh>
+#include <tmol/pack/rotamer/opth_sampling_torch.hh>
 #include <tmol/pack/rotamer/pose_imposition_torch.hh>
 namespace tmol::pack::rotamer {
 using tmol::native::Tensor;
@@ -168,9 +169,56 @@ std::vector<Tensor> plan_pose_imposition(
       }));
   return output;
 }
+std::tuple<Tensor, Tensor> opth_sampling_counts(
+    std::vector<Tensor> inputs, bool flip) {
+  TORCH_CHECK(!inputs.empty(), "OptH sampler needs input buffers");
+  std::tuple<Tensor, Tensor> output;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[0].options(), "opth_sampling_counts", ([&] {
+        output = OptHSamplingTorch<score::common::DeviceOperations, device_t>::
+            counts(conformer_context, inputs, flip);
+      }));
+  return output;
+}
+std::tuple<Tensor, Tensor, Tensor, Tensor> opth_sampling_fill(
+    std::vector<Tensor> inputs, Tensor counts, int64_t nrot) {
+  TORCH_CHECK(!inputs.empty(), "OptH sampler needs input buffers");
+  std::tuple<Tensor, Tensor, Tensor, Tensor> output;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[0].options(), "opth_sampling_fill", ([&] {
+        output =
+            OptHSamplingTorch<score::common::DeviceOperations, device_t>::fill(
+                conformer_context, inputs, counts, nrot);
+      }));
+  return output;
+}
+std::tuple<Tensor, Tensor, Tensor> opth_sampling_proton(
+    std::vector<Tensor> inputs, int64_t width) {
+  TORCH_CHECK(!inputs.empty(), "OptH sampler needs input buffers");
+  std::tuple<Tensor, Tensor, Tensor> output;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[0].options(), "opth_sampling_proton", ([&] {
+        output = OptHSamplingTorch<score::common::DeviceOperations, device_t>::
+            proton(conformer_context, inputs, width);
+      }));
+  return output;
+}
 TMOL_LIBRARY(tmol_conformer_dofs, m) {
   m.def(
-      "select_pose_rotamers(Tensor[] inputs) -> Tensor", TMOL_FN(&select_pose_rotamers));
+      "opth_sampling_counts(Tensor[] inputs, bool flip) -> (Tensor, Tensor)",
+      TMOL_FN(&opth_sampling_counts));
+  m.def(
+      "opth_sampling_fill(Tensor[] inputs, Tensor counts, int nrot) -> "
+      "(Tensor, Tensor, Tensor, Tensor)",
+      TMOL_FN(&opth_sampling_fill));
+  m.def(
+      "opth_sampling_proton(Tensor[] inputs, int width) -> (Tensor, Tensor, "
+      "Tensor)",
+      TMOL_FN(&opth_sampling_proton));
+
+  m.def(
+      "select_pose_rotamers(Tensor[] inputs) -> Tensor",
+      TMOL_FN(&select_pose_rotamers));
   m.def(
       "plan_pose_imposition(Tensor[] inputs, int capacity, int ncoords) -> "
       "Tensor[]",

@@ -17,3 +17,6 @@ template struct ConformerDofKernels<
 template struct tmol::pack::rotamer::PoseImpositionTorch<
     tmol::score::common::DeviceOperations,
     tmol::Device::CUDA>;
+
+#include <tmol/pack/rotamer/opth_sampling_torch.impl.hh>
+template struct tmol::pack::rotamer::OptHSamplingTorch<tmol::score::common::DeviceOperations,tmol::Device::CUDA>;
