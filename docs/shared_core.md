@@ -166,7 +166,9 @@ Torch retains pose tensor conversion and its existing public file APIs.
 
 The mature segmented Armijo optimizer now shares its native state transitions,
 compact H0=I direction, circular history, restart/retirement and independent
-convergence policy. Torch retains parameter storage, segmented reductions and
+convergence policy. Shared setup also owns settings validation, legacy checkpoint
+migration, segment layout and history allocation rules. Torch retains parameter
+storage, segmented reductions and
 linear-algebra execution. The common policy imports neither framework; a JAX
 executor must explicitly preserve per-pose objectives and failure semantics.
 This boundary alone does not establish JAX optimizer or full-workflow parity.

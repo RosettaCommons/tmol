@@ -8,8 +8,10 @@ array; an executor may preserve storage identity or replace functional arrays.
 ``_step_setup`` supplies a host context and ``_wrap_closure`` binds objectives.
 """
 
+from .setup import SegmentedLBFGSSetup
 
-class SegmentedLBFGSPolicy:
+
+class SegmentedLBFGSPolicy(SegmentedLBFGSSetup):
     """Execution-independent optimizer orchestration; not a public optimizer."""
 
     def _compute_search_direction(self, ctx):
