@@ -76,6 +76,10 @@ The beta2016 preset retains all 25 declared channels and uses shared native
 physics for coordinate-dependent terms. Required missing parameters raise
 during preparation. See the capability matrix for tested domains and open gaps.
 
+Score weights default to float32 storage, matching mature Torch defaults even
+when coordinates use float64. `ScoreFunction(db, weight_dtype=np.float64)` selects
+explicit double-precision weights; clones retain that choice.
+
 Rendered scorers snapshot weights, term options and topology. Reuse them for
 coordinate changes; render again after changing weights, parameters, types,
 connectivity or batch layout. `sum_terms=False` returns weighted channels in

@@ -186,3 +186,22 @@ def test_rerender_keeps_topology_parameters_and_callback_identity_fresh():
         batched = jax.jit(jax.vmap(fn))(jnp.stack([pose.coords, pose.coords]))
         np.testing.assert_allclose(batched[0], [energy, energy])
         np.testing.assert_allclose(batched[1], [gradient, gradient])
+
+
+def test_explicit_double_weight_storage_and_clone(scorer):
+    score = ScoreFunction(None, weight_dtype=np.float64)
+    score.set_weight(ScoreType.fa_ljatr, 0.55)
+    cloned = score.clone()
+    assert cloned.weight_dtype == np.dtype(np.float64)
+    assert cloned.get_weight(ScoreType.fa_ljatr) == 0.55
+    with jax.enable_x64():
+        pose = SimpleNamespace(
+            coords=jnp.ones((1, 2, 3), jnp.float64), packed_block_types=None
+        )
+        value, gradient = cloned.jitted_value_and_grad(pose)(pose.coords)
+        np.testing.assert_allclose(value, [6 * 0.55], rtol=2e-15, atol=2e-15)
+        np.testing.assert_allclose(gradient, 2 * 0.55, rtol=2e-15, atol=2e-15)
+    with pytest.raises(TypeError, match="float32 or float64"):
+        ScoreFunction(None, weight_dtype=np.float16)
+    with pytest.raises(ValueError, match="finite"):
+        scorer.set_weight(ScoreType.fa_ljatr, 1e100)

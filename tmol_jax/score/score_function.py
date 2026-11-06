@@ -55,7 +55,10 @@ class ScoreFunction:
     are its only input, so JAX can differentiate, compile and batch it normally.
     """
 
-    def __init__(self, param_db):
+    def __init__(self, param_db, *, weight_dtype=np.float32):
+        self.weight_dtype = np.dtype(weight_dtype)
+        if self.weight_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
+            raise TypeError("score weight storage requires float32 or float64")
         self._param_db = param_db
         self._weights = {}
         self._terms = []
@@ -64,13 +67,16 @@ class ScoreFunction:
         self._executors = {}
 
     @classmethod
-    def from_sfxn_file(cls, path, param_db=None):
+    def from_sfxn_file(cls, path, param_db=None, *, weight_dtype=np.float32):
         """Load the shared versioned weights/options contract; poses select devices."""
         from tmol_core.scoring.score_function import load_score_function_record
         from tmol_jax.database import ParameterDatabase
 
         data = load_score_function_record(path)
-        score = cls(ParameterDatabase.get_default() if param_db is None else param_db)
+        score = cls(
+            ParameterDatabase.get_default() if param_db is None else param_db,
+            weight_dtype=weight_dtype,
+        )
         for name, weight in data["weights"].items():
             score.set_weight(getattr(ScoreType, name), weight)
         if "options" in data:
@@ -91,7 +97,7 @@ class ScoreFunction:
 
     def clone(self):
         """Return an independent score configuration with identical weights."""
-        cloned = type(self)(self._param_db)
+        cloned = type(self)(self._param_db, weight_dtype=self.weight_dtype)
         cloned.set_options(self._options)
         for score_type, weight in self._weights.items():
             cloned.set_weight(score_type, weight)
@@ -113,7 +119,8 @@ class ScoreFunction:
     def set_weight(self, score_type, weight):
         if not isinstance(score_type, ScoreType):
             raise TypeError("score_type must be a ScoreType")
-        weight = float(weight)
+        with np.errstate(over="ignore"):
+            weight = np.asarray(weight, dtype=self.weight_dtype).item()
         if not math.isfinite(weight):
             raise ValueError("score weights must be finite")
         if score_type not in _TERM_FOR_TYPE:
