@@ -685,7 +685,7 @@ def test_prepare_ligands_honors_lenient_mode_for_ligand_preparation_errors(
     """
     from tmol.ligand import LigandPreparationError
     from tmol.ligand import prepare_ligands
-    from tmol.ligand import _preparation
+    from tmol_core.ligand import _preparation
 
     def fail(*args, **kwargs):
         raise LigandPreparationError("unsupported element in conjugated partner")
@@ -719,7 +719,7 @@ def test_prepare_ligands_rejects_incomplete_generated_chemistry(
 
     from tmol.ligand import LigandPreparationError
     from tmol.ligand import prepare_ligands
-    from tmol.ligand import _preparation
+    from tmol_core.ligand import _preparation
 
     arr = _load_full_array(CIF_INPUTS / "ada.ligand.cif")
     source_atom_names = arr.atom_name.copy()

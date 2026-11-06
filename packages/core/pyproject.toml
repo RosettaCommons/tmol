@@ -11,6 +11,14 @@ license = "BSD-3-Clause AND Apache-2.0"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.25", "attrs>=21", "cattrs>=22", "pint>=0.23,<1", "pyyaml>=6", "networkx>=3", "scipy>=1.11", "frozendict>=2", "toolz>=0.10", "numba>=0.56"]
 
+[project.optional-dependencies]
+ligand = [
+    "biotite==1.6.0",
+    "atomworks>=3.0.0,<4",
+    "rdkit>=2024.3.5",
+    "openbabel-wheel>=3.1.1.23,<4",
+]
+
 [project.urls]
 Repository = "https://github.com/RosettaCommons/tmol"
 Documentation = "https://rosettacommons.github.io/tmol/"
