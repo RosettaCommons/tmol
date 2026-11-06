@@ -2038,69 +2038,23 @@ def _filter_supported_atoms_and_connectivity(  # noqa: C901
 def _break_polymer_gaps(
     not_connected, bonds, inferred, coords, restypes, chain_id, co, threshold
 ):
-    """Break inferred polymer links across gaps; reject contradictory supplied bonds.
+    from tmol_core.io.polymer_gaps import break_polymer_gaps
 
-    Use connection atoms rather than side-chain contacts. A connection within
-    the cutoff in any pose (or unresolved) retains the shared topology.
-    Unknown bond provenance is treated as supplied, never silently discarded.
-    """
-    ports = co.polymer_conn_inds
-    up = numpy.asarray(ports.up_atom_for_co_restype)[restypes]
-    down = numpy.asarray(ports.down_atom_for_co_restype)[restypes]
-    coords = coords.cpu().numpy()
-    pair = numpy.arange(len(restypes) - 1)
-
-    def linked(a, b):
-        distance = coords[:, pair, a[:-1]] - coords[:, pair + 1, b[1:]]
-        distance = numpy.linalg.norm(distance, axis=-1)
-        return (a[:-1] >= 0) & (b[1:] >= 0) & ~(distance > threshold).all(axis=0)
-
-    polymer = (up >= 0) | (down >= 0)
-    gap = (chain_id[:-1] == chain_id[1:]) & polymer[:-1] & polymer[1:]
-    gap &= ~linked(up, down) & ~linked(down, up)
-    first, a, second, b = bonds.T
-    joined = ((a == up[first]) & (b == down[second])) | (
-        (a == down[first]) & (b == up[second])
+    return break_polymer_gaps(
+        not_connected,
+        bonds,
+        inferred,
+        coords.cpu().numpy(),
+        restypes,
+        chain_id,
+        co,
+        threshold,
     )
-    adjacent = (second == first + 1) & (chain_id[first] == chain_id[second]) & joined
-    distance = numpy.linalg.norm(coords[:, first, a] - coords[:, second, b], axis=-1)
-    across = adjacent & (distance > threshold).all(axis=0)
-    # A graph-specified orientation takes precedence over incidental contacts
-    # between the opposite pair of ports (e.g. N1--C2 instead of C1--N2).
-    gap[first[adjacent]] = True
-    gap[first[adjacent & ~across]] = False
-    if numpy.any(across & ~inferred):
-        row = numpy.flatnonzero(across & ~inferred)[0]
-        raise ValueError(
-            "Declared polymer bond crosses a geometry gap between residue indices "
-            f"{first[row]} and {second[row]} (cutoff {threshold:g} Angstrom). "
-            "Correct the supplied connectivity/coordinates, or set "
-            "missing_density_distance_threshold=0 to retain the declared topology."
-        )
-    not_connected[:-1, 1] |= gap
-    not_connected[1:, 0] |= gap
-    return bonds[~across]
 
 
-def _orient_polymer_gap_flags(not_connected, chain_id, restypes, bonds, co):
-    """Translate input-neighbor gap flags to chemical down/up on reversed chains.
-
-    Declared adjacent polymer bonds establish direction. Non-polymer links and
-    cyclic closures do not vote; mixed directions have no single chain ordering.
-    """
-    if not len(bonds) or not numpy.any(not_connected):
-        return
-    first, a, second, b = bonds.T
-    conn = co.polymer_conn_inds
-    up = numpy.asarray(conn.up_atom_for_co_restype)[restypes]
-    down = numpy.asarray(conn.down_atom_for_co_restype)[restypes]
-    adjacent = (second == first + 1) & (chain_id[first] == chain_id[second])
-    forward = adjacent & (a == up[first]) & (b == down[second])
-    reverse = adjacent & (a == down[first]) & (b == up[second])
-    for chain in numpy.unique(chain_id[first[reverse]]):
-        if not numpy.any(forward & (chain_id[first] == chain)):
-            members = chain_id == chain
-            not_connected[members] = not_connected[members, ::-1]
+from tmol_core.io.polymer_gaps import (  # noqa: E402
+    orient_polymer_gap_flags as _orient_polymer_gap_flags,
+)
 
 
 def _extract_residue_metadata(
