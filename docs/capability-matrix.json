@@ -197,7 +197,7 @@
       "repro_fixture": [
         "tmol/score/_fragment_interactions.py"
       ],
-      "implementation_status": "No public JAX fragment decomposition/recombination."
+      "implementation_status": "Input and original-block reconstruction have shared CPU checks; public JAX fragment interaction decomposition and AtomArray export remain absent."
     },
     {
       "domain": "structure_io",
@@ -301,6 +301,15 @@
         "tests/scientific/test_pose_imposition.py"
       ],
       "implementation_status": "Common metadata and split-block models; preserves insertion codes, source occupancy/B factors, residue annotations and metal origins during canonical projection. JAX legacy labels retained; design follows mature defaults for changed residue identities. Complete AtomArray/recombined-fragment round trips remain gaps. New metadata integration awaits exact package/CUDA validation."
+    },
+    {
+      "domain": "fragmented_ligand_input_and_reconstruction",
+      "torch": "supported_with_repeated_identity_fix",
+      "jax": "cpu_full_term_and_physical_gradient_checks",
+      "repro_fixture": [
+        "tests/scientific/test_fragment_input.py"
+      ],
+      "implementation_status": "Common named cut-bond and original-atom plans; independent physical groups for repeated ligands. Real protein-ligand and repeated ligand-only CPU cases preserve all 25 term values and physical gradients against uncut molecules in float64 (2e-6 tolerance), nonzero genbonded, default input packing and ligand minimization. Reconstruction preserves coordinate dtype/autodiff, original author labels, per-atom metadata and constraint atoms. Shared fixes also improve Torch; complete fragment interaction attribution/export and fresh CUDA/package gates remain pending. Externally bonded fragmented-ligand generation is not established by these cases."
     }
   ],
   "validation": "PR629 remains draft. Exact e8 ABI4 CPU artifacts pass45 molecular and257 shared checks without Torch. Exact H200 artifacts pass170 JAX and23 Torch CUDA affected checks plus three full prepared-group workflows. Later input/metadata increments need matching package/CUDA gates. Mature Torch complete cold/warm/peak-memory parity and actual final Metal remain unresolved.",

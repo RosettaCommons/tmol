@@ -178,7 +178,7 @@ def pose_stack_from_atom_array(
     """Build a molecular pose using shared normalization, chemistry and input H.
 
     Shared sampler policy selects missing-sidechain rebuilding and OptH packing.
-    Fragmented-ligand imposition is not implemented here yet and fails explicitly.
+    Fragment cut bonds and original identities use the common fragment plan.
     Pass the returned context's parameter database to scoring functions. Input
     preparation is eager.
     """
@@ -216,10 +216,6 @@ def pose_stack_from_atom_array(
                 ligand_seed,
                 ligand_hydrogens,
             )
-        if context.fragment_definitions:
-            raise NotImplementedError(
-                "JAX fragmented-ligand input imposition is not implemented"
-            )
         structure = _input_hydrogens(
             biotite_structure,
             ligand_ph,
@@ -227,6 +223,13 @@ def pose_stack_from_atom_array(
             context.parameter_database.chemical,
             find_additional_metal_coordination,
         )
+        fragment_mapping = None
+        if context.fragment_definitions:
+            from tmol_core.ligand._fragmentation import _expand_fragmented_ligands
+
+            structure, fragment_mapping = _expand_fragmented_ligands(
+                structure, context.fragment_definitions
+            )
         cf = canonical_form_from_biotite(
             structure,
             canonical_ordering=context.canonical_ordering,
@@ -258,6 +261,10 @@ def pose_stack_from_atom_array(
             ligand_hydrogens=ligand_hydrogens,
             **kwargs,
         )
+        if fragment_mapping is not None:
+            from tmol_jax.ligand.fragment_imposition import apply_fragment_connections
+
+            pose = apply_fragment_connections(pose, fragment_mapping)
         from .input_completion import complete_input
 
         pose = complete_input(
