@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
@@ -308,114 +308,6 @@ def _resolve_disulfide_pairs(
     return paired, pairs
 
 
-def _fill_missing_from_icoors(
-    bt: Any,
-    actual: np.ndarray,
-    present_mask: np.ndarray,
-    conn_atom_xyz: Optional[Dict[str, np.ndarray]] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Build missing atoms from the icoor tree using present parent /
-    grand-parent / great-grand-parent coordinates.
-
-    This mirrors upstream's ``gen_pose_leaf_atoms``: for each missing
-    atom, fetch the placed coordinates of its three ancestors (parent,
-    grand_parent, great_grand_parent) and apply ``build_coordinate`` with
-    the atom's stored ``(phi, theta, d)``. Atoms whose ancestors are all
-    present are built in a single sweep; atoms whose ancestors are
-    themselves missing can still be built in subsequent passes after
-    their immediate ancestor has been placed (H1 -> H2 -> H3 on
-    MET:nterm is the canonical example).
-
-    Returns ``(new_coords, newly_filled_mask)``. Atoms whose ancestors
-    can't be fully resolved are left unchanged.
-    """
-    from tmol_jax.chemical.ideal_coords import frame_from_coords, rot_x, rot_z, trans_z
-
-    filled = actual.copy()
-    n_bt = filled.shape[0]
-    newly_filled = np.zeros(n_bt, dtype=bool)
-
-    # Collect icoor records keyed by atom name.
-    icoors = list(getattr(bt, "icoors", ()) or ())
-    atoms = list(bt.atoms)
-    atom_name_to_idx = {a.name: i for i, a in enumerate(atoms)}
-
-    ic_for_atom: Dict[int, Any] = {}
-    for ic in icoors:
-        nm = getattr(ic, "name", None)
-        if nm is not None and nm in atom_name_to_idx:
-            ic_for_atom.setdefault(atom_name_to_idx[nm], ic)
-
-    def _ancestor_xyz(name: str, placed_mask: np.ndarray) -> Optional[np.ndarray]:
-        """Resolve an ancestor name to a 3-vec, or None if unresolvable.
-
-        Two cases:
-        1. ``name`` is an atom name in this block — read from ``filled``
-           if the atom is currently placed.
-        2. ``name`` is a connection name (e.g. ``"down"`` or ``"up"``) —
-           look it up in ``conn_atom_xyz``, which the caller pre-fills
-           with the corresponding cross-block atom position.
-        """
-        idx = atom_name_to_idx.get(name, -1)
-        if idx >= 0:
-            if placed_mask[idx]:
-                return filled[idx, :3].astype(np.float32)
-            return None
-        if conn_atom_xyz is not None and name in conn_atom_xyz:
-            xyz = conn_atom_xyz[name]
-            if xyz is not None:
-                return np.asarray(xyz, dtype=np.float32)
-        return None
-
-    # A simple iterative sweep: in each pass, try to build each missing
-    # atom whose three ancestors are now placed. Loop until no atom
-    # makes progress. N passes is O(tree depth), small in practice.
-    def _place_one(i: int) -> bool:
-        ic = ic_for_atom.get(i)
-        if ic is None:
-            return False
-        p_name = getattr(ic, "parent", None)
-        gp_name = getattr(ic, "grand_parent", None)
-        ggp_name = getattr(ic, "great_grand_parent", None)
-        if p_name is None or gp_name is None or ggp_name is None:
-            return False
-        # Root: parent == name (only N on the block-type root) -- nothing to do.
-        if p_name == getattr(ic, "name", None):
-            return False
-        placed_mask = present_mask | newly_filled
-        p_xyz = _ancestor_xyz(p_name, placed_mask)
-        gp_xyz = _ancestor_xyz(gp_name, placed_mask)
-        ggp_xyz = _ancestor_xyz(ggp_name, placed_mask)
-        if p_xyz is None or gp_xyz is None or ggp_xyz is None:
-            return False
-        phi = float(getattr(ic, "phi", 0.0))
-        theta = float(getattr(ic, "theta", 0.0))
-        d = float(getattr(ic, "d", 0.0))
-        ht = frame_from_coords(ggp_xyz, gp_xyz, p_xyz)
-        ht = ht @ rot_z(phi) @ rot_x(-theta) @ trans_z(d)
-        filled[i, 0] = ht[0, 3]
-        filled[i, 1] = ht[1, 3]
-        filled[i, 2] = ht[2, 3]
-        newly_filled[i] = True
-        return True
-
-    progress = True
-    while progress:
-        progress = False
-        for i in range(n_bt):
-            if present_mask[i] or newly_filled[i]:
-                continue
-            if _place_one(i):
-                progress = True
-
-    return filled, newly_filled
-
-
-# --------------------------------------------------------------------------- #
-# Main entry point                                                             #
-# --------------------------------------------------------------------------- #
-
-
 def _canonical_rows(value, shape, default, name):
     array = np.asarray(default if value is None else value, dtype=object)
     if array.ndim == 1:
@@ -471,7 +363,7 @@ def _map_residue_atoms(residue, source, present, mapping, leaf):
     valid = (mapping >= 0) & (mapping < source.shape[0])
     safe = np.where(valid, mapping, 0)
     available = valid & present[safe]
-    coords = np.where(available[:, None], source[safe], 0).astype(np.float32)
+    coords = np.where(available[:, None], source[safe], 0)
     missing = ~available & ~leaf[: residue.n_atoms]
     if missing.any():
         atoms = ", ".join(
@@ -481,49 +373,57 @@ def _map_residue_atoms(residue, source, present, mapping, leaf):
     return coords, available
 
 
-def _connection_coordinates(index, residues, coords, present, starts, ends):
-    result = {}
-    candidates = (
-        ("down", index - 1, "up", not starts[index]),
-        ("up", index + 1, "down", not ends[index]),
+def _complete_missing_atoms(pose, available):
+    """Arrange missing masks and execute the shared chemical reconstruction."""
+    import jax
+    from tmol_core.chemical.packed import PackedBlockTypesData
+    from tmol_core.io.missing_atoms import prepare_leaf_atom_metadata
+    from ._native import generate_leaf_atoms
+
+    if all(mask.all() for row in available for mask in row):
+        return pose
+    pbt = pose.packed_block_types
+    missing = np.zeros((*pose.block_type_ind.shape, pbt.max_n_atoms), bool)
+    flat_missing = np.zeros(pose.coords.shape[:2], bool)
+    offsets = np.asarray(pose.block_coord_offset)
+    for p, row in enumerate(available):
+        for r, mask in enumerate(row):
+            missing[p, r, : len(mask)] = ~mask
+            start = offsets[p, r]
+            flat_missing[p, start : start + len(mask)] = ~mask
+    info = prepare_leaf_atom_metadata(
+        pbt.active_block_types, np.asarray(pbt.atom_is_hydrogen), pbt.max_n_atoms
+    ).icoors
+    downstream = PackedBlockTypesData.join_atom_downstream_of_conn(
+        pbt.active_block_types
     )
-    for connection, neighbor, reverse, connected in candidates:
-        if not connected:
-            continue
-        atom = residues[neighbor].connection_to_idx.get(reverse)
-        if atom is not None and present[neighbor][atom]:
-            result[connection] = coords[neighbor][atom]
-    return result
-
-
-def _reconstruct_pose_atoms(residues, source, present, starts, ends, mappings, leaves):
-    mapped = [
-        _map_residue_atoms(residue, xyz, mask, mapping, leaf)
-        for residue, xyz, mask, mapping, leaf in zip(
-            residues, source, present, mappings, leaves
+    downstream = np.pad(
+        downstream,
+        ((0, 0), (0, pbt.max_n_conn - downstream.shape[1]), (0, 0)),
+        constant_values=-1,
+    )
+    dtype = pose.coords.dtype
+    metadata = (
+        missing,
+        flat_missing,
+        pose.block_coord_offset,
+        pose.block_type_ind,
+        pose.inter_residue_connections,
+        pbt.n_atoms,
+        downstream,
+        info.anc_uaids,
+        info.geom.astype(dtype),
+        info.anc_uaids_backup,
+        info.geom_backup.astype(dtype),
+    )
+    coords = generate_leaf_atoms(
+        pose.coords, tuple(jax.device_put(a, pose.device) for a in metadata)
+    )
+    if not np.isfinite(np.asarray(coords)).all():
+        raise ValueError(
+            "missing atoms could not be reconstructed from available chemical frames"
         )
-    ]
-    coordinates, available = map(list, zip(*mapped))
-    for index, residue in enumerate(residues):
-        if available[index].all():
-            continue
-        stubs = _connection_coordinates(
-            index, residues, coordinates, available, starts, ends
-        )
-        coordinates[index], filled = _fill_missing_from_icoors(
-            residue, coordinates[index], available[index], conn_atom_xyz=stubs
-        )
-        available[index] |= filled
-        if not available[index].all():
-            missing = ", ".join(
-                residue.atoms[atom].name for atom in np.flatnonzero(~available[index])
-            )
-            raise ValueError(
-                f"icoor reconstruction could not place {residue.name}: {missing}"
-            )
-        if not np.isfinite(coordinates[index]).all():
-            raise ValueError(f"non-finite reconstructed coordinates for {residue.name}")
-    return np.concatenate(coordinates)
+    return pose.replace(coords=coords)
 
 
 def _chain_segments(indices, chains, disconnected, gaps):
@@ -566,7 +466,9 @@ def pose_stack_from_canonical_form(
 
     cf = canonical_form_dict
     pbt = packed_block_types
-    coords = np.asarray(cf["coords"], dtype=np.float32)
+    coords = np.asarray(cf["coords"])
+    if coords.dtype not in (np.dtype("float32"), np.dtype("float64")):
+        raise TypeError("canonical coordinates require float32 or float64")
     if coords.ndim != 4 or coords.shape[-1] != 3 or min(coords.shape[:3]) == 0:
         raise ValueError("coords must have nonempty shape [poses, residues, atoms, 3]")
     shape = coords.shape[:2]
@@ -619,7 +521,8 @@ def pose_stack_from_canonical_form(
         residue_numbers,
         residue_names,
         disulfides,
-    ) = ([] for _ in range(7))
+        atom_availability,
+    ) = ([] for _ in range(8))
     for pose, row in enumerate(names):
         indices = np.array(
             [index for index, name in enumerate(row) if name], dtype=np.int32
@@ -632,7 +535,7 @@ def pose_stack_from_canonical_form(
             )
         if not len(indices):
             raise ValueError("each pose must contain at least one protein residue")
-        starts, ends, linked_starts, linked_ends, chain_segments = _chain_segments(
+        starts, ends, _, _, chain_segments = _chain_segments(
             indices, chains[pose], disconnected[pose], gaps[pose]
         )
         selected, pairs = _choose_residue_types(
@@ -645,17 +548,18 @@ def pose_stack_from_canonical_form(
             co,
         )
         residues = [pbt.active_block_types[index] for index in selected]
-        coordinates.append(
-            _reconstruct_pose_atoms(
+        mapped = [
+            _map_residue_atoms(residue, xyz, mask, mapping, leaf)
+            for residue, xyz, mask, mapping, leaf in zip(
                 residues,
                 coords[pose, indices],
                 present[pose, indices],
-                linked_starts,
-                linked_ends,
                 prepared.bt_canonical_atom_ind_map[selected],
                 leaves[selected],
             )
-        )
+        ]
+        coordinates.append(np.concatenate([xyz for xyz, _ in mapped]))
+        atom_availability.append([mask for _, mask in mapped])
         types.append(selected)
         segments.append(chain_segments)
         authors.append([str(labels[pose, index]) for index in indices])
@@ -677,6 +581,7 @@ def pose_stack_from_canonical_form(
         residue_names,
         disulfides,
     )
+    result = _complete_missing_atoms(result, atom_availability)
     return result.replace(pdb_info=attrs.evolve(result.pdb_info, chain_id=authors))
 
 

@@ -232,3 +232,30 @@ def test_custom_canonical_atom_order_survives_public_input_adapters(tmp_path):
         np.testing.assert_array_equal(
             actual.inter_residue_connections, expected.inter_residue_connections
         )
+
+
+def test_canonical_reconstruction_preserves_float64_observations(tmp_path):
+    from tmol_jax.io import (
+        canonical_form_from_pdb,
+        default_canonical_ordering,
+        default_packed_block_types,
+        pose_stack_from_canonical_form,
+    )
+
+    canonical = canonical_form_from_pdb(_tripeptide_pdb(tmp_path))
+    canonical["coords"] = canonical["coords"].astype(np.float64) + 1.23456789e-8
+    with jax.enable_x64():
+        pose = pose_stack_from_canonical_form(canonical, default_packed_block_types())
+    assert pose.coords.dtype == np.float64
+    co = default_canonical_ordering()
+    for block in range(pose.max_n_blocks):
+        residue = pose.block_type(0, block)
+        offset = int(pose.block_coord_offset[0, block])
+        mapping = co.restypes_atom_index_mapping[residue.io_equiv_class]
+        for atom, record in enumerate(residue.atoms):
+            source = mapping[record.name]
+            if canonical["atom_is_present"][0, block, source]:
+                np.testing.assert_array_equal(
+                    pose.coords[0, offset + atom], canonical["coords"][0, block, source]
+                )
+    assert np.isfinite(pose.coords).all()
