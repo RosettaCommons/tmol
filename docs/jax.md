@@ -7,9 +7,10 @@ topology and native CPU/CUDA scoring physics are shared with Torch through
 D residues, variants, nucleic acids, metals and mixed systems retain their input
 identities and parameter context. Existing `tmol` imports remain available.
 
-This is experimental: full packing/design execution is unfinished, and new
-hydrogen-bond, LK-ball and disulfide adapters still require final CUDA, package
-and Metal validation. See the [capability matrix](capability-matrix.json) for
+This is experimental: general structure input, conjugated sampling, correlated
+packing groups, bump pruning and full design/FastRelax APIs remain unfinished.
+Native molecular scoring and selected packing paths have CPU/CUDA and Torch-free
+package validation; final Metal validation is tracked separately. See the [capability matrix](capability-matrix.json) for
 implemented behavior and evidence rather than assuming full TMol parity.
 
 ## Install
@@ -170,11 +171,14 @@ counts, choices, defining_atoms, chi = sampler.sample_chi_for_poses(pose, task)
 
 Counts and choices refer to concrete task rows; defining atoms use residue-local
 indices. Ligands outside the sampler's amino-acid policy receive zero samples.
-Task masks and `set_chi_sample_budget(expanded_limit, limit)` control sampling;
-budget-frozen torsions retain measured input geometry. Dynamic output sizes
+Task masks and `set_chi_sample_budget(expanded_limit, limit)` control sampling.
+`restrict_absent_name3s(mask, names)` intersects choices at selected positions and
+rejects an empty identity set without partially changing the task; it never
+re-enables a previously excluded choice. Sampler bundles use `expand_into_task`.
+Budget-frozen torsions retain measured input geometry. Dynamic output sizes
 require an eager host allocation barrier, so sampling is not differentiable,
-jittable or vmappable. Coordinate assembly is available separately below; full
-packing, FastRelax and design execution remain unfinished.
+jittable or vmappable. Coordinate assembly and native repacking are available below; full design
+policy and FastRelax remain unfinished.
 
 `NaChiRotamerSampler.from_database(db, chi_sample_level=1, sample_syn=True)`
 samples DNA/RNA glycosidic and proton chi from the same shared chemical metadata,
@@ -196,8 +200,8 @@ fixes discrete samples eagerly. The plan's `chi_values(proton_samples, flip_valu
 supports optional float32 parameter overrides, `jit`, `vmap`, JVPs and higher
 parameter derivatives. `measure_flip_values(coords)` supports first coordinate
 derivatives; higher coordinate derivatives through native torsions are absent.
-CPU molecular sampling and built-coordinate checks pass; combined CUDA validation
-is pending.
+Shared CPU/CUDA molecular sampling, built-coordinate and sampled-angle gradient
+checks pass. This does not provide gradients through discrete sample selection.
 
 `IncludeCurrentSampler` and `FallbackSampler` expose
 `create_samples_for_poses(pose, concrete_task)`, returning counts, choice indices
@@ -285,6 +289,10 @@ sparse NA neighbor references use the first conformer. Exact whole-pose
 conservation therefore requires identical fixed backbone and sugar coordinates;
 raw float32 ensembles carry reconstruction error. Independent native Torch/JAX
 sampled values and coordinate gradients agree on those raw ensembles.
+
+PDB and Biotite input currently use the canonical protein loader. The general
+canonical loader is unfinished; native candidate selection and missing-leaf
+reconstruction are being shared with Torch.
 
 For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
 a batch of `ResidueBlock(residue_type, atom_names, coords)` records and explicit
