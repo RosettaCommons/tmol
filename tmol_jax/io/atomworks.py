@@ -54,10 +54,21 @@ def prepare_canonical_aa_atom37_builder(residue_type, chain_iid, device=None):
     return builder
 
 
-def pose_stack_from_canonical_aa_atom37(coords, residue_type, chain_iid):
+def pose_stack_from_canonical_aa_atom37(
+    coords,
+    residue_type,
+    chain_iid,
+    *,
+    return_chain_ind=False,
+    return_atom_mapping=False,
+    return_block_has_missing_atoms=False,
+):
     """Construct eagerly from the standard protein-only AtomWorks encoding."""
     return prepare_canonical_aa_atom37_builder(residue_type, chain_iid, coords.device)(
-        coords
+        coords,
+        return_chain_ind=return_chain_ind,
+        return_atom_mapping=return_atom_mapping,
+        return_block_has_missing_atoms=return_block_has_missing_atoms,
     )
 
 

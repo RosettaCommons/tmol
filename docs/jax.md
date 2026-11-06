@@ -484,8 +484,11 @@ canonical chemistry subset. Use `prepare_canonical_aa_atom37_builder` before
 transformations. This restricted 1..20 token format is separate from the full
 molecular context API above; nonprotein tokens reject explicitly. Export keeps
 coordinate derivatives, returns float32 slots with zeros for absent atoms, and
-uses JAX int32 identity/chain arrays. Optional canonical-constructor return
-mappings are not implemented.
+uses JAX int32 identity/chain arrays. The canonical constructor and prepared
+builder accept `return_chain_ind`, `return_atom_mapping`, and
+`return_block_has_missing_atoms`; requested metadata accompanies the pose in a
+dictionary. Atom mappings refer to left-justified canonical residue indices,
+including when the source contains padding.
 
 AtomWorks 3.0.4's published package imports Torch during structure preparation
 when Torch is installed. The [pinned development constraint](shared_core.md)

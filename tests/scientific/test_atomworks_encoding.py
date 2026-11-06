@@ -162,3 +162,82 @@ def test_atomworks_ubiquitin_full_score_and_source_gradient(backend):
             np.isfinite(b.numpy(energy)).all() and np.isfinite(b.numpy(gradient)).all()
         )
         assert np.linalg.norm(b.numpy(gradient)) > 1
+
+
+def test_atomworks_constructor_returns_left_justified_atom_identity(backend):
+    from tmol_core.io.atomworks_encoding import ATOMWORKS_ATOM37_NAMES
+    from tmol_core.io.canonical_ordering import CanonicalOrdering
+
+    b = backend
+    io = import_module("tmol_jax.io" if b.framework == "jax" else "tmol.io")
+    original, original_tokens, _ = ubiquitin_encoding()
+    source = np.full((2, 4, 37, 3), np.nan, np.float32)
+    tokens = np.zeros((2, 4), np.int32)
+    chains = np.full((2, 4), -1, np.int32)
+    for p, (indices, chain) in enumerate((([0, 2, 3], 9), ([0, 3], 4))):
+        source[p, indices] = original[0, : len(indices)]
+        tokens[p, indices] = original_tokens[0, : len(indices)]
+        chains[p, indices] = chain
+    options = dict(
+        return_chain_ind=True,
+        return_atom_mapping=True,
+        return_block_has_missing_atoms=True,
+    )
+    if b.framework == "jax":
+        x = b.module.device_put(source, b.device)
+        bind = io.prepare_canonical_aa_atom37_builder(tokens, chains, b.device).prepare(
+            x, **options
+        )
+    else:
+        x = b.module.tensor(source, device=b.device, requires_grad=True)
+        tokens_device = b.module.as_tensor(tokens, device=b.device)
+        chains_device = b.module.as_tensor(chains, device=b.device)
+
+        def bind(y):
+            return io.pose_stack_from_canonical_aa_atom37(
+                y, tokens_device, chains_device, **options
+            )
+
+    pose, details = bind(x)
+    np.testing.assert_array_equal(
+        b.numpy(details["chain_ind"]), [[9, 9, 9, -1], [4, 4, -1, -1]]
+    )
+    assert not b.numpy(details["block_has_missing_atoms"]).any()
+    canonical, packed = map(
+        b.numpy, (details["can_atom_mapping"], details["ps_atom_mapping"])
+    )
+    assert canonical.shape[1] == 3 and packed.shape == (len(canonical), 2)
+    np.testing.assert_array_equal(canonical[:, 0], packed[:, 0])
+    co = CanonicalOrdering.from_chemdb(pose.packed_block_types.chem_db)
+    types, offsets = map(b.numpy, (pose.block_type_ind, pose.block_coord_offset))
+    expected_count = sum(
+        len(pose.packed_block_types.active_block_types[t].atoms)
+        for t in types.flat
+        if t >= 0
+    )
+    assert len(canonical) == expected_count == len(set(map(tuple, packed)))
+    selected, expected_gradient = [], np.zeros_like(source)
+    for (p, block, atom), (_, flat) in zip(canonical, packed):
+        residue = pose.packed_block_types.active_block_types[types[p, block]]
+        name = residue.atoms[flat - offsets[p, block]].name
+        assert co.restypes_ordered_atom_names[residue.io_equiv_class][atom] == name
+        source_row = np.flatnonzero(tokens[p])[block]
+        slots = ATOMWORKS_ATOM37_NAMES[residue.io_equiv_class]
+        if (
+            name in slots
+            and np.isfinite(source[p, source_row, slots.index(name)]).all()
+        ):
+            slot = slots.index(name)
+            np.testing.assert_array_equal(
+                b.numpy(pose.coords)[p, flat], source[p, source_row, slot]
+            )
+            expected_gradient[p, source_row, slot] = 1
+            selected.append((p, flat))
+    p, a = np.asarray(selected).T
+    if b.framework == "jax":
+        derivative = b.module.jit(
+            b.module.grad(lambda y: bind(y)[0].coords[p, a].sum())
+        )(x)
+    else:
+        derivative = b.module.autograd.grad(pose.coords[p, a].sum(), x)[0]
+    np.testing.assert_array_equal(b.numpy(derivative), expected_gradient)

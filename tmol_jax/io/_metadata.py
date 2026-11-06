@@ -4,6 +4,55 @@ import attrs
 import numpy as np
 
 
+def canonical_atom_mappings(pose, ordering):
+    """Map each real pose atom to the left-justified canonical identity."""
+    import jax
+    from tmol_core.io.canonical import _create_bt_to_canonical_atom_mapping
+
+    pbt = pose.packed_block_types
+    _, mapping = _create_bt_to_canonical_atom_mapping(ordering, pbt)
+    types = np.asarray(pose.block_type_ind)
+    local = np.arange(pbt.max_n_atoms)
+    real = (types[..., None] >= 0) & (
+        local < np.asarray(pbt.n_atoms)[np.maximum(types, 0), None]
+    )
+    p, b, a = np.nonzero(real)
+    canonical = np.stack((p, b, mapping[types[p, b], a]), axis=-1)
+    packed = np.stack((p, np.asarray(pose.block_coord_offset)[p, b] + a), axis=-1)
+    return {
+        name: jax.device_put(value.astype(np.int32), pbt.n_atoms.device)
+        for name, value in (
+            ("can_atom_mapping", canonical),
+            ("ps_atom_mapping", packed),
+        )
+    }
+
+
+def canonical_construction_result(
+    pose,
+    ordering,
+    chains,
+    real,
+    missing,
+    *,
+    return_chain_ind,
+    return_atom_mapping,
+    return_block_has_missing_atoms,
+):
+    import jax
+
+    details = {}
+    if return_block_has_missing_atoms:
+        details["block_has_missing_atoms"] = jax.device_put(missing, pose.device)
+    if return_chain_ind:
+        details["chain_ind"] = jax.device_put(
+            np.where(real, chains, -1).astype(np.int32), pose.device
+        )
+    if return_atom_mapping:
+        details.update(canonical_atom_mappings(pose, ordering))
+    return (pose, details) if details else pose
+
+
 def canonical_metadata_for_pose(pose, canonical, order, rows, atom_indices, authors):
     info = attrs.evolve(pose.pdb_info, chain_id=authors)
     width = pose.max_n_blocks

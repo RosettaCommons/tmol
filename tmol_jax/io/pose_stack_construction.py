@@ -181,6 +181,8 @@ def pose_stack_from_canonical_form(
     ligand_hydrogens=None,
     require_all_metal_donors=None,
     return_block_has_missing_atoms=False,
+    return_chain_ind=False,
+    return_atom_mapping=False,
     packer_atoms=None,
 ):
     """Select chemical variants and build a pose from canonical atom identities.
@@ -392,15 +394,17 @@ def pose_stack_from_canonical_form(
     object.__setattr__(result, "_canonical_metal_replay", metal_replay)
     object.__setattr__(result, "_canonical_context_replay", context_replay)
 
-    import jax
+    from ._metadata import canonical_construction_result
 
-    return (
-        (
-            result,
-            {"block_has_missing_atoms": jax.device_put(missing_nonleaf, result.device)},
-        )
-        if return_block_has_missing_atoms
-        else result
+    return canonical_construction_result(
+        result,
+        co,
+        chains,
+        real,
+        missing_nonleaf,
+        return_chain_ind=return_chain_ind,
+        return_atom_mapping=return_atom_mapping,
+        return_block_has_missing_atoms=return_block_has_missing_atoms,
     )
 
 

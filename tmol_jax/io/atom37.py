@@ -184,7 +184,16 @@ class PreparedAtom37PoseBuilder:
     def _mapped_source(self, coords):
         return coords[:, self.routing[0], self.routing[1]]
 
-    def prepare(self, example_coords, *, opt_h=False, seed=None):
+    def prepare(
+        self,
+        example_coords,
+        *,
+        opt_h=False,
+        seed=None,
+        return_chain_ind=False,
+        return_atom_mapping=False,
+        return_block_has_missing_atoms=False,
+    ):
         if isinstance(example_coords, jax.core.Tracer):
             raise ValueError("prepare Atom37 chemistry outside JAX transformations")
         from .pose_stack_construction import pose_stack_from_canonical_form
@@ -239,6 +248,7 @@ class PreparedAtom37PoseBuilder:
             build_missing_context=True,
             ligand_hydrogens="input",
             return_block_has_missing_atoms=True,
+            return_chain_ind=return_chain_ind,
             packer_atoms=lambda rt: input_packer_atoms(self.context)(rt),
         )
         if self.fragment_mapping is not None:
@@ -271,15 +281,28 @@ class PreparedAtom37PoseBuilder:
                 cf["res_types"],
             )
 
+        outputs = {}
+        if return_chain_ind:
+            outputs["chain_ind"] = details["chain_ind"]
+        if return_block_has_missing_atoms:
+            outputs["block_has_missing_atoms"] = details["block_has_missing_atoms"]
+        if return_atom_mapping:
+            from ._metadata import canonical_atom_mappings
+
+            outputs.update(
+                canonical_atom_mappings(packed, self.context.canonical_ordering)
+            )
+
         def bind(coords):
             if coords.shape[0] != count:
                 raise ValueError("prepared Atom37 batch size changed; prepare again")
-            return replay(self._canonical_coords(coords))
+            result = replay(self._canonical_coords(coords))
+            return (result, dict(outputs)) if outputs else result
 
         return bind
 
-    def __call__(self, coords, *, opt_h=False, seed=None):
-        return self.prepare(coords, opt_h=opt_h, seed=seed)(coords)
+    def __call__(self, coords, *, opt_h=False, seed=None, **return_options):
+        return self.prepare(coords, opt_h=opt_h, seed=seed, **return_options)(coords)
 
 
 def prepare_atom37_pose_builder(structure, context):
@@ -337,6 +360,9 @@ def pose_stack_from_atom37_and_topology(
     *,
     packer_seed=None,
     return_context=False,
+    return_chain_ind=False,
+    return_atom_mapping=False,
+    return_block_has_missing_atoms=False,
     **canonical_options,
 ):
     """Construct eagerly from shared atom identities and authoritative coordinates.
@@ -359,7 +385,15 @@ def pose_stack_from_atom37_and_topology(
         )
     builder = prepare_atom37_pose_builder(biotite_structure, context)
     builder.template.update(canonical_options)
-    pose = builder(atom37_coords, opt_h=not no_optH, seed=packer_seed)
+    pose = builder(
+        atom37_coords,
+        opt_h=not no_optH,
+        seed=packer_seed,
+        return_chain_ind=return_chain_ind and not return_context,
+        return_atom_mapping=return_atom_mapping and not return_context,
+        return_block_has_missing_atoms=return_block_has_missing_atoms
+        and not return_context,
+    )
     return (pose, context) if return_context else pose
 
 
@@ -451,6 +485,10 @@ def pose_stack_from_atom37(
     res_not_connected=None,
     no_optH=True,
     packer_seed=None,
+    return_context=False,
+    return_chain_ind=False,
+    return_atom_mapping=False,
+    return_block_has_missing_atoms=False,
 ):
     """Build eagerly from residue/chain tensors and authoritative slot coordinates."""
     builder = prepare_atom37_tensor_builder(
@@ -464,4 +502,13 @@ def pose_stack_from_atom37(
         covalent_bonds=covalent_bonds,
         res_not_connected=res_not_connected,
     )
-    return builder(atom37_coords, opt_h=not no_optH, seed=packer_seed)
+    result = builder(
+        atom37_coords,
+        opt_h=not no_optH,
+        seed=packer_seed,
+        return_chain_ind=return_chain_ind and not return_context,
+        return_atom_mapping=return_atom_mapping and not return_context,
+        return_block_has_missing_atoms=return_block_has_missing_atoms
+        and not return_context,
+    )
+    return (result, context) if return_context else result

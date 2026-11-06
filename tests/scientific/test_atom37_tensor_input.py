@@ -154,3 +154,49 @@ def test_tensor_atom37_gap_suppresses_bond_without_inventing_termini(backend):
     energy, gradient = b.channel_values_and_gradients(b.numpy(pose.coords))
     assert energy.shape == (25, 1)
     assert np.isfinite(energy).all() and np.isfinite(gradient).all()
+
+
+def test_tensor_atom37_ligand_returns_custom_identity_metadata(backend):
+    b, io, source, topology, context = tensor_fixture(backend, "ligand")
+    if b.framework == "jax":
+        x = b.module.device_put(source, b.device)
+        options = topology
+    else:
+        x = b.module.tensor(source, device=b.device, requires_grad=True)
+        options = {
+            key: None if value is None else b.module.as_tensor(value, device=b.device)
+            for key, value in topology.items()
+        }
+    pose, details = io.pose_stack_from_atom37(
+        x,
+        context=context,
+        **options,
+        return_atom_mapping=True,
+        return_chain_ind=True,
+        return_block_has_missing_atoms=True,
+    )
+    canonical, packed = map(
+        b.numpy, (details["can_atom_mapping"], details["ps_atom_mapping"])
+    )
+    pbt = pose.packed_block_types
+    types, offsets = map(b.numpy, (pose.block_type_ind, pose.block_coord_offset))
+    assert pbt.chem_db is context.parameter_database.chemical
+    assert not b.numpy(details["block_has_missing_atoms"]).any()
+    assert len(packed) == sum(
+        len(pbt.active_block_types[t].atoms) for t in types.flat if t >= 0
+    )
+    for (p, r, a), (_, flat) in zip(canonical, packed):
+        residue = pbt.active_block_types[types[p, r]]
+        name = residue.atoms[flat - offsets[p, r]].name
+        assert (
+            context.canonical_ordering.restypes_ordered_atom_names[
+                residue.io_equiv_class
+            ][a]
+            == name
+        )
+        np.testing.assert_array_equal(b.numpy(pose.coords)[p, flat], source[p, r, a])
+    again, returned = io.pose_stack_from_atom37(
+        x, context=context, **options, return_context=True, return_atom_mapping=True
+    )
+    assert returned is context
+    np.testing.assert_array_equal(b.numpy(again.coords), b.numpy(pose.coords))

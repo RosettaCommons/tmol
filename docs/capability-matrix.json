@@ -480,18 +480,18 @@
   },
   "acceptance_gaps": {
     "mature_functionality": [
-      "Latest Atom37/pose-concatenation adapters require exact artifact/CUDA gates; fragment-attribution cold/memory gaps remain measured",
-      "Latest tensor-only Atom37 API gates and remaining constructor options; failing mature HYP missing-sidechain source-gradient regression under repair",
+      "Remaining constructor return options and complete public task/design compatibility require implementation or matched validation; current Atom37 and concatenation cases have exact installed CPU and actual CUDA coverage.",
+      "Latest standard AtomWorks encoding, tensor gap semantics and shared default chemistry have focused CPU evidence; matching artifact/CUDA gates pending. HYP missing-sidechain source-gradient regression is fixed and validated on CPU/CUDA plus bounded Apple callers.",
       "Complete task/design API compatibility, changed-port and constrained-identity imposition",
       "Mature optimizer checkpoint/API behavior and matched trajectory validation",
       "Exhaustive custom database/public score-option compatibility"
     ],
     "validation_and_performance": [
-      "Published a0a and private91f have matching clean installed CPU gates;91f JAX CUDA passed,Torch CUDA pending;latest input adapters need new source artifacts",
+      "Frozen cf0e43 has exact matching clean installed CPU and actual JAX/Torch CUDA gates; later canonical/default adapters require their own artifact/device gates.",
       "Matched mature end-to-end cold/warm runtime and peak host/device memory unresolved",
       "Core measured mature molecular minimization regressions remain under investigation",
-      "Corrected a0a and focused cf7 header Apple gates passed; small workflow Metal runtime/memory and earlier biotin/minimization exceptions remain. No repeat Apple requested for unchanged native sources.",
-      "AtomWorks3.0.4 imports Torch optionally when installed during host input preparation. Clean Torch-free installs pass; mixed-environment import boundary needs validated dependency correction. Exact91f full-workflow controls attribute453-595MiB extra peak process memory and20-35% cold-time overhead to this optional import; blocking controls are diagnostic only."
+      "Corrected a0a, focused cf7 and bounded cf0e hydrogen Apple checks passed. Small workflow Metal runtime/memory and earlier biotin/minimization exceptions remain; native hydrogen reconstruction executes CPU even in the Metal scoring/annealing lane.",
+      "Ordinary PyPI AtomWorks3.0.4 can import installed Torch during host preparation. The documented immutable dependency constraint was resolved and validated by normal pip installation with Torch installed/unloaded, no import blocker, and full 9278-atom fragment values/gradients. This explicit route does not change the PyPI default. Cold-time and host-memory gaps against mature Torch remain."
     ],
     "framework_specific_or_not_mature_parity": [
       "Higher derivatives through native torsion/forward-kinematics kernels are not advertised by mature Torch either",
@@ -502,7 +502,7 @@
   },
   "score_file_options": {
     "torch": "implemented",
-    "jax": "exact_cpu_installed_and_jax_cuda_validated_torch_cuda_pending",
+    "jax": "cpu_installed_and_cuda_validated",
     "repro_fixture": [
       "tests/scientific/test_score_files.py",
       "tests/scientific/test_soft_repulsion.py"
