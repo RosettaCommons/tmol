@@ -18,7 +18,6 @@ from tmol.pack._packer_task import (
     DEFAULT_CHI_SAMPLE_LIMIT,
 )
 from tmol.numeric import coord_dihedrals
-from tmol.utility.tensor._common_operations import _exclusive_cumsum1d
 
 from tmol_core.pack.opth import (  # noqa: F401
     OptHSamplerRTCache,
@@ -53,88 +52,48 @@ def _opth_fill_dofs(
        each flip / proton-chi rotamer; correct_phi_c_from_measured_chi turns
        it into the intended dihedral.
     """
-    pbt = pose_stack.packed_block_types
-    dev = conf_dofs_kto.device
-
-    # Per-sampler-rotamer lookup vectors (torch, length n_rots)
-    bt_inds = block_type_ind_for_conformer[conf_inds_for_sampler]
-    at_offs = n_dof_atoms_offset_for_conformer[conf_inds_for_sampler]
-
-    # Source offsets in orig_dofs_kto: mirrors create_full_dof_inds_to_copy_...
-    orig_bt_ind = (
-        pose_stack.block_type_ind[pose_stack.block_type_ind != -1]
-        .view(-1)
-        .to(torch.int64)
+    from ._conformer_execution import (
+        copy_current_conformer_dofs,
+        reset_opth_dofs,
+        assign_chi_dofs,
     )
-    orig_at_off_base = _exclusive_cumsum1d(pbt.n_atoms[orig_bt_ind]).to(torch.int64)
-    flat_block_for_gbt = task.global_block_ind_for_considered_block_types
-    real_idx_for_flat = torch.full(
-        (pose_stack.block_type_ind.shape[0] * pose_stack.block_type_ind.shape[1],),
-        -1,
-        dtype=torch.int64,
-        device=dev,
-    )
-    real_idx_for_flat[pose_stack.block_type_ind.view(-1) != -1] = torch.arange(
-        orig_bt_ind.shape[0], dtype=torch.int64, device=dev
-    )
-    orig_at_offs = orig_at_off_base[
-        real_idx_for_flat[flat_block_for_gbt[gbt_for_conformer[conf_inds_for_sampler]]]
-    ]
-
-    # Step 1: vectorised all-atom copy
-    n_rots = conf_inds_for_sampler.shape[0]
-    n_atoms_per_rot = pbt.n_atoms[bt_inds]
-    dummy = (
-        torch.arange(pbt.max_n_atoms, dtype=torch.int64, device=dev)
-        .view(1, -1)
-        .expand(n_rots, -1)
-    )
-    real_mask = dummy < n_atoms_per_rot.unsqueeze(1)
-    dst = (at_offs.unsqueeze(1).expand(-1, pbt.max_n_atoms) + dummy)[real_mask]
-    src = (orig_at_offs.unsqueeze(1).expand(-1, pbt.max_n_atoms) + dummy)[real_mask]
-    conf_dofs_kto[dst + 1, :] = orig_dofs_kto[src + 1, :]
-
-    # Steps 2 & 3: only for rotamers that have a chi override
-    if chi_atoms.shape[0] == 0:
-        return
-
-    chi_mask = chi_atoms >= 0
-    has_chi_override = chi_mask.any(dim=1)
-    dofs_ideal_t = pbt.rotamer_kinforest.dofs_ideal
-    opth_cache = pbt.opth_sample_cache
-
-    # Reset NHQ atoms downstream of the flipped chi to ideal geometry. Keep
-    # this entirely on-device: reading each rotamer's offsets with .item()
-    # serializes large CUDA batches.
-    if flip_NHQ:
-        downstream = opth_cache.nhq_downstream_kfo[bt_inds]
-        downstream_count = opth_cache.nhq_downstream_count[bt_inds]
-        downstream_slot = torch.arange(
-            downstream.shape[1], dtype=torch.int32, device=dev
-        )
-        reset_mask = (downstream_slot[None, :] < downstream_count[:, None]) & (
-            has_chi_override[:, None]
-        )
-        reset_k = downstream[reset_mask].to(torch.int64)
-        reset_bt = bt_inds[:, None].expand_as(downstream)[reset_mask]
-        reset_kto = (downstream + at_offs[:, None].to(downstream.dtype) + 1)[
-            reset_mask
-        ].to(torch.int64)
-        conf_dofs_kto[reset_kto] = dofs_ideal_t[reset_bt, reset_k]
-
-    # Write every chi override in one indexed assignment.
-    from tmol.pack.rotamer._build_rotamers import (
+    from ._build_rotamers import (
         _kinforest_device_indices,
         _build_ring_chi_phi_c_corrections,
     )
 
-    kfidx = _kinforest_device_indices(pbt, dev)
-    corrections = _build_ring_chi_phi_c_corrections(pbt)
-    safe_chi_atoms = chi_atoms.clamp_min(0).to(torch.int64)
-    rotamer_bt = bt_inds[:, None].expand_as(safe_chi_atoms)
-    chi_kto = kfidx[rotamer_bt, safe_chi_atoms] + at_offs[:, None] + 1
-    corrected_chi = chi_vals - corrections[rotamer_bt, safe_chi_atoms]
-    conf_dofs_kto[chi_kto[chi_mask], 3] = corrected_chi[chi_mask]
+    pbt = pose_stack.packed_block_types
+    copy_current_conformer_dofs(
+        pose_stack,
+        task,
+        gbt_for_conformer,
+        block_type_ind_for_conformer,
+        n_dof_atoms_offset_for_conformer,
+        conf_inds_for_sampler,
+        orig_dofs_kto,
+        conf_dofs_kto,
+    )
+    reset_opth_dofs(
+        block_type_ind_for_conformer,
+        n_dof_atoms_offset_for_conformer,
+        conf_inds_for_sampler,
+        chi_atoms,
+        pbt.opth_sample_cache,
+        pbt.rotamer_kinforest.dofs_ideal,
+        conf_dofs_kto,
+        flip_NHQ,
+    )
+    if chi_atoms.numel():
+        assign_chi_dofs(
+            block_type_ind_for_conformer,
+            n_dof_atoms_offset_for_conformer,
+            conf_inds_for_sampler,
+            chi_atoms,
+            chi_vals,
+            _kinforest_device_indices(pbt, conf_dofs_kto.device),
+            _build_ring_chi_phi_c_corrections(pbt).to(dtype=chi_vals.dtype),
+            conf_dofs_kto,
+        )
 
 
 @attr.s(auto_attribs=True, frozen=True)

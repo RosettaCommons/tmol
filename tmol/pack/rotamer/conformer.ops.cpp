@@ -270,7 +270,82 @@ Tensor chi_dof_indices(
                              }));
   return result;
 }
+Tensor conformer_copy_plan(std::vector<Tensor> inputs) {
+  TORCH_CHECK(inputs.size() == 7, "Conformer copy plan requires seven buffers");
+  TORCH_CHECK(
+      inputs[0].dim() == 2, "Original block types must be pose by block");
+  int n = score::common::checked_dispatch_size(
+      inputs[0].numel(), "conformer original blocks");
+  int selected = score::common::checked_dispatch_size(
+      inputs[6].numel(), "conformer selected blocks");
+  Tensor result;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[0].options(), "conformer_copy_plan", ([&] {
+        using Kernels = ConformerDofKernels<
+            score::common::DeviceOperations,
+            device_t,
+            float,
+            int64_t>;
+        auto counts = TPack<int64_t, 1, device_t>::empty({n});
+        auto offsets = TPack<int64_t, 1, device_t>::empty({n});
+        auto segments = TPack<int64_t, 2, device_t>::empty({3, selected});
+        typename Kernels::CopyPlan c{
+            TCAST(inputs[0]),
+            TCAST(inputs[1]),
+            TCAST(inputs[2]),
+            TCAST(inputs[3]),
+            TCAST(inputs[4]),
+            TCAST(inputs[5]),
+            TCAST(inputs[6]),
+            counts.view,
+            offsets.view,
+            segments.view};
+        Kernels::copy_plan(conformer_context, c);
+        result = segments.tensor;
+      }));
+  return result;
+}
+Tensor opth_reset_plan(
+    std::vector<Tensor> inputs, int64_t ideal_width, bool flip) {
+  TORCH_CHECK(
+      inputs.size() == 6 && ideal_width >= 0,
+      "OptH reset requires six buffers and nonnegative ideal width");
+  TORCH_CHECK(
+      inputs[3].dim() == 2 && inputs[3].size(0) == inputs[2].numel(),
+      "OptH reset chi axes differ");
+  int n = score::common::checked_dispatch_product(
+      inputs[2].numel(), inputs[4].size(1), "OptH reset indices");
+  Tensor result;
+  TMOL_DISPATCH_INDEX_DEVICE(inputs[0].options(), "opth_reset_plan", ([&] {
+                               using Kernels = ConformerDofKernels<
+                                   score::common::DeviceOperations,
+                                   device_t,
+                                   float,
+                                   int64_t>;
+                               auto indices =
+                                   TPack<int64_t, 2, device_t>::empty({2, n});
+                               typename Kernels::ResetPlan c{
+                                   TCAST(inputs[0]),
+                                   TCAST(inputs[1]),
+                                   TCAST(inputs[2]),
+                                   TCAST(inputs[3]),
+                                   TCAST(inputs[4]),
+                                   TCAST(inputs[5]),
+                                   indices.view,
+                                   ideal_width,
+                                   flip};
+                               Kernels::opth_reset(conformer_context, c);
+                               result = indices.tensor;
+                             }));
+  return result;
+}
 TMOL_LIBRARY(tmol_conformer_dofs, m) {
+  m.def(
+      "conformer_copy_plan(Tensor[] inputs) -> Tensor",
+      TMOL_FN(&conformer_copy_plan));
+  m.def(
+      "opth_reset_plan(Tensor[] inputs, int ideal_width, bool flip) -> Tensor",
+      TMOL_FN(&opth_reset_plan));
   m.def(
       "chi_dof_indices(Tensor types, Tensor offsets, Tensor conformers, Tensor "
       "atoms, Tensor kinematic_index, int correction_width) -> Tensor",
