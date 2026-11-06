@@ -149,8 +149,11 @@ or one model that can be broadcast. Finite mapped tensor coordinates replace
 the reference coordinates; unmapped slots (`-1`) and non-finite tensor entries
 retain their reference coordinates. TMol-generated atoms, such
 as hydrogens, are left in their built or optimized positions. Gradients from
-TMol coordinates route back to the mapped Atom37 entries even when hydrogen
-optimization is enabled. Missing, out-of-range, or ambiguous routing annotations
+supplied atom coordinates route back to the mapped Atom37 entries even when
+hydrogen optimization is enabled. Frozen residues retain derivatives of their
+built atoms. Sampled coordinates are selected as values: the discrete packing
+choice and the optimized hydrogen positions are not differentiated. Missing,
+out-of-range, or ambiguous routing annotations
 raise `Atom37MappingError`, so callers can handle mapping failures without
 catching unrelated pose-construction errors.
 

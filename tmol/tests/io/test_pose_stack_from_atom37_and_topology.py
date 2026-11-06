@@ -386,8 +386,39 @@ def test_explicit_opth_flags_preserve_previous_results(
     assert not torch.equal(actual.block_type_ind, preserved.block_type_ind) or not (
         torch.allclose(actual.coords, preserved.coords)
     )
-    actual.coords[actual.real_atoms].sum().backward()
-    assert torch.count_nonzero(coords.grad) > 0
+    # Supplied heavy atoms have the identity mapping even after OptH selection.
+    heavy = torch.zeros_like(actual.real_atoms)
+    input_starts = struc.get_residue_starts(structure, add_exclusive_stop=True)
+    for block, kind in enumerate(actual.block_type_ind[0].tolist()):
+        if kind < 0:
+            continue
+        residue = actual.packed_block_types.active_block_types[kind]
+        offset = int(actual.block_coord_offset[0, block])
+        names = set(structure.atom_name[input_starts[block] : input_starts[block + 1]])
+        for atom_index, atom in enumerate(residue.atoms):
+            heavy[0, offset + atom_index] = atom.name in names
+    actual.coords[heavy].sum().backward(retain_graph=True)
+    expected_grad = torch.zeros_like(coords)
+    expected_grad[:, :, 1] = 1
+    torch.testing.assert_close(coords.grad, expected_grad, rtol=0, atol=0)
+
+    # The first residue (MET or LEU) is frozen during OptH. Its generated
+    # hydrogens must retain the same geometry and derivatives as before packing.
+    unoptimized = builder(coords)
+    frozen = actual.packed_block_types.active_block_types[
+        int(actual.block_type_ind[0, 0])
+    ]
+    assert frozen.name3 in ("MET", "LEU")
+    hydrogens = actual.packed_block_types.atom_is_hydrogen[
+        int(actual.block_type_ind[0, 0]), : len(frozen.atoms)
+    ].bool()
+    actual_h = actual.coords[0, : len(frozen.atoms)][hydrogens]
+    reference_h = unoptimized.coords[0, : len(frozen.atoms)][hydrogens]
+    torch.testing.assert_close(actual_h, reference_h, rtol=0, atol=0)
+    gradient = torch.autograd.grad(actual_h.square().sum(), coords)[0]
+    reference_gradient = torch.autograd.grad(reference_h.square().sum(), coords)[0]
+    assert torch.count_nonzero(reference_gradient) > 0
+    torch.testing.assert_close(gradient, reference_gradient, rtol=0, atol=0)
 
 
 def test_prepared_atom37_builder_replays_variable_leaf_presence(
