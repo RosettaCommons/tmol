@@ -152,7 +152,7 @@
         "tests/jax/test_optimization.py",
         "tests/scientific/test_molecular_minimization.py"
       ],
-      "implementation_status": "Complete 25-channel objectives decrease for ligand, noncanonical, D, modified-DNA, metal and mixed cases. The default strong-Wolfe optimizer uses one summed batch objective. Opt-in optimizer=\"armijo\" now executes shared independent-segment policy and compact native transitions; matching mature trajectories, runtime and memory remain pending."
+      "implementation_status": "Complete 25-channel objectives decrease for ligand, noncanonical, D, modified-DNA, metal and mixed cases. The default strong-Wolfe optimizer uses one summed batch objective. Opt-in optimizer=\"armijo\" now executes shared independent-segment policy and compact native transitions; matching mature trajectories, runtime and memory remain pending. Public CartesianMoveMap and coord_mask spelling preserve fixed atoms and decrease full ligand/mixed objectives in both CPU backends; final artifact/CUDA checks pending."
     },
     {
       "domain": "packing_design_mutation",

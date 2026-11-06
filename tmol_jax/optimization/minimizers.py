@@ -44,13 +44,15 @@ def run_cart_min(
     constraint_set: Optional[Any] = None,
     optimizer="strong_wolfe",
     optimizer_kwargs=None,
+    coord_mask=None,
 ):
     """Minimize Cartesian coordinates with L-BFGS and strong-Wolfe search.
 
     The score function is rendered once because topology and atom layout stay
     fixed. ``move_mask`` may select atoms (``[poses, atoms]``) or individual
     xyz components (``[poses, atoms, 3]``); padding is always frozen. The
-    returned pose is new and the input is unchanged.
+    returned pose is new and the input is unchanged. ``coord_mask`` is the mature
+    API spelling for ``move_mask``; supply only one non-None mask.
 
     Set ``return_result=True`` to receive ``(pose, diagnostics)`` where the
     diagnostics mapping includes the final value, gradient, iteration count,
@@ -59,6 +61,10 @@ def run_cart_min(
     settings come from ``optimizer_kwargs`` (shared Torch names/defaults); the
     legacy ``gtol``, ``ftol`` and line-search limit apply only to strong Wolfe.
     """
+    if coord_mask is not None:
+        if move_mask is not None:
+            raise TypeError("supply only one of move_mask and coord_mask")
+        move_mask = coord_mask
     coords, scorer = _prepare_minimization(pose_stack, score_function, constraint_set)
     mask = _coordinate_mask(pose_stack, move_mask)
     shape = coords.shape

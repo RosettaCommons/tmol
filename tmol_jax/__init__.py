@@ -9,7 +9,7 @@ except PackageNotFoundError:
 
 from .io import ResidueBlock, pose_stack_from_pdb, pose_stack_from_residue_blocks
 from .optimization import run_cart_min, run_cart_relax, run_kin_min
-from .kinematics import FoldForest, MoveMap, PoseStackKinematics
+from .kinematics import CartesianMoveMap, FoldForest, MoveMap, PoseStackKinematics
 from .database import ParameterDatabase
 from .chemical.patched_chemdb import PatchedChemicalDatabase
 from .io.canonical_ordering import CanonicalOrdering
@@ -47,6 +47,7 @@ __all__ = [
     "FoldForest",
     "PoseStackKinematics",
     "MoveMap",
+    "CartesianMoveMap",
     "run_cart_min",
     "run_kin_min",
     "run_cart_relax",

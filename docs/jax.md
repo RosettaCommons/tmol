@@ -153,6 +153,10 @@ minimized, diagnostics = run_kin_min(
 )
 ```
 
+`CartesianMoveMap(coord_mask=mask)` carries an atom movement mask for Cartesian
+relax callbacks. `run_cart_min(..., coord_mask=mask)` accepts the mature keyword;
+`move_mask` remains available. Supply only one non-None mask.
+
 The native resolver maps these choices to chemical DOFs. Internal and Cartesian
 minimization share the JAX L-BFGS implementation; the input pose stays unchanged.
 Fixed DOFs remain exact, while atoms downstream of movable bonds or jumps move.

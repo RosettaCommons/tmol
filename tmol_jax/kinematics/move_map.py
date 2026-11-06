@@ -1,8 +1,19 @@
 """Host movement policy using the shared chemistry and native DOF resolver."""
 
+from typing import Any
+
+import attrs
+
 from tmol_core.kinematics.move_map import MoveMap as CoreMoveMap
 
 from .pose import _prepare_palette
+
+
+@attrs.define
+class CartesianMoveMap:
+    """Cartesian atom selection for relax minimizers; None permits every atom."""
+
+    coord_mask: Any = None
 
 
 class MoveMap(CoreMoveMap):
