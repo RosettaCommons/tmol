@@ -79,6 +79,32 @@ class PoseImpositionPlan:
         return self.pose.replace(coords=self.coordinates(rotamer_coords))
 
 
+def _imposed_metadata(pose, old, new, offsets, capacity, blocks):
+    info = copy.deepcopy(pose.pdb_info)
+    if info is not None:
+        from tmol_core.pack.pose_imposition import impose_pdb_atom_metadata
+
+        if info.atom_occupancy is not None and info.atom_b_factor is not None:
+            info.atom_occupancy, info.atom_b_factor = impose_pdb_atom_metadata(
+                old,
+                new,
+                np.asarray(pose.block_coord_offset),
+                np.asarray(offsets),
+                np.asarray(pose.packed_block_types.n_atoms),
+                info.atom_occupancy,
+                info.atom_b_factor,
+                capacity,
+            )
+        for q, block in zip(*np.nonzero(old != new)):
+            if info.res_name is not None and block < len(info.res_name[q]):
+                info.res_name[q][block] = blocks[new[q, block]].name3
+            if info.atom_record_type is not None and block < len(
+                info.atom_record_type[q]
+            ):
+                info.atom_record_type[q][block] = []
+    return info
+
+
 def prepare_pose_imposition(pose, rotamers, retained, assignments):
     """Prepare the shared native selection/layout for retained local assignments.
 
@@ -208,15 +234,7 @@ def prepare_pose_imposition(pose, rotamers, retained, assignments):
             from tmol_jax.pose.pose_stack_builder import _bond_separation
 
             distances = _bond_separation(pose.packed_block_types, new, connections)
-            info = copy.deepcopy(pose.pdb_info)
-            if info is not None:
-                for q, block in zip(*np.nonzero(old != new)):
-                    if info.res_name is not None and block < len(info.res_name[q]):
-                        info.res_name[q][block] = blocks[new[q, block]].name3
-                    if info.atom_record_type is not None and block < len(
-                        info.atom_record_type[q]
-                    ):
-                        info.atom_record_type[q][block] = []
+            info = _imposed_metadata(pose, old, new, offsets, capacity, blocks)
             result = result.replace(
                 inter_block_bondsep=None,
                 near_blocks=jnp.asarray(distances.near_blocks),

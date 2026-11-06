@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from tmol_jax.chemical.constants import MAX_SIG_BOND_SEPARATION
-from .pdb_info import PDBInfo
+from .pdb_info import PDBInfo, DEFAULT_ATOM_OCCUPANCY, DEFAULT_ATOM_B_FACTOR
 from .pose_stack import PoseStack
 
 
@@ -199,6 +199,11 @@ class PoseStackBuilder:
             res_num=numbers,
             res_name=[list(row) for row in res_name_per_pose],
             atom_record_type=records,
+            residue_insertion_codes=np.full(block_types.shape, "", object),
+            atom_occupancy=np.full(
+                coords.shape[:2], DEFAULT_ATOM_OCCUPANCY, np.float32
+            ),
+            atom_b_factor=np.full(coords.shape[:2], DEFAULT_ATOM_B_FACTOR, np.float32),
         )
         return PoseStack(
             packed_block_types=pbt,

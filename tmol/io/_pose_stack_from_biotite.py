@@ -11,6 +11,9 @@ import biotite.structure
 import logging
 import warnings
 
+from tmol_core.io.atom_metadata import (
+    populate_optional_atom_metadata as _populate_optional_atom_metadata,
+)
 from tmol_core.io.atom_array import (  # noqa: F401
     METAL_ORIGIN,
     template_array as _template_array,
@@ -52,7 +55,6 @@ from tmol.io._pose_stack_deconstruction import _canonical_form_from_pose_stack
 from tmol.io._build_context import PoseBuildContext
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
-from tmol.pose._pdb_info import DEFAULT_ATOM_B_FACTOR, DEFAULT_ATOM_OCCUPANCY
 from tmol.utility._biotite_util import _get_all_residue_positions
 from tmol.utility import resolve_device
 
@@ -1452,54 +1454,6 @@ def _populate_canonical_coords(
         biotite_coords = biotite_coords.unsqueeze(0)
     tmol_coords[:, valid_res_inds, valid_atom_inds] = biotite_coords[:, valid_atom_mask]
     return tmol_coords, n_poses
-
-
-def _populate_optional_atom_metadata(
-    biotite_structure: biotite.structure.AtomArray | biotite.structure.AtomArrayStack,
-    n_poses: int,
-    n_residues: int,
-    max_n_canonical_atoms: int,
-    valid_res_inds,
-    valid_atom_inds,
-    valid_atom_mask,
-):
-    biotite_b_factors = None
-    biotite_occupancy = None
-
-    if hasattr(biotite_structure, "b_factor"):
-        b_factor = numpy.asarray(biotite_structure.b_factor)
-        biotite_b_factors = numpy.full(
-            (n_poses, n_residues, max_n_canonical_atoms),
-            DEFAULT_ATOM_B_FACTOR,
-            dtype=numpy.float32,
-        )
-        if n_poses == 1 or b_factor.ndim == 1:
-            biotite_b_factors[:, valid_res_inds, valid_atom_inds] = b_factor[
-                valid_atom_mask
-            ]
-        else:
-            for pose_ind in range(n_poses):
-                biotite_b_factors[pose_ind, valid_res_inds, valid_atom_inds] = b_factor[
-                    pose_ind
-                ][valid_atom_mask]
-
-    if hasattr(biotite_structure, "occupancy"):
-        occupancy = numpy.asarray(biotite_structure.occupancy)
-        biotite_occupancy = numpy.full(
-            (n_poses, n_residues, max_n_canonical_atoms),
-            DEFAULT_ATOM_OCCUPANCY,
-            dtype=numpy.float32,
-        )
-        if n_poses == 1 or occupancy.ndim == 1:
-            biotite_occupancy[:, valid_res_inds, valid_atom_inds] = occupancy[
-                valid_atom_mask
-            ]
-        else:
-            for pose_ind in range(n_poses):
-                biotite_occupancy[pose_ind, valid_res_inds, valid_atom_inds] = (
-                    occupancy[pose_ind][valid_atom_mask]
-                )
-    return biotite_b_factors, biotite_occupancy
 
 
 def _validate_atom37_coords(

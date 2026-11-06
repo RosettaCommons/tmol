@@ -111,6 +111,26 @@ def canonical_form_from_biotite(
             combined["protonation_variants"] = np.broadcast_to(
                 values, (count, len(values))
             ).copy()
+    from tmol_core.io.atom_metadata import populate_optional_atom_metadata
+    from tmol_core.io import structure_context as metadata_policy
+
+    b_factors, occupancy = populate_optional_atom_metadata(
+        atoms,
+        len(models),
+        len(combined["res_types"][0]),
+        co.max_n_canonical_atoms,
+        residues[valid],
+        slots,
+        valid,
+    )
+    combined["atom_b_factor"] = b_factors
+    combined["atom_occupancy"] = occupancy
+    for key, source in (
+        ("metal_origins", metadata_policy._metal_origins(atoms)),
+        ("residue_annotations", metadata_policy._residue_annotations(atoms)),
+    ):
+        if source is not None:
+            combined[key] = np.broadcast_to(source, (len(models), *source.shape)).copy()
     types, chains = combined["res_types"][0], combined["chain_id"][0]
     bonds, disulfides, inferred = covalent_bonds_from_biotite(
         models[0],

@@ -171,6 +171,13 @@ def test_molecular_imposition_keeps_selected_atoms_and_connectivity(
 ):
     r, g, choices, selected = imposition_fixture(backend, name, design=design)
     original = backend.coords().copy()
+    info = backend.pose.pdb_info
+    info.atom_occupancy[:] = (
+        np.arange(info.atom_occupancy.size).reshape(info.atom_occupancy.shape) / 100
+    )
+    info.atom_b_factor[:] = 0.5 + np.arange(info.atom_b_factor.size).reshape(
+        info.atom_b_factor.shape
+    )
     out = impose(backend, r, g, choices)
     xyz, offsets, types = map(
         backend.numpy, (out.coords, out.block_coord_offset, out.block_type_ind)
@@ -183,6 +190,19 @@ def test_molecular_imposition_keeps_selected_atoms_and_connectivity(
     for p, block in np.argwhere(selected >= 0):
         rot = selected[p, block]
         assert types[p, block] == source_types[rot]
+        old_kind = int(backend.numpy(backend.pose.block_type_ind)[p, block])
+        dest = slice(offsets[p, block], offsets[p, block] + n_atoms[types[p, block]])
+        old_offset = int(backend.numpy(backend.pose.block_coord_offset)[p, block])
+        source_metadata = slice(old_offset, old_offset + n_atoms[old_kind])
+        for field, default in (("atom_occupancy", 1.0), ("atom_b_factor", 30.0)):
+            expected_metadata = (
+                getattr(info, field)[p, source_metadata]
+                if types[p, block] == old_kind
+                else default
+            )
+            np.testing.assert_array_equal(
+                getattr(out.pdb_info, field)[p, dest], expected_metadata
+            )
         n = n_atoms[types[p, block]]
         expected[p, offsets[p, block] : offsets[p, block] + n] = source[
             source_offsets[rot] : source_offsets[rot] + n

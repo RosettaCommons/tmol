@@ -152,3 +152,7 @@ molecular objective checks cover the new execution path. The existing
 strong-Wolfe API remains available; general Cartesian/kinematic defaults have not
 yet switched to Armijo. Matched optimizer trajectories, performance and memory
 parity remain separate acceptance gates.
+
+Host PDB metadata and split-block identity maps live in `tmol_core.io`. Torch
+retains its original imports; JAX keeps its legacy label aliases. Both consume
+the same optional atom-annotation projection and packing metadata policy.
