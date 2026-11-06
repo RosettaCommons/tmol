@@ -23,6 +23,12 @@ python scripts/build_jax_native.py --outdir dist/jax
 pip install dist/jax/tmol_core-*.whl dist/jax/tmol_jax-*.whl dist/jax/tmol_jax_native-*.whl
 ```
 
+Source-archive builds require `--source-revision` with the verified full commit
+SHA. Release validation binds core, JAX and native wheel hashes to that revision
+with `scripts/jax_release_manifest.py`; installed checks also verify package
+contents and native library hashes. Same-version artifacts from another revision
+are rejected.
+
 The builder exports the canonical Torch-serialized scoring tables as NumPy
 archives. Installed core/JAX wheels and standalone sdists require no Torch.
 For source development, export tables with
