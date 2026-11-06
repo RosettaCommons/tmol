@@ -89,6 +89,11 @@ slot does not change the true connection count. Torch reserves one slot for
 native fixed-width views, including ligand-only palettes. The native scoring
 backend's connection limit remains an explicit frontend constraint.
 
+`tmol_core.pose.concatenation` validates growing chemical databases by residue
+identity, merges ordered palettes, and preserves batch offsets, fragment identities
+and PDB metadata. Frontends copy coordinate and topology buffers on the requested
+device and concatenate constraints; the common policy reads only shapes and host metadata.
+
 Chemical atom flags, ordered LJ/LK tables, and complete hydrogen-bond family
 tables are prepared in `tmol_core.scoring.atom_types`, `ljlk`, and `hbond`.
 Real atoms must resolve to registered types and finite active parameters. Missing

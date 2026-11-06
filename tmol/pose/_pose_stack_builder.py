@@ -1,7 +1,6 @@
 import copy
 
 import itertools
-from dataclasses import replace
 
 import numpy
 import torch
@@ -22,15 +21,18 @@ from tmol.pose._pose_stack import PoseStack
 from tmol.pose._constraint_set import ConstraintSet
 from tmol.pose._split_block_mapping import SplitBlockMapping
 from tmol.utility.tensor._common_operations import (
-    _exclusive_cumsum1d,
     _exclusive_cumsum2d,
 )
 from tmol.utility import resolve_device
 
-
-def _is_leading_run(items, of) -> bool:
-    """Whether ``items`` begin ``of``, as the same objects."""
-    return len(items) <= len(of) and all(a is b for a, b in zip(items, of))
+from tmol_core.pose.concatenation import (
+    is_leading_run as _is_leading_run,
+    concatenation_layout,
+    widest_packed_block_types,
+    merged_block_types,
+    concatenate_split_mapping,
+    concatenate_pdb_info,
+)
 
 
 class PoseStackBuilder:
@@ -38,22 +40,7 @@ class PoseStackBuilder:
 
     @staticmethod
     def _widest_packed_block_types(pose_stacks):
-        """The packed block types over the largest chemical database.
-
-        Databases grow only by appending residues; each must be a leading run of it.
-        """
-        widest = max(
-            (ps.packed_block_types for ps in pose_stacks),
-            key=lambda pbt: (len(pbt.chem_db.residues), pbt.n_types),
-        )
-        for ps in pose_stacks:
-            residues = ps.packed_block_types.chem_db.residues
-            if not _is_leading_run(residues, widest.chem_db.residues):
-                raise ValueError(
-                    "pose stacks were built from chemical databases neither of "
-                    "which extends the other; build them from one context"
-                )
-        return widest
+        return widest_packed_block_types(pose_stacks)
 
     @classmethod
     @_validate_args
@@ -83,29 +70,19 @@ class PoseStackBuilder:
         if reuse_pbt:
             packed_block_types = pbt0
         else:
-            all_bt = [
-                bt
-                for pose_stack in pose_stacks
-                for bt in pose_stack.packed_block_types.active_block_types
-            ]
-            bt_set = {}
-            for bt in all_bt:
-                if bt.name not in bt_set:
-                    bt_set[bt.name] = bt
-            uniq_bt = [v for _, v in bt_set.items()]
+            uniq_bt = merged_block_types(pose_stacks)
             packed_block_types = PackedBlockTypes.from_restype_list(
                 pbt0.chem_db, pbt0.restype_set, uniq_bt, device
             )
 
-        max_n_blocks = max(pose_stack.max_n_blocks for pose_stack in pose_stacks)
+        layout = concatenation_layout(pose_stacks)
+        max_n_blocks = layout.max_n_blocks
         coords, block_coord_offset = cls._pack_pose_stack_coords(
             packed_block_types, pose_stacks, max_n_blocks, device
         )
 
-        n_poses = sum(len(ps) for ps in pose_stacks)
-        ps_offset = _exclusive_cumsum1d(
-            torch.tensor([len(ps) for ps in pose_stacks], dtype=torch.int64)
-        )
+        n_poses = layout.n_poses
+        ps_offset = torch.from_numpy(layout.pose_offsets)
 
         inter_residue_connections = cls._inter_residue_connections_from_pose_stacks(
             packed_block_types, pose_stacks, n_poses, ps_offset, max_n_blocks, device
@@ -166,37 +143,7 @@ class PoseStackBuilder:
         packed_block_types: PackedBlockTypes,
         pose_stacks: List[PoseStack],
     ) -> SplitBlockMapping | None:
-        """Concatenate split-block metadata and remap original block types."""
-        if not any(
-            pose_stack.split_block_mapping is not None
-            and pose_stack.split_block_mapping.entries
-            for pose_stack in pose_stacks
-        ):
-            return None
-
-        block_type_index_by_name = {
-            block_type.name: index
-            for index, block_type in enumerate(packed_block_types.active_block_types)
-        }
-        combined_entries = []
-        pose_offset = 0
-        for pose_stack in pose_stacks:
-            mapping = pose_stack.split_block_mapping
-            if mapping is not None:
-                source_block_types = pose_stack.packed_block_types.active_block_types
-                combined_entries.extend(
-                    replace(
-                        entry,
-                        pose_ind=pose_offset + entry.pose_ind,
-                        orig_block_type_ind=block_type_index_by_name[
-                            source_block_types[entry.orig_block_type_ind].name
-                        ],
-                    )
-                    for entry in mapping.entries
-                )
-            pose_offset += pose_stack.n_poses
-
-        return SplitBlockMapping(entries=tuple(combined_entries))
+        return concatenate_split_mapping(packed_block_types, pose_stacks)
 
     @classmethod
     @_validate_args
@@ -521,63 +468,10 @@ class PoseStackBuilder:
         ps_offsets: Tensor[torch.int64][:],
         max_n_blocks: int,
     ) -> PDBInfo:
-        ps_offsets = ps_offsets.cpu().numpy()
-
-        max_n_atoms = max(ps.coords.shape[1] for ps in pose_stacks)
-
-        residue_labels = numpy.full((n_poses, max_n_blocks), 0, dtype=int)
-        residue_insertion_codes = numpy.full((n_poses, max_n_blocks), "", dtype=object)
-        chain_labels = numpy.full((n_poses, max_n_blocks), "", dtype=object)
-        atom_occupancy = numpy.full((n_poses, max_n_atoms), 1.0, dtype=numpy.float32)
-        atom_b_factor = numpy.full((n_poses, max_n_atoms), 0.0, dtype=numpy.float32)
-        metal_origins = (
-            numpy.full((n_poses, max_n_blocks), None, dtype=object)
-            if any(ps.pdb_info.metal_origins is not None for ps in pose_stacks)
-            else None
-        )
-        annotations = [ps.pdb_info.residue_annotations for ps in pose_stacks]
-        residue_annotations = (
-            numpy.zeros((n_poses, max_n_blocks), dtype=annotations[0].dtype)
-            if all(a is not None for a in annotations)
-            and len({a.dtype for a in annotations}) == 1
-            else None
-        )
-
-        for i, pose_stack in enumerate(pose_stacks):
-            offset = ps_offsets[i]
-            i_nblocks = pose_stack.pdb_info.residue_labels.shape[1]
-            if pose_stack.pdb_info.metal_origins is not None:
-                metal_origins[offset : (offset + len(pose_stack)), :i_nblocks] = (
-                    pose_stack.pdb_info.metal_origins
-                )
-            if residue_annotations is not None:
-                residue_annotations[offset : (offset + len(pose_stack)), :i_nblocks] = (
-                    pose_stack.pdb_info.residue_annotations
-                )
-            residue_labels[offset : (offset + len(pose_stack)), :i_nblocks] = (
-                pose_stack.pdb_info.residue_labels
-            )
-            residue_insertion_codes[offset : (offset + len(pose_stack)), :i_nblocks] = (
-                pose_stack.pdb_info.residue_insertion_codes
-            )
-            chain_labels[offset : (offset + len(pose_stack)), :i_nblocks] = (
-                pose_stack.pdb_info.chain_labels
-            )
-            i_natoms = pose_stack.coords.shape[1]
-            atom_occupancy[offset : (offset + len(pose_stack)), :i_natoms] = (
-                pose_stack.pdb_info.atom_occupancy
-            )
-            atom_b_factor[offset : (offset + len(pose_stack)), :i_natoms] = (
-                pose_stack.pdb_info.atom_b_factor
-            )
         return PDBInfo(
-            residue_labels=residue_labels,
-            residue_insertion_codes=residue_insertion_codes,
-            chain_labels=chain_labels,
-            atom_occupancy=atom_occupancy,
-            atom_b_factor=atom_b_factor,
-            metal_origins=metal_origins,
-            residue_annotations=residue_annotations,
+            **concatenate_pdb_info(
+                pose_stacks, n_poses, ps_offsets.cpu().numpy(), max_n_blocks
+            )
         )
 
     @classmethod
