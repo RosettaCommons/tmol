@@ -48,7 +48,7 @@ _FIELDS = [
 ]
 
 
-INFERRED_POLYMER_BOND = "_tmol_inferred_polymer_bond"
+from tmol_core.io.atom_array import INFERRED_POLYMER_BOND  # noqa: E402
 
 
 def _pdb_declared_pairs(array, path, model):
