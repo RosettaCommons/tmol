@@ -211,19 +211,15 @@ def _check_budget_frozen_chi(backend, dtype):
     for row in range(2):
         points = backend.pose.coords[row, indices]
         if dtype == np.float64:
-            # Exercise the independent geometric API at the input precision:
-            # frozen values must survive request preparation without an f32
-            # round trip, irrespective of the library table precision.
-            if backend.framework == "jax":
-                from tmol_jax.score.constraint.functions import torsion
-
-                measured = backend.numpy(torsion(points[None])).item()
-            else:
-                from tmol.numeric import coord_dihedrals
-
-                measured = backend.numpy(
-                    coord_dihedrals(*(point[None] for point in points))
-                ).item()
+            # Independent plane-normal geometry avoids both framework helpers,
+            # whose output dtype is itself part of the precision contract.
+            a, b, c, d = backend.numpy(points)
+            axis = c - b
+            normal1, normal2 = np.cross(b - a, axis), np.cross(axis, d - c)
+            measured = np.arctan2(
+                np.dot(np.cross(normal1, normal2), axis / np.linalg.norm(axis)),
+                np.dot(normal1, normal2),
+            )
         else:
             measured = numpy_coord_dihedrals(*backend.numpy(points))
         assert chi.dtype == dtype
