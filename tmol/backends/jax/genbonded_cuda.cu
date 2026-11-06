@@ -15,6 +15,7 @@
 #include "independent_nonbonded_ffi.hh"
 #include "constraint_torsion_ffi.hh"
 #include "kinematics_ffi.hh"
+#include "conformer_ffi.hh"
 #include "forward_kinematics_ffi.hh"
 #include "sampling_ffi.hh"
 
@@ -572,4 +573,25 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets()
         .Attr<double>("reach"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_copy_conformer_dofs,
+    (tmol::jax::run<tmol::jax::CopyConformerDofsKernel, int64_t>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<int64_t>("sampler"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_assign_conformer_chi,
+    tmol::jax::run<tmol::jax::AssignConformerChiKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets(),
     {xla::ffi::Traits::kCmdBufferCompatible});

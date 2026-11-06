@@ -1,12 +1,46 @@
 """Eager CPU execution of the common dynamically sized chi sampler."""
 
 import ctypes
-from functools import lru_cache
+from functools import lru_cache, partial
 
 import jax
 import numpy as np
 
 from tmol_jax._host import invoke
+
+
+@partial(jax.jit, static_argnames=("target", "sampler"))
+def _conformer_dofs(dofs, arguments, *, target, sampler=None):
+    attributes = {} if sampler is None else {"sampler": np.int64(sampler)}
+    return jax.ffi.ffi_call(
+        target,
+        jax.ShapeDtypeStruct(dofs.shape, dofs.dtype),
+        input_output_aliases={0: 0},
+        vmap_method="sequential",
+    )(dofs, *arguments, **attributes)
+
+
+def copy_conformer_dofs(dofs, source, *metadata, sampler):
+    """Transfer finite retained-atom DOFs using shared native chemistry maps.
+
+    The input remains immutable; XLA owns the aliased output allocation. This
+    initializes independent conformers and has no coordinate autodiff rule.
+    """
+    from tmol_jax.score._native import register
+
+    target = "tmol_copy_conformer_dofs"
+    register(target)
+    return _conformer_dofs(dofs, (source, *metadata), target=target, sampler=sampler)
+
+
+def assign_conformer_chi(dofs, chi, *metadata):
+    """Apply sampled chi and shared ring corrections to independent DOFs."""
+    from tmol_jax.score._native import register
+
+    target = "tmol_assign_conformer_chi"
+    register(target)
+    return _conformer_dofs(dofs, (chi, *metadata), target=target)
+
 
 # Native argument order; table contents and fitting belong to tmol_core.
 _TABLE_ARGUMENTS = (

@@ -13,6 +13,7 @@
 #include "independent_nonbonded_ffi.hh"
 #include "constraint_torsion_ffi.hh"
 #include "kinematics_ffi.hh"
+#include "conformer_ffi.hh"
 #include "forward_kinematics_ffi.hh"
 #include <condition_variable>
 #include <cstring>
@@ -553,3 +554,22 @@ extern "C" uint64_t tmol_lk_ball_weighted_workspace_bytes(
     return std::numeric_limits<uint64_t>::max();
   }
 }
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_copy_conformer_dofs,
+    (tmol::jax::run<tmol::jax::CopyConformerDofsKernel, int64_t>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<int64_t>("sampler"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_assign_conformer_chi,
+    tmol::jax::run<tmol::jax::AssignConformerChiKernel>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets());
