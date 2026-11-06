@@ -9,6 +9,8 @@ import biotite.structure
 from tmol_core.chemical import _metal_table
 
 INFERRED_POLYMER_BOND = "_tmol_inferred_polymer_bond"
+FORMAL_CHARGE_SPECIFIED = "tmol_formal_charge_specified"
+METAL_ORIGIN = "tmol_metal_origin"
 
 
 def template_array(structure):

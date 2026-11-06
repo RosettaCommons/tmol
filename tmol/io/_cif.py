@@ -18,10 +18,11 @@ import logging
 import biotite.structure as struc
 import numpy as np
 
+from tmol_core.io.atom_array import FORMAL_CHARGE_SPECIFIED as _FORMAL_CHARGE_SPECIFIED
+
 logger = logging.getLogger(__name__)
 
 _MISSING_CIF_VALUE = ("", ".", "?")
-_FORMAL_CHARGE_SPECIFIED = "tmol_formal_charge_specified"
 _SOURCE_FORMAL_CHARGE = "tmol_source_formal_charge"
 # neutral valence of the atoms whose deposited charge their bonds can contradict
 _CHARGE_VALENCE = {"C": 4, "N": 3, "O": 2, "F": 1, "CL": 1, "BR": 1, "I": 1}
