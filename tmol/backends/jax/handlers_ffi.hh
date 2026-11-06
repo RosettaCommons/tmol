@@ -287,6 +287,11 @@ TMOL_JAX_STAGE(
     tmol_graph_bounds,
     tmol::jax::run_graph_stage<tmol::jax::GraphBoundsStage>, );
 
+TMOL_JAX_STAGE(
+    tmol_armijo,
+    (tmol::jax::run_graph_stage<tmol::jax::ArmijoStage, double, double>),
+    .Attr<double>("first").Attr<double>("second"));
+
 #undef TMOL_JAX_STAGE
 #undef TMOL_JAX_ENERGY
 #undef TMOL_JAX_TRAITS

@@ -42,6 +42,8 @@ def run_cart_min(
     verbose: bool = False,
     return_result: bool = False,
     constraint_set: Optional[Any] = None,
+    optimizer="strong_wolfe",
+    optimizer_kwargs=None,
 ):
     """Minimize Cartesian coordinates with L-BFGS and strong-Wolfe search.
 
@@ -52,7 +54,10 @@ def run_cart_min(
 
     Set ``return_result=True`` to receive ``(pose, diagnostics)`` where the
     diagnostics mapping includes the final value, gradient, iteration count,
-    convergence flag, and termination status.
+    convergence flag, and termination status. ``optimizer="armijo"`` uses the
+    shared mature segmented policy on compact movable coordinates. Its convergence
+    settings come from ``optimizer_kwargs`` (shared Torch names/defaults); the
+    legacy ``gtol``, ``ftol`` and line-search limit apply only to strong Wolfe.
     """
     coords, scorer = _prepare_minimization(pose_stack, score_function, constraint_set)
     mask = _coordinate_mask(pose_stack, move_mask)
@@ -61,18 +66,22 @@ def run_cart_min(
     flat_mask = mask.reshape(-1)
 
     def energy(x_flat):
-        return scorer(x_flat.reshape(shape)).sum()
+        values = scorer(x_flat.reshape(shape))
+        return values if optimizer == "armijo" else values.sum()
 
-    result = _minimize(
+    result = _minimize_selected(
         energy,
         x0,
         flat_mask,
+        jnp.repeat(jnp.arange(shape[0]), shape[1] * shape[2]),
         max_iter,
         history,
         gtol,
         ftol,
         line_search_max_iter,
         verbose,
+        optimizer,
+        optimizer_kwargs,
     )
     final_coords = result["x"].reshape(shape).astype(coords.dtype)
     final_coords = jnp.where(mask, final_coords, coords)
@@ -82,6 +91,45 @@ def run_cart_min(
         diagnostics["initial_fun"] = float(result["initial_fun"])
         return minimized, diagnostics
     return minimized
+
+
+def _minimize_selected(
+    energy,
+    initial,
+    mask,
+    pose_ids,
+    max_iter,
+    history,
+    gtol,
+    ftol,
+    line_search_max_iter,
+    verbose,
+    optimizer,
+    optimizer_kwargs,
+):
+    if optimizer == "strong_wolfe":
+        if optimizer_kwargs:
+            raise ValueError("optimizer_kwargs requires the Armijo execution path")
+        return _minimize(
+            energy,
+            initial,
+            mask,
+            max_iter,
+            history,
+            gtol,
+            ftol,
+            line_search_max_iter,
+            verbose,
+        )
+    if optimizer != "armijo":
+        raise ValueError("optimizer must be 'armijo' or 'strong_wolfe'")
+    from ._segmented_minimization import minimize_pose_variables
+
+    settings = dict(max_iter=max_iter, history_size=history, verbose=verbose)
+    settings.update(optimizer_kwargs or {})
+    return _validate_minimum(
+        minimize_pose_variables(energy, initial, mask, pose_ids, settings)
+    )
 
 
 def _prepare_minimization(pose_stack, score_function, constraint_set):
@@ -124,6 +172,10 @@ def _minimize(
             verbose=verbose,
             value_and_grad=jax.jit(jax.value_and_grad(energy)),
         )
+    return _validate_minimum(result)
+
+
+def _validate_minimum(result):
     if not bool(jnp.isfinite(result["x"]).all()) or not bool(
         jnp.isfinite(result["fun"])
     ):
@@ -151,6 +203,8 @@ def run_kin_min(
     verbose=False,
     return_result=False,
     constraint_set=None,
+    optimizer="strong_wolfe",
+    optimizer_kwargs=None,
 ):
     """Minimize selected internal DOFs through shared native molecular kinematics.
 
@@ -159,6 +213,9 @@ def run_kin_min(
     of selected bonds or jumps move. The original pose is unchanged. Diagnostics
     contain flat DOFs and their masked gradient, rather than Cartesian coordinates.
     This host-controlled optimizer requires first reverse derivatives only.
+    ``optimizer="armijo"`` selects the shared mature segmented policy, with
+    ``optimizer_kwargs`` using Torch setting names. Only movable DOFs enter its
+    history; independent poses retain independent line search and convergence.
     """
     from tmol_jax.kinematics import PoseStackKinematics
 
@@ -176,18 +233,23 @@ def run_kin_min(
         return mapping(dofs)
 
     def energy(flat):
-        return scorer(coordinates(flat)).sum()
+        values = scorer(coordinates(flat))
+        return values if optimizer == "armijo" else values.sum()
 
-    result = _minimize(
+    node_pose = kinematics.atom_ids // pose_stack.max_n_atoms_per_pose
+    result = _minimize_selected(
         energy,
         initial.reshape(-1),
         mask.reshape(-1),
+        jnp.repeat(node_pose, initial.shape[1]),
         max_iter,
         history,
         gtol,
         ftol,
         line_search_max_iter,
         verbose,
+        optimizer,
+        optimizer_kwargs,
     )
     final_coords = jax.jit(coordinates)(result["x"])
     if not bool(jnp.isfinite(final_coords).all()):

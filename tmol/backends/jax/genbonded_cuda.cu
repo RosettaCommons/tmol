@@ -2,6 +2,7 @@
 #include <cuda_runtime_api.h>
 #include <moderngpu/cta_reduce.hxx>
 #include <moderngpu/loadstore.hxx>
+#include "armijo_ffi.hh"
 #include "cartbonded_ffi.hh"
 #include "backbone_torsion_ffi.hh"
 #include "rotamer_backbone_ffi.hh"

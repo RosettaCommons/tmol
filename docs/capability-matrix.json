@@ -310,6 +310,16 @@
         "tests/scientific/test_fragment_input.py"
       ],
       "implementation_status": "Common named cut-bond and original-atom plans; independent physical groups for repeated ligands. Real protein-ligand and repeated ligand-only CPU cases preserve all 25 term values and physical gradients against uncut molecules in float64 (2e-6 tolerance), nonzero genbonded, default input packing and ligand minimization. Reconstruction preserves coordinate dtype/autodiff, original author labels, per-atom metadata and constraint atoms. Shared fixes also improve Torch; complete fragment interaction attribution/export and fresh CUDA/package gates remain pending. Externally bonded fragmented-ligand generation is not established by these cases."
+    },
+    {
+      "domain": "mature_segmented_armijo",
+      "torch": "supported",
+      "jax": "opt_in_cartesian_kinematic_and_array_minimization_cpu",
+      "repro_fixture": [
+        "tests/scientific/test_armijo_execution.py",
+        "tests/jax/test_armijo_native.py"
+      ],
+      "implementation_status": "Common settings/setup, compact H0=I direction, history, restart/retirement and per-segment convergence; typed shared native Armijo transitions through JAX FFI. Dense/scattered independent objectives, full25-channel molecular objectives and public compact Cartesian/kinematic execution pass CPU invariants in both frameworks. Existing strong-Wolfe default remains; exact CUDA/package, matched trajectories, cold/warm time and peak memory pending. Complete optimizer checkpoint/API parity is not established."
     }
   ],
   "validation": "PR629 remains draft. Exact e8 ABI4 CPU artifacts pass45 molecular and257 shared checks without Torch. Exact H200 artifacts pass170 JAX and23 Torch CUDA affected checks plus three full prepared-group workflows. Later input/metadata increments need matching package/CUDA gates. Mature Torch complete cold/warm/peak-memory parity and actual final Metal remain unresolved.",

@@ -534,14 +534,15 @@ def anchor_library_mask(plans, shape, sampler):
 
 def anchor_library_rows(groups, block_types, pose_of, block_of, type_of, sample_rows):
     """Map each original anchor identity to its sampled source-library rows."""
+    pose_of, block_of, type_of = map(numpy.asarray, (pose_of, block_of, type_of))
     out = {}
     for group in groups:
         kind = int(block_types[group.pose, group.anchor])
-        wanted = [
-            i
-            for i, identity in enumerate(zip(pose_of, block_of, type_of))
-            if tuple(map(int, identity)) == (group.pose, group.anchor, kind)
-        ]
+        wanted = numpy.flatnonzero(
+            (pose_of == group.pose) & (block_of == group.anchor) & (type_of == kind)
+        )
+        if not wanted.size:
+            continue
         rows = numpy.flatnonzero(numpy.isin(sample_rows, wanted))
         if rows.size:
             out[group.pose, group.anchor] = rows

@@ -140,6 +140,19 @@ bonds, metal coordination, author identities and unresolved-atom placeholders.
 The default polymer-port policy uses only shared chemical/canonical metadata.
 Torch retains pose tensor conversion and its existing public file APIs.
 
+The mature segmented Armijo optimizer now shares its native state transitions,
+compact H0=I direction, circular history, restart/retirement and independent
+convergence policy. Shared setup also owns settings validation, legacy checkpoint
+migration, segment layout and history allocation rules. Torch retains parameter
+storage, segmented reductions and
+linear-algebra execution. The common policy imports neither framework; a JAX
+executor supplies functional array storage and native transition calls through
+`tmol_jax.optimization.armijo_minimize`. Complete independent-segment and
+molecular objective checks cover the new execution path. The existing
+strong-Wolfe API remains available; general Cartesian/kinematic defaults have not
+yet switched to Armijo. Matched optimizer trajectories, performance and memory
+parity remain separate acceptance gates.
+
 Host PDB metadata and split-block identity maps live in `tmol_core.io`. Torch
 retains its original imports; JAX keeps its legacy label aliases. Both consume
 the same optional atom-annotation projection and packing metadata policy.
