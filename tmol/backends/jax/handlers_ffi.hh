@@ -275,6 +275,10 @@ TMOL_JAX_STAGE(
     tmol_canonical_policy,
     tmol::jax::run_graph_stage<tmol::jax::CanonicalPolicyStage>, );
 
+TMOL_JAX_STAGE(
+    tmol_hydrogen_completion,
+    tmol::jax::run_graph_stage<tmol::jax::HydrogenStage>, );
+
 #undef TMOL_JAX_STAGE
 #undef TMOL_JAX_ENERGY
 #undef TMOL_JAX_TRAITS

@@ -304,10 +304,15 @@ the individual native decision stages support `jit` and `vmap`.
 The default PDB/Biotite palette includes all ordinary residues and variants in
 the chemical database, including D residues and nucleic acids. Custom ligands
 use the supplied chemical ordering and palette. Standalone metal sites still
-require an explicitly prepared palette. General metal geometry/donor inference, protonation-state inference,
-and generated-hydrogen rebuilding remain unfinished. This loader preserves
-supplied hydrogen coordinates; comparisons to Torch must request its matching
-`ligand_hydrogens="input"` policy. Missing non-leaf atoms raise unless `build_missing_context=True` enables
+require an explicitly prepared palette. General metal geometry/donor inference and protonation-state inference remain
+unfinished. `ligand_hydrogens="input"` (the JAX default) retains generated named
+hydrogens only when their observed heavy parent and bond distance are consistent
+with the common policy. `"names"` and `"rebuild"` reconstruct generated hydrogens.
+Common native geometry reorients eligible rebuilt hydrogens from heavy neighbors,
+including connected residues. Its fixed-topology primitive supports `jit`, `vmap`
+and first/second reverse derivatives in coordinates and ideal bond lengths;
+forward-mode and third derivatives are not implemented. Comparisons to Torch
+must request matching input policies. Missing non-leaf atoms raise unless `build_missing_context=True` enables
 the shared context planner. Unsupported declared inference options raise. Use exact residue blocks for prepared metal states.
 `res_not_connected` retains the JAX terminated-break convention; `res_gap`
 suppresses bonds without forcing terminal variants.

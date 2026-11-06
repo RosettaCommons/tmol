@@ -101,10 +101,6 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
         raise NotImplementedError(
             "automatic canonical metal coordination is not implemented"
         )
-    if cf.get("ligand_hydrogens", "input") != "input":
-        raise NotImplementedError(
-            "canonical generated-hydrogen rebuilding is not implemented"
-        )
     for name in ("metal_sites", "metal_coordination", "protonation_variants"):
         if cf.get(name) is not None:
             raise NotImplementedError(

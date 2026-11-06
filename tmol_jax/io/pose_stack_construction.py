@@ -157,6 +157,7 @@ def pose_stack_from_canonical_form(
     *,
     compact_padding=False,
     build_missing_context=False,
+    ligand_hydrogens=None,
 ):
     """Select chemical variants and build a pose from canonical atom identities.
 
@@ -178,7 +179,16 @@ def pose_stack_from_canonical_form(
     from ._missing import complete_missing_atoms
     from tmol_jax.pose.pose_stack_builder import PoseStackBuilder
 
+    from tmol_core.io.missing_atoms import validate_ligand_hydrogens
+    from ._hydrogen import apply_input_policy
+
     cf = dict(canonical_form_dict)
+    mode = (
+        cf.get("ligand_hydrogens", "input")
+        if ligand_hydrogens is None
+        else ligand_hydrogens
+    )
+    validate_ligand_hydrogens(mode)
     pbt = packed_block_types
     co = cf.get("canonical_ordering") or default_canonical_ordering()
     coords, present = _canonical_coordinates(cf, co)
@@ -302,6 +312,7 @@ def pose_stack_from_canonical_form(
         residue_names,
         _connection_table=table,
     )
+    masks = apply_input_policy(result, masks, mode)
     result = complete_missing_atoms(result, masks, build_context=build_missing_context)
     return result.replace(pdb_info=attrs.evolve(result.pdb_info, chain_id=authors))
 

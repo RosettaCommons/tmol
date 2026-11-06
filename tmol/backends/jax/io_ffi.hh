@@ -2,6 +2,7 @@
 #pragma once
 #include "graph_topology_ffi.hh"
 #include "io_policy_ffi.hh"
+#include "io_hydrogen_ffi.hh"
 #include <tmol/io/details/compiled/leaf_atom_kernels.hh>
 #include <tmol/io/details/compiled/canonical_candidates.hh>
 #include <tmol/io/details/compiled/canonical_topology.hh>

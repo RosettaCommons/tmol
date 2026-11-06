@@ -59,6 +59,9 @@ def complete_missing_atoms(pose, available, *, build_context=False):
         info.geom_backup.astype(dtype),
     )
     coords = generate_leaf_atoms(pose.coords, jax.device_put(metadata, pose.device))
+    from ._hydrogen import reorient_rebuilt_hydrogens
+
+    coords = reorient_rebuilt_hydrogens(pose, missing, coords)
     if not np.isfinite(np.asarray(coords)).all():
         raise ValueError(
             "missing atoms could not be reconstructed from available chemical frames"

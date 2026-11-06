@@ -77,7 +77,6 @@ def test_unknown_input_atom_is_not_silently_dropped():
 @pytest.mark.parametrize(
     "option,value",
     (
-        ("ligand_hydrogens", "names"),
         ("find_additional_metal_coordination", True),
         ("protonation_variants", np.zeros((1, 3), np.int32)),
     ),
