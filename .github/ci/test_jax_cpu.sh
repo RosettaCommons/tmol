@@ -15,6 +15,10 @@ python -m venv "${work}/env"
 "${work}/env/bin/python" scripts/build_jax_native.py --outdir "${work}/native-dist"
 "${work}/env/bin/python" -m pip install "${work}/native-dist"/tmol_jax_native-*.whl
 
+"${work}/env/bin/python" scripts/jax_release_manifest.py --revision "$(git rev-parse HEAD)" \
+  --core-wheel "${JAX_DIST}"/tmol_core-*.whl --wheel "${JAX_DIST}"/tmol_jax-*.whl \
+  --native-wheel "${work}/native-dist"/tmol_jax_native-*.whl --output "${work}/release.json"
+
 mkdir -p "${work}/source/tests" "${work}/source/tmol/tests/data/pdb"
 cp -R tests/jax "${work}/source/tests/jax"
 cp -R tests/core "${work}/source/tests/core"
@@ -40,5 +44,5 @@ version=$("${work}/env/bin/python" -I -c \
   JAX_PLATFORMS=cpu "${work}/env/bin/python" -I \
     "${GITHUB_WORKSPACE}/scripts/smoke_installed_jax.py" \
     --pdb tmol/tests/data/pdb/1ubq.pdb --version "${version}" \
-    --device cpu --expect-no-torch
+    --device cpu --expect-no-torch --manifest "${work}/release.json"
 )

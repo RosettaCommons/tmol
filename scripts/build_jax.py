@@ -8,6 +8,7 @@ The resulting wheel and standalone sdist have no Torch dependency.
 
 from pathlib import Path
 import argparse
+import inspect
 import shutil
 import subprocess
 import sys
@@ -19,6 +20,7 @@ import attr
 import yaml
 
 from build_core import build_core
+from build_source import stamp_package
 
 
 def export_parameters(source, destination):
@@ -27,6 +29,16 @@ def export_parameters(source, destination):
         OmegaBBDepDatabase,
         DunbrackRotamerLibrary,
     )
+
+    # Parameter tables and their legacy deserializers must belong to the same
+    # checkout; an installed tmol with the same version is not sufficient.
+    loader_root = source.parent.resolve() / "scoring"
+    for loader in (RamaDatabase, OmegaBBDepDatabase, DunbrackRotamerLibrary):
+        module = Path(inspect.getfile(loader)).resolve()
+        if not module.is_relative_to(loader_root):
+            raise ValueError(
+                f"Parameter loader {module} does not belong to {loader_root}"
+            )
 
     shutil.copytree(
         source.parent / "score_functions",
@@ -116,13 +128,18 @@ def main():
         help="Only prepare canonical NumPy/YAML tables for source development",
     )
     parser.add_argument("--no-isolation", action="store_true")
+    parser.add_argument("--source-revision")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     source = root / "tmol/database/default"
     if args.export_data is not None:
         export_parameters(source, args.export_data.resolve())
         return
-    build_core(args.outdir, no_isolation=args.no_isolation)
+    build_core(
+        args.outdir,
+        no_isolation=args.no_isolation,
+        source_revision=args.source_revision,
+    )
     with tempfile.TemporaryDirectory(prefix="tmol-jax-build-") as temporary:
         stage = Path(temporary)
         shutil.copytree(
@@ -136,6 +153,7 @@ def main():
         shutil.copyfile(root / "docs/jax.md", stage / "README.md")
         metadata = tomllib.loads((root / "pyproject.toml").read_text())
         (stage / "VERSION").write_text(metadata["project"]["version"] + "\n")
+        stamp_package(root, stage, "tmol_jax", args.source_revision)
         subprocess.run(
             [
                 sys.executable,

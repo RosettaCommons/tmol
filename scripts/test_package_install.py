@@ -43,11 +43,14 @@ def main():
         help="Also install and smoke the matching pure JAX frontend wheel",
     )
     parser.add_argument("--core-wheel", type=Path)
+    parser.add_argument("--jax-native-wheel", type=Path)
     parser.add_argument("--torch-version", required=True)
     parser.add_argument("--torch-index", default="https://pypi.org/simple")
     parser.add_argument("--default-torch", action="store_true")
     parser.add_argument("--device", default="cpu", choices=("cpu", "cuda"))
     args = parser.parse_args()
+    if bool(args.jax_wheel) != bool(args.jax_native_wheel):
+        parser.error("JAX co-install requires both --jax-wheel and --jax-native-wheel")
     with tempfile.TemporaryDirectory(prefix="tmol-install-") as temporary:
         work = Path(temporary)
         files = work / "files"
@@ -154,7 +157,18 @@ def main():
             jax_name, jax_version, _, _ = parse_wheel_filename(args.jax_wheel.name)
             assert jax_name == "tmol-jax"
             assert jax_version == version
-            check(*pip, "install", args.jax_wheel.resolve(), cwd=work)
+            native_name, native_version, _, _ = parse_wheel_filename(
+                args.jax_native_wheel.name
+            )
+            assert native_name == "tmol-jax-native"
+            assert native_version == version
+            check(
+                *pip,
+                "install",
+                args.jax_wheel.resolve(),
+                args.jax_native_wheel.resolve(),
+                cwd=work,
+            )
             check(*pip, "check", cwd=work)
             check(
                 python,

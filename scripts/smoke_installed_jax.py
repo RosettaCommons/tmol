@@ -2,8 +2,10 @@
 """Score and differentiate with an installed tmol-jax distribution."""
 
 import argparse
+import json
 from importlib import metadata, util
 from pathlib import Path
+import sys
 
 import jax
 import numpy as np
@@ -17,7 +19,13 @@ def main():
     parser.add_argument("--expect-no-torch", action="store_true")
     parser.add_argument("--require-native-cuda", action="store_true")
     parser.add_argument("--also-torch", action="store_true")
+    parser.add_argument("--manifest", type=Path)
     args = parser.parse_args()
+    if args.manifest:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from jax_release_manifest import verify_installed
+
+        verify_installed(json.loads(args.manifest.read_text()))
 
     if args.expect_no_torch:
         assert util.find_spec("torch") is None, "Torch leaked into JAX-only install"

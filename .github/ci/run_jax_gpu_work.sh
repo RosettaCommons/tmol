@@ -31,6 +31,10 @@ esac
   "${JAX_DIST}"/tmol_core-*.whl "${JAX_DIST}"/tmol_jax-*.whl \
   "${JAX_CUDA_DIST}"/tmol_jax_native-*.whl
 
+"${JAX_BUILD_PYTHON}" scripts/jax_release_manifest.py --revision "$(git rev-parse HEAD)" \
+  --core-wheel "${JAX_DIST}"/tmol_core-*.whl --wheel "${JAX_DIST}"/tmol_jax-*.whl \
+  --native-wheel "${JAX_CUDA_DIST}"/tmol_jax_native-*.whl --output "${work}/release.json"
+
 mkdir -p "${work}/source/tests" "${work}/source/tmol/tests/data/pdb"
 cp -R tests/jax "${work}/source/tests/jax"
 cp -R tests/core "${work}/source/tests/core"
@@ -55,5 +59,6 @@ version=$("${work}/env/bin/python" -I -c \
   "${work}/env/bin/python" -I \
     "${GITHUB_WORKSPACE}/scripts/smoke_installed_jax.py" \
     --pdb tmol/tests/data/pdb/1ubq.pdb --version "${version}" \
-    --device cuda --expect-no-torch --require-native-cuda
+    --device cuda --expect-no-torch --require-native-cuda \
+    --manifest "${work}/release.json"
 )

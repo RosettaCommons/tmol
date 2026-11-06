@@ -26,9 +26,14 @@ for backend in cu12 cu13; do
 done
 if [ "${TEST_JAX:-false}" = true ]; then
   for backend in cu12 cu13; do
+    "$bootstrap/env/bin/python" scripts/jax_release_manifest.py \
+      --revision "$(git rev-parse HEAD)" \
+      --wheel jax-wheel/tmol_jax-*.whl --core-wheel core-dist/tmol_core-*.whl \
+      --native-wheel "jax-native/$backend"/tmol_jax_native-*.whl \
+      --output "$bootstrap/jax-$backend.json"
     "$bootstrap/env/bin/python" scripts/test_jax_package_install.py \
       --wheel jax-wheel/tmol_jax-*.whl --core-wheel core-dist/tmol_core-*.whl \
       --native-wheel "jax-native/$backend"/tmol_jax_native-*.whl \
-      --backend "$backend"
+      --backend "$backend" --manifest "$bootstrap/jax-$backend.json"
   done
 fi

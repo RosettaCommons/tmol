@@ -2,12 +2,15 @@
 """Install JAX release candidates in isolation and exercise native CUDA."""
 
 import argparse
+import json
 from pathlib import Path
 import subprocess
 import tempfile
 import tomllib
 import venv
 import zipfile
+
+from jax_release_manifest import verify_artifacts
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -31,8 +34,17 @@ def main():
     parser.add_argument("--wheel", type=Path, required=True)
     parser.add_argument("--native-wheel", type=Path, required=True)
     parser.add_argument("--core-wheel", type=Path, required=True)
+    parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--backend", choices=("cu12", "cu13"), required=True)
     args = parser.parse_args()
+    verify_artifacts(
+        json.loads(args.manifest.read_text()),
+        dict(
+            tmol_core=args.core_wheel,
+            tmol_jax=args.wheel,
+            tmol_jax_native=args.native_wheel,
+        ),
+    )
 
     core_owned = owned_packages(args.core_wheel)
     assert core_owned == {"tmol_core"}, core_owned
@@ -85,6 +97,8 @@ def main():
             "cuda",
             "--expect-no-torch",
             "--require-native-cuda",
+            "--manifest",
+            args.manifest.resolve(),
             cwd=work,
         )
 

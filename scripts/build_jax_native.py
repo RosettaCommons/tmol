@@ -4,7 +4,6 @@
 import argparse
 import hashlib
 import json
-import re
 from pathlib import Path
 import os
 import shutil
@@ -12,6 +11,8 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+
+from build_source import source_identity
 
 
 def stage_native_headers(root, stage):
@@ -94,42 +95,11 @@ def stage_native(root, stage, source_revision=None):
         for path in sorted(stage.rglob("*"))
         if path.is_file()
     }
-    if source_revision is not None and not re.fullmatch(
-        r"[0-9a-f]{40}", source_revision
-    ):
-        raise ValueError("--source-revision must be the verified full Git commit SHA")
-    probe = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True
-    )
-    top = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-    )
-    if (
-        probe.returncode == 0
-        and top.returncode == 0
-        and Path(top.stdout.strip()).resolve() == root.resolve()
-    ):
-        revision = probe.stdout.strip()
-        if source_revision is not None and source_revision != revision:
-            raise ValueError("--source-revision disagrees with the checkout")
-        dirty = bool(
-            subprocess.check_output(
-                ["git", "-C", str(root), "status", "--porcelain"], text=True
-            ).strip()
-        )
-    else:
-        if source_revision is None:
-            raise ValueError(
-                "Building a source archive requires --source-revision with its verified commit SHA"
-            )
-        revision, dirty = source_revision, None
+    identity = source_identity(root, source_revision)
     (stage / "tmol_jax_native/source.json").write_text(
         json.dumps(
             {
-                "revision": revision,
-                "dirty": dirty,
+                **identity,
                 "sha256": source_files,
             },
             indent=2,
