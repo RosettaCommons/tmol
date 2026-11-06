@@ -163,6 +163,7 @@ def pose_stack_from_canonical_form(
     compact_padding=False,
     build_missing_context=False,
     ligand_hydrogens=None,
+    require_all_metal_donors=None,
 ):
     """Select chemical variants and build a pose from canonical atom identities.
 
@@ -190,6 +191,8 @@ def pose_stack_from_canonical_form(
     from ._hydrogen import apply_input_policy
 
     cf = dict(canonical_form_dict)
+    if require_all_metal_donors is not None:
+        cf["require_all_metal_donors"] = require_all_metal_donors
     mode = (
         cf.get("ligand_hydrogens", "input")
         if ligand_hydrogens is None

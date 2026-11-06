@@ -150,5 +150,4 @@ def test_biotite_polymer_gaps_use_chemical_ports_and_shared_ensemble(names):
     distant.coord[2] = np.nan
     assert not canonical_form_from_biotite(distant)["res_gap"].any()
     atoms.bonds = struc.BondList(4, np.array([[0, 1, struc.BondType.SINGLE]]))
-    with pytest.raises(NotImplementedError, match="explicit Biotite bonds"):
-        canonical_form_from_biotite(atoms)
+    assert canonical_form_from_biotite(atoms)["covalent_bonds"].shape == (0, 5)

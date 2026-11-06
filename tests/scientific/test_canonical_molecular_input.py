@@ -226,6 +226,7 @@ def rebuild_canonical(
             ),
             find_additional_cyclic_closures=False,
             ligand_hydrogens="input",
+            require_all_metal_donors=cf.get("require_all_metal_donors", False),
             protonation_variants=(
                 None
                 if cf.get("protonation_variants") is None

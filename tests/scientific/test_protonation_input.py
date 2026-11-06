@@ -104,3 +104,24 @@ def test_explicit_protonation_retains_heavy_atoms_without_hydrogen_evidence(
     energy, gradient = b.channel_values_and_gradients(b.coords())
     assert np.isfinite(energy).all() and np.isfinite(gradient).all()
     assert np.linalg.norm(gradient) > 0
+
+
+def test_supplied_thiol_hydrogen_precedes_provisional_metal_request(backend):
+    from .molecules import MolecularCase
+    from .test_canonical_molecular_input import canonical_input, rebuild_canonical
+
+    case = MolecularCase((), (("ZN_tetrahedral", "CYS"),), ((1, 1),))
+    b = backend.molecule(case, terms=("metal_coordination",))
+    co, cf = canonical_input(case, b.parameter_database)
+    cf["metal_sites"] = np.empty((0, 3), np.int32)
+    cf["metal_coordination"] = np.array(
+        [[0, 0, -1, 2, co.restypes_atom_index_mapping["CYS"]["SG"]]], np.int32
+    )
+    rebuild_canonical(b, co, cf, unpatched_metals=True)
+    assert b.pose.block_type(0, 1).base_name == "CYS"
+    assert "HG" in b.pose.block_type(0, 1).atom_to_idx
+    assert not np.any(b.numpy(b.pose.inter_residue_connections)[..., 0] >= 0)
+    with pytest.raises(ValueError, match="metal coordination could not be resolved"):
+        rebuild_canonical(
+            b, co, dict(cf, require_all_metal_donors=True), unpatched_metals=True
+        )

@@ -5,7 +5,6 @@ import numpy as np
 
 from .canonical_ordering import (
     _canonical_form_from_records,
-    _polymer_gaps,
     default_canonical_ordering,
     default_packed_block_types,
 )
@@ -17,30 +16,68 @@ def canonical_form_from_biotite(
     atoms, *, canonical_ordering=None, missing_density_distance_threshold=2.4
 ):
     """Convert an AtomArray or same-topology AtomArrayStack to canonical form."""
-    if atoms.bonds is not None and atoms.bonds.get_bond_count():
-        raise NotImplementedError(
-            "explicit Biotite bonds require the canonical covalent_bonds, "
-            "disulfides and metal_coordination adapters"
-        )
+    from tmol_core.io.atom_array import (
+        with_metal_coordination_typed,
+        covalent_bonds_from_biotite,
+        metal_coordination_from_biotite,
+    )
+    from tmol_core.io.polymer_gaps import break_polymer_gaps, orient_polymer_gap_flags
+
     co = canonical_ordering or default_canonical_ordering()
+    atoms = with_metal_coordination_typed(atoms)
     models = list(atoms) if isinstance(atoms, struc.AtomArrayStack) else [atoms]
     if not models:
         raise ValueError("structure contains no models")
-    forms = [
+    mapped = [
         _canonical_form_from_records(
-            _records_from_biotite(model), co, missing_density_distance_threshold=0
+            _records_from_biotite(model),
+            co,
+            missing_density_distance_threshold=0,
+            return_atom_mapping=True,
         )
         for model in models
     ]
+    forms = [form for form, _ in mapped]
     combined = {
         key: np.concatenate([form[key] for form in forms], axis=0) for key in forms[0]
     }
-    combined["res_gap"] = _polymer_gaps(
+    residues, valid, slots = mapped[0][1]
+    types, chains = combined["res_types"][0], combined["chain_id"][0]
+    bonds, disulfides, inferred = covalent_bonds_from_biotite(
+        models[0],
         co,
-        combined["res_types"],
-        combined["chain_id"],
+        residues,
+        types,
+        valid,
+        slots,
+    )
+    gaps = np.zeros((len(types), 2), bool)
+    bonds = break_polymer_gaps(
+        gaps,
+        bonds,
+        inferred,
         combined["coords"],
+        types,
+        chains,
+        co,
         missing_density_distance_threshold,
+    )
+    orient_polymer_gap_flags(gaps, chains, types, bonds, co)
+    combined["res_gap"] = np.broadcast_to(gaps, (len(models), *gaps.shape)).copy()
+
+    def pose_rows(rows):
+        return np.concatenate(
+            [
+                np.column_stack((np.full(len(rows), p, np.int64), rows))
+                for p in range(len(models))
+            ]
+        )
+
+    combined["covalent_bonds"] = pose_rows(bonds)
+    if disulfides is not None:
+        combined["disulfides"] = pose_rows(disulfides)
+    combined["metal_coordination"] = pose_rows(
+        metal_coordination_from_biotite(models[0], residues, valid, slots)
     )
     return combined
 

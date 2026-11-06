@@ -304,7 +304,10 @@ the individual native decision stages support `jit` and `vmap`.
 The default PDB/Biotite palette includes all ordinary residues and variants in
 the chemical database, including D residues and nucleic acids. Custom ligands
 use the supplied chemical ordering and palette. Metal geometry and donor inference
-use the common chemical policy and grow donor variants in that palette. Explicit
+use the common chemical policy and grow donor variants in that palette. PDB
+CONECT and Biotite bonds use the shared atom-identity mapper for covalent bonds,
+disulfides and metal coordination; polymer gap detection uses chemical ports.
+Explicit
 `metal_sites` and `metal_coordination` rows retain declared geometry and connectivity;
 missing virtual sites use shared placement plans. `protonation_variants` supplies
 explicit states (`-1` means infer), while observed hydrogen evidence and required
@@ -319,7 +322,9 @@ including connected residues. Its fixed-topology primitive supports `jit`, `vmap
 and first/second reverse derivatives in coordinates and ideal bond lengths;
 forward-mode and third derivatives are not implemented. Comparisons to Torch
 must request matching input policies. Missing non-leaf atoms raise unless `build_missing_context=True` enables
-the shared context planner. Unresolved declared donor bonds raise.
+the shared context planner. Supplied protonation evidence takes precedence over
+provisional metal requests, matching Torch. Set `require_all_metal_donors=True`
+to reject requests that cannot all be satisfied.
 `res_not_connected` retains the JAX terminated-break convention; `res_gap`
 suppresses bonds without forcing terminal variants.
 

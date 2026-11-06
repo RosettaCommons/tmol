@@ -12,6 +12,7 @@ import numpy as np
 def _records_from_biotite(atoms):
     n = len(atoms)
     return {
+        "_atom_array": atoms,
         "record_name": np.where(atoms.hetero, "HETATM", "ATOM"),
         "atom_serial": np.arange(n, dtype=np.int32),
         "atom_name": np.asarray(atoms.atom_name),
@@ -44,11 +45,13 @@ def parse_pdb(pdb_input):
         )
     else:
         text = "\n".join(line.rstrip("\n") for line in pdb_input)
-    atoms = PDBFile.read(StringIO(text)).get_structure(
-        extra_fields=["occupancy", "b_factor"]
-    )
+    pdb = PDBFile.read(StringIO(text))
+    atoms = pdb.get_structure(extra_fields=["atom_id", "occupancy", "b_factor"])
     if isinstance(atoms, struc.AtomArrayStack):
         atoms = atoms[0]
+    # Retain actual CONECT records. include_bonds=True also invents bonds from
+    # residue names, losing the declared/inferred distinction needed for gaps.
+    atoms.bonds = pdb._get_bonds(atoms.atom_id)
     return _records_from_biotite(atoms)
 
 

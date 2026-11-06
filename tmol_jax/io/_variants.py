@@ -1,5 +1,7 @@
 """JAX execution of shared disulfide, metal, histidine and protonation policy."""
 
+import logging
+
 import jax
 import numpy as np
 
@@ -19,6 +21,8 @@ from tmol_core.io.protonation import (
 
 from . import _native
 from ._metal import grow_palette
+
+logger = logging.getLogger(__name__)
 
 
 def _protonation_arrays(pbt, co, types):
@@ -64,6 +68,7 @@ def resolve_input_variants(co, pbt, cf, types, coords, present, bonds):
         declared_sites=declared,
         required_donors=required,
         find_additional=cf.get("find_additional_metal_coordination", True),
+        require_all_donors=cf.get("require_all_metal_donors", False),
     )
     variants = np.where(metal_variants != 0, metal_variants, variants)
     his_rows = np.nonzero(np.isin(types, co.his_inds.his_co_aa_inds))
@@ -89,9 +94,13 @@ def resolve_input_variants(co, pbt, cf, types, coords, present, bonds):
         _wide(required_donor_rows(assignments)),
     )
     if np.any(np.asarray(unresolved)):
-        raise ValueError(
-            f"no chemical form can satisfy required metal donors at {np.argwhere(np.asarray(unresolved)).tolist()}"
+        message = (
+            "no chemical form can satisfy requested metal donors at "
+            f"{np.argwhere(np.asarray(unresolved)).tolist()}"
         )
+        if cf.get("require_all_metal_donors", False):
+            raise ValueError(message)
+        logger.warning(message)
     explicit = cf.get("protonation_variants")
     if explicit is not None:
         explicit = np.asarray(explicit, np.int32).copy()

@@ -58,9 +58,11 @@ def canonical_form_from_pdb(
     """
     from .pdb_parsing import parse_pdb
 
-    return _canonical_form_from_records(
-        parse_pdb(pdb_text_or_path),
-        canonical_ordering or default_canonical_ordering(),
+    from .pose_stack_from_biotite import canonical_form_from_biotite
+
+    return canonical_form_from_biotite(
+        parse_pdb(pdb_text_or_path)["_atom_array"],
+        canonical_ordering=canonical_ordering or default_canonical_ordering(),
         missing_density_distance_threshold=missing_density_distance_threshold,
     )
 
@@ -84,7 +86,11 @@ def _polymer_gaps(co, types, chains, coords, threshold):
 
 
 def _canonical_form_from_records(
-    records, canonical_ordering, *, missing_density_distance_threshold=2.4
+    records,
+    canonical_ordering,
+    *,
+    missing_density_distance_threshold=2.4,
+    return_atom_mapping=False,
 ):
     atom_names = records["atom_name"]
     res_names = records["res_name"]
@@ -186,6 +192,7 @@ def _canonical_form_from_records(
         res_ins_codes[0, r] = str(insert_raw[i]) if insert_raw is not None else ""
         residue_initialised[r] = True
 
+    canonical_atom_indices = np.full(n_records, -1, np.int64)
     # Now splat atoms into their canonical slots.
     for i in range(n_records):
         if not keep_atom[i]:
@@ -196,6 +203,7 @@ def _canonical_form_from_records(
         aind = canonical_ordering.atom_index(resn, atom_name)
         if aind < 0:
             raise ValueError(f"{resn} atom {atom_name} is not in the chemical atom set")
+        canonical_atom_indices[i] = aind
         coords[0, r, aind, 0] = coords_raw[i, 0]
         coords[0, r, aind, 1] = coords_raw[i, 1]
         coords[0, r, aind, 2] = coords_raw[i, 2]
@@ -203,7 +211,7 @@ def _canonical_form_from_records(
         occupancy_arr[0, r, aind] = float(occupancy_raw[i])
         b_factor_arr[0, r, aind] = float(b_factor_raw[i])
 
-    return {
+    form = {
         "res_gap": _polymer_gaps(
             canonical_ordering,
             res_types,
@@ -222,6 +230,9 @@ def _canonical_form_from_records(
         "atom_occupancy": occupancy_arr,
         "atom_b_factor": b_factor_arr,
     }
+    if return_atom_mapping:
+        return form, (res_ind_per_atom, keep_atom, canonical_atom_indices[keep_atom])
+    return form
 
 
 __all__ = [
