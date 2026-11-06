@@ -37,11 +37,12 @@ def test_ensemble_gaps_keep_unresolved_contacts_and_respect_declared_orientation
     )
 
 
-def test_reverse_chain_orientation_ignores_padding_and_other_chains():
+@pytest.mark.parametrize("container", [list, np.asarray])
+def test_reverse_chain_orientation_ignores_padding_and_other_chains(container):
     co = S(
         polymer_conn_inds=S(up_atom_for_co_restype=[2], down_atom_for_co_restype=[0])
     )
-    types = np.array([0, 0, -1, 0, 0])
+    types = container([0, 0, -1, 0, 0])
     chains = np.array([0, 0, 0, 1, 1])
     bonds = np.array([[0, 0, 1, 2], [3, 2, 4, 0]])
     flags = np.array(

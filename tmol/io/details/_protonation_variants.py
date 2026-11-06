@@ -5,6 +5,7 @@ import torch
 from tmol_core.chemical import DEPROTONATED_VAR_IND
 from tmol_core.io.protonation import (
     prepare_protonation_plan,
+    protonation_is_identity,
     required_donor_rows,
     neutral_terminus_patches,
     variant_atoms,
@@ -40,13 +41,28 @@ def _select_protonation_variants(
         canonical_ordering, chemical_db, res_types.cpu().numpy()
     )
     device = atom_is_present.device
+    required_rows = required_donor_rows(metal_assignments)
+    if not len(required_rows) and (
+        not plan.expecting.any()
+        or (
+            device.type == "cpu"
+            and protonation_is_identity(
+                plan,
+                res_types.numpy(),
+                res_type_variants.numpy(),
+                atom_is_present.numpy(),
+                required_rows,
+            )
+        )
+    ):
+        return res_type_variants.clone()
     execution = torch.device("cpu") if device.type == "mps" else device
     bonds = (
         torch.empty((0, 5), dtype=torch.int64, device=execution)
         if covalent_bonds is None
         else covalent_bonds.to(device=execution, dtype=torch.int64)
     )
-    required = torch.from_numpy(required_donor_rows(metal_assignments)).to(execution)
+    required = torch.from_numpy(required_rows).to(execution)
     inputs = [
         res_types.to(execution),
         res_type_variants.to(execution),

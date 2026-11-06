@@ -80,6 +80,7 @@ def orient_polymer_gap_flags(not_connected, chain_id, restypes, bonds, co):
     """
     if not len(bonds) or not numpy.any(not_connected):
         return
+    restypes = numpy.asarray(restypes)
     first, a, second, b = bonds.T
     up, down = _polymer_ports(co, restypes)
     adjacent = (second == first + 1) & (chain_id[first] == chain_id[second])
