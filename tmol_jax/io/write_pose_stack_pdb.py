@@ -19,9 +19,7 @@ from typing import Any, Dict, List, Optional, TextIO, Union
 
 import numpy as np
 
-# Default values matching upstream constants.
-DEFAULT_ATOM_OCCUPANCY = 1.0
-DEFAULT_ATOM_B_FACTOR = 0.0
+from tmol_core.io.pdb_info import DEFAULT_ATOM_OCCUPANCY, DEFAULT_ATOM_B_FACTOR
 
 # Max number of chain labels we can auto-generate ("A".."Z", "AA".."ZZ").
 _MAX_AUTO_CHAIN_LABELS = 26 * 27
@@ -85,6 +83,9 @@ def atom_records_from_pose_stack(
     pdb_atom_record_type = (
         getattr(pdb_info, "atom_record_type", None) if pdb_info is not None else None
     )
+    insertion = getattr(pdb_info, "residue_insertion_codes", None)
+    occupancy = getattr(pdb_info, "atom_occupancy", None)
+    b_factor = getattr(pdb_info, "atom_b_factor", None)
     if pdb_res_num is not None:
         pdb_res_num = np.asarray(pdb_res_num)
 
@@ -126,7 +127,6 @@ def atom_records_from_pose_stack(
                 pdb_res_num is not None
                 and pdb_res_num.shape[0] > p
                 and pdb_res_num.shape[1] > r
-                and int(pdb_res_num[p, r]) >= 0
             ):
                 resi = int(pdb_res_num[p, r])
             else:
@@ -177,9 +177,17 @@ def atom_records_from_pose_stack(
                         "y": float(y),
                         "z": float(z),
                         "location": " ",
-                        "insert": " ",
-                        "occupancy": DEFAULT_ATOM_OCCUPANCY,
-                        "b": DEFAULT_ATOM_B_FACTOR,
+                        "insert": " " if insertion is None else insertion[p, r],
+                        "occupancy": (
+                            DEFAULT_ATOM_OCCUPANCY
+                            if occupancy is None
+                            else float(occupancy[p, start + a])
+                        ),
+                        "b": (
+                            DEFAULT_ATOM_B_FACTOR
+                            if b_factor is None
+                            else float(b_factor[p, start + a])
+                        ),
                         "element": element,
                     }
                 )
@@ -206,7 +214,7 @@ def _format_atom_line(r: Dict[str, Any]) -> str:
     location = (str(r.get("location", "")) or " ")[:1]
     resn = str(r.get("resn", "UNK"))[:3].rjust(3)
     chain = (str(r.get("chain", "A")) or "A")[:1]
-    resi = int(r["resi"]) % 10000  # 4 columns
+    resi = int(r["resi"])  # preserve signed author residue labels
     insert = (str(r.get("insert", "")) or " ")[:1]
     x = float(r["x"])
     y = float(r["y"])

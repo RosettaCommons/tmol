@@ -1,97 +1,88 @@
-"""Host-only PDB labels, indexed along the same pose axis as PoseStack.
-
-chain_id and res_name contain one list per pose, one label per real residue.
-res_num is int32[poses, max_blocks], with -1 padding. atom_record_type contains
-one ATOM/HETATM label per atom, nested by pose and residue. These labels are
-metadata, not differentiable pytree leaves."""
-
-from __future__ import annotations
-
-from typing import List
+"""Compatibility labels over the shared host structure metadata model."""
 
 import attrs
 import numpy as np
 
-DEFAULT_ATOM_OCCUPANCY = 1.0
-DEFAULT_ATOM_B_FACTOR = 0.0
+from tmol_core.io.pdb_info import (
+    PDBInfo as CommonPDBInfo,
+    DEFAULT_ATOM_OCCUPANCY,
+    DEFAULT_ATOM_B_FACTOR,
+)
 
 
-@attrs.define
-class PDBInfo:
-    """Plain-Python PDB metadata for a ``PoseStack``.
+@attrs.define(init=False, slots=False)
+class PDBInfo(CommonPDBInfo):
+    """Shared metadata with the original JAX label aliases and constructor."""
 
-    See the module docstring for the exact layout; this is NOT a pytree.
-    """
+    res_name: object = None
+    atom_record_type: object = None
 
-    chain_id: List[List[str]]
-    res_num: np.ndarray  # shape (n_poses, max_n_blocks), dtype int32
-    res_name: List[List[str]]
-    atom_record_type: List[List[List[str]]]
+    def __init__(
+        self,
+        chain_id=None,
+        res_num=None,
+        res_name=None,
+        atom_record_type=None,
+        **metadata,
+    ):
+        if chain_id is not None:
+            metadata["chain_labels"] = chain_id
+        if res_num is not None:
+            metadata["residue_labels"] = res_num
+        super().__init__(
+            **{
+                name: metadata.pop(name, None)
+                for name in attrs.fields_dict(CommonPDBInfo)
+            }
+        )
+        if metadata:
+            raise TypeError("unknown metadata fields: " + ", ".join(metadata))
+        self.res_name = res_name
+        self.atom_record_type = atom_record_type
 
-    # Shape helpers
     @property
-    def n_poses(self) -> int:
-        for values in (
+    def chain_id(self):
+        return self.chain_labels
+
+    @chain_id.setter
+    def chain_id(self, value):
+        self.chain_labels = value
+
+    @property
+    def res_num(self):
+        return self.residue_labels
+
+    @res_num.setter
+    def res_num(self, value):
+        self.residue_labels = value
+
+    @property
+    def n_poses(self):
+        for value in (
             self.res_num,
             self.chain_id,
             self.res_name,
             self.atom_record_type,
         ):
-            if values is not None and len(values):
-                return len(values)
+            if value is not None and len(value):
+                return len(value)
         return 0
 
     @property
-    def max_n_blocks(self) -> int:
-        if self.res_num is not None and self.res_num.ndim == 2:
-            return int(self.res_num.shape[1])
-        return 0
+    def max_n_blocks(self):
+        return self.res_num.shape[1] if self.res_num is not None else 0
 
-    # Slicing
-    def __getitem__(self, index) -> "PDBInfo":
-        """Select poses with the same integer, slice or array indexing as a pose."""
-        indices = np.atleast_1d(np.arange(self.n_poses)[index])
-        if indices.ndim != 1:
-            raise IndexError("pose selection must be one dimensional")
-        return self.take(indices)
+    def __getitem__(self, index):
+        return self.take(np.atleast_1d(np.arange(self.n_poses)[index]))
 
-    def take(self, indices) -> "PDBInfo":
-        """Select normalized pose indices, preserving missing metadata fields."""
-
-        def rows(values):
-            return None if values is None else [list(values[i]) for i in indices]
-
-        records = self.atom_record_type
-        return PDBInfo(
-            chain_id=rows(self.chain_id),
-            res_num=None if self.res_num is None else self.res_num[indices].copy(),
-            res_name=rows(self.res_name),
-            atom_record_type=(
-                None
-                if records is None
-                else [[list(atoms) for atoms in records[i]] for i in indices]
-            ),
-        )
-
-    # Factories
     @classmethod
-    def empty(cls, n_poses: int, max_n_blocks: int) -> "PDBInfo":
-        """An all-zero/empty ``PDBInfo`` with no per-atom records yet.
-
-        ``res_num`` is filled with ``-1`` (the "padding" sentinel). The
-        nested string lists are created as empty inner lists ready to be
-        filled in by higher-level construction code.
-        """
+    def empty(cls, n_poses, max_n_blocks):
         return cls(
             chain_id=[[] for _ in range(n_poses)],
-            res_num=np.full((n_poses, max_n_blocks), -1, dtype=np.int32),
+            res_num=np.full((n_poses, max_n_blocks), -1, np.int32),
             res_name=[[] for _ in range(n_poses)],
             atom_record_type=[[] for _ in range(n_poses)],
         )
 
 
-__all__ = [
-    "PDBInfo",
-    "DEFAULT_ATOM_OCCUPANCY",
-    "DEFAULT_ATOM_B_FACTOR",
-]
+__all__ = ["PDBInfo", "DEFAULT_ATOM_OCCUPANCY", "DEFAULT_ATOM_B_FACTOR"]

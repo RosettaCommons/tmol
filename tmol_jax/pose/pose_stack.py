@@ -23,6 +23,7 @@ class PoseStack:
     _inter_block_bondsep: Any = attr.field(alias="inter_block_bondsep")
     block_type_ind: jax.Array  # int32[n_poses, max_n_blocks]
     pdb_info: Optional[Any] = None  # PDBInfo; aux.
+    split_block_mapping: Optional[Any] = None
     constraint_set: Optional[Any] = None
     near_blocks: Optional[jax.Array] = None  # int32[P,B,K,2], common sparse graph
     bondsep: Optional[jax.Array] = None  # int8[P,B,K,C,C]
@@ -146,6 +147,11 @@ class PoseStack:
             bondsep=None if self.bondsep is None else _take(self.bondsep),
             block_type_ind=_take(self.block_type_ind),
             pdb_info=None if self.pdb_info is None else self.pdb_info.take(indices),
+            split_block_mapping=(
+                None
+                if self.split_block_mapping is None
+                else self.split_block_mapping.take(indices)
+            ),
         )
 
     # Copy semantics

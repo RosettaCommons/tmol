@@ -79,11 +79,22 @@ def _select_pose(best, candidate, better):
     if info is not None:
         if candidate.pdb_info is None:
             raise ValueError("FastRelax candidate has lost pose metadata")
-        for name in ("chain_id", "res_num", "res_name", "atom_record_type"):
+        import attrs
+
+        for name in attrs.fields_dict(type(info)):
             left, right = getattr(info, name), getattr(candidate.pdb_info, name)
             if (left is None) != (right is None):
                 raise ValueError("FastRelax candidates have incompatible pose metadata")
             if left is not None:
+                if (
+                    isinstance(left, np.ndarray)
+                    and left.ndim == 2
+                    and left.shape[1] != right.shape[1]
+                ):
+                    width = max(left.shape[1], right.shape[1])
+                    left = np.pad(left, ((0, 0), (0, width - left.shape[1])))
+                    right = np.pad(right, ((0, 0), (0, width - right.shape[1])))
+                    setattr(info, name, left)
                 for row in rows:
                     left[row] = copy.deepcopy(right[row])
     elif candidate.pdb_info is not None:

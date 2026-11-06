@@ -20,7 +20,7 @@
         "tests/scientific/test_molecular_nonbonded.py",
         "tests/scientific/test_complete_preset.py"
       ],
-      "implementation_status": "Explicit B3Q/B3D identities retain topology/parameters; complete preset and nonzero per-term gradients tested CPU/CUDA. Supplied-palette canonical input has CPU atom/topology and per-term gradient identity coverage; canonical input also passes CUDA value/gradient checks."
+      "implementation_status": "Explicit B3Q/B3D identities retain topology/parameters; complete preset and nonzero per-term gradients tested CPU/CUDA. Supplied-palette canonical input has CPU atom/topology and per-term gradient identity coverage; canonical input also passes CUDA value/gradient checks. The B3Q/B3D fixture has no terminal variants: its uncapped public AtomArray form fails in both frontends; supported explicit/canonical gap-aware construction is distinct."
     },
     {
       "domain": "d_amino_acids",
@@ -291,9 +291,19 @@
         "tests/scientific/test_atom_array_input.py"
       ],
       "implementation_status": "Shared normalization, hydrogen/protonation, strict heavy atom identity, neutral-terminal mapping and reusable custom parameter context. Default missing-sidechain/OptH routing uses shared policy and native packing; noncanonical HYP and D missing-sidechain cases, ligand MOL2/CIF and metal/disulfide CPU workflows have finite full25E/G plus derivative and identity checks in both frameworks. Fragmented imposition, Atom37 and complete metadata round trips remain parity gaps. New input packing is not yet CUDA/package validated."
+    },
+    {
+      "domain": "structure_metadata",
+      "torch": "supported",
+      "jax": "source_projection_packing_slicing_and_pdb_output",
+      "repro_fixture": [
+        "tests/scientific/test_structure_metadata.py",
+        "tests/scientific/test_pose_imposition.py"
+      ],
+      "implementation_status": "Common metadata and split-block models; preserves insertion codes, source occupancy/B factors, residue annotations and metal origins during canonical projection. JAX legacy labels retained; design follows mature defaults for changed residue identities. Complete AtomArray/recombined-fragment round trips remain gaps. New metadata integration awaits exact package/CUDA validation."
     }
   ],
-  "validation": "PR629 remains draft. Matching c378 ABI3 CPU wheels pass installed molecular checks with Torch absent and source/native hash verification; H200 affected JAX checks pass137 cases. New increments require their own matching package/CUDA gates. Mature e29 complete warm workflow parity remains unresolved; constructor-only or earlier-JAX speedups do not establish readiness.",
+  "validation": "PR629 remains draft. Exact e8 ABI4 CPU artifacts pass45 molecular and257 shared checks without Torch. Exact H200 artifacts pass170 JAX and23 Torch CUDA affected checks plus three full prepared-group workflows. Later input/metadata increments need matching package/CUDA gates. Mature Torch complete cold/warm/peak-memory parity and actual final Metal remain unresolved.",
   "score_terms": {
     "nonbonded": {
       "torch": "implemented",

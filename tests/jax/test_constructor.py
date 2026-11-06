@@ -151,3 +151,30 @@ def test_biotite_polymer_gaps_use_chemical_ports_and_shared_ensemble(names):
     assert not canonical_form_from_biotite(distant)["res_gap"].any()
     atoms.bonds = struc.BondList(4, np.array([[0, 1, struc.BondType.SINGLE]]))
     assert canonical_form_from_biotite(atoms)["covalent_bonds"].shape == (0, 5)
+
+
+def test_metadata_labels_and_atom_annotations_survive_pdb_output_and_selection():
+    from io import StringIO
+    import biotite.structure.io.pdb as pdb
+    from tmol_jax.io.write_pose_stack_pdb import write_pose_stack_pdb
+
+    canonical = _three_residues()
+    canonical["res_num"][0] = [-2, 0, 17]
+    canonical["res_ins_codes"][0] = ["A", "", "B"]
+    canonical["atom_occupancy"][:] = 0.25
+    canonical["atom_b_factor"][:] = 42.5
+    pose = pose_stack_from_canonical_form(canonical, default_packed_block_types())
+    output = StringIO()
+    write_pose_stack_pdb(pose, output)
+    restored = pdb.PDBFile.read(StringIO(output.getvalue())).get_structure(
+        model=1, extra_fields=["occupancy", "b_factor"]
+    )
+    np.testing.assert_array_equal(np.unique(restored.res_id), [-2, 0, 17])
+    np.testing.assert_array_equal(restored.ins_code[restored.res_id == -2], "A")
+    np.testing.assert_array_equal(restored.ins_code[restored.res_id == 17], "B")
+    np.testing.assert_array_equal(restored.occupancy, 0.25)
+    np.testing.assert_array_equal(restored.b_factor, 42.5)
+    duplicate = pose[[0, 0]]
+    duplicate.pdb_info.atom_occupancy[0, 0] = 0.75
+    assert pose.pdb_info.atom_occupancy[0, 0] == 0.25
+    assert duplicate.pdb_info.atom_occupancy[1, 0] == 0.25

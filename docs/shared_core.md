@@ -139,3 +139,7 @@ compressed/binary CIF, MOL2/SDF, alternate locations, CCD supplements, supplied
 bonds, metal coordination, author identities and unresolved-atom placeholders.
 The default polymer-port policy uses only shared chemical/canonical metadata.
 Torch retains pose tensor conversion and its existing public file APIs.
+
+Host PDB metadata and split-block identity maps live in `tmol_core.io`. Torch
+retains its original imports; JAX keeps its legacy label aliases. Both consume
+the same optional atom-annotation projection and packing metadata policy.

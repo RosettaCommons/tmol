@@ -199,7 +199,6 @@ def pose_stack_from_canonical_form(
     remove virtual slots without breaking adjacency, matching Torch canonical input.
     Complete input preparation is a host boundary, not a jittable operation.
     """
-    import attrs
     from .canonical_ordering import default_canonical_ordering
     from ._selection import select_and_connect
     from ._missing import complete_missing_atoms
@@ -374,7 +373,18 @@ def pose_stack_from_canonical_form(
     )
     masks = apply_input_policy(result, masks, mode)
     result = complete_missing_atoms(result, masks, build_context=build_missing_context)
-    result = result.replace(pdb_info=attrs.evolve(result.pdb_info, chain_id=authors))
+    from ._metadata import canonical_metadata_for_pose
+
+    result = result.replace(
+        pdb_info=canonical_metadata_for_pose(
+            result,
+            cf,
+            order,
+            rows,
+            prepared.bt_canonical_atom_ind_map,
+            authors,
+        )
+    )
     import jax
 
     return (
