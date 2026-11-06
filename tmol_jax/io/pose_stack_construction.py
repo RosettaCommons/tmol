@@ -191,8 +191,11 @@ def pose_stack_from_canonical_form(
     from ._hydrogen import apply_input_policy
 
     cf = dict(canonical_form_dict)
-    if require_all_metal_donors is not None:
-        cf["require_all_metal_donors"] = require_all_metal_donors
+    cf["require_all_metal_donors"] = (
+        cf.get("require_all_metal_donors", False)
+        if require_all_metal_donors is None
+        else require_all_metal_donors
+    )
     mode = (
         cf.get("ligand_hydrogens", "input")
         if ligand_hydrogens is None
