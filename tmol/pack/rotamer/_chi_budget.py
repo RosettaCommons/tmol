@@ -17,6 +17,7 @@ import attr
 from copy import copy
 from tmol_core.pack.chi import (  # noqa: F401
     n_conformers as _n_conformers,
+    checked_sample_count,
     apply_chi_sample_budget as _apply_chi_sample_budget,
     budgeted_chi_samples as _budgeted_chi_samples,
     chi_depths as _chi_depths,
@@ -46,28 +47,17 @@ def _checked_sample_count(counts, expanded_limit, limit):
     """Check index capacity and budget before narrowing counts or allocating rows."""
     import torch
 
-    if counts.numel() == 0:
-        return 0
-    capacity = torch.iinfo(torch.int32).max
-    if counts.numel() > capacity:
-        raise ValueError(f"Sampling count exceeds index capacity {capacity}")
+    n_counts = counts.numel()
+    if n_counts == 0 or n_counts > torch.iinfo(torch.int32).max:
+        # Avoid reducing empty/oversized tensors; the core owns error policy.
+        return checked_sample_count(n_counts, 0, 0, 0, expanded_limit, limit)
     smallest, largest = torch.aminmax(counts)
     total, smallest, largest = torch.stack(
         (counts.sum(dtype=torch.int64), smallest, largest)
     ).tolist()
-    # Check each count before trusting the sum: invalid int64 inputs can wrap
-    # even an int64 reduction. Valid counts and lengths cannot overflow it.
-    if smallest < 0 or largest > capacity or total > capacity:
-        raise ValueError(
-            f"Sampling count exceeds index capacity {capacity} "
-            "or contains a negative count"
-        )
-    maximum = max(expanded_limit, limit)
-    if largest > maximum:
-        raise ValueError(
-            f"Sampling budget {maximum} cannot fit the required library states"
-        )
-    return total
+    return checked_sample_count(
+        n_counts, total, smallest, largest, expanded_limit, limit
+    )
 
 
 def _check_task_sample_budget(task, samples):

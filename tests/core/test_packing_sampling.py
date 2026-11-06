@@ -96,3 +96,26 @@ def test_sampling_batch_axis_and_framework_free_import():
         env={**os.environ, "PYTHONPATH": str(root)},
         check=True,
     )
+
+
+def test_sample_count_policy_checks_capacity_before_wrapped_totals():
+    from tmol_core.pack.chi import checked_sample_count
+    import pytest
+
+    capacity = 2**31 - 1
+    assert checked_sample_count(0, 0, 0, 0, 2, 3) == 0
+    assert checked_sample_count(3, 6, 1, 3, 2, 3) == 6
+    assert (
+        checked_sample_count(1, capacity, capacity, capacity, capacity, capacity)
+        == capacity
+    )
+    for n, total, smallest, largest in (
+        (capacity + 1, 0, 0, 0),
+        (2, -2, 2**63 - 1, 2**63 - 1),
+        (2, -1, -1, 0),
+        (2, capacity + 1, 1, capacity),
+    ):
+        with pytest.raises(ValueError, match="index capacity"):
+            checked_sample_count(n, total, smallest, largest, 2**63, 2**63)
+    with pytest.raises(ValueError, match="Sampling budget 2"):
+        checked_sample_count(3, 6, 1, 3, 2, 2)

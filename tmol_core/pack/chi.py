@@ -8,6 +8,30 @@ DEFAULT_CHI_SAMPLE_EXPANDED_LIMIT = 100
 DEFAULT_CHI_SAMPLE_LIMIT = 1000
 
 
+def checked_sample_count(n_counts, total, minimum, maximum, expanded_limit, limit):
+    """Validate reduced sampling counts before narrowing indices or allocating.
+
+    Frontends provide int64 reductions. Validate individual counts before
+    trusting their sum: arbitrary invalid int64 values may overflow reduction.
+    """
+    if n_counts == 0:
+        return 0
+    capacity = numpy.iinfo(numpy.int32).max
+    if n_counts > capacity:
+        raise ValueError(f"Sampling count exceeds index capacity {capacity}")
+    if minimum < 0 or maximum > capacity or total > capacity or total < 0:
+        raise ValueError(
+            f"Sampling count exceeds index capacity {capacity} "
+            "or contains a negative count"
+        )
+    budget = max(expanded_limit, limit)
+    if maximum > budget:
+        raise ValueError(
+            f"Sampling budget {budget} cannot fit the required library states"
+        )
+    return total
+
+
 def n_conformers(samples, expanded: bool) -> int:
     """How many conformers a set of sampled chi enumerates."""
     total = 1
