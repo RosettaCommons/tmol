@@ -18,6 +18,7 @@
 #include "conformer_ffi.hh"
 #include "graph_topology_ffi.hh"
 #include "graph_retention_ffi.hh"
+#include "rotamer_dispatch_ffi.hh"
 #include "graph_prefix_ffi.hh"
 #include "forward_kinematics_ffi.hh"
 #include "sampling_ffi.hh"
@@ -368,19 +369,20 @@ ffi::Error run(
     return ffi::Error::Internal(error.what());
   }
 }
-template <typename Stage>
+template <typename Stage, typename... Attributes>
 ffi::Error run_graph_stage(
     cudaStream_t stream,
     ffi::RemainingArgs args,
     ffi::RemainingRets rets,
     int64_t operation,
     int64_t extent,
-    int64_t width) {
+    int64_t width,
+    Attributes... attributes) {
   auto previous = active_stream;
   try {
     auto inputs = native_arguments(args);
     auto outputs = native_results(rets);
-    Stage::validate(inputs, outputs, operation, extent, width);
+    Stage::validate(inputs, outputs, operation, extent, width, attributes...);
     for (size_t i = 0; i < outputs.size(); ++i) {
       int fill = Stage::fill(operation, i);
       auto result = outputs[i];
@@ -390,7 +392,7 @@ ffi::Error run_graph_stage(
     }
     active_stream = stream;
     Stage::template execute<CudaOps, Device::CUDA>(
-        inputs, outputs, operation, extent, width);
+        inputs, outputs, operation, extent, width, attributes...);
     active_stream = previous;
     check_cuda(cudaPeekAtLastError());
     return ffi::Error::Success();
@@ -698,6 +700,19 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<int64_t>("operation")
         .Attr<int64_t>("extent")
         .Attr<int64_t>("width"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_rotamer_dispatch,
+    (tmol::jax::run_graph_stage<tmol::jax::RotamerDispatchStage, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width")
+        .Attr<double>("reach"),
     {xla::ffi::Traits::kCmdBufferCompatible});
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(

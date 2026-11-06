@@ -16,6 +16,7 @@
 #include "conformer_ffi.hh"
 #include "graph_topology_ffi.hh"
 #include "graph_retention_ffi.hh"
+#include "rotamer_dispatch_ffi.hh"
 #include "graph_prefix_ffi.hh"
 #include "annealer_ffi.hh"
 #include "forward_kinematics_ffi.hh"
@@ -172,19 +173,20 @@ ffi::Error run(
     return ffi::Error::InvalidArgument(error.what());
   }
 }
-template <typename Stage>
+template <typename Stage, typename... Attributes>
 ffi::Error run_graph_stage(
     ffi::ThreadPool pool,
     ffi::RemainingArgs args,
     ffi::RemainingRets rets,
     int64_t operation,
     int64_t extent,
-    int64_t width) {
+    int64_t width,
+    Attributes... attributes) {
   auto previous = active_pool;
   try {
     auto inputs = native_arguments(args);
     auto outputs = native_results(rets);
-    Stage::validate(inputs, outputs, operation, extent, width);
+    Stage::validate(inputs, outputs, operation, extent, width, attributes...);
     for (size_t i = 0; i < outputs.size(); ++i) {
       int fill = Stage::fill(operation, i);
       auto result = outputs[i];
@@ -193,7 +195,7 @@ ffi::Error run_graph_stage(
     }
     active_pool = &pool;
     Stage::template execute<CpuOps, Device::CPU>(
-        inputs, outputs, operation, extent, width);
+        inputs, outputs, operation, extent, width, attributes...);
     active_pool = previous;
 
     return ffi::Error::Success();
@@ -659,6 +661,18 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<int64_t>("operation")
         .Attr<int64_t>("extent")
         .Attr<int64_t>("width"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_rotamer_dispatch,
+    (tmol::jax::run_graph_stage<tmol::jax::RotamerDispatchStage, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width")
+        .Attr<double>("reach"));
 
 extern "C" uint64_t tmol_graph_prefix_workspace_bytes(
     int64_t count, int bits, int) {

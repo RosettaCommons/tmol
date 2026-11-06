@@ -13,7 +13,9 @@ def unpack(value):
 
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
-@pytest.mark.parametrize("mode", ("bump", "all", "empty", "fixed", "no_poses", "no_blocks"))
+@pytest.mark.parametrize(
+    "mode", ("bump", "all", "empty", "fixed", "no_poses", "no_blocks")
+)
 def test_native_retention_conserves_conformer_identity(platform, mode):
     try:
         device = jax.devices(platform)[0]
