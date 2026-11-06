@@ -12,6 +12,7 @@ bonded to a sidechain at all, forms no group and is left alone.
 """
 
 import attr
+from tmol_core.pack.correlation import GroupCollapse, expand_group_assignments
 from collections import OrderedDict
 import numpy
 import torch
@@ -160,147 +161,42 @@ def _add_conjugated_group_sampler(task, pose_stack, sampler=None, exclude=()):
     return sampler
 
 
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class GroupCollapse:
-    """How a group's members were folded into one choice for the packer.
-
-    The packer is handed a smaller rotamer set than was built: a member's
-    rotamers past the first are gone, and every reference to them has been sent
-    to the representative's corresponding rotamer, so the packer chooses once
-    for the whole group and cannot pick conformer 5 of one sugar against
-    conformer 200 of the next. The tensors named ``compact_`` describe that
-    smaller set and are what the interaction graph is built from;
-    ``rot_offset_for_block`` and ``members`` stay in the original indexing,
-    which is what the rotamer set's coordinates are addressed by.
-    """
-
-    # original rotamer index -> its index in the compacted set, with a member's
-    #    rotamers pointing at the representative's
-    rot_map: torch.Tensor
-    # compacted rotamer index -> the original rotamer it stands for
-    compact_to_orig: torch.Tensor
-    compact_n_rots_for_block: torch.Tensor
-    compact_rot_offset_for_block: torch.Tensor
-    compact_block_ind_for_rot: torch.Tensor
-    compact_pose_for_rot: torch.Tensor
-    compact_block_type_ind_for_rot: torch.Tensor
-    compact_n_rots_for_pose: torch.Tensor
-    compact_rot_offset_for_pose: torch.Tensor
-    # original indexing, for writing the chosen conformer back out
-    rot_offset_for_block: torch.Tensor
-    n_rots_for_block: torch.Tensor
-    # (pose, representative block, [(member block, that member's rot offset)])
-    members: tuple
-
-
 def _collapse_group_rotamers(pose_stack, rotamer_set, groups):
-    """Fold each group's members into a single block for the packer.
-
-    Returns the replacement bookkeeping, or None when there is nothing to fold.
-    """
     if not groups:
         return None
+    from types import SimpleNamespace
+    from tmol_core.pack.correlation import collapse_group_rotamers
 
-    device = rotamer_set.coords.device
-    n_rots = rotamer_set.block_ind_for_rot.shape[0]
-    rot_map = torch.arange(n_rots, dtype=torch.int64, device=device)
-    keep = torch.ones((n_rots,), dtype=torch.bool, device=device)
-    n_rots_for_block = rotamer_set.n_rots_for_block.clone()
-    rot_offset = rotamer_set.rot_offset_for_block
-    group_of_rot = torch.full((n_rots,), -1, dtype=torch.int64, device=device)
-    conformer_of_rot = torch.full((n_rots,), -1, dtype=torch.int64, device=device)
-
-    members = []
-    for gi, group in enumerate(groups):
-        counts = [int(n_rots_for_block[group.pose, b]) for b in group.blocks]
-        sampled = [b for b, c in zip(group.blocks, counts) if c > 1]
-        if len(sampled) < 2:
-            continue  # nothing to correlate
-        n_conf = int(n_rots_for_block[group.pose, sampled[0]])
-        if any(int(n_rots_for_block[group.pose, b]) != n_conf for b in sampled):
-            raise ValueError(
-                f"group at anchor {group.anchor} has members with differing "
-                "rotamer counts; they cannot be in lockstep"
-            )
-
-        rep = sampled[0]
-        rep_off = int(rot_offset[group.pose, rep])
-        entry = []
-        for b in sampled:
-            off = int(rot_offset[group.pose, b])
-            entry.append((b, off))
-            idx = torch.arange(off, off + n_conf, dtype=torch.int64, device=device)
-            group_of_rot[idx] = gi
-            conformer_of_rot[idx] = torch.arange(
-                n_conf, dtype=torch.int64, device=device
-            )
-            if b == rep:
-                continue
-            rot_map[idx] = torch.arange(
-                rep_off, rep_off + n_conf, dtype=torch.int64, device=device
-            )
-            # One rotamer, not none: a real block with no rotamers is neither
-            #    molten nor background, and the packer's bookkeeping needs it to
-            #    be one or the other. The one it keeps carries no energy -- every
-            #    reference to this member was remapped onto the representative --
-            #    and its coordinates are overwritten once the group's conformer
-            #    is chosen, so it is a placeholder and nothing more.
-            keep[idx[1:]] = False
-            n_rots_for_block[group.pose, b] = 1
-        members.append((group.pose, rep, tuple(entry)))
-
-    if not members:
+    fields = (
+        "block_ind_for_rot",
+        "n_rots_for_block",
+        "rot_offset_for_block",
+        "rot_offset_for_pose",
+        "n_rots_for_pose",
+        "pose_for_rot",
+        "block_type_ind_for_rot",
+    )
+    layout = SimpleNamespace(
+        **{name: getattr(rotamer_set, name).detach().cpu().numpy() for name in fields}
+    )
+    result = collapse_group_rotamers(layout, groups)
+    if result is None:
         return None
-
-    # Counts and offsets have to keep describing a partition of the rotamer
-    #    range: the interaction graph recovers a block's rotamer count by
-    #    differencing consecutive blocks' offsets, so a rotamer left sitting in
-    #    a gap is silently charged to whichever block precedes it.
-    # Include the exclusive end: trailing zero-rotamer blocks and empty poses
-    # can have an offset equal to n_rots.
-    orig_to_compact = torch.cat(
-        (torch.zeros(1, dtype=torch.int64, device=device), keep.cumsum(0))
-    )
-    compact_to_orig = torch.nonzero(keep).view(-1)
-
-    compact_rot_offset_for_block = torch.where(
-        rot_offset >= 0,
-        orig_to_compact[rot_offset.clamp_min(0).to(torch.int64)],
-        rot_offset,
-    )
-    compact_rot_offset_for_pose = orig_to_compact[
-        rotamer_set.rot_offset_for_pose.to(torch.int64)
-    ]
-    n_rots_for_pose = torch.zeros_like(rotamer_set.n_rots_for_pose)
-    n_poses = n_rots_for_pose.shape[0]
-    for pose in range(n_poses):
-        start = int(rotamer_set.rot_offset_for_pose[pose])
-        stop = start + int(rotamer_set.n_rots_for_pose[pose])
-        n_rots_for_pose[pose] = int(keep[start:stop].sum())
-
+    collapse, group, conformer = result
+    device = rotamer_set.coords.device
     return (
-        GroupCollapse(
-            rot_map=orig_to_compact[rot_map],
-            compact_to_orig=compact_to_orig,
-            compact_n_rots_for_block=n_rots_for_block,
-            compact_rot_offset_for_block=compact_rot_offset_for_block.to(
-                rot_offset.dtype
-            ),
-            compact_block_ind_for_rot=rotamer_set.block_ind_for_rot[compact_to_orig],
-            compact_pose_for_rot=rotamer_set.pose_for_rot[compact_to_orig],
-            compact_block_type_ind_for_rot=rotamer_set.block_type_ind_for_rot[
-                compact_to_orig
-            ],
-            compact_n_rots_for_pose=n_rots_for_pose,
-            compact_rot_offset_for_pose=compact_rot_offset_for_pose.to(
-                rotamer_set.rot_offset_for_pose.dtype
-            ),
-            rot_offset_for_block=rot_offset,
-            n_rots_for_block=n_rots_for_block,
-            members=tuple(members),
+        attr.evolve(
+            collapse,
+            **{
+                field.name: torch.as_tensor(
+                    getattr(collapse, field.name), device=device
+                )
+                for field in attr.fields(GroupCollapse)
+                if field.name != "members"
+            },
         ),
-        group_of_rot,
-        conformer_of_rot,
+        torch.as_tensor(group, device=device),
+        torch.as_tensor(conformer, device=device),
     )
 
 
@@ -357,21 +253,19 @@ def _write_group_members(new_pose_stack, rotamer_set, collapse, assignment):
     coords = new_pose_stack.coords.clone()
     pbt = new_pose_stack.packed_block_types
 
+    host_collapse = attr.evolve(
+        collapse,
+        rot_offset_for_block=collapse.rot_offset_for_block.cpu().numpy(),
+        n_rots_for_block=collapse.n_rots_for_block.cpu().numpy(),
+    )
+    sources = expand_group_assignments(assignment.cpu().numpy(), host_collapse)
     for pose, rep, entry in collapse.members:
-        rep_off = int(collapse.rot_offset_for_block[pose, rep])
-        chosen = int(assignment[pose, rep]) - rep_off
-        if chosen < 0 or chosen >= int(collapse.n_rots_for_block[pose, rep]):
-            raise ValueError(
-                f"group representative block {rep} of pose {pose} was assigned "
-                f"rotamer {int(assignment[pose, rep])}, which is not one of the "
-                f"{int(collapse.n_rots_for_block[pose, rep])} it offered"
-            )
         for block, off in entry:
             if block == rep:
                 continue
             n = int(pbt.n_atoms[int(new_pose_stack.block_type_ind[pose, block])])
             start = int(new_pose_stack.block_coord_offset[pose, block])
-            src = int(rotamer_set.coord_offset_for_rot[off + chosen])
+            src = int(rotamer_set.coord_offset_for_rot[int(sources[pose, block])])
             coords[pose, start : start + n] = rotamer_set.coords[src : src + n]
 
     return attr.evolve(new_pose_stack, coords=coords)
