@@ -139,6 +139,38 @@ def _copy_dofs_from_orig_to_rotamers_for_sampler(
     orig_dofs_kto: Tensor[torch.float32][:, 9],
     rot_dofs_kto: Tensor[torch.float32][:, 9],
 ) -> None:
+    if poses.device.type != "mps":
+        if conf_inds_for_sampler.numel() == 0:
+            return
+        pbt = poses.packed_block_types
+        fingerprints = pbt.mc_fingerprints
+        if fingerprints.atom_mapping.shape[1] == 0:
+            return
+        from tmol.pack.rotamer._build_rotamers import _kinforest_device_indices
+        from tmol.pack.rotamer._conformer_compiled import copy_mainchain_dofs
+
+        types = poses.block_type_ind.reshape(-1).long()
+        counts = pbt.n_atoms[types.clamp_min(0)].long()
+        counts = torch.where(types >= 0, counts, 0)
+        source_offsets = torch.cumsum(counts, 0) - counts
+        source_residues = task.global_block_ind_for_considered_block_types[
+            gbt_for_rot[conf_inds_for_sampler]
+        ]
+        copy_mainchain_dofs(
+            types[source_residues],
+            source_offsets[source_residues],
+            block_type_ind_for_rot[conf_inds_for_sampler],
+            n_dof_atoms_offset_for_rot[conf_inds_for_sampler],
+            fingerprints.source_fingerprint,
+            fingerprints.source_atom_mapping,
+            fingerprints.atom_mapping,
+            _kinforest_device_indices(pbt, pbt.device),
+            orig_dofs_kto,
+            rot_dofs_kto,
+            fingerprints.sampler_mapping[sampler_name],
+        )
+        return
+
     dst, src = _create_dof_inds_to_copy_from_orig_to_rotamers_for_sampler(
         poses,
         task,
@@ -243,6 +275,21 @@ def _assign_chi_dofs_from_samples(
         _build_ring_chi_phi_c_corrections,
         _kinforest_device_indices,
     )
+
+    if pbt.device.type != "mps":
+        from tmol.pack.rotamer._conformer_compiled import assign_chi_dofs
+
+        assign_chi_dofs(
+            block_type_ind_for_rot,
+            n_dof_atoms_offset_for_rot,
+            conf_inds_for_sampler,
+            chi_atoms,
+            chi,
+            _kinforest_device_indices(pbt, pbt.device),
+            _build_ring_chi_phi_c_corrections(pbt).to(dtype=chi.dtype),
+            rot_dofs_kto,
+        )
+        return
 
     rows, columns = torch.nonzero(chi_atoms != -1, as_tuple=True)
     atoms = chi_atoms[rows, columns]

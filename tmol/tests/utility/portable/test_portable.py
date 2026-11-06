@@ -300,3 +300,12 @@ def test_native_sampling_empty_segments(tmp_path):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     run = subprocess.run([str(binary)], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
+
+
+@requires_cxx
+def test_conformer_dofs_preserve_missing_geometry_and_ring_offsets(tmp_path):
+    binary = tmp_path / "conformer_dofs"
+    proc = _compile(HERE / "native_conformer_dofs.cc", binary, run=True)
+    assert proc.returncode == 0, proc.stderr
+    run = subprocess.run([str(binary)], capture_output=True, text=True)
+    assert run.returncode == 0, run.stdout + run.stderr
