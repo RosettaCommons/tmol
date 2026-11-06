@@ -31,6 +31,29 @@
 #include "rotamer_bonded_ffi.hh"
 #include "forward_kinematics_ffi.hh"
 #include "sampling_ffi.hh"
+#include "cuda_annealer_ffi.hh"
+
+extern "C" uint64_t tmol_cuda_annealer_workspace(
+    int64_t poses, int64_t residues, int64_t rotamers, int64_t edges) {
+  try {
+    return tmol::pack::compiled::CudaAnnealerWorkspace(
+               poses, residues, rotamers, edges)
+        .bytes;
+  } catch (...) {
+    return UINT64_MAX;
+  }
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_anneal_cuda,
+    tmol::jax::anneal_cuda,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("chunk_size")
+        .Attr<int64_t>("max_rotamers"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
 
 namespace tmol::jax {
 namespace {

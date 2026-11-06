@@ -22,7 +22,12 @@ def imposition_fixture(backend, name, *, design=False):
     if design:
         from .molecules import MolecularCase
 
-        case = MolecularCase((), (("ARG", "LYS"), ("DARG", "DLYS")), ((2,), (2,)))
+        types = (
+            (("ARG", "ALA", "GLY"), ("DARG", "DALA", "GLY"))
+            if name == "fixed_design"
+            else (("ARG", "LYS"), ("DARG", "DLYS"))
+        )
+        case = MolecularCase((), types, tuple((len(row),) for row in types))
     else:
         case = CASES[name]
     backend.molecule(case, terms=("ref",))
@@ -38,6 +43,7 @@ def imposition_fixture(backend, name, *, design=False):
                 PackerPalette,
                 SetPackerTask,
                 DunbrackChiSampler,
+                FixedAAChiSampler,
                 build_rotamers,
             )
 
@@ -48,6 +54,7 @@ def imposition_fixture(backend, name, *, design=False):
                 SetPackerTask,
                 create_dunbrack_sampler_from_database,
                 build_rotamers,
+                FixedAAChiSampler,
             )
 
             sampler = create_dunbrack_sampler_from_database(
@@ -55,6 +62,8 @@ def imposition_fixture(backend, name, *, design=False):
             )
         task = PackerTask(backend.pose, PackerPalette())
         task.add_conformer_sampler(sampler)
+        if name == "fixed_design":
+            task.add_conformer_sampler(FixedAAChiSampler())
         ensure_fallback_sampler(backend, task)
         _, rotamers = build_rotamers(
             backend.pose,
@@ -153,7 +162,9 @@ def impose(backend, rotamers, graph, choices):
 
 
 @pytest.mark.parametrize(
-    "name,design", [(name, False) for name in IMPOSITION_CASES] + [("design", True)]
+    "name,design",
+    [(name, False) for name in IMPOSITION_CASES]
+    + [("design", True), ("fixed_design", True)],
 )
 def test_molecular_imposition_keeps_selected_atoms_and_connectivity(
     backend, name, design

@@ -52,6 +52,13 @@ def prefix_counts(counts, *, maximum=False):
     )(counts, jnp.zeros(1, jnp.int32))[0]
 
 
+@partial(jax.jit, static_argnames=("include_total",))
+def prefix_offsets_and_total(counts, *, include_total=False):
+    """Keep prefix slicing inside compiled execution around an eager barrier."""
+    offsets = prefix_counts(counts)
+    return offsets if include_total else offsets[:-1], offsets[-1]
+
+
 @partial(jax.jit, static_argnames=("operation", "outputs", "extent", "width"))
 def retention_stage(arguments, *, operation, outputs, extent=0, width=0):
     """Run the common retained-conformer stage with functional output masks.
@@ -106,11 +113,11 @@ def retained_topology(
         return retention_stage(args, operation=op, outputs=outputs, **attributes)
 
     def compact(mask):
-        offsets = prefix_counts(mask.reshape(-1, 8))
-        total = int(np.asarray(offsets[-1]).copy().view(np.int64)[0])
+        offsets, total = prefix_offsets_and_total(mask.reshape(-1, 8))
+        total = int(np.asarray(total).copy().view(np.int64)[0])
         if total > np.iinfo(np.int32).max:
             raise OverflowError("retained topology exceeds native int32 capacity")
-        return offsets[:-1], total
+        return offsets, total
 
     with jax.default_device(counts.device):
         if best_energy_for_rotamer is None:

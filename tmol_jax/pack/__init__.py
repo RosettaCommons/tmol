@@ -1,9 +1,10 @@
-"""Shared chemistry and native conformer assembly, scoring and CPU packing."""
+"""Shared chemistry and native conformer assembly, scoring and packing."""
 
 from .palette import PackerPalette
 from .kinematics import prepare_rotamer_kinematics, prepare_block_group_kinematics
 from .dunbrack import DunbrackChiSampler
 from .na_sampling import NaChiRotamerSampler
+from .fixed_amino_acid import FixedAAChiSampler
 from .fingerprint import prepare_atom_copy_plan
 from .task import PackerTask, SetPackerTask
 from .current import IncludeCurrentSampler, FallbackSampler
@@ -27,5 +28,6 @@ __all__ = [
     "prepare_block_group_kinematics",
     "DunbrackChiSampler",
     "NaChiRotamerSampler",
+    "FixedAAChiSampler",
     "prepare_atom_copy_plan",
 ]

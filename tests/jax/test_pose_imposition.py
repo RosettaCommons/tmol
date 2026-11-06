@@ -49,6 +49,7 @@ def test_imposition_gaps_coordinate_ad_and_batching(platform, dtype):
         for rot in selected[selected >= 0]:
             start = rot_offsets[rot]
             selected_atoms[start : start + natoms[rot_types[rot]]] = True
+
         def loss(x):
             return jnp.square(plan.coordinates(x)).sum()
 

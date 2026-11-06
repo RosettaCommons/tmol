@@ -1,6 +1,6 @@
 // Caller-owned XLA buffers for the shared native CPU annealing schedule.
 #pragma once
-#include "genbonded_ffi.hh"
+#include "annealer_common_ffi.hh"
 #include <tmol/pack/compiled/annealer_cpu.hh>
 #include <tmol/score/common/tview_binder.hh>
 #include <cstring>
@@ -16,25 +16,9 @@ inline ffi::Error anneal_cpu(
     if (a.size() != 12 || outputs.size() != 4 || chunk_size < 1
         || chunk_size > INT32_MAX)
       throw std::invalid_argument("invalid CPU annealer arguments");
-    require_shape(a[0], ffi::DataType::S32, {-1});
-    auto poses = a[0].dimensions()[0];
-    for (int i = 1; i < 3; ++i)
-      require_shape(a[i], ffi::DataType::S32, {poses});
-    require_shape(a[3], ffi::DataType::S32, {poses, -1});
-    auto residues = a[3].dimensions()[1];
-    require_shape(a[4], ffi::DataType::S32, {poses, residues});
-    require_shape(a[5], ffi::DataType::S32, {-1});
-    auto rotamers = a[5].dimensions()[0];
-    // Opaque int64 metadata retains CSR capacity with JAX x64 disabled.
-    require_shape(a[6], ffi::DataType::U8, {poses * residues + 1, 8});
-    require_shape(a[7], ffi::DataType::S32, {-1});
-    require_shape(a[8], ffi::DataType::U8, {a[7].dimensions()[0], 8});
-    require_shape(a[9], ffi::DataType::U8, {-1, 8});
-    require_shape(a[10], ffi::DataType::F32, {rotamers});
-    require_shape(a[11], ffi::DataType::F32, {-1});
-    for (int i : {6, 8, 9})
-      if (reinterpret_cast<uintptr_t>(a[i].untyped_data()) % alignof(int64_t))
-        throw std::invalid_argument("unaligned annealer CSR metadata");
+    validate_annealer_graph(a);
+    auto poses = a[0].dimensions()[0], residues = a[3].dimensions()[1],
+         rotamers = a[5].dimensions()[0];
     std::vector<ffi::AnyBuffer> out;
     for (size_t i = 0; i < outputs.size(); ++i) {
       auto result = outputs.get<ffi::AnyBuffer>(i);

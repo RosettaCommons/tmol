@@ -5,27 +5,26 @@ import numpy as np
 
 from .rotamers import build_rotamers
 from .interaction_graph import build_interaction_graph
-from .annealing import anneal_cpu
+from .annealing import anneal_cpu, anneal_cuda
 from .imposition import impose_top_rotamer_assignments
 
 
 def pack_rotamers(pose_stack, sfxn, task, *, seed, chunk_size=16):
-    """Select conformers using the complete sparse score and mature CPU search.
+    """Select conformers using the complete sparse score and native search.
 
     Returns a new pose. The task must register its samplers, including fallback
     for uncovered blocks. All enabled score terms are included. This eager,
-    discrete operation requires float32 CPU coordinates and an explicit uint64
+    discrete operation requires float32 coordinates and an explicit uint64
     seed. Candidate pruning and correlated-group search are not implemented.
-    CUDA execution requires the forthcoming shared CUDA annealer binding.
+    CPU and CUDA use their respective mature search schedules. The CUDA phase
+    seeds are drawn locally from NumPy PCG64; no global RNG state is changed.
     """
     if isinstance(pose_stack.coords, jax.core.Tracer):
         raise TypeError("discrete packing requires eager coordinates and choices")
     if pose_stack.coords.dtype != np.float32:
         raise TypeError("native packing search requires float32 coordinates")
-    if pose_stack.device.platform != "cpu":
-        raise NotImplementedError(
-            "the current packing frontend requires native CPU annealing"
-        )
+    if not isinstance(seed, (int, np.integer)) or not 0 <= seed < 1 << 64:
+        raise ValueError("packing seed must be an unsigned 64-bit integer")
     pose, rotamers = build_rotamers(
         pose_stack, task, pose_stack.packed_block_types.chem_db
     )
@@ -55,5 +54,14 @@ def pack_rotamers(pose_stack, sfxn, task, *, seed, chunk_size=16):
             "energy2b",
         )
     )
-    _, assignments = anneal_cpu(*arguments, chunk_size=chunk_size, seed=seed)
+    if pose.device.platform == "cpu":
+        _, assignments = anneal_cpu(*arguments, chunk_size=chunk_size, seed=seed)
+    else:
+        seeds = np.random.PCG64(int(seed)).random_raw(3).view(np.uint8).reshape(3, 8)
+        _, assignments = anneal_cuda(
+            *arguments,
+            chunk_size=chunk_size,
+            phase_seeds=jax.device_put(seeds, pose.device),
+            max_rotamers=int(np.asarray(r["rotamer_pose_counts"]).max(initial=0)),
+        )
     return impose_top_rotamer_assignments(pose, rotamers, graph, assignments)
