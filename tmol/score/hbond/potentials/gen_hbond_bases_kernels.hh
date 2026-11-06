@@ -64,6 +64,7 @@ template <
     tmol::Device Dev,
     int nt,
     typename Real,
+    bool ComputeCoordinates = true,
     typename Ctx>
 void TMOL_DEVICE_FUNC hbond_bases_gen_load_block_coords_and_params_into_shared(
     TMOL_THREAD Ctx const& ctx,
@@ -77,12 +78,14 @@ void TMOL_DEVICE_FUNC hbond_bases_gen_load_block_coords_and_params_into_shared(
   r_dat.n_donH = ctx.block_type_tile_n_donH[r_dat.block_type][tile_ind];
   r_dat.n_acc = ctx.block_type_tile_n_acc[r_dat.block_type][tile_ind];
 
-  DeviceOps<Dev>::template copy_contiguous_data<nt, 3>(
-      r_dat.coords,
-      reinterpret_cast<TMOL_DEVICE_PTR(Real)>(
-          &ctx.rot_coords[r_dat.rot_coord_offset + start_atom]),
-      n_atoms_to_load * 3,
-      lane);
+  if constexpr (ComputeCoordinates) {
+    DeviceOps<Dev>::template copy_contiguous_data<nt, 3>(
+        r_dat.coords,
+        reinterpret_cast<TMOL_DEVICE_PTR(Real)>(
+            &ctx.rot_coords[r_dat.rot_coord_offset + start_atom]),
+        n_atoms_to_load * 3,
+        lane);
+  }
   DeviceOps<Dev>::template copy_contiguous_data_and_cast<nt, 1>(
       r_dat.donH_tile_inds,
       &ctx.block_type_tile_donH_inds[r_dat.block_type][tile_ind][0],
@@ -173,7 +176,12 @@ TMOL_DEVICE_FUNC
 }
 
 // Build the donor base entry for the donH at intra-tile index don_h_ind.
-template <int TileSize, typename Real, typename Int, typename Ctx>
+template <
+    int TileSize,
+    typename Real,
+    typename Int,
+    bool ComputeCoordinates = true,
+    typename Ctx>
 void TMOL_DEVICE_FUNC build_donor_base(
     TMOL_THREAD Ctx const& ctx,
     TMOL_THREAD HBondBasesGenSingleResData<Real> const& r_dat,
@@ -193,19 +201,27 @@ void TMOL_DEVICE_FUNC build_donor_base(
   auto don_bases = RotamerCentricDonorBase<Int>::for_polar_H(
       H, bonds, ctx.block_type_atom_is_hydrogen);
 
-  Vec<Real, 3> Dxyz = hbond_bases_gen_load_coord<TileSize>(
-      don_bases.D, r_dat, ctx, pose_ind, tile_start);
   int const D_pose_atom_ind =
       hbond_bases_gen_pose_atom_ind(don_bases.D, r_dat, ctx, pose_ind);
 
   int const H_pose_atom_ind = r_dat.rot_coord_offset + don_h_atom_in_block;
-  ctx.derived_coords[H_pose_atom_ind][0] = Dxyz;
-  ctx.derived_atom_inds[H_pose_atom_ind][0] = D_pose_atom_ind;
+  if constexpr (ComputeCoordinates) {
+    ctx.derived_coords[H_pose_atom_ind][0] =
+        hbond_bases_gen_load_coord<TileSize>(
+            don_bases.D, r_dat, ctx, pose_ind, tile_start);
+  }
+  ctx.derived_atom_inds[H_pose_atom_ind][0] =
+      !ComputeCoordinates && D_pose_atom_ind < 0 ? -2 : D_pose_atom_ind;
 }
 
 // Build the two acceptor base entries (B, B0) for the acceptor at intra-tile
 // index acc_ind.
-template <int TileSize, typename Real, typename Int, typename Ctx>
+template <
+    int TileSize,
+    typename Real,
+    typename Int,
+    bool ComputeCoordinates = true,
+    typename Ctx>
 void TMOL_DEVICE_FUNC build_acceptor_bases(
     TMOL_THREAD Ctx const& ctx,
     TMOL_THREAD HBondBasesGenSingleResData<Real> const& r_dat,
@@ -227,20 +243,24 @@ void TMOL_DEVICE_FUNC build_acceptor_bases(
       bonds,
       ctx.block_type_atom_is_hydrogen);
 
-  Vec<Real, 3> Bxyz = hbond_bases_gen_load_coord<TileSize>(
-      acc_bases.B, r_dat, ctx, pose_ind, tile_start);
-  Vec<Real, 3> B0xyz = hbond_bases_gen_load_coord<TileSize>(
-      acc_bases.B0, r_dat, ctx, pose_ind, tile_start);
   int const B_pose_atom_ind =
       hbond_bases_gen_pose_atom_ind(acc_bases.B, r_dat, ctx, pose_ind);
   int const B0_pose_atom_ind =
       hbond_bases_gen_pose_atom_ind(acc_bases.B0, r_dat, ctx, pose_ind);
 
   int const A_pose_atom_ind = r_dat.rot_coord_offset + acc_atom_in_block;
-  ctx.derived_coords[A_pose_atom_ind][1] = Bxyz;
-  ctx.derived_coords[A_pose_atom_ind][2] = B0xyz;
-  ctx.derived_atom_inds[A_pose_atom_ind][1] = B_pose_atom_ind;
-  ctx.derived_atom_inds[A_pose_atom_ind][2] = B0_pose_atom_ind;
+  if constexpr (ComputeCoordinates) {
+    ctx.derived_coords[A_pose_atom_ind][1] =
+        hbond_bases_gen_load_coord<TileSize>(
+            acc_bases.B, r_dat, ctx, pose_ind, tile_start);
+    ctx.derived_coords[A_pose_atom_ind][2] =
+        hbond_bases_gen_load_coord<TileSize>(
+            acc_bases.B0, r_dat, ctx, pose_ind, tile_start);
+  }
+  ctx.derived_atom_inds[A_pose_atom_ind][1] =
+      !ComputeCoordinates && B_pose_atom_ind < 0 ? -2 : B_pose_atom_ind;
+  ctx.derived_atom_inds[A_pose_atom_ind][2] =
+      !ComputeCoordinates && B0_pose_atom_ind < 0 ? -2 : B0_pose_atom_ind;
 }
 
 // One workgroup per rotamer: tile the rotamer's atoms, and for each tile
@@ -256,6 +276,7 @@ template <
     typename Real,
     typename Int,
     typename launch_t,
+    bool ComputeCoordinates = true,
     typename Ctx,
     typename Shared>
 TMOL_HOST_DEVICE_FUNC void hbond_bases_gen(
@@ -300,18 +321,20 @@ TMOL_HOST_DEVICE_FUNC void hbond_bases_gen(
         DeviceOps,
         Dev,
         nt,
-        Real>(ctx, tile_ind, r_dat, n_atoms_to_load, tile_ind * TileSize, lane);
+        Real,
+        ComputeCoordinates>(
+        ctx, tile_ind, r_dat, n_atoms_to_load, tile_ind * TileSize, lane);
     DeviceOps<Dev>::synchronize_workgroup(lane);
 
     auto gen_tile_bases = ([=] TMOL_DEVICE_FUNC(int tid) {
       int const n_items = r_dat.n_donH + r_dat.n_acc;
       for (int i = tid; i < n_items; i += nt) {
         if (i < r_dat.n_donH) {
-          build_donor_base<TileSize, Real, Int>(
+          build_donor_base<TileSize, Real, Int, ComputeCoordinates>(
               ctx, r_dat, pose_ind, tile_ind * TileSize, i);
         } else {
           int const acc_i = i - r_dat.n_donH;
-          build_acceptor_bases<TileSize, Real, Int>(
+          build_acceptor_bases<TileSize, Real, Int, ComputeCoordinates>(
               ctx, r_dat, pose_ind, tile_ind * TileSize, acc_i);
         }
       }

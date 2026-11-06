@@ -1036,6 +1036,7 @@ std::vector<Tensor> hbond_rotamer_scores_shared_op(
 // for the derived coords flow through the pairwise scoring kernel directly
 // to the source atoms via derived_atom_inds, so this op itself is treated
 // as a non-differentiable lookup.
+template <bool ComputeCoordinates = true>
 std::vector<Tensor> gen_hbond_bases_op(
     Tensor rot_coords,
     Tensor rot_coord_offset,
@@ -1068,36 +1069,53 @@ std::vector<Tensor> gen_hbond_bases_op(
         using Real = scalar_t;
         constexpr tmol::Device Dev = device_t;
 
-        auto result =
-            GenerateHBondBases<common::DeviceOperations, Dev, Real, Int>::
-                forward(
-                    mgr,
-                    TCAST(rot_coords),
-                    TCAST(rot_coord_offset),
-                    TCAST(first_rot_for_block),
-                    TCAST(first_rot_block_type),
-                    TCAST(block_ind_for_rot),
-                    TCAST(pose_ind_for_rot),
-                    TCAST(block_type_ind_for_rot),
-                    TCAST(pose_stack_inter_residue_connections),
-                    TCAST(block_type_n_atoms),
-                    TCAST(block_type_n_interblock_bonds),
-                    TCAST(block_type_atoms_forming_chemical_bonds),
-                    TCAST(block_type_n_all_bonds),
-                    TCAST(block_type_all_bonds),
-                    TCAST(block_type_atom_all_bond_ranges),
-                    TCAST(block_type_tile_n_donH),
-                    TCAST(block_type_tile_n_acc),
-                    TCAST(block_type_tile_donH_inds),
-                    TCAST(block_type_tile_acc_inds),
-                    TCAST(block_type_tile_hybridization),
-                    TCAST(block_type_atom_is_hydrogen));
+        auto result = GenerateHBondBases < common::DeviceOperations, Dev, Real,
+             Int,
+             ComputeCoordinates
+                 || Dev
+                        == tmol::Device::MPS > ::forward(
+                               mgr,
+                               TCAST(rot_coords),
+                               TCAST(rot_coord_offset),
+                               TCAST(first_rot_for_block),
+                               TCAST(first_rot_block_type),
+                               TCAST(block_ind_for_rot),
+                               TCAST(pose_ind_for_rot),
+                               TCAST(block_type_ind_for_rot),
+                               TCAST(pose_stack_inter_residue_connections),
+                               TCAST(block_type_n_atoms),
+                               TCAST(block_type_n_interblock_bonds),
+                               TCAST(block_type_atoms_forming_chemical_bonds),
+                               TCAST(block_type_n_all_bonds),
+                               TCAST(block_type_all_bonds),
+                               TCAST(block_type_atom_all_bond_ranges),
+                               TCAST(block_type_tile_n_donH),
+                               TCAST(block_type_tile_n_acc),
+                               TCAST(block_type_tile_donH_inds),
+                               TCAST(block_type_tile_acc_inds),
+                               TCAST(block_type_tile_hybridization),
+                               TCAST(block_type_atom_is_hydrogen));
 
         derived_coords = std::get<0>(result).tensor;
         derived_atom_inds = std::get<1>(result).tensor;
       }));
 
   return {derived_coords, derived_atom_inds};
+}
+
+Tensor gather_hbond_bases_op(Tensor coords, Tensor indices) {
+  tmol::native::Tensor output;
+  using Int = int32_t;
+  TMOL_DISPATCH_FLOATING_DEVICE(
+      coords.options(), "gather_hbond_bases_op", ([&] {
+        using Real = scalar_t;
+        constexpr tmol::Device Dev = device_t;
+        output =
+            GatherHBondBases<common::DeviceOperations, Dev, Real, Int>::forward(
+                mgr, TCAST(coords), TCAST(indices))
+                .tensor;
+      }));
+  return output;
 }
 
 template <template <tmol::Device> class DispatchMethod>
@@ -1203,7 +1221,9 @@ TMOL_LIBRARY(tmol_hbond, m) {
   m.def(
       "hbond_rotamer_dispatch_page",
       TMOL_FN(&hbond_rotamer_dispatch_page_op<common::DeviceOperations>));
-  m.def("gen_hbond_bases", TMOL_FN(&gen_hbond_bases_op));
+  m.def("gen_hbond_bases", TMOL_FN(&gen_hbond_bases_op<true>));
+  m.def("gen_hbond_base_indices", TMOL_FN(&gen_hbond_bases_op<false>));
+  m.def("gather_hbond_bases", TMOL_FN(&gather_hbond_bases_op));
 }
 
 }  // namespace potentials

@@ -17,6 +17,29 @@ template struct GenerateHBondBases<
     double,
     int>;
 
+template struct GenerateHBondBases<
+    common::DeviceOperations,
+    tmol::Device::CUDA,
+    float,
+    int,
+    false>;
+template struct GatherHBondBases<
+    common::DeviceOperations,
+    tmol::Device::CUDA,
+    float,
+    int>;
+template struct GenerateHBondBases<
+    common::DeviceOperations,
+    tmol::Device::CUDA,
+    double,
+    int,
+    false>;
+template struct GatherHBondBases<
+    common::DeviceOperations,
+    tmol::Device::CUDA,
+    double,
+    int>;
+
 }  // namespace potentials
 }  // namespace hbond
 }  // namespace score

@@ -20,3 +20,6 @@ _hbond_rotamer_scores_shared = _ops.hbond_rotamer_scores_shared
 _hbond_rotamer_spheres = _ops.hbond_rotamer_spheres
 _hbond_rotamer_dispatch_page = _ops.hbond_rotamer_dispatch_page
 _gen_hbond_bases = _ops.gen_hbond_bases
+
+_gen_hbond_base_indices = _ops.gen_hbond_base_indices
+_gather_hbond_bases = _ops.gather_hbond_bases
