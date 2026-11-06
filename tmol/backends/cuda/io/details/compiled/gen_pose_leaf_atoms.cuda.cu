@@ -45,3 +45,35 @@ template struct CanonicalTopology<
     Device::CUDA,
     int64_t>;
 }  // namespace tmol::io::details::compiled
+
+#include <tmol/io/details/compiled/canonical_policies.impl.hh>
+namespace tmol::io::details::compiled {
+template struct CanonicalPolicies<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    int32_t>;
+template struct CanonicalCycles<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    float,
+    int32_t>;
+template struct CanonicalCycles<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    double,
+    int32_t>;
+template struct CanonicalPolicies<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    int64_t>;
+template struct CanonicalCycles<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    float,
+    int64_t>;
+template struct CanonicalCycles<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    double,
+    int64_t>;
+}  // namespace tmol::io::details::compiled

@@ -9,6 +9,7 @@
 #include <tmol/io/details/compiled/gen_pose_leaf_atoms.hh>
 #include <tmol/io/details/compiled/canonical_candidates.hh>
 #include <tmol/io/details/compiled/canonical_topology.hh>
+#include <tmol/io/details/compiled/canonical_policies.hh>
 #include <tmol/utility/tensor/TensorPack.h>
 #include <tmol/io/details/compiled/resolve_his_taut.hh>
 
@@ -329,7 +330,108 @@ Tensor canonical_atom_termini(std::vector<Tensor> inputs) {
   return output;
 }
 
+Tensor canonical_variants(std::vector<Tensor> inputs, int64_t neutral_base) {
+  TORCH_CHECK(inputs.size() == 4, "Canonical variants require four buffers");
+  Tensor result;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[0].options(), "canonical_variants", ([&] {
+        using Int = scalar_t;
+        auto output = TPack<Int, 2, device_t>::empty(
+            {inputs[0].size(0), inputs[0].size(1)});
+        CanonicalVariantContext<Int, device_t> c{
+            TCAST(inputs[0]),
+            TCAST(inputs[1]),
+            TCAST(inputs[2]),
+            TCAST(inputs[3]),
+            neutral_base,
+            output.view};
+        CanonicalPolicies<score::common::DeviceOperations, device_t, Int>::
+            variants(mgr, c);
+        result = output.tensor;
+      }));
+  return result;
+}
+Tensor canonical_cycles(std::vector<Tensor> inputs, double cutoff) {
+  TORCH_CHECK(inputs.size() == 6, "Canonical cycles require six buffers");
+  Tensor result;
+  TMOL_DISPATCH_FLOATING_DEVICE(
+      inputs[4].options(), "canonical_cycle_coordinates", ([&] {
+        using Real = scalar_t;
+        TMOL_DISPATCH_INDEX_DEVICE(
+            inputs[0].options(), "canonical_cycle_indices", ([&] {
+              using Int = scalar_t;
+              auto output = TPack<Int, 2, device_t>::empty(
+                  {inputs[0].size(0), inputs[0].size(1)});
+              CanonicalCycleContext<Real, Int, device_t> c{
+                  TCAST(inputs[0]),
+                  TCAST(inputs[1]),
+                  TCAST(inputs[2]),
+                  TCAST(inputs[3]),
+                  TCAST(inputs[4]),
+                  TCAST(inputs[5]),
+                  Real(cutoff),
+                  output.view};
+              CanonicalCycles<
+                  score::common::DeviceOperations,
+                  device_t,
+                  Real,
+                  Int>::f(mgr, c);
+              result = output.tensor;
+            }));
+      }));
+  return result;
+}
+std::tuple<Tensor, Tensor> canonical_wiring(
+    std::vector<Tensor> inputs, int64_t max_ports) {
+  TORCH_CHECK(inputs.size() == 11, "Canonical wiring requires eleven buffers");
+  Tensor result, status;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[0].options(), "canonical_wiring", ([&] {
+        using Int = scalar_t;
+        auto output = TPack<Vec<Int, 2>, 3, device_t>::empty(
+            {inputs[0].size(0), inputs[0].size(1), max_ports});
+        auto errors = TPack<Int, 1, device_t>::empty({inputs[0].size(0)});
+        CanonicalWiringContext<Int, device_t> c{
+            TCAST(inputs[0]),
+            TCAST(inputs[1]),
+            TCAST(inputs[2]),
+            TCAST(inputs[3]),
+            TCAST(inputs[4]),
+            TCAST(inputs[5]),
+            TCAST(inputs[6]),
+            TCAST(inputs[7]),
+            TCAST(inputs[8]),
+            TCAST(inputs[9]),
+            TCAST(inputs[10]),
+            output.view,
+            errors.view};
+        CanonicalPolicies<score::common::DeviceOperations, device_t, Int>::
+            wiring(mgr, c);
+        result = output.tensor;
+        status = errors.tensor;
+      }));
+  return {result, status};
+}
+Tensor canonical_connection_errors(Tensor types, Tensor connections) {
+  Tensor result;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      types.options(), "canonical_connection_errors", ([&] {
+        using Int = scalar_t;
+        auto bad = TPack<bool, 3, device_t>::empty(
+            {connections.size(0), connections.size(1), connections.size(2)});
+        CanonicalPolicies<score::common::DeviceOperations, device_t, Int>::
+            validate(mgr, TCAST(types), TCAST(connections), bad.view);
+        result = bad.tensor;
+      }));
+  return result;
+}
+
 TMOL_LIBRARY(tmol_io, m) {
+  m.def("canonical_variants", TMOL_FN(&canonical_variants));
+  m.def("canonical_cycles", TMOL_FN(&canonical_cycles));
+  m.def("canonical_wiring", TMOL_FN(&canonical_wiring));
+  m.def("canonical_connection_errors", TMOL_FN(&canonical_connection_errors));
+
   m.def("canonical_chain_endings", TMOL_FN(&canonical_chain_endings));
   m.def("canonical_atom_termini", TMOL_FN(&canonical_atom_termini));
   m.def("select_canonical_candidates", TMOL_FN(&select_canonical_candidates));

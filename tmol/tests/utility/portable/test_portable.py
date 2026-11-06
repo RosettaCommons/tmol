@@ -354,6 +354,7 @@ def test_native_rotamer_dispatch_without_torch(tmp_path):
         "native_io_leaf_atoms.cc",
         "native_canonical_candidates.cc",
         "native_canonical_topology.cc",
+        "native_canonical_policies.cc",
         "native_histidine.cc",
         "native_pose_imposition.cc",
         "native_cuda_annealer_workspace.cc",

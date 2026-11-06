@@ -75,7 +75,6 @@ def _assign_block_types(
     device = pbt.device
     n_poses = chain_id.shape[0]
     max_n_res = chain_id.shape[1]
-    max_n_conn = pbt.max_n_conn
 
     res_types64 = res_types.to(torch.int64)
     res_type_variants64 = res_type_variants.to(torch.int64)
@@ -126,18 +125,19 @@ def _assign_block_types(
         res_not_connected & is_polymeric[..., None],
         is_real_res,
     )
-    # a neutral amino terminus where the residue is one; its charge elsewhere
-    neutral = res_type_variants64 >= NEUTRAL_TERMINUS_VAR_BASE
-    if bool(neutral.any()):
-        can_ann = pbt.canonical_ordering_annotation
-        fits = can_ann.var_combo_is_real_candidate[
-            res_types64.clamp(min=0), termini_variants, res_type_variants64.clamp(min=0)
-        ].any(-1)
-        res_type_variants64 = torch.where(
-            neutral & ~fits,
-            res_type_variants64 - NEUTRAL_TERMINUS_VAR_BASE,
-            res_type_variants64,
-        )
+    from tmol.io.details.compiled._compiled import _canonical_variants
+
+    variant_inputs = [
+        res_types64,
+        res_type_variants64,
+        termini_variants,
+        pbt.canonical_ordering_annotation.var_combo_is_real_candidate,
+    ]
+    if device.type == "mps":
+        variant_inputs = [x.cpu() for x in variant_inputs]
+    res_type_variants64 = _canonical_variants(
+        variant_inputs, NEUTRAL_TERMINUS_VAR_BASE
+    ).to(device)
     block_type_ind64 = _select_best_block_type_candidate(
         canonical_ordering,
         pbt,
@@ -155,127 +155,16 @@ def _assign_block_types(
         canonical_ordering, pbt, block_type_ind64, metal_connections
     )
 
-    # UGH: stealing/duplicating a lot of code from pose_stack_builder below
-    # SHOULD THIS JUST GO IN POSE_STACK_BUILDER AND REPLACE ITS EXISTING CODE???
-    # SHOULD POSE_STACK_BUILDER BE DEPRECATED??
-    inter_residue_connections64 = torch.full(
-        (n_poses, max_n_res, max_n_conn, 2), -1, dtype=torch.int64, device=device
-    )
-
-    # is a residue both polymeric and connected to the previous residue?
-    res_is_polymeric_and_conn_to_prev = torch.logical_and(
+    inter_residue_connections64 = _wire_canonical_connections(
+        pbt,
+        block_type_ind64,
         is_polymeric,
-        torch.logical_and(
-            torch.logical_not(is_actual_first_chain_res),
-            torch.logical_not(res_not_connected[:, :, 0]),
-        ),
-    )
-    res_is_polymeric_and_conn_to_next = torch.logical_and(
-        is_polymeric,
-        torch.logical_and(
-            torch.logical_not(is_actual_last_chain_res),
-            torch.logical_not(res_not_connected[:, :, 1]),
-        ),
-    )
-
-    # If a block cannot be resolved make sure it is completely
-    # removed from the connection table!
-    resolved = block_type_ind64 >= 0
-    pad = torch.zeros((n_poses, 1), dtype=torch.bool, device=device)
-    prev_resolved = torch.cat((pad, resolved[:, :-1]), dim=1)
-    next_resolved = torch.cat((resolved[:, 1:], pad), dim=1)
-    res_is_polymeric_and_conn_to_prev &= resolved & prev_resolved
-    res_is_polymeric_and_conn_to_next &= resolved & next_resolved
-
-    connected_up_conn_inds = pbt.up_conn_inds[
-        block_type_ind64[res_is_polymeric_and_conn_to_next]
-    ].to(torch.int64)
-    connected_down_conn_inds = pbt.down_conn_inds[
-        block_type_ind64[res_is_polymeric_and_conn_to_prev]
-    ].to(torch.int64)
-
-    (
-        nz_res_is_poly_and_conn_to_prev_pose_ind,
-        nz_res_is_poly_and_conn_to_prev_res_ind,
-    ) = torch.nonzero(res_is_polymeric_and_conn_to_prev, as_tuple=True)
-    (
-        nz_res_is_poly_and_conn_to_next_pose_ind,
-        nz_res_is_poly_and_conn_to_next_res_ind,
-    ) = torch.nonzero(res_is_polymeric_and_conn_to_next, as_tuple=True)
-
-    # mark each connection with the residue and connection on its other side
-    def join(pose1, res1, conn1, pose2, res2, conn2):
-        inter_residue_connections64[pose1, res1, conn1] = torch.stack((res2, conn2), -1)
-        inter_residue_connections64[pose2, res2, conn2] = torch.stack((res1, conn1), -1)
-
-    join(
-        nz_res_is_poly_and_conn_to_next_pose_ind,
-        nz_res_is_poly_and_conn_to_next_res_ind,
-        connected_up_conn_inds,
-        nz_res_is_poly_and_conn_to_prev_pose_ind,
-        nz_res_is_poly_and_conn_to_prev_res_ind,
-        connected_down_conn_inds,
-    )
-
-    # if we have any disulfides, then we need to also mark those
-    # connections in the inter_residue_connections64 map
-    if found_disulfides64.shape[0] != 0:
-        cyd1_block_type64 = block_type_ind64[
-            found_disulfides64[:, 0], found_disulfides64[:, 1]
-        ]
-        cyd2_block_type64 = block_type_ind64[
-            found_disulfides64[:, 0], found_disulfides64[:, 2]
-        ]
-
-        # n- and c-term CYD residues will have different dslf connection inds
-        # than mid-cyd residues; therefore we don't just hard code "2" here
-        cyd1_dslf_conn64 = pbt.canonical_dslf_conn_ind[cyd1_block_type64].to(
-            torch.int64
-        )
-        cyd2_dslf_conn64 = pbt.canonical_dslf_conn_ind[cyd2_block_type64].to(
-            torch.int64
-        )
-        join(
-            found_disulfides64[:, 0],
-            found_disulfides64[:, 1],
-            cyd1_dslf_conn64,
-            found_disulfides64[:, 0],
-            found_disulfides64[:, 2],
-            cyd2_dslf_conn64,
-        )
-
-    # a cyclic chain's closing bond joins two residues the sequential logic
-    # above deliberately skipped, so write it from the explicit pair list
-    if cyclic_closures64 is not None and cyclic_closures64.shape[0] != 0:
-        cyc_pose = cyclic_closures64[:, 0]
-        cyc_up_res = cyclic_closures64[:, 1]
-        cyc_down_res = cyclic_closures64[:, 2]
-        cyc_up_conn64 = pbt.up_conn_inds[block_type_ind64[cyc_pose, cyc_up_res]].to(
-            torch.int64
-        )
-        cyc_down_conn64 = pbt.down_conn_inds[
-            block_type_ind64[cyc_pose, cyc_down_res]
-        ].to(torch.int64)
-        join(
-            cyc_pose, cyc_up_res, cyc_up_conn64, cyc_pose, cyc_down_res, cyc_down_conn64
-        )
-
-    # a conjugation joins two residues through connections neither of them
-    #    declares by position, so both ends come from the bond itself
-    if conjugation_conns:
-        pose_inds, res1, conn1, res2, conn2 = torch.tensor(
-            conjugation_conns, dtype=torch.int64, device=device
-        ).unbind(1)
-        inter_residue_connections64[pose_inds, res1, conn1] = torch.stack(
-            (res2, conn2), -1
-        )
-        inter_residue_connections64[pose_inds, res2, conn2] = torch.stack(
-            (res1, conn1), -1
-        )
-
-    # now that we have the inter-residue connections established,
-    _assert_connections_are_well_formed(
-        pbt, block_type_ind64, inter_residue_connections64
+        is_actual_first_chain_res,
+        is_actual_last_chain_res,
+        res_not_connected,
+        found_disulfides64,
+        cyclic_closures64,
+        conjugation_conns,
     )
 
     inter_block_bondsep = PoseStackBuilder._inter_block_bondsep_from_connections(
@@ -285,35 +174,52 @@ def _assign_block_types(
     return (block_type_ind64, inter_residue_connections64, inter_block_bondsep)
 
 
-def _assert_connections_are_well_formed(
-    pbt, block_type_ind64, inter_residue_connections64
+def _wire_canonical_connections(
+    pbt, types, polymeric, first, last, broken, disulfides=None, cycles=None, extra=()
 ):
-    """Validate endpoint bounds and reciprocal ports without device scalar reads."""
-    connections = inter_residue_connections64
-    poses, blocks, ports = torch.nonzero(connections[..., 0] >= 0, as_tuple=True)
-    partners, partner_ports = connections[poses, blocks, ports].unbind(-1)
-    safe_partners = partners.clamp(0, connections.shape[1] - 1)
-    safe_ports = partner_ports.clamp(0, connections.shape[2] - 1)
-    reverse = connections[poses, safe_partners, safe_ports]
-    bad = (
-        (partners != safe_partners)
-        | (partner_ports != safe_ports)
-        | (block_type_ind64[poses, blocks] < 0)
-        | (block_type_ind64[poses, safe_partners] < 0)
-        | (reverse[:, 0] != blocks)
-        | (reverse[:, 1] != ports)
-        # A residue bonded to itself satisfies reciprocity trivially, so nothing
-        # above sees it. Sequential wiring pairs the k-th "connects to next"
-        # residue with the k-th "connects to prev" one, and a caller-supplied
-        # res_not_connected that breaks the two lists at different places makes
-        # those the same residue.
-        | (partners == blocks)
-    )
+    from tmol.io.details.compiled._compiled import _canonical_wiring
+
+    empty = torch.empty((0, 3), dtype=types.dtype, device=types.device)
+    inputs = [
+        types,
+        polymeric,
+        first,
+        last,
+        broken,
+        pbt.up_conn_inds.to(types.dtype),
+        pbt.down_conn_inds.to(types.dtype),
+        pbt.canonical_dslf_conn_ind.to(types.dtype),
+        empty if disulfides is None else disulfides,
+        empty if cycles is None else cycles,
+        torch.tensor(extra, dtype=types.dtype, device=types.device).reshape(-1, 5),
+    ]
+    if types.device.type == "mps":
+        inputs = [x.cpu() for x in inputs]
+    connections, status = _canonical_wiring(inputs, pbt.max_n_conn)
+    connections = connections.to(types.device)
+    if torch.any(status):
+        _assert_connections_are_well_formed(pbt, types, connections)
+        raise RuntimeError(
+            f"malformed inter-residue connections: pose status {status.tolist()}"
+        )
+    return connections
+
+
+def _assert_connections_are_well_formed(pbt, block_type_ind64, connections):
+    """Validate endpoint bounds, reciprocity, and self-connections in the core."""
+    from tmol.io.details.compiled._compiled import _canonical_connection_errors
+
+    types = block_type_ind64
+    if types.device.type == "mps":
+        types, connections = types.cpu(), connections.cpu()
+    bad = _canonical_connection_errors(types, connections)
     if bad.any():
-        rows = torch.stack((poses, blocks, ports, partners, partner_ports), dim=1)
+        rows = torch.nonzero(bad)[:20]
+        partners = connections[rows[:, 0], rows[:, 1], rows[:, 2]]
+        rows = torch.cat((rows, partners), dim=1)
         raise RuntimeError(
             "malformed inter-residue connections (pose, block, port, partner, "
-            f"partner port): {rows[bad][:20].tolist()}"
+            f"partner port): {rows.tolist()}"
         )
 
 
@@ -411,7 +317,9 @@ def _select_best_block_type_candidate(  # noqa: C901
     selected, best_candidate_score = selected.to(device), best_candidate_score.to(
         device
     )
-    warning_threshold = 2 * (canonical_ordering.max_n_canonical_atoms + 1)
+    warning_threshold, failure_threshold = _canonical.candidate_score_thresholds(
+        canonical_ordering.max_n_canonical_atoms
+    )
     if not torch.any(best_candidate_score >= warning_threshold):
         return selected
 
@@ -531,7 +439,6 @@ def _select_best_block_type_candidate(  # noqa: C901
             ]
         )
 
-        failure_threshold = 2 * warning_threshold
         if torch.any(best_candidate_score >= failure_threshold):
             raise RuntimeError(err_msg + "Best candidate exceeds failure threshold")
         logger.warning(err_msg)

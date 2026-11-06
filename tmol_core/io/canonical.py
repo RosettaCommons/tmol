@@ -305,3 +305,9 @@ def prepare_canonical_selection(co, active_block_types, max_n_atoms):
         bt_ind_to_canonical_io_equiv_class_ind=classes,
         bt_canonical_atom_ind_map=atoms,
     )
+
+
+def candidate_score_thresholds(max_n_canonical_atoms):
+    """Mature acceptance scores: one extraneous atom warns, two reject."""
+    warning = 2 * (max_n_canonical_atoms + 1)
+    return warning, 2 * warning
