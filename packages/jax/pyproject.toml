@@ -16,6 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ligand = ["tmol-core[ligand]==0.2.0"]
 cu12 = ["jax[cuda12]>=0.11.2"]
 cu13 = ["jax[cuda13]>=0.11.2"]
 native = ["tmol-jax-native==0.2.0"]

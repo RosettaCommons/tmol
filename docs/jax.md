@@ -18,7 +18,8 @@ SMILES generation uses the shared distance-geometry bounds, chirality/planarity
 objectives and restart policy with JAX differentiation and optimization. MOL2
 `mode="keep"` retains supplied geometry and charges. The returned database keeps
 the caller's subtype and must be used for subsequent pose construction and scoring.
-Optional preparation dependencies are available as `tmol-core[ligand]`.
+Optional ligand preparation dependencies are available as `tmol-jax[ligand]`
+(or `tmol-core[ligand]` when installing the component packages separately).
 CIF preparation and molecular file input use the common framework-free readers.
 Preparation runs eagerly on the host, with compiled numerical refinement; it is
 not a `jit`/`vmap` frontend. Generated conformers need not follow Torch's optimizer
