@@ -83,4 +83,49 @@ void launch_hbond_pose(
   launch(accumulate_derivs, Both{});
 #endif
 }
+// Sparse candidates and prepared donor/acceptor base geometry are caller-owned.
+// Preserve compute_derivs launch policy independently of whether the forward
+// call accumulates derivatives: block-pair outputs use a separate backward.
+template <
+    bool Backward,
+    template <Device> class DeviceDispatch,
+    Device Dev,
+    typename Real,
+    typename Int,
+    typename Context,
+    typename Ctx>
+void launch_hbond_rotamer(Context& mgr, Ctx ctx, bool compute_derivs = false) {
+  LAUNCH_BOX_32;
+  auto evaluate = [ctx] TMOL_DEVICE_FUNC(int cta) {
+    SHARED_MEMORY HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t> shared;
+    if constexpr (Backward) {
+      hbond_rotamer_eval_derivs<DeviceDispatch, Dev, Real, Int, launch_t>(
+          ctx, shared, cta, WorkgroupLane<Dev>{});
+    } else {
+      if (ctx.accumulate_derivs)
+        hbond_rotamer_eval_energies<
+            DeviceDispatch,
+            Dev,
+            Real,
+            Int,
+            launch_t,
+            true>(ctx, shared, cta);
+      else
+        hbond_rotamer_eval_energies<
+            DeviceDispatch,
+            Dev,
+            Real,
+            Int,
+            launch_t,
+            false>(ctx, shared, cta);
+    }
+  };
+  if (Backward || compute_derivs)
+    DeviceDispatch<Dev>::template foreach_workgroup<launch_t>(
+        mgr, ctx.dispatch_indices.size(1), evaluate);
+  else
+    DeviceDispatch<Dev>::template foreach_independent_workgroup<launch_t>(
+        mgr, ctx.dispatch_indices.size(1), evaluate);
+}
+
 }  // namespace tmol::score::hbond::potentials

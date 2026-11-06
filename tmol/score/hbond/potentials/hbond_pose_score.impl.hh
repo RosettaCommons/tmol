@@ -905,11 +905,6 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
       dispatch_indices[2][i]);
   }*/
 
-  // Optimal launch box on v100 and a100 is nt=32, vt=1
-  LAUNCH_BOX_32;
-  // Define nt and reduce_t
-  CTA_REAL_REDUCE_T_TYPEDEF;
-
   // State the kernel body reads, named explicitly rather than captured
   // implicitly by [=]. The rotamer family's output is [term, rot_pair] and its
   // dispatch list is [3, rot_pair]; the whole-pose family uses the same
@@ -943,34 +938,13 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
   ctx.output = output;
   ctx.dV_dcoords = dV_dcoords;
   ctx.max_n_blocks = max_n_blocks;
+  ctx.max_n_upper_triangle_inds = 0;
+  ctx.use_shared_compact_block_neighbors = false;
   ctx.output_block_pair_energies = output_block_pair_energies;
   ctx.accumulate_derivs = accumulate_derivs;
   // Read only by the backward kernel; the Metal launcher binds every view, so
   // it must not be left default-constructed.
   ctx.dTdV = output;
-
-  auto eval_energies = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    if (accumulate_derivs) {
-      hbond_rotamer_eval_energies<
-          DeviceDispatch,
-          Dev,
-          Real,
-          Int,
-          launch_t,
-          true>(ctx, shared, cta);
-    } else {
-      hbond_rotamer_eval_energies<
-          DeviceDispatch,
-          Dev,
-          Real,
-          Int,
-          launch_t,
-          false>(ctx, shared, cta);
-    }
-  });
 
   // Evaluate the prepared rotamer-pair dispatch list.
 
@@ -991,12 +965,9 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
         ctx,
         dispatch_indices.size(1),
         true);
-  } else if (compute_derivs) {
-    DeviceDispatch<Dev>::template foreach_workgroup<launch_t>(
-        mgr, dispatch_indices.size(1), eval_energies);
   } else {
-    DeviceDispatch<Dev>::template foreach_independent_workgroup<launch_t>(
-        mgr, dispatch_indices.size(1), eval_energies);
+    launch_hbond_rotamer<false, DeviceDispatch, Dev, Real, Int>(
+        mgr, ctx, compute_derivs);
   }
 
   // DeviceDispatch<Dev>::synchronize_device();
@@ -1106,11 +1077,6 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
   auto dV_dcoords_t = TPack<Vec<Real, 3>, 1, Dev>::zeros({n_atoms});  // TODO
   auto dV_dcoords = dV_dcoords_t.view;
 
-  // Optimal launch box on v100 and a100 is nt=32, vt=1
-  LAUNCH_BOX_32;
-  // Define nt and reduce_t
-  CTA_REAL_REDUCE_T_TYPEDEF;
-
   // State the kernel bodies read, named explicitly rather than captured
   // implicitly by [=]; see the forward pass. The last context parameter is
   // the derivative rank: a backward pass accumulates into a rank-1 tensor
@@ -1152,18 +1118,7 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
   ctx.use_shared_compact_block_neighbors = false;
   ctx.output_block_pair_energies = true;
   ctx.accumulate_derivs = true;
-  // Empty on CPU and CUDA; on Metal it carries the thread index and the
-  // reduction scratch the workgroup primitives need. See workgroup_lane.hh.
-  WorkgroupLane<Dev> lane;
-
-  auto eval_derivs = ([=] TMOL_DEVICE_FUNC(int cta) {
-    SHARED_MEMORY HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t> shared;
-    hbond_rotamer_eval_derivs<DeviceDispatch, Dev, Real, Int, launch_t>(
-        ctx, shared, cta, lane);
-  });
-
-  DeviceDispatch<Dev>::template foreach_workgroup<launch_t>(
-      mgr, dispatch_indices.size(1), eval_derivs);
+  launch_hbond_rotamer<true, DeviceDispatch, Dev, Real, Int>(mgr, ctx);
 
   return dV_dcoords_t;
 }
