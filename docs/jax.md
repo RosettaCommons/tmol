@@ -146,7 +146,10 @@ and `create_restrict_to_repacking_mask(...)`. These prepare choices. `tmol_jax.p
 shares residue-local trees, ideal DOFs and scan planning with Torch;
 `prepare_block_group_kinematics(block_types, links, anchor=0)` prepares connected
 chemical groups. Initialization calls the common native CPU inverse directly,
-without compiling each residue shape. `DunbrackChiSampler.from_database(db,
+without compiling each residue shape. Samplers own immutable parameter snapshots;
+create a new sampler after changing the database. Reusing a sampler retains its
+native table buffers while reading fresh coordinates and task requests.
+`DunbrackChiSampler.from_database(db,
 expanded_limit=1000, limit=1000).prepare_packed_block_types(pbt)` prepares shared
 library/explicit-chi metadata on the palette's device. `prepare_atom_copy_plan(pbt,
 samplers)` preserves sampler-owned retained atom identities.

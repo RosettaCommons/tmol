@@ -110,27 +110,75 @@ def _validate_payloads(samples, coordinates):
 
 
 def build_rotamers(poses, task, chem_db=None):
-    """Build task-selected coordinates and retain pose, residue and atom identity.
+    """Build task-selected coordinates using a bounded reusable execution plan.
 
-    Assembly is eager: discrete sampling determines coordinate array shapes.
-    Samplers must be registered explicitly, including any desired fallback.
+    Sampling remains eager because it determines output cardinality. The plan
+    contains topology and array operations; coordinates and sampled chi are
+    fresh inputs on every call, including when conformer identities are unchanged.
     """
     if isinstance(poses.coords, jax.core.Tracer):
         raise TypeError("conformer assembly requires eager coordinates")
     if isinstance(task, PackerTask):
         task = SetPackerTask.from_packer_task(task)
     task._validate_pose(poses)
-    pbt, device = poses.packed_block_types, poses.device
-    if chem_db is not None and chem_db is not pbt.chem_db:
+    if chem_db is not None and chem_db is not poses.packed_block_types.chem_db:
         raise ValueError("conformer chemistry must match the pose parameter context")
-    packed = prepare_rotamer_kinematics(pbt)
     samplers, samples, choices, destinations, groups = _sample_conformers(poses, task)
-    pose_of, block_of = np.asarray(task.cons_bt_pose), np.asarray(task.cons_bt_block)
+    copy_input = tuple(s[2].get("copy_input_coordinates", False) for s in samples)
+    key = (poses.coords.dtype, tuple(map(id, samplers)), copy_input, groups)
+    identities = tuple(
+        np.asarray(value)
+        for value in (
+            choices,
+            task.cons_bt_pose,
+            task.cons_bt_block,
+            task.cons_bt_block_type,
+            task.global_block_ind_for_considered_block_types,
+            *destinations,
+        )
+    )
+    previous = getattr(task, "_assembly_execution", None)
+    if (
+        previous is None
+        or previous[0] != key
+        or any(
+            not np.array_equal(old, new)
+            for old, new in zip(previous[1], identities, strict=True)
+        )
+    ):
+        execute, fields = _assembly_plan(
+            poses, task, samplers, copy_input, identities, groups
+        )
+        previous = (
+            key,
+            tuple(np.array(a, copy=True) for a in identities),
+            execute,
+            fields,
+        )
+        task._assembly_execution = previous
+    payloads = tuple(
+        (
+            ()
+            if copy
+            else (
+                sample[2]["chi_for_rotamers"],
+                sample[2]["chi_defining_atom_for_rotamer"],
+            )
+        )
+        for copy, sample in zip(copy_input, samples)
+    )
+    return poses, RotamerSet(coords=previous[2](poses.coords, payloads), **previous[3])
+
+
+def _assembly_plan(poses, task, samplers, copy_input, identities, groups):
+    """Bind immutable native layouts and compile one coordinate execution graph."""
+    pbt, device = poses.packed_block_types, poses.device
+    packed = prepare_rotamer_kinematics(pbt)
+    choices, pose_of, block_of, considered, global_blocks, *destinations = identities
+    types = considered[choices]
     shape = poses.block_type_ind.shape
-    host_choices = np.asarray(choices)
-    types = np.asarray(task.cons_bt_block_type)[host_choices]
     n_atoms_by_type = np.asarray(
-        [block.n_atoms for block in pbt.active_block_types], np.int32
+        [bt.n_atoms for bt in pbt.active_block_types], np.int32
     )
     layout, geometry = geometry_for_task(
         task,
@@ -141,25 +189,13 @@ def build_rotamers(poses, task, chem_db=None):
         types,
         device,
     )
-
     integer = partial(_indices, device=device)
-
-    with jax.default_device(device):
-        dofs = jnp.concatenate(
-            (
-                jnp.zeros((1, 9), poses.coords.dtype),
-                packed.dofs_ideal.reshape(-1, 9)[integer(layout.ideal_indices)].astype(
-                    poses.coords.dtype
-                ),
-            )
-        )
     source_types = np.asarray(poses.block_type_ind).ravel()
     real = source_types >= 0
     coordinate_offsets = (
         np.asarray(poses.block_coord_offset)
         + np.arange(poses.n_poses)[:, None] * poses.max_n_atoms_per_pose
     ).ravel()
-    coordinate_offsets_device = integer(coordinate_offsets)
     source_layout, source_geometry = geometry_for_task(
         task,
         "_source_conformer_geometry",
@@ -170,35 +206,62 @@ def build_rotamers(poses, task, chem_db=None):
         device,
         coordinate_offsets[real],
     )
-    source_dofs = source_geometry.inverse(poses.coords)
     source_offsets = np.zeros(len(source_types), np.int32)
     source_offsets[real] = source_layout.offsets
-    source_offsets, coordinate_offsets = (
-        integer(source_offsets),
-        coordinate_offsets_device,
-    )
-    target_offsets, atom_counts = integer(layout.offsets), integer(layout.n_atoms)
-    source_residues = task.global_block_ind_for_considered_block_types[choices]
-
-    def copy_rows(target, source, selected, offsets, root_shift):
-        sizes = atom_counts[selected]
-        with jax.default_device(device):
-            packed_offsets = jnp.concatenate(
-                (jnp.zeros(1, jnp.int32), jnp.cumsum(sizes))
+    source_residues = global_blocks[choices]
+    type_indices, target_offsets = integer(types), integer(layout.offsets)
+    with jax.default_device(device):
+        ideal = jnp.concatenate(
+            (
+                jnp.zeros((1, 9), poses.coords.dtype),
+                packed.dofs_ideal.reshape(-1, 9)[integer(layout.ideal_indices)].astype(
+                    poses.coords.dtype
+                ),
             )
-        return copy_conformer_rows(
-            target,
-            source,
-            offsets[source_residues[selected]],
-            target_offsets[selected],
-            packed_offsets,
-            n_rows=int(packed_offsets[-1]),
-            root_shift=root_shift,
         )
 
-    type_indices = integer(types)
-    chi_samples = any("chi_for_rotamers" in sample[2] for sample in samples)
-    if chi_samples:
+    def row_plan(selected, offsets):
+        # Cardinality is already known from the shared host layout. Prepare its
+        # row-copy offsets once, avoiding device synchronization during execution.
+        prefix = np.concatenate(
+            ([0], np.cumsum(layout.n_atoms[selected], dtype=np.int64))
+        )
+        return (
+            integer(offsets[source_residues[selected]]),
+            integer(layout.offsets[selected]),
+            integer(prefix),
+            int(prefix[-1]),
+        )
+
+    copy_plans, chi_plans, copied = [], [], []
+    for copy, selected in zip(copy_input, destinations):
+        if copy:
+            if not np.array_equal(
+                source_types[source_residues[selected]], types[selected]
+            ):
+                raise ValueError(
+                    "input conformers must retain their original chemical identity"
+                )
+            copy_plans.append(row_plan(selected, source_offsets))
+            chi_plans.append(None)
+            copied.append(selected)
+        else:
+            source = source_residues[selected]
+            chi_plans.append(
+                (
+                    integer(source_types[source]),
+                    integer(source_offsets[source]),
+                    integer(types[selected]),
+                    integer(layout.offsets[selected]),
+                )
+            )
+            copy_plans.append(None)
+    copied_rows = (
+        row_plan(np.concatenate(copied), coordinate_offsets) if copied else None
+    )
+    selections = tuple(integer(s) for s in destinations)
+    has_chi = not all(copy_input)
+    if has_chi:
         fingerprints = prepare_atom_copy_plan(pbt, samplers)
         kinematic_index = integer(packed.kinforest_idx)
         chi_atoms = integer(
@@ -210,73 +273,79 @@ def build_rotamers(poses, task, chem_db=None):
             ),
             device,
         )
-    copied = []
-    for sampler, sample, selected in zip(samplers, samples, destinations):
-        metadata = sample[2]
-        if metadata.get("copy_input_coordinates", False):
-            original = poses.block_type_ind.reshape(-1)[source_residues[selected]]
-            if not bool(jnp.all(original == integer(types)[selected])):
-                raise ValueError(
-                    "input conformers must retain their original chemical identity"
-                )
-            dofs = copy_rows(dofs, source_dofs, selected, source_offsets, 1)
-            copied.append(selected)
-        elif "chi_for_rotamers" in metadata:
-            if len(selected) and fingerprints.atom_mapping.shape[1]:
-                source = source_residues[selected]
-                dofs = copy_conformer_dofs(
-                    dofs,
-                    source_dofs,
-                    poses.block_type_ind.reshape(-1)[source],
-                    source_offsets[source],
-                    type_indices[selected],
-                    target_offsets[selected],
-                    fingerprints.source_fingerprint,
-                    fingerprints.source_atom_mapping,
-                    fingerprints.atom_mapping,
-                    kinematic_index,
-                    sampler=fingerprints.sampler_mapping[id(sampler)],
-                )
-            dofs = assign_conformer_chi(
-                dofs,
-                metadata["chi_for_rotamers"],
-                type_indices,
-                target_offsets,
-                selected,
-                metadata["chi_defining_atom_for_rotamer"],
-                kinematic_index,
-                ring_corrections,
+        sampler_indices = tuple(
+            (
+                fingerprints.sampler_mapping[id(s)]
+                if not copy and len(selected) and fingerprints.atom_mapping.shape[1]
+                else -1
             )
-        else:
-            raise NotImplementedError(
-                f"unsupported conformer payload from {sampler.sampler_name()}"
-            )
-    if chi_samples:
-        trial = geometry.forward(dofs)
-        for sample, selected in zip(samples, destinations):
-            metadata = sample[2]
-            if "chi_for_rotamers" in metadata:
-                dofs = correct_conformer_chi(
+            for s, copy, selected in zip(samplers, copy_input, destinations)
+        )
+
+    def copy_rows(target, source, plan, root_shift):
+        source_offsets, destination_offsets, prefix, n_rows = plan
+        return copy_conformer_rows(
+            target,
+            source,
+            source_offsets,
+            destination_offsets,
+            prefix,
+            n_rows=n_rows,
+            root_shift=root_shift,
+        )
+
+    @jax.jit
+    def execute(coords, payloads):
+        dofs = ideal
+        source_dofs = source_geometry.inverse(coords)
+        for i, (copy, selected) in enumerate(zip(copy_input, selections)):
+            if copy:
+                dofs = copy_rows(dofs, source_dofs, copy_plans[i], 1)
+            else:
+                if len(selected) and fingerprints.atom_mapping.shape[1]:
+                    dofs = copy_conformer_dofs(
+                        dofs,
+                        source_dofs,
+                        *chi_plans[i],
+                        fingerprints.source_fingerprint,
+                        fingerprints.source_atom_mapping,
+                        fingerprints.atom_mapping,
+                        kinematic_index,
+                        sampler=sampler_indices[i],
+                    )
+                angles, defining = payloads[i]
+                dofs = assign_conformer_chi(
                     dofs,
-                    metadata["chi_for_rotamers"],
-                    trial,
+                    angles,
                     type_indices,
                     target_offsets,
                     selected,
-                    metadata["chi_defining_atom_for_rotamer"],
-                    chi_atoms,
+                    defining,
                     kinematic_index,
+                    ring_corrections,
                 )
-    coordinates = geometry.forward(dofs)
-    if copied:
-        coordinates = copy_rows(
-            coordinates,
-            poses.coords.reshape(-1, 3),
-            jnp.concatenate(copied),
-            coordinate_offsets,
-            0,
-        )
-    origins = prepare_conformer_origins(shape, pose_of, block_of, host_choices)
+        if has_chi:
+            trial = geometry.forward(dofs)
+            for i, (copy, selected) in enumerate(zip(copy_input, selections)):
+                if not copy:
+                    angles, defining = payloads[i]
+                    dofs = correct_conformer_chi(
+                        dofs,
+                        angles,
+                        trial,
+                        type_indices,
+                        target_offsets,
+                        selected,
+                        defining,
+                        chi_atoms,
+                        kinematic_index,
+                    )
+        coordinates = geometry.forward(dofs)
+        if copied_rows is not None:
+            coordinates = copy_rows(coordinates, coords.reshape(-1, 3), copied_rows, 0)
+        return coordinates
+
+    origins = prepare_conformer_origins(shape, pose_of, block_of, choices)
     counts_pose, offsets_pose, counts_block, offsets_block, rot_pose, rot_block = map(
         integer, origins
     )
@@ -290,21 +359,23 @@ def build_rotamers(poses, task, chem_db=None):
             if len(types)
             else jnp.full(shape, -1, jnp.int32)
         )
-        atom_poses = jnp.repeat(rot_pose, atom_counts, total_repeat_length=layout.total)
-    return poses, RotamerSet(
-        counts_pose,
-        offsets_pose,
-        counts_block,
-        offsets_block,
-        rot_pose,
-        type_indices,
-        rot_block,
-        target_offsets,
-        coordinates,
-        integer(correlation_indices(shape, groups, origins[2])),
-        first_type,
-        atom_poses,
-        int(origins[0].max(initial=0)),
-        groups,
-        ConformerContext(poses),
+        atom_poses = jnp.repeat(
+            rot_pose, integer(layout.n_atoms), total_repeat_length=layout.total
+        )
+    fields = dict(
+        n_rots_for_pose=counts_pose,
+        rot_offset_for_pose=offsets_pose,
+        n_rots_for_block=counts_block,
+        rot_offset_for_block=offsets_block,
+        pose_for_rot=rot_pose,
+        block_type_ind_for_rot=type_indices,
+        block_ind_for_rot=rot_block,
+        coord_offset_for_rot=target_offsets,
+        group_for_block=integer(correlation_indices(shape, groups, origins[2])),
+        first_rot_block_type=first_type,
+        pose_ind_for_atom=atom_poses,
+        max_n_rots_per_pose=int(origins[0].max(initial=0)),
+        correlated_groups=groups,
+        context=ConformerContext(poses),
     )
+    return execute, fields

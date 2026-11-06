@@ -122,6 +122,64 @@ _INT64_TABLES = {
 }
 
 
+def _sampling_array(value, dtype, wide=False):
+    value = np.asarray(value)
+    if value.dtype.kind == "f":
+        return value.astype(dtype, copy=False)
+    if value.dtype.kind == "b":
+        return value
+    if value.dtype.kind not in "iu":
+        raise TypeError("sampling indices must be integers")
+    if (
+        not wide
+        and value.size
+        and (value.min() < -(1 << 31) or value.max() >= (1 << 31))
+    ):
+        raise OverflowError("sampling indices exceed int32")
+    return value.astype(np.int64 if wide else np.int32, copy=False)
+
+
+def _sampling_put(value, device):
+    value = np.ascontiguousarray(value)
+    if value.dtype == np.int64:
+        value = value.view(np.uint8).reshape(value.shape + (8,))
+    return jax.device_put(value, device)
+
+
+class SamplingStorage:
+    """Typed runtime buffers owned by one immutable sampler parameter snapshot."""
+
+    def __init__(self, tables):
+        self.tables = tables
+        self._host = {}
+        self._device = {}
+
+    def host(self, dtype):
+        dtype = np.dtype(dtype)
+        if dtype not in self._host:
+            arrays = tuple(
+                np.ascontiguousarray(
+                    _sampling_array(
+                        self.tables.sampling_db[name], dtype, name in _INT64_TABLES
+                    )
+                )
+                for name in _TABLE_ARGUMENTS
+            )
+            for value in arrays:
+                value.setflags(write=False)
+            self._host[dtype] = arrays
+        return self._host[dtype]
+
+    def device(self, dtype, device):
+        key = (np.dtype(dtype), device)
+        if key not in self._device:
+            tables = self.host(dtype)
+            self._device[key] = tuple(
+                _sampling_put(a, device) for a in tables[:13] + tables[23:27]
+            )
+        return self._device[key]
+
+
 def _sampling_inputs(tables, coordinates, request):
     if isinstance(coordinates, jax.core.Tracer):
         raise TypeError("dynamic chi sampling requires eager coordinates")
@@ -131,25 +189,14 @@ def _sampling_inputs(tables, coordinates, request):
     if coordinates.dtype == np.float64 and not jax.config.x64_enabled:
         raise ValueError("float64 sampling requires JAX x64 to preserve output dtype")
 
-    def array(value, wide=False):
-        value = np.asarray(value)
-        if value.dtype.kind == "f":
-            return value.astype(coordinates.dtype, copy=False)
-        if value.dtype.kind == "b":
-            return value
-        if value.dtype.kind not in "iu":
-            raise TypeError("sampling indices must be integers")
-        if (
-            not wide
-            and value.size
-            and (value.min() < -(1 << 31) or value.max() >= (1 << 31))
-        ):
-            raise OverflowError("sampling indices exceed int32")
-        return value.astype(np.int64 if wide else np.int32, copy=False)
-
-    arguments = tuple(
-        array(tables.sampling_db[name], name in _INT64_TABLES)
-        for name in _TABLE_ARGUMENTS
+    array = partial(_sampling_array, dtype=coordinates.dtype)
+    arguments = (
+        tables.host(coordinates.dtype)
+        if isinstance(tables, SamplingStorage)
+        else tuple(
+            array(tables.sampling_db[name], wide=name in _INT64_TABLES)
+            for name in _TABLE_ARGUMENTS
+        )
     )
     return coordinates, arguments, tuple(array(value) for value in request)
 
@@ -229,14 +276,13 @@ def sample_chi(tables, coordinates, *request, max_samples_per_restype=0):
             raise ValueError("invalid sampling workspace extent")
         return jax.ShapeDtypeStruct((nbytes,), np.uint8)
 
-    def put(value):
-        value = np.ascontiguousarray(value)
-        if value.dtype == np.int64:
-            value = value.view(np.uint8).reshape(value.shape + (8,))
-        return jax.device_put(value, device)
-
-    active = all_tables[:13] + all_tables[23:27]
-    inputs = (coordinates,) + tuple(map(put, active + prepared_request))
+    put = partial(_sampling_put, device=device)
+    active = (
+        tables.device(coordinates.dtype, device)
+        if isinstance(tables, SamplingStorage)
+        else tuple(map(put, all_tables[:13] + all_tables[23:27]))
+    )
+    inputs = (coordinates,) + active + tuple(map(put, prepared_request))
     shape = jax.ShapeDtypeStruct
     plan_shapes = (
         shape((2 * nblocks,), coordinates.dtype),

@@ -1,7 +1,5 @@
 """Device forests for shared conformer layout plans."""
 
-from functools import partial
-
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -32,7 +30,6 @@ class ConformerGeometry:
             for plan in (ordering.forward, ordering.backward)
         )
 
-    @partial(jax.jit, static_argnums=0)
     def inverse(self, coordinates):
         with jax.default_device(self.device):
             gathered = jnp.concatenate(
@@ -43,7 +40,6 @@ class ConformerGeometry:
             )
         return inverse_coordinates(gathered, self.inverse_indices)
 
-    @partial(jax.jit, static_argnums=0)
     def forward(self, dofs):
         coordinates = forward_coordinates(dofs, self.forest, *self.plans)
         with jax.default_device(self.device):
