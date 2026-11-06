@@ -314,3 +314,10 @@ def test_conformer_dofs_preserve_missing_geometry_and_ring_offsets(tmp_path):
 def test_native_cpu_annealer_without_torch(tmp_path):
     proc = _compile(HERE / "native_cpu_annealer.cc", tmp_path / "annealer", run=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_native_interaction_graph_without_torch(tmp_path):
+    proc = _compile(
+        HERE / "native_interaction_graph.cc", tmp_path / "interaction_graph", run=True
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
