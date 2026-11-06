@@ -455,7 +455,7 @@ ffi::Error run_graph_stage(
 }  // namespace
 }  // namespace tmol::jax
 
-extern "C" int tmol_jax_native_abi_version() { return 3; }
+extern "C" int tmol_jax_native_abi_version() { return 4; }
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_forward_kinematics,

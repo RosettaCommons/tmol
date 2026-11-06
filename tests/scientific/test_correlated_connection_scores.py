@@ -70,11 +70,13 @@ def joint_states(execution):
             prepare_rotamer_metal,
         )
         from tmol_jax.pack.constraint_scoring import prepare_rotamer_constraints
+        from tmol_jax.pack.backbone_scoring import prepare_rotamer_backbone
 
         prepare = {
             "disulfide": prepare_rotamer_disulfide,
             "metal": prepare_rotamer_metal,
             "constraint": prepare_rotamer_constraints,
+            "backbone": prepare_rotamer_backbone,
         }[execution.family]
         execution.state = prepare(b.pose, execution.rotamers, b.parameter_database)
     else:
@@ -101,35 +103,65 @@ def test_joint_connection_values_and_gradients_match_whole_pose(backend, family)
             )
             execution = RotamerExecution(backend, family=family)
         execution = joint_states(execution)
-        r = execution.rotamers
-        xyz = backend.numpy(r.coords).astype(np.float64)
-        values, indices = map(backend.numpy, execution.scores(xyz))
-        assert np.isfinite(values).all() and np.any(np.abs(values) > 1e-3)
-        for state in range(2):
-            selected = (indices[1] % 2 == state) & (indices[2] % 2 == state)
-            weights = np.broadcast_to(selected, values.shape).astype(np.float64)
-            scored, gradient, _ = execution.value_and_grad(xyz, weights)
-            whole_xyz = backend.coords().astype(np.float64)
-            for rot in range(state, r.n_rotamers_total, 2):
-                p, block = int(r.pose_for_rot[rot]), int(r.block_ind_for_rot[rot])
-                source = int(r.coord_offset_for_rot[rot])
-                target = int(backend.pose.block_coord_offset[p, block])
-                n = backend.pose.block_type(p, block).n_atoms
-                whole_xyz[p, target : target + n] = xyz[source : source + n]
-            whole, whole_grad = backend.value_and_grad(whole_xyz)
-            np.testing.assert_allclose(
-                scored[:, selected].sum(), whole.sum(), atol=2e-9, rtol=2e-9
+        assert_joint_values_and_gradients(execution)
+
+
+def assert_joint_values_and_gradients(execution, dtype=np.float64):
+    backend = execution.backend
+    r = execution.rotamers
+    xyz = backend.numpy(r.coords).astype(dtype)
+    tolerance = 2e-4 if dtype == np.float32 else 2e-8
+    energy_tolerance = 2e-4 if dtype == np.float32 else 2e-9
+    values, indices = map(backend.numpy, execution.scores(xyz))
+    assert np.isfinite(values).all() and np.any(np.abs(values) > 1e-3)
+    for state in range(2):
+        selected = (indices[1] % 2 == state) & (indices[2] % 2 == state)
+        scales = np.linspace(0.7, 1.3, len(values)).astype(dtype)
+        weights = selected[None, :] * scales[:, None]
+        scored, gradient, _ = execution.value_and_grad(xyz, weights)
+        whole_xyz = backend.coords().astype(dtype)
+        for rot in range(state, r.n_rotamers_total, 2):
+            p, block = int(r.pose_for_rot[rot]), int(r.block_ind_for_rot[rot])
+            source = int(r.coord_offset_for_rot[rot])
+            target = int(backend.pose.block_coord_offset[p, block])
+            n = backend.pose.block_type(p, block).n_atoms
+            whole_xyz[p, target : target + n] = xyz[source : source + n]
+        whole, whole_jacobian = backend.channel_values_and_gradients(whole_xyz)
+        order = (
+            [backend.channel_names().index(name) for name in ("rama", "omega")]
+            if execution.family == "backbone"
+            else list(range(len(values)))
+        )
+        whole_grad = np.einsum("c,cpai->pai", scales, whole_jacobian[order])
+        np.testing.assert_allclose(
+            scored[:, selected].sum(axis=1),
+            whole[order].sum(axis=1),
+            atol=energy_tolerance,
+            rtol=energy_tolerance,
+        )
+        for rot in range(r.n_rotamers_total):
+            p, block = int(r.pose_for_rot[rot]), int(r.block_ind_for_rot[rot])
+            source = int(r.coord_offset_for_rot[rot])
+            target = int(backend.pose.block_coord_offset[p, block])
+            n = backend.pose.block_type(p, block).n_atoms
+            expected = (
+                whole_grad[p, target : target + n]
+                if rot % 2 == state
+                else np.zeros((n, 3))
             )
-            for rot in range(r.n_rotamers_total):
-                p, block = int(r.pose_for_rot[rot]), int(r.block_ind_for_rot[rot])
-                source = int(r.coord_offset_for_rot[rot])
-                target = int(backend.pose.block_coord_offset[p, block])
-                n = backend.pose.block_type(p, block).n_atoms
-                expected = (
-                    whole_grad[p, target : target + n]
-                    if rot % 2 == state
-                    else np.zeros((n, 3))
-                )
-                np.testing.assert_allclose(
-                    gradient[source : source + n], expected, atol=2e-8, rtol=2e-8
-                )
+            np.testing.assert_allclose(
+                gradient[source : source + n], expected, atol=tolerance, rtol=tolerance
+            )
+
+
+@pytest.mark.parametrize(
+    "name", ("canonical", "cyclic", "d_peptide", "hydroxyproline", "mixed")
+)
+@pytest.mark.parametrize("dtype", (np.float32, np.float64))
+def test_joint_backbone_third_member_values_and_gradients(backend, name, dtype):
+    from .molecules import BACKBONE_CASES
+
+    with backend.module.enable_x64() if backend.framework == "jax" else nullcontext():
+        backend.molecule(BACKBONE_CASES[name], terms=("rama", "omega"))
+        execution = joint_states(RotamerExecution(backend, family="backbone"))
+        assert_joint_values_and_gradients(execution, dtype)

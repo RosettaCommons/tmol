@@ -75,7 +75,7 @@ struct RotamerBackboneStage {
       int64_t,
       int64_t,
       double) {
-    if ((op != 0 && op != 1) || a.size() != 19 + op || out.size() != 1)
+    if ((op != 0 && op != 1) || a.size() != 20 + op || out.size() != 1)
       throw std::invalid_argument("invalid sparse backbone operands");
     auto real = a[0].element_type(), i = ffi::DataType::S32;
     if (real != ffi::DataType::F32 && real != ffi::DataType::F64)
@@ -89,10 +89,11 @@ struct RotamerBackboneStage {
     require_shape(a[4], i, {p, b, -1, 2});
     validate_backbone_tables(a, real, a[4].dimensions()[2]);
     for (int k : {16, 17}) require_shape(a[k], i, {r});
-    require_shape(a[18], i, {3, -1});
-    auto entries = a[18].dimensions()[1];
+    require_shape(a[18], i, {p, b});
+    require_shape(a[19], i, {3, -1});
+    auto entries = a[19].dimensions()[1];
     if (op) {
-      require_shape(a[19], real, {2, entries});
+      require_shape(a[20], real, {2, entries});
       require_shape(out[0], real, {a[0].dimensions()[0], 3});
     } else
       require_shape(out[0], real, {2, entries});
@@ -104,7 +105,7 @@ struct RotamerBackboneStage {
     ContextManager manager;
     auto e = contiguous_view<Real, 2, D>(
         Backward ? nullptr : out[0].untyped_data(),
-        {2, Backward ? 0 : a[18].dimensions()[1]});
+        {2, Backward ? 0 : a[19].dimensions()[1]});
     int64_t sizes[] = {2, Backward ? a[0].dimensions()[0] : 0},
             strides[] = {0, 1};
     TView<Vec<Real, 3>, 2, D> g(
@@ -112,8 +113,8 @@ struct RotamerBackboneStage {
         sizes,
         strides);
     auto weights = contiguous_view<Real, 2, D>(
-        Backward ? a[19].untyped_data() : nullptr,
-        {2, Backward ? a[18].dimensions()[1] : 0});
+        Backward ? a[20].untyped_data() : nullptr,
+        {2, Backward ? a[19].dimensions()[1] : 0});
     std::apply(
         [&](auto... tables) {
           score::backbone_torsion::potentials::
@@ -127,12 +128,13 @@ struct RotamerBackboneStage {
                   buffer_view<int32_t, 1, D>(a[17]),
                   buffer_view<Vec<int32_t, 2>, 3, D>(a[4]),
                   tables...,
-                  buffer_view<int32_t, 2, D>(a[18]),
+                  buffer_view<int32_t, 2, D>(a[19]),
                   e,
                   g,
                   weights,
                   true,
-                  Backward);
+                  Backward,
+                  buffer_view<int32_t, 2, D>(a[18]));
         },
         backbone_tables<true, D, Real>(a));
   }
