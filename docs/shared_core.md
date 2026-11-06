@@ -96,8 +96,9 @@ an explicit database path still creates fresh chemistry. The bounded weak-owner
 cache is framework neutral, while the Torch adapter retains CUDA stream readiness.
 These host policies import neither framework.
 
-The optional `tmol-core[ligand]` dependencies provide structure chemistry and
-ligand preparation without installing either framework.
+The core installs its structure chemistry dependencies without either framework.
+The optional `tmol-core[ligand]` extra adds OpenBabel for ligand preparation paths
+that require its charge models or protonation fallback.
 
 `tmol_core.ligand` owns ligand typing, protonation routing, charge overrides,
 parameter-file loading/writing, residue registration, polymer/conjugate chemistry
