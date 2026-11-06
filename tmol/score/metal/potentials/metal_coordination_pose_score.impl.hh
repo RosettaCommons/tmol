@@ -1,4 +1,5 @@
 #pragma once
+#include <tmol/score/metal/potentials/metal_rotamer_kernels.hh>
 
 #include <tmol/utility/portable/reduce_ops.hh>
 #include <tmol/utility/portable/matrix.hh>
@@ -203,47 +204,23 @@ auto MetalCoordinationRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::
 
   LAUNCH_BOX_32;
 
-  auto count_dispatch_indices = ([=] TMOL_DEVICE_FUNC(int rot_ind) {
-    int const pose_ind = pose_ind_for_rot[rot_ind];
-    int const block_ind = block_ind_for_rot[rot_ind];
-    int const block_type = block_type_ind_for_rot[rot_ind];
-    if (pose_ind < 0 || block_ind < 0 || block_type < 0) {
-      return;
-    }
-    int64_t n_energies = fan_atoms[block_type][0][0] >= 0 ? 1 : 0;
-    for (int conn = 0; conn < max_n_conns; conn++) {
-      if (conn_virt[block_type][conn] == NOT_A_SITE) {
-        continue;
-      }
-      int const other_block =
-          pose_stack_inter_block_connections[pose_ind][block_ind][conn][0];
-      if (other_block < 0) {
-        continue;
-      }
-      n_energies += n_rots_for_block[pose_ind][other_block];
-    }
-    for_each_bridge<Int, Real, D>(
-        pose_ind,
-        block_ind,
-        block_type,
-        max_n_conns,
-        max_n_internal,
-        first_rot_block_type,
-        pose_stack_inter_block_connections,
-        conn_atom,
-        conn_metal,
-        conn_virt,
-        conn_key,
-        site_params,
-        bridge_internal_metal,
-        bridge_internal_d0,
-        [&](int, int other, int, int, int, Real, Real, int) {
-          n_energies += n_rots_for_block[pose_ind][other];
-        });
-    n_energies_for_rot[rot_ind] = n_energies;
-  });
-  DeviceDispatch<D>::template forall<launch_t>(
-      mgr, n_rots, count_dispatch_indices);
+  metal_rotamer_count_native<DeviceDispatch,D,Real,Int>(mgr,
+      first_rot_block_type,
+      block_ind_for_rot,
+      pose_ind_for_rot,
+      block_type_ind_for_rot,
+      n_rots_for_block,
+      pose_stack_inter_block_connections,
+      conn_atom,
+      conn_metal,
+      conn_virt,
+      conn_key,
+      site_params,
+      fan_atoms,
+      bridge_internal_metal,
+      bridge_internal_d0,
+      n_energies_for_rot);
+
 
   int64_t const max_n_energies_for_rot_64 = DeviceDispatch<D>::reduce(
       mgr,
@@ -282,178 +259,56 @@ auto MetalCoordinationRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::
   auto dispatch_indices = dispatch_indices_t.view;
   auto terms_for_dispatch = terms_for_dispatch_t.view;
 
-  auto mark_dispatch_indices = ([=] TMOL_DEVICE_FUNC(int ind) {
-    int const rot_ind1 = ind / max_n_energies_for_rot;
-    int const local_ind = ind % max_n_energies_for_rot;
-    if (local_ind >= n_energies_for_rot[rot_ind1]) {
-      return;
-    }
-    int const pose_ind = pose_ind_for_rot[rot_ind1];
-    int const block_ind1 = block_ind_for_rot[rot_ind1];
-    int const block_type1 = block_type_ind_for_rot[rot_ind1];
-    int const sparse_ind = n_energies_for_rot_offset[rot_ind1] + local_ind;
-    dispatch_indices[0][sparse_ind] = pose_ind;
+  metal_rotamer_fill_native<DeviceDispatch,D,Real,Int>(mgr,
+      first_rot_for_block,
+      first_rot_block_type,
+      block_ind_for_rot,
+      pose_ind_for_rot,
+      block_type_ind_for_rot,
+      n_rots_for_block,
+      pose_stack_inter_block_connections,
+      conn_atom,
+      conn_metal,
+      conn_virt,
+      conn_key,
+      site_params,
+      fan_atoms,
+      bridge_internal_metal,
+      bridge_internal_d0,
+      n_energies_for_rot,
+      n_energies_for_rot_offset,
+      dispatch_indices,
+      terms_for_dispatch,
+      max_n_energies_for_rot,
+      candidate_dispatch);
 
-    int remaining = local_ind;
-    if (fan_atoms[block_type1][0][0] >= 0) {
-      if (remaining == 0) {
-        dispatch_indices[1][sparse_ind] = rot_ind1;
-        dispatch_indices[2][sparse_ind] = rot_ind1;
-        terms_for_dispatch[0][sparse_ind] = rot_ind1;
-        terms_for_dispatch[1][sparse_ind] = rot_ind1;
-        terms_for_dispatch[2][sparse_ind] = -1;
-        return;
-      }
-      remaining -= 1;
-    }
-    for (int conn1 = 0; conn1 < max_n_conns; conn1++) {
-      if (conn_virt[block_type1][conn1] == NOT_A_SITE) {
-        continue;
-      }
-      int const block_ind2 =
-          pose_stack_inter_block_connections[pose_ind][block_ind1][conn1][0];
-      if (block_ind2 < 0) {
-        continue;
-      }
-      int const n_rots2 = n_rots_for_block[pose_ind][block_ind2];
-      if (remaining < n_rots2) {
-        int const rot_ind2 =
-            first_rot_for_block[pose_ind][block_ind2] + remaining;
-        // lower block first, as the other pair terms report it
-        bool const metal_first = block_ind1 < block_ind2;
-        dispatch_indices[1][sparse_ind] = metal_first ? rot_ind1 : rot_ind2;
-        dispatch_indices[2][sparse_ind] = metal_first ? rot_ind2 : rot_ind1;
-        terms_for_dispatch[0][sparse_ind] = rot_ind1;
-        terms_for_dispatch[1][sparse_ind] = rot_ind2;
-        terms_for_dispatch[2][sparse_ind] = conn1;
-        return;
-      }
-      remaining -= n_rots2;
-    }
-    // bridges follow, coded -2 - code: -1 is the fan
-    bool placed = false;
-    for_each_bridge<Int, Real, D>(
-        pose_ind,
-        block_ind1,
-        block_type1,
-        max_n_conns,
-        max_n_internal,
-        first_rot_block_type,
-        pose_stack_inter_block_connections,
-        conn_atom,
-        conn_metal,
-        conn_virt,
-        conn_key,
-        site_params,
-        bridge_internal_metal,
-        bridge_internal_d0,
-        [&](int code, int other, int, int, int, Real, Real, int) {
-          if (placed) {
-            return;
-          }
-          int const n_rots2 = n_rots_for_block[pose_ind][other];
-          if (remaining < n_rots2) {
-            int const rot_ind2 =
-                first_rot_for_block[pose_ind][other] + remaining;
-            bool const first = block_ind1 < other;
-            dispatch_indices[1][sparse_ind] = first ? rot_ind1 : rot_ind2;
-            dispatch_indices[2][sparse_ind] = first ? rot_ind2 : rot_ind1;
-            terms_for_dispatch[0][sparse_ind] = rot_ind1;
-            terms_for_dispatch[1][sparse_ind] = rot_ind2;
-            terms_for_dispatch[2][sparse_ind] = -2 - code;
-            placed = true;
-            return;
-          }
-          remaining -= n_rots2;
-        });
-  });
-  DeviceDispatch<D>::template forall<launch_t>(
-      mgr, candidate_dispatch, mark_dispatch_indices);
 
-  auto eval_energies = ([=] TMOL_DEVICE_FUNC(int dispatch_ind) {
-    int const pose_ind = dispatch_indices[0][dispatch_ind];
-    int const rot_ind1 = terms_for_dispatch[0][dispatch_ind];
-    int const rot_ind2 = terms_for_dispatch[1][dispatch_ind];
-    int const conn1 = terms_for_dispatch[2][dispatch_ind];
-    int const block_type1 = block_type_ind_for_rot[rot_ind1];
-    int const offset1 = rot_coord_offset[rot_ind1];
-    Real* V_out =
-        output_block_pair_energies ? &V[0][dispatch_ind] : &V[0][pose_ind];
+  metal_rotamer_score_native<false, DeviceDispatch,D,Real,Int>(mgr,
+      rot_coords,
+      rot_coord_offset,
+      first_rot_block_type,
+      block_ind_for_rot,
+      pose_ind_for_rot,
+      block_type_ind_for_rot,
+      pose_stack_inter_block_connections,
+      conn_atom,
+      conn_metal,
+      conn_virt,
+      conn_key,
+      site_params,
+      fan_atoms,
+      fan_params,
+      bridge_internal_metal,
+      bridge_internal_d0,
+      bridge_params,
+      dispatch_indices,
+      terms_for_dispatch,
+      compute_derivs,
+      output_block_pair_energies,
+      V,
+      dV_dx,
+      {});
 
-    if (conn1 <= -2) {
-      int const bridge_pose = pose_ind_for_rot[rot_ind1];
-      auto const bridge = bridge_from_code<Int, Real, D>(
-          -2 - conn1,
-          bridge_pose,
-          block_ind_for_rot[rot_ind1],
-          block_type1,
-          block_type_ind_for_rot[rot_ind2],
-          max_n_conns,
-          max_n_internal,
-          first_rot_block_type,
-          pose_stack_inter_block_connections,
-          conn_metal,
-          conn_key,
-          site_params,
-          bridge_internal_metal,
-          bridge_internal_d0);
-      if (bridge.valid) {
-        accumulate_metal_bridge<Real, D>(
-            rot_coords,
-            offset1 + bridge.metal1,
-            rot_coord_offset[rot_ind2] + bridge.metal2,
-            bridge.d1,
-            bridge.d2,
-            bridge_params[bridge.key],
-            dV_dx,
-            compute_derivs,
-            Real(1),
-            V_out);
-      }
-      return;
-    }
-
-    if (conn1 < 0) {
-      for (int i = 0; i < max_n_fan; i++) {
-        Vec<Int, 2> const pair = fan_atoms[block_type1][i];
-        if (pair[0] < 0) {
-          break;
-        }
-        accumulate_metal_fan_pair<Real, D>(
-            rot_coords,
-            offset1 + pair[0],
-            offset1 + pair[1],
-            fan_params[block_type1][i],
-            dV_dx,
-            compute_derivs,
-            Real(1),
-            V_out);
-      }
-      return;
-    }
-
-    int const block_ind1 = block_ind_for_rot[rot_ind1];
-    int const conn2 =
-        pose_stack_inter_block_connections[pose_ind][block_ind1][conn1][1];
-    int const block_type2 = block_type_ind_for_rot[rot_ind2];
-    int const key = conn_key[block_type2][conn2];
-    if (key < 0) {
-      return;
-    }
-    int const virt = conn_virt[block_type1][conn1];
-    accumulate_metal_site<Real, D>(
-        rot_coords,
-        offset1 + conn_metal[block_type1][conn1],
-        virt >= 0 ? offset1 + virt : -1,
-        rot_coord_offset[rot_ind2] + conn_atom[block_type2][conn2],
-        site_params[block_type1][conn1][key],
-        dV_dx,
-        compute_derivs,
-        Real(1),
-        V_out);
-  });
-  DeviceDispatch<D>::template forall<launch_t>(
-      mgr, n_dispatch_total, eval_energies);
 
   return {V_t, dV_dx_t, dispatch_indices_t, terms_for_dispatch_t};
 }
@@ -507,92 +362,31 @@ auto MetalCoordinationRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::
 
   LAUNCH_BOX_32;
 
-  auto eval_derivs = ([=] TMOL_DEVICE_FUNC(int dispatch_ind) {
-    Real const weight = dTdV[0][dispatch_ind];
-    if (weight == 0) {
-      return;
-    }
-    int const rot_ind1 = terms_for_dispatch[0][dispatch_ind];
-    int const rot_ind2 = terms_for_dispatch[1][dispatch_ind];
-    int const conn1 = terms_for_dispatch[2][dispatch_ind];
-    int const block_type1 = block_type_ind_for_rot[rot_ind1];
-    int const offset1 = rot_coord_offset[rot_ind1];
-
-    if (conn1 <= -2) {
-      int const bridge_pose = pose_ind_for_rot[rot_ind1];
-      auto const bridge = bridge_from_code<Int, Real, D>(
-          -2 - conn1,
-          bridge_pose,
-          block_ind_for_rot[rot_ind1],
-          block_type1,
-          block_type_ind_for_rot[rot_ind2],
-          max_n_conns,
-          max_n_internal,
-          first_rot_block_type,
-          pose_stack_inter_block_connections,
-          conn_metal,
-          conn_key,
-          site_params,
-          bridge_internal_metal,
-          bridge_internal_d0);
-      if (bridge.valid) {
-        accumulate_metal_bridge<Real, D>(
-            rot_coords,
-            offset1 + bridge.metal1,
-            rot_coord_offset[rot_ind2] + bridge.metal2,
-            bridge.d1,
-            bridge.d2,
-            bridge_params[bridge.key],
-            dV_dx,
-            true,
-            weight,
-            nullptr);
-      }
-      return;
-    }
-
-    if (conn1 < 0) {
-      for (int i = 0; i < max_n_fan; i++) {
-        Vec<Int, 2> const pair = fan_atoms[block_type1][i];
-        if (pair[0] < 0) {
-          break;
-        }
-        accumulate_metal_fan_pair<Real, D>(
-            rot_coords,
-            offset1 + pair[0],
-            offset1 + pair[1],
-            fan_params[block_type1][i],
-            dV_dx,
-            true,
-            weight,
-            nullptr);
-      }
-      return;
-    }
-
-    int const pose_ind = pose_ind_for_rot[rot_ind1];
-    int const block_ind1 = block_ind_for_rot[rot_ind1];
-    int const conn2 =
-        pose_stack_inter_block_connections[pose_ind][block_ind1][conn1][1];
-    int const block_type2 = block_type_ind_for_rot[rot_ind2];
-    int const key = conn_key[block_type2][conn2];
-    if (key < 0) {
-      return;
-    }
-    int const virt = conn_virt[block_type1][conn1];
-    accumulate_metal_site<Real, D>(
-        rot_coords,
-        offset1 + conn_metal[block_type1][conn1],
-        virt >= 0 ? offset1 + virt : -1,
-        rot_coord_offset[rot_ind2] + conn_atom[block_type2][conn2],
-        site_params[block_type1][conn1][key],
-        dV_dx,
-        true,
-        weight,
-        nullptr);
-  });
-  DeviceDispatch<D>::template forall<launch_t>(
-      mgr, n_dispatch_total, eval_derivs);
+  metal_rotamer_score_native<true,DeviceDispatch,D,Real,Int>(mgr,
+      rot_coords,
+      rot_coord_offset,
+      first_rot_block_type,
+      block_ind_for_rot,
+      pose_ind_for_rot,
+      block_type_ind_for_rot,
+      pose_stack_inter_block_connections,
+      conn_atom,
+      conn_metal,
+      conn_virt,
+      conn_key,
+      site_params,
+      fan_atoms,
+      fan_params,
+      bridge_internal_metal,
+      bridge_internal_d0,
+      bridge_params,
+      {},
+      terms_for_dispatch,
+      true,
+      true,
+      {},
+      dV_dx,
+      dTdV);
 
   return dV_dx_t;
 }
