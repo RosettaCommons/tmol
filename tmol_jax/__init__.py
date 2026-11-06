@@ -10,8 +10,11 @@ except PackageNotFoundError:
 from .io import ResidueBlock, pose_stack_from_pdb, pose_stack_from_residue_blocks
 from .optimization import run_cart_min, run_cart_relax, run_kin_min
 from .kinematics import FoldForest, MoveMap, PoseStackKinematics
-from .pack import PackerPalette
-from .pose import ConstraintSet
+from .database import ParameterDatabase
+from .chemical.patched_chemdb import PatchedChemicalDatabase
+from .io.canonical_ordering import CanonicalOrdering
+from .pack import PackerPalette, PackerTask, pack_rotamers
+from .pose import ConstraintSet, PoseStack, PoseStackBuilder, PackedBlockTypes, PDBInfo
 from .score import ScoreFunction, ScoreType, beta2016_score_function
 
 __all__ = [
@@ -20,6 +23,15 @@ __all__ = [
     "ResidueBlock",
     "ConstraintSet",
     "PackerPalette",
+    "PackerTask",
+    "pack_rotamers",
+    "ParameterDatabase",
+    "PatchedChemicalDatabase",
+    "CanonicalOrdering",
+    "PoseStack",
+    "PoseStackBuilder",
+    "PackedBlockTypes",
+    "PDBInfo",
     "FoldForest",
     "PoseStackKinematics",
     "MoveMap",
