@@ -405,7 +405,77 @@ Tensor mainchain_dof_indices(std::vector<Tensor> inputs, int64_t sampler) {
       }));
   return result;
 }
+Tensor chi_correction_indices(std::vector<Tensor> inputs) {
+  TORCH_CHECK(
+      inputs.size() == 6, "Chi correction requires six metadata buffers");
+  int n = score::common::checked_dispatch_product(
+      inputs[3].size(0), inputs[3].size(1), "chi correction indices");
+  Tensor result;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[0].options(), "chi_correction_indices", ([&] {
+        using Kernels = ConformerDofKernels<
+            score::common::DeviceOperations,
+            device_t,
+            float,
+            int64_t>;
+        auto indices = TPack<int64_t, 2, device_t>::empty({5, n});
+        typename Kernels::CorrectionIndices c{
+            TCAST(inputs[0]),
+            TCAST(inputs[1]),
+            TCAST(inputs[2]),
+            TCAST(inputs[3]),
+            TCAST(inputs[4]),
+            TCAST(inputs[5])};
+        Kernels::correction_indices(conformer_context, c, indices.view);
+        result = indices.tensor;
+      }));
+  return result;
+}
+std::tuple<Tensor, Tensor> chi_correction_derivatives(
+    Tensor indices,
+    Tensor coords,
+    Tensor weights,
+    Tensor direction,
+    bool second) {
+  TORCH_CHECK(
+      coords.dim() == 2 && coords.size(1) == 3 && weights.dim() == 2
+          && weights.size(1) == 9,
+      "Chi correction derivative axes differ");
+  TORCH_CHECK(
+      !second || direction.sizes() == coords.sizes(),
+      "Chi correction direction shape differs");
+  Tensor gradient, weight_gradient;
+  TMOL_DISPATCH_FLOATING_DEVICE(
+      coords.options(), "chi_correction_derivatives", ([&] {
+        using Kernels = ConformerDofKernels<
+            score::common::DeviceOperations,
+            device_t,
+            scalar_t,
+            int64_t>;
+        auto gc = TPack<scalar_t, 2, device_t>::zeros({coords.size(0), 3});
+        auto gw = TPack<scalar_t, 2, device_t>::zeros(
+            {second ? weights.size(0) : 0, 9});
+        typename Kernels::CorrectionDerivatives c{
+            TCAST(indices),
+            TCAST(coords),
+            TCAST(weights),
+            TCAST(direction),
+            gc.view,
+            gw.view};
+        Kernels::correction_derivatives(conformer_context, c, second);
+        gradient = gc.tensor;
+        weight_gradient = gw.tensor;
+      }));
+  return {gradient, weight_gradient};
+}
 TMOL_LIBRARY(tmol_conformer_dofs, m) {
+  m.def(
+      "chi_correction_indices(Tensor[] inputs) -> Tensor",
+      TMOL_FN(&chi_correction_indices));
+  m.def(
+      "chi_correction_derivatives(Tensor indices, Tensor coords, Tensor "
+      "weights, Tensor direction, bool second) -> (Tensor, Tensor)",
+      TMOL_FN(&chi_correction_derivatives));
   m.def(
       "mainchain_row_indices(Tensor[] inputs, int sampler) -> Tensor",
       TMOL_FN(&mainchain_row_indices));

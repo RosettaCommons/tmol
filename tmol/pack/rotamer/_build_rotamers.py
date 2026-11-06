@@ -34,7 +34,6 @@ from tmol.pack.rotamer._mainchain_fingerprint import (
     _find_unique_fingerprints,
 )
 from tmol.pack._packer_task import SetPackerTask
-from tmol.numeric import coord_dihedrals
 from tmol_core.pack.chi import (  # noqa: F401
     chi_moves_fourth_atom as _turns_its_fourth_atom,
     chi4_by_defining_atom,
@@ -116,12 +115,18 @@ def _correct_phi_c_from_measured_chi(
     """
     # trial forward pass to get coords in RTO
     n_at_total = conformer_kinforest.id.numel() - 1
+    # The correction mutates DOFs after the trial pass. Preserve the values
+    # retained by forward-kinematics autograd when construction is differentiable.
+    trial_dofs = (
+        conf_dofs_kto.clone()
+        if torch.is_grad_enabled() and conf_dofs_kto.requires_grad
+        else conf_dofs_kto
+    )
     trial_coords_rto = _calculate_rotamer_coords(
-        pbt, n_at_total, conformer_kinforest, nodes, scans, gens, conf_dofs_kto
+        pbt, n_at_total, conformer_kinforest, nodes, scans, gens, trial_dofs
     )
 
     chi4_by_atom, kfidx = _chi4_and_kfo_device_tables(pbt, conf_dofs_kto.device)
-    phi_c = conf_dofs_kto.select(1, 3)
 
     for i, sample_data in enumerate(conformer_samples):
         sample_dict = sample_data[2]
@@ -132,47 +137,18 @@ def _correct_phi_c_from_measured_chi(
         if chi_intended.shape[0] == 0:
             continue
 
-        if pbt.device.type != "mps":
-            from ._conformer_compiled import correct_chi_dofs
+        from ._conformer_execution import correct_chi_dofs
 
-            correct_chi_dofs(
-                block_type_ind_for_conformer_torch,
-                n_atoms_offset_for_conformer_torch,
-                new_ind_for_sampler_rotamer[i],
-                cda_rto,
-                chi_intended,
-                trial_coords_rto,
-                chi4_by_atom,
-                kfidx,
-                conf_dofs_kto,
-            )
-            continue
-
-        # per-rotamer metadata for every (samp_rot, chi) pair
-        g_rot = new_ind_for_sampler_rotamer[i]
-        bt_idx = block_type_ind_for_conformer_torch[g_rot][:, None]
-        rot_off = n_atoms_offset_for_conformer_torch[g_rot][:, None]
-
-        safe_rto = cda_rto.clamp_min(0).to(torch.int64)
-        cda_kto = kfidx[bt_idx, safe_rto] + rot_off + 1  # +1 for the virtual root
-
-        # the chi each defining atom turns: (n_samp, max_n_chi, 4)
-        four_rto = chi4_by_atom[bt_idx, safe_rto]
-        valid = ((cda_rto >= 0) & (four_rto >= 0).all(dim=-1)).reshape(-1)
-
-        # invalid entries read atom 0 and contribute a zero, so nothing here
-        # depends on a count the host would have to be told
-        four_abs = torch.where(four_rto >= 0, four_rto + rot_off.unsqueeze(-1), 0)
-        xyz = trial_coords_rto[four_abs.reshape(-1, 4)].to(torch.float64)
-
-        measured = coord_dihedrals(xyz[:, 0], xyz[:, 1], xyz[:, 2], xyz[:, 3])
-        delta = chi_intended.reshape(-1).to(torch.float64) - measured
-        delta = (delta + numpy.pi) % (2 * numpy.pi) - numpy.pi
-
-        phi_c.index_add_(
-            0,
-            torch.where(valid, cda_kto.reshape(-1), 0),
-            torch.where(valid, delta, torch.zeros_like(delta)).to(phi_c.dtype),
+        correct_chi_dofs(
+            block_type_ind_for_conformer_torch,
+            n_atoms_offset_for_conformer_torch,
+            new_ind_for_sampler_rotamer[i],
+            cda_rto,
+            chi_intended,
+            trial_coords_rto,
+            chi4_by_atom,
+            kfidx,
+            conf_dofs_kto,
         )
 
 
@@ -471,9 +447,27 @@ def _calculate_rotamer_coords(
         ).to(pbt.device)
     )
 
-    new_coords_kto = _forward_only_op(
-        rot_dofs_kto, _p(_t(nodes)), _p(_t(scans)), _p(_tcpu(gens)), kinforest_stack
-    )
+    if torch.is_grad_enabled() and rot_dofs_kto.requires_grad:
+        from tmol_core.kinematics.scan_ordering import scan_ordering_from_forward
+        from tmol.kinematics.compiled._compiled_ops import _forward_kin_op
+
+        backward = scan_ordering_from_forward(
+            rot_kinforest.parent.cpu().numpy(), nodes, scans, gens
+        ).backward
+        new_coords_kto = _forward_kin_op(
+            rot_dofs_kto,
+            _t(nodes),
+            _t(scans),
+            _tcpu(gens),
+            _t(backward.nodes),
+            _t(backward.scans),
+            _tcpu(backward.gens),
+            kinforest_stack,
+        )
+    else:
+        new_coords_kto = _forward_only_op(
+            rot_dofs_kto, _t(nodes), _t(scans), _tcpu(gens), kinforest_stack
+        )
 
     new_coords_rto = torch.zeros(
         (n_atoms_total, 3), dtype=torch.float32, device=pbt.device
@@ -547,6 +541,11 @@ def build_rotamers(
 ) -> tuple[PoseStack, RotamerSet]:
     """Build coordinates and indexing for every task-allowed conformer.
 
+    Chi construction supports first derivatives of sampled angles with fixed
+    input coordinates. Coordinate derivatives through inverse kinematics and
+    higher derivatives through forward kinematics are not implemented. Current
+    conformers copied directly from the input retain coordinate derivatives.
+
     Args:
         poses: Input poses supplying backbone geometry and current conformers.
         task: Finalized packing choices and conformer samplers.
@@ -609,6 +608,21 @@ def build_rotamers(
             conformer_samples[i] = samplers[i].create_samples_for_poses(
                 poses, task, built_rotamer_counts=built
             )
+
+    if (
+        torch.is_grad_enabled()
+        and poses.coords.requires_grad
+        and any(
+            "chi_for_rotamers" in sample[2] and sample[2]["chi_for_rotamers"].numel()
+            for sample in conformer_samples
+        )
+    ):
+        raise NotImplementedError(
+            "Chi-conformer construction requires inverse-kinematics coordinate "
+            "derivatives, which are not implemented. Current-only conformers "
+            "support coordinate derivatives; sampled-angle gradients require "
+            "fixed input coordinates."
+        )
 
     correlated_groups = _correlated_groups_for_samples(task, conformer_samples)
 

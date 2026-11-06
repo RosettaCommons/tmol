@@ -6,6 +6,7 @@
 #include <tmol/utility/portable/device.hh>
 #include <cmath>
 #include <tmol/score/common/accumulate.hh>
+#include <tmol/score/common/geom.hh>
 
 namespace tmol::pack::rotamer {
 // Static topology and caller-owned DOFs. All indices address compact forests
@@ -309,20 +310,63 @@ struct ChiDofCorrection {
   View<Real, 2> dofs;
 };
 
-template <Device D, typename Real, typename Ctx>
-TMOL_DEVICE_FUNC void correct_chi_dof(Ctx const& c, int index) {
+template <template <typename, int> class View, typename Int>
+struct ChiCorrectionIndexPlan {
+  View<Int, 1> types, offsets, conformers;
+  View<int32_t, 2> atoms;
+  View<Int, 3> chi_atoms;
+  View<Int, 2> kinematic_index;
+};
+struct ChiCorrectionRows {
+  int64_t destination, points[4];
+};
+template <typename Ctx>
+TMOL_DEVICE_FUNC ChiCorrectionRows
+chi_correction_lookup(Ctx const& c, int index) {
   int width = c.atoms.size(1), row = index / width, column = index % width;
   int atom = c.atoms[row][column];
-  if (atom < 0) return;
-  auto conformer = c.conformers[row], type = c.types[conformer];
-  auto offset = c.offsets[conformer];
-  double xyz[4][3];
+  ChiCorrectionRows result{-1, {-1, -1, -1, -1}};
+  if (atom < 0) return result;
+  auto conformer = c.conformers[row], type = c.types[conformer],
+       offset = c.offsets[conformer];
   for (int point = 0; point < 4; ++point) {
     auto local = c.chi_atoms[type][atom][point];
-    if (local < 0) return;
-    for (int component = 0; component < 3; ++component)
-      xyz[point][component] = double(c.trial_coords[offset + local][component]);
+    if (local < 0) return result;
+    result.points[point] = offset + local;
   }
+  result.destination = (c.kinematic_index[type][atom] + offset + 1) * 9 + 3;
+  return result;
+}
+template <
+    template <Device> class Ops,
+    Device D,
+    typename Context,
+    typename Ctx,
+    typename Indices>
+void launch_chi_correction_indices(Context& context, Ctx c, Indices indices) {
+  LAUNCH_BOX_128;
+  int n = score::common::checked_dispatch_product(
+      c.atoms.size(0), c.atoms.size(1), "chi correction indices");
+  Ops<D>::template forall<launch_t>(
+      context, n, [=] TMOL_DEVICE_FUNC(int index) {
+        auto rows = chi_correction_lookup(c, index);
+        indices[0][index] = rows.destination;
+        for (int point = 0; point < 4; ++point)
+          indices[point + 1][index] =
+              rows.destination >= 0 ? rows.points[point] : -1;
+      });
+}
+
+template <Device D, typename Real, typename Ctx>
+TMOL_DEVICE_FUNC void correct_chi_dof(Ctx const& c, int index) {
+  auto rows = chi_correction_lookup(c, index);
+  if (rows.destination < 0) return;
+  int row = index / c.atoms.size(1), column = index % c.atoms.size(1);
+  double xyz[4][3];
+  for (int point = 0; point < 4; ++point)
+    for (int component = 0; component < 3; ++component)
+      xyz[point][component] =
+          double(c.trial_coords[rows.points[point]][component]);
   // Float32 reconstruction historically computes geometry in double and
   // rounds the measured angle before forming its double-precision delta.
   // Float64 reconstruction retains the measured double precision.
@@ -332,7 +376,7 @@ TMOL_DEVICE_FUNC void correct_chi_dof(Ctx const& c, int index) {
   double wrapped = std::fmod(delta + pi, 2 * pi);
   if (wrapped < 0) wrapped += 2 * pi;
   delta = wrapped - pi;
-  auto destination = c.kinematic_index[type][atom] + offset + 1;
+  auto destination = rows.destination / 9;
   Real correction = Real(delta);
   score::common::accumulate<D, Real>::add(c.dofs[destination][3], correction);
 }
@@ -350,6 +394,70 @@ void launch_correct_chi_dofs(Context& context, Ctx c) {
   Ops<D>::template forall<launch_t>(
       context, count, [=] TMOL_DEVICE_FUNC(int i) {
         correct_chi_dof<D, Real>(c, i);
+      });
+}
+
+// Caller clears accumulation outputs. The first derivative reads no direction
+// or weight-output buffer. The second computes H*direction and the transpose
+// contribution to output weights, so framework adapters can preserve HVPs.
+template <template <typename, int> class View, typename Real>
+struct ChiCorrectionDerivatives {
+  View<int64_t, 2> indices;
+  View<Real, 2> coords, weights, direction, grad_coords, grad_weights;
+};
+template <
+    template <Device> class Ops,
+    Device D,
+    typename Real,
+    bool Second,
+    typename Context,
+    typename Ctx>
+void launch_chi_correction_derivatives(Context& context, Ctx c) {
+  LAUNCH_BOX_128;
+  int n = score::common::checked_dispatch_size(
+      c.indices.size(1), "chi correction derivatives");
+  Ops<D>::template forall<launch_t>(
+      context, n, [=] TMOL_DEVICE_FUNC(int index) {
+        auto destination = c.indices[0][index];
+        if (destination < 0) return;
+        using V = tmol::portable::Vec<double, 3>;
+        using Geometry = score::common::dihedral_angle<double>;
+        V xyz[4], direction[4];
+        for (int p = 0; p < 4; ++p)
+          for (int k = 0; k < 3; ++k) {
+            auto atom = c.indices[p + 1][index];
+            xyz[p][k] = double(c.coords[atom][k]);
+            if constexpr (Second)
+              direction[p][k] = double(c.direction[atom][k]);
+          }
+        auto gradient = Geometry::V_dV(xyz[0], xyz[1], xyz[2], xyz[3]);
+        V values[4] = {
+            gradient.dV_dI, gradient.dV_dJ, gradient.dV_dK, gradient.dV_dL};
+        if constexpr (Second) {
+          double product = 0;
+          for (int p = 0; p < 4; ++p) product += values[p].dot(direction[p]);
+          score::common::accumulate<D, Real>::add(
+              c.grad_weights[destination / 9][destination % 9], Real(-product));
+          auto hvp = Geometry::gradient_jvp(
+              xyz[0],
+              xyz[1],
+              xyz[2],
+              xyz[3],
+              direction[0],
+              direction[1],
+              direction[2],
+              direction[3]);
+          values[0] = hvp.dI;
+          values[1] = hvp.dJ;
+          values[2] = hvp.dK;
+          values[3] = hvp.dL;
+        }
+        double weight = double(c.weights[destination / 9][destination % 9]);
+        for (int p = 0; p < 4; ++p)
+          for (int k = 0; k < 3; ++k)
+            score::common::accumulate<D, Real>::add(
+                c.grad_coords[c.indices[p + 1][index]][k],
+                Real(-weight * values[p][k]));
       });
 }
 

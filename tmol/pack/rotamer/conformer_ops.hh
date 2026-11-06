@@ -21,6 +21,15 @@ struct ConformerDofKernels {
   static void opth_reset(ContextManager&, ResetPlan);
   using Correction = ChiDofCorrection<Binder::template View, Real, Int>;
   static void correct(ContextManager&, Correction);
+  using CorrectionIndices = ChiCorrectionIndexPlan<Binder::template View, Int>;
+  using CorrectionDerivatives =
+      ChiCorrectionDerivatives<Binder::template View, Real>;
+  static void correction_indices(
+      ContextManager&,
+      CorrectionIndices,
+      typename Binder::template View<int64_t, 2>);
+  static void correction_derivatives(
+      ContextManager&, CorrectionDerivatives, bool);
   static void copy(ContextManager&, Copy);
   using ValueIndices = typename Binder::template View<int64_t, 2>;
   using MainchainIndices = MainchainDofIndexPlan<Binder::template View, Int>;

@@ -240,6 +240,38 @@ struct dihedral_angle {
             + (H.dot(G) / (B.dot(B) * G.norm())) * B,
         G.norm() / B.dot(B) * B};
   }
+
+  struct Gradient {
+    Real3 dI, dJ, dK, dL;
+  };
+
+  // Directional derivative of the Blondel/Karplus gradient above. This avoids
+  // finite differences and shares torsion curvature with every native caller.
+  static def gradient_jvp(
+      Real3 I,
+      Real3 J,
+      Real3 K,
+      Real3 L,
+      Real3 dI,
+      Real3 dJ,
+      Real3 dK,
+      Real3 dL) -> Gradient {
+    auto F = I - J, G = J - K, H = L - K;
+    auto dF = dI - dJ, dG = dJ - dK, dH = dL - dK;
+    auto A = F.cross(G), B = H.cross(G);
+    auto dA = dF.cross(G) + F.cross(dG), dB = dH.cross(G) + H.cross(dG);
+    Real u = G.norm(), a = A.dot(A), b = B.dot(B);
+    Real du = G.dot(dG) / u, da = 2 * A.dot(dA), db = 2 * B.dot(dB);
+    Real p = u / a, q = F.dot(G) / (a * u), r = H.dot(G) / (b * u), t = u / b;
+    Real dp = (du - p * da) / a, dt = (du - t * db) / b;
+    Real dq = (dF.dot(G) + F.dot(dG) - q * (da * u + a * du)) / (a * u);
+    Real dr = (dH.dot(G) + H.dot(dG) - r * (db * u + b * du)) / (b * u);
+    return {
+        -dp * A - p * dA,
+        (dp + dq) * A + (p + q) * dA - dr * B - r * dB,
+        -dq * A - q * dA + (dr - dt) * B + (r - t) * dB,
+        dt * B + t * dB};
+  }
 };
 
 #undef Real3
