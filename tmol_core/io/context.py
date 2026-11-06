@@ -3,6 +3,7 @@ each free rotation (and interchangeable anchor labels) greedily to minimize clas
 
 import math
 from collections import deque
+from collections.abc import Mapping
 from typing import Dict, List, Tuple
 
 import numpy
@@ -137,10 +138,14 @@ class _BlockTypeGeometry:
             self.chi_for_axis[(c, b)] = (d, a, values)
 
 
-def _geometry(bt, atom_types):
+def _geometry(bt, atom_types, identity=None):
+    if identity is None:
+        identity = tuple(atom_types.values())
     geom = getattr(bt, "_missing_context_geometry", None)
-    if geom is None:
+    previous = getattr(geom, "atom_types_identity", None)
+    if geom is None or (previous is not identity and previous != identity):
         geom = _BlockTypeGeometry(bt, atom_types)
+        geom.atom_types_identity = identity
         setattr(bt, "_missing_context_geometry", geom)
     return geom
 
@@ -378,12 +383,19 @@ def build_missing_by_context(
 ):
     """Choose and execute context-dependent placements, returning a built-atom mask.
 
+    ``atom_types`` accepts an immutable atom-type tuple or a name mapping;
+    retaining the tuple permits constant-time cache identity checks.
     Inputs are structural residue types and NumPy metadata/coordinates. ``place``
     receives a chosen block build and must return a mapping from local atom index
     to its executed coordinate. Feedback uses the frontend's actual precision;
     later waves must see those coordinates when choosing clash-free rotations.
     Coordinates and metadata supplied by the caller are never modified.
     """
+    if isinstance(atom_types, Mapping):
+        atom_types_identity = tuple(atom_types.values())
+    else:
+        atom_types_identity = tuple(atom_types)
+        atom_types = {at.name: at for at in atom_types}
     xyz_all = numpy.array(coordinates, dtype=numpy.float64, copy=True)
     xyz_all[missing] = numpy.nan
     tgt_all = targets
@@ -404,7 +416,7 @@ def build_missing_by_context(
         for b, t in enumerate(types_all[pose].tolist()):
             if t < 0:
                 continue
-            geom = geoms[b] = _geometry(bts[t], atom_types)
+            geom = geoms[b] = _geometry(bts[t], atom_types, atom_types_identity)
             s = int(off_all[pose, b])
             donor[s : s + geom.n] = geom.donor
             acceptor[s : s + geom.n] = geom.acceptor

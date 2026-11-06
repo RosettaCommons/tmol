@@ -810,121 +810,48 @@ class PoseStackBuilder:
         assert block_type_ind64.shape[0] == n_poses
         assert block_type_ind64.shape[1] == max_n_res
 
-        device = pbt.device
-
-        # 1) inter_residue_connections:
-        max_n_conn = pbt.max_n_conn
-        inter_residue_connections64 = torch.full(
-            (n_poses, max_n_res, max_n_conn, 2), -1, dtype=torch.int64, device=device
+        from tmol_core.pose.sequences import chain_ids_from_lengths
+        from tmol._construction_ops import _canonical_chain_endings
+        from tmol.pose._connections import _wire_canonical_connections
+        from tmol.pose._packed_block_types import (
+            _annotate_packed_block_types_w_dslf_conn_inds,
         )
 
-        # let's find the up connection indices of the n-terminal sides of
-        # each connection and the down connection indices of the c-terminal
-        # sides of each connection
-        res_is_real_and_not_n_term = real_res.clone()
-        res_is_real_and_not_n_term[:, 0] = False
-
-        res_is_real_and_not_c_term = real_res.clone()
-        npose_arange = torch.arange(n_poses, dtype=torch.int64, device=device)
-        res_is_real_and_not_c_term[npose_arange, n_res - 1] = False
-
-        connected_up_conn_inds = pbt.up_conn_inds[
-            block_type_ind64[res_is_real_and_not_c_term]
-        ].to(torch.int64)
-        connected_down_conn_inds = pbt.down_conn_inds[
-            block_type_ind64[res_is_real_and_not_n_term]
-        ].to(torch.int64)
-
-        # TO DO: handle termini patches!
-
-        (
-            nz_res_is_real_and_not_n_term_pose_ind,
-            nz_res_is_real_and_not_n_term_res_ind,
-        ) = torch.nonzero(res_is_real_and_not_n_term, as_tuple=True)
-        (
-            nz_res_is_real_and_not_c_term_pose_ind,
-            nz_res_is_real_and_not_c_term_res_ind,
-        ) = torch.nonzero(res_is_real_and_not_c_term, as_tuple=True)
-
-        inter_residue_connections64[
-            nz_res_is_real_and_not_c_term_pose_ind,
-            nz_res_is_real_and_not_c_term_res_ind,
-            connected_up_conn_inds,
-            0,  # residue id
-        ] = nz_res_is_real_and_not_n_term_res_ind
-        inter_residue_connections64[
-            nz_res_is_real_and_not_c_term_pose_ind,
-            nz_res_is_real_and_not_c_term_res_ind,
-            connected_up_conn_inds,
-            1,  # connection id
-        ] = connected_down_conn_inds
-
-        inter_residue_connections64[
-            nz_res_is_real_and_not_n_term_pose_ind,
-            nz_res_is_real_and_not_n_term_res_ind,
-            connected_down_conn_inds,
-            0,  # residue id
-        ] = nz_res_is_real_and_not_c_term_res_ind
-        inter_residue_connections64[
-            nz_res_is_real_and_not_n_term_pose_ind,
-            nz_res_is_real_and_not_n_term_res_ind,
-            connected_down_conn_inds,
-            1,  # connection id
-        ] = connected_up_conn_inds
-
-        if chain_lengths:
-            n_chains = [len(c_lens) for c_lens in chain_lengths]
-            max_n_chains_minus1 = max(n_chains) - 1
-            n_chains = torch.tensor(n_chains, dtype=torch.int64, device=device)
-            chain_lengths_t = torch.full(
-                (n_poses, max_n_chains_minus1), -1, dtype=torch.int64
+        device = pbt.device
+        chain_id = torch.from_numpy(
+            chain_ids_from_lengths(n_res.cpu().numpy(), max_n_res, chain_lengths)
+        ).to(device)
+        if not hasattr(pbt, "_sequence_polymer_flags"):
+            pbt._sequence_polymer_flags = torch.tensor(
+                [bt.properties.polymer.is_polymer for bt in pbt.active_block_types],
+                dtype=torch.bool,
+                device=device,
             )
-            for i, c_lens in enumerate(chain_lengths):
-                for j, chain_length in enumerate(c_lens):
-                    if j != len(c_lens) - 1:
-                        # we will leave off the last chain from each pose
-                        chain_lengths_t[i, j] = chain_length
-            chain_lengths_t = chain_lengths_t.to(device)
-            cl_real = chain_lengths_t != -1
-            cl_offsets = torch.cumsum(chain_lengths_t, dim=1)
-
-            # mark the first residue of each chain with a 1, then run inclusive cumsum
-            # to get chain IDs
-            cl_real_real = (chain_lengths_t != -1) & (cl_offsets <= n_res[:, None])
-            cl_real_real_pose_ind, _ = torch.nonzero(cl_real_real, as_tuple=True)
-            chain_id = torch.zeros(
-                (n_poses, max_n_res), dtype=torch.int32, device=device
-            )
-            chain_id[cl_real_real_pose_ind, cl_offsets[cl_real_real]] = 1
-            chain_id = torch.cumsum(chain_id, dim=1).to(torch.int32)
-            chain_id[torch.logical_not(real_res)] = -1
-
-            nz_cl_real_pose_ind, _ = torch.nonzero(cl_real, as_tuple=True)
-            n_term_res = cl_offsets[cl_real]
-            c_term_res = n_term_res - 1
-
-            cterm_bts = block_type_ind64[nz_cl_real_pose_ind, c_term_res]
-            up_conn_for_cterm = pbt.up_conn_inds[cterm_bts].to(torch.int64)
-
-            nterm_bts = block_type_ind64[nz_cl_real_pose_ind, n_term_res]
-            down_conn_for_nterm = pbt.down_conn_inds[nterm_bts].to(torch.int64)
-
-            # sentinel out the down connection residue and connection
-            inter_residue_connections64[
-                nz_cl_real_pose_ind, n_term_res, down_conn_for_nterm, 0:2
-            ] = -1
-            # sentinel out the up connection residue and connection
-            inter_residue_connections64[
-                nz_cl_real_pose_ind, c_term_res, up_conn_for_cterm, 0:1
-            ] = -1
-        else:
-            # everything is in a single chain, so mark the real residues as chain 0
-            chain_id = torch.full(
-                (n_poses, max_n_res), -1, dtype=torch.int32, device=device
-            )
-            chain_id[real_res] = 0
-
-        return inter_residue_connections64, chain_id
+        broken = torch.zeros((n_poses, max_n_res, 2), dtype=torch.bool, device=device)
+        empty = torch.empty((0, 3), dtype=torch.int64, device=device)
+        inputs = [
+            chain_id,
+            block_type_ind64,
+            broken,
+            real_res,
+            pbt._sequence_polymer_flags,
+            pbt.polymeric_conn_inds.to(torch.int64),
+            empty,
+            broken,
+        ]
+        if device.type == "mps":
+            inputs = [x.cpu() for x in inputs]
+        _, first, last, polymeric = _canonical_chain_endings(inputs)
+        _annotate_packed_block_types_w_dslf_conn_inds(pbt)
+        connections = _wire_canonical_connections(
+            pbt,
+            block_type_ind64,
+            polymeric.to(device),
+            first.to(device),
+            last.to(device),
+            broken,
+        )
+        return connections, chain_id
 
     @classmethod
     @_validate_args
