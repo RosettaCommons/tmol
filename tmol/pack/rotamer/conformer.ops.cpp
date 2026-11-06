@@ -111,7 +111,46 @@ void copy_conformer_rows(
       }));
 }
 
+void correct_chi_dofs(
+    Tensor types,
+    Tensor offsets,
+    Tensor conformers,
+    Tensor atoms,
+    Tensor chi,
+    Tensor trial_coords,
+    Tensor chi_atoms,
+    Tensor kinematic_index,
+    Tensor dofs) {
+  TORCH_CHECK(
+      dofs.dim() == 2 && dofs.size(1) == 9,
+      "conformer DOFs require nine components");
+  TMOL_DISPATCH_FLOATING_DEVICE(dofs.options(), "correct_chi_dofs", ([&] {
+                                  using Kernels = ConformerDofKernels<
+                                      score::common::DeviceOperations,
+                                      device_t,
+                                      scalar_t,
+                                      int64_t>;
+                                  Kernels::Correction c;
+                                  c.types = TCAST(types);
+                                  c.offsets = TCAST(offsets);
+                                  c.conformers = TCAST(conformers);
+                                  c.atoms = TCAST(atoms);
+                                  c.chi = TCAST(chi);
+                                  c.trial_coords = TCAST(trial_coords);
+                                  c.chi_atoms = TCAST(chi_atoms);
+                                  c.kinematic_index = TCAST(kinematic_index);
+                                  c.dofs = TCAST(dofs);
+                                  Kernels::correct(conformer_context, c);
+                                }));
+}
+
 TMOL_LIBRARY(tmol_conformer_dofs, m) {
+  m.def(
+      "correct_chi_dofs(Tensor types, Tensor offsets, Tensor conformers, "
+      "Tensor atoms, Tensor chi, Tensor trial_coords, Tensor chi_atoms, Tensor "
+      "kinematic_index, Tensor(a!) dofs) -> ()",
+      TMOL_FN(&correct_chi_dofs));
+
   m.def(
       "copy_conformer_rows(Tensor source_offsets, Tensor target_offsets, "
       "Tensor packed_offsets, Tensor source_values, Tensor(a!) target_values, "
