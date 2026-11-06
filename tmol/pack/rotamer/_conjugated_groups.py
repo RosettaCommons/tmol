@@ -13,7 +13,6 @@ bonded to a sidechain at all, forms no group and is left alone.
 
 import attr
 from collections import OrderedDict
-import networkx
 import numpy
 import torch
 
@@ -24,49 +23,20 @@ from tmol.pose._conjugated_groups import (  # noqa: F401
 )
 
 
+from tmol_core.pack.conjugated import (
+    GroupSamplingTopology,  # noqa: F401 legacy import path
+    GroupSamplingPlan,  # noqa: F401 legacy import path
+    group_atom_context,
+    group_sampling_topology,
+    sampled_group_chi,
+    resolve_group_atom as _resolve_group_atom,  # noqa: F401 legacy import path
+)
+
+
 def _group_atom_context(group, pose_stack):
-    """Local residue types, group atom offsets and connection partners."""
     pbt = pose_stack.packed_block_types
     indices = pose_stack.block_type_ind[group.pose, list(group.blocks)].tolist()
-    types = [pbt.active_block_types[index] for index in indices]
-    offsets = numpy.cumsum([0] + [bt.n_atoms for bt in types])
-    partners = {}
-    for a, ac, b, bc in group.links:
-        partners[a, ac] = (b, bc)
-        partners[b, bc] = (a, ac)
-    return types, offsets, partners
-
-
-def _resolve_group_atom(uaid, owner, block_types, offsets, partners):
-    """Resolve a torsion atom into the group's concatenated atom numbering."""
-    atom, conn, sep = (int(v) for v in uaid)
-    if conn != -1:
-        partner = partners.get((owner, conn))
-        if partner is None:
-            return -1
-        owner, conn = partner
-        downstream = block_types[owner].atom_downstream_of_conn
-        if not 0 <= sep < downstream.shape[1]:
-            return -1
-        atom = int(downstream[conn, sep])
-    return int(offsets[owner]) + atom if atom >= 0 else -1
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class GroupSamplingTopology:
-    block_types: list
-    offsets: numpy.ndarray
-    partners: dict
-    kinforest: object
-    # Unordered axis -> its child in the rooted tree, for budget depth.
-    movable_axes: dict
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class GroupSamplingPlan:
-    group: ConjugatedGroup
-    topology: GroupSamplingTopology
-    owners: tuple
+    return group_atom_context(group, [pbt.active_block_types[i] for i in indices])
 
 
 def _group_sampling_topology(group, pose_stack, fixed_owners=()):
@@ -100,46 +70,12 @@ def _group_sampling_topology(group, pose_stack, fixed_owners=()):
 
 
 def _group_sampling_topology_impl(group, pose_stack, fixed_owners=()):
-    from tmol.kinematics._scan_ordering import _block_group_kinforest_data
-
-    types, offsets, partners = _group_atom_context(group, pose_stack)
-    rkd, offsets = _block_group_kinforest_data(types, group.links, anchor=0)
-    graph = networkx.Graph()
-    graph.add_nodes_from(range(int(offsets[-1])))
-    for i, bt in enumerate(types):
-        graph.add_edges_from(numpy.asarray(bt.bond_indices) + offsets[i])
-    for a, ac, b, bc in group.links:
-        graph.add_edge(
-            int(offsets[a]) + int(types[a].ordered_connection_atoms[ac]),
-            int(offsets[b]) + int(types[b].ordered_connection_atoms[bc]),
-        )
-    fixed = numpy.zeros(int(offsets[-1]), dtype=bool)
-    fixed[rkd.jump_atom] = True
-    for owner in fixed_owners:
-        fixed[int(offsets[owner]) : int(offsets[owner + 1])] = True
-    backbone_owners = {0}
-    for owner, conn, _partner, _partner_conn in group.external_links:
-        atom = int(offsets[owner]) + int(types[owner].ordered_connection_atoms[conn])
-        fixed[atom] = True
-        fixed[list(graph[atom])] = True
-        backbone_owners.add(owner)
-    for owner in backbone_owners:
-        bt = types[owner]
-        polymer = getattr(getattr(bt, "properties", None), "polymer", None)
-        mainchain = set(getattr(polymer, "mainchain_atoms", None) or ())
-        for atom, definition in enumerate(bt.atoms):
-            if definition.name in mainchain:
-                fixed[int(offsets[owner]) + atom] = True
-    for child in reversed(rkd.bfto_2_orig):
-        parent = rkd.preds[child]
-        if parent >= 0:
-            fixed[parent] |= fixed[child]
-    axes = {}
-    for a, b in networkx.bridges(graph):
-        child = a if rkd.preds[a] == b else b
-        if not fixed[child]:
-            axes[frozenset((a, b))] = int(child)
-    return GroupSamplingTopology(types, offsets, partners, rkd, axes)
+    return group_sampling_topology(
+        group,
+        pose_stack.packed_block_types.active_block_types,
+        pose_stack.block_type_ind[group.pose, list(group.blocks)].tolist(),
+        fixed_owners,
+    )
 
 
 def _group_sampled_chi(
@@ -154,78 +90,18 @@ def _group_sampled_chi(
     include_anchor=False,
     sampled_members=None,
 ):
-    """Which chi of a group's attached blocks survive the budget.
-
-    The whole group enumerates one product, so the budget is applied across it
-    rather than to each block: seven sugars of six chi each would otherwise
-    multiply out. Chi freeze from the tip of the group inward, using depth in
-    the kinforest that builds the group, so the linkage torsions nearest the
-    anchor -- the ones that move the most atoms -- are the last to go. Library
-    axes are excluded. Additional anchor axes may be included explicitly.
-
-    The budget counts rotamers, not conformers. Every active member costs one
-    rotamer per conformer; inactive members each cost one background rotamer.
-    Subtract that background cost before dividing by the active member count.
-
-    Returns a list of (index within the group, ChiSamples) for the survivors.
-    """
-    from tmol.pack.rotamer._chi_budget import _budgeted_chi_samples, _chi_depths
-
     topology = topology or _group_sampling_topology(group, pose_stack)
-    block_types, offsets, partners = (
-        topology.block_types,
-        topology.offsets,
-        topology.partners,
+    return sampled_group_chi(
+        group,
+        topology,
+        expanded_limit,
+        limit,
+        library_size,
+        reserve_current,
+        exclude_axes,
+        include_anchor,
+        sampled_members,
     )
-
-    selected = []
-    seen = set(exclude_axes)
-    # Prefer the downstream owner's definition when both sides name one axis.
-    for i, bt in reversed(list(enumerate(block_types))):
-        if i == 0 and not include_anchor:
-            continue
-        for j, cs in enumerate(bt.chi_samples):
-            if cs.is_proton:
-                continue
-            atoms = [
-                _resolve_group_atom(u, i, block_types, offsets, partners)
-                for u in bt.torsion_to_uaids[cs.chi_dihedral][1:3]
-            ]
-            if min(atoms) < 0:
-                raise ValueError(f"Cannot resolve group torsion {cs.chi_dihedral}")
-            axis = frozenset(atoms)
-            if axis in seen or axis not in topology.movable_axes:
-                continue
-            seen.add(axis)
-            selected.append((i, j, cs, topology.movable_axes[axis]))
-    selected.sort(key=lambda item: item[:2])
-    entries = [item[2] for item in selected]
-    owners = [item[0] for item in selected]
-    depths = _chi_depths(topology.kinforest, [item[3] for item in selected])
-    # Only active members carry a copy of each conformer.
-    n_blocks = len(group.blocks) if sampled_members is None else sampled_members
-    fixed_members = len(group.blocks) - n_blocks
-    expanded_limit = (expanded_limit - fixed_members) // n_blocks
-    limit = (limit - fixed_members) // n_blocks
-    # With no library axes, a one-state budget keeps the input itself. There
-    # is no need to reserve a second identical empty-product conformer.
-    if (
-        reserve_current
-        and library_size == 1
-        and not exclude_axes
-        and max(expanded_limit, limit) == 1
-    ):
-        return []
-    reserve_current = reserve_current and bool(entries or exclude_axes)
-    kept = _budgeted_chi_samples(
-        entries,
-        depths,
-        max(expanded_limit - int(reserve_current), 0),
-        max(limit - int(reserve_current), 0),
-        library_size=library_size,
-    )
-
-    return [(owners[index], cs) for index, cs in kept]
 
 
 def _add_conjugated_group_sampler(task, pose_stack, sampler=None, exclude=()):

@@ -12,141 +12,30 @@ has to know which blocks move together in order not to enumerate combinations
 the group cannot adopt.
 """
 
-from collections import deque
-
-import attr
+from typing import List
 import numpy
 import torch
-
-from typing import List, Tuple
-
 from tmol.pose._pose_stack import PoseStack
 from tmol.pose._packed_block_types import (
     _annotate_packed_block_types_w_conjugation_conns,
 )
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class ConjugatedGroup:
-    """One anchor residue and the blocks bonded to its sidechain.
-
-    ``blocks`` lists the anchor first, then the attached blocks in the order a
-    breadth-first walk out from the anchor reaches them, so a block always
-    follows the one it is bonded to. ``links`` gives each bond as (parent index
-    within ``blocks``, connection on the parent, child index within ``blocks``,
-    connection on the child) -- the form block_group_kinforest_data takes.
-    It includes cycle-closing bonds, not only the breadth-first tree.
-    ``external_links`` uses the same format except its third entry is a pose
-    block index outside the group. These bonds constrain which parts can move.
-    """
-
-    pose: int
-    blocks: Tuple[int, ...]
-    links: Tuple[Tuple[int, int, int, int], ...]
-    external_links: Tuple[Tuple[int, int, int, int], ...] = ()
-
-    @property
-    def anchor(self) -> int:
-        return self.blocks[0]
-
-    def __len__(self) -> int:
-        return len(self.blocks)
+from tmol_core.pack.conjugated import ConjugatedGroup, find_conjugated_groups
 
 
 def _find_conjugated_groups(pose_stack: PoseStack) -> List[ConjugatedGroup]:
-    """Every anchor-plus-attachments group in the stack."""
     pbt = pose_stack.packed_block_types
     _annotate_packed_block_types_w_conjugation_conns(pbt)
-
-    # most structures have no conjugations at all; answer them without walking
-    #    the pose, since this runs on every pack
     if not bool(pbt.conjugation_conn.any()):
         return []
-
-    conj = pbt.conjugation_conn.cpu().numpy()
-    n_conn = pbt.n_conn.cpu().numpy()
-    bti = pose_stack.block_type_ind.cpu().numpy()
-    irc = pose_stack.inter_residue_connections.cpu().numpy()
-
-    # an anchor is a polymer residue carrying a conjugation; find the candidates
-    #    with a gather rather than a scan over every block
-    # Terminal patches can remove both ordinary polymer ports. Chemical
-    # identity, rather than surviving connection names, defines an anchor.
-    is_polymer = numpy.array(
-        [bt.properties.polymer.is_polymer for bt in pbt.active_block_types],
-        dtype=bool,
+    return find_conjugated_groups(
+        pose_stack.block_type_ind.cpu().numpy(),
+        pose_stack.inter_residue_connections.cpu().numpy(),
+        pbt.conjugation_conn.cpu().numpy(),
+        pbt.n_conn.cpu().numpy(),
+        numpy.asarray(
+            [bt.properties.polymer.is_polymer for bt in pbt.active_block_types]
+        ),
     )
-    has_conj = conj.any(axis=1)
-    candidate_bt = is_polymer & has_conj
-    real = bti >= 0
-    candidates = numpy.logical_and(real, candidate_bt[numpy.where(real, bti, 0)])
-
-    groups = []
-    for pose in range(pose_stack.n_poses):
-        claimed = set()
-        for block in numpy.nonzero(candidates[pose])[0]:
-            block = int(block)
-            if block in claimed:
-                continue
-
-            blocks = [block]
-            links = []
-            index_of = {block: 0}
-            queue = deque([block])
-            while queue:
-                cur = queue.popleft()
-                cur_bt = int(bti[pose, cur])
-                for c in range(int(n_conn[cur_bt])):
-                    if not conj[cur_bt, c]:
-                        continue
-                    partner = int(irc[pose, cur, c, 0])
-                    if partner < 0 or int(bti[pose, partner]) < 0:
-                        continue
-                    if partner in index_of:
-                        continue  # Remaining internal bonds are collected below.
-                    index_of[partner] = len(blocks)
-                    blocks.append(partner)
-                    links.append(
-                        (
-                            index_of[cur],
-                            c,
-                            index_of[partner],
-                            int(irc[pose, cur, c, 1]),
-                        )
-                    )
-                    queue.append(partner)
-
-            # Preserve every constraint, including non-conjugation bonds
-            # between members (e.g. a disulfide or polymer bond closing a loop).
-            seen = {
-                tuple(sorted(((blocks[a], ac), (blocks[b], bc))))
-                for a, ac, b, bc in links
-            }
-            external = []
-            for owner, member in enumerate(blocks):
-                member_bt = int(bti[pose, member])
-                for conn in range(int(n_conn[member_bt])):
-                    partner, partner_conn = (int(v) for v in irc[pose, member, conn])
-                    if partner < 0 or int(bti[pose, partner]) < 0:
-                        continue
-                    if partner not in index_of:
-                        external.append((owner, conn, partner, partner_conn))
-                        continue
-                    edge = tuple(sorted(((member, conn), (partner, partner_conn))))
-                    if edge not in seen:
-                        links.append((owner, conn, index_of[partner], partner_conn))
-                        seen.add(edge)
-            if links:
-                claimed.update(blocks)
-                groups.append(
-                    ConjugatedGroup(
-                        pose=pose,
-                        blocks=tuple(blocks),
-                        links=tuple(links),
-                        external_links=tuple(external),
-                    )
-                )
-    return groups
 
 
 def _lockstep_group_for_block(pose_stack, rotamer_set) -> torch.Tensor:
