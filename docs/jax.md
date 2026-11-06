@@ -149,11 +149,29 @@ chemical groups. Initialization calls the common native CPU inverse directly,
 without compiling each residue shape. `DunbrackChiSampler.from_database(db,
 expanded_limit=1000, limit=1000).prepare_packed_block_types(pbt)` prepares shared
 library/explicit-chi metadata on the palette's device. `prepare_atom_copy_plan(pbt,
-samplers)` preserves sampler-owned retained atom identities. These are preparation
-APIs. Prepared native chi enumeration runs eagerly on CPU/CUDA with explicit
-sample budgets; dynamic output sizes require a host allocation barrier and are
-not differentiable or jittable. Public pose/task sampling, interaction graphs,
-annealing and design execution remain unavailable.
+samplers)` preserves sampler-owned retained atom identities.
+
+Public chi sampling uses the same chemical requests and native CPU/CUDA sampler
+as Torch. Register samplers explicitly; the JAX task currently has no default
+fallback sampler for uncovered residues:
+
+```python
+from tmol_jax.pack import PackerTask, PackerPalette, DunbrackChiSampler
+
+task = PackerTask(pose, PackerPalette())
+task.restrict_to_repacking()
+sampler = DunbrackChiSampler.from_database(context.parameter_database)
+task.add_conformer_sampler(sampler)
+counts, choices, defining_atoms, chi = sampler.sample_chi_for_poses(pose, task)
+```
+
+Counts and choices refer to concrete task rows; defining atoms use residue-local
+indices. Ligands outside the sampler's amino-acid policy receive zero samples.
+Task masks and `set_chi_sample_budget(expanded_limit, limit)` control sampling;
+budget-frozen torsions retain measured input geometry. Dynamic output sizes
+require an eager host allocation barrier, so sampling is not differentiable,
+jittable or vmappable. Rotamer coordinate assembly, interaction graphs, annealing,
+FastRelax and design execution remain unavailable.
 
 For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
 a batch of `ResidueBlock(residue_type, atom_names, coords)` records and explicit

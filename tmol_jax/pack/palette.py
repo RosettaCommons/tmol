@@ -10,8 +10,8 @@ from tmol_core.pack.palette import prepare_packer_palette
 class PackerPalette:
     """Inspect chemically compatible choices from the shared TMol palette.
 
-    This exposes residue-choice preparation. JAX rotamer generation and packing
-    execution remain unavailable.
+    These choices feed public chi sampling. Complete rotamer coordinate assembly
+    and packing execution remain unavailable.
     """
 
     def __init__(self, noncanonical_design=False):
