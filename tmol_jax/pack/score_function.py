@@ -95,7 +95,8 @@ class RotamerScorer:
                     ref = RefEnergyTerm(score_function.param_db)
                     ref.set_options(score_function._options)
                     per_type = jnp.asarray(
-                        ref.block_type_values(pose.packed_block_types)
+                        ref.block_type_values(pose.packed_block_types),
+                        device=pose.device,
                     )
                     ids = jnp.arange(rotamers.n_rotamers_total, dtype=jnp.int32)
                     state = (

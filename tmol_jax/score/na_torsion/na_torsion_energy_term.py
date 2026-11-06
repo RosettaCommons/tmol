@@ -23,11 +23,11 @@ def na_block_parameters(pbt):
     return [_block_type_params(bt, elements) for bt in pbt.active_block_types]
 
 
-def na_parameter_state(database):
+def na_parameter_state(database, device=None):
     params = prepare_na_torsion_parameters(database.scoring.na_torsion)
     return NaTorsionTermState(
         tuple(
-            jnp.asarray(params[name])
+            jnp.asarray(params[name], device=device)
             for name in (
                 "backbone_means",
                 "backbone_sdev",
@@ -77,11 +77,14 @@ class NaTorsionEnergyTerm(EnergyTerm):
             np.asarray(pose_stack.inter_residue_connections),
             pose_stack.coords.shape[1],
         )
-        state = na_parameter_state(self.param_db)
+        state = na_parameter_state(self.param_db, pose_stack.coords.device)
         register("tmol_na_torsion")
         return NaTorsionTermState(
             tuple(
-                jnp.asarray(a.astype(np.int32) if a.dtype.kind == "i" else a)
+                jnp.asarray(
+                    a.astype(np.int32) if a.dtype.kind == "i" else a,
+                    device=pose_stack.coords.device,
+                )
                 for a in topology
             )
             + state.parameters,

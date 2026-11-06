@@ -45,7 +45,11 @@ class DunbrackEnergyTerm(EnergyTerm):
         if not parameters:
             return DunbrackTermState(())
         return DunbrackTermState(
-            tuple(jnp.asarray(a) for a in pose_arguments(pose_stack)) + parameters
+            tuple(
+                jnp.asarray(a, device=pose_stack.coords.device)
+                for a in pose_arguments(pose_stack)
+            )
+            + parameters
         )
 
     def _packed_parameters(self, pbt):
@@ -85,7 +89,7 @@ class DunbrackEnergyTerm(EnergyTerm):
                 ):
                     raise ValueError("native Dunbrack indices exceed int32")
                 array = array.astype(np.int32)
-            parameters.append(jnp.asarray(array))
+            parameters.append(jnp.asarray(array, device=pbt.n_atoms.device))
         return tuple(parameters)
 
     def __call__(self, pose_stack, term_state, coords_override=None):

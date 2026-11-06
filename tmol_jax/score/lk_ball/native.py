@@ -102,7 +102,9 @@ def prepare_lk_ball(pose, database):
         native_lk_ball_global_parameters(globals_),
     )
     register("tmol_lk_ball")
-    return tuple(jnp.asarray(a) for a in arrays), float(globals_.max_dis)
+    return tuple(jnp.asarray(a, device=pose.coords.device) for a in arrays), float(
+        globals_.max_dis
+    )
 
 
 def lk_ball_energy(coords, state, weights=None):

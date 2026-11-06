@@ -30,7 +30,7 @@ class RefEnergyTerm(EnergyTerm):
         values = self.block_type_values(pbt)
         indices = np.asarray(pose_stack.block_type_ind)
         per_block = np.where(indices >= 0, values[np.maximum(indices, 0)], 0)
-        return jnp.asarray(per_block.sum(axis=1))
+        return jnp.asarray(per_block.sum(axis=1), device=pose_stack.coords.device)
 
     def __call__(self, pose_stack, term_state, coords_override=None):
         coords = pose_stack.coords if coords_override is None else coords_override

@@ -32,7 +32,7 @@ class CartBondedEnergyTerm(EnergyTerm):
         host = self._prepared("packed", lambda: prep.prepare_packed(types), *types)
         register("tmol_cartbonded")
         return tuple(
-            jnp.asarray(a)
+            jnp.asarray(a, device=pose_stack.coords.device)
             for a in (
                 *bonded_pose_arguments(pose_stack, pbt),
                 host.atom_unique_ids,

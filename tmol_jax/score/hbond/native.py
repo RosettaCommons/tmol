@@ -133,7 +133,7 @@ def prepare_hbond(pose, database, *, rotamers=None):
     )
     register("tmol_hbond" if rotamers is None else "tmol_rotamer_hbond")
     return tuple(
-        jnp.asarray(a)
+        jnp.asarray(a, device=pose.coords.device)
         for a in (
             *arrays,
             indices,

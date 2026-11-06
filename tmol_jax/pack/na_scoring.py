@@ -56,7 +56,7 @@ def prepare_rotamer_na_torsion(pose, rotamers, database):
         base, previous, is_na, torsions, _, torsion_ok, rings, ring_ok = _topology(
             arguments
         )
-        tables = na_parameter_state(database)
+        tables = na_parameter_state(database, pose.device)
     return (
         (
             base,

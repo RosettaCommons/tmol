@@ -60,7 +60,7 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
         register("tmol_backbone_torsion")
         return BackboneTorsionTermState(
             tuple(
-                jnp.asarray(a)
+                jnp.asarray(a, device=pose_stack.coords.device)
                 for a in (
                     *pose_arguments(pose_stack),
                     atom_downstream_of_conn(pbt),

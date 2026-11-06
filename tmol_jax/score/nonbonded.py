@@ -113,7 +113,7 @@ def prepare_nonbonded(pose, database, *, soft_repulsive=False):
     near, separation = _pose_connections(pose)
     _validate_native_connections(pbt)
     parameters = tuple(
-        jnp.asarray(a)
+        jnp.asarray(a, device=pose.coords.device)
         for a in (
             offsets,
             first,
@@ -173,7 +173,7 @@ def prepare_independent_nonbonded(
         specific = (elec.charges, elec.inter, elec.intra, elec.global_parameters)
         target, channels, reach = "tmol_elec", 1, elec.global_parameters[0, 4]
         # Preserve existing palette charge inspection and immutable scorer snapshots.
-        pbt.elec_partial_charge = jnp.asarray(elec.charges)
+        pbt.elec_partial_charge = jnp.asarray(elec.charges, device=pose.coords.device)
         pbt._elec_owners = (database.scoring.elec, types)
     else:
         parameters, globals_ = _ljlk_parameters(
@@ -197,7 +197,12 @@ def prepare_independent_nonbonded(
         *specific,
     )
     register(target)
-    return target, channels, tuple(jnp.asarray(a) for a in operands), float(reach)
+    return (
+        target,
+        channels,
+        tuple(jnp.asarray(a, device=pose.coords.device) for a in operands),
+        float(reach),
+    )
 
 
 def independent_nonbonded_energy(coords, state):

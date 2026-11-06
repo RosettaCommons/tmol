@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any, Sequence, Tuple
 
 import attrs
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -72,8 +73,9 @@ class PackedBlockTypes:
         from tmol_core.chemical.packed import PackedBlockTypesData
 
         host = PackedBlockTypesData.from_restypes(chem_db, active_types, min_n_conn=2)
+        device = jax.config.jax_default_device or jax.devices()[0]
         arrays = {
-            name: jnp.asarray(getattr(host, name))
+            name: jnp.asarray(getattr(host, name), device=device)
             for name in (
                 "n_atoms",
                 "atom_is_real",
@@ -86,11 +88,13 @@ class PackedBlockTypes:
                 "intrares_path_distance",
             )
         }
-        arrays["atom_is_hydrogen"] = jnp.asarray(host.atom_is_hydrogen, dtype=bool)
-        arrays["bond_indices"] = jnp.asarray(
-            np.where(host.bond_is_real[..., None], host.bond_indices, 0)
+        arrays["atom_is_hydrogen"] = jnp.asarray(
+            host.atom_is_hydrogen, dtype=bool, device=device
         )
-        arrays["conn_atoms"] = jnp.asarray(host.conn_atom)
+        arrays["bond_indices"] = jnp.asarray(
+            np.where(host.bond_is_real[..., None], host.bond_indices, 0), device=device
+        )
+        arrays["conn_atoms"] = jnp.asarray(host.conn_atom, device=device)
         return cls(
             chem_db=chem_db,
             active_block_types=host.active_block_types,
