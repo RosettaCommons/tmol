@@ -8,7 +8,7 @@ error_this_should_not_be_compiled();  // gcc should not include this file
 #include <tmol/score/common/segmented_scan_cuda.cuh>
 #include <moderngpu/transform.hxx>
 #include <moderngpu/loadstore.hxx>
-#include <moderngpu/kernel_load_balance.hxx>
+#include <tmol/score/common/load_balance.hh>
 #include <moderngpu/kernel_reduce.hxx>
 #include <moderngpu/kernel_scan.hxx>
 #include <moderngpu/kernel_segsort.hxx>
@@ -170,7 +170,7 @@ struct DeviceOperations<tmol::Device::CUDA> {
         TPack<Int, 1, tmol::Device::CUDA>::zeros({n_work_units_total});
     auto gen_for_work_item = gen_for_work_item_t.view;
 
-    load_balance_search(
+    load_balancing_search_into_cuda(
         n_work_units_total,
         exc_scan_offsets,
         n_generators,
