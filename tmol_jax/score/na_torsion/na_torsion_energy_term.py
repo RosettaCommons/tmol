@@ -18,14 +18,48 @@ class NaTorsionTermState(NamedTuple):
     attributes: dict
 
 
+def na_block_parameters(pbt):
+    elements = {at.name: at.element for at in pbt.chem_db.atom_types}
+    return [_block_type_params(bt, elements) for bt in pbt.active_block_types]
+
+
+def na_parameter_state(database):
+    params = prepare_na_torsion_parameters(database.scoring.na_torsion)
+    return NaTorsionTermState(
+        tuple(
+            jnp.asarray(params[name])
+            for name in (
+                "backbone_means",
+                "backbone_sdev",
+                "sugar_means",
+                "chi_means",
+                "sdev_sugar",
+                "sdev_chi",
+                "well_pucker",
+                "well_alpha_gamma",
+                "well_bibii_pucker",
+                "well_alphanext_bibii",
+                "well_chi_syn",
+                "is_north",
+                "weight_bb",
+                "weight_chi",
+                "weight_sugar",
+            )
+        ),
+        {
+            name: np.float64(params[name])
+            for name in ("pucker_temperature", "bin_blend_sdev")
+        },
+    )
+
+
 class NaTorsionEnergyTerm(EnergyTerm):
     def score_types_provided(self):
         return [ScoreType.na_torsion, ScoreType.na_torsion_well]
 
     def setup_for_pose_stack(self, pose_stack, pbt=None):
         pbt = pose_stack.packed_block_types if pbt is None else pbt
-        elements = {at.name: at.element for at in pbt.chem_db.atom_types}
-        blocks = [_block_type_params(bt, elements) for bt in pbt.active_block_types]
+        blocks = na_block_parameters(pbt)
         bti = np.asarray(pose_stack.block_type_ind)
         base = np.asarray([row["base"] for row in blocks], np.int32)
         if not np.any(base[bti[bti >= 0]] >= 0):
@@ -43,40 +77,15 @@ class NaTorsionEnergyTerm(EnergyTerm):
             np.asarray(pose_stack.inter_residue_connections),
             pose_stack.coords.shape[1],
         )
-        params = prepare_na_torsion_parameters(self.param_db.scoring.na_torsion)
-        arrays = (
-            *topology,
-            *(
-                params[name]
-                for name in (
-                    "backbone_means",
-                    "backbone_sdev",
-                    "sugar_means",
-                    "chi_means",
-                    "sdev_sugar",
-                    "sdev_chi",
-                    "well_pucker",
-                    "well_alpha_gamma",
-                    "well_bibii_pucker",
-                    "well_alphanext_bibii",
-                    "well_chi_syn",
-                    "is_north",
-                    "weight_bb",
-                    "weight_chi",
-                    "weight_sugar",
-                )
-            ),
-        )
+        state = na_parameter_state(self.param_db)
         register("tmol_na_torsion")
         return NaTorsionTermState(
             tuple(
                 jnp.asarray(a.astype(np.int32) if a.dtype.kind == "i" else a)
-                for a in arrays
-            ),
-            {
-                name: np.float64(params[name])
-                for name in ("pucker_temperature", "bin_blend_sdev")
-            },
+                for a in topology
+            )
+            + state.parameters,
+            state.attributes,
         )
 
     def __call__(self, pose_stack, term_state, coords_override=None):

@@ -43,7 +43,10 @@ def test_conformer_assembly_reuses_topology_but_not_coordinates(platform):
 
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
-def test_conformer_assembly_without_fallback_preserves_empty_selection(platform):
+@pytest.mark.parametrize("family", ("genbonded", "na_torsion"))
+def test_conformer_assembly_without_fallback_preserves_empty_selection(
+    platform, family
+):
     backend = Execution(f"jax-{platform}")
     backend.molecule(DOMAIN_CASES["ligand"], terms=("ref",))
     task, sampler, concrete = sampling_task(backend)
@@ -59,14 +62,23 @@ def test_conformer_assembly_without_fallback_preserves_empty_selection(platform)
         sparse_genbonded_scores,
     )
 
-    state = prepare_rotamer_genbonded(backend.pose, result, backend.parameter_database)
-    values, indices = sparse_genbonded_scores(result.coords, state)
-    assert values.shape == (1, 0) and indices.shape == (3, 0)
-    assert result.device == values.device == indices.device == backend.device
-    assert all(a.device == backend.device for a in state[0][2])
-    gradient = jax.grad(lambda x: sparse_genbonded_scores(x, state)[0].sum())(
-        result.coords
+    from tmol_jax.pack.na_scoring import (
+        prepare_rotamer_na_torsion,
+        sparse_na_torsion_scores,
     )
+
+    prepare, score, channels = (
+        (prepare_rotamer_genbonded, sparse_genbonded_scores, 1)
+        if family == "genbonded"
+        else (prepare_rotamer_na_torsion, sparse_na_torsion_scores, 2)
+    )
+    state = prepare(backend.pose, result, backend.parameter_database)
+    values, indices = score(result.coords, state)
+    assert values.shape == (channels, 0) and indices.shape == (3, 0)
+    assert result.device == values.device == indices.device == backend.device
+    arrays = [a for a in jax.tree.leaves(state) if isinstance(a, jax.Array)]
+    assert all(a.device == backend.device for a in arrays)
+    gradient = jax.grad(lambda x: score(x, state)[0].sum())(result.coords)
     assert gradient.shape == (0, 3)
 
 

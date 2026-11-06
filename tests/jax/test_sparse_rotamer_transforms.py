@@ -8,6 +8,7 @@ import pytest
 from tests.scientific.execution import Execution
 from tests.scientific.molecules import DOMAIN_CASES
 from tests.scientific.hbond_molecules import HBOND_CASES
+from tests.scientific.na_molecules import NA_CASES
 from tests.scientific.dunbrack_molecules import DUNBRACK_CASES
 from tests.scientific.rotamer_execution import RotamerExecution
 from tmol_jax.pack.scoring import sparse_nonbonded_values, nonbonded_candidate_pairs
@@ -17,7 +18,16 @@ from tmol_jax.pack.scoring import sparse_nonbonded_values, nonbonded_candidate_p
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
 @pytest.mark.parametrize(
     "family",
-    ("ljlk", "elec", "dunbrack", "lk_ball", "genbonded", "hbond", "cartbonded"),
+    (
+        "ljlk",
+        "elec",
+        "dunbrack",
+        "lk_ball",
+        "genbonded",
+        "hbond",
+        "cartbonded",
+        "na_torsion",
+    ),
 )
 def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
     b = Execution("jax-" + platform)
@@ -25,12 +35,14 @@ def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
         cases = DUNBRACK_CASES if family == "dunbrack" else DOMAIN_CASES
         if family == "hbond":
             cases = HBOND_CASES
+        elif family == "na_torsion":
+            cases = NA_CASES
         b.molecule(cases["mixed_batch"], terms=("ref",))
         execute = RotamerExecution(b, family=family)
         coords = jax.device_put(
             np.asarray(execute.rotamers.coords, dtype=dtype), b.device
         )
-        if family not in ("dunbrack", "genbonded", "cartbonded"):
+        if family not in ("dunbrack", "genbonded", "cartbonded", "na_torsion"):
             indices = nonbonded_candidate_pairs(
                 execute.rotamers,
                 b.pose.packed_block_types,
@@ -44,6 +56,10 @@ def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
                 from tmol_jax.pack.bonded_scoring import sparse_bonded_scores
 
                 values = sparse_bonded_scores(x, execute.state)[0]
+            elif family == "na_torsion":
+                from tmol_jax.pack.na_scoring import sparse_na_torsion_scores
+
+                values = sparse_na_torsion_scores(x, execute.state)[0]
             elif family == "dunbrack":
                 from tmol_jax.pack.dunbrack_scoring import sparse_dunbrack_scores
 
@@ -163,7 +179,16 @@ def test_connected_dispatch_preserves_lockstep_identities(platform, coupled):
 
 @pytest.mark.parametrize(
     "family",
-    ("ljlk", "elec", "lk_ball", "dunbrack", "genbonded", "hbond", "cartbonded"),
+    (
+        "ljlk",
+        "elec",
+        "lk_ball",
+        "dunbrack",
+        "genbonded",
+        "hbond",
+        "cartbonded",
+        "na_torsion",
+    ),
 )
 def test_sparse_preparation_respects_cpu_pose_on_gpu_host(family):
     from tmol_jax.pack.scoring import prepare_rotamer_nonbonded
@@ -174,6 +199,7 @@ def test_sparse_preparation_respects_cpu_pose_on_gpu_host(family):
         prepare_rotamer_cartbonded,
     )
     from tmol_jax.pack.hbond_scoring import prepare_rotamer_hbond
+    from tmol_jax.pack.na_scoring import prepare_rotamer_na_torsion
 
     try:
         gpu = jax.devices("cuda")[0]
@@ -183,6 +209,8 @@ def test_sparse_preparation_respects_cpu_pose_on_gpu_host(family):
     cases = DUNBRACK_CASES if family == "dunbrack" else DOMAIN_CASES
     if family == "hbond":
         cases = HBOND_CASES
+    elif family == "na_torsion":
+        cases = NA_CASES
     b.molecule(cases["mixed_batch"], terms=("ref",))
     e = RotamerExecution(b, family=family)
     prepare = {
@@ -191,6 +219,7 @@ def test_sparse_preparation_respects_cpu_pose_on_gpu_host(family):
         "genbonded": prepare_rotamer_genbonded,
         "cartbonded": prepare_rotamer_cartbonded,
         "hbond": prepare_rotamer_hbond,
+        "na_torsion": prepare_rotamer_na_torsion,
     }.get(family, prepare_rotamer_nonbonded)
     with jax.default_device(gpu):
         state = prepare(

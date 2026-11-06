@@ -850,3 +850,28 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<int64_t>("extent")
         .Attr<int64_t>("width")
         .Attr<double>("reach"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_rotamer_na_torsion,
+    (tmol::jax::
+         run_graph_stage<tmol::jax::RotamerNaTorsionStage, double, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width")
+        .Attr<double>("pucker_temperature")
+        .Attr<double>("bin_blend_sdev"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_na_rotamer_topology,
+    tmol::jax::run_graph_stage<tmol::jax::NaRotamerTopologyStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"));

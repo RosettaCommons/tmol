@@ -44,6 +44,7 @@ class RotamerExecution:
                 prepare_rotamer_cartbonded,
             )
             from tmol_jax.pack.hbond_scoring import prepare_rotamer_hbond
+            from tmol_jax.pack.na_scoring import prepare_rotamer_na_torsion
 
             with backend.module.default_device(backend.device):
                 arguments = (backend.pose, self.rotamers, backend.parameter_database)
@@ -53,6 +54,7 @@ class RotamerExecution:
                     "genbonded",
                     "hbond",
                     "cartbonded",
+                    "na_torsion",
                 ):
                     prepare = {
                         "dunbrack": prepare_rotamer_dunbrack,
@@ -60,6 +62,7 @@ class RotamerExecution:
                         "genbonded": prepare_rotamer_genbonded,
                         "cartbonded": prepare_rotamer_cartbonded,
                         "hbond": prepare_rotamer_hbond,
+                        "na_torsion": prepare_rotamer_na_torsion,
                     }[self.family]
                     self.state = prepare(*arguments)
                 else:
@@ -75,6 +78,7 @@ class RotamerExecution:
                 GenBondedEnergyTerm,
                 CartBondedEnergyTerm,
                 HBondEnergyTerm,
+                NaTorsionEnergyTerm,
             )
 
             cls = {
@@ -85,6 +89,7 @@ class RotamerExecution:
                 "genbonded": GenBondedEnergyTerm,
                 "cartbonded": CartBondedEnergyTerm,
                 "hbond": HBondEnergyTerm,
+                "na_torsion": NaTorsionEnergyTerm,
             }[self.family]
             term = cls(param_db=backend.parameter_database, device=backend.device)
             for block in backend.pose.packed_block_types.active_block_types:
@@ -109,6 +114,10 @@ class RotamerExecution:
             from tmol_jax.pack.bonded_scoring import sparse_bonded_scores
 
             return sparse_bonded_scores(x, self.state)
+        if self.family == "na_torsion":
+            from tmol_jax.pack.na_scoring import sparse_na_torsion_scores
+
+            return sparse_na_torsion_scores(x, self.state)
         if self.family == "dunbrack":
             from tmol_jax.pack.dunbrack_scoring import sparse_dunbrack_scores
 
@@ -154,6 +163,10 @@ class RotamerExecution:
                 from tmol_jax.pack.bonded_scoring import sparse_bonded_scores
 
                 values = sparse_bonded_scores(x, self.state)[0]
+            elif self.family == "na_torsion":
+                from tmol_jax.pack.na_scoring import sparse_na_torsion_scores
+
+                values = sparse_na_torsion_scores(x, self.state)[0]
             elif self.family == "dunbrack":
                 from tmol_jax.pack.dunbrack_scoring import sparse_dunbrack_scores
 

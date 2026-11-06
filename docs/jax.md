@@ -196,11 +196,12 @@ native DOF operations support `jit` and `vmap`. A concrete `SetPackerTask` reuse
 validated topology plans while recomputing coordinates. Internal native stages
 now provide sparse graph topology/retention, device load balancing with XLA-owned
 scratch, sphere-based candidate enumeration, and the mature CPU annealing schedule.
-Sparse LJ/LK, electrostatic, LK-ball, hydrogen-bond, Dunbrack, Cartesian and generic-bonded values
-and coordinate VJPs consume explicit candidate indices with `jit`/`vmap` support;
+Sparse LJ/LK, electrostatic, LK-ball, hydrogen-bond, Dunbrack, Cartesian,
+generic-bonded and nucleic-acid values and coordinate VJPs use common native
+physics with `jit`/`vmap` support;
 forward-mode and higher derivatives are not implemented for these sparse entries.
 Recompute discrete candidates after coordinate changes. Full graph scoring and
-packing, CUDA annealing, mutation/design, optH/conjugated samplers and FastRelax
+packing, CUDA annealing, mutation/design, NA/optH/conjugated samplers and FastRelax
 remain unfinished. Float64 JAX assembly preserves dtype; this does not establish
 float64 support for Torch's complete packing pipeline.
 

@@ -7,6 +7,7 @@ import pytest
 
 from .molecules import CASES, DOMAIN_CASES
 from .hbond_molecules import HBOND_CASES
+from .na_molecules import NA_CASES
 from .test_cartbonded import CARTESIAN_CASES, TERMS as CART_TERMS
 from .rotamer_execution import RotamerExecution
 
@@ -27,6 +28,7 @@ from .rotamer_execution import RotamerExecution
     ]
     + [("genbonded", name) for name in CASES]
     + [("hbond", name) for name in HBOND_CASES]
+    + [("na_torsion", name) for name in NA_CASES]
     + [
         ("cartbonded", name)
         for name in (
@@ -44,11 +46,14 @@ def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, 
         "genbonded": ("gen_torsions",),
         "cartbonded": CART_TERMS,
         "hbond": ("hbond",),
+        "na_torsion": ("na_torsion", "na_torsion_well"),
         "elec": ("fa_elec",),
         "ljlk": ("fa_ljatr", "fa_ljrep", "fa_lk"),
         "lk_ball": ("lk_ball_iso", "lk_ball", "lk_bridge", "lk_bridge_uncpl"),
     }[family]
     cases = HBOND_CASES if family == "hbond" else CARTESIAN_CASES
+    if family == "na_torsion":
+        cases = NA_CASES
     backend.molecule(cases[case_name], terms=terms)
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
@@ -92,7 +97,7 @@ def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, 
 
 
 @pytest.mark.parametrize(
-    "family", ("ljlk", "lk_ball", "genbonded", "hbond", "cartbonded")
+    "family", ("ljlk", "lk_ball", "genbonded", "hbond", "cartbonded", "na_torsion")
 )
 def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
     import attrs
@@ -100,6 +105,8 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
     case = DOMAIN_CASES["ligand" if family == "ljlk" else "connected_noncanonical"]
     if family == "hbond":
         case = HBOND_CASES["beta_amino_ligand"]
+    elif family == "na_torsion":
+        case = NA_CASES["methylcytosine"]
     backend.molecule(case, terms=("ref",))
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
@@ -114,6 +121,7 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
             "genbonded": (1, 2),
             "cartbonded": (1, 2),
             "hbond": (1, 2),
+            "na_torsion": (1, 0.25),
         }[family]
         weights = np.broadcast_to(
             (np.arange(first.shape[0]) < scaled_channels)[:, None], first.shape
@@ -124,7 +132,24 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
         database = backend.parameter_database
         # Fourfold well depth doubles its float32 square-root table exactly;
         # this keeps the analytic scaling check free of parameter quantization.
-        if family == "cartbonded":
+        if family == "na_torsion":
+            source = database.scoring.na_torsion
+            changed = attrs.evolve(
+                source,
+                global_parameters={
+                    name: attrs.evolve(
+                        row,
+                        sdev_sugar=2 * row.sdev_sugar,
+                        sdev_chi=2 * row.sdev_chi,
+                        sdev_backbone=tuple(2 * x for x in row.sdev_backbone),
+                    )
+                    for name, row in source.global_parameters.items()
+                },
+            )
+            modified = attrs.evolve(
+                database, scoring=attrs.evolve(database.scoring, na_torsion=changed)
+            )
+        elif family == "cartbonded":
             source = database.scoring.cartbonded
 
             def scale(record):
