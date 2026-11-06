@@ -43,8 +43,7 @@ namespace potentials {
 
 // Scoped capacities: including this kernel must not rewrite other terms'
 // template arguments or leak its private callback macros into a frontend.
-constexpr int MAX_N_CONN = 12;
-constexpr int TILE_SIZE = 32;
+enum : int { MAX_N_CONN = 12, TILE_SIZE = 32 };
 
 using tmol::portable::Vec;
 using tmol::score::common::accumulate;
