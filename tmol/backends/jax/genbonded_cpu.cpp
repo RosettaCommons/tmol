@@ -1,6 +1,7 @@
 // CPU execution policy and XLA registration; science lives in the common
 // kernel.
 #include <initializer_list>
+#include "armijo_ffi.hh"
 #include "cartbonded_ffi.hh"
 #include "backbone_torsion_ffi.hh"
 #include "rotamer_backbone_ffi.hh"

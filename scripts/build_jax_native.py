@@ -38,6 +38,7 @@ def stage_native_headers(root, stage):
         "utility/portable",
         "utility/tensor",
         "numeric",
+        "optimization",
         "extern/moderngpu",
         "extern/Eigen",
     ):
