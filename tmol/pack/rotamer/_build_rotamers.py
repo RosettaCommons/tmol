@@ -17,7 +17,6 @@ from typing import Any
 
 from tmol.types._array import NDArray
 from tmol.types._torch import Tensor
-from tmol.utility.tensor._common_operations import _exclusive_cumsum1d
 from tmol.database.chemical import ChemicalDatabase
 from tmol.kinematics._datatypes import KinForest
 from tmol.chemical import RefinedResidueType
@@ -320,89 +319,76 @@ def _merge_conformer_samples(
     list[Tensor[torch.bool][:]],
     list[Tensor[torch.int64][:]],
 ]:
-    """Merge sampler rows in considered-type, sampler, then source-row order.
+    """Execute common ordering policies with host or device-native arrays."""
+    from tmol_core.pack.conformer_merge import (
+        prepare_conformer_merge,
+        conformer_merge_prefixes,
+        validate_conformer_counts,
+        conformer_rows_are_ordered,
+        conformer_destinations,
+    )
 
-    Each sampler supplies a count per considered type and its source rows in
-    ascending considered-type order. Prefix offsets locate each row directly;
-    the returned destinations map original sampler rows into the merged arrays.
-    """
     if not conformer_samples:
         raise ValueError("At least one conformer sampler is required")
     device = conformer_samples[0][0].device
-    count_dtype = conformer_samples[0][0].dtype
-    index_dtype = conformer_samples[0][1].dtype
-    for counts, indices, *_ in conformer_samples:
-        if counts.device != device or indices.device != device:
-            raise ValueError("Conformer samples must share a device")
-        if counts.dtype not in (torch.int32, torch.int64) or indices.dtype not in (
-            torch.int32,
-            torch.int64,
-        ):
-            raise ValueError("Conformer sample counts and indices must be integers")
-        count_dtype = torch.promote_types(count_dtype, counts.dtype)
-        index_dtype = torch.promote_types(index_dtype, indices.dtype)
-
-    n_conformers = sum(sample[1].numel() for sample in conformer_samples)
-    if (
-        max(n_conformers, conformer_samples[0][0].numel())
-        > torch.iinfo(torch.int32).max
+    if any(
+        value.device != device for sample in conformer_samples for value in sample[:2]
     ):
-        raise ValueError("Conformer sample counts exceed native 32-bit indexing")
-    counts = torch.stack([sample[0].to(torch.int64) for sample in conformer_samples])
-    source_ends = counts.cumsum(dim=1)
-    expected_types = torch.arange(counts.shape[1], device=device)
-    valid = []
-    for i, sample in enumerate(conformer_samples):
-        indices = sample[1]
-        if indices.numel() == 0:
-            valid.append(counts.new_ones((), dtype=torch.bool))
-            continue
-        # Clamp both ends while counts are still unvalidated. Invalid source
-        # counts must produce a diagnostic, not an out-of-bounds device read.
-        starts = (source_ends[i] - counts[i]).clamp(0, indices.numel() - 1)
-        ends = (source_ends[i] - 1).clamp(0, indices.numel() - 1)
-        boundaries_match = (indices[starts] == expected_types) & (
-            indices[ends] == expected_types
+        raise ValueError("Conformer samples must share a device")
+    if any(
+        value.dtype not in (torch.int32, torch.int64)
+        for sample in conformer_samples
+        for value in sample[:2]
+    ):
+        raise ValueError("Conformer sample counts and indices must be integers")
+    if device.type == "cpu":
+        plan = prepare_conformer_merge(
+            [(c.numpy(), i.numpy()) for c, i, *_ in conformer_samples]
         )
-        # Monotonic rows with matching interval endpoints must match throughout.
-        valid.append(
-            ((counts[i] == 0) | boundaries_match).all()
-            & (indices[1:] >= indices[:-1]).all()
+        counts, samplers, considered = map(
+            torch.from_numpy, (plan.counts, plan.sampler, plan.considered)
         )
-    totals = counts.sum(dim=1)
-    minima = counts.amin(dim=1) if counts.shape[1] else totals
-    maxima = counts.amax(dim=1) if counts.shape[1] else totals
-    summary = torch.stack((totals, minima, maxima, torch.stack(valid)), dim=1).tolist()
-    for sample, (total, minimum, maximum, ordered) in zip(conformer_samples, summary):
-        available = sample[1].numel()
-        # A matching sum alone can wrap even when every int64 count is positive.
-        if minimum < 0 or maximum > available or total != available:
-            raise ValueError("Conformer sample counts do not match the source rows")
-        if not ordered:
-            raise ValueError("Conformer source rows do not match ordered sample counts")
-
-    merged_counts = counts.sum(dim=0)
-    merged_offsets = merged_counts.cumsum(dim=0) - merged_counts
-    # Destination start minus source start, for each sampler/considered type.
-    # Inclusive scans cancel the current cell in the two exclusive prefixes.
-    destination_offsets = merged_offsets + counts.cumsum(dim=0) - source_ends
-    sampler_for_conformer = torch.empty(n_conformers, dtype=torch.int64, device=device)
-    gbt_for_conformer = torch.empty(n_conformers, dtype=index_dtype, device=device)
-    destinations = []
-    for i, sample in enumerate(conformer_samples):
-        indices = sample[1].to(torch.int64)
-        destination = destination_offsets[i, indices] + torch.arange(
-            indices.numel(), dtype=torch.int64, device=device
+        destinations = [torch.from_numpy(value) for value in plan.destinations]
+    else:
+        counts = torch.stack([sample[0] for sample in conformer_samples])
+        sizes = [sample[1].numel() for sample in conformer_samples]
+        total = validate_conformer_counts([], sizes, counts.shape[1])
+        wide = counts.long()
+        merged, ends, offsets = conformer_merge_prefixes(wide)
+        choices = torch.arange(counts.shape[1], device=device)
+        valid = [
+            conformer_rows_are_ordered(sample[1], wide[i], ends[i], choices)
+            for i, sample in enumerate(conformer_samples)
+        ]
+        totals = wide.sum(1)
+        minima, maxima = (
+            (wide.amin(1), wide.amax(1)) if counts.shape[1] else (totals, totals)
         )
-        sampler_for_conformer[destination] = i
-        gbt_for_conformer[destination] = indices.to(index_dtype)
-        destinations.append(destination)
-
+        validate_conformer_counts(
+            torch.stack((totals, minima, maxima, torch.stack(valid)), 1).tolist(),
+            sizes,
+            counts.shape[1],
+        )
+        index_dtype = conformer_samples[0][1].dtype
+        for sample in conformer_samples[1:]:
+            index_dtype = torch.promote_types(index_dtype, sample[1].dtype)
+        samplers = torch.empty(total, dtype=torch.int64, device=device)
+        considered = torch.empty(total, dtype=index_dtype, device=device)
+        destinations = []
+        for i, sample in enumerate(conformer_samples):
+            indices = sample[1].long()
+            destination = conformer_destinations(
+                offsets[i], indices, torch.arange(indices.numel(), device=device)
+            )
+            samplers[destination] = i
+            considered[destination] = indices.to(index_dtype)
+            destinations.append(destination)
+        counts = merged.to(counts.dtype)
     return (
-        merged_counts.to(count_dtype),
-        sampler_for_conformer,
-        gbt_for_conformer,
-        [sampler_for_conformer == i for i in range(len(conformer_samples))],
+        counts,
+        samplers,
+        considered,
+        [samplers == i for i in range(len(conformer_samples))],
         destinations,
     )
 
@@ -477,34 +463,27 @@ def _get_rotamer_origin_data(
     Tensor[torch.int64][:],
     Tensor[torch.int32][:],
 ]:
-    n_poses = task.per_block_orig_block_type.shape[0]
-    pose_for_gbt = task.cons_bt_pose.to(torch.int32)
-
-    block_ind_for_rt = task.cons_bt_block.to(torch.int32)
-    max_n_blocks = task.per_block_orig_block_type.shape[1]
-
-    gbt_for_rot64 = gbt_for_rot.to(torch.int64)
-    pose_for_rot = pose_for_gbt[gbt_for_rot64].to(torch.int64)
-    n_rots_for_pose = torch.bincount(pose_for_rot, minlength=n_poses)
-    rot_offset_for_pose = _exclusive_cumsum1d(n_rots_for_pose)
-    block_ind_for_rot = block_ind_for_rt[gbt_for_rot64]
-    block_ind_for_rt_global = max_n_blocks * pose_for_gbt + block_ind_for_rt
-    block_ind_for_rot_global = block_ind_for_rt_global[gbt_for_rot64]
-    n_rots_for_block = torch.bincount(
-        block_ind_for_rot_global, minlength=n_poses * max_n_blocks
-    ).reshape(n_poses, max_n_blocks)
-    rot_offset_for_block = _exclusive_cumsum1d(n_rots_for_block.flatten()).reshape(
-        n_poses, max_n_blocks
+    from tmol_core.pack.conformer_merge import (
+        prepare_conformer_origins,
+        conformer_origin_prefixes,
     )
 
-    return (
-        n_rots_for_pose,
-        rot_offset_for_pose,
-        n_rots_for_block,
-        rot_offset_for_block,
-        pose_for_rot,
-        block_ind_for_rot,
-    )
+    shape = task.per_block_orig_block_type.shape
+    device = gbt_for_rot.device
+    if device.type == "cpu":
+        return tuple(
+            torch.from_numpy(value)
+            for value in prepare_conformer_origins(
+                shape,
+                task.cons_bt_pose.numpy(),
+                task.cons_bt_block.numpy(),
+                gbt_for_rot.numpy(),
+            )
+        )
+    poses = task.cons_bt_pose[gbt_for_rot.long()].long()
+    blocks = task.cons_bt_block[gbt_for_rot.long()].int()
+    counts = torch.bincount(poses * shape[1] + blocks, minlength=shape[0] * shape[1])
+    return (*conformer_origin_prefixes(counts, shape), poses, blocks)
 
 
 def _correlated_groups_for_samples(task, samples):
