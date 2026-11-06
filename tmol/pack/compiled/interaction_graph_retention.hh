@@ -186,6 +186,7 @@ void launch_ig_pose_block_offsets(
     View2 molten_block_offset_for_pose) {
   LAUNCH_BOX_32;
   int const n_poses = keep_block.size(0);
+  if (n_poses < 2) return;
   int const max_n_blocks = keep_block.size(1);
   auto record_molten_block_offset_per_pose = ([=] TMOL_DEVICE_FUNC(int index) {
     if (max_n_blocks == 0) {

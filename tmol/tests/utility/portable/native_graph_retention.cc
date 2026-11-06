@@ -6,6 +6,11 @@ using namespace tmol::pack::compiled;
 using tmol_test::view;
 template <tmol::Device D>
 struct RetentionOps : tmol_test::SerialOps<D> {
+  template <class Launch, class F>
+  static void forall(tmol::ContextManager& mgr, int n, F f) {
+    assert(n >= 0);
+    tmol_test::SerialOps<D>::template forall<Launch>(mgr, n, f);
+  }
   template <int nt, class T, class Op>
   static T shuffle_reduce_in_workgroup(T v, Op) {
     return v;
@@ -54,6 +59,13 @@ void check() {
       view(block_inverse, {1}));
   assert(rot_inverse[0] == 1 && rot_inverse[1] == 3 && block_inverse[0] == 3);
   Int block_pose_offsets[3] = {}, block_pose_counts[3] = {};
+  // No CUDA launch may receive a negative grid for a zero-pose batch.
+  launch_ig_pose_block_offsets<RetentionOps, tmol::Device::CPU>(
+      mgr,
+      view(blocks, {0, 3}),
+      view(block_prefix, {0}),
+      view(block_pose_offsets, {0}));
+
   launch_ig_pose_block_offsets<RetentionOps, tmol::Device::CPU>(
       mgr,
       view(blocks, {3, 3}),
