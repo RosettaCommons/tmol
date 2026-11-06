@@ -76,3 +76,14 @@ def test_shared_flatbottom_coordinate_translation_and_zero_region():
     np.testing.assert_array_equal(
         coordinate_flatbottom(atoms + shift, translated, ops), [0.0, 16.0]
     )
+
+
+@pytest.mark.parametrize(
+    "blocks,expected", [([8, 12, 8, 12], 2), ([8, 12, 3, 8], 3), ([8, 8, 8, 8], 1)]
+)
+def test_constraint_body_count_ignores_atom_order(blocks, expected):
+    atoms = np.zeros((1, 4, 3), np.int32)
+    atoms[0, :, 1] = blocks
+    topology, _ = ConstraintTopology.empty(1).add(atoms, 0)
+    np.testing.assert_array_equal(topology.constraint_num_unique_blocks, [expected])
+    np.testing.assert_array_equal(topology.constraint_atoms, atoms)

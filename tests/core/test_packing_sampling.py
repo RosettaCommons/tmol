@@ -75,6 +75,7 @@ def test_sampling_batch_axis_and_framework_free_import():
             "-c",
             "import sys; import tmol_core.pack.dunbrack; "
             "import tmol_core.pack.sampling_request; "
+            "import tmol_core.pack.na_sampling; "
             "assert not {'torch', 'jax', 'tmol'}.intersection(sys.modules)",
         ],
         cwd=root,

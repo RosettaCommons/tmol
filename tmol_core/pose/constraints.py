@@ -11,8 +11,8 @@ MAX_N_ATOMS = 4
 
 
 def count_unique_blocks(atom_indices):
-    """Count block runs, preserving TMol's one-/two-body packing convention."""
-    blocks = np.asarray(atom_indices)[:, :, 1]
+    """Count distinct blocks without changing physical atom order."""
+    blocks = np.sort(np.asarray(atom_indices)[:, :, 1], axis=1)
     return np.sum(blocks[:, 1:] != blocks[:, :-1], axis=1, dtype=np.int32) + 1
 
 
