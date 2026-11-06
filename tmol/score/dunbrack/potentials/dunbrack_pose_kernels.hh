@@ -1,4 +1,5 @@
 #pragma once
+#include <tmol/utility/tensor/context_manager.hh>
 
 #include <tmol/utility/portable/matrix.hh>
 #include <type_traits>
