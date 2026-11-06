@@ -18,6 +18,9 @@ void instantiate() {
   tmol::ContextManager mgr;
   HBondBasesCtx<Real, int, tmol::Device::CPU> bases;
   launch_hbond_bases<SerialOps, tmol::Device::CPU, Real, int>(mgr, bases);
+  launch_hbond_bases<SerialOps, tmol::Device::CPU, Real, int, false>(
+      mgr, bases);
+  gather_hbond_bases<SerialOps, tmol::Device::CPU, Real>(mgr, bases);
   HBondCtx<Real, int, tmol::Device::CPU> pose;
   launch_hbond_pose<SerialOps, tmol::Device::CPU, Real, int>(
       pose, 1, 2, 1, false, [](auto kernel) { kernel(0); });
@@ -74,7 +77,32 @@ void check_indices() {
   assert(residue.donH_type[0] == 299);
   assert(residue.acc_type[0] == 300);
 }
+template <typename Real>
+void check_gather() {
+  tmol::portable::Vec<Real, 3> coords[2] = {{1, 2, 3}, {4, 5, 6}};
+  int indices[6] = {1, -1, -2, 0, 1, -2};
+  tmol::portable::Vec<Real, 3> output[6];
+  HBondBasesCtx<Real, int, tmol::Device::CPU> ctx{};
+  ctx.rot_coords = view(coords, {2});
+  ctx.derived_atom_inds = view(indices, {2, 3});
+  ctx.derived_coords = view(output, {2, 3});
+  tmol::ContextManager mgr;
+  gather_hbond_bases<SerialOps, tmol::Device::CPU, Real>(mgr, ctx);
+  for (int component = 0; component < 3; ++component) {
+    assert(output[0][component] == coords[1][component]);
+    assert(std::isnan(output[1][component]));
+    assert(output[2][component] == 0);
+    assert(output[3][component] == coords[0][component]);
+    assert(output[5][component] == 0);
+  }
+  coords[1][0] = 19;
+  gather_hbond_bases<SerialOps, tmol::Device::CPU, Real>(mgr, ctx);
+  assert(output[0][0] == 19);
+}
+
 int main() {
   check_indices<float>();
   check_indices<double>();
+  check_gather<float>();
+  check_gather<double>();
 }
