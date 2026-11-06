@@ -53,6 +53,15 @@ class CysSpecialCaseIndices:
     # every equivalence class that forms disulfides, l and d alike
     cys_co_aa_inds: Tuple[int, ...]
     sg_atom_for_co_cys: int
+    sg_atoms_for_co_cys: Tuple[int, ...] = ()
+
+    @property
+    def sg_by_class(self):
+        """Class-specific sulfur identity, including legacy uniformly indexed objects."""
+        slots = self.sg_atoms_for_co_cys or (self.sg_atom_for_co_cys,) * len(
+            self.cys_co_aa_inds
+        )
+        return dict(zip(self.cys_co_aa_inds, slots))
 
 
 @attr.s(slots=True, frozen=True)
@@ -67,6 +76,7 @@ class HisSpecialCaseIndices:
     his_NH_in_co: int = attr.ib()
     his_NN_in_co: int = attr.ib()
     his_CG_in_co: int = attr.ib()
+    atom_inds_by_class: Tuple[Tuple[int, ...], ...] = attr.ib(default=())
     _hash: int = attr.ib()
 
     @_hash.default
@@ -82,6 +92,7 @@ class HisSpecialCaseIndices:
                 self.his_NH_in_co,
                 self.his_NN_in_co,
                 self.his_CG_in_co,
+                self.atom_inds_by_class,
             )
         )
 
@@ -90,6 +101,25 @@ class HisSpecialCaseIndices:
 
     def __eq__(self, other):
         return self._hash == other._hash
+
+
+HIS_ATOMS = ("ND1", "NE2", "HD1", "HE2", "HN", "NH", "NN", "CG")
+
+
+def histidine_atom_indices(indices):
+    """Native slot table: one shared row, or rows indexed by canonical class.
+
+    Scalar legacy fields describe the first histidine class; consumers of mixed
+    custom classes should use this table. Non-histidine rows contain -1.
+    """
+    rows = indices.atom_inds_by_class or (
+        tuple(getattr(indices, f"his_{atom}_in_co") for atom in HIS_ATOMS),
+    )
+    if all(row == rows[0] for row in rows):
+        return numpy.asarray(rows[:1], dtype=numpy.int32)
+    table = numpy.full((max(indices.his_co_aa_inds) + 1, 8), -1, numpy.int32)
+    table[list(indices.his_co_aa_inds)] = rows
+    return table
 
 
 @attr.s(auto_attribs=True, frozen=True)
@@ -507,17 +537,13 @@ class CanonicalOrdering:
         if not cys_classes:
             return CysSpecialCaseIndices(cys_co_aa_inds=(), sg_atom_for_co_cys=-1)
 
-        sg_inds = {
+        sg_inds = tuple(
             restypes_ordered_atom_names[name].index("SG") for name in cys_classes
-        }
-        if len(sg_inds) != 1:
-            raise ValueError(
-                f"disulfide-forming classes {cys_classes} disagree on the position "
-                f"of SG in the canonical ordering: {sorted(sg_inds)}"
-            )
+        )
         return CysSpecialCaseIndices(
             cys_co_aa_inds=tuple(restype_name3s.index(n) for n in cys_classes),
-            sg_atom_for_co_cys=sg_inds.pop(),
+            sg_atom_for_co_cys=sg_inds[0] if len(set(sg_inds)) == 1 else -1,
+            sg_atoms_for_co_cys=sg_inds,
         )
 
     @classmethod
@@ -539,31 +565,15 @@ class CanonicalOrdering:
                 his_NN_in_co=-1,
                 his_CG_in_co=-1,
             )
-        else:
-
-            def his_at_ind(atname):
-                inds = {
-                    restypes_ordered_atom_names[name].index(atname)
-                    for name in his_classes
-                }
-                if len(inds) != 1:
-                    raise ValueError(
-                        f"histidine classes {his_classes} disagree on the position "
-                        f"of {atname} in the canonical ordering: {sorted(inds)}"
-                    )
-                return inds.pop()
-
-            return HisSpecialCaseIndices(
-                his_co_aa_inds=tuple(restype_name3s.index(n) for n in his_classes),
-                his_ND1_in_co=his_at_ind("ND1"),
-                his_NE2_in_co=his_at_ind("NE2"),
-                his_HD1_in_co=his_at_ind("HD1"),
-                his_HE2_in_co=his_at_ind("HE2"),
-                his_HN_in_co=his_at_ind("HN"),
-                his_NH_in_co=his_at_ind("NH"),
-                his_NN_in_co=his_at_ind("NN"),
-                his_CG_in_co=his_at_ind("CG"),
-            )
+        rows = tuple(
+            tuple(restypes_ordered_atom_names[name].index(atom) for atom in HIS_ATOMS)
+            for name in his_classes
+        )
+        return HisSpecialCaseIndices(
+            his_co_aa_inds=tuple(restype_name3s.index(n) for n in his_classes),
+            **dict(zip((f"his_{atom}_in_co" for atom in HIS_ATOMS), rows[0])),
+            atom_inds_by_class=rows,
+        )
 
     def create_src_2_tmol_mappings(self, src_aa_name3s, src_atom_names_for_name3s):
         src_2_tmol_restype_mapping = numpy.full(
@@ -577,7 +587,9 @@ class CanonicalOrdering:
         # the same length, so we will just ask what the length is
         # of the first name3's atom list
         src_max_n_ats = (
-            len(src_atom_names_for_name3s[src_aa_name3s[0]]) if len(src_aa_name3s) else 0
+            len(src_atom_names_for_name3s[src_aa_name3s[0]])
+            if len(src_aa_name3s)
+            else 0
         )
 
         src_2_tmol_atom_mapping = numpy.full(

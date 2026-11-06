@@ -39,7 +39,7 @@ void launch_resolve_his_taut(Context& mgr, HisTautContext<Real, Int, Dev> c) {
   assert(c.res_type_variants.size(0) == n_poses);
   assert(c.res_type_variants.size(1) == max_n_blocks);
   assert(c.his_res_ind.size(0) == n_his);
-  assert(c.his_atom_inds.size(0) == 1);
+  assert(c.his_atom_inds.size(0) >= 1);
   assert(c.his_remapping_dst_index.size(0) == n_poses);
   assert(c.his_remapping_dst_index.size(1) == max_n_blocks);
   assert(c.his_remapping_dst_index.size(2) == max_n_block_atoms);
@@ -54,7 +54,20 @@ void launch_resolve_his_taut(Context& mgr, HisTautContext<Real, Int, Dev> c) {
     int const ip = c.his_pose_ind[ind];
     int const ir = c.his_res_ind[ind];
     if (ip < 0 || ip >= n_poses || ir < 0 || ir >= max_n_blocks) return;
-    HisAtomIndsInCanonicalOrdering<Int> atom_inds = c.his_atom_inds[0];
+    auto row = c.his_atom_inds.size(0) == 1 ? 0 : c.res_types[ip][ir];
+    if (row < 0 || row >= c.his_atom_inds.size(0)) return;
+    HisAtomIndsInCanonicalOrdering<Int> atom_inds = c.his_atom_inds[row];
+    Int slots[] = {
+        atom_inds.his_ND1_in_co,
+        atom_inds.his_NE2_in_co,
+        atom_inds.his_HD1_in_co,
+        atom_inds.his_HE2_in_co,
+        atom_inds.his_HN_in_co,
+        atom_inds.his_NH_in_co,
+        atom_inds.his_NN_in_co,
+        atom_inds.his_CG_in_co};
+    for (auto slot : slots)
+      if (slot < 0 || slot >= max_n_block_atoms) return;
     bool const ND1_present = c.atom_is_present[ip][ir][atom_inds.his_ND1_in_co];
     bool const NE2_present = c.atom_is_present[ip][ir][atom_inds.his_NE2_in_co];
     bool const HD1_present = c.atom_is_present[ip][ir][atom_inds.his_HD1_in_co];

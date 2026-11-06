@@ -56,9 +56,39 @@ void check() {
   assert(mapping[40] == 5 && mapping[42] == 4 && mapping[41] == 6);
   assert(mapping[48] == 6 && mapping[51] == 4 && mapping[49] == 5);
   for (int a = 0; a < 8; ++a) assert(mapping[64 + a] == a);
+  // Relabel alternate classes' atom slots. Physical tautomer decisions and
+  // alias destinations must be invariant to that canonical permutation.
+  V reordered[72];
+  bool reordered_present[72];
+  int64_t expected_mapping[72];
+  HisAtomIndsInCanonicalOrdering<Int> by_class[] = {
+      {0, 1, 2, 3, 4, 5, 6, 7}, {7, 6, 5, 4, 3, 2, 1, 0}};
+  for (int r = 0; r < 9; ++r) {
+    if (r < 8) types[r] = r % 2;
+    for (int a = 0; a < 8; ++a) {
+      auto slot = r % 2 ? 7 - a : a;
+      reordered[r * 8 + slot] = coords[r * 8 + a];
+      reordered_present[r * 8 + slot] = present[r * 8 + a];
+      expected_mapping[r * 8 + slot] =
+          r % 2 ? 7 - mapping[r * 8 + a] : mapping[r * 8 + a];
+    }
+  }
+  for (int r = 0; r < 9; ++r)
+    for (int a = 0; a < 8; ++a) mapping[r * 8 + a] = a;
+  c.coords = view(reordered, {1, 9, 8});
+  c.atom_is_present = view(reordered_present, {1, 9, 8});
+  c.his_atom_inds = view(by_class, {2});
+  launch_resolve_his_taut<tmol_test::SerialOps, CPU>(mgr, c);
+  for (int r = 0; r < 9; ++r) {
+    assert(
+        states[r] == expected_states[r] && variants[r] == expected_variants[r]);
+    for (int a = 0; a < 8; ++a)
+      assert(mapping[r * 8 + a] == expected_mapping[r * 8 + a]);
+  }
 }
 int main() {
   check<float, int32_t>();
   check<double, int32_t>();
   check<double, int64_t>();
+  check<float, int64_t>();
 }

@@ -31,6 +31,11 @@ def _find_disulfides(
         res_types.cpu().numpy(),
         None if disulfides is None else disulfides.cpu().numpy(),
         find_additional_disulfides,
+        (
+            canonical_ordering.cys_inds.sg_atoms_for_co_cys
+            if canonical_ordering.cys_inds.sg_atom_for_co_cys < 0
+            else None
+        ),
     )
     if (
         not plan.search

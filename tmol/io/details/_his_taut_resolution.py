@@ -1,5 +1,6 @@
 import torch
 import toolz.functoolz
+from tmol_core.io.canonical_ordering import histidine_atom_indices
 
 from typing import Tuple
 from tmol.types._torch import Tensor
@@ -94,18 +95,5 @@ def _resolve_his_tautomerization(
 @toolz.functoolz.memoize(key=lambda args, kwargs: (hash(args[0]), args[1]))
 def _his_atom_inds_tensor(his_inds: HisSpecialCaseIndices, device: torch.device):
     return torch.tensor(
-        [
-            [
-                his_inds.his_ND1_in_co,
-                his_inds.his_NE2_in_co,
-                his_inds.his_HD1_in_co,
-                his_inds.his_HE2_in_co,
-                his_inds.his_HN_in_co,
-                his_inds.his_NH_in_co,
-                his_inds.his_NN_in_co,
-                his_inds.his_CG_in_co,
-            ],
-        ],
-        dtype=torch.int32,
-        device=device,
+        histidine_atom_indices(his_inds), dtype=torch.int32, device=device
     )
