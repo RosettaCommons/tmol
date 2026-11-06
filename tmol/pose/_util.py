@@ -357,7 +357,11 @@ def _measure_torsion_indices(pose_stack, inds, degrees):
         flat = pose_stack.coords.reshape(-1, 3).double()
         sel = torch.from_numpy(inds[ok]).to(pose_stack.device)
         measured = coord_dihedrals(
-            flat[sel[:, 0]], flat[sel[:, 1]], flat[sel[:, 2]], flat[sel[:, 3]]
+            flat[sel[:, 0]],
+            flat[sel[:, 1]],
+            flat[sel[:, 2]],
+            flat[sel[:, 3]],
+            output_dtype=pose_stack.coords.dtype,
         )
         values[ok] = measured.cpu().numpy().astype(numpy.float64)
     return numpy.degrees(values) if degrees else values

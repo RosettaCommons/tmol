@@ -3,8 +3,8 @@
 import numpy
 
 
-def numpy_coord_dihedrals(a, b, c, d):
-    """Return vectorized coordinate dihedrals for NumPy topology setup."""
+def numpy_coord_dihedrals(a, b, c, d, *, output_dtype=numpy.float32):
+    """Return dihedrals, retaining the legacy float32 default unless requested."""
     ba = a - b
     bc = c - b
     cd = d - c
@@ -13,4 +13,4 @@ def numpy_coord_dihedrals(a, b, c, d):
     w = cd - numpy.sum(cd * unit_bc, axis=-1, keepdims=True) * unit_bc
     x = numpy.sum(v * w, axis=-1)
     y = numpy.sum(numpy.cross(unit_bc, v) * w, axis=-1)
-    return numpy.asarray(numpy.arctan2(y, x), dtype=numpy.float32)
+    return numpy.asarray(numpy.arctan2(y, x), dtype=output_dtype)
