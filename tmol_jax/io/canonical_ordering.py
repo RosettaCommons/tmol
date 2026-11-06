@@ -6,7 +6,6 @@ from collections import OrderedDict
 from functools import lru_cache
 from typing import Any, Dict, Tuple
 
-import attr
 import numpy as np
 
 from tmol_core.io.canonical_ordering import CanonicalOrdering as _CanonicalOrdering
@@ -27,42 +26,18 @@ class CanonicalOrdering(_CanonicalOrdering):
 
 @lru_cache(maxsize=1)
 def default_canonical_ordering() -> CanonicalOrdering:
-    """Return the :class:`CanonicalOrdering` for the default 20-AA palette.
-
-    Uses :func:`tmol_jax.chemical.patched_chemdb.default_patched_chemdb`.
-    """
-    # Imported lazily to avoid a cycle at module import time.
+    """Return the shared atom ordering for the complete default chemical database."""
     from tmol_jax.chemical.patched_chemdb import default_patched_chemdb
-    from tmol_jax.chemical.constants import canonical_aa_3letter
 
-    chemdb = default_patched_chemdb()
-
-    # Filter to just the 20 canonical AAs (the chem-db may contain
-    # extras like DNA bases, termini variants, etc.). We keep the
-    # palette order ALA, CYS, ASP, ... matching ``canonical_aa_3letter``.
-    canonical_set = set(canonical_aa_3letter)
-    filtered_residues = tuple(
-        r for r in chemdb.residues if getattr(r, "name3", None) in canonical_set
-    )
-
-    return CanonicalOrdering.from_chemdb(
-        attr.evolve(chemdb, residues=filtered_residues)
-    )
+    return CanonicalOrdering.from_chemdb(default_patched_chemdb())
 
 
 @lru_cache(maxsize=1)
 def default_packed_block_types() -> Any:
-    """Return a :class:`PackedBlockTypes` matching :func:`default_canonical_ordering`.
+    """Return the default molecular palette, including patched residue types.
 
-    This is exactly :func:`PackedBlockTypes.default` -- the 20 canonical
-    amino acids **plus their N-/C-terminal variants**
-    (``:nterm``, ``:cterm``, ``:cterm:nterm``). The termini variants
-    differ from the base block types in atom count and charge state:
-    the N-terminal NH3+ adds H1/H2/H3 and drops H, and the C-terminal
-    COO- adds OXT. Including them in the default palette lets
-    :func:`pose_stack_from_canonical_form` assign the correct variant
-    to each chain's first / last residue, matching upstream tmol
-    behaviour.
+    Standalone metal sites use an explicitly prepared palette so their connection
+    widths do not enlarge every ordinary structure.
     """
     from tmol_jax.pose.packed_block_types import PackedBlockTypes
 
@@ -75,9 +50,9 @@ def default_packed_block_types() -> Any:
 
 
 def canonical_form_from_pdb(pdb_text_or_path, canonical_ordering=None):
-    """Convert a PDB to canonical protein coordinates, retaining missing atoms.
+    """Convert a PDB to canonical molecular coordinates, retaining missing atoms.
 
-    Noncanonical residues fail explicitly; water is ignored. Chain labels
+    Unknown residue and atom identities fail explicitly; water is ignored. Chain labels
     and C-N distances (gaps beyond 2.4 A) determine polymer connectivity.
     """
     from .pdb_parsing import parse_pdb
@@ -163,13 +138,13 @@ def _canonical_form_from_records(records, canonical_ordering):
 
     if skipped_residue_names:
         raise NotImplementedError(
-            "JAX protein loading does not yet support residues: "
+            "The canonical ordering does not contain residues: "
             + ", ".join(sorted(skipped_residue_names))
         )
 
     n_res = len(unique_residues)
     if n_res == 0:
-        raise ValueError("PDB contains no supported protein residues")
+        raise ValueError("PDB contains no supported residues")
     max_n_atoms = max(1, canonical_ordering.max_n_canonical_atoms)
 
     # -------- Allocate canonical-form arrays ------------------------ #

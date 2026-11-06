@@ -6,7 +6,7 @@ Torsion-specific annotations are prepared by the scoring terms."""
 
 from __future__ import annotations
 
-from typing import Any, List, Sequence, Tuple
+from typing import Any, Sequence, Tuple
 
 import attrs
 import jax.numpy as jnp
@@ -105,81 +105,22 @@ class PackedBlockTypes:
     # Convenience constructors                                            #
     @classmethod
     def default(cls, chem_db: Any | None = None) -> "PackedBlockTypes":
-        """Build the default patched protein residue palette.
+        """Build the shared default molecular palette on the current JAX device.
 
-        JAX's current device context determines array placement. Chemistry and
-        residue identities remain host metadata."""
-        # Lazy imports (see module docstring for why).
+        Standalone metal sites require an explicitly prepared palette; ordinary
+        residues retain all chemical variants and their atom identities.
+        """
+        from tmol_core.io.canonical_ordering import only_coordinates_a_metal
+        from tmol_jax.chemical.patched_chemdb import default_patched_chemdb
+        from tmol_jax.chemical.restypes import RefinedResidueType, _refined_from_raw
+
         if chem_db is None:
-            from tmol_jax.chemical.patched_chemdb import (
-                default_patched_chemdb,
-            )
-
             chem_db = default_patched_chemdb()
-
-        from tmol_jax.chemical.restypes import RefinedResidueType  # noqa: F401
-
-        canonical_aas = (
-            "ALA",
-            "CYS",
-            "ASP",
-            "GLU",
-            "PHE",
-            "GLY",
-            "HIS",
-            "ILE",
-            "LYS",
-            "LEU",
-            "MET",
-            "ASN",
-            "PRO",
-            "GLN",
-            "ARG",
-            "SER",
-            "THR",
-            "VAL",
-            "TRP",
-            "TYR",
+        selected = tuple(
+            res if isinstance(res, RefinedResidueType) else _refined_from_raw(res)
+            for res in chem_db.residues
+            if not only_coordinates_a_metal(res)
         )
-
-        # Group residues by base ``name3``; we collect every variant
-        # whose ``name3`` matches one of the canonical AAs.
-        by_name3: dict = {}
-        for res in chem_db.residues:
-            n3 = getattr(res, "name3", None)
-            name = getattr(res, "name", None)
-            if n3 is None or name is None:
-                continue
-            by_name3.setdefault(n3, []).append(res)
-
-        def _variant_sort_key(res: Any) -> tuple:
-            """Sort key: base residue first, then by variant-tag tuple.
-
-            We rely on the residue's ``name`` being ``base`` (no colon)
-            for the base variant, and ``base:<display_name>[:...]`` for
-            patched ones. The key orders:
-
-              - bases first (empty variant tuple),
-              - then single variants sorted alphabetically,
-              - then double+ variants sorted alphabetically.
-            """
-            name = getattr(res, "name", "")
-            parts = name.split(":")
-            # Everything after the base name is a sorted tuple of
-            # display names (the chemdb already sorts them).
-            variants = tuple(parts[1:])
-            return (len(variants), variants, name)
-
-        selected: List[Any] = []
-        for aa in canonical_aas:
-            variants = sorted(by_name3.get(aa, []), key=_variant_sort_key)
-            for res in variants:
-                if not isinstance(res, RefinedResidueType):
-                    from tmol_jax.chemical.restypes import _refined_from_raw
-
-                    res = _refined_from_raw(res)
-                selected.append(res)
-
         return cls.from_restypes(chem_db, selected)
 
     # Lookup helpers                                                      #

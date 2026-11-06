@@ -55,7 +55,7 @@ def parse_pdb(pdb_input):
 def pose_stack_from_pdb(
     pdb_input, *, canonical_ordering=None, packed_block_types=None, **kwargs
 ):
-    """Load a protein PDB, reconstruct missing atoms, and build its topology."""
+    """Load a molecular PDB using its chemical ordering and residue palette."""
     from .canonical_ordering import (
         canonical_form_from_pdb,
         default_canonical_ordering,

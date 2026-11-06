@@ -301,8 +301,10 @@ default; `compact_padding=True` removes virtual slots while retaining adjacency,
 matching the Torch canonical-input contract. Input preparation runs on the host;
 the individual native decision stages support `jit` and `vmap`.
 
-The default PDB/Biotite palette still contains canonical proteins. General metal
-geometry/donor inference, protonation-state inference,
+The default PDB/Biotite palette includes all ordinary residues and variants in
+the chemical database, including D residues and nucleic acids. Custom ligands
+use the supplied chemical ordering and palette. Standalone metal sites still
+require an explicitly prepared palette. General metal geometry/donor inference, protonation-state inference,
 and generated-hydrogen rebuilding remain unfinished. This loader preserves
 supplied hydrogen coordinates; comparisons to Torch must request its matching
 `ligand_hydrogens="input"` policy. Missing non-leaf atoms raise unless `build_missing_context=True` enables

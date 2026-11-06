@@ -108,11 +108,12 @@ def test_canonical_input_retains_molecular_state(backend, case):
     co, cf = canonical_input(CASES[case], b.parameter_database)
     if b.framework == "jax":
         from tmol_jax.io import pose_stack_from_canonical_form
+        from tmol_jax.pose.packed_block_types import PackedBlockTypes
 
         with b.module.default_device(b.device):
             b.pose = pose_stack_from_canonical_form(
                 dict(cf, canonical_ordering=co),
-                b.pose.packed_block_types,
+                PackedBlockTypes.default(b.parameter_database.chemical),
                 compact_padding=True,
             )
         b.pose = b.pose.to(b.device)
