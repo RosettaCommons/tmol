@@ -198,11 +198,16 @@ def test_opth_constructed_coordinate_parameter_gradients(backend, name, flip):
     else:
         gradient = b.module.autograd.grad(loss(shift), shift)[0]
     epsilon = 0.002
-    finite = (loss(shift + epsilon) - loss(shift - epsilon)) / (2 * epsilon)
-    assert np.isfinite(b.numpy(gradient))
-    np.testing.assert_allclose(
-        b.numpy(gradient), b.numpy(finite), rtol=0.003, atol=0.0001
+    # Difference coordinates before the weighted reduction. Subtracting two
+    # float32 scalar losses loses the small derivative on the protein fixture;
+    # CPU/CUDA float64 and a step sweep independently verify this oracle.
+    plus = b.numpy(run(coords, shift + epsilon)).astype(np.float64)
+    minus = b.numpy(run(coords, shift - epsilon)).astype(np.float64)
+    finite = ((plus - minus) * b.numpy(weights).astype(np.float64)).sum() / (
+        2 * epsilon
     )
+    assert np.isfinite(b.numpy(gradient))
+    np.testing.assert_allclose(b.numpy(gradient), finite, rtol=0.003, atol=0.0001)
     # Do not silently return a partial derivative through inverse initialization.
     with pytest.raises(NotImplementedError, match="inverse.*kinematics"):
         if b.framework == "jax":
