@@ -436,3 +436,113 @@ def group_torsion_nodes(rot_kf, columns, n_atoms):
             )
         nodes.append(node)
     return numpy.asarray(nodes, dtype=numpy.int64)
+
+
+def group_task_rows(pose_of, block_of, type_of, allowed, sampler_allowed):
+    """Concrete original-type rows admitted by both task and sampler masks."""
+    return {
+        (int(pose), int(block), int(kind)): i
+        for i, (pose, block, kind) in enumerate(zip(pose_of, block_of, type_of))
+        if allowed[i] and sampler_allowed[pose, block]
+    }
+
+
+def group_sampling_plans(
+    groups,
+    active_types,
+    block_types,
+    allowed_rows=None,
+    *,
+    include_anchor=False,
+    topology_for_group=None,
+):
+    """Freeze excluded members before determining each group's movable axes."""
+    first_owner = int(not include_anchor)
+    plans = []
+    for group in groups:
+        owners = tuple(
+            owner
+            for owner in range(first_owner, len(group))
+            if allowed_rows is None
+            or (
+                group.pose,
+                group.blocks[owner],
+                int(block_types[group.pose, group.blocks[owner]]),
+            )
+            in allowed_rows
+        )
+        if owners:
+            fixed = tuple(owner for owner in range(len(group)) if owner not in owners)
+            plans.append(
+                GroupSamplingPlan(
+                    group,
+                    (
+                        topology_for_group(group, fixed)
+                        if topology_for_group is not None
+                        else group_sampling_topology(
+                            group,
+                            active_types,
+                            block_types[group.pose, list(group.blocks)],
+                            fixed,
+                        )
+                    ),
+                    owners,
+                )
+            )
+    return plans
+
+
+def group_sample_layout(plans, conformer_counts, allowed_rows, block_types, n_rows):
+    """List each active member's joint states in concrete block-type row order."""
+    counts = numpy.zeros(n_rows, numpy.int32)
+    emitted = []
+    for gi, (plan, count) in enumerate(zip(plans, conformer_counts)):
+        for owner in plan.owners:
+            group = plan.group
+            block = group.blocks[owner]
+            gbt = allowed_rows[group.pose, block, int(block_types[group.pose, block])]
+            counts[gbt] = count
+            emitted.append((gbt, gi, owner, count))
+    emitted.sort()
+    mapping, rows = [], []
+    correlated = [[] for _ in plans]
+    for gbt, gi, owner, count in emitted:
+        rows.append((gi, owner, gbt, len(mapping)))
+        correlated[gi].append(gbt)
+        mapping.extend([gbt] * count)
+    return (
+        counts,
+        numpy.asarray(mapping, numpy.int32),
+        rows,
+        tuple(tuple(g) for g in correlated),
+    )
+
+
+def anchor_library_mask(plans, shape, sampler):
+    """Select only anchors whose library chi include an unconstrained axis."""
+    allowed = numpy.zeros(shape, dtype=bool)
+    for plan in plans:
+        topology, group = plan.topology, plan.group
+        if any(
+            name.startswith("chi")
+            and frozenset((int(u[1][0]), int(u[2][0]))) in topology.movable_axes
+            for name, u in topology.block_types[0].torsion_to_uaids.items()
+        ):
+            allowed[group.pose, group.anchor, sampler] = True
+    return allowed
+
+
+def anchor_library_rows(groups, block_types, pose_of, block_of, type_of, sample_rows):
+    """Map each original anchor identity to its sampled source-library rows."""
+    out = {}
+    for group in groups:
+        kind = int(block_types[group.pose, group.anchor])
+        wanted = [
+            i
+            for i, identity in enumerate(zip(pose_of, block_of, type_of))
+            if tuple(map(int, identity)) == (group.pose, group.anchor, kind)
+        ]
+        rows = numpy.flatnonzero(numpy.isin(sample_rows, wanted))
+        if rows.size:
+            out[group.pose, group.anchor] = rows
+    return out

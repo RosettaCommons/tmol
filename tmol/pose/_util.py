@@ -15,6 +15,11 @@ from tmol.chemical._restypes import _three2one
 from tmol.numeric import coord_dihedrals
 from tmol.pose._pose_stack import PoseStack
 from tmol_core.chemical.atom_resolution import torsion_atom_indices, resolve_atom_id
+from tmol_core.pose.query import (
+    torsion_requests,
+    format_named_torsions,
+)
+from tmol_core.pose.query import _is_scalar, _as_list  # noqa: F401
 
 
 def get_sequence(pose_stack: PoseStack, pose: int = 0) -> str:
@@ -249,75 +254,24 @@ def get_named_torsions(
     requests = _torsion_requests(pose_stack, poses, blocks, names)
     values = _measure_torsions(pose_stack, requests, degrees)
 
-    if _is_scalar(poses) and _is_scalar(blocks):
-        if _is_scalar(names):
-            return float(values[0])
-        return {
-            name: value for (_, _, _, name), value in zip(requests, values.tolist())
-        }
-
-    out = [
-        [{} for _ in range(pose_stack.max_n_blocks)] for _ in range(pose_stack.n_poses)
-    ]
-    for (pose, block, _, name), value in zip(requests, values.tolist()):
-        out[pose][block][name] = value
-    return out
+    return format_named_torsions(
+        requests,
+        values,
+        (pose_stack.n_poses, pose_stack.max_n_blocks),
+        poses,
+        blocks,
+        names,
+    )
 
 
-def _is_scalar(x):
-    return isinstance(x, (int, numpy.integer, str))
-
-
-def _as_list(x, default):
-    if x is None:
-        return list(default)
-    return [x] if _is_scalar(x) else list(x)
-
-
-def _torsion_requests(pose_stack, poses, blocks, names):  # noqa: C901
-    """Expand a selection into (pose, block, torsion index, name) tuples."""
-    pbt = pose_stack.packed_block_types
-    bti = pose_stack.block_type_ind64
-
-    pose_list = _as_list(poses, range(pose_stack.n_poses))
-    block_list = _as_list(blocks, range(pose_stack.max_n_blocks))
-    name_list = None if names is None else _as_list(names, ())
-
-    paired = poses is not None and blocks is not None
-    if paired and not _is_scalar(poses) and not _is_scalar(blocks):
-        if len(pose_list) != len(block_list):
-            raise ValueError("poses and blocks must be the same length")
-        pairs = list(zip(pose_list, block_list))
-    else:
-        pairs = [(p, b) for p in pose_list for b in block_list]
-
-    if name_list is not None and len(name_list) == len(pairs) and len(pairs) > 1:
-        paired_names = name_list
-    else:
-        paired_names = None
-
-    requests = []
-    for i, (pose, block) in enumerate(pairs):
-        bt_ind = int(bti[pose, block])
-        if bt_ind == -1:
-            if blocks is None:
-                continue
-            raise ValueError(f"block {block} of pose {pose} is not a real block")
-        bt = pbt.active_block_types[bt_ind]
-        tor_inds = {tor.name: j for j, tor in enumerate(bt.torsions)}
-        if paired_names is not None:
-            wanted = [paired_names[i]]
-        elif name_list is not None:
-            wanted = name_list
-        else:
-            wanted = list(tor_inds)
-        for name in wanted:
-            if name not in tor_inds:
-                if name_list is None or blocks is None:
-                    continue
-                raise ValueError(f"block type {bt.name} has no torsion {name!r}")
-            requests.append((pose, block, tor_inds[name], name))
-    return requests
+def _torsion_requests(pose_stack, poses, blocks, names):
+    return torsion_requests(
+        pose_stack.packed_block_types.active_block_types,
+        pose_stack.block_type_ind64.cpu().numpy(),
+        poses,
+        blocks,
+        names,
+    )
 
 
 def _resolve_uaid(pose_stack, pose, block, uaid):
