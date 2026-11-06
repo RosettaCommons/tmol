@@ -109,11 +109,12 @@ def validate_rotamer_context(pose, rotamers):
 def prepare_rotamer_nonbonded(pose, rotamers, database, *, electrostatic=False):
     """Prepare shared chemistry for sparse LJ/LK or electrostatic execution."""
     validate_rotamer_context(pose, rotamers)
-    target, channels, parameters, reach = prepare_independent_nonbonded(
-        pose,
-        database,
-        electrostatic=electrostatic,
-    )
+    with jax.default_device(pose.device):
+        target, channels, parameters, reach = prepare_independent_nonbonded(
+            pose,
+            database,
+            electrostatic=electrostatic,
+        )
     common = (
         rotamers.coord_offset_for_rot,
         rotamers.block_ind_for_rot,

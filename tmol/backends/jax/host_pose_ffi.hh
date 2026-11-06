@@ -82,7 +82,7 @@ inline auto sampling_host_offsets(
 // Typed host storage for the canonical topology-only hydrogen-bond prepass.
 // Atom/bond traversal and unresolved-base semantics remain in the shared
 // kernel.
-template <template <Device> class Ops>
+template <template <Device> class Ops, typename... RotamerTypes>
 auto hbond_host_indices(
     ContextManager& context,
     int64_t n_coordinates,
@@ -103,15 +103,24 @@ auto hbond_host_indices(
     TView<int32_t, 2, Device::CPU> n_acceptors,
     TView<int32_t, 3, Device::CPU> donor_indices,
     TView<int32_t, 3, Device::CPU> acceptor_indices,
-    TView<int32_t, 3, Device::CPU> hybridizations) {
+    TView<int32_t, 3, Device::CPU> hybridizations,
+    RotamerTypes... explicit_types) {
   using namespace score::hbond::potentials;
   using I = int32_t;
   constexpr auto D = Device::CPU;
   auto rots = offsets.size(0);
+  static_assert(sizeof...(RotamerTypes) <= 1);
+  TView<I, 1, D> types;
+  if constexpr (sizeof...(RotamerTypes))
+    types = std::get<0>(std::make_tuple(explicit_types...));
+  else {
+    if (first_type.size(0) * first_type.size(1) != rots)
+      throw std::invalid_argument("invalid whole-pose HBond type layout");
+    types = contiguous_view<I, 1, D>(first_type.data(), {rots});
+  }
   if (n_coordinates < 0 || n_coordinates > INT32_MAX / 3
       || first_rot.size(0) != first_type.size(0)
-      || first_rot.size(1) != first_type.size(1)
-      || first_type.size(0) * first_type.size(1) != rots
+      || first_rot.size(1) != first_type.size(1) || types.size(0) != rots
       || block_for_rot.size(0) != rots || pose_for_rot.size(0) != rots)
     throw std::invalid_argument("invalid hydrogen-bond topology layout");
   auto result = OwnedHostTensor<I, 2, D>::full({n_coordinates, 3}, -1);
@@ -121,8 +130,7 @@ auto hbond_host_indices(
   bases.first_rot_block_type = first_type;
   bases.block_ind_for_rot = block_for_rot;
   bases.pose_ind_for_rot = pose_for_rot;
-  bases.block_type_ind_for_rot =
-      contiguous_view<I, 1, D>(first_type.data(), {rots});
+  bases.block_type_ind_for_rot = types;
   bases.pose_stack_inter_residue_connections = connections;
   bases.block_type_n_atoms = n_atoms;
   bases.block_type_n_interblock_bonds = n_connections;
@@ -226,6 +234,15 @@ extern "C" int tmol_kinematic_host_prepare(
       case 15:
         tmol::jax::invoke_host(
             &tmol::jax::hbond_host_indices<tmol::jax::CpuOps>,
+            context,
+            inputs,
+            *output);
+        break;
+      case 16:
+        tmol::jax::invoke_host(
+            &tmol::jax::hbond_host_indices<
+                tmol::jax::CpuOps,
+                tmol::TView<int32_t, 1, tmol::Device::CPU>>,
             context,
             inputs,
             *output);

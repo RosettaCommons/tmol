@@ -37,21 +37,33 @@ def prepare_hbond_metadata(pbt, database):
     return blocks, pack_hbond_blocks(blocks, max_n_atoms=pbt.max_n_atoms)
 
 
-def prepare_hbond(pose, database):
+def prepare_hbond(pose, database, *, rotamers=None):
     pbt = pose.packed_block_types
     _validate_native_connections(pbt)
     _, hb = prepare_hbond_metadata(pbt, database)
     bonds = pack_bond_topology(pbt.active_block_types, max_n_atoms=pbt.max_n_atoms)
     params = native_hbond_parameters(database.chemical, database.scoring.hbond)
     offsets, first, types, _ = pose_arguments(pose)
+    if rotamers is not None:
+        offsets = rotamers.coord_offset_for_rot
+        first = rotamers.rot_offset_for_block
+        types = rotamers.first_rot_block_type
     poses, blocks = types.shape
     near, separation = _pose_connections(pose)
     arrays = (
         offsets,
         first,
         types,
-        np.tile(np.arange(blocks, dtype=np.int32), poses),
-        np.repeat(np.arange(poses, dtype=np.int32), blocks),
+        (
+            np.tile(np.arange(blocks, dtype=np.int32), poses)
+            if rotamers is None
+            else rotamers.block_ind_for_rot
+        ),
+        (
+            np.repeat(np.arange(poses, dtype=np.int32), blocks)
+            if rotamers is None
+            else rotamers.pose_for_rot
+        ),
         pose.inter_residue_connections,
         near,
         separation,
@@ -86,15 +98,27 @@ def prepare_hbond(pose, database):
     # the same native base planner as Torch once, then gather changing coordinates
     # on the execution device. -1 is unused; -2 is an active unresolved base.
     (indices,) = invoke(
-        15,
-        pose.coords.shape[0] * pose.coords.shape[1],
+        15 if rotamers is None else 16,
+        (
+            pose.coords.shape[0] * pose.coords.shape[1]
+            if rotamers is None
+            else rotamers.coords.shape[0]
+        ),
         *(
             arrays[i]
             for i in (0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 22)
         ),
+        *((rotamers.block_type_ind_for_rot,) if rotamers is not None else ()),
     )
-    register("tmol_hbond")
-    return tuple(jnp.asarray(a) for a in (*arrays, indices))
+    register("tmol_hbond" if rotamers is None else "tmol_rotamer_hbond")
+    return tuple(
+        jnp.asarray(a)
+        for a in (
+            *arrays,
+            indices,
+            *((rotamers.block_type_ind_for_rot,) if rotamers is not None else ()),
+        )
+    )
 
 
 def hbond_energy(coords, parameters):

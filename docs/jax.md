@@ -196,7 +196,7 @@ native DOF operations support `jit` and `vmap`. A concrete `SetPackerTask` reuse
 validated topology plans while recomputing coordinates. Internal native stages
 now provide sparse graph topology/retention, device load balancing with XLA-owned
 scratch, sphere-based candidate enumeration, and the mature CPU annealing schedule.
-Sparse LJ/LK, electrostatic, LK-ball, Dunbrack and generic-bonded values
+Sparse LJ/LK, electrostatic, LK-ball, hydrogen-bond, Dunbrack and generic-bonded values
 and coordinate VJPs consume explicit candidate indices with `jit`/`vmap` support;
 forward-mode and higher derivatives are not implemented for these sparse entries.
 Recompute discrete candidates after coordinate changes. Full graph scoring and

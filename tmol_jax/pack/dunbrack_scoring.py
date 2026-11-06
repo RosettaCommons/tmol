@@ -13,7 +13,8 @@ from .scoring import coordinate_vjp, validate_rotamer_context
 
 def prepare_rotamer_dunbrack(pose, rotamers, database):
     validate_rotamer_context(pose, rotamers)
-    parameters = DunbrackEnergyTerm(database).setup_for_pose_stack(pose).parameters
+    with jax.default_device(pose.device):
+        parameters = DunbrackEnergyTerm(database).setup_for_pose_stack(pose).parameters
     if parameters:
         parameters = (
             rotamers.coord_offset_for_rot,

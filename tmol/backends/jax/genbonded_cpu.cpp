@@ -807,3 +807,34 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<int64_t>("extent")
         .Attr<int64_t>("width")
         .Attr<double>("reach"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_rotamer_hbond,
+    (tmol::jax::run_graph_stage<tmol::jax::RotamerHBondStage, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width")
+        .Attr<double>("reach"));
+
+extern "C" double tmol_hbond_neighbor_reach() {
+  return tmol::score::hbond::potentials::hbond_neighbor_reach();
+}
+extern "C" uint64_t tmol_rotamer_hbond_workspace_bytes(
+    int64_t poses, int64_t blocks, int64_t atoms, int bits, int) {
+  try {
+    if (poses < 0 || blocks < 0 || atoms < 0 || atoms > INT32_MAX / 9
+        || (bits != 32 && bits != 64))
+      return UINT64_MAX;
+    return bits == 32
+               ? tmol::jax::HBondWorkspace<float, true>(poses, blocks, atoms)
+                     .storage.size_bytes()
+               : tmol::jax::HBondWorkspace<double, true>(poses, blocks, atoms)
+                     .storage.size_bytes();
+  } catch (...) {
+    return UINT64_MAX;
+  }
+}

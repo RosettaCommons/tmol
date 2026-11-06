@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from .molecules import CASES, DOMAIN_CASES
+from .hbond_molecules import HBOND_CASES
 from .rotamer_execution import RotamerExecution
 
 
@@ -23,16 +24,19 @@ from .rotamer_execution import RotamerExecution
             "mixed_batch",
         )
     ]
-    + [("genbonded", name) for name in CASES],
+    + [("genbonded", name) for name in CASES]
+    + [("hbond", name) for name in HBOND_CASES],
 )
 def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, family):
     terms = {
         "genbonded": ("gen_torsions",),
+        "hbond": ("hbond",),
         "elec": ("fa_elec",),
         "ljlk": ("fa_ljatr", "fa_ljrep", "fa_lk"),
         "lk_ball": ("lk_ball_iso", "lk_ball", "lk_bridge", "lk_bridge_uncpl"),
     }[family]
-    backend.molecule(DOMAIN_CASES[case_name], terms=terms)
+    cases = HBOND_CASES if family == "hbond" else DOMAIN_CASES
+    backend.molecule(cases[case_name], terms=terms)
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
     )
@@ -55,7 +59,11 @@ def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, 
         direction = np.random.default_rng(103).normal(size=coords.shape)
         direction /= np.linalg.norm(direction)
         analytic = np.sum(gradient * direction)
-        for step in (1e-5, 2e-6):
+        # Degree-10 HBond fits lose subtraction digits below 1e-4 even in
+        # float64. These two steps lie in the converged interval, before
+        # cancellation dominates; the gradient tolerance is unchanged.
+        steps = (1e-3, 3e-4) if family == "hbond" else (1e-5, 2e-6)
+        for step in steps:
             plus, plus_indices = map(
                 backend.numpy, execution.scores(coords + step * direction)
             )
@@ -70,11 +78,13 @@ def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, 
         np.testing.assert_array_equal(backend.numpy(execution.rotamers.coords), coords)
 
 
-@pytest.mark.parametrize("family", ("ljlk", "lk_ball", "genbonded"))
+@pytest.mark.parametrize("family", ("ljlk", "lk_ball", "genbonded", "hbond"))
 def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
     import attrs
 
     case = DOMAIN_CASES["ligand" if family == "ljlk" else "connected_noncanonical"]
+    if family == "hbond":
+        case = HBOND_CASES["beta_amino_ligand"]
     backend.molecule(case, terms=("ref",))
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
@@ -87,6 +97,7 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
             "ljlk": (2, 4),
             "lk_ball": (3, 2),
             "genbonded": (1, 2),
+            "hbond": (1, 2),
         }[family]
         weights = np.broadcast_to(
             (np.arange(first.shape[0]) < scaled_channels)[:, None], first.shape
@@ -97,7 +108,19 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
         database = backend.parameter_database
         # Fourfold well depth doubles its float32 square-root table exactly;
         # this keeps the analytic scaling check free of parameter quantization.
-        if family == "genbonded":
+        if family == "hbond":
+            source = database.scoring.hbond
+            changed = attrs.evolve(
+                source,
+                donor_type_params=tuple(
+                    attrs.evolve(p, weight=2 * p.weight)
+                    for p in source.donor_type_params
+                ),
+            )
+            modified = attrs.evolve(
+                database, scoring=attrs.evolve(database.scoring, hbond=changed)
+            )
+        elif family == "genbonded":
             source = database.scoring.genbonded
             changed = attrs.evolve(
                 source,
@@ -166,8 +189,15 @@ def test_sparse_dunbrack_preserves_library_free_conformer_identity(backend):
     np.testing.assert_array_equal(gradient, np.zeros_like(coords))
 
 
-@pytest.mark.parametrize("case_name", ("l_peptide", "mixed_batch"))
-@pytest.mark.parametrize("family", ("ljlk", "elec", "dunbrack", "lk_ball", "genbonded"))
+@pytest.mark.parametrize(
+    "family,case_name",
+    [
+        (family, case)
+        for family in ("ljlk", "elec", "dunbrack", "lk_ball", "genbonded")
+        for case in ("l_peptide", "mixed_batch")
+    ]
+    + [("hbond", "sampled_ser_ligand")],
+)
 def test_sampled_ensemble_selection_conserves_energy_and_forces(
     backend, case_name, family
 ):
@@ -175,12 +205,14 @@ def test_sampled_ensemble_selection_conserves_energy_and_forces(
 
     terms = {
         "genbonded": ("gen_torsions",),
+        "hbond": ("hbond",),
         "elec": ("fa_elec",),
         "ljlk": ("fa_ljatr", "fa_ljrep", "fa_lk"),
         "dunbrack": ("dunbrack_rot", "dunbrack_rotdev", "dunbrack_semirot"),
         "lk_ball": ("lk_ball_iso", "lk_ball", "lk_bridge", "lk_bridge_uncpl"),
     }[family]
-    backend.molecule(DUNBRACK_CASES[case_name], terms=terms)
+    cases = HBOND_CASES if family == "hbond" else DUNBRACK_CASES
+    backend.molecule(cases[case_name], terms=terms)
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
     )
@@ -192,6 +224,8 @@ def test_sampled_ensemble_selection_conserves_energy_and_forces(
         starts = backend.numpy(r.rot_offset_for_block)
         assert counts.max() > 2
         values, indices = map(backend.numpy, e.scores(xyz))
+        if family == "hbond":
+            assert np.any(values < -0.1)
         selected = np.zeros(r.n_rotamers_total, bool)
         reconstructed = backend.coords().astype(np.float64)
         offsets = backend.numpy(r.coord_offset_for_rot)
@@ -216,7 +250,8 @@ def test_sampled_ensemble_selection_conserves_energy_and_forces(
         _, gradient, _ = e.value_and_grad(xyz, weights)
         direction = np.random.default_rng(203).normal(size=xyz.shape)
         direction /= np.linalg.norm(direction)
-        for step in (1e-5, 2e-6):
+        steps = (1e-3, 3e-4) if family == "hbond" else (1e-5, 2e-6)
+        for step in steps:
             plus = backend.numpy(e.scores(xyz + step * direction)[0])
             minus = backend.numpy(e.scores(xyz - step * direction)[0])
             np.testing.assert_allclose(

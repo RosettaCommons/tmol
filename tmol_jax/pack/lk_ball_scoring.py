@@ -1,5 +1,7 @@
 """Sparse LK-ball execution with shared water generation and coordinate VJP."""
 
+import jax
+
 from tmol_jax.score.lk_ball.native import prepare_lk_ball
 from tmol_jax.score._native import workspace_sizes
 from .scoring import sparse_nonbonded_values, validate_rotamer_context
@@ -7,7 +9,8 @@ from .scoring import sparse_nonbonded_values, validate_rotamer_context
 
 def prepare_rotamer_lk_ball(pose, rotamers, database):
     validate_rotamer_context(pose, rotamers)
-    parameters, reach = prepare_lk_ball(pose, database)
+    with jax.default_device(pose.device):
+        parameters, reach = prepare_lk_ball(pose, database)
     parameters = (
         rotamers.coord_offset_for_rot,
         rotamers.pose_for_rot,

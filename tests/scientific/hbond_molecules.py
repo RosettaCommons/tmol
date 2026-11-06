@@ -76,3 +76,8 @@ HBOND_CASES["mixed_batch"] = HydrogenBondCase(
     ("N", "H"),
     ("N1", "C11", "C12"),
 )
+
+# Backbone donation remains active while SER samples multiple side-chain states.
+HBOND_CASES["sampled_ser_ligand"] = HydrogenBondCase(
+    (LIGAND,), (("SER", "LG1"),), ((1, 1),), ("N", "H"), ("N1", "C11", "C12")
+)
