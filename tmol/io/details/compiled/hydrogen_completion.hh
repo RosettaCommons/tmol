@@ -276,9 +276,7 @@ void launch_hydrogen_input(Context& mgr, HydrogenInputContext<Real, Int, D> c) {
       width,
       "hydrogen input atoms");
   LAUNCH_BOX_128;
-  Ops<D>::template forall<launch_t>(mgr, n, [=] TMOL_DEVICE_FUNC(int i) {
-    int a = i % width, b = (i / width) % blocks, p = i / (width * blocks);
-    auto type = c.types[p][b];
+  auto process = [c, width] TMOL_DEVICE_FUNC(int p, int b, int a, Int type) {
     bool keep = false;
     if (type >= 0 && type < c.parent.size(0)) {
       auto parent = c.parent[type][a];
@@ -291,7 +289,20 @@ void launch_hydrogen_input(Context& mgr, HydrogenInputContext<Real, Int, D> c) {
       }
     }
     c.retained[p][b][a] = keep;
-  });
+  };
+  if constexpr (D == Device::CPU) {
+    for (int p = 0; p < c.types.size(0); ++p)
+      for (int b = 0; b < blocks; ++b) {
+        auto type = c.types[p][b];
+        for (int a = 0; a < width; ++a) process(p, b, a, type);
+      }
+  } else {
+    Ops<D>::template forall<launch_t>(
+        mgr, n, [c, width, blocks, process] TMOL_DEVICE_FUNC(int i) {
+          int a = i % width, b = (i / width) % blocks, p = i / (width * blocks);
+          process(p, b, a, c.types[p][b]);
+        });
+  }
 }
 template <template <Device> class Ops, Device D, class Real, class Int>
 struct HydrogenInput {
