@@ -4,7 +4,15 @@ import numpy as np
 
 
 class RotamerExecution:
-    def __init__(self, backend, *, electrostatic=False, sampled=False, family=None):
+    def __init__(
+        self,
+        backend,
+        *,
+        electrostatic=False,
+        sampled=False,
+        family=None,
+        include_current=True,
+    ):
         if backend.requested_device == "mps":
             raise NotImplementedError(
                 "the sparse float64 science adapter requires CPU/CUDA; Metal needs a separate float32 validation"
@@ -22,14 +30,28 @@ class RotamerExecution:
             )
         else:
             from tmol import PackerTask, PackerPalette
-            from tmol.pack import SetPackerTask, IncludeCurrentSampler, build_rotamers
+            from tmol.pack import (
+                SetPackerTask,
+                IncludeCurrentSampler,
+                build_rotamers,
+            )
         task = PackerTask(backend.pose, PackerPalette())
         task.restrict_to_repacking()
         if sampled:
-            from .test_molecular_sampling import sampling_task
+            if self.family == "na_torsion":
+                from .test_na_sampling import na_sampling_task
 
-            task, _, _ = sampling_task(backend)
-        task.add_conformer_sampler(IncludeCurrentSampler())
+                task, _, _ = na_sampling_task(backend, level=1)
+            else:
+                from .test_molecular_sampling import sampling_task
+
+                task, _, _ = sampling_task(backend)
+        if include_current:
+            task.add_conformer_sampler(IncludeCurrentSampler())
+        else:
+            from .test_current_conformers import ensure_fallback_sampler
+
+            ensure_fallback_sampler(backend, task)
         _, self.rotamers = build_rotamers(
             backend.pose,
             SetPackerTask.from_packer_task(task),

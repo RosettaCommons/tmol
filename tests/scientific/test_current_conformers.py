@@ -15,6 +15,16 @@ def current_samplers(backend):
     return IncludeCurrentSampler(), FallbackSampler()
 
 
+def ensure_fallback_sampler(backend, task):
+    """Match the explicit JAX and default Torch fallback configuration."""
+    for sampler in task.conformer_samplers:
+        if sampler.sampler_name() == "FallbackSampler":
+            return sampler
+    _, sampler = current_samplers(backend)
+    task.add_conformer_sampler(sampler)
+    return sampler
+
+
 def mixed_task(backend):
     backend.molecule(
         MolecularCase(

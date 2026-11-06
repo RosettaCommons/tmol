@@ -71,9 +71,11 @@
         "tests/scientific/test_cartbonded.py",
         "tests/scientific/test_molecular_nonbonded.py",
         "tests/scientific/test_na_torsion.py",
-        "tests/scientific/test_complete_preset.py"
+        "tests/scientific/test_complete_preset.py",
+        "tests/scientific/test_na_sampling.py",
+        "tests/jax/test_na_sample_transforms.py"
       ],
-      "implementation_status": "Shared native NA torsion and population channels: exact fresh Torch/JAX CPU energies/full gradients for connected DNA/RNA, termini, real methylcytosine and mixed batches. Custom widths and explicit unknown-base references tested; complete 25-channel presets pass on the molecular fixtures. CPU/CUDA values, gradients and float32/64 transformations pass."
+      "implementation_status": "Shared native NA torsion and population channels: exact fresh Torch/JAX CPU energies/full gradients for connected DNA/RNA, termini, real methylcytosine and mixed batches. Custom widths and explicit unknown-base references tested; complete 25-channel presets pass on the molecular fixtures. CPU/CUDA values, gradients and float32/64 transformations pass. Native NA sampling now supports both glycosidic and proton chi; DNA/RNA/termini/modified/mixed coordinate reconstruction, task budgets, custom widths and fixed-plan parameter JVP/HVP/vmap pass CPU. Independent CPU comparison:120 sample/metadata/assembled-coordinate arrays exact across12 configurations; full parameter gradients exact and HVP errors below2.4e-7. All20 sampled per-channel values/full coordinate gradients exact acrossfive molecular cases andboth precisions. Matching CUDA sampling remains pending."
     },
     {
       "domain": "metals_and_coordination",
@@ -166,9 +168,13 @@
         "tests/jax/test_native_graph_retention.py",
         "tests/jax/test_native_rotamer_dispatch.py",
         "tests/scientific/test_rotamer_nonbonded.py",
-        "tests/jax/test_sparse_rotamer_transforms.py"
+        "tests/jax/test_sparse_rotamer_transforms.py",
+        "tests/scientific/test_na_sampling.py",
+        "tests/jax/test_na_sample_transforms.py",
+        "tests/scientific/test_complete_rotamer_score.py",
+        "tests/jax/test_interaction_graph_entries.py"
       ],
-      "implementation_status": "Common chemistry, task/request preparation, retained-atom plans and native assembly support current/fallback and Dunbrack/explicit amino-acid chi conformers. Independent CPU/CUDA assembly coordinates and identities match Torch. Every sparse physical score family uses common native kernels; real ligand, noncanonical, D-amino-acid, modified-NA, disulfide and metal values/full coordinate VJPs have independent CPU/CUDA evidence. Sparse constraints also preserve parameter AD and JVPs. The complete 25-channel sparse ScoreFunction conserves whole-pose values/gradients and named channels on all 12 molecular fixtures on CPU; combined-source CUDA validation is pending. Common native graph entry accumulation passes exhaustive CPU assignment checks, including duplicates, fixed blocks and empties; 15 independent current/sampled molecular graph comparisons preserve all 12 topology arrays and agree within float32 tolerances; matching CUDA validation is pending. Native CPU annealing stages exist. No complete packing/design/mutation/FastRelax frontend or CUDA annealer yet. NA/optH/conjugated sampling, bump pruning, lockstep dispatch/collapse, backbone two-residue cycles and general native sparse JVP/higher derivatives remain gaps. Task APIs remain a subset."
+      "implementation_status": "Common chemistry, task/request preparation, retained-atom plans and native assembly support current/fallback and Dunbrack/explicit amino-acid chi conformers. Independent CPU/CUDA assembly coordinates and identities match Torch. Every sparse physical score family uses common native kernels; real ligand, noncanonical, D-amino-acid, modified-NA, disulfide and metal values/full coordinate VJPs have independent CPU/CUDA evidence. Sparse constraints also preserve parameter AD and JVPs. The complete 25-channel sparse ScoreFunction conserves whole-pose values/gradients and named channels on all 12 molecular fixtures on CPU; combined-source CUDA validation is pending. Common native graph entry accumulation passes exhaustive CPU assignment checks, including duplicates, fixed blocks and empties; 15 independent current/sampled molecular graph comparisons preserve all 12 topology arrays and agree within float32 tolerances; matching CUDA validation is pending. Native CPU annealing stages exist. No complete packing/design/mutation/FastRelax frontend or CUDA annealer yet. OptH/conjugated sampling, bump pruning, lockstep dispatch/collapse, backbone two-residue cycles and general native sparse JVP/higher derivatives remain gaps. Task APIs remain a subset. NA native sampling CPU tests cover fixed-plan parameter AD and custom databases. Sampled-only NA ensembles conserve whole-pose energies and pass directional derivatives without changing float64 tolerances. Mixed sampled/current float32 NA backbones differ by reconstruction roundoff; Torch float64 assembly remains unsupported. Complete sparse float64 Torch reduction is fixed and all12 molecular CPU conservation tests pass. Matching complete-graph build and35 CPU/CUDA checks pass; independent CUDA graph comparison/benchmarks pending."
     },
     {
       "domain": "kinematics",

@@ -320,6 +320,7 @@ def test_sparse_dunbrack_preserves_library_free_conformer_identity(backend):
         for case in ("l_peptide", "mixed_batch")
     ]
     + [("hbond", "sampled_ser_ligand")]
+    + [("na_torsion", name) for name in NA_CASES]
     + [("disulfide", name) for name in ("ld", "mixed_batch")]
     + [("metal", name) for name in ("zinc_site", "bridging_donor", "mixed_batch")],
 )
@@ -339,18 +340,30 @@ def test_sampled_ensemble_selection_conserves_energy_and_forces(
         "ljlk": ("fa_ljatr", "fa_ljrep", "fa_lk"),
         "dunbrack": ("dunbrack_rot", "dunbrack_rotdev", "dunbrack_semirot"),
         "lk_ball": ("lk_ball_iso", "lk_ball", "lk_bridge", "lk_bridge_uncpl"),
+        "na_torsion": ("na_torsion", "na_torsion_well"),
     }[family]
     cases = HBOND_CASES if family == "hbond" else DUNBRACK_CASES
     if family == "disulfide":
         cases = DISULFIDE_CASES
     elif family == "metal":
         cases = METAL_CASES
+    elif family == "na_torsion":
+        cases = NA_CASES
     backend.molecule(cases[case_name], terms=terms)
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
     )
     with precision:
-        e = RotamerExecution(backend, family=family, sampled=True)
+        # NA choices here are newly sampled conformers. Mixing exact copied
+        # input with a float32 reconstructed sugar introduces backbone roundoff
+        # above this test's float64 energy bound. Both APIs' current conformers
+        # are exercised separately; this also avoids Torch's float32-only builder.
+        e = RotamerExecution(
+            backend,
+            family=family,
+            sampled=True,
+            include_current=family != "na_torsion",
+        )
         r = e.rotamers
         xyz = backend.numpy(r.coords).astype(np.float64)
         counts = backend.numpy(r.n_rots_for_block)

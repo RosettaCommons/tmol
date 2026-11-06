@@ -7,6 +7,7 @@
 #include "rotamer_backbone_ffi.hh"
 #include "metal_ffi.hh"
 #include "na_torsion_ffi.hh"
+#include "na_sampling_ffi.hh"
 #include "workspace_ffi.hh"
 #include "lk_ball_ffi.hh"
 #include "hbond_ffi.hh"
@@ -47,7 +48,9 @@ template <Device D>
 struct CudaOps;
 template <>
 struct CudaOps<Device::CUDA> {
-  __device__ static void bitwise_or(int32_t& target, int32_t value) { atomicOr(&target, value); }
+  __device__ static void bitwise_or(int32_t& target, int32_t value) {
+    atomicOr(&target, value);
+  }
   static void load_balance(
       int total,
       const int64_t* offsets,
@@ -1016,4 +1019,25 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<int64_t>("operation")
         .Attr<int64_t>("extent")
         .Attr<int64_t>("width"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_na_sampling,
+    (tmol::jax::run_graph_stage<
+        tmol::jax::NaSamplingStage,
+        double,
+        int64_t,
+        double,
+        double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width")
+        .Attr<double>("temperature")
+        .Attr<int64_t>("sample_syn")
+        .Attr<double>("max_syn_well")
+        .Attr<double>("syn_mean"),
     {xla::ffi::Traits::kCmdBufferCompatible});

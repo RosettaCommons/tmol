@@ -176,6 +176,17 @@ require an eager host allocation barrier, so sampling is not differentiable,
 jittable or vmappable. Coordinate assembly is available separately below; full
 packing, FastRelax and design execution remain unfinished.
 
+`NaChiRotamerSampler.from_database(db, chi_sample_level=1, sample_syn=True)`
+samples DNA/RNA glycosidic and proton chi from the same shared chemical metadata,
+scoring tables and native kernels as Torch, including modified nucleotides.
+Register it with the task like the Dunbrack sampler. Levels 0–4 expand the
+glycosidic distribution; task masks and sample budgets still apply. Public NA
+angles retain Torch's float32 table precision. Coordinate assembly preserves the
+pose dtype. `plan = sampler.prepare_chi_for_poses(pose, task)` fixes the discrete
+sugar-pucker and sample choices eagerly; `plan.chi_values(proton, means, sdev)`
+accepts optional float32 table overrides and supports `jit`, `vmap`, JVPs and
+higher parameter derivatives. It does not differentiate the discrete preparation.
+
 `IncludeCurrentSampler` and `FallbackSampler` expose
 `create_samples_for_poses(pose, concrete_task)`, returning counts, choice indices
 and an input-coordinate copy marker. Register either sampler explicitly.
@@ -183,7 +194,7 @@ Fallback accepts `built_rotamer_counts=counts` aggregated from earlier samplers;
 it retains fixed residues and fills uncovered positions. Coverage includes all
 identities at a position, so a sampled design choice does not reintroduce the
 original identity. `build_rotamers(pose, task, parameter_database.chemical)` assembles their coordinates
-and sampled Dunbrack/explicit amino-acid chi using common native kernels. It returns
+and sampled Dunbrack, explicit amino-acid and NA chi using common native kernels. It returns
 `(pose, rotamer_set)` with atom, residue and pose identities. Register
 `FallbackSampler()` explicitly to preserve fixed and uncovered residues. Input
 conformers are copied exactly; sampled coordinates preserve retained atoms and
@@ -224,9 +235,12 @@ consumes these entries and shares background, one-body and chunked two-body
 accumulation with Torch. Bump pruning and correlated-group collapse remain absent
 from this JAX graph frontend.
 
-Complete packing, CUDA annealing, mutation/design, NA/optH/conjugated samplers and FastRelax
+Complete packing, CUDA annealing, mutation/design, optH/conjugated samplers and FastRelax
 remain unfinished. Float64 JAX assembly preserves dtype; this does not establish
-float64 support for Torch's complete packing pipeline.
+float64 support for Torch's complete packing pipeline. Float32 reconstructed NA
+backbones can differ slightly from exact input copies; sparse NA neighbor
+references use the first conformer, so mixed sampled/current ensembles carry
+that reconstruction error.
 
 For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
 a batch of `ResidueBlock(residue_type, atom_names, coords)` records and explicit

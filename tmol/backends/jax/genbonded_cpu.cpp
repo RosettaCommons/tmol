@@ -5,6 +5,7 @@
 #include "rotamer_backbone_ffi.hh"
 #include "metal_ffi.hh"
 #include "na_torsion_ffi.hh"
+#include "na_sampling_ffi.hh"
 #include "workspace_ffi.hh"
 #include "lk_ball_ffi.hh"
 #include "hbond_ffi.hh"
@@ -64,7 +65,8 @@ struct CpuOps<Device::CPU> : score::common::SerialCPUOperations {
     // for child work; competing calls execute their own work without blocking
     // a pool worker needed by the first call. Keep the uncontended parallel
     // path, including its caller's share of the work.
-    std::unique_lock<std::mutex> dispatch(parallel_workgroups, std::try_to_lock);
+    std::unique_lock<std::mutex> dispatch(
+        parallel_workgroups, std::try_to_lock);
     if (poses <= 1 || !active_pool || active_pool->num_threads() <= 1
         || !dispatch.owns_lock()) {
       for (int pose = 0; pose < poses; ++pose) run(pose);
@@ -989,3 +991,23 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<int64_t>("operation")
         .Attr<int64_t>("extent")
         .Attr<int64_t>("width"));
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_na_sampling,
+    (tmol::jax::run_graph_stage<
+        tmol::jax::NaSamplingStage,
+        double,
+        int64_t,
+        double,
+        double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width")
+        .Attr<double>("temperature")
+        .Attr<int64_t>("sample_syn")
+        .Attr<double>("max_syn_well")
+        .Attr<double>("syn_mean"));
