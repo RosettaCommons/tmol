@@ -23,13 +23,17 @@ def _find_metal_geometries(
     declared_sites=None,
     find_additional=True,
     required_donors=None,
+    require_all_donors=False,
 ):
     table = _metal_table() if table is None else table
     tables = _common._build_canonical_metal_tables(
         canonical_ordering, chemical_db, table
     )
-    if not tables.ion_for_class and not tables.cluster_for_class:
-        _common.validate_required_donors([], required_donors)
+    if (
+        not tables.ion_for_class
+        and not tables.cluster_for_class
+        and not (declared_sites or required_donors or geometries)
+    ):
         return torch.zeros_like(res_types, dtype=torch.int32), []
     variants, assignments = _common.find_metal_geometries(
         canonical_ordering,
@@ -47,6 +51,7 @@ def _find_metal_geometries(
         declared_sites,
         find_additional,
         required_donors,
+        require_all_donors,
     )
     return torch.from_numpy(variants).to(res_types.device), assignments
 
