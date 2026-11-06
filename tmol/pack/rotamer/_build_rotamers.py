@@ -648,13 +648,9 @@ def build_rotamers(
         (n_atoms_total + 1, 9), dtype=torch.float32, device=pbt.device
     )
 
-    conf_dofs_kto[1:] = (
-        pbt.rotamer_kinforest.dofs_ideal[block_type_ind_for_conformer]
-        .reshape((-1, 9))[
-            pbt.atom_is_real[block_type_ind_for_conformer].reshape(-1) != 0
-        ]
-        .to(dtype=torch.float32, device=pbt.device)
-    )
+    conf_dofs_kto[1:] = pbt.rotamer_kinforest.dofs_ideal.reshape(-1, 9)[
+        _t(layout.ideal_indices, torch.int64)
+    ].to(dtype=torch.float32, device=pbt.device)
 
     for i, sampler in enumerate(samplers):
         sampler.fill_dofs_for_samples(
