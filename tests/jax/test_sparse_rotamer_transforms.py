@@ -270,7 +270,7 @@ def test_sparse_preparation_respects_cpu_pose_on_gpu_host(family):
     assert arrays and all(x.device == b.device for x in arrays)
 
 
-def test_sparse_backbone_rejects_unimplemented_dispatch_topologies():
+def test_sparse_backbone_rejects_inconsistent_group_indices():
     import attrs
     from tmol_core.pack.correlation import CorrelatedBlockGroup
     from tests.scientific.molecules import CyclicPeptideCase
@@ -279,11 +279,13 @@ def test_sparse_backbone_rejects_unimplemented_dispatch_topologies():
     b = Execution("jax-cpu")
     b.molecule(CyclicPeptideCase((), (("ALA", "PRO"),), ((2,),)), terms=("ref",))
     e = RotamerExecution(b, family="genbonded")
-    with pytest.raises(NotImplementedError, match="lockstep"):
+    with pytest.raises(ValueError, match="correspondence"):
         prepare_rotamer_backbone(
             b.pose,
             attrs.evolve(
-                e.rotamers, correlated_groups=(CorrelatedBlockGroup(0, (0, 1)),)
+                e.rotamers,
+                correlated_groups=(CorrelatedBlockGroup(0, (0, 1)),),
+                group_for_block=e.rotamers.group_for_block.at[0, 0].set(5),
             ),
             b.parameter_database,
         )

@@ -23,10 +23,6 @@ def _stage(arguments, *, operation, outputs):
 
 def prepare_rotamer_backbone(pose, rotamers, database):
     validate_rotamer_context(pose, rotamers)
-    if rotamers.correlated_groups:
-        raise NotImplementedError(
-            "sparse backbone lockstep candidate filtering is not implemented"
-        )
     with jax.default_device(pose.device):
         parameters = (
             BackboneTorsionEnergyTerm(database).setup_for_pose_stack(pose).parameters
@@ -64,6 +60,7 @@ def prepare_rotamer_backbone(pose, rotamers, database):
         *parameters[3:],
         rotamers.block_ind_for_rot,
         rotamers.block_type_ind_for_rot,
+        rotamers.group_for_block,
     )
     return ("tmol_rotamer_backbone", 2, parameters, 0.0), indices
 

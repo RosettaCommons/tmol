@@ -368,3 +368,12 @@ def test_native_candidate_invariants_without_frameworks(tmp_path, source):
     assert compile_result.returncode == 0, compile_result.stdout + compile_result.stderr
     run = subprocess.run([str(binary)], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
+
+
+@requires_cxx
+def test_dihedral_precision_near_planar_geometry(tmp_path):
+    binary = tmp_path / "dihedral"
+    proc = _compile(HERE / "dihedral_precision.cc", binary, run=True)
+    assert proc.returncode == 0, proc.stderr
+    proc = subprocess.run([str(binary)], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr

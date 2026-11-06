@@ -123,3 +123,7 @@ default task registration, and per-pose acceptance live in `tmol_core.relax`.
 Frontends provide packing/minimization execution and array/metadata selection.
 The public Torch defaults and callback signatures remain available; sharing the
 protocol does not establish equivalence of the frontend optimizers.
+
+Correlated backbone resolution uses the selected matching conformer for a
+third member in the same joint group and scatters its derivatives to that
+member. Independent third varying blocks remain outside pairwise packing.

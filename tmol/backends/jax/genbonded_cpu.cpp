@@ -244,7 +244,7 @@ ffi::Error run_graph_stage(
 // Host setup reuses the execution policy above for topology-only kernels.
 #include "host_pose_ffi.hh"
 
-extern "C" int tmol_jax_native_abi_version() { return 3; }
+extern "C" int tmol_jax_native_abi_version() { return 4; }
 
 namespace tmol::jax {
 template <typename Real, size_t Rank>
