@@ -7,8 +7,8 @@ topology and native CPU/CUDA scoring physics are shared with Torch through
 D residues, variants, nucleic acids, metals and mixed systems retain their input
 identities and parameter context. Existing `tmol` imports remain available.
 
-This is experimental: general structure-file preparation, complete correlated
-packing, full design policies and optimizer parity remain unfinished.
+This is experimental: fragmented-ligand input, complete metadata/Atom37 contracts,
+full design policies and optimizer parity remain unfinished.
 Native molecular scoring and selected packing paths have CPU/CUDA and Torch-free
 package validation; final Metal validation is tracked separately. See the [capability matrix](capability-matrix.json) for
 implemented behavior and evidence rather than assuming full TMol parity.
@@ -19,8 +19,7 @@ objectives and restart policy with JAX differentiation and optimization. MOL2
 `mode="keep"` retains supplied geometry and charges. The returned database keeps
 the caller's subtype and must be used for subsequent pose construction and scoring.
 Optional preparation dependencies are available as `tmol-core[ligand]`.
-CIF preparation currently requires an explicit `atom_array_reader`; automatic
-mixed-structure input uses the shared chemistry/context preparation described below.
+CIF preparation and molecular file input use the common framework-free readers.
 Preparation runs eagerly on the host, with compiled numerical refinement; it is
 not a `jit`/`vmap` frontend. Generated conformers need not follow Torch's optimizer
 trajectory, and matched cold/warm preparation and peak-memory parity are pending.
@@ -436,8 +435,12 @@ performance are still parity gaps.
 parameters. `tmol_jax.pose_stack_from_atom_array(..., return_context=True)`
 accepts prepared ligands, noncanonical/D residues and metal coordination using
 the common normalization and hydrogen policies. Use the returned context for
-scoring. This incremental frontend currently defaults to `no_optH=True`;
-`no_optH=False` and fragmented-ligand imposition raise explicitly. Mature
-default input packing, file loading and complete metadata round trips remain
-parity gaps. Four public CPU cases check physical heavy-atom identity and all
-25 score-channel derivatives; this does not establish complete input parity.
+scoring. Missing sidechains and default OptH use the mature shared sampler
+routing and native packing; `no_optH=True` disables OptH and `packer_seed` makes
+packing reproducible. Fragmented-ligand imposition still raises explicitly.
+`pose_stack_from_file()` reads PDB, CIF, MOL2 and SDF through the common reader;
+optional residue bounds select a half-open range. Complete metadata round trips
+and Atom37 coordinate overrides remain parity gaps. Shared CPU workflows check
+physical atom identity, neutral-terminal hydrogen names, missing HYP/D
+sidechains, file input, and all 25 score-channel derivatives. This does not
+establish complete input or end-to-end speed/memory parity.

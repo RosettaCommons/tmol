@@ -188,3 +188,195 @@ def test_public_atom_array_context_keeps_chemistry_and_input(backend, name):
     np.testing.assert_allclose(
         np.einsum("cpai,pai->cp", gradient, direction), expected, rtol=2e-3, atol=2e-3
     )
+
+
+@pytest.mark.parametrize(
+    "name,missing,no_optH",
+    [
+        (name, False, False)
+        for name in ("noncanonical", "heterochiral_disulfide", "metal")
+    ]
+    + [
+        (name, True, disabled)
+        for name in ("noncanonical", "d_peptide")
+        for disabled in (False, True)
+    ],
+)
+def test_public_input_completion_keeps_backbone_and_scores_all_terms(
+    backend, name, missing, no_optH
+):
+    case = (
+        BACKBONE_CASES["hydroxyproline"]
+        if name == "noncanonical"
+        else DOMAIN_CASES[name] if name == "d_peptide" else CASES[name]
+    )
+    b = backend.molecule(case, terms=())
+    atoms = bonded_array(b, case)
+    if missing:
+        atoms = atoms[
+            ((atoms.res_id != 2) | np.isin(atoms.atom_name, ["N", "CA", "C", "O"]))
+            & ~np.isin(atoms.element, ["H", "D"])
+        ]
+    if b.framework == "jax":
+        import tmol_jax as frontend
+    else:
+        import tmol as frontend
+    pose, context = frontend.pose_stack_from_atom_array(
+        atoms,
+        b.device,
+        param_db=b.parameter_database,
+        no_optH=no_optH,
+        return_context=True,
+        ligand_hydrogens="input",
+        packer_seed=73,
+        missing_density_distance_threshold=0.0,
+    )
+    assert context.parameter_database is b.parameter_database
+    for r in range(pose.max_n_blocks):
+        block = pose.block_type(0, r)
+        start = int(b.numpy(pose.block_coord_offset)[0, r])
+        for atom in ("N", "CA", "C"):
+            index = np.flatnonzero((atoms.res_id == r + 1) & (atoms.atom_name == atom))
+            if len(index):
+                np.testing.assert_allclose(
+                    b.numpy(pose.coords)[0, start + block.atom_to_idx[atom]],
+                    atoms.coord[index[0]],
+                    atol=3e-5,
+                    rtol=3e-5,
+                )
+    b.pose = pose
+    channels, _ = b.use_beta2016()
+    values, gradient = b.channel_values_and_gradients(b.coords())
+    assert (
+        len(channels) == 25
+        and np.isfinite(values).all()
+        and np.isfinite(gradient).all()
+    )
+    direction = np.random.default_rng(73).normal(size=b.coords().shape)
+    direction /= np.linalg.norm(direction)
+    np.testing.assert_allclose(
+        np.einsum("cpai,pai->cp", gradient, direction),
+        b.float64_directional_derivative(b.coords(), direction),
+        rtol=2e-3,
+        atol=2e-3,
+    )
+
+
+@pytest.mark.parametrize("format", ("mol2", "cif"))
+def test_public_file_input_preserves_ligand_context(backend, format):
+    from importlib import import_module
+    from pathlib import Path
+    from tmol_core.io import file_from_atom_array, atom_array_from_file
+
+    b = backend.molecule(DOMAIN_CASES["ligand"], terms=())
+    frontend = import_module("tmol_jax" if b.framework == "jax" else "tmol")
+    ligand = import_module(frontend.__name__ + ".ligand")
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "tmol/tests/data/ligand_test/ligand_ground_truth/mol2/comt_2.mol2"
+    )
+    name = str(atom_array_from_file(source).res_name[0])
+    info = ligand.nonstandard_residue_info_from_mol2(source, res_name=name)
+    db, _ = ligand.prepare_ligand_from_mol2(source, res_name=name, mode="keep")
+    text = (
+        source
+        if format == "mol2"
+        else file_from_atom_array(info.atom_array, format=format)
+    )
+    pose, context = frontend.pose_stack_from_file(
+        text,
+        b.device,
+        format=format,
+        param_db=db,
+        no_optH=True,
+        ligand_hydrogens="input",
+        return_context=True,
+    )
+    assert context.parameter_database is db
+    block = pose.block_type(0, 0)
+    for i, name in enumerate(info.atom_names):
+        if info.elements[i] not in ("H", "D"):
+            np.testing.assert_allclose(
+                b.numpy(pose.coords)[0, block.atom_to_idx[name]],
+                info.coords[i],
+                atol=2e-5,
+                rtol=2e-5,
+            )
+    b.pose, b.parameter_database = pose, db
+    channels, _ = b.use_beta2016()
+    values, gradients = b.channel_values_and_gradients(b.coords())
+    assert (
+        len(channels) == 25
+        and np.isfinite(values).all()
+        and np.isfinite(gradients).all()
+    )
+    assert np.linalg.norm(gradients) > 1e-3
+
+
+@pytest.mark.parametrize("ccd_h_name", (False, True))
+def test_public_input_preserves_supplied_neutral_terminal_hydrogen(backend, ccd_h_name):
+    from importlib import import_module
+    from pathlib import Path
+    from tmol_core.io import atom_array_from_file
+
+    b = backend.molecule(BACKBONE_CASES["canonical"], terms=())
+    atoms = atom_array_from_file(
+        Path(__file__).resolve().parents[2]
+        / "tmol/tests/data/sweep_regressions/stated_terminus_5lh4.pdb"
+    )
+    atoms = atoms[atoms.res_id == 132]
+    if ccd_h_name:
+        atoms.atom_name[atoms.atom_name == "H1"] = "H"
+    original = atoms.coord.copy()
+    frontend = import_module("tmol_jax" if b.framework == "jax" else "tmol")
+    pose = frontend.pose_stack_from_atom_array(
+        atoms,
+        b.device,
+        param_db=b.parameter_database,
+        no_optH=True,
+        ligand_hydrogens="input",
+    )
+    block = pose.block_type(0, 0)
+    assert "nterm_neutral" in block.name and "H3" not in block.atom_to_idx
+    for i, name in enumerate(atoms.atom_name):
+        if not np.isfinite(original[i]).all():
+            continue  # Reader placeholders must be rebuilt, not copied.
+        mapped = "H1" if ccd_h_name and name == "H" else name
+        np.testing.assert_allclose(
+            b.numpy(pose.coords)[0, block.atom_to_idx[mapped]],
+            original[i],
+            atol=1e-5,
+            rtol=1e-5,
+        )
+    np.testing.assert_array_equal(atoms.coord, original)
+    b.pose = pose
+    b.use_beta2016()
+    values, gradients = b.channel_values_and_gradients(b.coords())
+    assert np.isfinite(values).all() and np.isfinite(gradients).all()
+
+
+@pytest.mark.parametrize("invalid", ("unknown_heavy", "duplicate"))
+def test_public_input_rejects_lost_heavy_or_ambiguous_atom_identity(backend, invalid):
+    b = backend.molecule(BACKBONE_CASES["canonical"], terms=())
+    atoms = bonded_array(b, BACKBONE_CASES["canonical"])
+    atoms = atoms[atoms.res_id == 1]
+    if invalid == "unknown_heavy":
+        atoms.atom_name[atoms.atom_name == "CB"] = "XYZ"
+        expected = "Heavy atoms.*XYZ"
+    else:
+        atoms = atoms + atoms[atoms.atom_name == "CA"]
+        expected = "Multiple input atoms map to canonical"
+    if b.framework == "jax":
+        from tmol_jax.io.pose_stack_from_biotite import canonical_form_from_biotite
+
+        def build():
+            return canonical_form_from_biotite(atoms, prepare_input=True)
+
+    else:
+        from tmol.io._pose_stack_from_biotite import canonical_form_from_biotite
+
+        def build():
+            return canonical_form_from_biotite(atoms, b.device)
+
+    with pytest.raises(ValueError, match=expected):
+        build()

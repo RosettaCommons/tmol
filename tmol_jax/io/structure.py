@@ -1,6 +1,7 @@
 """JAX structure input over the common chemistry preparation policy."""
 
 from dataclasses import dataclass
+from functools import cached_property
 from types import SimpleNamespace
 
 import jax
@@ -19,6 +20,35 @@ class AtomArrayBuildContext(PoseBuildContext):
     canonical_ordering: object
     fragment_definitions: tuple = ()
     cut_covalent_partners: frozenset = frozenset()
+
+    @cached_property
+    def _packing_score_function(self):
+        from tmol_jax.score import beta2016_score_function
+
+        return beta2016_score_function(self.parameter_database)
+
+    @cached_property
+    def _opth_score_function(self):
+        from tmol_jax.score import beta2016_score_function, ScoreType
+
+        score = beta2016_score_function(self.parameter_database)
+        from tmol_core.pack.input_completion import OPTH_INVARIANT_TERMS
+
+        for name in OPTH_INVARIANT_TERMS:
+            score.set_weight(ScoreType[name], 0)
+        return score
+
+    @cached_property
+    def _dunbrack_sampler(self):
+        from tmol_jax.pack import DunbrackChiSampler
+
+        return DunbrackChiSampler.from_database(self.parameter_database)
+
+    @cached_property
+    def _na_sampler(self):
+        from tmol_jax.pack import NaChiRotamerSampler
+
+        return NaChiRotamerSampler.from_database(self.parameter_database)
 
 
 _CONTEXTS = WeakIdentityLRU()
@@ -138,7 +168,8 @@ def pose_stack_from_atom_array(
     chem_comp_types=None,
     ligand_seed=None,
     ligand_hydrogens="names",
-    no_optH=True,
+    no_optH=False,
+    packer_seed=None,
     return_context=False,
     missing_density_distance_threshold=2.4,
     find_additional_metal_coordination=True,
@@ -146,19 +177,14 @@ def pose_stack_from_atom_array(
 ):
     """Build a molecular pose using shared normalization, chemistry and input H.
 
-    This incremental frontend currently requires ``no_optH=True`` and complete
-    heavy-atom input or anchored missing-context reconstruction. Default mature
-    OptH/sidechain packing and fragmented-ligand imposition are not implemented
-    here yet and fail explicitly. Pass the returned context's parameter database
-    to scoring functions. Input preparation is eager.
+    Shared sampler policy selects missing-sidechain rebuilding and OptH packing.
+    Fragmented-ligand imposition is not implemented here yet and fails explicitly.
+    Pass the returned context's parameter database to scoring functions. Input
+    preparation is eager.
     """
     from .pose_stack_from_biotite import canonical_form_from_biotite
     from .pose_stack_construction import pose_stack_from_canonical_form
 
-    if not no_optH:
-        raise NotImplementedError(
-            "JAX AtomArray input requires no_optH=True; input packing is not implemented"
-        )
     device = _device(device)
     with jax.default_device(device):
         if context is not None:
@@ -220,12 +246,52 @@ def pose_stack_from_atom_array(
         ):
             if name in kwargs:
                 cf[name] = kwargs.pop(name)
-        pose = pose_stack_from_canonical_form(
+        from .input_completion import input_packer_atoms
+
+        pose, extra = pose_stack_from_canonical_form(
             cf,
             context.packed_block_types,
+            return_block_has_missing_atoms=True,
+            packer_atoms=lambda rt: input_packer_atoms(context)(rt),
             compact_padding=True,
             build_missing_context=True,
             ligand_hydrogens=ligand_hydrogens,
             **kwargs,
         )
+        from .input_completion import complete_input
+
+        pose = complete_input(
+            pose,
+            extra["block_has_missing_atoms"],
+            context,
+            no_optH=no_optH,
+            seed=packer_seed,
+        )
         return (pose, context) if return_context else pose
+
+
+def pose_stack_from_file(
+    source,
+    device=None,
+    format=None,
+    *,
+    model=1,
+    assembly_id=None,
+    residue_start=None,
+    residue_end=None,
+    **kwargs,
+):
+    """Read molecular files with the common reader and build a JAX pose.
+
+    Remaining options are passed to :func:`pose_stack_from_atom_array`.
+    Residue bounds select a half-open range using the file's physical order.
+    """
+    import biotite.structure as struc
+    from tmol_core.io import atom_array_from_file
+
+    array = atom_array_from_file(source, format, model=model, assembly_id=assembly_id)
+    if residue_start is not None or residue_end is not None:
+        boundaries = struc.get_residue_starts(array, add_exclusive_stop=True)
+        start, stop, _ = slice(residue_start, residue_end).indices(len(boundaries) - 1)
+        array = array[boundaries[start] : boundaries[stop]]
+    return pose_stack_from_atom_array(array, device, **kwargs)

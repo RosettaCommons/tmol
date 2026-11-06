@@ -41,6 +41,13 @@ def with_jax_execution(function):
             from . import _conformer_generation
 
             bound.arguments["conformer_execution"] = _conformer_generation
+        if (
+            "atom_array_reader" in sig.parameters
+            and bound.arguments.get("atom_array_reader") is None
+        ):
+            from tmol_core.io import atom_array_from_file
+
+            bound.arguments["atom_array_reader"] = atom_array_from_file
         return _jax_ordering(function(*bound.args, **bound.kwargs))
 
     return call

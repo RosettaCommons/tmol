@@ -46,12 +46,42 @@ def canonical_form_from_biotite(
     models = list(atoms) if isinstance(atoms, struc.AtomArrayStack) else [atoms]
     if not models:
         raise ValueError("structure contains no models")
+    prepared_atom_indices = None
+    if prepare_input:
+        from tmol_core.io.canonical_atom_mapping import (
+            map_atoms_to_canonical,
+            map_neutral_terminal_hydrogens,
+        )
+        from tmol_core.io.protonation_input import PROTONATION_VARIANT
+
+        template = models[0]
+        residue_indices = struc.get_all_residue_positions(template)
+        valid, indices, _ = map_atoms_to_canonical(
+            co,
+            residue_indices,
+            template.res_name,
+            template.atom_name,
+            template.element,
+        )
+        if PROTONATION_VARIANT in template.get_annotation_categories():
+            indices = map_neutral_terminal_hydrogens(
+                co,
+                residue_indices,
+                template.res_name,
+                template.atom_name,
+                template.get_annotation(PROTONATION_VARIANT),
+                valid,
+                indices,
+            )
+        prepared_atom_indices = np.full(len(template), -1, np.int64)
+        prepared_atom_indices[valid] = indices
     mapped = [
         _canonical_form_from_records(
             _records_from_biotite(model),
             co,
             missing_density_distance_threshold=0,
             return_atom_mapping=True,
+            prepared_atom_indices=prepared_atom_indices,
         )
         for model in models
     ]

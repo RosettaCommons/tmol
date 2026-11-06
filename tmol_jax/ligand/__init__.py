@@ -1,6 +1,6 @@
 """Shared ligand preparation with JAX refinement and parameter context.
 
-CIF entry points currently require an explicit framework-free atom-array reader.
+CIF entry points use the common framework-free atom-array reader.
 Preparation is host orchestration; its numerical refinement executes through JAX.
 """
 

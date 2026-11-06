@@ -91,6 +91,7 @@ def _canonical_form_from_records(
     *,
     missing_density_distance_threshold=2.4,
     return_atom_mapping=False,
+    prepared_atom_indices=None,
 ):
     atom_names = records["atom_name"]
     res_names = records["res_name"]
@@ -193,6 +194,8 @@ def _canonical_form_from_records(
         residue_initialised[r] = True
 
     canonical_atom_indices = np.full(n_records, -1, np.int64)
+    if prepared_atom_indices is not None:
+        keep_atom &= prepared_atom_indices >= 0
     # Now splat atoms into their canonical slots.
     for i in range(n_records):
         if not keep_atom[i]:
@@ -200,14 +203,18 @@ def _canonical_form_from_records(
         r = int(res_ind_per_atom[i])
         resn = str(res_names[i]).strip()
         atom_name = str(atom_names[i]).strip()
-        aind = canonical_ordering.atom_index(resn, atom_name)
+        aind = (
+            canonical_ordering.atom_index(resn, atom_name)
+            if prepared_atom_indices is None
+            else prepared_atom_indices[i]
+        )
         if aind < 0:
             raise ValueError(f"{resn} atom {atom_name} is not in the chemical atom set")
         canonical_atom_indices[i] = aind
         coords[0, r, aind, 0] = coords_raw[i, 0]
         coords[0, r, aind, 1] = coords_raw[i, 1]
         coords[0, r, aind, 2] = coords_raw[i, 2]
-        atom_present[0, r, aind] = True
+        atom_present[0, r, aind] = np.isfinite(coords_raw[i]).all()
         occupancy_arr[0, r, aind] = float(occupancy_raw[i])
         b_factor_arr[0, r, aind] = float(b_factor_raw[i])
 

@@ -286,11 +286,11 @@
     {
       "domain": "public_atom_array_context",
       "torch": "supported_including_default_input_packing_and_fragments",
-      "jax": "incremental_shared_preparation_no_opth_or_fragments",
+      "jax": "shared_preparation_default_input_packing_file_loading",
       "repro_fixture": [
         "tests/scientific/test_atom_array_input.py"
       ],
-      "implementation_status": "Shared normalization, hydrogen/protonation, metal mapping and reusable custom parameter context. Four physical-heavy-identity and 25-channel derivative CPU cases pass both frameworks. Default OptH/sidechain packing, fragmented imposition, Atom37 and complete metadata round trips remain parity gaps."
+      "implementation_status": "Shared normalization, hydrogen/protonation, strict heavy atom identity, neutral-terminal mapping and reusable custom parameter context. Default missing-sidechain/OptH routing uses shared policy and native packing; noncanonical HYP and D missing-sidechain cases, ligand MOL2/CIF and metal/disulfide CPU workflows have finite full25E/G plus derivative and identity checks in both frameworks. Fragmented imposition, Atom37 and complete metadata round trips remain parity gaps. New input packing is not yet CUDA/package validated."
     }
   ],
   "validation": "PR629 remains draft. Matching c378 ABI3 CPU wheels pass installed molecular checks with Torch absent and source/native hash verification; H200 affected JAX checks pass137 cases. New increments require their own matching package/CUDA gates. Mature e29 complete warm workflow parity remains unresolved; constructor-only or earlier-JAX speedups do not establish readiness.",

@@ -154,6 +154,22 @@ def _canonical_coordinates(cf, co):
     return coords, present
 
 
+def _input_missing_nonleaf(result, rows, masks, pbt, leaves, packer_atoms, requested):
+    if not requested:
+        return None
+    missing_nonleaf = np.zeros(result.block_type_ind.shape, bool)
+    for p, row in enumerate(rows):
+        for r, kind in enumerate(row):
+            mask = masks[p][r]
+            missing = ~mask & ~leaves[kind, : len(mask)]
+            # Context completion resolves non-packer atoms below. Preserve
+            # original missing atoms reserved for sidechain sampling.
+            if missing.any() and packer_atoms is not None:
+                missing &= packer_atoms(pbt.active_block_types[kind])
+            missing_nonleaf[p, r] = np.any(missing)
+    return missing_nonleaf
+
+
 def pose_stack_from_canonical_form(
     canonical_form_dict,
     packed_block_types,
@@ -164,6 +180,8 @@ def pose_stack_from_canonical_form(
     build_missing_context=False,
     ligand_hydrogens=None,
     require_all_metal_donors=None,
+    return_block_has_missing_atoms=False,
+    packer_atoms=None,
 ):
     """Select chemical variants and build a pose from canonical atom identities.
 
@@ -351,9 +369,22 @@ def pose_stack_from_canonical_form(
                 _require_rebuildable(
                     pbt.active_block_types[kind], masks[p][r], leaves[kind]
                 )
+    missing_nonleaf = _input_missing_nonleaf(
+        result, rows, masks, pbt, leaves, packer_atoms, return_block_has_missing_atoms
+    )
     masks = apply_input_policy(result, masks, mode)
     result = complete_missing_atoms(result, masks, build_context=build_missing_context)
-    return result.replace(pdb_info=attrs.evolve(result.pdb_info, chain_id=authors))
+    result = result.replace(pdb_info=attrs.evolve(result.pdb_info, chain_id=authors))
+    import jax
+
+    return (
+        (
+            result,
+            {"block_has_missing_atoms": jax.device_put(missing_nonleaf, result.device)},
+        )
+        if return_block_has_missing_atoms
+        else result
+    )
 
 
 __all__ = ["pose_stack_from_canonical_form"]

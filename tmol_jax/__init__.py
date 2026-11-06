@@ -49,7 +49,11 @@ __all__ = [
 ]
 
 
-_STRUCTURE_INPUT = {"build_context_from_atom_array", "pose_stack_from_atom_array"}
+_STRUCTURE_INPUT = {
+    "build_context_from_atom_array",
+    "pose_stack_from_atom_array",
+    "pose_stack_from_file",
+}
 __all__ += sorted(_STRUCTURE_INPUT)
 
 
