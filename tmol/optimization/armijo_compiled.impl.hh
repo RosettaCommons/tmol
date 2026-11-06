@@ -1,21 +1,10 @@
 #pragma once
 
-#include <cmath>
-
 #include <tmol/optimization/armijo_compiled.hh>
-#include <tmol/score/common/diamond_macros.hh>
-#include <tmol/score/common/launch_box_macros.hh>
+#include <tmol/optimization/armijo.hh>
 
 namespace tmol {
 namespace optimization {
-
-// Keep these values synchronized with _lbfgs_armijo.py.  The kernels preserve
-// the Python implementation's sequential state transitions while replacing
-// each group of elementwise tensor expressions with one launch.
-constexpr int64_t LS_DONE = 0;
-constexpr int64_t LS_INCREASE = 1;
-constexpr int64_t LS_BACKTRACK = 2;
-constexpr int64_t LS_FAILED = 3;
 
 template <
     template <tmol::Device> class DeviceDispatch,
@@ -29,11 +18,7 @@ TPack<Real, 1, D> ArmijoCompiledDispatch<DeviceDispatch, D, Real>::start(
   auto alpha_t = TPack<Real, 1, D>::empty({n_segments});
   auto alpha = alpha_t.view;
 
-  LAUNCH_BOX_128;
-  DeviceDispatch<D>::template forall<launch_t>(
-      mgr, n_segments, [=] TMOL_DEVICE_FUNC(int i) {
-        alpha[i] = searching[i] ? alpha0[i] : Real(0);
-      });
+  launch_armijo_start<DeviceDispatch, D, Real>(mgr, searching, alpha0, alpha);
   return alpha_t;
 }
 
@@ -65,24 +50,19 @@ ArmijoCompiledDispatch<DeviceDispatch, D, Real>::classify(
   auto status = status_t.view;
   auto active = active_t.view;
 
-  LAUNCH_BOX_128;
-  DeviceDispatch<D>::template forall<launch_t>(
-      mgr, n_segments, [=] TMOL_DEVICE_FUNC(int i) {
-        bool const linear =
-            phi[i] <= phi0[i] + alpha[i] * sigma_increase * derphi0[i];
-        bool const sufficient =
-            phi[i] <= phi0[i] + alpha[i] * sigma_decrease * derphi0[i];
-        bool const took = searching[i] && (linear || sufficient);
-
-        accepted[i] = took ? alpha[i] : Real(0);
-        phi_accepted[i] = took ? phi[i] : phi0[i];
-        int64_t const status_i = !searching[i] ? LS_DONE
-                                 : linear      ? LS_INCREASE
-                                 : !sufficient ? LS_BACKTRACK
-                                               : LS_DONE;
-        status[i] = status_i;
-        active[i] = status_i == LS_INCREASE || status_i == LS_BACKTRACK;
-      });
+  launch_armijo_classify<DeviceDispatch, D, Real>(
+      mgr,
+      searching,
+      alpha,
+      phi,
+      phi0,
+      derphi0,
+      sigma_increase,
+      sigma_decrease,
+      accepted,
+      phi_accepted,
+      status,
+      active);
   return {accepted_t, phi_accepted_t, status_t, active_t};
 }
 
@@ -100,13 +80,8 @@ TPack<Real, 1, D> ArmijoCompiledDispatch<DeviceDispatch, D, Real>::trial(
   auto result_t = TPack<Real, 1, D>::empty({n_segments});
   auto result = result_t.view;
 
-  LAUNCH_BOX_128;
-  DeviceDispatch<D>::template forall<launch_t>(
-      mgr, n_segments, [=] TMOL_DEVICE_FUNC(int i) {
-        result[i] = status[i] == LS_INCREASE    ? alpha[i] / factor
-                    : status[i] == LS_BACKTRACK ? alpha[i] * factor * factor
-                                                : accepted[i];
-      });
+  launch_armijo_trial<DeviceDispatch, D, Real>(
+      mgr, status, alpha, accepted, factor, result);
   return result_t;
 }
 
@@ -144,47 +119,23 @@ ArmijoCompiledDispatch<DeviceDispatch, D, Real>::update(
   auto failed = failed_t.view;
   auto active = active_t.view;
 
-  LAUNCH_BOX_128;
-  DeviceDispatch<D>::template forall<launch_t>(
-      mgr, n_segments, [=] TMOL_DEVICE_FUNC(int i) {
-        Real accepted_i = accepted[i];
-        Real phi_accepted_i = phi_accepted[i];
-        int64_t status_i = status[i];
-        bool failed_i = false;
-
-        if (status_i == LS_INCREASE) {
-          if (phi_trial[i] < phi[i]) {
-            accepted_i = trial[i];
-            phi_accepted_i = phi_trial[i];
-          }
-          status_i = LS_DONE;
-        } else if (status_i == LS_BACKTRACK) {
-          bool const armijo =
-              phi_trial[i] <= phi0[i] + trial[i] * sigma_decrease * derphi0[i];
-          if (armijo) {
-            accepted_i = trial[i];
-            phi_accepted_i = phi_trial[i];
-            status_i = LS_DONE;
-          } else if (trial[i] < minstep) {
-            if (phi_trial[i] < phi0[i]) {
-              accepted_i = trial[i];
-              phi_accepted_i = phi_trial[i];
-              status_i = LS_DONE;
-            } else {
-              accepted_i = Real(0);
-              phi_accepted_i = phi0[i];
-              status_i = LS_FAILED;
-              failed_i = true;
-            }
-          }
-        }
-
-        next_accepted[i] = accepted_i;
-        next_phi_accepted[i] = phi_accepted_i;
-        next_status[i] = status_i;
-        failed[i] = failed_i;
-        active[i] = status_i == LS_INCREASE || status_i == LS_BACKTRACK;
-      });
+  launch_armijo_update<DeviceDispatch, D, Real>(
+      mgr,
+      status,
+      trial,
+      accepted,
+      phi_accepted,
+      phi,
+      phi_trial,
+      phi0,
+      derphi0,
+      sigma_decrease,
+      minstep,
+      next_accepted,
+      next_phi_accepted,
+      next_status,
+      failed,
+      active);
   return {
       next_accepted_t, next_phi_accepted_t, next_status_t, failed_t, active_t};
 }
@@ -208,20 +159,8 @@ ArmijoCompiledDispatch<DeviceDispatch, D, Real>::finalize(
   auto step = step_t.view;
   auto failed = failed_t.view;
 
-  LAUNCH_BOX_128;
-  DeviceDispatch<D>::template forall<launch_t>(
-      mgr, n_segments, [=] TMOL_DEVICE_FUNC(int i) {
-        bool const failed_i = status[i] == LS_FAILED;
-        Real selected = accepted[i];
-        if (failed_i) {
-          Real magnitude = -derphi0[i];
-          magnitude = magnitude < minstep ? minstep : magnitude;
-          Real retry = Real(1) / sqrt(magnitude);
-          selected = retry < Real(1) ? retry : Real(1);
-        }
-        step[i] = searching[i] ? selected : start[i];
-        failed[i] = failed_i;
-      });
+  launch_armijo_finalize<DeviceDispatch, D, Real>(
+      mgr, status, derphi0, accepted, start, searching, minstep, step, failed);
   return {step_t, failed_t};
 }
 
