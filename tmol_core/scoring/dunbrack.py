@@ -41,6 +41,18 @@ def _concatenate_padded(arrays):
     return result
 
 
+def _negative_log_probabilities(probabilities):
+    """Round the log once to the table dtype before fitting spline coefficients.
+
+    Float32 vector log implementations can differ by an ulp. Amplification by
+    the spline prefilter makes that difference visible even in double scoring.
+    Evaluate in double, then retain the library's original storage precision.
+    """
+    return -numpy.log(probabilities.astype(numpy.float64, copy=False)).astype(
+        probabilities.dtype
+    )
+
+
 def prepare_dunbrack_tables(database, fit_coefficients):
     """Prepare scoring, sampling, topology and validated residue lookup tables."""
     return _DunbrackBuilder(fit_coefficients).prepare(database)
@@ -256,7 +268,7 @@ class _DunbrackBuilder:
         for table in rotameric_prob_tables:
             table[table == 0] = 1e-6
         rotameric_neglnprob_tables = [
-            -1 * numpy.log(table) for table in rotameric_prob_tables
+            _negative_log_probabilities(table) for table in rotameric_prob_tables
         ]
 
         prob_coeffs, prob_coeffs_sizes, prob_coeffs_strides = self._pack_coefficients(
@@ -529,7 +541,7 @@ class _DunbrackBuilder:
         # the neglnprobs
         for table in semirotameric_prob_tables:
             table[table == 0] = 1e-6
-            table[:] = -1 * numpy.log(table)
+            table[:] = _negative_log_probabilities(table)
 
         return self._pack_coefficients(semirotameric_prob_tables, ndim=3)
 

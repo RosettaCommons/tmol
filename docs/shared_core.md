@@ -178,3 +178,8 @@ default task registration, and per-pose acceptance live in `tmol_core.relax`.
 Frontends provide packing/minimization execution and array/metadata selection.
 The public Torch defaults and callback signatures remain available; sharing the
 protocol does not establish equivalence of the frontend optimizers.
+
+Dunbrack probability tables evaluate logarithms in double precision before
+rounding to the library's storage dtype and applying the shared spline prefilter.
+Both frontends consume those same tables. Historical float32 framework logarithms
+can round differently; this does not change table dtypes or spline conventions.
