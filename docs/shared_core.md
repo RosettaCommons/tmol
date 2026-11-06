@@ -109,3 +109,12 @@ sizes are checked. Empty block bounds retain the mature sentinel `1234`.
 The allocating Torch controller calls these same stages. The two size-discovery
 barriers remain part of the execution contract; a frontend must implement them
 before claiming support for this packing workflow.
+
+Sparse backbone, disulfide, metal and constraint preparation accepts optional
+per-block correlation groups. Empty metadata preserves independent sampling;
+equal nonnegative IDs select matching local conformer indices. Callers must
+validate equal active counts and correspondence with the shared correlation
+plan. Native preparation preserves connection identity and separate metal bridge
+contributions. This does not resolve backbone dependencies on a third sampled
+block or the directed bonds of a two-residue cycle; those workflow boundaries
+remain explicit until their complete energies and derivatives are validated.

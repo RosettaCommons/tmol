@@ -4,19 +4,22 @@
 #include <tmol/utility/tensor/TensorAccessor.h>
 #include <tmol/utility/tensor/context_manager.hh>
 #include <tmol/score/common/launch_box_macros.hh>
+#include <tmol/score/common/rotamer_correlation.hh>
 namespace tmol::score::constraint::potentials {
 using tmol::portable::Vec;
 // Structural inputs only. Parameters and custom callbacks stay with the
 // frontend, which gathers their rows through the returned source indices.
 // Expanded ordering preserves the mature two-body rows followed by one-body
 // rows; the first block's local conformer index advances fastest. This entry
-// does not add support for three-body constraints or coupled lockstep groups.
+// does not add support for three-body constraints. Nonempty group metadata
+// requires validated equal active conformer counts within each coupled group.
 template <typename Int, tmol::Device D>
 struct ConstraintCandidateTopology {
   TView<Vec<Int, 3>, 2, D> atoms;
   TView<Int, 1, D> n_unique, coordinate_offsets;
   TView<Vec<Int, 3>, 1, D> unique_blocks;
   TView<Int, 2, D> n_conformers, first_conformer;
+  TView<Int, 2, D> lockstep_group_for_block;
 };
 template <template <tmol::Device> class Ops, tmol::Device D, typename Int>
 void constraint_candidate_count_native(
@@ -32,7 +35,12 @@ void constraint_candidate_count_native(
     int64_t total = 0;
     if ((phase == 0 && body == 2) || (phase == 1 && body == 1)) {
       total = ctx.n_conformers[blocks[0]][blocks[1]];
-      if (body == 2) total *= ctx.n_conformers[blocks[0]][blocks[2]];
+      if (body == 2) {
+        Int const other = ctx.n_conformers[blocks[0]][blocks[2]];
+        bool const coupled = common::same_rotamer_group(
+            ctx.lockstep_group_for_block, blocks[0], blocks[1], blocks[2]);
+        total *= coupled && other > 0 ? 1 : other;
+      }
     }
     counts[row] = total;
   };
@@ -85,11 +93,15 @@ void constraint_candidate_fill_native(
     int64_t const local = int64_t(output) - offsets[owner];
     bool const two = ctx.n_unique[source] == 2;
     Int const n_first = ctx.n_conformers[blocks[0]][blocks[1]];
+    bool const coupled =
+        two
+        && common::same_rotamer_group(
+            ctx.lockstep_group_for_block, blocks[0], blocks[1], blocks[2]);
     Int const first = ctx.first_conformer[blocks[0]][blocks[1]]
-                      + (two ? local % n_first : local);
-    Int const second =
-        two ? ctx.first_conformer[blocks[0]][blocks[2]] + local / n_first
-            : first;
+                      + (two && !coupled ? local % n_first : local);
+    Int const second = two ? ctx.first_conformer[blocks[0]][blocks[2]]
+                                 + (coupled ? local : local / n_first)
+                           : first;
     sparse_indices[output] = Vec<Index, 3>{blocks[0], first, second};
     for (int a = 0; a < 4; ++a) {
       auto const atom = ctx.atoms[source][a];
