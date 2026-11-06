@@ -163,7 +163,7 @@ def pose_stack_from_atom37(
     res_not_connected: Optional[torch.Tensor] = None,
     no_optH: bool = True,
     **kwargs: object,
-) -> PoseStack:
+) -> PoseStack | tuple[PoseStack, dict] | tuple[PoseStack, PoseBuildContext]:
     """Build a differentiable PoseStack from Atom37 tensors alone.
 
     One path for canonical and noncanonical poses. Residue identity comes from
@@ -187,7 +187,8 @@ def pose_stack_from_atom37(
       no_optH: Preserve finite input hydrogens rather than optimizing them.
 
     Returns:
-      A pose whose coordinates carry gradients back to ``atom37_coords``.
+      A pose whose coordinates carry gradients back to ``atom37_coords``,
+      optionally paired with canonical metadata or the build context.
 
     Examples:
       >>> context = build_context_from_atom_array(array, device)
