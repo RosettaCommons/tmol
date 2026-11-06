@@ -12,9 +12,9 @@ from tmol.io._canonical_ordering import CanonicalOrdering
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
 
+from tmol_core.io.atomworks_encoding import ATOMWORKS_ATOM37_NAMES  # noqa: F401
 from tmol_core.io.atomworks_encoding import (
     ATOMWORKS_NAME3S,
-    ATOMWORKS_ATOM37_NAMES,  # noqa: F401 - compatibility import
     _ATOMWORKS_MIN_PROTEIN_IDX,
     _ATOMWORKS_MAX_PROTEIN_IDX,
     atomworks_restype_map,
