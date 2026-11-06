@@ -242,32 +242,6 @@ ffi::Error run_graph_stage(
 #include "host_pose_ffi.hh"
 
 extern "C" int tmol_jax_native_abi_version() { return 2; }
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_genbonded,
-    tmol::jax::run<tmol::jax::GenBondedKernel>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_cartbonded,
-    tmol::jax::run<tmol::jax::CartBondedKernel>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_backbone_torsion,
-    tmol::jax::run<tmol::jax::BackboneTorsionKernel>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
 
 namespace tmol::jax {
 template <typename Real, size_t Rank>
@@ -329,35 +303,6 @@ extern "C" int tmol_bspline_coefficients(
   }
 }
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_metal_coordination,
-    tmol::jax::run<tmol::jax::MetalCoordinationKernel>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_na_torsion,
-    (tmol::jax::run<tmol::jax::NaTorsionKernel, double, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets()
-        .Attr<double>("pucker_temperature")
-        .Attr<double>("bin_blend_sdev"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_dunbrack,
-    tmol::jax::run<tmol::jax::DunbrackKernel>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
-
 extern "C" uint64_t tmol_dunbrack_workspace_bytes(
     int64_t rots, int64_t dihedrals, int bits, int derivative) {
   try {
@@ -373,16 +318,6 @@ extern "C" uint64_t tmol_dunbrack_workspace_bytes(
   }
   return std::numeric_limits<uint64_t>::max();
 }
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_nonbonded,
-    (tmol::jax::run<tmol::jax::NonbondedKernel<false>, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets()
-        .Attr<double>("reach"));
 
 extern "C" uint64_t tmol_nonbonded_workspace_bytes(
     int64_t poses, int64_t blocks, int bits, int) {
@@ -400,16 +335,6 @@ extern "C" uint64_t tmol_nonbonded_workspace_bytes(
   return std::numeric_limits<uint64_t>::max();
 }
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_nonbonded_weighted,
-    (tmol::jax::run<tmol::jax::NonbondedKernel<true>, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets()
-        .Attr<double>("reach"));
-
 extern "C" uint64_t tmol_nonbonded_weighted_workspace_bytes(
     int64_t poses, int64_t blocks, int bits, int) {
   try {
@@ -425,34 +350,6 @@ extern "C" uint64_t tmol_nonbonded_weighted_workspace_bytes(
   }
   return std::numeric_limits<uint64_t>::max();
 }
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_constraint_torsion,
-    tmol::jax::run<tmol::jax::ConstraintTorsionKernel>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_precise_torsion,
-    tmol::jax::run<tmol::jax::PreciseTorsionKernel>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_ljlk,
-    (tmol::jax::run<tmol::jax::IndependentNonbondedKernel<false>, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets()
-        .Attr<double>("reach"));
 
 extern "C" uint64_t tmol_ljlk_workspace_bytes(
     int64_t poses, int64_t blocks, int bits, int) {
@@ -470,16 +367,6 @@ extern "C" uint64_t tmol_ljlk_workspace_bytes(
   }
 }
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_elec,
-    (tmol::jax::run<tmol::jax::IndependentNonbondedKernel<true>, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets()
-        .Attr<double>("reach"));
-
 extern "C" uint64_t tmol_elec_workspace_bytes(
     int64_t poses, int64_t blocks, int bits, int) {
   try {
@@ -495,15 +382,6 @@ extern "C" uint64_t tmol_elec_workspace_bytes(
     return std::numeric_limits<uint64_t>::max();
   }
 }
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_inverse_kinematics,
-    tmol::jax::run<tmol::jax::InverseKinematicsKernel>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
 
 extern "C" uint64_t tmol_inverse_kinematics_workspace_bytes(
     int64_t nodes, int bits, int) {
@@ -548,16 +426,6 @@ extern "C" uint64_t tmol_kinematic_scan_workspace_bytes(
       count, generations, generation_count, bits, derivative);
 }
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_lk_ball,
-    (tmol::jax::run<tmol::jax::LKBallKernel, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets()
-        .Attr<double>("reach"));
-
 extern "C" uint64_t tmol_lk_ball_workspace_bytes(
     int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
   try {
@@ -574,24 +442,6 @@ extern "C" uint64_t tmol_lk_ball_workspace_bytes(
   }
 }
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_disulfide,
-    tmol::jax::run<tmol::jax::DisulfideKernel>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_hbond,
-    tmol::jax::run<tmol::jax::HBondKernel>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
-
 extern "C" uint64_t tmol_hbond_workspace_bytes(
     int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
   try {
@@ -605,16 +455,6 @@ extern "C" uint64_t tmol_hbond_workspace_bytes(
     return std::numeric_limits<uint64_t>::max();
   }
 }
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_lk_ball_weighted,
-    (tmol::jax::run<tmol::jax::LKBallWeightedKernel, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets()
-        .Attr<double>("reach"));
 
 extern "C" uint64_t tmol_lk_ball_weighted_workspace_bytes(
     int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
@@ -633,45 +473,6 @@ extern "C" uint64_t tmol_lk_ball_weighted_workspace_bytes(
 }
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_copy_conformer_dofs,
-    (tmol::jax::run<tmol::jax::CopyConformerDofsKernel, int64_t>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets()
-        .Attr<int64_t>("sampler"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_assign_conformer_chi,
-    tmol::jax::run<tmol::jax::AssignConformerChiKernel>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_copy_conformer_rows,
-    (tmol::jax::run<tmol::jax::CopyConformerRowsKernel, int64_t, int64_t>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets()
-        .Attr<int64_t>("n_rows")
-        .Attr<int64_t>("root_shift"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_correct_conformer_chi,
-    tmol::jax::run<tmol::jax::CorrectConformerChiKernel>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_anneal_cpu,
     tmol::jax::anneal_cpu,
     xla::ffi::Ffi::Bind()
@@ -679,66 +480,6 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .RemainingRets()
         .Attr<int64_t>("chunk_size")
         .Attr<int64_t>("seed"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_graph_topology,
-    tmol::jax::run_graph_stage<tmol::jax::GraphTopologyStage>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_graph_retention,
-    tmol::jax::run_graph_stage<tmol::jax::GraphRetentionStage>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_rotamer_dispatch,
-    (tmol::jax::run_graph_stage<tmol::jax::RotamerDispatchStage, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width")
-        .Attr<double>("reach"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_rotamer_elec,
-    (tmol::jax::
-         run_graph_stage<tmol::jax::RotamerNonbondedStage<true>, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width")
-        .Attr<double>("reach"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_rotamer_ljlk,
-    (tmol::jax::
-         run_graph_stage<tmol::jax::RotamerNonbondedStage<false>, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width")
-        .Attr<double>("reach"));
 
 extern "C" uint64_t tmol_graph_prefix_workspace_bytes(
     int64_t count, int bits, int) {
@@ -751,38 +492,6 @@ extern "C" uint64_t tmol_graph_prefix_workspace_bytes(
     return std::numeric_limits<uint64_t>::max();
   }
 }
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_graph_prefix,
-    tmol::jax::run<tmol::jax::GraphPrefixKernel>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_rotamer_dunbrack,
-    tmol::jax::run_graph_stage<tmol::jax::RotamerDunbrackStage>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_rotamer_lk_ball,
-    (tmol::jax::run_graph_stage<tmol::jax::RotamerLKBallStage, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width")
-        .Attr<double>("reach"));
 
 extern "C" uint64_t tmol_rotamer_lk_ball_workspace_bytes(
     int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
@@ -799,52 +508,6 @@ extern "C" uint64_t tmol_rotamer_lk_ball_workspace_bytes(
     return std::numeric_limits<uint64_t>::max();
   }
 }
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_load_balance,
-    tmol::jax::run_graph_stage<tmol::jax::LoadBalanceStage>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_connected_rotamer_dispatch,
-    tmol::jax::run_graph_stage<tmol::jax::ConnectedRotamerStage>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_rotamer_genbonded,
-    (tmol::jax::run_graph_stage<tmol::jax::RotamerGenBondedStage, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width")
-        .Attr<double>("reach"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_rotamer_hbond,
-    (tmol::jax::run_graph_stage<tmol::jax::RotamerHBondStage, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width")
-        .Attr<double>("reach"));
 
 extern "C" double tmol_hbond_neighbor_reach() {
   return tmol::score::hbond::potentials::hbond_neighbor_reach();
@@ -865,205 +528,4 @@ extern "C" uint64_t tmol_rotamer_hbond_workspace_bytes(
   }
 }
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_rotamer_cartbonded,
-    (tmol::jax::run_graph_stage<tmol::jax::RotamerCartBondedStage, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width")
-        .Attr<double>("reach"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_rotamer_na_torsion,
-    (tmol::jax::
-         run_graph_stage<tmol::jax::RotamerNaTorsionStage, double, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width")
-        .Attr<double>("pucker_temperature")
-        .Attr<double>("bin_blend_sdev"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_na_rotamer_topology,
-    tmol::jax::run_graph_stage<tmol::jax::NaRotamerTopologyStage>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_backbone_rotamer_topology,
-    tmol::jax::run_graph_stage<tmol::jax::BackboneRotamerTopologyStage>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_rotamer_backbone,
-    (tmol::jax::run_graph_stage<tmol::jax::RotamerBackboneStage, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width")
-        .Attr<double>("reach"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_graph_maximum_prefix,
-    tmol::jax::run<tmol::jax::GraphMaximumKernel>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .Ret<xla::ffi::AnyBuffer>()
-        .RemainingRets());
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_disulfide_rotamer_topology,
-    tmol::jax::run_graph_stage<tmol::jax::ConnectionTopologyStage<false>>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_metal_rotamer_topology,
-    tmol::jax::run_graph_stage<tmol::jax::ConnectionTopologyStage<true>>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_rotamer_disulfide,
-    (tmol::jax::
-         run_graph_stage<tmol::jax::RotamerConnectionStage<false>, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width")
-        .Attr<double>("reach"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_rotamer_metal,
-    (tmol::jax::
-         run_graph_stage<tmol::jax::RotamerConnectionStage<true>, double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width")
-        .Attr<double>("reach"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_constraint_rotamer_topology,
-    tmol::jax::run_graph_stage<tmol::jax::ConstraintTopologyStage>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_graph_entries,
-    tmol::jax::run_graph_stage<tmol::jax::GraphEntryStage>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_na_sampling,
-    (tmol::jax::run_graph_stage<
-        tmol::jax::NaSamplingStage,
-        double,
-        int64_t,
-        double,
-        double>),
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width")
-        .Attr<double>("temperature")
-        .Attr<int64_t>("sample_syn")
-        .Attr<double>("max_syn_well")
-        .Attr<double>("syn_mean"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_pose_imposition,
-    tmol::jax::run_graph_stage<tmol::jax::PoseImpositionStage>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_conformer_copy_plan,
-    tmol::jax::run_graph_stage<tmol::jax::ConformerCopyPlanStage>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_conformer_indices,
-    tmol::jax::run_graph_stage<tmol::jax::ConformerIndexStage>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    tmol_opth_sampling,
-    tmol::jax::run_graph_stage<tmol::jax::OptHSamplingStage>,
-    xla::ffi::Ffi::Bind()
-        .Ctx<xla::ffi::ThreadPool>()
-        .RemainingArgs()
-        .RemainingRets()
-        .Attr<int64_t>("operation")
-        .Attr<int64_t>("extent")
-        .Attr<int64_t>("width"));
+#include "ffi_handlers.hh"
