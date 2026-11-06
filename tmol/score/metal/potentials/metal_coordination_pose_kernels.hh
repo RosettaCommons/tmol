@@ -69,7 +69,7 @@ TMOL_DEVICE_FUNC void for_each_bridge(
       if (key < 0) {
         continue;
       }
-      int const donor_atom = conn_atom[ptype][pconn];
+      Int const donor_atom = conn_atom[ptype][pconn];
       for (int c = 0; c < max_n_conns; c++) {
         if (c == pconn || conn_atom[ptype][c] != donor_atom) {
           continue;
@@ -100,7 +100,7 @@ TMOL_DEVICE_FUNC void for_each_bridge(
         continue;
       }
       for (int k = 0; k < max_n_internal; k++) {
-        int const metal = bridge_internal_metal[block_type1][conn1][k];
+        Int const metal = bridge_internal_metal[block_type1][conn1][k];
         if (metal < 0) {
           break;
         }
@@ -122,8 +122,8 @@ TMOL_DEVICE_FUNC void for_each_bridge(
 template <typename Int, typename Real, tmol::Device D>
 struct Bridge {
   bool valid;
-  int metal1;
-  int metal2;
+  Int metal1;
+  Int metal2;
   Real d1;
   Real d2;
   int key;
@@ -173,7 +173,7 @@ TMOL_DEVICE_FUNC Bridge<Int, Real, D> bridge_from_code(
     int const pconn =
         pose_stack_inter_block_connections[pose_ind][block_ind1][conn1][1];
     int const key = conn_key[type1][conn1];
-    int const metal = bridge_internal_metal[type1][conn1][k];
+    Int const metal = bridge_internal_metal[type1][conn1][k];
     if (key < 0 || metal < 0) {
       return out;
     }
@@ -238,7 +238,7 @@ void metal_coordination_pose_forward(
     if (block_type1 < 0) {
       return;
     }
-    int const offset1 = rot_coord_offset[rot_ind1];
+    Int const offset1 = rot_coord_offset[rot_ind1];
     int const Vind1 = output_block_pair_energies ? block_ind1 : 0;
 
     for (int i = 0; i < max_n_fan; i++) {
@@ -313,8 +313,8 @@ void metal_coordination_pose_forward(
         [&](int,
             int other,
             int,
-            int metal1,
-            int metal2,
+            Int metal1,
+            Int metal2,
             Real d1,
             Real d2,
             int key) {
@@ -389,7 +389,7 @@ void metal_coordination_pose_backward(
     if (block_type1 < 0) {
       return;
     }
-    int const offset1 = rot_coord_offset[rot_ind1];
+    Int const offset1 = rot_coord_offset[rot_ind1];
 
     Real const dTdV_fan = dTdV[0][pose_ind][block_ind1][block_ind1];
     if (dTdV_fan != 0) {
@@ -467,8 +467,8 @@ void metal_coordination_pose_backward(
         [&](int,
             int other,
             int,
-            int metal1,
-            int metal2,
+            Int metal1,
+            Int metal2,
             Real d1,
             Real d2,
             int key) {

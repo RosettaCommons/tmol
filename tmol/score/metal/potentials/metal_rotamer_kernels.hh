@@ -267,7 +267,7 @@ void metal_rotamer_score_native(
     int const rot_ind2 = terms_for_dispatch[1][dispatch_ind];
     int const conn1 = terms_for_dispatch[2][dispatch_ind];
     int const block_type1 = block_type_ind_for_rot[rot_ind1];
-    int const offset1 = rot_coord_offset[rot_ind1];
+    Int const offset1 = rot_coord_offset[rot_ind1];
     Real* V_out = Backward ? nullptr
                            : (output_block_pair_energies ? &V[0][dispatch_ind]
                                                          : &V[0][pose_ind]);

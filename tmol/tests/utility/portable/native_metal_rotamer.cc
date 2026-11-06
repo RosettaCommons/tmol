@@ -121,7 +121,65 @@ void check(bool coupled = false, bool bridge = false) {
   (void)f;
   (void)b;
 }
+// Bridge metadata must preserve the declared index width before atom gathers.
+template <typename Int, typename Real>
+void check_bridge_index_width() {
+  Int high = 101;
+  if constexpr (sizeof(Int) > 4) high += Int(1) << 40;
+  Int types[] = {0, 1, 2};
+  Int metals[] = {high, -1, -1, -1, high + 7, -1};
+  Int keys[] = {-1, -1, 0, 0, -1, -1};
+  Int internal[] = {-1, -1, high + 7, -1, -1, -1};
+  Real distances[] = {0, 0, Real(2.2), 0, 0, 0};
+  tmol::portable::Vec<Int, 2> connections[6];
+  for (auto& c : connections) c[0] = c[1] = -1;
+  connections[0][0] = 1;
+  connections[0][1] = 0;
+  connections[2][0] = 0;
+  connections[2][1] = 0;
+  connections[3][0] = 2;
+  connections[3][1] = 0;
+  MetalSiteParams<Real> params[6] = {};
+  params[0].d0 = Real(2.1);
+  params[4].d0 = Real(2.3);
+  auto external = bridge_from_code<Int, Real, tmol::Device::CPU>(
+      1,
+      0,
+      0,
+      0,
+      2,
+      2,
+      1,
+      view(types, {1, 3}),
+      view(connections, {1, 3, 2}),
+      view(metals, {3, 2}),
+      view(keys, {3, 2}),
+      view(params, {3, 2, 1}),
+      view(internal, {3, 2, 1}),
+      view(distances, {3, 2, 1}));
+  assert(external.valid && external.metal1 == high && external.metal2 == high + 7);
+  auto local = bridge_from_code<Int, Real, tmol::Device::CPU>(
+      4,
+      0,
+      1,
+      1,
+      0,
+      2,
+      1,
+      view(types, {1, 3}),
+      view(connections, {1, 3, 2}),
+      view(metals, {3, 2}),
+      view(keys, {3, 2}),
+      view(params, {3, 2, 1}),
+      view(internal, {3, 2, 1}),
+      view(distances, {3, 2, 1}));
+  assert(local.valid && local.metal1 == high + 7 && local.metal2 == high);
+}
 int main() {
+  check_bridge_index_width<int32_t, float>();
+  check_bridge_index_width<int32_t, double>();
+  check_bridge_index_width<int64_t, float>();
+  check_bridge_index_width<int64_t, double>();
   check<int32_t, float>();
   check<int32_t, float>(true);
   check<int32_t, float>(false, true);
