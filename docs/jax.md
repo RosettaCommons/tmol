@@ -463,8 +463,19 @@ Preparation fixes chemistry, nonleaf presence and inferred metal-site geometry.
 Missing leaves use the common native reconstruction kernels. Prepare again when
 those discrete choices change. Invalid mapped triplets raise during preparation;
 invalid triplets or changed nonleaf presence during traced execution produce
-NaN coordinates. Hydrogen optimization, the tensor-only topology constructor
-and the `pose_stack_from_atom_array(atom37_coords=...)` overload remain gaps.
+NaN coordinates. `prepare(..., opt_h=True, seed=...)` uses the shared input
+sampler policy and native packing. Sampled coordinates are values of a fixed
+discrete choice; supplied atoms and rebuilt leaves in frozen blocks retain
+coordinate derivatives. Missing sampled sidechains follow the same boundary.
+Prepare again to reselect packing choices after coordinate motion.
+`pose_stack_from_atom37_and_topology()` and
+`pose_stack_from_atom_array(atom37_coords=...)` provide eager entry points.
+The tensor-only topology constructor remains a gap.
+
+AtomWorks 3.0.4's optional ML registration currently imports Torch when it is
+installed, including during ordinary structure preparation. Clean JAX package
+installations work without Torch; a dependency correction for mixed environments
+is being validated. This optional import also affects cold runtime and memory.
 
 `PoseStackBuilder.from_poses(stacks, device)` combines compatible chemical
 contexts using the common palette, metadata and fragment-identity plans. It

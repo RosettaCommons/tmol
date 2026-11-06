@@ -68,6 +68,7 @@ __all__ += sorted(_STRUCTURE_INPUT)
 _ATOM37_INPUT = {
     "atom37_slot_map_for_ordering",
     "prepare_atom37_pose_builder",
+    "pose_stack_from_atom37_and_topology",
     "PreparedAtom37PoseBuilder",
 }
 __all__ += sorted(_ATOM37_INPUT)

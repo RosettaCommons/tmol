@@ -334,13 +334,13 @@
     },
     {
       "domain": "prepared_atom37_input",
-      "torch": "supported_with_first_call_hydrogen_retention_bug_under_repair",
+      "torch": "first_call_hydrogen_and_metal_replay_fixed_missing_HYP_source_AD_under_repair",
       "jax": "prepared_cpu_values_source_gradients_jit_vmap",
       "repro_fixture": [
         "tests/scientific/test_atom37_input.py",
         "tests/jax/test_atom37_transforms.py"
       ],
-      "implementation_status": "Common routing; native leaf/H reconstruction and fixed inferred metal placement. Six ligand/D/DNA/RNA/HYP/zinc molecular CPU cases pass physical identity,25-channel finiteness and source-energy gradients. JAX malformed/missing-leaf/native-translation/jit/vmap checks pass. OptH,tensor-only topology and direct AtomArray coordinate override remain gaps. Prepared nonleaf presence and chemistry are fixed. CUDA/install gates pending. Mature Torch inferred virtual sites detach; the extra JAX virtual translation derivative is not a mature parity claim."
+      "implementation_status": "Shared atom routing; native leaf/H and fixed metal reconstruction; shared input packing and finite-input/frozen-block derivative restoration. Six molecular first/replay cases, GLN/HIS OptH and four public AtomArray/topology overload cases pass CPU checks in both frameworks. Missing HYP/D-proline native packing and source-energy gradients pass JAX; Torch HYP currently produces21 NaN source-gradient components despite finite output-coordinate gradients and remains a failing regression. Geometry searches for extra disulfides/cycles are off by default; prepared chemistry and sampling choices are fixed. Tensor-only API remains pending. Newest adapters require matching CUDA/install gates."
     },
     {
       "domain": "pose_concatenation",
@@ -350,7 +350,7 @@
       "implementation_status": "Common exact chemical-prefix identity, merged palettes, metadata and fragment maps; JAX buffer copying preserves coordinate dtype/derivatives, sparse bond distances and constraints. Four CPU checks per backend cover mixed ligand/noncanonical/D batches, all26 per-term values/gradients, distinct palettes and repeated fragment identity. Exact CUDA/install and full workflow runtime/memory pending."
     }
   ],
-  "validation": "PR629 remains OPEN DRAFT at corrected a0a9f43. Its default chemistry and associated gold data match docking-free d758. Exact clean installed CPU45+318, actual JAX CUDA36 and Torch CUDA30 passed. Corrected Apple bounded source gates:209 tests and48 full energy/gradient comparisons, including actual MPS packing/minimization; no native JAX MPS claim. New private91f CPU45+344 and JAX CUDA41 passed; corresponding Torch CUDA and latest frontend gates remain pending. Complete supported mature functionality and matched cold/warm/peak-memory acceptance remain incomplete.",
+  "validation": "PR629 remains OPEN DRAFT at corrected a0a9f43. Exact private91f CPU45+344,JAXCUDA41,TorchCUDA42 passed. Frozen71c9 clean installed CPU45+361 and JAXCUDA33 passed; its TorchCUDA gate is pending. Later input-completion adapters have additional CPU evidence but need matching artifacts/CUDA. Corrected a0a Apple209 tests/48 full E/G and focused cf7 header40 tests passed, with unsupported MPS routes and runtime/memory holds retained. Complete supported mature functionality and matched cold/warm/peak-memory acceptance remain incomplete.",
   "score_terms": {
     "nonbonded": {
       "torch": "implemented",
@@ -478,7 +478,7 @@
   "acceptance_gaps": {
     "mature_functionality": [
       "Latest Atom37/pose-concatenation adapters require exact artifact/CUDA gates; fragment-attribution cold/memory gaps remain measured",
-      "Atom37 OptH,tensor-only topology and direct AtomArray coordinate overload; remaining public input contracts",
+      "Tensor-only Atom37 topology API and remaining constructor options; failing mature HYP missing-sidechain source-gradient regression under repair",
       "Complete task/design API compatibility, changed-port and constrained-identity imposition",
       "Mature optimizer checkpoint/API behavior and matched trajectory validation",
       "Exhaustive custom database/public score-option compatibility"
@@ -487,7 +487,8 @@
       "Published a0a and private91f have matching clean installed CPU gates;91f JAX CUDA passed,Torch CUDA pending;latest input adapters need new source artifacts",
       "Matched mature end-to-end cold/warm runtime and peak host/device memory unresolved",
       "Core measured mature molecular minimization regressions remain under investigation",
-      "Corrected a0a Apple bounded correctness passed; cf7 LKBall header followup dispatched through existing Metal owner. Small Metal workflow runtime/memory remains slower/higher"
+      "Corrected a0a and focused cf7 header Apple gates passed; small workflow Metal runtime/memory and earlier biotin/minimization exceptions remain. No repeat Apple requested for unchanged native sources.",
+      "AtomWorks3.0.4 imports Torch optionally when installed during host input preparation. Clean Torch-free installs pass; mixed-environment import boundary needs validated dependency correction. Exact91f full-workflow controls attribute453-595MiB extra peak process memory and20-35% cold-time overhead to this optional import; blocking controls are diagnostic only."
     ],
     "framework_specific_or_not_mature_parity": [
       "Higher derivatives through native torsion/forward-kinematics kernels are not advertised by mature Torch either",

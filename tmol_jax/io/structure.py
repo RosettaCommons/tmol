@@ -173,6 +173,7 @@ def pose_stack_from_atom_array(
     return_context=False,
     missing_density_distance_threshold=2.4,
     find_additional_metal_coordination=True,
+    atom37_coords=None,
     **kwargs,
 ):
     """Build a molecular pose using shared normalization, chemistry and input H.
@@ -195,7 +196,7 @@ def pose_stack_from_atom_array(
             if context.packed_block_types.n_atoms.device != device:
                 raise ValueError("context and requested device must match")
         else:
-            if prepare_ligands:
+            if prepare_ligands and atom37_coords is None:
                 biotite_structure = _input_hydrogens(
                     biotite_structure,
                     ligand_ph,
@@ -215,6 +216,19 @@ def pose_stack_from_atom_array(
                 chem_comp_types,
                 ligand_seed,
                 ligand_hydrogens,
+            )
+        if atom37_coords is not None:
+            from .atom37 import pose_stack_from_atom37_and_topology
+
+            return pose_stack_from_atom37_and_topology(
+                atom37_coords,
+                biotite_structure,
+                context,
+                no_optH,
+                packer_seed=packer_seed,
+                return_context=return_context,
+                find_additional_metal_coordination=find_additional_metal_coordination,
+                **kwargs,
             )
         structure = _input_hydrogens(
             biotite_structure,

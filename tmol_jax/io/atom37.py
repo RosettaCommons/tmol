@@ -55,16 +55,22 @@ class _CoordinateReplay:
         self.canonical = jax.device_put(np.asarray(canonical, np.int32).T, pose.device)
         self.packed = jax.device_put(np.asarray(packed, np.int32).T, pose.device)
         self.leaf = jax.device_put(np.asarray(leaf, bool), pose.device)
-        observed = np.isfinite(
-            np.asarray(canonical_coords)[tuple(np.asarray(self.canonical))]
-        ).all(-1)
+        observed = np.isfinite(np.asarray(canonical_coords)).all(-1)
+        variable = np.zeros_like(observed)
+        indices = np.asarray(self.canonical)[:, np.asarray(self.leaf)]
+        variable[tuple(indices)] = True
         self.observed = jax.device_put(observed, pose.device)
+        self.variable_presence = jax.device_put(variable, pose.device)
         missing = np.zeros((*types.shape, pbt.max_n_atoms), bool)
         flat = np.zeros(pose.coords.shape[:2], bool)
         self.leaf_metadata = jax.device_put(
             leaf_execution_metadata(pose, missing, flat), pose.device
         )
         self.h_distances, self.h_metadata = execution_metadata(pose, missing)
+
+    def valid(self, canonical_coords):
+        finite = jnp.isfinite(canonical_coords).all(-1)
+        return jnp.all(self.variable_presence | (finite == self.observed))
 
     def __call__(self, canonical_coords):
         from ._native import generate_leaf_atoms
@@ -75,7 +81,7 @@ class _CoordinateReplay:
         p, b, atom, flat = self.packed
         # Discrete nonleaf presence belongs to preparation. Native leaf masks
         # may vary without changing residue identity or the packed atom layout.
-        valid = jnp.all(self.leaf | (finite == self.observed))
+        valid = self.valid(canonical_coords)
         value = jnp.where(finite[:, None], source, self.pose.coords[p, flat])
         coords = self.pose.coords.at[p, flat].set(value)
         missing = self.leaf_metadata[0].at[p, b, atom].set(self.leaf & ~finite)
@@ -97,13 +103,52 @@ class _CoordinateReplay:
         return self.pose.replace(coords=jnp.where(valid, coords, jnp.nan))
 
 
+class _PackedReplay:
+    """Discrete packing supplies values; frozen and observed atoms retain AD."""
+
+    def __init__(self, original, packed, frozen, canonical, ordering, types):
+        self.original = original
+        self.pose = packed
+        final = _CoordinateReplay(packed, canonical, ordering, types)
+        self.canonical, self.packed = final.canonical, final.packed
+        rows, source, target = [], [], []
+        old = original.pose
+        for p, b in zip(*np.nonzero(np.asarray(frozen))):
+            before, after = old.block_type(p, b), packed.block_type(p, b)
+            if before.name != after.name:
+                raise ValueError("input packing changed a frozen residue identity")
+            count = len(before.atoms)
+            rows.extend([p] * count)
+            source.extend(np.asarray(old.block_coord_offset)[p, b] + np.arange(count))
+            target.extend(
+                np.asarray(packed.block_coord_offset)[p, b] + np.arange(count)
+            )
+        self.frozen_indices = jax.device_put(
+            np.asarray((rows, source, target), np.int32), packed.device
+        )
+
+    def __call__(self, canonical):
+        rebuilt = self.original(canonical).coords
+        p, source, target = self.frozen_indices
+        coords = self.pose.coords.at[p, target].set(rebuilt[p, source])
+        source = canonical[tuple(self.canonical)]
+        p, _, _, target = self.packed
+        coords = coords.at[p, target].set(
+            jnp.where(jnp.isfinite(source).all(-1)[:, None], source, coords[p, target])
+        )
+        return self.pose.replace(
+            coords=jnp.where(self.original.valid(canonical), coords, jnp.nan)
+        )
+
+
 class PreparedAtom37PoseBuilder:
     """Prepare chemistry eagerly; bind coordinates with native first derivatives.
 
     Call ``prepare(example_coords)`` before differentiating or jitting the
     returned callable. A prepared execution fixes nonleaf presence and chemistry;
     changing those requires another preparation. Missing leaf atoms are rebuilt
-    natively. Hydrogen optimization is not yet implemented by this adapter.
+    natively. Optional packing choices are fixed during preparation; supplied
+    atoms and frozen blocks retain coordinate derivatives.
     """
 
     def __init__(self, context, template, routing, fragment_mapping, mainchain):
@@ -136,9 +181,7 @@ class PreparedAtom37PoseBuilder:
             jnp.all(valid), base.at[:, residues, atoms].set(source), jnp.nan
         )
 
-    def prepare(self, example_coords, *, opt_h=False):
-        if opt_h:
-            raise NotImplementedError("Atom37 hydrogen optimization is not implemented")
+    def prepare(self, example_coords, *, opt_h=False, seed=None):
         if isinstance(example_coords, jax.core.Tracer):
             raise ValueError("prepare Atom37 chemistry outside JAX transformations")
         from .pose_stack_construction import pose_stack_from_canonical_form
@@ -181,15 +224,19 @@ class PreparedAtom37PoseBuilder:
                 cf[name] = value
         cf.update(
             coords=np.asarray(canonical),
-            atom_present=np.isfinite(np.asarray(canonical)).all(-1),
+            atom_is_present=np.isfinite(np.asarray(canonical)).all(-1),
             canonical_ordering=self.context.canonical_ordering,
         )
-        pose = pose_stack_from_canonical_form(
+        from .input_completion import input_packer_atoms, complete_input
+
+        pose, details = pose_stack_from_canonical_form(
             cf,
             self.context.packed_block_types,
             compact_padding=True,
             build_missing_context=True,
             ligand_hydrogens="input",
+            return_block_has_missing_atoms=True,
+            packer_atoms=lambda rt: input_packer_atoms(self.context)(rt),
         )
         if self.fragment_mapping is not None:
             from tmol_jax.ligand.fragment_imposition import apply_fragment_connections
@@ -203,6 +250,24 @@ class PreparedAtom37PoseBuilder:
             pose, canonical, self.context.canonical_ordering, cf["res_types"]
         )
 
+        packed, frozen = complete_input(
+            pose,
+            details["block_has_missing_atoms"],
+            self.context,
+            no_optH=not opt_h,
+            seed=seed,
+            return_frozen=True,
+        )
+        if packed is not pose:
+            replay = _PackedReplay(
+                replay,
+                packed,
+                frozen,
+                canonical,
+                self.context.canonical_ordering,
+                cf["res_types"],
+            )
+
         def bind(coords):
             if coords.shape[0] != count:
                 raise ValueError("prepared Atom37 batch size changed; prepare again")
@@ -210,8 +275,8 @@ class PreparedAtom37PoseBuilder:
 
         return bind
 
-    def __call__(self, coords, *, opt_h=False):
-        return self.prepare(coords, opt_h=opt_h)(coords)
+    def __call__(self, coords, *, opt_h=False, seed=None):
+        return self.prepare(coords, opt_h=opt_h, seed=seed)(coords)
 
 
 def prepare_atom37_pose_builder(structure, context):
@@ -232,7 +297,10 @@ def prepare_atom37_pose_builder(structure, context):
         structure, common._metal_atom_names(co=co)
     )
     structure, _ = common._filter_supported_atoms_and_connectivity(
-        structure, co, filter_missing_mainchain=False
+        structure,
+        co,
+        filter_missing_mainchain=False,
+        cut_partners=context.cut_covalent_partners,
     )
     template = canonical_form_from_biotite(
         structure,
@@ -240,6 +308,10 @@ def prepare_atom37_pose_builder(structure, context):
         prepare_input=True,
         missing_density_distance_threshold=0,
         filter_missing_mainchain=False,
+        cut_partners=context.cut_covalent_partners,
+    )
+    template.update(
+        find_additional_disulfides=False, find_additional_cyclic_closures=False
     )
     valid, atoms, residues = map_atoms_to_canonical(
         co,
@@ -252,3 +324,37 @@ def prepare_atom37_pose_builder(structure, context):
     return PreparedAtom37PoseBuilder(
         context, template, routing, mapping, required_mainchain_entries(structure, co)
     )
+
+
+def pose_stack_from_atom37_and_topology(
+    atom37_coords,
+    biotite_structure,
+    context,
+    no_optH=True,
+    *,
+    packer_seed=None,
+    return_context=False,
+    **canonical_options,
+):
+    """Construct eagerly from shared atom identities and authoritative coordinates.
+
+    Use ``prepare_atom37_pose_builder(...).prepare(...)`` for transformed execution
+    with fixed discrete chemistry and packing choices.
+    """
+    supported = {
+        "find_additional_disulfides",
+        "find_additional_cyclic_closures",
+        "find_additional_metal_coordination",
+        "protonation_variants",
+        "metal_sites",
+        "require_all_metal_donors",
+    }
+    unknown = canonical_options.keys() - supported
+    if unknown:
+        raise TypeError(
+            "unsupported Atom37 constructor options: " + ", ".join(sorted(unknown))
+        )
+    builder = prepare_atom37_pose_builder(biotite_structure, context)
+    builder.template.update(canonical_options)
+    pose = builder(atom37_coords, opt_h=not no_optH, seed=packer_seed)
+    return (pose, context) if return_context else pose

@@ -24,10 +24,10 @@ def _supported_blocks(sampler, pose):
     return jax.device_put(supported[np.maximum(types, 0)], pose.device)
 
 
-def complete_input(pose, missing, context, *, no_optH, seed):
+def complete_input(pose, missing, context, *, no_optH, seed, return_frozen=False):
     has_missing = bool(np.asarray(missing).any())
     if not has_missing and no_optH:
-        return pose
+        return (pose, pose.block_type_ind >= 0) if return_frozen else pose
     task = prepare_input_completion_task(
         pose,
         missing,
@@ -46,7 +46,11 @@ def complete_input(pose, missing, context, *, no_optH, seed):
     )
     if seed is None:
         seed = int(np.random.PCG64().random_raw())
-    return pack_rotamers(pose, score, task, seed=seed)
+    result = pack_rotamers(pose, score, task, seed=seed)
+    if not return_frozen:
+        return result
+    frozen = task.is_real_block & ~task.per_block_is_block_type_allowed.any(axis=-1)
+    return result, frozen
 
 
 def input_packer_atoms(context):
