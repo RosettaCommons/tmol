@@ -355,110 +355,110 @@ set(_C_SOURCES
   tmol/native.cpp
   # dock
   tmol/dock/lbfgs_compiled.ops.cpp
-  tmol/dock/lbfgs_compiled.cpu.cpp
+  tmol/backends/cpu/dock/lbfgs_compiled.cpu.cpp
   # optimization
   tmol/optimization/armijo_compiled.ops.cpp
-  tmol/optimization/armijo_compiled.cpu.cpp
+  tmol/backends/cpu/optimization/armijo_compiled.cpu.cpp
   # io/details/compiled
   tmol/io/details/compiled/compiled.ops.cpp
-  tmol/io/details/compiled/gen_pose_leaf_atoms.cpu.cpp
-  tmol/io/details/compiled/resolve_his_taut.cpu.cpp
+  tmol/backends/cpu/io/details/compiled/gen_pose_leaf_atoms.cpu.cpp
+  tmol/backends/cpu/io/details/compiled/resolve_his_taut.cpu.cpp
   # kinematics/compiled
   tmol/kinematics/compiled/compiled_ops.cpp
-  tmol/kinematics/compiled/compiled.cpu.cpp
+  tmol/backends/cpu/kinematics/compiled/compiled.cpu.cpp
   # pack/compiled
   tmol/pack/compiled/compiled.ops.cpp
-  tmol/pack/compiled/compiled.cpu.cpp
+  tmol/backends/cpu/pack/compiled/compiled.cpu.cpp
   # pack/rotamer/dunbrack
   tmol/pack/rotamer/dunbrack/compiled.ops.cpp
-  tmol/pack/rotamer/dunbrack/compiled.cpu.cpp
+  tmol/backends/cpu/pack/rotamer/dunbrack/compiled.cpu.cpp
   # score/backbone_torsion
   tmol/score/backbone_torsion/potentials/compiled.ops.cpp
-  tmol/score/backbone_torsion/potentials/backbone_torsion_pose_score.cpu.cpp
+  tmol/backends/cpu/score/backbone_torsion/potentials/backbone_torsion_pose_score.cpu.cpp
   # score/cartbonded
   tmol/score/cartbonded/potentials/compiled.ops.cpp
-  tmol/score/cartbonded/potentials/cartbonded_pose_score.cpu.cpp
+  tmol/backends/cpu/score/cartbonded/potentials/cartbonded_pose_score.cpu.cpp
   # score/genbonded
   tmol/score/genbonded/potentials/compiled.ops.cpp
-  tmol/score/genbonded/potentials/genbonded_pose_score.cpu.cpp
+  tmol/backends/cpu/score/genbonded/potentials/genbonded_pose_score.cpu.cpp
   # score/gridscore
   tmol/score/gridscore/potentials/compiled.ops.cpp
-  tmol/score/gridscore/potentials/grid_interp_pose_score.cpu.cpp
-  tmol/score/gridscore/potentials/live_hbond.cpu.cpp
-  tmol/score/gridscore/potentials/live_lk_ball.cpu.cpp
-  tmol/score/gridscore/potentials/grid_score.cpu.cpp
-  tmol/score/gridscore/potentials/grid_build.cpu.cpp
+  tmol/backends/cpu/score/gridscore/potentials/grid_interp_pose_score.cpu.cpp
+  tmol/backends/cpu/score/gridscore/potentials/live_hbond.cpu.cpp
+  tmol/backends/cpu/score/gridscore/potentials/live_lk_ball.cpu.cpp
+  tmol/backends/cpu/score/gridscore/potentials/grid_score.cpu.cpp
+  tmol/backends/cpu/score/gridscore/potentials/grid_build.cpu.cpp
   # score/constraint
   tmol/score/constraint/potentials/compiled.ops.cpp
-  tmol/score/constraint/potentials/constraint_score.cpu.cpp
+  tmol/backends/cpu/score/constraint/potentials/constraint_score.cpu.cpp
   # score/disulfide
   tmol/score/disulfide/potentials/compiled.ops.cpp
-  tmol/score/disulfide/potentials/disulfide_pose_score.cpu.cpp
+  tmol/backends/cpu/score/disulfide/potentials/disulfide_pose_score.cpu.cpp
   # score/dunbrack
   tmol/score/dunbrack/potentials/compiled.ops.cpp
-  tmol/score/dunbrack/potentials/dunbrack_pose_score.cpu.cpp
+  tmol/backends/cpu/score/dunbrack/potentials/dunbrack_pose_score.cpu.cpp
   # score/elec
   tmol/score/elec/potentials/compiled.ops.cpp
-  tmol/score/elec/potentials/elec_pose_score.cpu.cpp
+  tmol/backends/cpu/score/elec/potentials/elec_pose_score.cpu.cpp
   # score/hbond
   tmol/score/hbond/potentials/compiled.ops.cpp
-  tmol/score/hbond/potentials/hbond_pose_score.cpu.cpp
-  tmol/score/hbond/potentials/gen_hbond_bases.cpu.cpp
+  tmol/backends/cpu/score/hbond/potentials/hbond_pose_score.cpu.cpp
+  tmol/backends/cpu/score/hbond/potentials/gen_hbond_bases.cpu.cpp
   # score/ljlk
   tmol/score/ljlk/potentials/compiled.ops.cpp
-  tmol/score/ljlk/potentials/ljlk_pose_score.cpu.cpp
-  tmol/score/ljlk/potentials/ljlk_elec_pose_score.cpu.cpp
+  tmol/backends/cpu/score/ljlk/potentials/ljlk_pose_score.cpu.cpp
+  tmol/backends/cpu/score/ljlk/potentials/ljlk_elec_pose_score.cpu.cpp
   # score/lk_ball
   tmol/score/lk_ball/potentials/compiled.ops.cpp
-  tmol/score/lk_ball/potentials/lk_ball_pose_score.cpu.cpp
-  tmol/score/lk_ball/potentials/gen_pose_waters.cpu.cpp
+  tmol/backends/cpu/score/lk_ball/potentials/lk_ball_pose_score.cpu.cpp
+  tmol/backends/cpu/score/lk_ball/potentials/gen_pose_waters.cpu.cpp
   # score/metal
   tmol/score/metal/potentials/compiled.ops.cpp
-  tmol/score/metal/potentials/metal_coordination_pose_score.cpu.cpp
+  tmol/backends/cpu/score/metal/potentials/metal_coordination_pose_score.cpu.cpp
   # score/na_torsion (CUDA implementation registered separately below)
   tmol/score/na_torsion/potentials/compiled.ops.cpp
 )
 
 if(TMOL_HAS_CUDA)
   list(APPEND _C_SOURCES
-    tmol/score/common/whole_pose_scoring.cuda.cu
-    tmol/optimization/armijo_compiled.cuda.cu
-    tmol/dock/lbfgs_compiled.cuda.cu
-    tmol/io/details/compiled/gen_pose_leaf_atoms.cuda.cu
-    tmol/io/details/compiled/resolve_his_taut.cuda.cu
-    tmol/kinematics/compiled/compiled.cuda.cu
-    tmol/pack/compiled/compiled.cuda.cu
-    tmol/pack/rotamer/dunbrack/compiled.cuda.cu
-    tmol/score/backbone_torsion/potentials/backbone_torsion_pose_score.cuda.cu
-    tmol/score/cartbonded/potentials/cartbonded_pose_score.cuda.cu
-    tmol/score/gridscore/potentials/grid_interp_pose_score.cuda.cu
-    tmol/score/gridscore/potentials/live_hbond.cuda.cu
-    tmol/score/gridscore/potentials/live_lk_ball.cuda.cu
-    tmol/score/gridscore/potentials/grid_score.cuda.cu
-    tmol/score/gridscore/potentials/grid_build.cuda.cu
-    tmol/score/genbonded/potentials/genbonded_pose_score.cuda.cu
-    tmol/score/constraint/potentials/constraint_score.cuda.cu
-    tmol/score/disulfide/potentials/disulfide_pose_score.cuda.cu
-    tmol/score/dunbrack/potentials/dunbrack_pose_score.cuda.cu
-    tmol/score/elec/potentials/elec_pose_score.cuda.cu
-    tmol/score/hbond/potentials/hbond_pose_score.cuda.cu
-    tmol/score/hbond/potentials/gen_hbond_bases.cuda.cu
-    tmol/score/ljlk/potentials/ljlk_pose_score.cuda.cu
-    tmol/score/ljlk/potentials/ljlk_elec_pose_score.cuda.cu
-    tmol/score/lk_ball/potentials/lk_ball_pose_score.cuda.cu
-    tmol/score/lk_ball/potentials/gen_pose_waters.cuda.cu
-    tmol/score/metal/potentials/metal_coordination_pose_score.cuda.cu
-    tmol/score/na_torsion/potentials/na_torsion_pose_score.cuda.cu
+    tmol/backends/cuda/score/common/whole_pose_scoring.cuda.cu
+    tmol/backends/cuda/optimization/armijo_compiled.cuda.cu
+    tmol/backends/cuda/dock/lbfgs_compiled.cuda.cu
+    tmol/backends/cuda/io/details/compiled/gen_pose_leaf_atoms.cuda.cu
+    tmol/backends/cuda/io/details/compiled/resolve_his_taut.cuda.cu
+    tmol/backends/cuda/kinematics/compiled/compiled.cuda.cu
+    tmol/backends/cuda/pack/compiled/compiled.cuda.cu
+    tmol/backends/cuda/pack/rotamer/dunbrack/compiled.cuda.cu
+    tmol/backends/cuda/score/backbone_torsion/potentials/backbone_torsion_pose_score.cuda.cu
+    tmol/backends/cuda/score/cartbonded/potentials/cartbonded_pose_score.cuda.cu
+    tmol/backends/cuda/score/gridscore/potentials/grid_interp_pose_score.cuda.cu
+    tmol/backends/cuda/score/gridscore/potentials/live_hbond.cuda.cu
+    tmol/backends/cuda/score/gridscore/potentials/live_lk_ball.cuda.cu
+    tmol/backends/cuda/score/gridscore/potentials/grid_score.cuda.cu
+    tmol/backends/cuda/score/gridscore/potentials/grid_build.cuda.cu
+    tmol/backends/cuda/score/genbonded/potentials/genbonded_pose_score.cuda.cu
+    tmol/backends/cuda/score/constraint/potentials/constraint_score.cuda.cu
+    tmol/backends/cuda/score/disulfide/potentials/disulfide_pose_score.cuda.cu
+    tmol/backends/cuda/score/dunbrack/potentials/dunbrack_pose_score.cuda.cu
+    tmol/backends/cuda/score/elec/potentials/elec_pose_score.cuda.cu
+    tmol/backends/cuda/score/hbond/potentials/hbond_pose_score.cuda.cu
+    tmol/backends/cuda/score/hbond/potentials/gen_hbond_bases.cuda.cu
+    tmol/backends/cuda/score/ljlk/potentials/ljlk_pose_score.cuda.cu
+    tmol/backends/cuda/score/ljlk/potentials/ljlk_elec_pose_score.cuda.cu
+    tmol/backends/cuda/score/lk_ball/potentials/lk_ball_pose_score.cuda.cu
+    tmol/backends/cuda/score/lk_ball/potentials/gen_pose_waters.cuda.cu
+    tmol/backends/cuda/score/metal/potentials/metal_coordination_pose_score.cuda.cu
+    tmol/backends/cuda/score/na_torsion/potentials/na_torsion_pose_score.cuda.cu
   )
   # Approximate CUDA math is accurate for the pairwise nonbonded terms and
   # materially improves their throughput. Keep every other term exact:
   # torsion-heavy gradients are substantially more sensitive to approximation.
   set_source_files_properties(
-    tmol/score/elec/potentials/elec_pose_score.cuda.cu
-    tmol/score/hbond/potentials/hbond_pose_score.cuda.cu
-    tmol/score/ljlk/potentials/ljlk_pose_score.cuda.cu
-    tmol/score/ljlk/potentials/ljlk_elec_pose_score.cuda.cu
-    tmol/score/lk_ball/potentials/lk_ball_pose_score.cuda.cu
+    tmol/backends/cuda/score/elec/potentials/elec_pose_score.cuda.cu
+    tmol/backends/cuda/score/hbond/potentials/hbond_pose_score.cuda.cu
+    tmol/backends/cuda/score/ljlk/potentials/ljlk_pose_score.cuda.cu
+    tmol/backends/cuda/score/ljlk/potentials/ljlk_elec_pose_score.cuda.cu
+    tmol/backends/cuda/score/lk_ball/potentials/lk_ball_pose_score.cuda.cu
     PROPERTIES COMPILE_OPTIONS "--use_fast_math"
   )
 endif()
@@ -478,17 +478,17 @@ if(TMOL_ENABLE_MPS)
 
   # <dir>/<stem> of each .metal.in, and the symbol its source is embedded as.
   set(_TMOL_SHADERS
-    "tmol/score/elec/potentials/elec_mps_kernels|kElecMetalShaderSource"
-    "tmol/score/ljlk/potentials/ljlk_mps_kernels|kLJLKMetalShaderSource"
-    "tmol/score/ljlk/potentials/ljlk_elec_mps_kernels|kLJLKElecMetalShaderSource"
-    "tmol/pack/compiled/streaming_interaction_graph_mps_kernels|kStreamingInteractionGraphMetalShaderSource"
-    "tmol/score/lk_ball/potentials/lk_ball_mps_kernels|kLKBallMetalShaderSource"
-    "tmol/score/lk_ball/potentials/gen_pose_waters_mps_kernels|kWaterGenMetalShaderSource"
-    "tmol/score/hbond/potentials/hbond_mps_kernels|kHBondMetalShaderSource"
-    "tmol/score/hbond/potentials/gen_hbond_bases_mps_kernels|kHBondBasesMetalShaderSource"
-    "tmol/score/common/pose_total_reduce_mps_kernels|kPoseTotalReduceMetalShaderSource"
-    "tmol/pack/compiled/annealer_mps_kernels|kAnnealerMetalShaderSource"
-    "tmol/score/common/sphere_overlap_mps_kernels|kSphereOverlapMetalShaderSource"
+    "tmol/backends/metal/score/elec/potentials/elec_mps_kernels|kElecMetalShaderSource"
+    "tmol/backends/metal/score/ljlk/potentials/ljlk_mps_kernels|kLJLKMetalShaderSource"
+    "tmol/backends/metal/score/ljlk/potentials/ljlk_elec_mps_kernels|kLJLKElecMetalShaderSource"
+    "tmol/backends/metal/pack/compiled/streaming_interaction_graph_mps_kernels|kStreamingInteractionGraphMetalShaderSource"
+    "tmol/backends/metal/score/lk_ball/potentials/lk_ball_mps_kernels|kLKBallMetalShaderSource"
+    "tmol/backends/metal/score/lk_ball/potentials/gen_pose_waters_mps_kernels|kWaterGenMetalShaderSource"
+    "tmol/backends/metal/score/hbond/potentials/hbond_mps_kernels|kHBondMetalShaderSource"
+    "tmol/backends/metal/score/hbond/potentials/gen_hbond_bases_mps_kernels|kHBondBasesMetalShaderSource"
+    "tmol/backends/metal/score/common/pose_total_reduce_mps_kernels|kPoseTotalReduceMetalShaderSource"
+    "tmol/backends/metal/pack/compiled/annealer_mps_kernels|kAnnealerMetalShaderSource"
+    "tmol/backends/metal/score/common/sphere_overlap_mps_kernels|kSphereOverlapMetalShaderSource"
   )
   foreach(_entry IN LISTS _TMOL_SHADERS)
     string(REPLACE "|" ";" _entry "${_entry}")
@@ -503,15 +503,15 @@ if(TMOL_ENABLE_MPS)
   endforeach()
 
   list(APPEND _C_SOURCES
-    tmol/score/common/mps_launch.cpp
-    tmol/score/elec/potentials/elec_pose_score.mps.cpp
-    tmol/score/ljlk/potentials/ljlk_pose_score.mps.cpp
-    tmol/score/ljlk/potentials/ljlk_elec_pose_score.mps.cpp
-    tmol/pack/compiled/streaming_interaction_graph.mps.cpp
-    tmol/score/lk_ball/potentials/lk_ball_pose_score.mps.cpp
-    tmol/score/lk_ball/potentials/gen_pose_waters.mps.cpp
-    tmol/score/hbond/potentials/hbond_pose_score.mps.cpp
-    tmol/score/hbond/potentials/gen_hbond_bases.mps.cpp
+    tmol/backends/metal/score/common/mps_launch.cpp
+    tmol/backends/metal/score/elec/potentials/elec_pose_score.mps.cpp
+    tmol/backends/metal/score/ljlk/potentials/ljlk_pose_score.mps.cpp
+    tmol/backends/metal/score/ljlk/potentials/ljlk_elec_pose_score.mps.cpp
+    tmol/backends/metal/pack/compiled/streaming_interaction_graph.mps.cpp
+    tmol/backends/metal/score/lk_ball/potentials/lk_ball_pose_score.mps.cpp
+    tmol/backends/metal/score/lk_ball/potentials/gen_pose_waters.mps.cpp
+    tmol/backends/metal/score/hbond/potentials/hbond_pose_score.mps.cpp
+    tmol/backends/metal/score/hbond/potentials/gen_hbond_bases.mps.cpp
   )
 endif()
 

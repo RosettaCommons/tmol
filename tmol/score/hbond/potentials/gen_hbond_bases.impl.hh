@@ -13,9 +13,9 @@
 #include <tmol/score/hbond/potentials/gen_hbond_bases_ctx.hh>
 #include <tmol/score/common/tview_binder.hh>
 #include <tmol/score/hbond/potentials/gen_hbond_bases_kernels.hh>
-#include <tmol/score/common/mps_launch.hh>
+#include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
-#include <tmol/score/hbond/potentials/gen_hbond_bases_mps_kernels_source.h>
+#include <tmol/backends/metal/score/hbond/potentials/gen_hbond_bases_mps_kernels_source.h>
 #endif
 
 namespace tmol {

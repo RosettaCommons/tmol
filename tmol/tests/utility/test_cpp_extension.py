@@ -1,4 +1,46 @@
+from pathlib import Path
+
+import pytest
+
 from tmol.utility import _cpp_extension
+
+
+@pytest.mark.parametrize(
+    "module_dir, name, expected",
+    [
+        ("tests/numeric", "bspline.cuda.cu", "tests/numeric/bspline.cuda.cu"),
+        (
+            "tests/score/common",
+            "warp_segreduce.cuda.cu",
+            "tests/score/common/warp_segreduce.cuda.cu",
+        ),
+        (
+            "tests/score/common",
+            "warp_stride_reduce.cuda.cu",
+            "tests/score/common/warp_stride_reduce.cuda.cu",
+        ),
+        (
+            "kinematics/compiled",
+            "compiled.cpu.cpp",
+            "backends/cpu/kinematics/compiled/compiled.cpu.cpp",
+        ),
+        (
+            "kinematics/compiled",
+            "compiled.cuda.cu",
+            "backends/cuda/kinematics/compiled/compiled.cuda.cu",
+        ),
+        (
+            "score/ljlk/potentials",
+            "../../common/whole_pose_scoring.cuda.cu",
+            "backends/cuda/score/common/whole_pose_scoring.cuda.cu",
+        ),
+    ],
+)
+def test_source_paths(module_dir, name, expected):
+    root = Path(_cpp_extension.__file__).resolve().parents[1]
+    resolved = _cpp_extension._relpaths(root / module_dir / "_compiled.py", [name])
+    assert Path(resolved[0]).resolve() == root / expected
+    assert Path(resolved[0]).is_file()
 
 
 def test_required_cxx_standard():
