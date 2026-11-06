@@ -496,90 +496,29 @@ def _merge_conformer_samples(
     list[Tensor[torch.bool][:]],
     list[Tensor[torch.int64][:]],
 ]:
-    """Merge sampler rows in considered-type, sampler, then source-row order.
+    """Place the common eager conformer merge plan on the sampler device."""
+    from tmol_core.pack.conformer_merge import prepare_conformer_merge
 
-    Each sampler supplies a count per considered type and its source rows in
-    ascending considered-type order. Prefix offsets locate each row directly;
-    the returned destinations map original sampler rows into the merged arrays.
-    """
     if not conformer_samples:
         raise ValueError("At least one conformer sampler is required")
     device = conformer_samples[0][0].device
-    count_dtype = conformer_samples[0][0].dtype
-    index_dtype = conformer_samples[0][1].dtype
-    for counts, indices, *_ in conformer_samples:
-        if counts.device != device or indices.device != device:
-            raise ValueError("Conformer samples must share a device")
-        if counts.dtype not in (torch.int32, torch.int64) or indices.dtype not in (
-            torch.int32,
-            torch.int64,
-        ):
-            raise ValueError("Conformer sample counts and indices must be integers")
-        count_dtype = torch.promote_types(count_dtype, counts.dtype)
-        index_dtype = torch.promote_types(index_dtype, indices.dtype)
-
-    n_conformers = sum(sample[1].numel() for sample in conformer_samples)
-    if (
-        max(n_conformers, conformer_samples[0][0].numel())
-        > torch.iinfo(torch.int32).max
+    if any(
+        value.device != device for sample in conformer_samples for value in sample[:2]
     ):
-        raise ValueError("Conformer sample counts exceed native 32-bit indexing")
-    counts = torch.stack([sample[0].to(torch.int64) for sample in conformer_samples])
-    source_ends = counts.cumsum(dim=1)
-    expected_types = torch.arange(counts.shape[1], device=device)
-    valid = []
-    for i, sample in enumerate(conformer_samples):
-        indices = sample[1]
-        if indices.numel() == 0:
-            valid.append(counts.new_ones((), dtype=torch.bool))
-            continue
-        # Clamp both ends while counts are still unvalidated. Invalid source
-        # counts must produce a diagnostic, not an out-of-bounds device read.
-        starts = (source_ends[i] - counts[i]).clamp(0, indices.numel() - 1)
-        ends = (source_ends[i] - 1).clamp(0, indices.numel() - 1)
-        boundaries_match = (indices[starts] == expected_types) & (
-            indices[ends] == expected_types
-        )
-        # Monotonic rows with matching interval endpoints must match throughout.
-        valid.append(
-            ((counts[i] == 0) | boundaries_match).all()
-            & (indices[1:] >= indices[:-1]).all()
-        )
-    totals = counts.sum(dim=1)
-    minima = counts.amin(dim=1) if counts.shape[1] else totals
-    maxima = counts.amax(dim=1) if counts.shape[1] else totals
-    summary = torch.stack((totals, minima, maxima, torch.stack(valid)), dim=1).tolist()
-    for sample, (total, minimum, maximum, ordered) in zip(conformer_samples, summary):
-        available = sample[1].numel()
-        # A matching sum alone can wrap even when every int64 count is positive.
-        if minimum < 0 or maximum > available or total != available:
-            raise ValueError("Conformer sample counts do not match the source rows")
-        if not ordered:
-            raise ValueError("Conformer source rows do not match ordered sample counts")
-
-    merged_counts = counts.sum(dim=0)
-    merged_offsets = merged_counts.cumsum(dim=0) - merged_counts
-    # Destination start minus source start, for each sampler/considered type.
-    # Inclusive scans cancel the current cell in the two exclusive prefixes.
-    destination_offsets = merged_offsets + counts.cumsum(dim=0) - source_ends
-    sampler_for_conformer = torch.empty(n_conformers, dtype=torch.int64, device=device)
-    gbt_for_conformer = torch.empty(n_conformers, dtype=index_dtype, device=device)
-    destinations = []
-    for i, sample in enumerate(conformer_samples):
-        indices = sample[1].to(torch.int64)
-        destination = destination_offsets[i, indices] + torch.arange(
-            indices.numel(), dtype=torch.int64, device=device
-        )
-        sampler_for_conformer[destination] = i
-        gbt_for_conformer[destination] = indices.to(index_dtype)
-        destinations.append(destination)
-
+        raise ValueError("Conformer samples must share a device")
+    plan = prepare_conformer_merge(
+        [(c.cpu().numpy(), i.cpu().numpy()) for c, i, *_ in conformer_samples]
+    )
+    counts, samplers, considered = (
+        torch.as_tensor(value, device=device)
+        for value in (plan.counts, plan.sampler, plan.considered)
+    )
     return (
-        merged_counts.to(count_dtype),
-        sampler_for_conformer,
-        gbt_for_conformer,
-        [sampler_for_conformer == i for i in range(len(conformer_samples))],
-        destinations,
+        counts,
+        samplers,
+        considered,
+        [samplers == i for i in range(len(conformer_samples))],
+        [torch.as_tensor(value, device=device) for value in plan.destinations],
     )
 
 
