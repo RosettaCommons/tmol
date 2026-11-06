@@ -19,12 +19,12 @@ def execute_metal_placement(coords, rows, offset_bytes, wide):
     return coords.at[rows[:, 0], rows[:, 1]].set(values)
 
 
-def prepare_metal_completion(pose, available, assignments):
+def prepare_metal_completion(pose, available, assignments, *, return_plan=False):
     """Execute common virtual-site placements and update per-residue availability."""
     from tmol_core.io.metal_detection import metal_virtual_placements
 
     if not assignments:
-        return pose, available
+        return (pose, available, None) if return_plan else (pose, available)
     pbt = pose.packed_block_types
     types, offsets = map(np.asarray, (pose.block_type_ind, pose.block_coord_offset))
     missing = np.ones((*types.shape, pbt.max_n_atoms), bool)
@@ -35,7 +35,7 @@ def prepare_metal_completion(pose, available, assignments):
         metal_virtual_placements(pbt.active_block_types, types, missing, assignments)
     )
     if not placements:
-        return pose, available
+        return (pose, available, None) if return_plan else (pose, available)
     rows, shifts, wide = [], [], []
     updated = [[mask.copy() for mask in row] for row in available]
     for p, r, atom, metal, shift, widened in placements:
@@ -53,7 +53,8 @@ def prepare_metal_completion(pose, available, assignments):
         pose.device,
     )
     coords = execute_metal_placement(pose.coords, *data)
-    return pose.replace(coords=coords), updated
+    result = pose.replace(coords=coords)
+    return (result, updated, data) if return_plan else (result, updated)
 
 
 def grow_palette(pbt, co, patches, metal_classes):

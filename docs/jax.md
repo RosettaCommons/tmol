@@ -449,10 +449,28 @@ routing and native packing; `no_optH=True` disables OptH and `packer_seed` makes
 packing reproducible. Fragment imposition uses common original-atom plans.
 `pose_stack_from_file()` reads PDB, CIF, MOL2 and SDF through the common reader;
 optional residue bounds select a half-open range. Shared AtomArray export preserves
-molecular metadata; Atom37 coordinate overrides remain a parity gap. Shared CPU workflows check
+molecular metadata. Shared CPU workflows check
 physical atom identity, neutral-terminal hydrogen names, missing HYP/D
 sidechains, file input, and all 25 score-channel derivatives. This does not
 establish complete input or end-to-end speed/memory parity.
+
+
+`prepare_atom37_pose_builder(atoms, context)` uses shared atom identity and
+connectivity routing. Call `bind = builder.prepare(example_coords)` eagerly,
+then use `bind(coords)` inside `jit`, `vmap` or reverse differentiation. Inputs
+are float32 `[poses, tokens, 37, 3]`; mapped all-NaN triplets mean missing atoms.
+Preparation fixes chemistry, nonleaf presence and inferred metal-site geometry.
+Missing leaves use the common native reconstruction kernels. Prepare again when
+those discrete choices change. Invalid mapped triplets raise during preparation;
+invalid triplets or changed nonleaf presence during traced execution produce
+NaN coordinates. Hydrogen optimization, the tensor-only topology constructor
+and the `pose_stack_from_atom_array(atom37_coords=...)` overload remain gaps.
+
+`PoseStackBuilder.from_poses(stacks, device)` combines compatible chemical
+contexts using the common palette, metadata and fragment-identity plans. It
+preserves coordinate derivatives, constraints and sparse bond distances, pads
+the batch, and retains the coordinate dtype. As in Torch, independently rebuilt
+chemical databases must be resolved to one shared context before concatenation.
 
 ## Fragmented ligands
 

@@ -361,7 +361,9 @@ def pose_stack_from_canonical_form(
     )
     from ._metal import prepare_metal_completion
 
-    result, masks = prepare_metal_completion(result, masks, assignments)
+    result, masks, metal_replay = prepare_metal_completion(
+        result, masks, assignments, return_plan=True
+    )
     if assignments and not build_missing_context:
         for p, row in enumerate(rows):
             for r, kind in enumerate(row):
@@ -372,7 +374,9 @@ def pose_stack_from_canonical_form(
         result, rows, masks, pbt, leaves, packer_atoms, return_block_has_missing_atoms
     )
     masks = apply_input_policy(result, masks, mode)
-    result = complete_missing_atoms(result, masks, build_context=build_missing_context)
+    result, context_replay = complete_missing_atoms(
+        result, masks, build_context=build_missing_context, return_plan=True
+    )
     from ._metadata import canonical_metadata_for_pose
 
     result = result.replace(
@@ -385,6 +389,9 @@ def pose_stack_from_canonical_form(
             authors,
         )
     )
+    object.__setattr__(result, "_canonical_metal_replay", metal_replay)
+    object.__setattr__(result, "_canonical_context_replay", context_replay)
+
     import jax
 
     return (

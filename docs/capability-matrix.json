@@ -199,7 +199,7 @@
         "tests/scientific/test_fragment_attribution.py",
         "tests/jax/test_block_pair_transforms.py"
       ],
-      "implementation_status": "Shared current/legacy fragment-column validation and bounded reduction policy. JAX uses existing native conformer physics for directed block-pair matrices. Ten molecular domains compare all-term values/gradients; real single/repeated protein-ligand fragmentation preserves uncut partner energies and physical gradients. Coordinate motion, jit/vmap and arbitrary pair-cotangent reverse derivatives have CPU checks. Dense output is quadratic; final CUDA/package and mature runtime/peak memory gates are pending."
+      "implementation_status": "Shared current/legacy fragment-column validation; sparse requested fragment-pair reduction through existing native conformer physics and bounded reusable JAX programs. Exact91f installed CPU and JAX CUDA checks passed. Full9278-atom input/render/fragment-energy/full-coordinate-gradient workflow matches corrected mature d758 at2e-10 in both run orders. Warm ratio0.720-0.724, cold2.108-2.198, peak process memory2.03-2.05M versus1.59MKiB: cold/memory HOLD. This is fragment attribution, not whole-pose angular-gradient equivalence."
     },
     {
       "domain": "structure_io",
@@ -321,7 +321,7 @@
         "tests/scientific/test_armijo_execution.py",
         "tests/jax/test_armijo_native.py"
       ],
-      "implementation_status": "Common settings/setup, compact H0=I direction, history, restart/retirement and per-segment convergence; typed shared native Armijo transitions through JAX FFI. Dense/scattered independent objectives, full25-channel molecular objectives and public compact Cartesian/kinematic execution pass CPU invariants in both frameworks. Existing strong-Wolfe default remains; exact CUDA/package, matched trajectories, cold/warm time and peak memory pending. Complete optimizer checkpoint/API parity is not established."
+      "implementation_status": "Common settings/setup, compact H0=I direction, history, restart/retirement and per-segment convergence; typed shared native Armijo transitions through JAX FFI. Dense/scattered independent objectives, full25-channel molecular objectives and public compact Cartesian/kinematic execution pass CPU invariants in both frameworks. Existing strong-Wolfe default remains; exact a0a CUDA/package and bounded Apple portable execution passed; matched trajectories, cold/warm time and peak memory remain pending. Complete optimizer checkpoint/API parity is not established."
     },
     {
       "domain": "molecular_atomarray_export",
@@ -330,10 +330,27 @@
       "repro_fixture": [
         "tests/scientific/test_structure_export.py"
       ],
-      "implementation_status": "Shared canonical atom projection, physical-chain graph, Biotite metadata/bonds/metal restoration and original fragment identity. Zinc, PLP/CSD, 2ML isopeptide, repeated glycans and repeated ligand molecules have CPU all-25-term value/gradient roundtrips; source parameters/atom identity preserved. JAX automatic polymer preparation now exposes the common Dunbrack library alias. Conflicting B factors, residue annotations and metal origins in multi-model export reject explicitly. Export is host I/O, not differentiable or jittable. Exact package/CUDA gates pending."
+      "implementation_status": "Shared canonical atom projection, physical-chain graph, Biotite metadata/bonds/metal restoration and original fragment identity. Zinc, PLP/CSD, 2ML isopeptide, repeated glycans and repeated ligand molecules have CPU all-25-term value/gradient roundtrips; source parameters/atom identity preserved. JAX automatic polymer preparation now exposes the common Dunbrack library alias. Conflicting B factors, residue annotations and metal origins in multi-model export reject explicitly. Export is host I/O, not differentiable or jittable. Exact a0a installed CPU and actual CUDA gates passed."
+    },
+    {
+      "domain": "prepared_atom37_input",
+      "torch": "supported_with_first_call_hydrogen_retention_bug_under_repair",
+      "jax": "prepared_cpu_values_source_gradients_jit_vmap",
+      "repro_fixture": [
+        "tests/scientific/test_atom37_input.py",
+        "tests/jax/test_atom37_transforms.py"
+      ],
+      "implementation_status": "Common routing; native leaf/H reconstruction and fixed inferred metal placement. Six ligand/D/DNA/RNA/HYP/zinc molecular CPU cases pass physical identity,25-channel finiteness and source-energy gradients. JAX malformed/missing-leaf/native-translation/jit/vmap checks pass. OptH,tensor-only topology and direct AtomArray coordinate override remain gaps. Prepared nonleaf presence and chemistry are fixed. CUDA/install gates pending. Mature Torch inferred virtual sites detach; the extra JAX virtual translation derivative is not a mature parity claim."
+    },
+    {
+      "domain": "pose_concatenation",
+      "torch": "supported",
+      "jax": "shared_policy_cpu_validated",
+      "repro_fixture": "tests/scientific/test_pose_concatenation.py",
+      "implementation_status": "Common exact chemical-prefix identity, merged palettes, metadata and fragment maps; JAX buffer copying preserves coordinate dtype/derivatives, sparse bond distances and constraints. Four CPU checks per backend cover mixed ligand/noncanonical/D batches, all26 per-term values/gradients, distinct palettes and repeated fragment identity. Exact CUDA/install and full workflow runtime/memory pending."
     }
   ],
-  "validation": "PR629 remains draft. Published e8 and historical package/CUDA evidence retain C-terminal COO from an incomplete docking rollback. Private chemistry and associated gold data now exactly match docking-free d758; corrected installed CPU/CUDA gates are pending. Mature Torch complete cold/warm/peak-memory parity and actual corrected-chemistry Metal remain unresolved.",
+  "validation": "PR629 remains OPEN DRAFT at corrected a0a9f43. Its default chemistry and associated gold data match docking-free d758. Exact clean installed CPU45+318, actual JAX CUDA36 and Torch CUDA30 passed. Corrected Apple bounded source gates:209 tests and48 full energy/gradient comparisons, including actual MPS packing/minimization; no native JAX MPS claim. New private91f CPU45+344 and JAX CUDA41 passed; corresponding Torch CUDA and latest frontend gates remain pending. Complete supported mature functionality and matched cold/warm/peak-memory acceptance remain incomplete.",
   "score_terms": {
     "nonbonded": {
       "torch": "implemented",
@@ -460,27 +477,28 @@
   },
   "acceptance_gaps": {
     "mature_functionality": [
-      "New block-pair/fragment public APIs await exact CUDA/package and matched mature runtime/memory gates",
-      "Atom37 coordinate overrides and remaining public input contracts",
+      "Latest Atom37/pose-concatenation adapters require exact artifact/CUDA gates; fragment-attribution cold/memory gaps remain measured",
+      "Atom37 OptH,tensor-only topology and direct AtomArray coordinate overload; remaining public input contracts",
       "Complete task/design API compatibility, changed-port and constrained-identity imposition",
       "Mature optimizer checkpoint/API behavior and matched trajectory validation",
       "Exhaustive custom database/public score-option compatibility"
     ],
     "validation_and_performance": [
-      "Published a0a corrected CObb source passed clean installed CPU and actual CUDA gates; newer private block-pair/fragment/loader/score-option changes await their matching artifacts",
+      "Published a0a and private91f have matching clean installed CPU gates;91f JAX CUDA passed,Torch CUDA pending;latest input adapters need new source artifacts",
       "Matched mature end-to-end cold/warm runtime and peak host/device memory unresolved",
       "Core measured mature molecular minimization regressions remain under investigation",
-      "Corrected-chemistry final Apple validation belongs to Metal owner"
+      "Corrected a0a Apple bounded correctness passed; cf7 LKBall header followup dispatched through existing Metal owner. Small Metal workflow runtime/memory remains slower/higher"
     ],
     "framework_specific_or_not_mature_parity": [
       "Higher derivatives through native torsion/forward-kinematics kernels are not advertised by mature Torch either",
       "Dynamic topology/sampling/graph allocation remains eager; JAX jit/vmap extensions beyond mature execution are tracked separately",
-      "Independent varying third-backbone context lacks a validated mature native contract; do not count it as established Torch capability"
+      "Independent varying third-backbone context lacks a validated mature native contract; do not count it as established Torch capability",
+      "JAX inferred-metal virtual translation derivatives exceed the mature detached-fit path; track separately from physical source-coordinate parity"
     ]
   },
   "score_file_options": {
     "torch": "implemented",
-    "jax": "cpu_validated_pending_exact_cuda_and_package",
+    "jax": "exact_cpu_installed_and_jax_cuda_validated_torch_cuda_pending",
     "repro_fixture": [
       "tests/scientific/test_score_files.py",
       "tests/scientific/test_soft_repulsion.py"

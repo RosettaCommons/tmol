@@ -19,6 +19,7 @@ def canonical_form_from_biotite(
     missing_density_distance_threshold=2.4,
     prepare_input=False,
     cut_partners=frozenset(),
+    filter_missing_mainchain=True,
 ):
     """Convert an AtomArray or same-topology AtomArrayStack to canonical form."""
     from tmol_core.io.atom_array import (
@@ -41,6 +42,7 @@ def canonical_form_from_biotite(
             atoms,
             co,
             cut_partners=cut_partners,
+            filter_missing_mainchain=filter_missing_mainchain,
         )
     atoms = with_metal_coordination_typed(atoms)
     models = list(atoms) if isinstance(atoms, struc.AtomArrayStack) else [atoms]

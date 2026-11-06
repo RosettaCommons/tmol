@@ -65,7 +65,21 @@ _STRUCTURE_INPUT = {
 __all__ += sorted(_STRUCTURE_INPUT)
 
 
+_ATOM37_INPUT = {
+    "atom37_slot_map_for_ordering",
+    "prepare_atom37_pose_builder",
+    "PreparedAtom37PoseBuilder",
+}
+__all__ += sorted(_ATOM37_INPUT)
+
+
 def __getattr__(name):
+    if name in _ATOM37_INPUT:
+        from importlib import import_module
+
+        value = getattr(import_module(".io.atom37", __name__), name)
+        globals()[name] = value
+        return value
     if name in _STRUCTURE_INPUT:
         from importlib import import_module
 
