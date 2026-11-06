@@ -61,6 +61,19 @@ def test_own_d_library_precedes_reference_and_nonalpha_borrowing_is_neutral():
 
 
 def test_sampling_batch_axis_and_framework_free_import():
+    from tmol_core.pack.na_sampling import pack_na_sampler_params
+
+    na = pack_na_sampler_params([])
+    assert na["chi_atom"].shape == (0, 1)
+    assert na["ring"].shape == (0, 5)
+    assert na["proton"].shape == (0, 1, 0)
+    assert na["n_combos"].shape == (0,)
+    assert na["n_chi"] == 1
+    zero_samples = pack_na_sampler_params(
+        [dict(ring=np.arange(5), base=0, chi1_atom=1, proton_chi=[(1, 2, ())])]
+    )
+    assert zero_samples["proton"].shape == (1, 0, 1)
+    np.testing.assert_array_equal(zero_samples["n_combos"], [0])
     packed = pack_dunbrack_sampler_metadata([], [], [])
     assert packed.bbdihe_uaids.shape == (0, 2, 4, 3)
     assert packed.non_dunbrack_samples.shape == (0, 0, 2, 0)

@@ -63,14 +63,21 @@ def annotate_na_sampler_residue(
 
 def pack_na_sampler_params(params):
     """Build the canonical type-indexed atom and proton-product arrays."""
-    n_chi = max(1 + len(p["proton_chi"]) for p in params)
+    n_chi = max((1 + len(p["proton_chi"]) for p in params), default=1)
 
-    ring = numpy.stack([p["ring"] for p in params])
+    ring = (
+        numpy.stack([p["ring"] for p in params])
+        if params
+        else numpy.empty((0, 5), dtype=numpy.int64)
+    )
     base = numpy.array([p["base"] for p in params])
     chi_atom = numpy.full((len(params), n_chi), -1, dtype=numpy.int32)
     combos = [proton_combinations(p["proton_chi"]) for p in params]
     n_combos = numpy.array([len(c) for c in combos], dtype=numpy.int64)
-    proton = numpy.zeros((len(params), n_combos.max(), n_chi - 1), dtype=numpy.float32)
+    proton = numpy.zeros(
+        (len(params), (n_combos.max() if n_combos.size else 1), n_chi - 1),
+        dtype=numpy.float32,
+    )
     for i, p in enumerate(params):
         if p["base"] < 0:
             continue
