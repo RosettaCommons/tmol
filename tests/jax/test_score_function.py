@@ -131,8 +131,8 @@ def test_reference_options_snapshot_clone_dtype_and_transform_contract():
         np.testing.assert_array_equal(
             jax.jit(jax.vmap(old))(jnp.stack([coords, coords + 3])), [[10.0], [10.0]]
         )
-    with pytest.raises(NotImplementedError, match="soft_rep"):
-        sf.set_option("soft_rep", True)
+    with pytest.raises(NotImplementedError, match="unknown_option"):
+        sf.set_option("unknown_option", True)
 
 
 def test_rerender_keeps_topology_parameters_and_callback_identity_fresh():

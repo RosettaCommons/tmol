@@ -105,7 +105,16 @@ class RotamerScorer:
                     evaluate, spatial = _reference, False
                 else:
                     prepare, evaluate, spatial = _EXECUTION[provided[0]]
-                    state = prepare(pose, rotamers, score_function.param_db)
+                    options = (
+                        {
+                            "soft_repulsive": score_function._options.get(
+                                "soft_rep", False
+                            )
+                        }
+                        if provided[0] == ScoreType.fa_ljatr
+                        else {}
+                    )
+                    state = prepare(pose, rotamers, score_function.param_db, **options)
                 entries.append((provided, selected, weights, evaluate, state, spatial))
         self.entries = tuple(entries)
         self._evaluate = self._compiled_evaluator()

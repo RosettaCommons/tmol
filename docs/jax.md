@@ -81,8 +81,11 @@ coordinate changes; render again after changing weights, parameters, types,
 connectivity or batch layout. `sum_terms=False` returns weighted channels in
 `ScoreType` order; additionally set `apply_weights=False` for unweighted values.
 `set_options({"ref_weights": weights})` replaces reference weights; explicit D
-entries take precedence over the corresponding L residue. Other score options
-currently reject explicitly. Minimization accepts atom or xyz movement masks, freezes padding and returns a
+entries take precedence over the corresponding L residue.
+`set_options({"soft_rep": True})` selects the shared soft-repulsive LJ parameters
+for whole-pose, block-pair and packing scoring. Unknown options reject explicitly.
+`ScoreFunction.from_sfxn_file(path, param_db)` reads versioned weights and options
+through the same format parser as Torch; incompatible major versions reject. Minimization accepts atom or xyz movement masks, freezes padding and returns a
 new pose. Check `result["converged"]` and `result["status"]`.
 
 Attach general geometric constraints with `tmol_jax.ConstraintSet.create_empty(

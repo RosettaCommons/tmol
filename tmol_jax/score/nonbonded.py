@@ -53,7 +53,7 @@ def _validate_atom_type_order(pbt, names):
         raise ValueError("scoring database atom-type order differs from pose chemistry")
 
 
-def _ljlk_parameters(pose, database):
+def _ljlk_parameters(pose, database, *, soft_repulsive=False):
     pbt = pose.packed_block_types
     names, flags = atom_type_parameters(database.chemical.atom_types)
     _validate_atom_type_order(pbt, names)
@@ -63,7 +63,9 @@ def _ljlk_parameters(pose, database):
         lj.validate_block_type(pbt.active_block_types[index])
     return (
         lj.native_parameters(flags),
-        native_ljlk_global_parameters(database.scoring.ljlk.global_parameters),
+        native_ljlk_global_parameters(
+            database.scoring.ljlk.global_parameters, soft_repulsive=soft_repulsive
+        ),
     )
 
 
@@ -97,11 +99,11 @@ def _validate_native_connections(pbt):
         )
 
 
-def prepare_nonbonded(pose, database):
+def prepare_nonbonded(pose, database, *, soft_repulsive=False):
     """Materialize canonical chemistry/parameters in the native operand layout."""
     pbt = pose.packed_block_types
     types = pbt.active_block_types
-    lj, lj_global = _ljlk_parameters(pose, database)
+    lj, lj_global = _ljlk_parameters(pose, database, soft_repulsive=soft_repulsive)
     elec = _electrostatic_parameters(pose, database)
     lj_paths, generic = packed_ljlk_distances(
         types, pbt.max_n_atoms, database.scoring.genbonded.rosetta_typed
@@ -155,7 +157,9 @@ def nonbonded_energy(coords, state, weights=None):
     )
 
 
-def prepare_independent_nonbonded(pose, database, *, electrostatic):
+def prepare_independent_nonbonded(
+    pose, database, *, electrostatic, soft_repulsive=False
+):
     pbt = pose.packed_block_types
     _validate_native_connections(pbt)
     types = pbt.active_block_types
@@ -172,7 +176,9 @@ def prepare_independent_nonbonded(pose, database, *, electrostatic):
         pbt.elec_partial_charge = jnp.asarray(elec.charges)
         pbt._elec_owners = (database.scoring.elec, types)
     else:
-        parameters, globals_ = _ljlk_parameters(pose, database)
+        parameters, globals_ = _ljlk_parameters(
+            pose, database, soft_repulsive=soft_repulsive
+        )
         paths, generic = packed_ljlk_distances(types, pbt.max_n_atoms, rosetta_typed)
         specific = (pbt.atom_types, paths, parameters, globals_)
         target, channels, reach = "tmol_ljlk", 3, globals_[0, 0]

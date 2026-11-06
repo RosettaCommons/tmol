@@ -467,7 +467,7 @@
       "Exhaustive custom database/public score-option compatibility"
     ],
     "validation_and_performance": [
-      "Corrected CObb source: clean installed CPU and actual CUDA gates running",
+      "Published a0a corrected CObb source passed clean installed CPU and actual CUDA gates; newer private block-pair/fragment/loader/score-option changes await their matching artifacts",
       "Matched mature end-to-end cold/warm runtime and peak host/device memory unresolved",
       "Core measured mature molecular minimization regressions remain under investigation",
       "Corrected-chemistry final Apple validation belongs to Metal owner"
@@ -477,5 +477,14 @@
       "Dynamic topology/sampling/graph allocation remains eager; JAX jit/vmap extensions beyond mature execution are tracked separately",
       "Independent varying third-backbone context lacks a validated mature native contract; do not count it as established Torch capability"
     ]
+  },
+  "score_file_options": {
+    "torch": "implemented",
+    "jax": "cpu_validated_pending_exact_cuda_and_package",
+    "repro_fixture": [
+      "tests/scientific/test_score_files.py",
+      "tests/scientific/test_soft_repulsion.py"
+    ],
+    "implementation_status": "Common versioned .sfxn parser; explicit reference overrides and soft_rep reach whole-pose, block-pair and packing preparation. Four ligand/noncanonical/D/mixed full beta_soft cases compare all 25 values and coordinate gradients to actual Torch at float64 2e-10. Whole/pair conservation and independent directional derivatives tested. Unknown options reject."
   }
 }

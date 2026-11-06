@@ -125,7 +125,9 @@ def validate_rotamer_context(pose, rotamers):
         object.__setattr__(rotamers, "_validated_correspondence", sources)
 
 
-def prepare_rotamer_nonbonded(pose, rotamers, database, *, electrostatic=False):
+def prepare_rotamer_nonbonded(
+    pose, rotamers, database, *, electrostatic=False, soft_repulsive=False
+):
     """Prepare shared chemistry for sparse LJ/LK or electrostatic execution."""
     validate_rotamer_context(pose, rotamers)
     with jax.default_device(pose.device):
@@ -133,6 +135,7 @@ def prepare_rotamer_nonbonded(pose, rotamers, database, *, electrostatic=False):
             pose,
             database,
             electrostatic=electrostatic,
+            soft_repulsive=soft_repulsive,
         )
     common = (
         rotamers.coord_offset_for_rot,

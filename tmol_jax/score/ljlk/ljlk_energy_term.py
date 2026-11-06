@@ -5,6 +5,9 @@ from tmol_jax.score.score_types import ScoreType
 
 
 class LJLKEnergyTerm(EnergyTerm):
+    def set_options(self, options):
+        self.soft_repulsive = options.get("soft_rep", False)
+
     def score_types_provided(self):
         return [ScoreType.fa_ljatr, ScoreType.fa_ljrep, ScoreType.fa_lk]
 
@@ -12,7 +15,10 @@ class LJLKEnergyTerm(EnergyTerm):
         from tmol_jax.score.nonbonded import prepare_independent_nonbonded
 
         return prepare_independent_nonbonded(
-            pose_stack, self.param_db, electrostatic=False
+            pose_stack,
+            self.param_db,
+            electrostatic=False,
+            soft_repulsive=getattr(self, "soft_repulsive", False),
         )
 
     def __call__(self, pose_stack, term_state, coords_override=None):

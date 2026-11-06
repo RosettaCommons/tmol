@@ -10,9 +10,9 @@ from .test_current_conformers import current_samplers, ensure_fallback_sampler
 
 
 @pytest.mark.parametrize(
-    "name,bump",
+    "name,bump,soft_rep",
     [
-        (name, False)
+        (name, False, False)
         for name in (
             "ligand",
             "connected_noncanonical",
@@ -21,10 +21,11 @@ from .test_current_conformers import current_samplers, ensure_fallback_sampler
             "dna",
         )
     ]
-    + [(name, True) for name in ("ligand", "d_peptide", "mixed_batch")],
+    + [(name, True, False) for name in ("ligand", "d_peptide", "mixed_batch")]
+    + [(name, False, True) for name in ("ligand", "d_peptide")],
 )
 def test_complete_packing_selects_conformers_and_preserves_chemistry(
-    backend, name, bump
+    backend, name, bump, soft_rep
 ):
     backend.molecule(CASES[name], terms=("ref",))
     task, _, concrete = (
@@ -43,6 +44,8 @@ def test_complete_packing_selects_conformers_and_preserves_chemistry(
         backend.pose, concrete(task), backend.parameter_database.chemical
     )
     backend.use_beta2016()
+    if soft_rep:
+        backend.set_options({"soft_rep": True})
     before = backend.coords().copy()
     energy_before = backend.scores(before)
     packed = pack_rotamers(backend.pose, backend.score_function, task, seed=17)

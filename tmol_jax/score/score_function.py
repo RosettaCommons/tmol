@@ -63,6 +63,20 @@ class ScoreFunction:
         self._options = {}
         self._executors = {}
 
+    @classmethod
+    def from_sfxn_file(cls, path, param_db=None):
+        """Load the shared versioned weights/options contract; poses select devices."""
+        from tmol_core.scoring.score_function import load_score_function_record
+        from tmol_jax.database import ParameterDatabase
+
+        data = load_score_function_record(path)
+        score = cls(ParameterDatabase.get_default() if param_db is None else param_db)
+        for name, weight in data["weights"].items():
+            score.set_weight(getattr(ScoreType, name), weight)
+        if "options" in data:
+            score.set_options(data["options"])
+        return score
+
     @property
     def param_db(self):
         return self._param_db
@@ -85,7 +99,7 @@ class ScoreFunction:
 
     def set_options(self, options):
         """Replace supported term options; unsupported options fail explicitly."""
-        unsupported = set(options) - {"ref_weights"}
+        unsupported = set(options) - {"ref_weights", "soft_rep"}
         if unsupported:
             raise NotImplementedError(
                 "JAX score options are not implemented: "
@@ -183,7 +197,11 @@ class ScoreFunction:
             if fused_terms:
                 from tmol_jax.score.nonbonded import prepare_nonbonded, nonbonded_energy
 
-                fused_state = prepare_nonbonded(pose_stack, self.param_db)
+                fused_state = prepare_nonbonded(
+                    pose_stack,
+                    self.param_db,
+                    soft_repulsive=self._options.get("soft_rep", False),
+                )
         entries = tuple(
             (copy.copy(term), state)
             for term, state in zip(self._terms, states)
