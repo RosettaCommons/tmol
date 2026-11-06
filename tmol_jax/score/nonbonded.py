@@ -1,5 +1,6 @@
 """Runtime packing for the shared whole-pose LJ/LK/electrostatic kernels."""
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -113,7 +114,7 @@ def prepare_nonbonded(pose, database, *, soft_repulsive=False):
     near, separation = _pose_connections(pose)
     _validate_native_connections(pbt)
     parameters = tuple(
-        jnp.asarray(a, device=pose.coords.device)
+        jax.device_put(a, device=pose.coords.device)
         for a in (
             offsets,
             first,
@@ -173,7 +174,9 @@ def prepare_independent_nonbonded(
         specific = (elec.charges, elec.inter, elec.intra, elec.global_parameters)
         target, channels, reach = "tmol_elec", 1, elec.global_parameters[0, 4]
         # Preserve existing palette charge inspection and immutable scorer snapshots.
-        pbt.elec_partial_charge = jnp.asarray(elec.charges, device=pose.coords.device)
+        pbt.elec_partial_charge = jax.device_put(
+            elec.charges, device=pose.coords.device
+        )
         pbt._elec_owners = (database.scoring.elec, types)
     else:
         parameters, globals_ = _ljlk_parameters(
@@ -200,7 +203,7 @@ def prepare_independent_nonbonded(
     return (
         target,
         channels,
-        tuple(jnp.asarray(a, device=pose.coords.device) for a in operands),
+        tuple(jax.device_put(a, device=pose.coords.device) for a in operands),
         float(reach),
     )
 

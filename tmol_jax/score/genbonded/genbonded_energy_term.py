@@ -1,5 +1,6 @@
 """Generic bonded torsions from shared preparation and whole-pose kernels."""
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -44,7 +45,7 @@ class GenBondedEnergyTerm(EnergyTerm):
                 padding[1] = (0, ports - packed[i].shape[1])
                 packed[i] = np.pad(packed[i], padding)
         return tuple(
-            jnp.asarray(a, device=pose_stack.coords.device)
+            jax.device_put(a, device=pose_stack.coords.device)
             for a in (
                 *bonded_pose_arguments(pose_stack, pbt),
                 *packed,

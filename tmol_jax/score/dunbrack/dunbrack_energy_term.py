@@ -2,6 +2,7 @@
 
 from typing import NamedTuple
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -46,7 +47,7 @@ class DunbrackEnergyTerm(EnergyTerm):
             return DunbrackTermState(())
         return DunbrackTermState(
             tuple(
-                jnp.asarray(a, device=pose_stack.coords.device)
+                jax.device_put(a, device=pose_stack.coords.device)
                 for a in pose_arguments(pose_stack)
             )
             + parameters
@@ -89,7 +90,7 @@ class DunbrackEnergyTerm(EnergyTerm):
                 ):
                     raise ValueError("native Dunbrack indices exceed int32")
                 array = array.astype(np.int32)
-            parameters.append(jnp.asarray(array, device=pbt.n_atoms.device))
+            parameters.append(jax.device_put(array, device=pbt.n_atoms.device))
         return tuple(parameters)
 
     def __call__(self, pose_stack, term_state, coords_override=None):

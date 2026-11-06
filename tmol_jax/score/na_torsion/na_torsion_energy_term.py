@@ -2,6 +2,7 @@
 
 from typing import NamedTuple
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -27,7 +28,7 @@ def na_parameter_state(database, device=None):
     params = prepare_na_torsion_parameters(database.scoring.na_torsion)
     return NaTorsionTermState(
         tuple(
-            jnp.asarray(params[name], device=device)
+            jax.device_put(params[name], device=device)
             for name in (
                 "backbone_means",
                 "backbone_sdev",
@@ -81,7 +82,7 @@ class NaTorsionEnergyTerm(EnergyTerm):
         register("tmol_na_torsion")
         return NaTorsionTermState(
             tuple(
-                jnp.asarray(
+                jax.device_put(
                     a.astype(np.int32) if a.dtype.kind == "i" else a,
                     device=pose_stack.coords.device,
                 )

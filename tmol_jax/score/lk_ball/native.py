@@ -1,5 +1,6 @@
 """Native LK-ball operand layout from shared host chemistry and water metadata."""
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -102,7 +103,7 @@ def prepare_lk_ball(pose, database):
         native_lk_ball_global_parameters(globals_),
     )
     register("tmol_lk_ball")
-    return tuple(jnp.asarray(a, device=pose.coords.device) for a in arrays), float(
+    return tuple(jax.device_put(a, device=pose.coords.device) for a in arrays), float(
         globals_.max_dis
     )
 

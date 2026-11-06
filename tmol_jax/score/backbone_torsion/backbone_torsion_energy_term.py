@@ -2,7 +2,7 @@
 
 from typing import NamedTuple
 
-import jax.numpy as jnp
+import jax
 import numpy as np
 
 from tmol_core.scoring.backbone_torsion import (
@@ -60,7 +60,7 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
         register("tmol_backbone_torsion")
         return BackboneTorsionTermState(
             tuple(
-                jnp.asarray(a, device=pose_stack.coords.device)
+                jax.device_put(a, device=pose_stack.coords.device)
                 for a in (
                     *pose_arguments(pose_stack),
                     atom_downstream_of_conn(pbt),

@@ -1,6 +1,6 @@
 """Array transport for shared hydrogen-bond chemistry and native physics."""
 
-import jax.numpy as jnp
+import jax
 import numpy as np
 
 from tmol_core.chemical.bonds import index_bonds, pack_bond_topology
@@ -133,7 +133,7 @@ def prepare_hbond(pose, database, *, rotamers=None):
     )
     register("tmol_hbond" if rotamers is None else "tmol_rotamer_hbond")
     return tuple(
-        jnp.asarray(a, device=pose.coords.device)
+        jax.device_put(a, device=pose.coords.device)
         for a in (
             *arrays,
             indices,

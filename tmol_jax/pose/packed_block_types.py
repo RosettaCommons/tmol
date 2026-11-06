@@ -75,7 +75,7 @@ class PackedBlockTypes:
         host = PackedBlockTypesData.from_restypes(chem_db, active_types, min_n_conn=2)
         device = jax.config.jax_default_device or jax.devices()[0]
         arrays = {
-            name: jnp.asarray(getattr(host, name), device=device)
+            name: jax.device_put(getattr(host, name), device=device)
             for name in (
                 "n_atoms",
                 "atom_is_real",
@@ -88,13 +88,13 @@ class PackedBlockTypes:
                 "intrares_path_distance",
             )
         }
-        arrays["atom_is_hydrogen"] = jnp.asarray(
-            host.atom_is_hydrogen, dtype=bool, device=device
+        arrays["atom_is_hydrogen"] = jax.device_put(
+            np.asarray(host.atom_is_hydrogen, dtype=bool), device=device
         )
-        arrays["bond_indices"] = jnp.asarray(
+        arrays["bond_indices"] = jax.device_put(
             np.where(host.bond_is_real[..., None], host.bond_indices, 0), device=device
         )
-        arrays["conn_atoms"] = jnp.asarray(host.conn_atom, device=device)
+        arrays["conn_atoms"] = jax.device_put(host.conn_atom, device=device)
         return cls(
             chem_db=chem_db,
             active_block_types=host.active_block_types,

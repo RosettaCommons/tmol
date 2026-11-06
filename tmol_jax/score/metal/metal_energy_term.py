@@ -1,5 +1,6 @@
 """Thin coordinate-runtime adapter for canonical metal coordination scoring."""
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -32,7 +33,7 @@ class MetalCoordinationEnergyTerm(EnergyTerm):
         )
         register("tmol_metal_coordination")
         return tuple(
-            jnp.asarray(a, device=pose_stack.coords.device)
+            jax.device_put(a, device=pose_stack.coords.device)
             for a in (
                 *pose_arguments(pose_stack),
                 pbt.conn_atoms,

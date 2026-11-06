@@ -94,7 +94,7 @@ class RotamerScorer:
                 if provided == (ScoreType.ref,):
                     ref = RefEnergyTerm(score_function.param_db)
                     ref.set_options(score_function._options)
-                    per_type = jnp.asarray(
+                    per_type = jax.device_put(
                         ref.block_type_values(pose.packed_block_types),
                         device=pose.device,
                     )

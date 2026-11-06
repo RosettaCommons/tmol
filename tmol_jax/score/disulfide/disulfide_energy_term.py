@@ -1,6 +1,6 @@
 """Disulfide topology and stereochemistry from the shared scientific core."""
 
-import jax.numpy as jnp
+import jax
 
 from tmol_core.scoring.disulfide import (
     pack_disulfide_connections,
@@ -34,7 +34,7 @@ class DisulfideEnergyTerm(EnergyTerm):
             ),
         )
         register("tmol_disulfide")
-        return tuple(jnp.asarray(a, device=pose_stack.coords.device) for a in arrays)
+        return tuple(jax.device_put(a, device=pose_stack.coords.device) for a in arrays)
 
     def __call__(self, pose_stack, term_state, coords_override=None):
         coords = pose_stack.coords if coords_override is None else coords_override

@@ -1,6 +1,6 @@
 """Cartesian bonded scoring from the shared preparation and native kernels."""
 
-import jax.numpy as jnp
+import jax
 import numpy as np
 
 from tmol_core.scoring.cartbonded import CartBondedPreparation
@@ -32,7 +32,7 @@ class CartBondedEnergyTerm(EnergyTerm):
         host = self._prepared("packed", lambda: prep.prepare_packed(types), *types)
         register("tmol_cartbonded")
         return tuple(
-            jnp.asarray(a, device=pose_stack.coords.device)
+            jax.device_put(a, device=pose_stack.coords.device)
             for a in (
                 *bonded_pose_arguments(pose_stack, pbt),
                 host.atom_unique_ids,
