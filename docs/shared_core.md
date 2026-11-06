@@ -58,3 +58,11 @@ shared `tests/scientific` cases with the relevant execution adapters. Existing
 frontend suites cover public APIs, device behavior, packing and minimization.
 Core code is BSD-3-Clause; vendored PySMILES retains its Apache-2.0 license and
 attribution, and native packages include their compiled dependencies' licenses.
+
+Conjugated sampling shares library projection, joint chi enumeration, budgets,
+current-state eligibility, and sampler ownership masks in `tmol_core.pack.conjugated`.
+Repeated local tree/scan plans and torsion-child lookup also use common host
+metadata. Frontends measure input torsions and execute the existing native
+forward/inverse transforms. This preserves coupled group geometry; it does not
+provide a ring-closure solver or establish support in a frontend that has not
+integrated the complete workflow.
