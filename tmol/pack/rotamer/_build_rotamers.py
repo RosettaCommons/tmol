@@ -6,7 +6,6 @@ from typing import Any
 from tmol.types._array import NDArray
 from tmol.types._torch import Tensor
 from tmol.types._functional import _validate_args
-from tmol.utility.tensor._common_operations import _exclusive_cumsum1d
 from tmol.database.chemical import ChemicalDatabase
 from tmol.kinematics._datatypes import KinForest
 from tmol.chemical import RefinedResidueType
@@ -496,8 +495,13 @@ def _merge_conformer_samples(
     list[Tensor[torch.bool][:]],
     list[Tensor[torch.int64][:]],
 ]:
-    """Place the common eager conformer merge plan on the sampler device."""
-    from tmol_core.pack.conformer_merge import prepare_conformer_merge
+    """Execute a shared count/prefix plan without copying GPU source rows."""
+    from tmol_core.pack.conformer_merge import (
+        prepare_conformer_merge,
+        prepare_conformer_merge_counts,
+        conformer_rows_are_ordered,
+        conformer_destinations,
+    )
 
     if not conformer_samples:
         raise ValueError("At least one conformer sampler is required")
@@ -506,19 +510,57 @@ def _merge_conformer_samples(
         value.device != device for sample in conformer_samples for value in sample[:2]
     ):
         raise ValueError("Conformer samples must share a device")
-    plan = prepare_conformer_merge(
-        [(c.cpu().numpy(), i.cpu().numpy()) for c, i, *_ in conformer_samples]
-    )
-    counts, samplers, considered = (
-        torch.as_tensor(value, device=device)
-        for value in (plan.counts, plan.sampler, plan.considered)
-    )
+    if any(
+        value.dtype not in (torch.int32, torch.int64)
+        for sample in conformer_samples
+        for value in sample[:2]
+    ):
+        raise ValueError("Conformer sample counts and indices must be integers")
+    if device.type == "cpu":
+        plan = prepare_conformer_merge(
+            [(c.numpy(), i.numpy()) for c, i, *_ in conformer_samples]
+        )
+        counts, samplers, considered = map(
+            torch.from_numpy, (plan.counts, plan.sampler, plan.considered)
+        )
+        destinations = [torch.from_numpy(value) for value in plan.destinations]
+    else:
+        counts = torch.stack([sample[0] for sample in conformer_samples])
+        plan = prepare_conformer_merge_counts(
+            counts.cpu().numpy(), [sample[1].numel() for sample in conformer_samples]
+        )
+        intervals = torch.as_tensor(plan.intervals, device=device)
+        offsets = torch.as_tensor(plan.offsets, device=device)
+        choices = torch.arange(counts.shape[1], device=device)
+        valid = [
+            conformer_rows_are_ordered(
+                sample[1], *intervals[:, i].unbind(0), counts[i] > 0, choices
+            )
+            for i, sample in enumerate(conformer_samples)
+        ]
+        if not bool(torch.stack(valid).all()):
+            raise ValueError("Conformer source rows do not match ordered sample counts")
+        index_dtype = conformer_samples[0][1].dtype
+        for sample in conformer_samples[1:]:
+            index_dtype = torch.promote_types(index_dtype, sample[1].dtype)
+        samplers = torch.empty(plan.total, dtype=torch.int64, device=device)
+        considered = torch.empty(plan.total, dtype=index_dtype, device=device)
+        destinations = []
+        for i, sample in enumerate(conformer_samples):
+            indices = sample[1].long()
+            destination = conformer_destinations(
+                offsets[i], indices, torch.arange(indices.numel(), device=device)
+            )
+            samplers[destination] = i
+            considered[destination] = indices.to(index_dtype)
+            destinations.append(destination)
+        counts = torch.as_tensor(plan.counts, device=device)
     return (
         counts,
         samplers,
         considered,
         [samplers == i for i in range(len(conformer_samples))],
-        [torch.as_tensor(value, device=device) for value in plan.destinations],
+        destinations,
     )
 
 
@@ -592,33 +634,29 @@ def _get_rotamer_origin_data(
     Tensor[torch.int64][:],
     Tensor[torch.int32][:],
 ]:
-    n_poses = task.per_block_orig_block_type.shape[0]
-    pose_for_gbt = task.cons_bt_pose.to(torch.int32)
-
-    block_ind_for_rt = task.cons_bt_block.to(torch.int32)
-    max_n_blocks = task.per_block_orig_block_type.shape[1]
-
-    gbt_for_rot64 = gbt_for_rot.to(torch.int64)
-    pose_for_rot = pose_for_gbt[gbt_for_rot64].to(torch.int64)
-    n_rots_for_pose = torch.bincount(pose_for_rot, minlength=n_poses)
-    rot_offset_for_pose = _exclusive_cumsum1d(n_rots_for_pose)
-    block_ind_for_rot = block_ind_for_rt[gbt_for_rot64]
-    block_ind_for_rt_global = max_n_blocks * pose_for_gbt + block_ind_for_rt
-    block_ind_for_rot_global = block_ind_for_rt_global[gbt_for_rot64]
-    n_rots_for_block = torch.bincount(
-        block_ind_for_rot_global, minlength=n_poses * max_n_blocks
-    ).reshape(n_poses, max_n_blocks)
-    rot_offset_for_block = _exclusive_cumsum1d(n_rots_for_block.flatten()).reshape(
-        n_poses, max_n_blocks
+    from tmol_core.pack.conformer_merge import (
+        prepare_conformer_origins,
+        conformer_origin_counts,
     )
 
+    shape = task.per_block_orig_block_type.shape
+    poses, blocks = task.cons_bt_pose.cpu().numpy(), task.cons_bt_block.cpu().numpy()
+    device = gbt_for_rot.device
+    if device.type == "cpu":
+        return tuple(
+            torch.from_numpy(value)
+            for value in prepare_conformer_origins(
+                shape, poses, blocks, gbt_for_rot.numpy()
+            )
+        )
+    counts = torch.bincount(gbt_for_rot.long(), minlength=len(poses)).cpu().numpy()
     return (
-        n_rots_for_pose,
-        rot_offset_for_pose,
-        n_rots_for_block,
-        rot_offset_for_block,
-        pose_for_rot,
-        block_ind_for_rot,
+        *(
+            torch.as_tensor(value, device=device)
+            for value in conformer_origin_counts(shape, poses, blocks, counts)
+        ),
+        task.cons_bt_pose[gbt_for_rot.long()].long(),
+        task.cons_bt_block[gbt_for_rot.long()].int(),
     )
 
 
