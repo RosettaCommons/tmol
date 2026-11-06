@@ -8,7 +8,7 @@ import numpy as np
 
 from tmol_jax.score._native import register
 from tmol_jax.score.nonbonded import prepare_independent_nonbonded
-from .dispatch import rotamer_spheres, block_spheres, candidate_pairs
+from .dispatch import rotamer_spheres, block_spheres, candidate_pair_groups
 
 
 @partial(
@@ -133,8 +133,8 @@ def prepare_rotamer_nonbonded(pose, rotamers, database, *, electrostatic=False):
     )
 
 
-def nonbonded_candidate_pairs(
-    rotamers, packed_block_types, *, reach, coords=None, begin=0, count=None
+def nonbonded_candidate_groups(
+    rotamers, packed_block_types, *, reaches, coords=None, begin=0, count=None
 ):
     """Recompute sparse candidates for the supplied conformer coordinates."""
     if (
@@ -152,14 +152,28 @@ def nonbonded_candidate_pairs(
     sites = block_spheres(
         spheres, rotamers.n_rots_for_block, rotamers.rot_offset_for_block
     )
-    return candidate_pairs(
+    return candidate_pair_groups(
         rotamers.first_rot_block_type,
         spheres,
         sites,
         rotamers.n_rots_for_block,
         rotamers.rot_offset_for_block,
         rotamers.group_for_block,
-        reach=reach,
+        reaches=reaches,
         begin=begin,
         count=count,
     )
+
+
+def nonbonded_candidate_pairs(
+    rotamers, packed_block_types, *, reach, coords=None, begin=0, count=None
+):
+    """Recompute one sparse candidate set from the current conformer geometry."""
+    return nonbonded_candidate_groups(
+        rotamers,
+        packed_block_types,
+        reaches=(reach,),
+        coords=coords,
+        begin=begin,
+        count=count,
+    )[0]

@@ -11,7 +11,7 @@ from tmol_jax.score.ref.ref_energy_term import RefEnergyTerm
 from .scoring import (
     validate_rotamer_context,
     prepare_rotamer_nonbonded,
-    nonbonded_candidate_pairs,
+    nonbonded_candidate_groups,
     sparse_nonbonded_values,
 )
 from .bonded_scoring import (
@@ -118,21 +118,29 @@ class RotamerScorer:
             raise ValueError(f"expected finite coordinates with shape {self.shape}")
         if coords.device != self.rotamers.device:
             raise ValueError("coordinates and conformers must be on the same device")
-        candidates, prepared_indices = {}, []
+        reaches = tuple(
+            dict.fromkeys(entry[4][3] for entry in self.entries if entry[5])
+        )
         with jax.default_device(self.rotamers.device):
-            for provided, selected, weights, evaluate, state, spatial in self.entries:
-                indices = None
-                if spatial:
-                    reach = state[3]
-                    if reach not in candidates:
-                        candidates[reach] = nonbonded_candidate_pairs(
+            candidates = (
+                dict(
+                    zip(
+                        reaches,
+                        nonbonded_candidate_groups(
                             self.rotamers,
                             self.packed_block_types,
-                            reach=reach,
+                            reaches=reaches,
                             coords=coords,
-                        )
-                    indices = candidates[reach]
-                prepared_indices.append(indices)
+                        ),
+                    )
+                )
+                if reaches
+                else {}
+            )
+            prepared_indices = tuple(
+                candidates[state[3]] if spatial else None
+                for *_, state, spatial in self.entries
+            )
         return partial(
             self._evaluate, arrays=self._arrays, candidates=tuple(prepared_indices)
         )
