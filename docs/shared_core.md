@@ -113,6 +113,25 @@ JAX retains `TMOL_JAX_DATABASE`. The core installs its structure-chemistry
 dependencies without either framework. `tmol-core[ligand]` adds optional OpenBabel
 for preparation paths requiring its charge models or protonation fallback.
 
+AtomWorks 3.0.4 can import Torch during structure preparation when Torch is
+installed. Until an upstream release contains the import fix, use the explicit
+commit-qualified constraint at `packages/constraints/atomworks-no-torch.txt`
+for mixed Torch/JAX environments:
+
+```bash
+python -m pip install --upgrade --force-reinstall --no-deps \
+  -r packages/constraints/atomworks-no-torch.txt
+python -m pip install -c packages/constraints/atomworks-no-torch.txt \
+  core-dist/tmol_core-*.whl
+```
+
+The first command replaces an existing same-version AtomWorks installation.
+The second resolves the core's dependencies against the same source archive.
+This temporary personal-fork commit changes optional ML imports; explicit Torch
+conversion and RNG tracking still use Torch. The archive SHA256 is pinned and
+pip records its origin in `direct_url.json`. Ordinary PyPI installation does not
+apply this constraint and does not yet guarantee that Torch stays unloaded.
+
 Run `pytest -o addopts= tests/core` for common contracts and the affected frontend
 and device suites for integration. Compare matched molecular inputs, parameters,
 energies, gradients, topology and full cold/warm workflows, including peak host

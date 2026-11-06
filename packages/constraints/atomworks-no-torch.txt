@@ -1,0 +1,3 @@
+# Temporary AtomWorks 3.0.4 IO import fix; remove after a validated upstream release.
+# Source: https://github.com/kierandidi/atomworks/commit/35cdbe7ead7f239950bc34c127bc3b024ec66b38
+atomworks @ https://github.com/kierandidi/atomworks/archive/35cdbe7ead7f239950bc34c127bc3b024ec66b38.tar.gz#sha256=75204ba2ff446121e639a3e004d1b9fb7f97561a55ac3fa31d03fb3b46a575ed
