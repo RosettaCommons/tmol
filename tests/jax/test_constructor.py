@@ -110,3 +110,45 @@ def test_explicit_bond_indices_cannot_be_truncated_or_wrapped(indices):
     canonical["covalent_bonds"] = indices
     with pytest.raises(ValueError, match="integer indices within the int32 range"):
         pose_stack_from_canonical_form(canonical, default_packed_block_types())
+
+
+@pytest.mark.parametrize("names", (("DA", "DT"), ("DALA", "DPHE")))
+def test_biotite_polymer_gaps_use_chemical_ports_and_shared_ensemble(names):
+    import biotite.structure as struc
+    from tmol_jax.io.canonical_ordering import default_canonical_ordering
+    from tmol_jax.io.pose_stack_from_biotite import canonical_form_from_biotite
+
+    from tmol_jax.chemical.patched_chemdb import default_patched_chemdb
+
+    raw = {r.name: r for r in default_patched_chemdb().residues}
+    classes = tuple(raw[name].io_equiv_class for name in names)
+    co = default_canonical_ordering()
+    kinds = [co.restype_io_equiv_classes.index(c) for c in classes]
+    ports = co.polymer_conn_inds
+    atoms = struc.AtomArray(4)
+    atoms.chain_id[:] = "A"
+    atoms.res_id[:] = [1, 1, 2, 2]
+    atoms.res_name[:] = np.repeat(classes, 2)
+    for r, cls in enumerate(kinds):
+        names = co.restypes_ordered_atom_names[classes[r]]
+        atoms.atom_name[2 * r : 2 * r + 2] = [
+            names[ports.down_atom_for_co_restype[cls]],
+            names[ports.up_atom_for_co_restype[cls]],
+        ]
+    atoms.coord[:] = [[30, 0, 0], [0, 0, 0], [1.6, 0, 0], [40, 0, 0]]
+    close = canonical_form_from_biotite(atoms)
+    assert not close["res_gap"].any()
+    distant = atoms.copy()
+    distant.coord[2, 0] = 8
+    broken = canonical_form_from_biotite(distant)
+    np.testing.assert_array_equal(broken["res_gap"], [[[False, True], [True, False]]])
+    assert not canonical_form_from_biotite(
+        distant, missing_density_distance_threshold=0
+    )["res_gap"].any()
+    ensemble = canonical_form_from_biotite(struc.stack([distant, atoms]))
+    assert not ensemble["res_gap"].any()
+    distant.coord[2] = np.nan
+    assert not canonical_form_from_biotite(distant)["res_gap"].any()
+    atoms.bonds = struc.BondList(4, np.array([[0, 1, struc.BondType.SINGLE]]))
+    with pytest.raises(NotImplementedError, match="explicit Biotite bonds"):
+        canonical_form_from_biotite(atoms)

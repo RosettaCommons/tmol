@@ -36,8 +36,7 @@ def default_canonical_ordering() -> CanonicalOrdering:
 def default_packed_block_types() -> Any:
     """Return the default molecular palette, including patched residue types.
 
-    Standalone metal sites use an explicitly prepared palette so their connection
-    widths do not enlarge every ordinary structure.
+    Metal input grows this ordinary palette with the shared coordination policy.
     """
     from tmol_jax.pose.packed_block_types import PackedBlockTypes
 
@@ -49,40 +48,44 @@ def default_packed_block_types() -> Any:
 # --------------------------------------------------------------------- #
 
 
-def canonical_form_from_pdb(pdb_text_or_path, canonical_ordering=None):
+def canonical_form_from_pdb(
+    pdb_text_or_path, canonical_ordering=None, *, missing_density_distance_threshold=2.4
+):
     """Convert a PDB to canonical molecular coordinates, retaining missing atoms.
 
     Unknown residue and atom identities fail explicitly; water is ignored. Chain labels
-    and C-N distances (gaps beyond 2.4 A) determine polymer connectivity.
+    and database-defined polymer connection atoms determine geometry gaps.
     """
     from .pdb_parsing import parse_pdb
 
     return _canonical_form_from_records(
         parse_pdb(pdb_text_or_path),
         canonical_ordering or default_canonical_ordering(),
+        missing_density_distance_threshold=missing_density_distance_threshold,
     )
 
 
-_PEPTIDE_GAP = 2.4  # Angstrom; matches tmol's missing_density_distance_threshold
+def _polymer_gaps(co, types, chains, coords, threshold):
+    """Apply the common chemical-port policy to a same-topology ensemble."""
+    from tmol_core.io.polymer_gaps import break_polymer_gaps
+
+    flags = np.zeros((coords.shape[1], 2), bool)
+    break_polymer_gaps(
+        flags,
+        np.empty((0, 4), np.int64),
+        np.empty(0, bool),
+        coords,
+        types[0],
+        chains[0],
+        co,
+        threshold,
+    )
+    return np.broadcast_to(flags, (*coords.shape[:2], 2)).copy()
 
 
-def _peptide_gaps(canonical_ordering, res_names, chain_id, coords, present):
-    """Flag polymer bonds whose resolved C and N atoms are farther than a peptide bond."""
-    n_res = chain_id.shape[1]
-    not_connected = np.zeros((1, n_res, 2), dtype=bool)
-    for r in range(n_res - 1):
-        if chain_id[0, r] != chain_id[0, r + 1]:
-            continue
-        c = canonical_ordering.atom_index(res_names[0, r], "C")
-        n = canonical_ordering.atom_index(res_names[0, r + 1], "N")
-        if c < 0 or n < 0 or not (present[0, r, c] and present[0, r + 1, n]):
-            continue
-        if np.linalg.norm(coords[0, r, c] - coords[0, r + 1, n]) > _PEPTIDE_GAP:
-            not_connected[0, r, 1] = not_connected[0, r + 1, 0] = True
-    return not_connected
-
-
-def _canonical_form_from_records(records, canonical_ordering):
+def _canonical_form_from_records(
+    records, canonical_ordering, *, missing_density_distance_threshold=2.4
+):
     atom_names = records["atom_name"]
     res_names = records["res_name"]
     chain_ids_raw = records["chain_id"]
@@ -201,8 +204,12 @@ def _canonical_form_from_records(records, canonical_ordering):
         b_factor_arr[0, r, aind] = float(b_factor_raw[i])
 
     return {
-        "res_gap": _peptide_gaps(
-            canonical_ordering, res_name_arr, chain_id, coords, atom_present
+        "res_gap": _polymer_gaps(
+            canonical_ordering,
+            res_types,
+            chain_id,
+            coords,
+            missing_density_distance_threshold,
         ),
         "coords": coords,
         "atom_is_present": atom_present,

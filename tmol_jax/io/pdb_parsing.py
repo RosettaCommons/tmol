@@ -53,7 +53,12 @@ def parse_pdb(pdb_input):
 
 
 def pose_stack_from_pdb(
-    pdb_input, *, canonical_ordering=None, packed_block_types=None, **kwargs
+    pdb_input,
+    *,
+    canonical_ordering=None,
+    packed_block_types=None,
+    missing_density_distance_threshold=2.4,
+    **kwargs,
 ):
     """Load a molecular PDB using its chemical ordering and residue palette."""
     from .canonical_ordering import (
@@ -66,7 +71,14 @@ def pose_stack_from_pdb(
     co = canonical_ordering or default_canonical_ordering()
     pbt = packed_block_types or default_packed_block_types()
     return pose_stack_from_canonical_form(
-        dict(canonical_form_from_pdb(pdb_input, co), canonical_ordering=co),
+        dict(
+            canonical_form_from_pdb(
+                pdb_input,
+                co,
+                missing_density_distance_threshold=missing_density_distance_threshold,
+            ),
+            canonical_ordering=co,
+        ),
         pbt,
         **kwargs,
     )
