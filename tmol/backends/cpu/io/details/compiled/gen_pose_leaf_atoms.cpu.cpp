@@ -121,3 +121,15 @@ template struct HydrogenInput<
     double,
     int64_t>;
 }  // namespace tmol::io::details::compiled
+
+#include <tmol/io/details/compiled/protonation.impl.hh>
+namespace tmol::io::details::compiled {
+template struct Protonation<
+    score::common::DeviceOperations,
+    Device::CPU,
+    int32_t>;
+template struct Protonation<
+    score::common::DeviceOperations,
+    Device::CPU,
+    int64_t>;
+}  // namespace tmol::io::details::compiled
