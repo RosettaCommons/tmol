@@ -1,5 +1,6 @@
 #pragma once
 #include <tmol/score/backbone_torsion/potentials/backbone_torsion_pose_kernels.hh>
+#include <tmol/score/common/rotamer_correlation.hh>
 
 namespace tmol::score::backbone_torsion::potentials {
 // Caller-owned native sparse preparation and science. Count buffers and score/
@@ -24,7 +25,8 @@ void backbone_rotamer_count_native(
     TView<Int, 2, Dev> pose_stack_block_type,
     TView<Vec<Int, 2>, 3, Dev> pose_stack_inter_block_connections,
     TView<Int, 1, Dev> block_type_upper_conn_ind,
-    TView<int64_t, 2, Dev> n_energies_for_block) {
+    TView<int64_t, 2, Dev> n_energies_for_block,
+    TView<Int, 2, Dev> lockstep_group_for_block = {}) {
   using tmol::score::common::accumulate;
   LAUNCH_BOX_32;
   int const n_poses = pose_stack_block_type.size(0);
@@ -70,7 +72,10 @@ void backbone_rotamer_count_native(
     // too.
     int const upper_n_rots = n_rots_for_block[pose_ind][upper_nbr_block_ind];
 
-    n_energies_for_block[pose_ind][block_ind] = int64_t(n_rots) * upper_n_rots;
+    bool const coupled = common::same_rotamer_group(
+        lockstep_group_for_block, pose_ind, block_ind, upper_nbr_block_ind);
+    n_energies_for_block[pose_ind][block_ind] =
+        int64_t(n_rots) * (coupled && upper_n_rots > 0 ? 1 : upper_n_rots);
   });
   DeviceDispatch<Dev>::template forall<launch_t>(
       mgr, n_pose_block_cells, count_n_rotamer_energies);
@@ -90,7 +95,8 @@ void backbone_rotamer_fill_native(
     TView<Int, 1, Dev> block_type_upper_conn_ind,
     TView<int64_t, 2, Dev> n_energies_for_block_offset,
     TView<Int, 1, Dev> block_for_dispatch,
-    TView<Int, 2, Dev> dispatch_indices) {
+    TView<Int, 2, Dev> dispatch_indices,
+    TView<Int, 2, Dev> lockstep_group_for_block = {}) {
   using tmol::score::common::accumulate;
   LAUNCH_BOX_32;
   int const max_n_blocks = first_rot_for_block.size(1);
@@ -108,8 +114,11 @@ void backbone_rotamer_fill_native(
     // invert the sparse index this block's pairs were counted into
     int const within =
         index - n_energies_for_block_offset[pose_ind][block1_ind];
-    int const local_rot1_ind = within / upper_n_rots;
-    int const local_rot2_ind = within - local_rot1_ind * upper_n_rots;
+    bool const coupled = common::same_rotamer_group(
+        lockstep_group_for_block, pose_ind, block1_ind, upper_nbr_block_ind);
+    int const local_rot1_ind = coupled ? within : within / upper_n_rots;
+    int const local_rot2_ind =
+        coupled ? within : within - local_rot1_ind * upper_n_rots;
 
     int const rot1_ind =
         first_rot_for_block[pose_ind][block1_ind] + local_rot1_ind;

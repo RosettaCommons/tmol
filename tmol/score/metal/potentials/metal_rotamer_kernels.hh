@@ -1,5 +1,6 @@
 #pragma once
 #include <tmol/score/metal/potentials/metal_coordination_pose_kernels.hh>
+#include <tmol/score/common/rotamer_correlation.hh>
 namespace tmol::score::metal::potentials {
 // Caller-owned sparse fan/site/bridge entries with explicit chemical identity.
 // Counts and score/gradient storage start at zero; offsets are exclusive.
@@ -26,7 +27,8 @@ void metal_rotamer_count_native(
     TView<Vec<Int, 2>, 2, D> fan_atoms,
     TView<Int, 3, D> bridge_internal_metal,
     TView<Real, 3, D> bridge_internal_d0,
-    TView<int64_t, 1, D> n_energies_for_rot) {
+    TView<int64_t, 1, D> n_energies_for_rot,
+    TView<Int, 2, D> lockstep_group_for_block = {}) {
   LAUNCH_BOX_32;
   int const max_n_conns = conn_virt.size(1);
   int const max_n_internal = bridge_internal_metal.size(2);
@@ -47,7 +49,15 @@ void metal_rotamer_count_native(
       if (other_block < 0) {
         continue;
       }
-      n_energies += n_rots_for_block[pose_ind][other_block];
+      Int const other_n_rots = n_rots_for_block[pose_ind][other_block];
+      n_energies += other_n_rots > 0
+                            && common::same_rotamer_group(
+                                lockstep_group_for_block,
+                                pose_ind,
+                                block_ind,
+                                other_block)
+                        ? 1
+                        : other_n_rots;
     }
     for_each_bridge<Int, Real, D>(
         pose_ind,
@@ -65,7 +75,13 @@ void metal_rotamer_count_native(
         bridge_internal_metal,
         bridge_internal_d0,
         [&](int, int other, int, int, int, Real, Real, int) {
-          n_energies += n_rots_for_block[pose_ind][other];
+          Int const other_n_rots = n_rots_for_block[pose_ind][other];
+          n_energies +=
+              other_n_rots > 0
+                      && common::same_rotamer_group(
+                          lockstep_group_for_block, pose_ind, block_ind, other)
+                  ? 1
+                  : other_n_rots;
         });
     n_energies_for_rot[rot_ind] = n_energies;
   });
@@ -100,7 +116,8 @@ void metal_rotamer_fill_native(
     TView<Int, 2, D> dispatch_indices,
     TView<Int, 2, D> terms_for_dispatch,
     int max_n_energies_for_rot,
-    int candidate_dispatch) {
+    int candidate_dispatch,
+    TView<Int, 2, D> lockstep_group_for_block = {}) {
   LAUNCH_BOX_32;
   int const max_n_conns = conn_virt.size(1);
   int const max_n_internal = bridge_internal_metal.size(2);
@@ -137,10 +154,15 @@ void metal_rotamer_fill_native(
       if (block_ind2 < 0) {
         continue;
       }
-      int const n_rots2 = n_rots_for_block[pose_ind][block_ind2];
+      int const other_n_rots = n_rots_for_block[pose_ind][block_ind2];
+      bool const coupled = common::same_rotamer_group(
+          lockstep_group_for_block, pose_ind, block_ind1, block_ind2);
+      int const n_rots2 = coupled && other_n_rots > 0 ? 1 : other_n_rots;
       if (remaining < n_rots2) {
         int const rot_ind2 =
-            first_rot_for_block[pose_ind][block_ind2] + remaining;
+            first_rot_for_block[pose_ind][block_ind2]
+            + (coupled ? rot_ind1 - first_rot_for_block[pose_ind][block_ind1]
+                       : remaining);
         // lower block first, as the other pair terms report it
         bool const metal_first = block_ind1 < block_ind2;
         dispatch_indices[1][sparse_ind] = metal_first ? rot_ind1 : rot_ind2;
@@ -173,10 +195,16 @@ void metal_rotamer_fill_native(
           if (placed) {
             return;
           }
-          int const n_rots2 = n_rots_for_block[pose_ind][other];
+          int const other_n_rots = n_rots_for_block[pose_ind][other];
+          bool const coupled = common::same_rotamer_group(
+              lockstep_group_for_block, pose_ind, block_ind1, other);
+          int const n_rots2 = coupled && other_n_rots > 0 ? 1 : other_n_rots;
           if (remaining < n_rots2) {
             int const rot_ind2 =
-                first_rot_for_block[pose_ind][other] + remaining;
+                first_rot_for_block[pose_ind][other]
+                + (coupled
+                       ? rot_ind1 - first_rot_for_block[pose_ind][block_ind1]
+                       : remaining);
             bool const first = block_ind1 < other;
             dispatch_indices[1][sparse_ind] = first ? rot_ind1 : rot_ind2;
             dispatch_indices[2][sparse_ind] = first ? rot_ind2 : rot_ind1;

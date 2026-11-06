@@ -5,7 +5,7 @@ using namespace tmol::score::constraint::potentials;
 using tmol_test::SerialOps;
 using tmol_test::view;
 template <typename Int>
-void check() {
+void check(bool coupled = false) {
   tmol::ContextManager mgr;
   Int const start = sizeof(Int) == 8 ? Int(2500000000LL) : Int(10);
   Vec<Int, 3> atoms[12] = {
@@ -29,7 +29,8 @@ void check() {
       Int(start + 20),
       Int(start + 30),
       Int(start + 40)};
-  Int sizes[3] = {2, 3, 0}, first[3] = {0, 2, 4};
+  Int sizes[3] = {2, Int(coupled ? 2 : 3), 0}, first[3] = {0, 2, 4};
+  Int groups[] = {11, 11, -1};
   ConstraintCandidateTopology<Int, tmol::Device::CPU> ctx{
       view(atoms, {3, 4}),
       view(bodies, {3}),
@@ -37,13 +38,20 @@ void check() {
       view(blocks, {3}),
       view(sizes, {1, 3}),
       view(first, {1, 3})};
+  if (coupled) ctx.lockstep_group_for_block = view(groups, {1, 3});
   int64_t counts[6];
   constraint_candidate_count_native<SerialOps, tmol::Device::CPU>(
       mgr, ctx, view(counts, {6}));
-  int64_t expected_counts[] = {0, 6, 0, 3, 0, 0};
+  int const pair_count = coupled ? 2 : 6;
+  int const total = coupled ? 4 : 9;
+  int64_t expected_counts[] = {0, pair_count, 0, coupled ? 2 : 3, 0, 0};
   for (int i = 0; i < 6; ++i) assert(counts[i] == expected_counts[i]);
-  int64_t offsets[] = {0, 0, 6, 6, 9, 9};
+  int64_t offsets[] = {0, 0, pair_count, pair_count, total, total};
   Int owners[] = {1, 1, 1, 1, 1, 1, 3, 3, 3}, sources[9];
+  if (coupled) {
+    owners[2] = 3;
+    owners[3] = 3;
+  }
   Vec<Int, 4> mapped[9];
   Vec<int64_t, 3> indices[9];
   constraint_candidate_fill_native<SerialOps, tmol::Device::CPU>(
@@ -51,25 +59,28 @@ void check() {
       ctx,
       true,
       view(offsets, {6}),
-      view(owners, {9}),
-      view(sources, {9}),
-      view(mapped, {9}),
-      view(indices, {9}));
+      view(owners, {total}),
+      view(sources, {total}),
+      view(mapped, {total}),
+      view(indices, {total}));
   int64_t expected_pairs[9][2] = {
       {0, 2}, {1, 2}, {0, 3}, {1, 3}, {0, 4}, {1, 4}, {2, 2}, {3, 3}, {4, 4}};
-  for (int i = 0; i < 9; ++i) {
-    assert(sources[i] == (i < 6 ? 1 : 0));
+  int64_t coupled_pairs[4][2] = {{0, 2}, {1, 3}, {2, 2}, {3, 3}};
+  auto expected = coupled ? coupled_pairs : expected_pairs;
+  for (int i = 0; i < total; ++i) {
+    assert(sources[i] == (i < pair_count ? 1 : 0));
     assert(
-        indices[i][0] == 0 && indices[i][1] == expected_pairs[i][0]
-        && indices[i][2] == expected_pairs[i][1]);
+        indices[i][0] == 0 && indices[i][1] == expected[i][0]
+        && indices[i][2] == expected[i][1]);
   }
   assert(
       mapped[0][0] == start + 1 && mapped[0][1] == start + 20
       && mapped[0][2] == start + 19);
-  assert(mapped[1][0] == start + 11 && mapped[2][1] == start + 30);
   assert(
-      mapped[6][0] == start + 20 && mapped[6][1] == start + 21
-      && mapped[6][2] == -1);
+      mapped[1][0] == start + 11 && mapped[coupled ? 1 : 2][1] == start + 30);
+  assert(
+      mapped[pair_count][0] == start + 20 && mapped[pair_count][1] == start + 21
+      && mapped[pair_count][2] == -1);
   ctx.atoms = view(atoms, {2, 4});
   ctx.n_unique = view(bodies, {2});
   ctx.unique_blocks = view(blocks, {2});
@@ -104,5 +115,7 @@ void check() {
 }
 int main() {
   check<int32_t>();
+  check<int32_t>(true);
   check<int64_t>();
+  check<int64_t>(true);
 }

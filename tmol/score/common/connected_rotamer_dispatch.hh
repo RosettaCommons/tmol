@@ -4,6 +4,7 @@
 #include <tmol/utility/tensor/TensorAccessor.h>
 #include <tmol/utility/tensor/context_manager.hh>
 #include <tmol/score/common/launch_box_macros.hh>
+#include <tmol/score/common/rotamer_correlation.hh>
 namespace tmol::score::common {
 using tmol::portable::Vec;
 // One diagonal entry per valid rotamer plus connected upper-block pairs.
@@ -44,10 +45,11 @@ void connected_rotamer_count_native(
       if (block_ind < other_block_ind) {
         // blocks that sample in lockstep only ever coexist at matching
         // rotamer indices, so this rotamer pairs with exactly one of theirs
-        int const g1 = lockstep_group_for_block[pose_ind][block_ind];
-        int const g2 = lockstep_group_for_block[pose_ind][other_block_ind];
         n_output_intxns_for_rot_conn[index] =
-            (g1 >= 0 && g1 == g2) ? 1 : other_block_n_rots;
+            same_rotamer_group(
+                lockstep_group_for_block, pose_ind, block_ind, other_block_ind)
+                ? 1
+                : other_block_n_rots;
       }
     }
   });
@@ -90,10 +92,9 @@ void connected_rotamer_fill_native(
       int const block_ind2 =
           pose_stack_inter_block_connections[pose_ind][block_ind1][conn_ind1]
                                             [0];
-      int const g1 = lockstep_group_for_block[pose_ind][block_ind1];
-      int const g2 = lockstep_group_for_block[pose_ind][block_ind2];
       int const offset2 =
-          (g1 >= 0 && g1 == g2)
+          same_rotamer_group(
+              lockstep_group_for_block, pose_ind, block_ind1, block_ind2)
               ? rot_ind1 - first_rot_for_block[pose_ind][block_ind1]
               : local_rot_ind2;
       rot_ind2 = first_rot_for_block[pose_ind][block_ind2] + offset2;
