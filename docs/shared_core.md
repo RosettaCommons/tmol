@@ -38,6 +38,10 @@ See [JAX capabilities](jax.md) and the [capability matrix](capability-matrix.jso
 for tested domains, supported operations and remaining boundaries. CPU, CUDA and
 Metal still need independent execution validation.
 
+Atom37 host routing validates residue/atom ranges and unique source slots;
+frameworks scatter coordinates using its paired indices. The default protein
+encoding is shared data matching AtomWorks 3.0.4 without importing its ML layer.
+
 Build the core before installing a development frontend:
 
 ```bash
