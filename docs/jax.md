@@ -53,9 +53,9 @@ minimized, result = run_cart_min(
 )
 ```
 
-The beta2016 preset retains every declared weight. NA torsion and metal
-coordination use shared native kernels; complete noncanonical scoring remains
-limited by other terms, which reject unvalidated chemistry before tracing.
+The beta2016 preset retains all 25 declared channels and uses shared native
+physics for coordinate-dependent terms. Required missing parameters raise
+during preparation. See the capability matrix for tested domains and open gaps.
 
 Rendered scorers snapshot weights, term options and topology. Reuse them for
 coordinate changes; render again after changing weights, parameters, types,
@@ -136,8 +136,9 @@ recommended when comparing small rotational gradients of strongly repulsive syst
 
 `run_cart_relax` performs a no-pack repulsive-weight ramp with optional mainchain
 coordinate constraints. It retains the best full-weight structure. It does not
-implement FastRelax. Complete nucleic-acid, metal and ligand/noncanonical
-scoring and repacking remain unsupported.
+implement FastRelax or repacking. The full 25-channel preset is tested on
+ligand, noncanonical, D-residue, nucleic-acid, metal and mixed-system fixtures;
+this does not establish exhaustive coverage of every custom chemistry.
 
 `PackerPalette(noncanonical_design=True)` exposes the shared chemical residue-choice
 policy through `block_types_from_original(pose.packed_block_types, pose.block_type_ind)`
@@ -149,7 +150,9 @@ without compiling each residue shape. `DunbrackChiSampler.from_database(db,
 expanded_limit=1000, limit=1000).prepare_packed_block_types(pbt)` prepares shared
 library/explicit-chi metadata on the palette's device. `prepare_atom_copy_plan(pbt,
 samplers)` preserves sampler-owned retained atom identities. These are preparation
-APIs; native rotamer enumeration, packing tasks, interaction-graph construction,
+APIs. Prepared native chi enumeration runs eagerly on CPU/CUDA with explicit
+sample budgets; dynamic output sizes require a host allocation barrier and are
+not differentiable or jittable. Public pose/task sampling, interaction graphs,
 annealing and design execution remain unavailable.
 
 For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
@@ -179,13 +182,15 @@ sequential initially. Shared native terms support first-order JVP and reverse gr
 their derivative kernels do not provide higher derivatives. Coincident or
 collinear atoms do not define a torsion; its native derivative can be non-finite. Combined LJ/LK and
 electrostatics use live native spatial neighbors and one gradient buffer for a
-weighted total. Standalone LJ/LK and electrostatics use their shared native
+weighted total. LK-ball likewise composes weighted derivatives in one native
+reverse pass. Standalone LJ/LK and electrostatics use their shared native
 kernels with the same first-order transformation contract and independent
 parameter prerequisites.
 
 Before comparing frontends, verify residue/atom identities and use identical
-coordinates and parameters: loaders can idealize missing atoms and hydrogens
-differently. Canonical residue and atom metadata come from the common chemical database.
+coordinates, parameters and weight precision: loaders can idealize missing atoms
+and hydrogens differently. Match exposed score channels by name; Torch groups
+channels by term while JAX orders them by `ScoreType`. Canonical residue and atom metadata come from the common chemical database.
 Unknown input atom names reject instead of being dropped. PDB loading selects
 the first model/alternate location; represent
 chain breaks explicitly. Float32 reductions and torsion formulas differ between

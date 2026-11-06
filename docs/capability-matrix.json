@@ -4,30 +4,35 @@
     {
       "domain": "canonical_proteins",
       "torch": "supported",
-      "jax": "values_gradients",
-      "repro_fixture": "tests/scientific/test_score_contract.py",
+      "jax": "values_gradients_on_molecular_fixtures",
+      "repro_fixture": [
+        "tests/scientific/test_score_contract.py",
+        "tests/scientific/test_complete_preset.py"
+      ],
       "implementation_status": "Shared canonical fixture; CPU/CUDA native parity has historical residual caveats."
     },
     {
       "domain": "noncanonical_polymers",
       "torch": "supported",
-      "jax": "partial_scoring",
+      "jax": "values_gradients_on_molecular_fixtures",
       "repro_fixture": [
         "tests/scientific/test_cartbonded.py",
-        "tests/scientific/test_molecular_nonbonded.py"
+        "tests/scientific/test_molecular_nonbonded.py",
+        "tests/scientific/test_complete_preset.py"
       ],
-      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. All score-term frontends now consume shared native physics; HB/LK/disulfide CPU/CUDA comparisons pass. Complete preset molecular CPU validation covers 25 channels; exhaustive full-domain acceptance remains pending."
+      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. All score-term frontends now consume shared native physics; HB/LK/disulfide CPU/CUDA comparisons pass. Complete preset molecular CPU/CUDA validation covers 25 channels; exhaustive full-domain acceptance remains pending."
     },
     {
       "domain": "d_amino_acids",
       "torch": "supported",
-      "jax": "partial_scoring",
+      "jax": "values_gradients_on_molecular_fixtures",
       "repro_fixture": [
         "tests/scientific/test_cartbonded.py",
         "tests/scientific/test_molecular_nonbonded.py",
-        "tests/scientific/test_dunbrack.py"
+        "tests/scientific/test_dunbrack.py",
+        "tests/scientific/test_complete_preset.py"
       ],
-      "implementation_status": "Shared native Dunbrack/backbone, bonded and nonbonded channels support explicit D residues. Dunbrack three-channel values and full coordinate gradients exactly match current Torch on L/D/variants/mixed cases in float32/64; custom widths and first-order transformations tested CPU. Full multi-term coverage remains partial."
+      "implementation_status": "Shared native Dunbrack/backbone, bonded and nonbonded channels support explicit D residues. Dunbrack three-channel values and full coordinate gradients exactly match current Torch on L/D/variants/mixed cases in float32/64; custom widths and first-order transformations tested CPU. Complete 25-channel molecular presets pass CPU/CUDA; exhaustive chemistry coverage remains unestablished."
     },
     {
       "domain": "modifications_and_termini",
@@ -39,51 +44,58 @@
     {
       "domain": "ligand_only",
       "torch": "supported",
-      "jax": "partial_scoring",
+      "jax": "values_gradients_on_molecular_fixtures",
       "repro_fixture": [
         "tests/scientific/test_cartbonded.py",
-        "tests/scientific/test_molecular_nonbonded.py"
+        "tests/scientific/test_molecular_nonbonded.py",
+        "tests/scientific/test_complete_preset.py"
       ],
-      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. All score-term frontends now consume shared native physics; HB/LK/disulfide CPU/CUDA comparisons pass. Complete preset molecular CPU validation covers 25 channels; exhaustive full-domain acceptance remains pending."
+      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. All score-term frontends now consume shared native physics; HB/LK/disulfide CPU/CUDA comparisons pass. Complete preset molecular CPU/CUDA validation covers 25 channels; exhaustive full-domain acceptance remains pending."
     },
     {
       "domain": "protein_ligand_mixed",
       "torch": "supported",
-      "jax": "partial_scoring",
+      "jax": "values_gradients_on_molecular_fixtures",
       "repro_fixture": [
         "tests/scientific/test_cartbonded.py",
-        "tests/scientific/test_molecular_nonbonded.py"
+        "tests/scientific/test_molecular_nonbonded.py",
+        "tests/scientific/test_complete_preset.py"
       ],
-      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. All score-term frontends now consume shared native physics; HB/LK/disulfide CPU/CUDA comparisons pass. Complete preset molecular CPU validation covers 25 channels; exhaustive full-domain acceptance remains pending."
+      "implementation_status": "Five native cartbonded and four nonbonded channels: CPU Torch value/full-gradient comparison and CPU/CUDA independent derivatives across nine molecular cases. All score-term frontends now consume shared native physics; HB/LK/disulfide CPU/CUDA comparisons pass. Complete preset molecular CPU/CUDA validation covers 25 channels; exhaustive full-domain acceptance remains pending."
     },
     {
       "domain": "nucleic_acids",
       "torch": "supported",
-      "jax": "partial_scoring",
+      "jax": "values_gradients_on_molecular_fixtures",
       "repro_fixture": [
         "tests/scientific/test_cartbonded.py",
         "tests/scientific/test_molecular_nonbonded.py",
-        "tests/scientific/test_na_torsion.py"
+        "tests/scientific/test_na_torsion.py",
+        "tests/scientific/test_complete_preset.py"
       ],
-      "implementation_status": "Shared native NA torsion and population channels: exact fresh Torch/JAX CPU energies/full gradients for connected DNA/RNA, termini, real methylcytosine and mixed batches. Custom widths and explicit unknown-base references tested; full multi-term scoring remains gated. CPU/CUDA values, gradients and float32/64 transformations pass."
+      "implementation_status": "Shared native NA torsion and population channels: exact fresh Torch/JAX CPU energies/full gradients for connected DNA/RNA, termini, real methylcytosine and mixed batches. Custom widths and explicit unknown-base references tested; complete 25-channel presets pass on the molecular fixtures. CPU/CUDA values, gradients and float32/64 transformations pass."
     },
     {
       "domain": "metals_and_coordination",
       "torch": "supported",
-      "jax": "partial_scoring",
+      "jax": "values_gradients_on_molecular_fixtures",
       "repro_fixture": [
         "tests/scientific/test_cartbonded.py",
         "tests/scientific/test_molecular_nonbonded.py",
-        "tests/scientific/test_metal_coordination.py"
+        "tests/scientific/test_metal_coordination.py",
+        "tests/scientific/test_complete_preset.py"
       ],
-      "implementation_status": "Shared native coordination on zinc, irregular calcium, bridging donors, iron-sulfur cluster bridges and mixed batches: fresh Torch/JAX CPU energies and full gradients match exactly. Custom widths/depths scale both by the independent expected factor. Metal CPU/CUDA values, gradients and first-order transforms tested; complete multi-term scoring remains gated."
+      "implementation_status": "Shared native coordination on zinc, irregular calcium, bridging donors, iron-sulfur cluster bridges and mixed batches: fresh Torch/JAX CPU energies and full gradients match exactly. Custom widths/depths scale both by the independent expected factor. Metal CPU/CUDA values, gradients and first-order transforms tested; complete 25-channel presets pass on the molecular fixtures."
     },
     {
       "domain": "disconnected_components",
       "torch": "supported",
-      "jax": "partial",
-      "repro_fixture": "tests/jax/test_residue_blocks.py",
-      "implementation_status": "Explicit disconnected topology; noncanonical total scoring pending."
+      "jax": "values_gradients_on_molecular_fixtures",
+      "repro_fixture": [
+        "tests/jax/test_residue_blocks.py",
+        "tests/scientific/test_complete_preset.py"
+      ],
+      "implementation_status": "Explicit disconnected topology; complete 25-channel scoring is tested on disconnected and mixed fixtures."
     },
     {
       "domain": "custom_database",
@@ -98,8 +110,8 @@
     },
     {
       "domain": "arbitrary_connectivity",
-      "torch": "supported",
-      "jax": "input_only",
+      "torch": "supported_with_native_connection_capacity",
+      "jax": "native_scoring_with_connection_capacity",
       "repro_fixture": "tests/jax/test_residue_blocks.py",
       "implementation_status": "Named connection ports and shared sparse capped graph preparation preserve branches/cycles. Dense compatibility layout remains. Native LJ/LK, electrostatics and fused nonbonded permit full int32 connection atom indices after a shared two-bond-exclusion invariant exposed byte truncation; at most12 connection ports remain supported. Other term boundaries remain explicit."
     },
@@ -116,8 +128,11 @@
     {
       "domain": "heterogeneous_batches",
       "torch": "supported",
-      "jax": "partial",
-      "repro_fixture": "tests/jax/test_native_genbonded.py",
+      "jax": "values_gradients_on_molecular_fixtures",
+      "repro_fixture": [
+        "tests/jax/test_native_genbonded.py",
+        "tests/scientific/test_complete_preset.py"
+      ],
       "implementation_status": "Mixed ligand/HYP/GLY batches: native gen/cart coordinate gradients, independent poses and vmap tested CPU/CUDA; packing/topology mutation APIs absent."
     },
     {
@@ -128,19 +143,19 @@
         "tests/jax/test_optimization.py",
         "tests/scientific/test_molecular_minimization.py"
       ],
-      "implementation_status": "Ligand, connected beta-amino acid and D-peptide objectives decrease with exact frozen-atom and unchanged-input invariants in Torch CPU and JAX CPU/CUDA. These objectives cover native cartbonded/nonbonded plus generic bonded or Dunbrack; complete noncanonical objective remains absent."
+      "implementation_status": "Complete 25-channel preset objectives decrease on ligand, connected beta-amino acid, D-peptide, modified-DNA, metal and mixed-batch fixtures with exact frozen-atom and unchanged-input invariants in Torch CPU and JAX CPU. CUDA complete-preset minimization validation is pending; earlier reduced objectives pass CPU/CUDA."
     },
     {
       "domain": "packing_design_mutation",
       "torch": "supported",
-      "jax": "shared_palette_geometry_and_sampling_preparation",
+      "jax": "shared_preparation_and_native_chi_enumeration",
       "repro_fixture": [
         "tests/scientific/test_packing_palette.py",
         "tests/scientific/test_molecular_rotamer_geometry.py",
         "tests/scientific/test_molecular_sampling_preparation.py",
         "tests/jax/test_native_sampling.py"
       ],
-      "implementation_status": "Shared residue choices, single-residue and connected-group rotamer geometry, Dunbrack library/explicit-chi preparation and retained-atom copy plans. JAX native CPU initialization reproduces 3877 geometry arrays across 322 default/custom residue types exactly against Torch; sampling preparation matches 2588 arrays and 644 ownership records across the same types and two budgets. Molecular geometry passes CPU/CUDA and matching Torch-free installed artifacts. Sampling preparation passes the same seven molecular assertions on Torch CPU and JAX CPU/CUDA. The private CPU dynamic-sampling binding matches all four outputs for 50 calls in float32/64 against a fresh Torch artifact from the same geometry revision; two budget errors agree. A prepared CUDA dynamic-enumeration adapter now consumes shared stages; GPU validation is pending. Public pose/task sampling, PackerTask, interaction graphs, annealing, pack_rotamers and mutation/design execution remain absent."
+      "implementation_status": "Shared palette, single/connected residue geometry, Dunbrack and explicit-chi metadata, and retained-atom plans. Geometry and preparation match Torch across 322 default/custom residue types. Prepared eager CPU/CUDA chi enumeration passes identity, mirror, precision, empty-input and budget invariants. CUDA execution agrees with 49 independent Torch calls; four sample-limit failures agree. Dynamic cardinality requires an eager host allocation barrier. Public pose/task sampling, PackerTask, interaction graphs, annealing and mutation/design execution remain absent."
     },
     {
       "domain": "kinematics",
@@ -195,14 +210,14 @@
       "torch": "supported",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_native_genbonded.py",
-      "implementation_status": "Generic/Cartesian bonded, backbone, NA torsion, metal coordination, Dunbrack, fused and independent nonbonded terms share native physics and derivatives with Torch. CPU/H200 molecular values, gradients and transformations tested. Hydrogen-bond, LK-ball and disulfide frontends now share native preparation/physics; focused CPU checks pass and CUDA validation is pending."
+      "implementation_status": "Generic/Cartesian bonded, backbone, NA torsion, metal coordination, Dunbrack, fused and independent nonbonded terms share native physics and derivatives with Torch. CPU/H200 molecular values, gradients and transformations tested. Hydrogen-bond, LK-ball and disulfide frontends now share native preparation/physics; CPU/CUDA scientific checks and independent Torch comparisons pass; GPU HB performance remains a blocker."
     },
     {
       "domain": "native_cuda",
       "torch": "supported",
       "jax": "partial",
       "repro_fixture": "tests/jax/test_native_genbonded.py",
-      "implementation_status": "Generic/Cartesian bonded, backbone, NA torsion, metal coordination, Dunbrack, fused and independent nonbonded terms share native physics and derivatives with Torch. CPU/H200 molecular values, gradients and transformations tested. Hydrogen-bond, LK-ball and disulfide frontends now share native preparation/physics; focused CPU checks pass and CUDA validation is pending."
+      "implementation_status": "Generic/Cartesian bonded, backbone, NA torsion, metal coordination, Dunbrack, fused and independent nonbonded terms share native physics and derivatives with Torch. CPU/H200 molecular values, gradients and transformations tested. Hydrogen-bond, LK-ball and disulfide frontends now share native preparation/physics; CPU/CUDA scientific checks and independent Torch comparisons pass; GPU HB performance remains a blocker."
     },
     {
       "domain": "internal_coordinate_minimization",
@@ -238,8 +253,8 @@
     },
     "hbond": {
       "torch": "implemented",
-      "jax": "shared_native_frontend_cpu_validated_cuda_pending",
-      "noncanonical_validation": "Five nonzero ligand/D/beta-amino-acid/modified-DNA/mixed cases x float32/64: independently prepared values and full gradients exactly match Torch CPU. Custom donor weights and JIT/JVP/vmap pass. Native degree-ten polynomials require a stable finite-difference step; unchanged tolerances pass at 1e-3 in float64. Equivalent custom donor-family indices above255 preserve exact energies and full gradients through public JAX preparation."
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "Five nonzero ligand/D-amino/beta-amino/modified-DNA/mixed cases match Torch CPU/CUDA values and full gradients exactly in float32/64. Custom donor weights and family indices above255 pass. GPU 1ubq regression remains under investigation."
     },
     "cart_lengths": {
       "torch": "implemented",
@@ -273,8 +288,8 @@
     },
     "disulfide": {
       "torch": "implemented",
-      "jax": "shared_native_frontend_cpu_validated_cuda_pending",
-      "noncanonical_validation": "L/L, L/D, D/D and mixed systems: seven scientific checks plus float32/64 transformations and empty batching pass CPU. Independent Torch comparisons across eight domain/precision combinations give exact float64 values/gradients and float32 maximum errors 1.67e-6 energy / 2.68e-7 gradient. Custom weights, mirror/permutation and published heterochiral golden preserved."
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "L/L, L/D, D/D and mixed systems: values/full gradients match Torch exactly on CUDA in both precisions; CPU float32 errors <=1.7e-6/2.7e-7. Custom weights, mirror/permutation and heterochiral golden invariants pass."
     },
     "omega": {
       "torch": "implemented",
@@ -303,23 +318,23 @@
     },
     "lk_ball_iso": {
       "torch": "implemented",
-      "jax": "shared_native_frontend_cpu_validated_cuda_pending",
-      "noncanonical_validation": "Five real ligand/noncanonical/mixed/D-peptide/modified-DNA cases x float32/64: energies exact vs Torch CPU; full-gradient max difference 1.19e-7 float32 / 2.22e-16 float64. Four nonzero channels, custom solvation weights and JAX transformations pass. CUDA/package/matched final performance validation pending."
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "Five ligand/noncanonical/mixed/D-peptide/modified-DNA cases in float32/64 match Torch CPU/CUDA (full-gradient errors <=1.2e-7/2.3e-16). Four nonzero channels, custom solvation parameters and first-order transformations pass. Weighted totals use one common reverse pass."
     },
     "lk_ball": {
       "torch": "implemented",
-      "jax": "shared_native_frontend_cpu_validated_cuda_pending",
-      "noncanonical_validation": "Five real ligand/noncanonical/mixed/D-peptide/modified-DNA cases x float32/64: energies exact vs Torch CPU; full-gradient max difference 1.19e-7 float32 / 2.22e-16 float64. Four nonzero channels, custom solvation weights and JAX transformations pass. CUDA/package/matched final performance validation pending."
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "Five ligand/noncanonical/mixed/D-peptide/modified-DNA cases in float32/64 match Torch CPU/CUDA (full-gradient errors <=1.2e-7/2.3e-16). Four nonzero channels, custom solvation parameters and first-order transformations pass. Weighted totals use one common reverse pass."
     },
     "lk_bridge": {
       "torch": "implemented",
-      "jax": "shared_native_frontend_cpu_validated_cuda_pending",
-      "noncanonical_validation": "Five real ligand/noncanonical/mixed/D-peptide/modified-DNA cases x float32/64: energies exact vs Torch CPU; full-gradient max difference 1.19e-7 float32 / 2.22e-16 float64. Four nonzero channels, custom solvation weights and JAX transformations pass. CUDA/package/matched final performance validation pending."
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "Five ligand/noncanonical/mixed/D-peptide/modified-DNA cases in float32/64 match Torch CPU/CUDA (full-gradient errors <=1.2e-7/2.3e-16). Four nonzero channels, custom solvation parameters and first-order transformations pass. Weighted totals use one common reverse pass."
     },
     "lk_bridge_uncpl": {
       "torch": "implemented",
-      "jax": "shared_native_frontend_cpu_validated_cuda_pending",
-      "noncanonical_validation": "Five real ligand/noncanonical/mixed/D-peptide/modified-DNA cases x float32/64: energies exact vs Torch CPU; full-gradient max difference 1.19e-7 float32 / 2.22e-16 float64. Four nonzero channels, custom solvation weights and JAX transformations pass. CUDA/package/matched final performance validation pending."
+      "jax": "native_values_and_coordinate_gradients",
+      "noncanonical_validation": "Five ligand/noncanonical/mixed/D-peptide/modified-DNA cases in float32/64 match Torch CPU/CUDA (full-gradient errors <=1.2e-7/2.3e-16). Four nonzero channels, custom solvation parameters and first-order transformations pass. Weighted totals use one common reverse pass."
     },
     "ref": {
       "torch": "implemented",
@@ -347,5 +362,5 @@
       "noncanonical_validation": "Five nonzero metal fixtures: exact fresh Torch/JAX CPU energies and full gradients; independent directional derivatives and custom width/depth scaling. Fresh CPU/CUDA artifacts pass the same science cases and float32/64 transformations."
     }
   },
-  "validation": "f221aeabe5 matching artifacts: 423 JAX/core/scientific CUDA checks pass; 62 Torch HB/disulfide checks pass with two fixture/device skips. Independent CUDA comparisons cover 28 molecular/precision cases: HB/disulfide values and full gradients exact, LK gradients within 1.2e-7 float32 and 2.3e-16 float64. Clean Torch-free install passes 44 molecular and 77 shared capability checks. The complete 25-channel preset passes per-channel derivative and weighted-composition tests on 12 molecular cases in both JAX CPU and Torch CPU. Matched one-CPU 1ubq HB improves 13 ms to 0.73 ms; matched GPU HB and LK regressions remain blockers (15\u201349% and 84\u2013133% on tested nonzero cases). Final Metal, CUDA sampler validation, complete packing/design and standalone electrostatics performance remain acceptance work. PR629 stays draft."
+  "validation": "8b549088f1: 62 affected CPU and 75 CUDA checks pass; exact clean installation passes44 molecular and91 shared checks with Torch/tmol absent and no Torch linkage. Earlier full CUDA suite423 checks passes. Complete25-channel preset derivatives pass12 molecular fixtures on both frameworks; independent float64 CPU values/full gradients agree within5.7e-14/4.5e-16 after matching named channels and weight precision. Staged CUDA sampler21 checks and74 mature Torch checks pass (one disabled benchmark);49 independent sampler calls agree. Matched GPU LK1ubq82\u201384us vs old89us after weighted derivative composition; HB44\u201345us vs old29\u201330us remains a blocker. Final Metal, public packing/design, and standalone electrostatics performance remain acceptance work. PR629 stays draft."
 }
