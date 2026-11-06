@@ -9,14 +9,16 @@ inline ffi::DataType validate_conformer_output(
     const std::vector<ffi::AnyBuffer>& args,
     ffi::AnyBuffer output,
     const ffi::AnyBuffer* derivative,
-    size_t count) {
+    size_t count,
+    int64_t width = 9) {
   if (args.size() != count || derivative)
     throw std::invalid_argument("incorrect conformer DOF arguments");
   auto real = args[0].element_type();
   if (real != ffi::DataType::F32 && real != ffi::DataType::F64)
     throw std::invalid_argument("conformer DOFs require float32 or float64");
-  require_shape(args[0], real, {-1, 9});
-  require_shape(output, real, {args[0].dimensions()[0], 9});
+  require_shape(args[0], real, {-1, width});
+  require_shape(
+      output, real, {args[0].dimensions()[0], args[0].dimensions()[1]});
   if (output.untyped_data() != args[0].untyped_data())
     throw std::invalid_argument("conformer FFI requires an aliased DOF result");
   return real;
@@ -109,6 +111,45 @@ struct AssignConformerChiKernel {
         buffer_view<Real, 2, D>(output)};
     ContextManager context;
     pack::rotamer::launch_assign_chi_dofs<Ops, D, Real>(context, c);
+  }
+};
+struct CopyConformerRowsKernel {
+  static constexpr bool zero_energy = false;
+  static void validate(
+      const std::vector<ffi::AnyBuffer>& args,
+      ffi::AnyBuffer output,
+      const ffi::AnyBuffer* derivative) {
+    auto real = validate_conformer_output(args, output, derivative, 5, -1);
+    require_shape(args[1], real, {-1, args[0].dimensions()[1]});
+    require_shape(args[2], ffi::DataType::S32, {-1});
+    auto count = args[2].dimensions()[0];
+    require_shape(args[3], ffi::DataType::S32, {count});
+    require_shape(args[4], ffi::DataType::S32, {count + 1});
+  }
+
+  template <template <Device> class Ops, Device D, typename Real>
+  static void execute(
+      const std::vector<ffi::AnyBuffer>& args,
+      ffi::AnyBuffer output,
+      const ffi::AnyBuffer*,
+      int64_t n_rows,
+      int64_t root_shift) {
+    if (root_shift < 0 || root_shift > 1
+        || (n_rows > 0 && args[2].dimensions()[0] == 0))
+      throw std::invalid_argument("invalid conformer row-copy layout");
+    using Context = pack::rotamer::ConformerRowCopy<
+        score::common::TViewBinder<D>::template View,
+        Real,
+        int32_t>;
+    Context c{
+        buffer_view<int32_t, 1, D>(args[2]),
+        buffer_view<int32_t, 1, D>(args[3]),
+        buffer_view<int32_t, 1, D>(args[4]),
+        buffer_view<Real, 2, D>(args[1]),
+        buffer_view<Real, 2, D>(output)};
+    ContextManager context;
+    pack::rotamer::launch_copy_conformer_rows<Ops, D>(
+        context, c, n_rows, static_cast<int>(root_shift));
   }
 };
 }  // namespace tmol::jax

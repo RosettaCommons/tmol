@@ -5,7 +5,11 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from tmol_jax.pack._native import copy_conformer_dofs, assign_conformer_chi
+from tmol_jax.pack._native import (
+    copy_conformer_dofs,
+    assign_conformer_chi,
+    copy_conformer_rows,
+)
 
 
 @pytest.mark.parametrize("platform", ("cpu", "gpu"))
@@ -74,3 +78,44 @@ def test_conformer_dof_transport_preserves_unselected_state(dtype, platform):
         # A skipped chi leaves all its components untouched, and assignment
         # does not mutate the previously returned copy operation's result.
         np.testing.assert_array_equal(copied[3], source[1])
+        for width, root_shift in ((3, 0), (9, 1)):
+            # A leading empty segment and two uses of one input conformation
+            # exercise compact whole-row copying, including exact NaN content.
+            values = jnp.full((6, width), -3, dtype=dtype)
+            rows = np.arange(7 * width, dtype=dtype).reshape(7, width)
+            rows[2 + root_shift, 1] = np.nan
+
+            def full_copy(x):
+                return copy_conformer_rows(
+                    x,
+                    jnp.asarray(rows),
+                    integer([0, 2, 2]),
+                    integer([0, 0, 3]),
+                    integer([0, 0, 2, 3]),
+                    n_rows=3,
+                    root_shift=root_shift,
+                )
+
+            expected_rows = np.full((6, width), -3, dtype=dtype)
+            expected_rows[root_shift : root_shift + 2] = rows[
+                2 + root_shift : 4 + root_shift
+            ]
+            expected_rows[3 + root_shift] = rows[2 + root_shift]
+            np.testing.assert_array_equal(full_copy(values), expected_rows)
+            np.testing.assert_array_equal(
+                jax.jit(jax.vmap(full_copy))(jnp.stack((values, values))),
+                np.stack((expected_rows, expected_rows)),
+            )
+            np.testing.assert_array_equal(values, np.full((6, width), -3, dtype=dtype))
+            np.testing.assert_array_equal(
+                copy_conformer_rows(
+                    values,
+                    jnp.asarray(rows),
+                    integer([]),
+                    integer([]),
+                    integer([0]),
+                    n_rows=0,
+                    root_shift=root_shift,
+                ),
+                values,
+            )

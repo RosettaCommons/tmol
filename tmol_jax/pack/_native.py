@@ -1,4 +1,4 @@
-"""Eager CPU execution of the common dynamically sized chi sampler."""
+"""Native execution for chi sampling and conformer initialization."""
 
 import ctypes
 from functools import lru_cache, partial
@@ -9,9 +9,13 @@ import numpy as np
 from tmol_jax._host import invoke
 
 
-@partial(jax.jit, static_argnames=("target", "sampler"))
-def _conformer_dofs(dofs, arguments, *, target, sampler=None):
+@partial(jax.jit, static_argnames=("target", "sampler", "n_rows", "root_shift"))
+def _conformer_dofs(
+    dofs, arguments, *, target, sampler=None, n_rows=None, root_shift=0
+):
     attributes = {} if sampler is None else {"sampler": np.int64(sampler)}
+    if n_rows is not None:
+        attributes.update(n_rows=np.int64(n_rows), root_shift=np.int64(root_shift))
     return jax.ffi.ffi_call(
         target,
         jax.ShapeDtypeStruct(dofs.shape, dofs.dtype),
@@ -40,6 +44,30 @@ def assign_conformer_chi(dofs, chi, *metadata):
     target = "tmol_assign_conformer_chi"
     register(target)
     return _conformer_dofs(dofs, (chi, *metadata), target=target)
+
+
+def copy_conformer_rows(
+    values,
+    source,
+    source_offsets,
+    target_offsets,
+    packed_offsets,
+    *,
+    n_rows,
+    root_shift=0,
+):
+    """Copy complete input conformers, retaining all components including NaNs."""
+    from tmol_jax.score._native import register
+
+    target = "tmol_copy_conformer_rows"
+    register(target)
+    return _conformer_dofs(
+        values,
+        (source, source_offsets, target_offsets, packed_offsets),
+        target=target,
+        n_rows=n_rows,
+        root_shift=root_shift,
+    )
 
 
 # Native argument order; table contents and fitting belong to tmol_core.

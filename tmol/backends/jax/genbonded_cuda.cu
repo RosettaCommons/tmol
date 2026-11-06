@@ -595,3 +595,15 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets(),
     {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_copy_conformer_rows,
+    (tmol::jax::run<tmol::jax::CopyConformerRowsKernel, int64_t, int64_t>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<int64_t>("n_rows")
+        .Attr<int64_t>("root_shift"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
