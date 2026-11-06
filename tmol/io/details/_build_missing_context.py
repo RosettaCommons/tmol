@@ -53,7 +53,7 @@ def _build_missing_by_context(
 
     built = build_missing_by_context(
         pbt.active_block_types,
-        {at.name: at for at in pbt.chem_db.atom_types},
+        pbt.chem_db.atom_types,
         pbt.conn_atom.cpu().numpy(),
         pose_coords.detach().cpu().double().numpy(),
         missing.cpu().numpy(),
