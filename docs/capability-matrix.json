@@ -200,7 +200,7 @@
         "tests/scientific/test_fragment_attribution.py",
         "tests/jax/test_block_pair_transforms.py"
       ],
-      "implementation_status": "Shared fragment-column validation and sparse requested-pair reduction through common native conformer physics. Exact installed CPU and actual CUDA checks pass. Latest direct-host transfers preserve the full9278-atom input/render/fragment-energy/coordinate-gradient result against corrected mature d758 at2e-10 in both orders. Warm JAX/Torch ratios0.745/0.699, cold1.328/1.085; warm process peak1713936/1606112 versus1585932/1587120KiB. Cold/memory HOLD remains. This is selected-fragment attribution, not whole-protein angular-gradient equivalence or isolated scratch-memory measurement."
+      "implementation_status": "Shared fragment-column validation and sparse requested-pair reduction through common native conformer physics. Exact installed CPU and actual CUDA checks pass. Full9278-atom input/render/fragment-energy/coordinate-gradient workflow matches corrected mature d758 at2e-10. Latest matched controls use a separate fresh compilation cache per process: warm JAX/Torch ratios0.726/0.715, cold1.309/1.295; warm process peaks1701024/1704924 versus1588840/1585920KiB. Cold/memory HOLD remains. Earlier reverse-order measurements reused one persistent JAX compilation; preserved results are explicitly marked. This is selected-fragment attribution, not whole-protein angular-gradient equivalence or isolated scratch-memory measurement."
     },
     {
       "domain": "structure_io",
@@ -320,9 +320,10 @@
       "jax": "opt_in_cartesian_kinematic_and_array_minimization_cpu",
       "repro_fixture": [
         "tests/scientific/test_armijo_execution.py",
-        "tests/jax/test_armijo_native.py"
+        "tests/jax/test_armijo_native.py",
+        "tests/scientific/test_armijo_checkpoint.py"
       ],
-      "implementation_status": "Common settings/setup, compact H0=I direction, history, restart/retirement and per-segment convergence; typed shared native Armijo transitions through JAX FFI. Dense/scattered independent objectives, full25-channel molecular objectives and public compact Cartesian/kinematic execution pass CPU invariants in both frameworks. Existing strong-Wolfe default remains; exact a0a CUDA/package and bounded Apple portable execution passed; matched trajectories, cold/warm time and peak memory remain pending. Complete optimizer checkpoint/API parity is not established."
+      "implementation_status": "Common settings/setup, compact H0=I direction, history, restart/retirement and per-segment convergence; typed shared native Armijo transitions through JAX FFI. Dense/scattered independent objectives, full25-channel molecular objectives and public compact Cartesian/kinematic execution pass CPU invariants in both frameworks. Existing strong-Wolfe default remains; exact a0a CUDA/package and bounded Apple portable execution passed; matched trajectories, cold/warm time and peak memory remain pending. JAX checkpoint continuation now uses the common persistent history: scattered objectives and full ligand/mixed physical objectives match uninterrupted six-step execution on CPU; frozen atoms remain exact. Host-array restoration and incompatible context rejection pass. Checkpoint CUDA/artifact validation and complete optimizer API compatibility remain pending."
     },
     {
       "domain": "molecular_atomarray_export",
@@ -483,8 +484,8 @@
     "mature_functionality": [
       "Constructor chain/atom/missing metadata and context precedence have focused CPU evidence. Complete public task/design compatibility still requires implementation or matched validation.",
       "Standard AtomWorks encoding, tensor-gap semantics, default chemistry and optional constructor metadata passed exact installed CPU and actual CUDA gates. New direct host transfers and palette defaults await their final matching artifacts/device results.",
-      "Complete task/design API compatibility; changed-port and changed-constraint-atom imposition. Mature-supported unchanged constraint atom identities now pass CPU, final artifact/device gates pending.",
-      "Mature optimizer checkpoint/API behavior and matched trajectory validation",
+      "Complete task/design API compatibility audit. Mature-supported unchanged constraint atom identities passed exact installed CPU and actual CUDA gates. Changed-port/constraint-index design needs a mature correctness audit before classifying it as parity or new capability.",
+      "Complete optimizer API compatibility and matched mature trajectories/performance. JAX shared-history checkpoint continuation has CPU independent/molecular evidence; final artifact/CUDA gate pending.",
       "Exhaustive custom database/public score-option compatibility"
     ],
     "validation_and_performance": [
@@ -498,7 +499,8 @@
       "Higher derivatives through native torsion/forward-kinematics kernels are not advertised by mature Torch either",
       "Dynamic topology/sampling/graph allocation remains eager; JAX jit/vmap extensions beyond mature execution are tracked separately",
       "Independent varying third-backbone context lacks a validated mature native contract; do not count it as established Torch capability",
-      "JAX inferred-metal virtual translation derivatives exceed the mature detached-fit path; track separately from physical source-coordinate parity"
+      "JAX inferred-metal virtual translation derivatives exceed the mature detached-fit path; track separately from physical source-coordinate parity",
+      "Torch design currently retains connection/constraint indices across identity changes; reordered or missing atom/port identities are not established mature-correct capabilities. JAX rejects these cases while the common scientific audit is pending."
     ]
   },
   "score_file_options": {

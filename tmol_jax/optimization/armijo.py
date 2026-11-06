@@ -11,6 +11,7 @@ from tmol_core.optimization.segmented import SegmentedLBFGSPolicy
 from tmol_core.optimization.setup import LBFGS_DEFAULTS, validate_settings
 from ._armijo_native import ArmijoExecution, finalize
 from ._compact_lbfgs import compact_direction
+from ._armijo_checkpoint import checkpoint_settings, restore_checkpoint, make_checkpoint
 
 
 class _Optimizer(SegmentedLBFGSPolicy):
@@ -167,7 +168,14 @@ def _trial(x, direction, step):
 
 
 def armijo_minimize(
-    fn, x0, *, segment_ids=None, grad_mask=None, value_and_grad=None, **settings
+    fn,
+    x0,
+    *,
+    segment_ids=None,
+    grad_mask=None,
+    value_and_grad=None,
+    checkpoint=None,
+    **settings,
 ):
     """Minimize independent segments using mature TMol settings and native search.
 
@@ -179,7 +187,14 @@ def armijo_minimize(
     ``gradtol``, ``patience``, ``fixed_iterations`` and ``value_only_line_search``.
     Preparation and convergence control are eager; numerical objectives execute
     on the input device. This API does not differentiate optimizer trajectories.
+    Pass a returned ``checkpoint`` with its ``x`` to resume the common history.
+    Segment identities, movement mask, coordinate dtype and history capacity must
+    match. The caller must retain the same objective and parameter context.
     """
+    settings = checkpoint_settings(checkpoint, settings)
+    if checkpoint is not None:
+        segment_ids = checkpoint["segment_ids"] if segment_ids is None else segment_ids
+        grad_mask = checkpoint["grad_mask"] if grad_mask is None else grad_mask
     unknown = settings.keys() - LBFGS_DEFAULTS.keys()
     if unknown:
         raise TypeError("unknown optimizer settings: " + ", ".join(sorted(unknown)))
@@ -205,6 +220,7 @@ def armijo_minimize(
         ids = jax.device_put(ids, x.device)
         mask = jax.device_put(mask, x.device)
         optimizer = _Optimizer(x, ids, settings)
+        optimizer.state = restore_checkpoint(checkpoint, x, ids, mask, settings)
 
         def total(flat):
             values = fn(flat.reshape(x.shape))
@@ -234,4 +250,7 @@ def armijo_minimize(
             "converged": optimizer.state["converged"],
             "stalled": optimizer.state["stalled"],
             "state": optimizer.state,
+            "checkpoint": make_checkpoint(
+                optimizer.x.reshape(x.shape), ids, mask, settings, optimizer.state
+            ),
         }

@@ -153,6 +153,16 @@ minimized, diagnostics = run_kin_min(
 )
 ```
 
+`optimizer="armijo"` selects the common per-pose optimizer in `run_cart_min`
+and `run_kin_min`; `optimizer_kwargs` uses mature TMol setting names.
+`tmol_jax.optimization.armijo_minimize` runs the same policy on arrays and returns a
+`checkpoint` containing coordinates, movement/segment identities, settings and
+history. Resume with `armijo_minimize(objective, checkpoint["x"],
+checkpoint=checkpoint)`. NumPy copies of checkpoint arrays can be restored to the
+input device. Keep the same objective and parameter context; incompatible
+coordinates, masks, segment identities, dtype or history capacity reject.
+Checkpoint continuation is distinct from differentiating optimizer trajectories.
+
 `CartesianMoveMap(coord_mask=mask)` carries an atom movement mask for Cartesian
 relax callbacks. `run_cart_min(..., coord_mask=mask)` accepts the mature keyword;
 `move_mask` remains available. Supply only one non-None mask.
