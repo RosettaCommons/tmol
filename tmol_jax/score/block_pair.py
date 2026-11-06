@@ -1,5 +1,7 @@
 """Block-pair execution through the existing shared native conformer kernels."""
 
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -8,6 +10,17 @@ from tmol_core.pack.conformer_merge import prepare_conformer_origins
 from tmol_core.pack.correlation import correlation_indices
 from tmol_jax.pack.rotamer_set import RotamerSet, ConformerContext
 from tmol_jax.pack.score_function import RotamerScorer
+
+
+@partial(jax.jit, static_argnames=("weights", "interaction_only"))
+def _physical_pair_values(values, indices, blocks, *, weights, interaction_only):
+    p, i, j = indices
+    i, j = blocks[i], blocks[j]
+    if interaction_only:
+        values = jnp.where((i != j)[None], values, 0)
+    if weights is not None:
+        values *= jnp.asarray(weights, values.dtype)[:, None]
+    return values, (p, i, j)
 
 
 def _current_conformers(pose):
@@ -119,13 +132,13 @@ class BlockPairScorer:
             arrays=self.sparse._arrays,
             candidates=self.candidates,
         )
-        p, i, j = indices
-        i, j = self.blocks[i], self.blocks[j]
-        if self.interaction_only:
-            values = jnp.where((i != j)[None], values, 0)
-        if apply_weights:
-            values *= jnp.asarray(self.weights, coords.dtype)[:, None]
-        return values, (p, i, j)
+        return _physical_pair_values(
+            values,
+            indices,
+            self.blocks,
+            weights=self.weights if apply_weights else None,
+            interaction_only=self.interaction_only,
+        )
 
     def __call__(self, coords, sum_terms=True, apply_weights=True):
         values, (p, i, j) = self.pair_values(coords, apply_weights)

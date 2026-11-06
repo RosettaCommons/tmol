@@ -1,5 +1,7 @@
 """JAX execution of the common original-fragment attribution contract."""
 
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -8,6 +10,22 @@ from tmol_core.scoring.fragment_interactions import (
     FragmentInteractionScores,
     fragment_mapping_plan,
 )
+
+
+@partial(jax.jit, static_argnames=("n_fragments", "sum_terms"))
+def _fragment_values(values, indices, columns, partner_mask, *, n_fragments, sum_terms):
+    poses, left, right = indices
+    result = jnp.zeros(
+        (values.shape[0], partner_mask.shape[0], n_fragments), values.dtype
+    )
+    if n_fragments:
+        for fragment, partner in ((left, right), (right, left)):
+            column = columns[fragment]
+            selected = (column >= 0) & partner_mask[poses, partner]
+            result = result.at[:, poses, jnp.maximum(column, 0)].add(
+                jnp.where(selected[None], values, 0)
+            )
+    return result.sum(0) if sum_terms else result
 
 
 class FragmentScorer:
@@ -55,19 +73,15 @@ class FragmentScorer:
         self.sum_terms = sum_terms
 
     def __call__(self, coords):
-        values, (poses, left, right) = self.scorer.pair_values(coords)
-        result = jnp.zeros(
-            (len(self.scorer.weights), self.partner_mask.shape[0], self.indices.size),
-            coords.dtype,
+        values, indices = self.scorer.pair_values(coords)
+        return _fragment_values(
+            values,
+            indices,
+            self.columns,
+            self.partner_mask,
+            n_fragments=self.indices.size,
+            sum_terms=self.sum_terms,
         )
-        if self.indices.size:
-            for fragment, partner in ((left, right), (right, left)):
-                column = self.columns[fragment]
-                selected = (column >= 0) & self.partner_mask[poses, partner]
-                result = result.at[:, poses, jnp.maximum(column, 0)].add(
-                    jnp.where(selected[None], values, 0)
-                )
-        return result.sum(0) if self.sum_terms else result
 
 
 def render_fragment_interactions(
