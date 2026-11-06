@@ -71,10 +71,11 @@ def test_histidine_protonation_and_alias_identity(backend, name, dtype):
             )
 
         if b.framework == "jax":
-            from tmol_jax.io._native import histidine_state
+            from tmol_jax.io._native import histidine_state, histidine_coordinates
 
             def wide(x):
                 return x.view(np.uint8).reshape((*x.shape, 8))
+
             arguments = tuple(
                 map(
                     array,
@@ -99,6 +100,17 @@ def test_histidine_protonation_and_alias_identity(backend, name, dtype):
             mapping = mapping.copy().view(np.int64).reshape(present.shape)
             states = states.copy().view(np.int64).reshape(types.shape)
             np.testing.assert_array_equal(b.numpy(arguments[2]), variants)
+            resolved_variants, resolved_coords, resolved_present = (
+                histidine_coordinates(*arguments)
+            )
+            np.testing.assert_array_equal(b.numpy(resolved_variants), actual_variants)
+            np.testing.assert_array_equal(
+                b.numpy(resolved_coords),
+                np.take_along_axis(xyz, expected[..., None], axis=2),
+            )
+            np.testing.assert_array_equal(
+                b.numpy(resolved_present), np.take_along_axis(present, expected, axis=2)
+            )
         else:
             from tmol.io.details.compiled._compiled import _resolve_his_taut
 

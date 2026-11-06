@@ -87,7 +87,7 @@ def prepare_context_completion(pose, missing, targets, *, heavy_only=True):
 
     built = build_missing_by_context(
         pbt.active_block_types,
-        {at.name: at for at in pbt.chem_db.atom_types},
+        pbt.chem_db.atom_types,
         np.asarray(pbt.conn_atoms),
         np.asarray(pose.coords, dtype=np.float64),
         np.asarray(missing),

@@ -123,6 +123,7 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
         co.cys_inds.sg_atom_for_co_cys,
     )
     disulfides = disulfides.astype(np.int32)
+    resolved = None
     his_rows = np.nonzero(np.isin(types, co.his_inds.his_co_aa_inds))
     if len(his_rows[0]):
         inds = co.his_inds
@@ -135,9 +136,9 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
             ],
             np.int32,
         )
-        variant_array, mapping, _ = run(
-            _native.histidine_state,
-            coords,
+        resolved = run(
+            _native.histidine_coordinates,
+            np.where(present[..., None], coords, np.nan),
             types,
             variants,
             _wide(his_rows[0]),
@@ -145,10 +146,7 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
             present,
             atoms,
         )
-        variants = np.asarray(variant_array)
-        mapping = np.asarray(mapping).copy().view(np.int64).reshape(present.shape)
-        coords = np.take_along_axis(coords, mapping[..., None], axis=2)
-        present = np.take_along_axis(present, mapping, axis=2)
+        variants = resolved[0]
     cycles = _rows(cf, "cyclic_bonds", 3, types.shape, (1, 2))
     bonds = _rows(cf, "covalent_bonds", 5, types.shape, (1, 3))
     explicit_ports = np.zeros((*types.shape, 2), bool)
@@ -165,8 +163,12 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
             (
                 types,
                 chains,
-                np.where(present[..., None], coords, np.nan),
-                present,
+                (
+                    np.where(present[..., None], coords, np.nan)
+                    if resolved is None
+                    else resolved[1]
+                ),
+                present if resolved is None else resolved[2],
                 gaps,
                 real,
                 variants,
@@ -271,4 +273,6 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
         raise ValueError(
             f"invalid canonical connection topology (per-pose status {np.asarray(status).tolist()})"
         )
+    if resolved is not None:
+        coords, present = map(np.asarray, resolved[1:])
     return selected, np.asarray(connections), coords, present

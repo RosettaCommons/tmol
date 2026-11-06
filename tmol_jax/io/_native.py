@@ -244,3 +244,21 @@ def canonical_connections(
         extent=np.int64(0),
         width=np.int64(max_connections),
     )
+
+
+@jax.jit
+def histidine_coordinates(coords, types, variants, poses, residues, present, atoms):
+    """Execute common tautomer decisions and apply their atom permutation on device.
+
+    Canonical atom indices fit int32; read that low word from the opaque int64
+    transport without enabling global JAX x64 mode. Input arrays remain immutable.
+    """
+    variants, mapping, _ = histidine_state(
+        coords, types, variants, poses, residues, present, atoms
+    )
+    indices = jax.lax.bitcast_convert_type(mapping[..., :4], np.int32)
+    return (
+        variants,
+        jax.numpy.take_along_axis(coords, indices[..., None], axis=2),
+        jax.numpy.take_along_axis(present, indices, axis=2),
+    )
