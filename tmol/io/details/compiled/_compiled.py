@@ -17,3 +17,6 @@ _gen_pose_leaf_atoms = _ops.gen_pose_leaf_atoms
 _resolve_his_taut = _ops.resolve_his_taut
 
 _select_canonical_candidates = _ops.select_canonical_candidates
+
+_canonical_chain_endings = _ops.canonical_chain_endings
+_canonical_atom_termini = _ops.canonical_atom_termini

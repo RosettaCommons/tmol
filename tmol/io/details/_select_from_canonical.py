@@ -328,204 +328,52 @@ def _determine_chain_ending_status(
     cyclic_closures64: Optional[Tensor[torch.int64][:, 3]] = None,
     explicit_polymer_connections: Optional[Tensor[torch.bool][:, :, 2]] = None,
 ):
-    n_poses = chain_id.shape[0]
-    device = pbt.device
-    can_ann = pbt.canonical_ordering_annotation
+    """Infer chain boundaries and termini from prepared ports and explicit topology."""
+    from tmol.io.details.compiled._compiled import _canonical_chain_endings
 
-    # logic for deciding what chemical bonds are present between the polymeric
-    # residues and which residues should be represented as termini:
-    # - The first and last residues in a chain are not connected to the
-    #   previous / next residues
-    # - If res_not_connected[p, i, 0] is true, then this residue will not
-    #   be connected to i-1;
-    # - If res_not_connected[p, i, 1] is true, then this residue will not
-    #   be connected to i+1
-    # - Thus: for residue i and i+1 to be connected, all the following must hold:
-    #   - i cannot be the last residue in a chain
-    #   - (equivalently, i+1 cannot be the first residue in a chain)
-    #   - res_not_connected[p, i, 1] must be false
-    #   - res_not_connected[p, i+1, 0] must be false
-    # - If a residue is the first residue in a chain and res_not_connected[p, i, 0]
-    #   is true, then it will not be treated as an n-terminal residue, rather,
-    #   it will be treated as a "mid" residue (unless it is also a c-term residue)
-    #   and, in the case of amino acids, will have a regular H atom bonded to N
-    #   instead of the 1H, 2H, and 3H atoms. Its connection to the "previous" residue
-    #   will be incomplete (-1) instead of to a particular residue.
-    # - If a residue is the last residue in a chain and res_not_connected[p, i, 1]
-    #   is true, then it will not be treated as a c-terminal residue.
-    #
-    # NOTE: Often non-polymeric residues are marked as belonging to the chains of
-    # polymeric residues, usually to designate them as part of the same symmetry
-    # unit, e.g. the "chain A waters" vs the "chain B waters". This complicates
-    # chain-end dection, as the last chain A residue might be a water residue, but
-    # the last polymeric chain A residue might be 30 residues back. So we look at
-    # whether the restype for a position is a polymic residue type and we will
-    # mark residue i as being the C-term residue if i+1 is non-polymeric (and real).
-    # We also have to mark the non-polymeric residue as being "mid" residue termini
-    # types (1) because it will be understood as neither an up- nor down-terminus
-    # type.
-
-    is_chain_first_res = torch.logical_and(
-        is_real_res,
-        torch.cat(
-            (
-                torch.ones((n_poses, 1), dtype=torch.bool, device=device),
-                chain_id[:, 1:] != chain_id[:, :-1],  # is i different from i-1?
-            ),
-            dim=1,
-        ),
-    )
-    is_chain_last_res = torch.logical_and(
-        is_real_res,
-        torch.cat(
-            (
-                chain_id[:, :-1] != chain_id[:, 1:],  # is i different from i+1?
-                torch.ones((n_poses, 1), dtype=torch.bool, device=device),
-            ),
-            dim=1,
-        ),
-    )
-    is_polymeric = torch.zeros_like(is_chain_first_res)
-    is_polymeric[is_real_res] = can_ann.co_equiv_class_is_polymeric[
-        res_types64[is_real_res]
-    ]
-
-    # another way a residue might be declared as a chain-ending residue is if
-    # the next residue is not polymeric yet is declared to be part of the same chain
-    next_res_on_same_chain_not_polymeric = torch.logical_and(
-        torch.cat(
-            (
-                torch.logical_not(is_polymeric[:, 1:]),
-                torch.zeros((n_poses, 1), dtype=torch.bool, device=device),
-            ),
-            dim=1,
-        ),
-        torch.cat(
-            (
-                chain_id[:, :-1] == chain_id[:, 1:],  # is i different from i+1?
-                torch.zeros((n_poses, 1), dtype=torch.bool, device=device),
-            ),
-            dim=1,
-        ),
-    )
-    prev_res_on_same_chain_not_polymeric = torch.logical_and(
-        torch.cat(
-            (
-                torch.zeros((n_poses, 1), dtype=torch.bool, device=device),
-                torch.logical_not(is_polymeric[:, :-1]),
-            ),
-            dim=1,
-        ),
-        torch.cat(
-            (
-                torch.zeros((n_poses, 1), dtype=torch.bool, device=device),
-                chain_id[:, :-1] == chain_id[:, 1:],  # is i different from i+1?
-            ),
-            dim=1,
-        ),
-    )
-
-    is_actual_first_chain_res = torch.logical_or(
-        is_chain_first_res, prev_res_on_same_chain_not_polymeric
-    )
-    is_actual_last_chain_res = torch.logical_or(
-        is_chain_last_res, next_res_on_same_chain_not_polymeric
-    )
-
-    available_ports = can_ann.co_polymer_connection_atoms[res_types64] >= 0
-    breaks = ~available_ports[:, :-1, 1] | ~available_ports[:, 1:, 0]
-    if explicit_polymer_connections is not None:
-        breaks |= (
-            explicit_polymer_connections[:, :-1, 1]
-            | explicit_polymer_connections[:, 1:, 0]
+    annotation = pbt.canonical_ordering_annotation
+    if cyclic_closures64 is None:
+        cyclic_closures64 = torch.empty((0, 3), dtype=torch.int64, device=pbt.device)
+    if res_not_connected is None:
+        res_not_connected = torch.zeros(
+            (*chain_id.shape, 2), dtype=torch.bool, device=pbt.device
         )
-    is_actual_last_chain_res[:, :-1] |= breaks
-    is_actual_first_chain_res[:, 1:] |= breaks
-
-    is_down_term_res = torch.logical_and(
-        is_actual_first_chain_res,
-        torch.logical_not(res_not_connected[:, :, 0]),
-    )
-    is_up_term_res = torch.logical_and(
-        is_actual_last_chain_res,
-        torch.logical_not(res_not_connected[:, :, 1]),
-    )
-    is_down_term_res |= is_polymeric & ~available_ports[:, :, 0]
-    is_up_term_res |= is_polymeric & ~available_ports[:, :, 1]
-    if explicit_polymer_connections is not None:
-        is_down_term_res &= ~explicit_polymer_connections[:, :, 0]
-        is_up_term_res &= ~explicit_polymer_connections[:, :, 1]
-
-    # A residue whose backbone continues around a cycle is not a terminus, even
-    # though it does sit at the end of the residue-index range for its chain.
-    # The chain-boundary flags keep their meaning: they still bar the pair from
-    # the sequential connection logic below, which pairs residue i with i+1.
-    if cyclic_closures64 is not None and cyclic_closures64.shape[0] != 0:
-        is_up_term_res[cyclic_closures64[:, 0], cyclic_closures64[:, 1]] = False
-        is_down_term_res[cyclic_closures64[:, 0], cyclic_closures64[:, 2]] = False
-    is_down_and_not_up_term_res = torch.logical_and(
-        is_down_term_res, torch.logical_not(is_up_term_res)
-    )
-    is_up_and_not_down_term_res = torch.logical_and(
-        is_up_term_res, torch.logical_not(is_down_term_res)
-    )
-    is_both_down_and_up_term_res = torch.logical_and(is_down_term_res, is_up_term_res)
-
-    # note which polymeric residues should be given their chain-ending
-    # (aka termini) patches
-    termini_variants = torch.ones_like(chain_id, dtype=torch.int64)
-    termini_variants[is_down_and_not_up_term_res] = 0
-    termini_variants[is_up_and_not_down_term_res] = 2
-    termini_variants[is_both_down_and_up_term_res] = 3
-
-    # now, any non-polymeric residue type is marked as neither an up nor a down terminus,
-    # overriding any instances where such a residue is marked as an up or down terminus
-    # by the logic above, as that logic does not examine whether a particular residue
-    # is polymeric
-    termini_variants[torch.logical_not(is_polymeric)] = 1
-
-    return (
-        termini_variants,
-        is_actual_first_chain_res,
-        is_actual_last_chain_res,
-        is_polymeric,
-    )
+    if explicit_polymer_connections is None:
+        explicit_polymer_connections = torch.zeros_like(res_not_connected)
+    inputs = [
+        chain_id,
+        res_types64,
+        res_not_connected,
+        is_real_res,
+        annotation.co_equiv_class_is_polymeric,
+        annotation.co_polymer_connection_atoms,
+        cyclic_closures64,
+        explicit_polymer_connections,
+    ]
+    if pbt.device.type == "mps":
+        inputs = [x.cpu() for x in inputs]
+    return tuple(x.to(pbt.device) for x in _canonical_chain_endings(inputs))
 
 
 def _termini_the_atoms_state(pbt, present, restypes, variants, termini, broken, real):
-    """Termini at a gap when that explains more of the supplied atoms.
+    """Infer terminal patches at gaps without trading away any supplied atom."""
+    from tmol.io.details.compiled._compiled import _canonical_atom_termini
 
-    PDBbind v2020 1ERR A:74 (PrepWizard) caps its chain break with H1 and H2,
-    which no mid-chain ALA holds; a heavy-atom input still fits mid-chain.
-    A generic H already incompatible with an inferred amino terminus must not
-    hide a supplied OXT on its other end (2JDM's first pocket residue).
-    """
-    can_ann = pbt.canonical_ordering_annotation
-    down = (termini == 0) | (termini == 3) | broken[..., 0]
-    up = (termini == 2) | (termini == 3) | broken[..., 1]
-    alt = torch.where(down & up, 3, torch.where(down, 0, torch.where(up, 2, 1)))
-    restypes, variants = restypes.clamp(min=0), variants.clamp(min=0)
-
-    def unmatched(t):
-        cands = can_ann.var_combo_candidate_bt_index[restypes, t, variants]
-        real_cand = can_ann.var_combo_is_real_candidate[restypes, t, variants]
-        absent = can_ann.bt_canonical_atom_is_absent[cands.clamp(min=0)]
-        missing = present[:, :, None] & absent
-        count = missing.sum(-1).masked_fill(~real_cand, present.shape[-1] + 1)
-        fewest = count.min(-1).values
-        best = real_cand & (count == fewest[..., None])
-        return missing, best[..., None], fewest
-
-    before, best_before, count_before = unmatched(termini)
-    after, best_after, count_after = unmatched(alt)
-    # Every best alternative must retain every atom any best original could keep.
-    # A smaller count alone could trade away a heavy atom for more hydrogen names.
-    allowed_missing = (before | ~best_before).all(-2)
-    could_lose = (after & best_after).any(-2) & ~allowed_missing
-    switch = (
-        real & (alt != termini) & (count_after < count_before) & ~could_lose.any(-1)
-    )
-    return torch.where(switch, alt, termini)
+    annotation = pbt.canonical_ordering_annotation
+    inputs = [
+        present,
+        restypes,
+        variants,
+        termini,
+        broken,
+        real,
+        annotation.var_combo_candidate_bt_index,
+        annotation.var_combo_is_real_candidate,
+        annotation.bt_canonical_atom_is_absent,
+    ]
+    if present.device.type == "mps":
+        inputs = [x.cpu() for x in inputs]
+    return _canonical_atom_termini(inputs).to(present.device)
 
 
 @_validate_args

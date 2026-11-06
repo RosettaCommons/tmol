@@ -8,6 +8,7 @@
 
 #include <tmol/io/details/compiled/gen_pose_leaf_atoms.hh>
 #include <tmol/io/details/compiled/canonical_candidates.hh>
+#include <tmol/io/details/compiled/canonical_topology.hh>
 #include <tmol/utility/tensor/TensorPack.h>
 #include <tmol/io/details/compiled/resolve_his_taut.hh>
 
@@ -261,7 +262,76 @@ std::tuple<Tensor, Tensor, Tensor> select_canonical_candidates(
   return {selected, score, candidate_index};
 }
 
+std::tuple<Tensor, Tensor, Tensor, Tensor> canonical_chain_endings(
+    std::vector<Tensor> inputs) {
+  TORCH_CHECK(
+      inputs.size() == 8, "Canonical chain endings require eight buffers");
+  Tensor termini, first, last, polymeric;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[1].options(), "canonical_chain_endings", ([&] {
+        using Int = scalar_t;
+        auto shape =
+            std::array<int64_t, 2>{inputs[1].size(0), inputs[1].size(1)};
+        auto a = TPack<Int, 2, device_t>::empty(shape);
+        auto b = TPack<bool, 2, device_t>::empty(shape),
+             c = TPack<bool, 2, device_t>::empty(shape),
+             d = TPack<bool, 2, device_t>::empty(shape);
+        CanonicalChainContext<Int, device_t> context{
+            TCAST(inputs[0]),
+            TCAST(inputs[1]),
+            TCAST(inputs[2]),
+            TCAST(inputs[3]),
+            TCAST(inputs[4]),
+            TCAST(inputs[5]),
+            TCAST(inputs[6]),
+            TCAST(inputs[7]),
+            a.view,
+            b.view,
+            c.view,
+            d.view};
+        CanonicalTopology<score::common::DeviceOperations, device_t, Int>::
+            chain_endings(mgr, context);
+        termini = a.tensor;
+        first = b.tensor;
+        last = c.tensor;
+        polymeric = d.tensor;
+      }));
+  return {termini, first, last, polymeric};
+}
+Tensor canonical_atom_termini(std::vector<Tensor> inputs) {
+  TORCH_CHECK(
+      inputs.size() == 9, "Canonical atom termini require nine buffers");
+  Tensor output;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[1].options(), "canonical_atom_termini", ([&] {
+        using Int = scalar_t;
+        auto shape =
+            std::array<int64_t, 2>{inputs[1].size(0), inputs[1].size(1)};
+        auto a = TPack<Int, 2, device_t>::empty(shape);
+        auto counts = TPack<Int, 4, device_t>::empty(
+            {shape[0], shape[1], 2, inputs[6].size(3)});
+        CanonicalTerminusContext<Int, device_t> context{
+            TCAST(inputs[0]),
+            TCAST(inputs[1]),
+            TCAST(inputs[2]),
+            TCAST(inputs[3]),
+            TCAST(inputs[4]),
+            TCAST(inputs[5]),
+            TCAST(inputs[6]),
+            TCAST(inputs[7]),
+            TCAST(inputs[8]),
+            counts.view,
+            a.view};
+        CanonicalTopology<score::common::DeviceOperations, device_t, Int>::
+            atom_termini(mgr, context);
+        output = a.tensor;
+      }));
+  return output;
+}
+
 TMOL_LIBRARY(tmol_io, m) {
+  m.def("canonical_chain_endings", TMOL_FN(&canonical_chain_endings));
+  m.def("canonical_atom_termini", TMOL_FN(&canonical_atom_termini));
   m.def("select_canonical_candidates", TMOL_FN(&select_canonical_candidates));
   m.def("gen_pose_leaf_atoms", TMOL_FN(&pose_leaf_atom_gen_op));
   m.def("resolve_his_taut", TMOL_FN(&resolve_his_tautomerization));
