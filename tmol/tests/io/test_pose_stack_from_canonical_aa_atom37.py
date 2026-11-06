@@ -211,3 +211,15 @@ def test_device_of_packed_block_types(torch_device):
     """Test that PBT is on the correct device."""
     pbt = _packed_block_types_for_atomworks(torch_device)
     assert pbt.device == torch_device
+
+
+def test_shared_atomworks_encoding_matches_provider():
+    from atomworks.ml.encoding_definitions import UNIFIED_ATOM37_ENCODING
+
+    names = UNIFIED_ATOM37_ENCODING.tokens[
+        : UNIFIED_ATOM37_ENCODING.token_to_idx["UNK"] + 1
+    ].tolist()
+    assert ATOMWORKS_NAME3S == names
+    assert ATOMWORKS_ATOM37_NAMES == {
+        name: UNIFIED_ATOM37_ENCODING.token_atoms[name].tolist() for name in names
+    }

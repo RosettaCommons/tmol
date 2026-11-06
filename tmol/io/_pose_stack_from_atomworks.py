@@ -12,21 +12,14 @@ from tmol.io._canonical_ordering import CanonicalOrdering
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
 
-# Use AtomWorks' protein token order and atom slots as the source of truth.
-# This module therefore has a runtime AtomWorks dependency. Copy the public
-# lists so callers cannot mutate AtomWorks' shared encoding.
-from atomworks.ml.encoding_definitions import UNIFIED_ATOM37_ENCODING
-
-_ATOMWORKS_MIN_PROTEIN_IDX = UNIFIED_ATOM37_ENCODING.token_to_idx["ALA"]
-_ATOMWORKS_MAX_PROTEIN_IDX = UNIFIED_ATOM37_ENCODING.token_to_idx["VAL"]
-ATOMWORKS_NAME3S = UNIFIED_ATOM37_ENCODING.tokens[
-    : UNIFIED_ATOM37_ENCODING.token_to_idx["UNK"] + 1
-].tolist()
-ATOMWORKS_ATOM37_NAMES = {
-    name: UNIFIED_ATOM37_ENCODING.token_atoms[name].tolist()
-    for name in ATOMWORKS_NAME3S
-}
-
+from tmol_core.io.atomworks_encoding import (
+    ATOMWORKS_NAME3S,
+    ATOMWORKS_ATOM37_NAMES,  # noqa: F401 - compatibility import
+    _ATOMWORKS_MIN_PROTEIN_IDX,
+    _ATOMWORKS_MAX_PROTEIN_IDX,
+    atomworks_restype_map,
+    canonical_to_atomworks_mappings,
+)
 
 # ---------------------------------------------------------------------------
 # Forward: atomworks tensors -> PoseStack
@@ -343,47 +336,15 @@ def _packed_block_types_for_atomworks(device: torch.device) -> PackedBlockTypes:
 @toolz.functoolz.memoize
 def _aw_2_tmol_restype_map(device: torch.device):
     """Atomworks residue index -> tmol canonical residue type (-1 if tmol has none)."""
-    classes = _canonical_ordering_for_atomworks().restype_io_equiv_classes
-    return torch.tensor(
-        [classes.index(n) if n in classes else -1 for n in ATOMWORKS_NAME3S],
-        dtype=torch.int64,
-        device=device,
+    return torch.as_tensor(
+        atomworks_restype_map(_canonical_ordering_for_atomworks()), device=device
     )
 
 
 @toolz.functoolz.memoize
 def _get_tmol_2_aw_mappings(device: torch.device):
     """Build reverse mapping tensors: tmol canonical -> atomworks atom37 slot."""
-    co = _canonical_ordering_for_atomworks()
-
-    n_co_restypes = len(co.restype_io_equiv_classes)
-    max_n_canonical_atoms = co.max_n_canonical_atoms
-
-    tmol_2_aw_rtmap = torch.full((n_co_restypes,), 0, dtype=torch.int64)
-    tmol_2_aw_atmap = torch.full(
-        (n_co_restypes, max_n_canonical_atoms), -1, dtype=torch.int64
+    return tuple(
+        torch.as_tensor(x, device=device)
+        for x in canonical_to_atomworks_mappings(_canonical_ordering_for_atomworks())
     )
-    tmol_at_is_real = torch.zeros(
-        (n_co_restypes, max_n_canonical_atoms), dtype=torch.bool
-    )
-
-    for aw_idx, name3 in enumerate(ATOMWORKS_NAME3S):
-        if name3 not in co.restype_io_equiv_classes:
-            continue
-        tmol_rt_idx = co.restype_io_equiv_classes.index(name3)
-        tmol_2_aw_rtmap[tmol_rt_idx] = aw_idx
-
-        aw_atoms = ATOMWORKS_ATOM37_NAMES[name3]
-        tmol_atom_mapping = co.restypes_atom_index_mapping[name3]
-        for at37_slot, at_name in enumerate(aw_atoms):
-            if at_name == "":
-                continue
-            if at_name in tmol_atom_mapping:
-                canon_at_idx = tmol_atom_mapping[at_name]
-                tmol_2_aw_atmap[tmol_rt_idx, canon_at_idx] = at37_slot
-                tmol_at_is_real[tmol_rt_idx, canon_at_idx] = True
-
-    def _d(x):
-        return x.to(device=device)
-
-    return _d(tmol_2_aw_rtmap), _d(tmol_2_aw_atmap), _d(tmol_at_is_real)

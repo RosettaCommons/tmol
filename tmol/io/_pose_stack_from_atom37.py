@@ -62,9 +62,8 @@ def _default_slot_map(
     canonical_ordering: CanonicalOrdering, device: torch.device
 ) -> torch.Tensor:
     """Build the slot map for the standard Atom37 layout."""
-    # Imported here because the module holding the layout table imports this
-    # one for its own scatter.
-    from tmol.io._pose_stack_from_atomworks import ATOMWORKS_ATOM37_NAMES
+    # AtomWorks layout metadata has no framework dependency.
+    from tmol_core.io.atomworks_encoding import ATOMWORKS_ATOM37_NAMES
 
     return atom37_slot_map_for_ordering(
         canonical_ordering, ATOMWORKS_ATOM37_NAMES, device
@@ -106,65 +105,28 @@ def _canonical_form_from_atom37(
       A canonical form whose coordinates carry gradients back to
       ``atom37_coords``.
     """
+    from tmol_core.io.atom37 import prepare_atom37_routing
+
     device = atom37_coords.device
-    if slot_map is None:
-        slot_map = _default_slot_map(canonical_ordering, device)
-    slot_map = slot_map.to(device=device)
-
-    n_poses, n_tokens, n_slots = atom37_coords.shape[:3]
-    if slot_map.shape[1] < n_slots:
-        raise ValueError(
-            f"slot map covers {slot_map.shape[1]} slots but coordinates supply "
-            f"{n_slots}"
-        )
-
-    # Padding carries no residue type, so give it a valid row to gather and
-    # mask it out afterwards rather than indexing with -1.
-    is_real_residue = res_types >= 0
-    lookup = torch.where(is_real_residue, res_types, torch.zeros_like(res_types))
-    canonical_atom = slot_map[lookup.to(torch.int64)][:, :, :n_slots]
-    routed = (canonical_atom >= 0) & is_real_residue.unsqueeze(-1)
-
-    # A residue type the slot map does not describe routes nothing at all, so
-    # every one of its atoms would be rebuilt from ideal internal coordinates
-    # and the returned pose would carry no gradient back to atom37_coords for
-    # it -- a fabricated residue that looks like a measured one. The default
-    # layout covers the canonical amino acids and UNK only, so anything else in
-    # this input has to be named rather than silently invented.
-    unroutable = is_real_residue & ~routed.any(dim=-1)
-    if bool(unroutable.any()):
-        missing = torch.unique(res_types[unroutable]).tolist()
-        classes = canonical_ordering.restype_io_equiv_classes
-        named = ", ".join(
-            classes[index] if 0 <= index < len(classes) else str(index)
-            for index in missing[:8]
-        )
-        raise ValueError(
-            f"the slot map routes no atom of residue type(s) {named}, so their "
-            "coordinates cannot come from atom37_coords. Supply a slot_map that "
-            "covers them, or build the pose from the atom-array path instead"
-        )
-
-    pose_index = (
-        torch.arange(n_poses, dtype=torch.int64, device=device)
-        .reshape(-1, 1, 1)
-        .expand(n_poses, n_tokens, n_slots)
+    if atom37_coords.ndim != 4 or atom37_coords.shape[-1] != 3:
+        raise ValueError("atom37_coords must have shape [pose, token, slot, 3]")
+    if tuple(res_types.shape) != tuple(atom37_coords.shape[:2]):
+        raise ValueError("res_types must match the coordinate pose and token axes")
+    routing = prepare_atom37_routing(
+        res_types.detach().cpu().numpy(),
+        None if slot_map is None else slot_map.detach().cpu().numpy(),
+        atom37_coords.shape[2],
+        canonical_ordering,
     )
-    token_index = (
-        torch.arange(n_tokens, dtype=torch.int64, device=device)
-        .reshape(1, -1, 1)
-        .expand(n_poses, n_tokens, n_slots)
-    )
-
+    source = tuple(torch.as_tensor(x, device=device) for x in routing.source_indices)
+    target = tuple(torch.as_tensor(x, device=device) for x in routing.target_indices)
     coords = torch.full(
-        (n_poses, n_tokens, canonical_ordering.max_n_canonical_atoms, 3),
+        (*routing.canonical_shape, 3),
         float("nan"),
         dtype=torch.float32,
         device=device,
     )
-    coords[pose_index[routed], token_index[routed], canonical_atom[routed]] = (
-        atom37_coords[routed]
-    )
+    coords[target] = atom37_coords[source]
 
     return CanonicalForm(
         chain_id=chain_id.to(torch.int32),

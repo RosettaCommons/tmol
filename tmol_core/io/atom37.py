@@ -1,5 +1,7 @@
 """Shared Atom37 atom identity, slot routing and topology validation."""
 
+from dataclasses import dataclass
+
 import numpy
 import biotite.structure
 from tmol_core.io.canonical_ordering import CanonicalOrdering
@@ -112,3 +114,71 @@ def atom37_slot_map_for_ordering(canonical_ordering, atom_names_by_slot):
             if canonical_atom is not None:
                 slot_map[restype_index, slot] = canonical_atom
     return slot_map
+
+
+@dataclass(frozen=True)
+class Atom37Routing:
+    """Paired source/target indices for framework coordinate scatter."""
+
+    source_indices: tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]
+    target_indices: tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]
+    canonical_shape: tuple[int, int, int]
+
+
+def prepare_atom37_routing(res_types, slot_map, n_slots, canonical_ordering):
+    """Resolve static Atom37 topology without reading coordinates or frameworks.
+
+    Residue indices are ``[pose, token]``, with -1 for padding. The integer
+    ``[residue_type, slot]`` map uses -1 for absent slots. Each supplied atom
+    must have one source slot; multiple slots targeting one atom are ambiguous.
+    The returned paired indices can be placed on any execution device.
+    """
+    if slot_map is None:
+        from tmol_core.io.atomworks_encoding import ATOMWORKS_ATOM37_NAMES
+
+        slot_map = atom37_slot_map_for_ordering(
+            canonical_ordering, ATOMWORKS_ATOM37_NAMES
+        )
+    res_types, slot_map = numpy.asarray(res_types), numpy.asarray(slot_map)
+    if res_types.ndim != 2 or slot_map.ndim != 2:
+        raise ValueError("res_types and slot_map must both be two-dimensional")
+    if not all(numpy.issubdtype(x.dtype, numpy.integer) for x in (res_types, slot_map)):
+        raise TypeError("res_types and slot_map must have integer dtypes")
+    if n_slots < 0 or slot_map.shape[1] < n_slots:
+        raise ValueError(
+            f"slot map covers {slot_map.shape[1]} slots but coordinates supply "
+            f"{n_slots}"
+        )
+    classes = canonical_ordering.restype_io_equiv_classes
+    real = res_types >= 0
+    if numpy.any(res_types < -1) or numpy.any(
+        res_types[real] >= min(len(classes), slot_map.shape[0])
+    ):
+        raise ValueError("res_types contains an index outside the canonical slot map")
+    used = numpy.unique(res_types[real])
+    rows = slot_map[used, :n_slots]
+    width = canonical_ordering.max_n_canonical_atoms
+    lengths = numpy.asarray(
+        [len(canonical_ordering.restypes_ordered_atom_names[classes[i]]) for i in used]
+    )
+    if numpy.any(rows < -1) or numpy.any(rows >= lengths[:, None]):
+        raise ValueError("slot_map contains an index outside the canonical atom range")
+    unroutable = used[~(rows >= 0).any(axis=1)]
+    if unroutable.size:
+        named = ", ".join(classes[index] for index in unroutable[:8])
+        raise ValueError(
+            f"the slot map routes no atom of residue type(s) {named}, so their "
+            "coordinates cannot come from atom37_coords. Supply a slot_map that "
+            "covers them, or build the pose from the atom-array path instead"
+        )
+    ordered = numpy.sort(rows, axis=1)
+    if numpy.any((ordered[:, 1:] >= 0) & (ordered[:, 1:] == ordered[:, :-1])):
+        raise ValueError("Multiple Atom37 slots route to the same canonical atom")
+    # Index only real rows, including the empty/all-padding case. No placeholder
+    # residue or canonical atom is needed for padding.
+    pose, token = numpy.nonzero(real)
+    canonical = slot_map[res_types[real], :n_slots]
+    row, slot = numpy.nonzero(canonical >= 0)
+    source = (pose[row], token[row], slot)
+    target = (source[0], source[1], canonical[row, slot].astype(numpy.int64))
+    return Atom37Routing(source, target, (*res_types.shape, width))

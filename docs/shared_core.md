@@ -90,6 +90,9 @@ restart selection. Its `ConformerExecution` protocol requires an executor for
 planar/chiral/stress refinement. Complete supplied coordinates and authoritative
 charges need no executor; this does not establish JAX regeneration support.
 
+Atom37 host routing validates residue/atom ranges and unique source slots;
+frameworks scatter coordinates using its paired indices. The default protein
+encoding is shared data matching AtomWorks 3.0.4 without importing its ML layer.
 Atom37 routing and slot policy preserve residue-specific terminal atoms and
 custom layouts. `tmol_core.pose.concatenation` validates chemical-database
 extensions by residue identity, merges ordered palettes, and preserves original
