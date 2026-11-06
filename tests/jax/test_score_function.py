@@ -133,3 +133,56 @@ def test_reference_options_snapshot_clone_dtype_and_transform_contract():
         )
     with pytest.raises(NotImplementedError, match="soft_rep"):
         sf.set_option("soft_rep", True)
+
+
+def test_rerender_keeps_topology_parameters_and_callback_identity_fresh():
+    from tmol_jax.pose.constraint_set import ConstraintSet
+
+    from tests.scientific.execution import Execution
+    from tests.scientific.molecules import MolecularCase
+
+    pose = (
+        Execution("jax-cpu")
+        .molecule(MolecularCase((), (("GLY",), ("GLY",)), ((1,), (1,))), terms=())
+        .pose
+    )
+    sf = ScoreFunction(None)
+    sf.set_weight(ScoreType.constraint, 1.0)
+
+    def squared_xyz(atoms, params):
+        return params[:, 0] * (atoms[:, 0] ** 2).sum(axis=-1)
+
+    def linear_x(atoms, params):
+        return params[:, 0] * atoms[:, 0, 0]
+
+    old = []
+    for atom, scale, callback in (
+        (0, 2.0, squared_xyz),
+        (2, 3.0, squared_xyz),
+        (2, 5.0, linear_x),
+    ):
+        cs = ConstraintSet.create_empty(n_poses=2).add_constraints(
+            callback,
+            jnp.array([[[0, 0, atom]]], jnp.int32),
+            jnp.array([[scale]], jnp.float32),
+        )
+        import attrs
+
+        constrained = attrs.evolve(pose, constraint_set=cs)
+        fn = sf.jitted_value_and_grad(constrained)
+        expected_gradient = np.zeros(pose.coords.shape, np.float32)
+        if callback is squared_xyz:
+            expected_energy = scale * np.square(np.asarray(pose.coords)[0, atom]).sum()
+            expected_gradient[0, atom] = 2 * scale * np.asarray(pose.coords)[0, atom]
+        else:
+            expected_energy = scale * float(pose.coords[0, atom, 0])
+            expected_gradient[0, atom, 0] = scale
+        old.append((fn, [expected_energy, 0.0], expected_gradient))
+    # First execution after every mutation must retain each rendered snapshot.
+    for fn, energy, gradient in old:
+        actual = fn(pose.coords)
+        np.testing.assert_allclose(actual[0], energy)
+        np.testing.assert_allclose(actual[1], gradient)
+        batched = jax.jit(jax.vmap(fn))(jnp.stack([pose.coords, pose.coords]))
+        np.testing.assert_allclose(batched[0], [energy, energy])
+        np.testing.assert_allclose(batched[1], [gradient, gradient])

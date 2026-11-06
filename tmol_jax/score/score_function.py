@@ -11,6 +11,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from .score_types import ScoreType
+from ._execution import render_execution
 
 _TERM_TYPES = {
     "ljlk": ("LJLKEnergyTerm", ("fa_ljatr", "fa_ljrep", "fa_lk")),
@@ -79,6 +80,7 @@ class ScoreFunction:
         self._terms = []
         self._term_for_st = {}
         self._options = {}
+        self._executors = {}
 
     @property
     def param_db(self):
@@ -210,21 +212,41 @@ class ScoreFunction:
         shape = pose_stack.coords.shape
         pair_weights = tuple(weights.get(st, 0) for st in _FUSED_PAIR_TYPES)
 
-        def score(coords):
-            if coords.shape != shape or not jnp.issubdtype(coords.dtype, jnp.floating):
-                raise ValueError(f"expected floating coordinates with shape {shape}")
+        terms = tuple(term for term, _ in entries)
+        prepared = (
+            tuple(state for _, state in entries),
+            fused_state if fused_terms else None,
+        )
+
+        # Stock terms evaluate solely from their prepared state. Custom terms
+        # may retain additional configuration, so preserve fresh render closures.
+        stock = {
+            (f"tmol_jax.score.{module}.{module}_energy_term", name)
+            for module, (name, _) in _TERM_TYPES.items()
+        }
+        cache = (
+            self._executors
+            if all(
+                (type(term).__module__, type(term).__name__) in stock for term in terms
+            )
+            else None
+        )
+        evaluation_pose = None if cache is not None else pose_stack
+
+        def score(coords, prepared):
+            term_states, pair_state = prepared
             energies = {}
             weighted_pair = None
             if fused_terms:
                 if sum_terms and apply_weights:
-                    weighted_pair = nonbonded_energy(coords, fused_state, pair_weights)
+                    weighted_pair = nonbonded_energy(coords, pair_state, pair_weights)
                 else:
                     energies.update(
-                        zip(_FUSED_PAIR_TYPES, nonbonded_energy(coords, fused_state))
+                        zip(_FUSED_PAIR_TYPES, nonbonded_energy(coords, pair_state))
                     )
             weighted_terms = []
             combined_channels = set()
-            for term, state in entries:
+            for term, state in zip(terms, term_states):
                 weighted = getattr(term, "weighted_energy", None)
                 if sum_terms and weighted is not None:
                     provided = term.score_types_provided()
@@ -235,7 +257,9 @@ class ScoreFunction:
                     weighted_terms.append(weighted(state, coords, term_weights))
                     combined_channels.update(provided)
                 else:
-                    energies.update(term(pose_stack, state, coords_override=coords))
+                    energies.update(
+                        term(evaluation_pose, state, coords_override=coords)
+                    )
             if weighted_pair is not None:
                 weighted_terms.append(weighted_pair)
                 combined_channels.update(_FUSED_PAIR_TYPES)
@@ -244,7 +268,8 @@ class ScoreFunction:
                 return sum(
                     weighted_terms,
                     jnp.zeros(
-                        (shape[0],) if sum_terms else (0, shape[0]), coords.dtype
+                        (coords.shape[0],) if sum_terms else (0, coords.shape[0]),
+                        coords.dtype,
                     ),
                 )
             values = jnp.stack(
@@ -258,10 +283,18 @@ class ScoreFunction:
                 return sum(weighted_terms, result)
             return values
 
-        return score
+        configuration = (
+            tuple(type(term) for term in terms),
+            tuple(sorted(weights.items())),
+            sum_terms,
+            apply_weights,
+            bool(fused_terms),
+        )
+        return render_execution(cache, configuration, score, prepared, shape)
 
     def jitted(self, pose_stack):
-        return jax.jit(self.render_whole_pose_scoring_module(pose_stack))
+        """Compile execution; reuse its program across fresh prepared states."""
+        return self.render_whole_pose_scoring_module(pose_stack).jitted()
 
     def render_rotamer_scoring_module(
         self, pose_stack, rotamer_set, *, sum_terms=True, apply_weights=True
@@ -279,16 +312,5 @@ class ScoreFunction:
         return RotamerScorer(self, pose_stack, rotamer_set, sum_terms, apply_weights)
 
     def jitted_value_and_grad(self, pose_stack):
-        score = self.render_whole_pose_scoring_module(pose_stack)
-
-        def value(coords):
-            energies = score(coords)
-            return energies.sum(), energies
-
-        value_and_grad = jax.value_and_grad(value, has_aux=True)
-
-        def apply(coords):
-            (_, energies), gradient = value_and_grad(coords)
-            return energies, gradient
-
-        return jax.jit(apply)
+        """Return per-pose scores and the gradient of their sum."""
+        return self.render_whole_pose_scoring_module(pose_stack).value_and_grad()
