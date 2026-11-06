@@ -15,6 +15,7 @@ from tmol_core.io.canonical_ordering import (  # noqa: F401 (legacy exports)
     CysSpecialCaseIndices,
     HisSpecialCaseIndices,
     ordered_set,
+    only_coordinates_a_metal as _only_coordinates_a_metal,
 )
 from ._canonical_form import CanonicalForm
 from ._pdb_parsing import _parse_pdb
@@ -48,17 +49,6 @@ def _default_packed_block_types(device: torch.device) -> PackedBlockTypes:
     """Create a PackedBlockTypes object from the default set of residue types"""
     # resolved before the memo lookup so 'cuda' and 'cuda:0' share one entry
     return _memoized_packed_block_types(resolve_device(device))
-
-
-def _only_coordinates_a_metal(restype) -> bool:
-    """Whether this type is an ion or cluster: a non-polymer whose connections are all
-    non-kinematic (a capped cystine's disulfide is too, so polymers are kept)."""
-    if restype.properties.polymer.is_polymer:
-        return False
-    connections = restype.connections
-    return bool(connections) and not any(
-        connection.kinematic for connection in connections
-    )
 
 
 @toolz.functoolz.memoize
