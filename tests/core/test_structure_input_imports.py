@@ -88,3 +88,23 @@ assert 'LG1' in ordering.restype_io_equiv_classes
 
 assert not {'torch', 'jax', 'tmol'}.intersection(sys.modules)
 """)
+
+
+def test_structure_reader_preserves_atoms_and_bonds_without_frameworks():
+    _assert_framework_free("""
+from pathlib import Path
+import numpy as np
+from tmol_core.io import atom_array_from_file, file_from_atom_array
+data = Path('tmol/tests/data')
+for path in (
+    data / 'pdb/1ubq.pdb',
+    data / 'protein_ligand_test/ace.lig.mol2',
+    data / 'covalent_fixtures/lys_biotin_1bdo.cif',
+):
+    array = atom_array_from_file(path)
+    assert len(array) > 0 and len(array.bonds.as_array()) > 0
+    assert np.isfinite(array.coord).any()
+    assert 'charge' in array.get_annotation_categories()
+    assert file_from_atom_array(array, format='cif').startswith('data_')
+assert not {'torch', 'jax', 'tmol'}.intersection(sys.modules)
+""")

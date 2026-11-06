@@ -155,3 +155,11 @@ coordinate derivative. The optional final `lockstep_group_for_block` view select
 this behavior; an empty view retains fixed-background resolution. Adapters must
 validate group counts, local-state correspondence and compatible connection
 layouts. A third independently varying block remains outside this pairwise model.
+
+
+`tmol_core.io.atom_array_from_file` and `file_from_atom_array` share the mature
+structure readers and writers, including PDB/CIF model and assembly selection,
+compressed/binary CIF, MOL2/SDF, alternate locations, CCD supplements, supplied
+bonds, metal coordination, author identities and unresolved-atom placeholders.
+The default polymer-port policy uses only shared chemical/canonical metadata.
+Torch retains pose tensor conversion and its existing public file APIs.
