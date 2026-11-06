@@ -1,9 +1,6 @@
-"""Compatibility imports for the shared chemical internal-coordinate tree."""
+"""Compatibility import for shared ligand chemistry."""
 
-from tmol_core.chemical.icoor_tree import (  # noqa: F401
-    _vertex_angle,
-    _signed_dihedral_angle,
-    _icoor_geometry_from_coords,
-    _build_atom_tree,
-    _find_root_atom,
-)
+import sys
+from tmol_core.ligand import _icoor_tree as _implementation
+
+sys.modules[__name__] = _implementation
