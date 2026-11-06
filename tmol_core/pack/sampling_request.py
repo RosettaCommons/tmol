@@ -68,6 +68,7 @@ def prepare_dunbrack_sampling_request(
     considered_allowed,
     sampler_allowed,
     chi_expansion,
+    real_dtype=None,
 ):
     """Select concrete task rows and prepare one canonical native sampling call.
 
@@ -105,7 +106,9 @@ def prepare_dunbrack_sampling_request(
     # Burial classification is not implemented; both frontends preserve the
     # conservative buried-state library/proton sampling policy.
     counts = metadata.non_dunbrack_sample_counts[types, :, 1]
-    samples = metadata.non_dunbrack_samples[types, :, 1].copy()
+    samples = metadata.non_dunbrack_samples[types, :, 1].astype(
+        real_dtype or metadata.non_dunbrack_samples.dtype, copy=True
+    )
     # Frozen gaps are real chi slots; only -1 marks padding.
     n_chi = np.sum(counts >= 0, axis=1, dtype=np.int32)
 
@@ -133,7 +136,7 @@ def prepare_dunbrack_sampling_request(
         expansions,
         samples,
         counts,
-        np.full(n_types, 0.98, dtype=np.float32),
+        np.full(n_types, 0.98, dtype=np.float32).astype(samples.dtype, copy=False),
         n_chi,
         tuple(requests),
         np.asarray(destinations, dtype=np.int64).reshape(-1, 2),
