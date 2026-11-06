@@ -1,12 +1,13 @@
 """Execution of common sparse interaction-graph preparation stages."""
 
-from functools import partial
+import ctypes
+from functools import lru_cache, partial
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_jax.score._native import register, workspace_sizes
+from tmol_jax.score._native import libraries, register, workspace_sizes
 
 
 @partial(jax.jit, static_argnames=("operation", "outputs", "chunk_size"))
@@ -194,3 +195,51 @@ def retained_topology(
         block_rotamer_counts=compact_counts,
         block_for_rotamer=compact_blocks,
     )
+
+
+@lru_cache(maxsize=None)
+def _load_balance_workspace(total, generators):
+    library = libraries().get("cuda")
+    if library is None:
+        return 0
+    try:
+        devices = jax.local_devices(backend="cuda")
+    except RuntimeError:
+        return 0
+    query = library.tmol_load_balance_workspace
+    query.argtypes = [ctypes.c_int] * 3
+    query.restype = ctypes.c_uint64
+    # One shape is valid on every local device, including heterogeneous GPUs.
+    size = max(
+        (query(total, generators, d.local_hardware_id) for d in devices), default=0
+    )
+    if size == (1 << 64) - 1:
+        raise ValueError("invalid native load-balance workspace")
+    return size
+
+
+@partial(jax.jit, static_argnames=("total",))
+def load_balance(offsets, *, total):
+    """Expand trusted exclusive offsets to generator IDs on the input device.
+
+    Offsets are opaque int64 rows without a terminal total. They must start at
+    zero, be nondecreasing and bounded by ``total``; common count/prefix stages
+    produce this layout. Empty generators are retained. The output extent is
+    static, allowing jit/vmap without a hidden allocation or host count read.
+    """
+    generators = offsets.shape[0]
+    if offsets.shape != (generators, 8) or offsets.dtype != np.uint8:
+        raise TypeError("load-balance offsets require opaque int64 rows")
+    if total < 0 or total + generators > np.iinfo(np.int32).max:
+        raise OverflowError("load-balance extent exceeds native int32 capacity")
+    if total and not generators:
+        raise ValueError("nonempty load balance requires generators")
+    target = "tmol_load_balance"
+    register(target)
+    capacity = _load_balance_workspace(total, generators)
+    shape = jax.ShapeDtypeStruct
+    return jax.ffi.ffi_call(
+        target,
+        (shape((total,), np.int32), shape((capacity, 8), np.uint8)),
+        vmap_method="sequential",
+    )(offsets, operation=np.int64(0), extent=np.int64(total), width=np.int64(0))[0]

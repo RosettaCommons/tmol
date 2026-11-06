@@ -21,6 +21,7 @@
 #include "rotamer_dispatch_ffi.hh"
 #include "rotamer_nonbonded_ffi.hh"
 #include "graph_prefix_ffi.hh"
+#include "load_balance_ffi.hh"
 #include "forward_kinematics_ffi.hh"
 #include "sampling_ffi.hh"
 
@@ -41,6 +42,18 @@ template <Device D>
 struct CudaOps;
 template <>
 struct CudaOps<Device::CUDA> {
+  static void load_balance(
+      int total,
+      const int64_t* offsets,
+      int generators,
+      int32_t* output,
+      int64_t* scratch,
+      size_t capacity) {
+    KinematicStream context(active_stream);
+    score::common::load_balancing_search_into_cuda(
+        total, offsets, generators, output, scratch, capacity, context);
+  }
+
   template <portable::scan_type Scan, typename T, typename I, typename Op>
   static void segmented_scan_into(
       ContextManager&,
@@ -768,8 +781,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_rotamer_lk_ball,
-    (tmol::jax::
-         run_graph_stage<tmol::jax::RotamerLKBallStage, double>),
+    (tmol::jax::run_graph_stage<tmol::jax::RotamerLKBallStage, double>),
     xla::ffi::Ffi::Bind()
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()
@@ -779,3 +791,34 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<int64_t>("width")
         .Attr<double>("reach"),
     {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_load_balance,
+    tmol::jax::run_graph_stage<tmol::jax::LoadBalanceStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+extern "C" uint64_t tmol_load_balance_workspace(
+    int total, int generators, int device) {
+  int previous = -1;
+  try {
+    if (cudaGetDevice(&previous) != cudaSuccess
+        || cudaSetDevice(device) != cudaSuccess)
+      return UINT64_MAX;
+    tmol::jax::KinematicStream context(nullptr);
+    auto size =
+        tmol::score::common::load_balancing_search_workspace_size<int64_t>(
+            total, generators, context.ptx_version());
+    if (cudaSetDevice(previous) != cudaSuccess) return UINT64_MAX;
+    return size;
+  } catch (...) {
+    if (previous >= 0) cudaSetDevice(previous);
+    return UINT64_MAX;
+  }
+}

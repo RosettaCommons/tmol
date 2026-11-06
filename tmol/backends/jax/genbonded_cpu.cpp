@@ -19,6 +19,7 @@
 #include "rotamer_dispatch_ffi.hh"
 #include "rotamer_nonbonded_ffi.hh"
 #include "graph_prefix_ffi.hh"
+#include "load_balance_ffi.hh"
 #include "annealer_ffi.hh"
 #include "forward_kinematics_ffi.hh"
 #include <tmol/score/common/serial_cpu_operations.hh>
@@ -35,6 +36,17 @@ template <Device D>
 struct CpuOps;
 template <>
 struct CpuOps<Device::CPU> : score::common::SerialCPUOperations {
+  static void load_balance(
+      int total,
+      const int64_t* offsets,
+      int generators,
+      int32_t* output,
+      int64_t* scratch,
+      size_t capacity) {
+    score::common::load_balancing_search_into_cpu(
+        total, offsets, generators, output);
+  }
+
   template <typename Launch, typename F>
   static void foreach_pose_workgroup(
       ContextManager&, int poses, int groups, F f) {
@@ -735,8 +747,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_rotamer_lk_ball,
-    (tmol::jax::
-         run_graph_stage<tmol::jax::RotamerLKBallStage, double>),
+    (tmol::jax::run_graph_stage<tmol::jax::RotamerLKBallStage, double>),
     xla::ffi::Ffi::Bind()
         .Ctx<xla::ffi::ThreadPool>()
         .RemainingArgs()
@@ -761,3 +772,14 @@ extern "C" uint64_t tmol_rotamer_lk_ball_workspace_bytes(
     return std::numeric_limits<uint64_t>::max();
   }
 }
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_load_balance,
+    tmol::jax::run_graph_stage<tmol::jax::LoadBalanceStage>,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width"));

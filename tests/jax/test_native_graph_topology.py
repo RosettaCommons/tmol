@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from tmol_jax.pack.graph import topology_stage, prefix_counts
+from tmol_jax.pack.graph import topology_stage, prefix_counts, load_balance
 
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
@@ -135,3 +135,43 @@ def test_native_graph_prefix_retains_wide_counts_without_x64(platform):
             )
             np.testing.assert_array_equal(argument, opaque)
             assert actual.device == device
+
+
+@pytest.mark.parametrize("platform", ("cpu", "cuda"))
+def test_load_balance_preserves_empty_generators_and_partition_boundaries(platform):
+    try:
+        device = jax.devices(platform)[0]
+    except RuntimeError:
+        pytest.skip(f"{platform} unavailable")
+    with jax.enable_x64(False), jax.default_device(device):
+        for counts in (
+            np.zeros(0, np.int64),
+            np.zeros(17, np.int64),
+            np.array([0, 3, 0, 1, 0], np.int64),
+            np.random.default_rng(73).integers(0, 19, 40000, dtype=np.int64),
+        ):
+            total = int(counts.sum())
+            offsets = np.cumsum(counts, dtype=np.int64) - counts
+            opaque = offsets.view(np.uint8).reshape(-1, 8)
+            argument = jax.device_put(opaque, device)
+            expected = np.repeat(np.arange(len(counts), dtype=np.int32), counts)
+
+            def expand(x):
+                return load_balance(x, total=total)
+
+            actual = expand(argument)
+            np.testing.assert_array_equal(actual, expected)
+            batched = jax.jit(jax.vmap(expand))(jnp.stack((argument, argument)))
+            np.testing.assert_array_equal(batched, np.stack((expected, expected)))
+            np.testing.assert_array_equal(argument, opaque)
+            assert actual.device == device
+
+
+def test_load_balance_rejects_unrepresentable_extents_before_allocation():
+    offsets = jnp.zeros((2, 8), np.uint8)
+    with pytest.raises(OverflowError, match="int32"):
+        load_balance(offsets, total=np.iinfo(np.int32).max)
+    with pytest.raises(ValueError, match="requires generators"):
+        load_balance(offsets[:0], total=1)
+    with pytest.raises(TypeError, match="opaque int64"):
+        load_balance(jnp.zeros(2, np.int32), total=0)
