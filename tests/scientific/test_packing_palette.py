@@ -50,3 +50,61 @@ def test_palette_preserves_termini_chirality_and_ligand_identity(
     np.testing.assert_array_equal(counts[1, 1:], 0)
     np.testing.assert_array_equal(choices[1, 1:], -1)
     assert not original[1, 1:].any() and not repack[1, 1:].any()
+
+
+def test_task_identity_restrictions_preserve_unselected_chemistry(backend):
+    from .test_molecular_sampling import block_mask
+    from .test_current_conformers import current_samplers
+
+    b = backend.molecule(
+        MolecularCase(
+            CASES["ligand"].parameter_files,
+            (("ALA", "GLY", "DALA", "LG1"), ("ALA",)),
+            ((1, 1, 1, 1), (1,)),
+        ),
+        terms=("ref",),
+    )
+    if b.framework == "jax":
+        from tmol_jax import PackerTask, PackerPalette
+    else:
+        from tmol import PackerTask, PackerPalette
+    task = PackerTask(b.pose, PackerPalette())
+    original = b.numpy(task.per_block_is_block_type_allowed).copy()
+    selected = block_mask(
+        b, [[True, False, False, False], [False, False, False, False]]
+    )
+    task.restrict_absent_name3s({"GLY"}, selected)
+    allowed = b.numpy(task.per_block_is_block_type_allowed)
+    np.testing.assert_array_equal(
+        allowed[~b.numpy(selected)], original[~b.numpy(selected)]
+    )
+    choices = b.numpy(task.per_block_considered_block_types)
+    offered = {
+        b.pose.packed_block_types.active_block_types[t].name3
+        for t in choices[0, 0][allowed[0, 0]]
+    }
+    assert offered == {"GLY"}
+    # A failed explicit restriction must neither coerce a ligand nor alter task state.
+    before = allowed.copy()
+    ligand = block_mask(b, [[False, False, False, True], [False, False, False, False]])
+    with pytest.raises(ValueError, match="no allowed block type"):
+        task.restrict_absent_name3s({"ALA"}, ligand)
+    np.testing.assert_array_equal(b.numpy(task.per_block_is_block_type_allowed), before)
+    task.restrict_absent_name3s({"ALA", "GLY"}, selected)
+    np.testing.assert_array_equal(b.numpy(task.per_block_is_block_type_allowed), before)
+    # Framework execution supports the same bundle protocol without requiring
+    # a specific sampler implementation or changing its registration identity.
+    samplers = current_samplers(b)
+
+    class Bundle:
+        def expand_into_task(self, destination):
+            for sampler in samplers:
+                destination.add_conformer_sampler(sampler)
+
+    task.add_conformer_sampler(Bundle())
+    task.add_conformer_sampler(Bundle())
+    assert all(
+        any(value is sampler for value in task.conformer_samplers)
+        for sampler in samplers
+    )
+    assert len({id(s) for s in task.conformer_samplers}) == len(task.conformer_samplers)

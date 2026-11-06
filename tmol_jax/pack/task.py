@@ -14,8 +14,8 @@ class PackerTask:
     """Select residue choices and samplers for a pose.
 
     Task construction and mutation are eager host operations. Samplers must be
-    registered explicitly; this interface does not yet execute rotamer packing
-    or automatically add a fallback sampler for uncovered residues.
+    registered explicitly, including fallback coverage for uncovered residues.
+    Concrete tasks feed public conformer construction and native packing.
     """
 
     def __init__(self, systems, palette=None):
@@ -89,10 +89,45 @@ class PackerTask:
             restriction = restriction | ~self._mask(block_mask)[..., None]
         self.per_block_is_block_type_allowed &= restriction
 
+    def restrict_absent_name3s(self, name3s, block_mask=None):
+        """Restrict identities monotonically, preserving unselected blocks.
+
+        Like Torch, an explicit mask rejects a restriction that empties a
+        previously allowed selected block. A global restriction may empty rows.
+        """
+        names = frozenset(name3s)
+        mask = self._mask(block_mask) if block_mask is not None else None
+        choices = self.per_block_considered_block_types
+        matches = jax.device_put(
+            np.asarray([bt.name3 in names for bt in self.pbt.active_block_types]),
+            self.device,
+        )
+        restriction = (choices >= 0) & matches[jnp.maximum(choices, 0)]
+        if mask is not None:
+            restriction |= ~mask[..., None]
+        previous = self.per_block_is_block_type_allowed
+        allowed = previous & restriction
+        if mask is not None:
+            emptied = np.asarray(mask & previous.any(-1) & ~allowed.any(-1))
+            if emptied.any():
+                pose, block = map(int, np.argwhere(emptied)[0])
+                original = self.pbt.active_block_types[
+                    int(self.per_block_orig_block_type[pose, block])
+                ]
+                raise ValueError(
+                    f"pose {pose} block {block} ({original.name}): no allowed block type "
+                    f"has a name3 in {sorted(names)}"
+                )
+        self.per_block_is_block_type_allowed = allowed
+
     def disable_packing_by_block_mask(self, block_mask):
         self.per_block_is_block_type_allowed &= ~self._mask(block_mask)[..., None]
 
     def add_conformer_sampler(self, sampler):
+        expand = getattr(sampler, "expand_into_task", None)
+        if expand is not None:
+            expand(self)
+            return
         self.add_conformer_sampler_by_block_mask(
             sampler, np.ones(self.is_real_block.shape, dtype=bool)
         )
