@@ -37,6 +37,11 @@ from tmol_core.pack.conjugated import (
     group_conformer_grid,
     append_current_conformer,
     group_torsion_nodes,
+    group_task_rows,
+    group_sampling_plans,
+    group_sample_layout,
+    anchor_library_mask,
+    anchor_library_rows,
 )
 from tmol_core.kinematics.scan_ordering import (
     repeat_local_kinforest,
@@ -177,18 +182,15 @@ class ConjugatedChiSampler(ChiSampler):
         )
         out = []
         if plans is None:
-            first_owner = int(self.library_sampler is None)
-            plans = [
-                GroupSamplingPlan(
-                    group,
-                    _group_sampling_topology(
-                        group, pose_stack, (0,) if first_owner else ()
-                    ),
-                    tuple(range(first_owner, len(group))),
-                )
-                for group in _find_conjugated_groups(pose_stack)
-                if len(group) > first_owner
-            ]
+            plans = group_sampling_plans(
+                _find_conjugated_groups(pose_stack),
+                pose_stack.packed_block_types.active_block_types,
+                pose_stack.block_type_ind.cpu().numpy(),
+                include_anchor=self.library_sampler is not None,
+                topology_for_group=lambda group, fixed: _group_sampling_topology(
+                    group, pose_stack, fixed
+                ),
+            )
         for sampling_plan in plans:
             group = sampling_plan.group
             columns, conformers = group_conformer_grid(
@@ -337,44 +339,25 @@ class ConjugatedChiSampler(ChiSampler):
         """
         device = pose_stack.device
         n_gbt = task.cons_bt_pose.shape[0]
-        n_rots_for_gbt = torch.zeros(n_gbt, dtype=torch.int32, device=device)
-
-        pose_of = task.cons_bt_pose.cpu().numpy()
-        block_of = task.cons_bt_block.cpu().numpy()
-        bt_of = task.cons_bt_block_type.cpu().numpy()
-        gbt_for = {}
-        allowed = task.is_cons_bt_allowed.cpu().numpy()
-        sampler_index = task.conformer_sampler_index[id(self)]
-        sampler_allowed = (
-            task.per_block_conformer_sampler_allowed[:, :, sampler_index].cpu().numpy()
-        )
         block_types = pose_stack.block_type_ind.cpu().numpy()
-        for i in range(n_gbt):
-            if allowed[i] and sampler_allowed[pose_of[i], block_of[i]]:
-                gbt_for[(int(pose_of[i]), int(block_of[i]), int(bt_of[i]))] = i
-
-        plans = []
-        for group in _find_conjugated_groups(pose_stack):
-            first_owner = int(self.library_sampler is None)
-            owners = tuple(
-                owner
-                for owner in range(first_owner, len(group))
-                if (
-                    group.pose,
-                    group.blocks[owner],
-                    int(block_types[group.pose, group.blocks[owner]]),
-                )
-                in gbt_for
-            )
-            if not owners:
-                continue
-            fixed = tuple(owner for owner in range(len(group)) if owner not in owners)
-            plans.append(
-                GroupSamplingPlan(
-                    group, _group_sampling_topology(group, pose_stack, fixed), owners
-                )
-            )
-
+        sampler_index = task.conformer_sampler_index[id(self)]
+        gbt_for = group_task_rows(
+            task.cons_bt_pose.cpu().numpy(),
+            task.cons_bt_block.cpu().numpy(),
+            task.cons_bt_block_type.cpu().numpy(),
+            task.is_cons_bt_allowed.cpu().numpy(),
+            task.per_block_conformer_sampler_allowed[:, :, sampler_index].cpu().numpy(),
+        )
+        plans = group_sampling_plans(
+            _find_conjugated_groups(pose_stack),
+            pose_stack.packed_block_types.active_block_types,
+            block_types,
+            gbt_for,
+            include_anchor=self.library_sampler is not None,
+            topology_for_group=lambda group, fixed: _group_sampling_topology(
+                group, pose_stack, fixed
+            ),
+        )
         anchor_chi = self.anchor_library_chi(
             pose_stack,
             task,
@@ -387,37 +370,17 @@ class ConjugatedChiSampler(ChiSampler):
             budget=getattr(task, "chi_sample_budget", None),
             plans=plans,
         )
-        emitted = []
-        for gi, (group, columns, conformers) in enumerate(groups):
-            n_conf = int(conformers.shape[0])
-            # Planning has already checked both task masks for each owner.
-            for owner in plans[gi].owners:
-                block = group.blocks[owner]
-                bt = int(block_types[group.pose, block])
-                gbt = gbt_for[group.pose, block, bt]
-                n_rots_for_gbt[gbt] = n_conf
-                emitted.append((gbt, gi, owner, n_conf))
-
-        # rotamers must be listed in ascending block-type order: the merge
-        #    locates a sampler's rotamers by a cumulative sum over the counts
-        #    above, so any other order silently points them at the wrong
-        #    conformers
-        emitted.sort()
-        gbt_for_rotamer, plan = [], []
-        correlated_gbts = [[] for _ in groups]
-        for gbt, gi, owner, n_conf in emitted:
-            plan.append((gi, owner, gbt, len(gbt_for_rotamer)))
-            correlated_gbts[gi].append(gbt)
-            gbt_for_rotamer.extend([gbt] * n_conf)
-
+        counts, mapping, plan, correlated = group_sample_layout(
+            plans,
+            [len(conformers) for _, _, conformers in groups],
+            gbt_for,
+            block_types,
+            n_gbt,
+        )
         return (
-            n_rots_for_gbt,
-            torch.tensor(gbt_for_rotamer, dtype=torch.int32, device=device),
-            dict(
-                groups=groups,
-                plan=plan,
-                correlated_gbts=tuple(tuple(gbts) for gbts in correlated_gbts),
-            ),
+            torch.tensor(counts, dtype=torch.int32, device=device),
+            torch.tensor(mapping, dtype=torch.int32, device=device),
+            dict(groups=groups, plan=plan, correlated_gbts=correlated),
         )
 
     def fill_dofs_for_samples(
@@ -505,47 +468,37 @@ class ConjugatedChiSampler(ChiSampler):
         # It is not a cap on the temporary source-library rows used to obtain
         # those distinct projected states.
         library_task.chi_sample_budget = None
-        allowed = torch.zeros_like(task.per_block_conformer_sampler_allowed)
+        if plans is None:
+            plans = [
+                GroupSamplingPlan(
+                    group, _group_sampling_topology(group, pose_stack), ()
+                )
+                for group in groups
+            ]
+        allowed = torch.tensor(
+            anchor_library_mask(
+                plans,
+                task.per_block_conformer_sampler_allowed.shape,
+                index,
+            ),
+            device=task.per_block_conformer_sampler_allowed.device,
+        )
         library_task.per_block_conformer_sampler_allowed = allowed
-        for group_index, group in enumerate(groups):
-            topology = (
-                plans[group_index].topology
-                if plans is not None
-                else _group_sampling_topology(group, pose_stack)
-            )
-            if any(
-                name.startswith("chi")
-                and frozenset((int(u[1][0]), int(u[2][0]))) in topology.movable_axes
-                for name, u in topology.block_types[0].torsion_to_uaids.items()
-            ):
-                allowed[group.pose, group.anchor, index] = True
         if not bool(allowed.any()):
             return {}
         _n, gbt_for_rot, chi_atoms, chi = self.library_sampler.sample_chi_for_poses(
             pose_stack, library_task
         )
 
-        pose_of = task.cons_bt_pose.cpu().numpy()
-        block_of = task.cons_bt_block.cpu().numpy()
-        bt_of = task.cons_bt_block_type.cpu().numpy()
-        gbt_np = gbt_for_rot.cpu().numpy()
-
-        out = {}
-        for group in groups:
-            bt = int(pose_stack.block_type_ind[group.pose, group.anchor])
-            wanted = [
-                i
-                for i in range(len(pose_of))
-                if (int(pose_of[i]), int(block_of[i]), int(bt_of[i]))
-                == (group.pose, group.anchor, bt)
-            ]
-            if not wanted:
-                continue
-            rows = numpy.nonzero(numpy.isin(gbt_np, wanted))[0]
-            if rows.size == 0:
-                continue
-            out[(group.pose, group.anchor)] = (
-                chi_atoms[rows].cpu().numpy(),
-                chi[rows].cpu().numpy(),
-            )
-        return out
+        rows = anchor_library_rows(
+            groups,
+            pose_stack.block_type_ind.cpu().numpy(),
+            task.cons_bt_pose.cpu().numpy(),
+            task.cons_bt_block.cpu().numpy(),
+            task.cons_bt_block_type.cpu().numpy(),
+            gbt_for_rot.cpu().numpy(),
+        )
+        atoms, angles = chi_atoms.cpu().numpy(), chi.cpu().numpy()
+        return {
+            key: (atoms[selected], angles[selected]) for key, selected in rows.items()
+        }
