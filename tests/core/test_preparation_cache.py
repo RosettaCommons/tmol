@@ -53,7 +53,7 @@ def test_failed_preparation_is_not_published_and_retention_is_bounded():
     for i in range(20):
         value = Source(i)
         refs.append(weakref.ref(value))
-        cache.get_or_create(str(i), AnnotationKey.from_sources(value), lambda: value)
+        cache.get_or_create(str(i), AnnotationKey.from_sources(value), lambda source=value: source)
     del value
     gc.collect()
     assert sum(r() is not None for r in refs) == 8
