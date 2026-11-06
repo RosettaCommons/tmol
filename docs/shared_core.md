@@ -8,6 +8,11 @@ It includes custom residues and databases, variants, arbitrary connection
 metadata, ligand charge overrides, kinematic stencils and movement policies.
 Frontends own device arrays, annotation caches and their lifetime.
 
+`tmol_core.database.scoring.load_scoring_parameters` assembles the standard
+scoring records and generated overlays. Frontends supply archive readers for
+Dunbrack, Rama and omega tables and optionally adapt the raw HBond representation;
+required-file validation and parameter precedence stay in the common loaders.
+
 The `tmol` distribution retains the existing public Torch imports and
 CPU/CUDA/Metal bindings. `tmol-jax` owns JAX arrays, tracing and differentiation;
 `tmol-jax-native` provides its CPU and optional CUDA execution bindings.
