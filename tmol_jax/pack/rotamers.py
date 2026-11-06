@@ -167,7 +167,11 @@ def build_rotamers(poses, task, chem_db=None):
         )
         for copy, sample in zip(copy_input, samples)
     )
-    return poses, RotamerSet(coords=previous[2](poses.coords, payloads), **previous[3])
+    # Empty assembly can be constant-folded, removing all device-bearing inputs.
+    # Keep its output on the pose device even when another backend is default.
+    with jax.default_device(poses.device):
+        coordinates = previous[2](poses.coords, payloads)
+    return poses, RotamerSet(coords=coordinates, **previous[3])
 
 
 def _assembly_plan(poses, task, samplers, copy_input, identities, groups):

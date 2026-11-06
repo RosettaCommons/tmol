@@ -57,10 +57,11 @@ def connected_candidates(pose, rotamers):
 
 def prepare_rotamer_genbonded(pose, rotamers, database):
     validate_rotamer_context(pose, rotamers)
-    parameters = GenBondedEnergyTerm(database).setup_for_pose_stack(
-        pose, include_empty=True
-    )
-    owners, indices = connected_candidates(pose, rotamers)
+    with jax.default_device(pose.device):
+        parameters = GenBondedEnergyTerm(database).setup_for_pose_stack(
+            pose, include_empty=True
+        )
+        owners, indices = connected_candidates(pose, rotamers)
     parameters = (
         rotamers.coord_offset_for_rot,
         rotamers.block_ind_for_rot,

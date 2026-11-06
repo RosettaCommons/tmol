@@ -62,6 +62,8 @@ def test_conformer_assembly_without_fallback_preserves_empty_selection(platform)
     state = prepare_rotamer_genbonded(backend.pose, result, backend.parameter_database)
     values, indices = sparse_genbonded_scores(result.coords, state)
     assert values.shape == (1, 0) and indices.shape == (3, 0)
+    assert result.device == values.device == indices.device == backend.device
+    assert all(a.device == backend.device for a in state[0][2])
     gradient = jax.grad(lambda x: sparse_genbonded_scores(x, state)[0].sum())(
         result.coords
     )
