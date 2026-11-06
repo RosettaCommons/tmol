@@ -342,6 +342,7 @@ def test_native_rotamer_dispatch_without_torch(tmp_path):
         "native_na_sampling.cc",
         "native_opth_sampling.cc",
         "native_pose_imposition.cc",
+        "native_cuda_annealer_workspace.cc",
     ],
 )
 def test_native_candidate_invariants_without_frameworks(tmp_path, source):
