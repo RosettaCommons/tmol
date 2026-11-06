@@ -893,8 +893,8 @@ TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_energies(
     int cta,
     WorkgroupLane<Dev> lane = {}) {
   CTA_LAUNCH_T_PARAMS;
-  using shared_mem_union =
-      HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>;
+  typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
+      shared_mem_union;
   // Compile-time, not `ctx.accumulate_derivs`. The two branches of
   // HBOND_ATOM_ENERGY are both valid code, so a plain `if` on a constant is
   // enough for the optimizer to drop the unused one -- and dropping the
@@ -926,8 +926,8 @@ TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_derivs(
     int cta,
     WorkgroupLane<Dev> lane = {}) {
   CTA_LAUNCH_T_PARAMS;
-  using shared_mem_union =
-      HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>;
+  typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
+      shared_mem_union;
   auto hbond_atom_energy =
       ([=] TMOL_DEVICE_FUNC(
            int don_ind,
