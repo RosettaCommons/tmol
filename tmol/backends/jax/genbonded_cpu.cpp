@@ -573,3 +573,14 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .RemainingArgs()
         .Ret<xla::ffi::AnyBuffer>()
         .RemainingRets());
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_copy_conformer_rows,
+    (tmol::jax::run<tmol::jax::CopyConformerRowsKernel, int64_t, int64_t>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .RemainingArgs()
+        .Ret<xla::ffi::AnyBuffer>()
+        .RemainingRets()
+        .Attr<int64_t>("n_rows")
+        .Attr<int64_t>("root_shift"));
