@@ -325,6 +325,7 @@ class BackboneTorsionRotamerScoreOp
       Tensor rot_offset_for_pose,
       Tensor n_rots_for_block,
       Tensor rot_offset_for_block,
+      Tensor lockstep_group_for_block,
       int64_t max_n_rots_per_pose,
 
       Tensor pose_stack_block_type,
@@ -389,7 +390,8 @@ class BackboneTorsionRotamerScoreOp
                   TCAST(omega_tables),
                   TCAST(omega_table_params),
                   output_block_pair_energies,
-                  TopologyOnly);
+                  TopologyOnly,
+                  TCAST(lockstep_group_for_block));
 
           score = std::get<0>(result).tensor;
           dscore_dcoords = std::get<1>(result).tensor;
@@ -432,7 +434,8 @@ class BackboneTorsionRotamerScoreOp
            rama_table_params,
            omega_tables,
            omega_table_params,
-           dispatch_indices});
+           dispatch_indices,
+           lockstep_group_for_block});
     } else {
       ctx->save_for_backward({dscore_dcoords, pose_ind_for_atom});
     }
@@ -500,6 +503,7 @@ class BackboneTorsionRotamerScoreOp
       auto omega_tables = saved[i++];
       auto omega_table_params = saved[i++];
       auto dispatch_indices = saved[i++];
+      auto lockstep_group_for_block = saved[i++];
 
       using Int = int32_t;
 
@@ -548,14 +552,15 @@ class BackboneTorsionRotamerScoreOp
                     TCAST(omega_tables),
                     TCAST(omega_table_params),
                     TCAST(dispatch_indices),
-                    TCAST(dTdV));
+                    TCAST(dTdV),
+                    TCAST(lockstep_group_for_block));
 
             dV_d_rot_coords = result.tensor;
           }));
     }
 
     return {
-        // common: rot_coords + 12 more arguments
+        // common: rot_coords + 13 more arguments
         dV_d_rot_coords,
 
         tmol::native::Tensor(),
@@ -572,6 +577,8 @@ class BackboneTorsionRotamerScoreOp
 
         tmol::native::Tensor(),
         tmol::native::Tensor(),
+
+        tmol::native::Tensor(),  // lockstep_group_for_block
 
         // 14 more arguments
         tmol::native::Tensor(),
@@ -674,8 +681,7 @@ std::vector<Tensor> backbone_torsion_rotamer_score_op(
     Tensor rot_offset_for_pose,
     Tensor n_rots_for_block,
     Tensor rot_offset_for_block,
-    // only the pair terms enumerate rotamer pairs
-    Tensor /*lockstep_group_for_block*/,
+    Tensor lockstep_group_for_block,
     int64_t max_n_rots_per_pose,
 
     Tensor pose_stack_block_type,
@@ -707,6 +713,7 @@ std::vector<Tensor> backbone_torsion_rotamer_score_op(
       rot_offset_for_pose,
       n_rots_for_block,
       rot_offset_for_block,
+      lockstep_group_for_block,
       max_n_rots_per_pose,
 
       pose_stack_block_type,
