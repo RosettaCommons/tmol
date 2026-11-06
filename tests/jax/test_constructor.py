@@ -86,3 +86,10 @@ def test_unimplemented_input_inference_is_explicit(option, value):
     canonical[option] = value
     with pytest.raises(NotImplementedError):
         pose_stack_from_canonical_form(canonical, default_packed_block_types())
+
+
+def test_conflicting_canonical_residue_identities_are_rejected():
+    canonical = _three_residues()
+    canonical["res_types"][0, 1] = canonical["res_types"][0, 0]
+    with pytest.raises(ValueError, match="residue names and res_types disagree"):
+        pose_stack_from_canonical_form(canonical, default_packed_block_types())

@@ -204,6 +204,8 @@ def pose_stack_from_canonical_form(
     types = np.array(
         [[classes.get(name, -1) for name in row] for row in names], np.int32
     )
+    if "res_types" in cf and not np.array_equal(types, np.asarray(cf["res_types"])):
+        raise ValueError("canonical residue names and res_types disagree")
     real = types >= 0
     if np.any(~real.any(axis=1)):
         raise ValueError("each pose must contain at least one molecular residue")
