@@ -88,3 +88,33 @@ assert 'LG1' in ordering.restype_io_equiv_classes
 
 assert not {'torch', 'jax', 'tmol'}.intersection(sys.modules)
 """)
+
+
+def test_structure_context_host_policy_imports_without_frameworks():
+    _assert_framework_free("""
+import numpy as np
+import biotite.structure as struc
+from types import SimpleNamespace
+from tmol_core.chemical.default import default_patched_chemical_database
+from tmol_core.io import structure_context as common
+from tmol_core.ligand import nonstandard_residue_info_from_mol2
+chemistry = default_patched_chemical_database()
+database = SimpleNamespace(chemical=chemistry)
+source = 'tmol/tests/data/ligand_test/ligand_ground_truth/mol2/comt_2.mol2'
+atoms = nonstandard_residue_info_from_mol2(source, res_name='LG1').atom_array
+original = atoms.coord.copy()
+def unexpected(*args, **kwargs):
+    raise AssertionError('preparation executor called with preparation disabled')
+result = common.prepare_structure_context(
+    atoms, parameter_database=database, default_database=lambda: database,
+    prepare_ligands=False, ligand_ph=7.4, strict_atom_types=False,
+    strict_ligands=True, ligand_params_files=None, chem_comp_types=None,
+    ligand_seed=47, ligand_hydrogens='input', input_hydrogens=unexpected,
+    ligand_preparer=unexpected,
+)
+assert result.parameter_database is database
+assert not result.use_default_context
+np.testing.assert_array_equal(atoms.coord, original)
+assert common._get_all_residue_positions(atoms[:0]).shape == (0,)
+assert not {'torch', 'jax', 'tmol'}.intersection(sys.modules)
+""")
