@@ -148,7 +148,7 @@
     {
       "domain": "packing_design_mutation",
       "torch": "supported",
-      "jax": "public_task_native_chi_and_conformer_assembly",
+      "jax": "conformer_assembly_and_partial_native_packing_stages",
       "repro_fixture": [
         "tests/scientific/test_packing_palette.py",
         "tests/scientific/test_molecular_rotamer_geometry.py",
@@ -160,9 +160,15 @@
         "tests/scientific/test_conformer_coordinates.py",
         "tests/scientific/test_conformer_merge.py",
         "tests/jax/test_native_conformer.py",
-        "tests/jax/test_conformer_assembly.py"
+        "tests/jax/test_conformer_assembly.py",
+        "tests/jax/test_native_annealing.py",
+        "tests/jax/test_native_graph_topology.py",
+        "tests/jax/test_native_graph_retention.py",
+        "tests/jax/test_native_rotamer_dispatch.py",
+        "tests/scientific/test_rotamer_nonbonded.py",
+        "tests/jax/test_sparse_rotamer_transforms.py"
       ],
-      "implementation_status": "Shared palette, residue/group geometry, retained-atom plans, task/request preparation and native DOF transfer/correction. Eager assembly supports Dunbrack/explicit amino-acid chi and input/fallback coordinates. Independent CPU torsion/backbone invariants cover L/D residues, variants and mixed systems; current coordinates are exact across ligand, connected noncanonical, modified DNA, metal and mixed batches. Custom chi database changes and unsampled upstream torsions pass both frameworks. Six independent frontend comparisons have exact full CPU coordinates/identities. New assembly CUDA validation pending. No default JAX fallback; interaction graphs, annealing, mutation/design execution, optH/conjugated samplers and FastRelax remain absent. Task APIs are a subset of Torch."
+      "implementation_status": "Shared palette, geometry, retained-atom plans, task/request preparation and native DOF assembly. Dunbrack/explicit amino-acid chi and input/fallback coordinates support custom chemistry; six frontend CPU/CUDA comparisons have exact coordinates/identities. Internal CPU/CUDA sparse topology, retention and candidate stages are tested; CPU annealing matches mature seeded molecular calls. Sparse LJ/LK and electrostatic values/coordinate VJPs pass CPU science, custom parameters and jit/vmap; CUDA scoring validation pending. No complete interaction-graph scoring or packing/design/mutation/FastRelax frontend, CUDA annealer, optH/conjugated/NA samplers, or sparse forward-mode/higher derivatives. Task APIs remain a subset."
     },
     {
       "domain": "kinematics",
@@ -372,5 +378,5 @@
       "noncanonical_validation": "Five nonzero metal fixtures: exact fresh Torch/JAX CPU energies and full gradients; independent directional derivatives and custom width/depth scaling. Fresh CPU/CUDA artifacts pass the same science cases and float32/64 transformations."
     }
   },
-  "validation": "Exact cb5a058f85 native GPU:69 affected checks; clean matching wheels/sdists:44 molecular plus101 shared checks, Torch/tmol absent and no Torch linkage. Later public float64 request fixes match all four outputs exactly in four independent CPU cases, with a frozen-chi precision negative control. Complete25-channel preset:12 molecular cases on CPU/CUDA; independent CUDA physical-term values/full gradients agree within1.9e-12/1.2e-13. Constant reference uses float32 weights/reduction and an analytic roundoff bound. Six molecular full-preset minimization cases pass both frameworks CPU and JAX CUDA. Matched LK protein performance improves; HB and standalone electrostatics regressions remain. Final current-source Metal, complete packing/design and whole-core simplification remain acceptance work; PR629 stays draft."
+  "validation": "Matching7735 wheels/sdists:44 molecular plus111 shared checks, no Torch installation/linkage. Assembly219a:30CPU/CUDA checks; six full outputs exact in both benchmark orders, CPU runtime .682-.776 and GPU .690-.790 of7735, still slower than Torch assembly. Native packing stages dced:36CPU/CUDA checks,22molecular candidate-index comparisons exact per backend. Sparse LJ/LK/electrostatics CPU:12shared cases per framework,24independent float32/64 value/full-gradient comparisons exact; GPU validation pending. Complete25-channel whole-pose preset:12domains and six minimization cases. Final current-source Metal, full packing/design, performance gaps and whole-core simplification remain acceptance work; PR629 stays draft."
 }

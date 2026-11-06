@@ -18,7 +18,7 @@ from .task import PackerTask, SetPackerTask
 from .kinematics import prepare_rotamer_kinematics
 from .merge import merge_conformer_samples
 from .conformer_geometry import geometry_for_task
-from .rotamer_set import RotamerSet
+from .rotamer_set import RotamerSet, ConformerContext
 from tmol_core.pack.chi import chi4_by_defining_atom, ring_chi_phi_c_corrections
 from .fingerprint import prepare_atom_copy_plan
 from ._native import (
@@ -306,4 +306,5 @@ def build_rotamers(poses, task, chem_db=None):
         atom_poses,
         int(origins[0].max(initial=0)),
         groups,
+        ConformerContext(poses),
     )

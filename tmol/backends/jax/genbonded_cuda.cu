@@ -19,6 +19,7 @@
 #include "graph_topology_ffi.hh"
 #include "graph_retention_ffi.hh"
 #include "rotamer_dispatch_ffi.hh"
+#include "rotamer_nonbonded_ffi.hh"
 #include "graph_prefix_ffi.hh"
 #include "forward_kinematics_ffi.hh"
 #include "sampling_ffi.hh"
@@ -705,6 +706,34 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_rotamer_dispatch,
     (tmol::jax::run_graph_stage<tmol::jax::RotamerDispatchStage, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width")
+        .Attr<double>("reach"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_rotamer_elec,
+    (tmol::jax::
+         run_graph_stage<tmol::jax::RotamerNonbondedStage<true>, double>),
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
+        .RemainingArgs()
+        .RemainingRets()
+        .Attr<int64_t>("operation")
+        .Attr<int64_t>("extent")
+        .Attr<int64_t>("width")
+        .Attr<double>("reach"),
+    {xla::ffi::Traits::kCmdBufferCompatible});
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_rotamer_ljlk,
+    (tmol::jax::
+         run_graph_stage<tmol::jax::RotamerNonbondedStage<false>, double>),
     xla::ffi::Ffi::Bind()
         .Ctx<xla::ffi::PlatformStream<cudaStream_t>>()
         .RemainingArgs()

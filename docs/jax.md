@@ -170,8 +170,8 @@ indices. Ligands outside the sampler's amino-acid policy receive zero samples.
 Task masks and `set_chi_sample_budget(expanded_limit, limit)` control sampling;
 budget-frozen torsions retain measured input geometry. Dynamic output sizes
 require an eager host allocation barrier, so sampling is not differentiable,
-jittable or vmappable. Rotamer coordinate assembly, interaction graphs, annealing,
-FastRelax and design execution remain unavailable.
+jittable or vmappable. Coordinate assembly is available separately below; full
+packing, FastRelax and design execution remain unfinished.
 
 `IncludeCurrentSampler` and `FallbackSampler` expose
 `create_samples_for_poses(pose, concrete_task)`, returning counts, choice indices
@@ -190,9 +190,14 @@ pose's packed types.
 Assembly is eager because sampling determines output sizes; it does not support
 `jit`, `vmap` or coordinate differentiation through sampling/initialization. The
 native DOF operations support `jit` and `vmap`. A concrete `SetPackerTask` reuses
-validated topology plans while recomputing coordinates. Interaction graphs,
-annealing, mutation/design execution, optH/conjugated samplers and FastRelax are
-still unfinished. Float64 JAX assembly preserves dtype; this does not establish
+validated topology plans while recomputing coordinates. Internal native stages
+now provide sparse graph topology/retention, sphere-based candidate enumeration,
+and the mature CPU annealing schedule. Sparse LJ/LK and electrostatic values
+and coordinate VJPs consume explicit candidate indices with `jit`/`vmap` support;
+forward-mode and higher derivatives are not implemented for these sparse entries.
+Recompute discrete candidates after coordinate changes. Full graph scoring and
+packing, CUDA annealing, mutation/design, optH/conjugated samplers and FastRelax
+remain unfinished. Float64 JAX assembly preserves dtype; this does not establish
 float64 support for Torch's complete packing pipeline.
 
 For already parameterized chemistry, `pose_stack_from_residue_blocks()` accepts
@@ -216,9 +221,10 @@ terms use their common host records and formulas.
 Run `pytest tests/jax` for JAX transformations and runtime contracts, and
 `TMOL_TEST_BACKENDS=jax-cpu pytest tests/scientific` for shared scientific cases.
 The same cases accept `torch-cpu`, `torch-cuda`, `torch-mps` and `jax-cuda`; missing
-devices are explicitly skipped. Core chemistry tests live in `tests/core`.
-Native FFI calls support reverse gradients, `vmap` and `jacrev`; batching is
-sequential initially. Shared native terms support first-order JVP and reverse gradients in float32/64;
+devices are explicitly skipped. Sparse float64 scientific checks require CPU or
+CUDA; they do not validate Metal execution. Core chemistry tests live in `tests/core`.
+Whole-pose native FFI calls support reverse gradients, `vmap` and `jacrev`; batching is
+sequential initially. Shared whole-pose native terms support first-order JVP and reverse gradients in float32/64;
 their derivative kernels do not provide higher derivatives. Coincident or
 collinear atoms do not define a torsion; its native derivative can be non-finite. Combined LJ/LK and
 electrostatics use live native spatial neighbors and one gradient buffer for a

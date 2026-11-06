@@ -50,6 +50,8 @@ def _pose_connections(pose):
 def _ljlk_parameters(pose, database):
     pbt = pose.packed_block_types
     names, flags = atom_type_parameters(database.chemical.atom_types)
+    if tuple(names[:-1]) != tuple(at.name for at in pbt.chem_db.atom_types):
+        raise ValueError("scoring database atom-type order differs from pose chemistry")
     lj = ljlk_type_parameters(names, database.scoring.ljlk)
     active = np.asarray(pose.block_type_ind)
     for index in np.unique(active[active >= 0]):
