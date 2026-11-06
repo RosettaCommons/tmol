@@ -23,6 +23,12 @@ class PackerTask:
         self.pose_stack = systems
         self.pbt = systems.packed_block_types
         self.device = systems.coords.device
+        self._coordinate_shape = systems.coords.shape
+        self._topology = (
+            systems.block_type_ind,
+            systems.block_coord_offset,
+            systems.inter_residue_connections,
+        )
         self.per_block_orig_block_type = systems.block_type_ind
         self.is_real_block = systems.block_type_ind >= 0
         (
@@ -52,6 +58,27 @@ class PackerTask:
         if value.shape != self.is_real_block.shape or value.dtype != np.bool_:
             raise ValueError("block mask must be boolean with the pose/block shape")
         return jax.device_put(value, self.device)
+
+    def _validate_pose(self, pose):
+        if (
+            pose.packed_block_types is not self.pbt
+            or pose.coords.shape != self._coordinate_shape
+            or pose.coords.device != self.device
+            or any(
+                not np.array_equal(expected, actual)
+                for expected, actual in zip(
+                    self._topology,
+                    (
+                        pose.block_type_ind,
+                        pose.block_coord_offset,
+                        pose.inter_residue_connections,
+                    ),
+                )
+            )
+        ):
+            raise ValueError(
+                "sampling task belongs to a different pose layout or device"
+            )
 
     def set_chi_sample_budget(self, expanded_limit, limit):
         self.chi_sample_budget = chi_sample_budget(expanded_limit, limit)
@@ -108,6 +135,8 @@ class PackerTask:
 
 class SetPackerTask:
     """Snapshot of task masks with canonical concrete row identities."""
+
+    _validate_pose = PackerTask._validate_pose
 
     @classmethod
     def from_packer_task(cls, task):

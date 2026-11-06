@@ -150,7 +150,18 @@ def test_custom_libraryless_chi_preserves_parameter_context_and_unsampled_atoms(
                 np.testing.assert_array_equal(atoms[choices == row, 0], -1)
 
 
-def test_task_budget_freezes_distal_chi_at_the_input_conformation(backend):
+@pytest.mark.parametrize("dtype", (np.float32, np.float64))
+def test_task_budget_freezes_distal_chi_at_the_input_conformation(backend, dtype):
+    from contextlib import nullcontext
+
+    context = (
+        backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
+    )
+    with context:
+        _check_budget_frozen_chi(backend, dtype)
+
+
+def _check_budget_frozen_chi(backend, dtype):
     from tmol_core.chemical import ChiSamples
     from tmol_core.geometry import numpy_coord_dihedrals
 
@@ -180,6 +191,15 @@ def test_task_budget_freezes_distal_chi_at_the_input_conformation(backend):
         terms=("ref",),
         parameter_database=database,
     )
+    coordinates = backend.coords().astype(dtype)
+    if backend.framework == "jax":
+        backend.pose = backend.pose.replace(
+            coords=backend.module.device_put(coordinates, backend.device)
+        )
+    else:
+        backend.pose.coords = backend.module.as_tensor(
+            coordinates, device=backend.device
+        )
     task, sampler, concrete = sampling_task(backend)
     task.set_chi_sample_budget(3, 3)
     counts, choices, atoms, chi = map(
@@ -189,8 +209,30 @@ def test_task_budget_freezes_distal_chi_at_the_input_conformation(backend):
     block = backend.pose.packed_block_types.active_block_types[0]
     indices = [block.atom_to_idx[name] for name in ("CA", "CB", "CG1", "CD1")]
     for row in range(2):
-        measured = numpy_coord_dihedrals(*backend.coords()[row, indices])
-        np.testing.assert_allclose(chi[choices == row, 1], measured, atol=3e-7, rtol=0)
+        points = backend.pose.coords[row, indices]
+        if dtype == np.float64:
+            # Exercise the independent geometric API at the input precision:
+            # frozen values must survive request preparation without an f32
+            # round trip, irrespective of the library table precision.
+            if backend.framework == "jax":
+                from tmol_jax.score.constraint.functions import torsion
+
+                measured = backend.numpy(torsion(points[None])).item()
+            else:
+                from tmol.numeric import coord_dihedrals
+
+                measured = backend.numpy(
+                    coord_dihedrals(*(point[None] for point in points))
+                ).item()
+        else:
+            measured = numpy_coord_dihedrals(*backend.numpy(points))
+        assert chi.dtype == dtype
+        np.testing.assert_allclose(
+            chi[choices == row, 1],
+            measured,
+            atol=2e-14 if dtype == np.float64 else 3e-7,
+            rtol=0,
+        )
         np.testing.assert_array_equal(atoms[choices == row, 1], indices[2])
     # A task's tighter budget must not mutate reusable sampler chemistry.
     task.set_chi_sample_budget(1000, 1000)

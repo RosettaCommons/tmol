@@ -115,8 +115,7 @@ class DunbrackChiSampler:
             raise TypeError("dynamic chi sampling requires eager coordinates")
         if isinstance(task, PackerTask):
             task = SetPackerTask.from_packer_task(task)
-        if task.pose_stack is not pose_stack:
-            raise ValueError("sampling task belongs to a different pose layout")
+        task._validate_pose(pose_stack)
         if id(self) not in task.conformer_sampler_index:
             raise ValueError("sampler must be registered with the packing task")
         pbt, device = pose_stack.packed_block_types, pose_stack.coords.device
@@ -144,6 +143,7 @@ class DunbrackChiSampler:
             np.asarray(task.is_cons_bt_allowed),
             np.asarray(task.per_block_conformer_sampler_allowed[..., sampler_index]),
             np.asarray(task.per_block_chi_expansion),
+            real_dtype=pose_stack.coords.dtype,
         )
         measured = np.empty(len(request.frozen_requests), pose_stack.coords.dtype)
         if request.frozen_requests:
