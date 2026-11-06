@@ -243,7 +243,8 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
         TView<Real, 4, Dev> omega_tables,
         TView<RamaTableParams<Real>, 1, Dev> omega_table_params,
         bool output_block_pair_energies,
-        bool topology_only)
+        bool topology_only,
+        TView<Int, 2, Dev> lockstep_group_for_block)
         -> std::tuple<
             TPack<Real, 2, Dev>,
             TPack<Vec<Real, 3>, 2, Dev>,
@@ -318,7 +319,8 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
       pose_stack_block_type,
       pose_stack_inter_block_connections,
       block_type_upper_conn_ind,
-      n_energies_for_block);
+      n_energies_for_block,
+      lockstep_group_for_block);
 
   auto n_energies_for_block_offset_t =
       TPack<int64_t, 2, Dev>::zeros({n_poses, max_n_blocks});
@@ -374,7 +376,8 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
       block_type_upper_conn_ind,
       n_energies_for_block_offset,
       block_for_dispatch,
-      dispatch_indices);
+      dispatch_indices,
+      lockstep_group_for_block);
 
   if (topology_only) {
     return {V_t, dV_dxyz_t, dispatch_indices_t};
@@ -404,7 +407,8 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
       dV_dxyz,
       {},
       output_block_pair_energies,
-      accumulate_derivs);
+      accumulate_derivs,
+      lockstep_group_for_block);
 
   return {V_t, dV_dxyz_t, dispatch_indices_t};
 };
@@ -451,8 +455,9 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
         TView<RamaTableParams<Real>, 1, Dev> omega_table_params,
 
         TView<Int, 2, Dev> dispatch_indices,  // from forward pass
-        TView<Real, 2, Dev> dTdV  // nterms x nposes x (1|len) x (1|len)
-        ) -> TPack<Vec<Real, 3>, 2, Dev> {
+        TView<Real, 2, Dev> dTdV,  // nterms x nposes x (1|len) x (1|len)
+        TView<Int, 2, Dev> lockstep_group_for_block)
+        -> TPack<Vec<Real, 3>, 2, Dev> {
   using tmol::score::common::accumulate;
   using Real3 = Vec<Real, 3>;
 
@@ -529,7 +534,8 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
       dV_dxyz,
       dTdV,
       true,
-      true);
+      true,
+      lockstep_group_for_block);
 
   return dV_dxyz_t;
 };

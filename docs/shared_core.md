@@ -124,6 +124,18 @@ Frontends provide packing/minimization execution and array/metadata selection.
 The public Torch defaults and callback signatures remain available; sharing the
 protocol does not establish equivalence of the frontend optimizers.
 
-Correlated backbone resolution uses the selected matching conformer for a
-third member in the same joint group and scatters its derivatives to that
-member. Independent third varying blocks remain outside pairwise packing.
+For a connected third backbone residue in either endpoint's correlation group,
+backbone scoring resolves its atom from the matching local conformer and that
+conformer's actual residue type. The same global atom index receives its weighted
+coordinate derivative. The optional final `lockstep_group_for_block` view selects
+this behavior; an empty view retains fixed-background resolution. Adapters must
+validate group counts, local-state correspondence and compatible connection
+layouts. A third independently varying block remains outside this pairwise model.
+
+
+`tmol_core.io.atom_array_from_file` and `file_from_atom_array` share the mature
+structure readers and writers, including PDB/CIF model and assembly selection,
+compressed/binary CIF, MOL2/SDF, alternate locations, CCD supplements, supplied
+bonds, metal coordination, author identities and unresolved-atom placeholders.
+The default polymer-port policy uses only shared chemical/canonical metadata.
+Torch retains pose tensor conversion and its existing public file APIs.
