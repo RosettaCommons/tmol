@@ -90,7 +90,9 @@ class ConstraintEnergyTerm(EnergyTerm):
         The rotamer arg list carries one extra tensor -- which blocks sample in
         lockstep -- that only the pair terms' rotamer-pair enumerator reads.
         """
-        return self.constraint_pose_scores(*args[:12], *args[13:])
+        return self.constraint_pose_scores(
+            *args[:12], *args[13:], _sparse_rotamers=True
+        )
 
     def get_score_term_attributes(self, pose_stack: PoseStack):
         return [
@@ -114,11 +116,18 @@ class ConstraintEnergyTerm(EnergyTerm):
         max_n_rots_per_pose,
         constraint_set,
         output_block_pair_energies=False,
+        *,
+        _sparse_rotamers=False,
     ):
         device = coords.device
 
         # Early exit if we have no constraints
         if constraint_set is None:
+            if _sparse_rotamers:
+                return (
+                    torch.zeros((1, 0), dtype=coords.dtype, device=device),
+                    torch.zeros((3, 0), dtype=torch.int32, device=device),
+                )
             n_poses = first_rot_block_type.shape[0]
             if not output_block_pair_energies:
                 # Whole-pose scoring never represents multiple rotamers per
@@ -150,8 +159,8 @@ class ConstraintEnergyTerm(EnergyTerm):
 
         # Whole-pose scoring has one conformer per block; its attribution does
         # not require a device reduction to detect sparse expansion.
-        has_rotamers = output_block_pair_energies and bool(
-            (n_rots_for_block.max() > 1).item()
+        has_rotamers = _sparse_rotamers or (
+            output_block_pair_energies and bool((n_rots_for_block.max() > 1).item())
         )
         from .potentials._compiled import _expand_constraint_candidates
 
