@@ -5,10 +5,12 @@ import torch
 
 from tmol import PackerPalette, PackerTask, extended_pose_stack_from_sequences
 from tmol.pack import IncludeCurrentSampler, SetPackerTask, build_rotamers
-from tmol.score import LJLKEnergyTerm, DunbrackEnergyTerm
+from tmol.score import LJLKEnergyTerm, DunbrackEnergyTerm, BackboneTorsionEnergyTerm
 
 
-@pytest.mark.parametrize("term_class", [LJLKEnergyTerm, DunbrackEnergyTerm])
+@pytest.mark.parametrize(
+    "term_class", [LJLKEnergyTerm, DunbrackEnergyTerm, BackboneTorsionEnergyTerm]
+)
 def test_weighted_rotamer_directional_derivative(
     default_database, torch_device, term_class
 ):
