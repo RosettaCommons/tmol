@@ -7,6 +7,8 @@
 #include <tmol/score/common/device_operations.hh>
 
 #include <tmol/io/details/compiled/gen_pose_leaf_atoms.hh>
+#include <tmol/io/details/compiled/canonical_candidates.hh>
+#include <tmol/utility/tensor/TensorPack.h>
 #include <tmol/io/details/compiled/resolve_his_taut.hh>
 
 namespace tmol {
@@ -222,7 +224,45 @@ Tensor resolve_his_tautomerization(
   return his_taut;
 }
 
+std::tuple<Tensor, Tensor, Tensor> select_canonical_candidates(
+    std::vector<Tensor> inputs) {
+  TORCH_CHECK(inputs.size() == 10, "Canonical selection requires ten buffers");
+  TORCH_CHECK(
+      inputs[1].dim() == 2, "Canonical residue mask must have rank two");
+  Tensor selected, score, candidate_index;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[2].options(), "canonical_candidates", ([&] {
+        using Int = scalar_t;
+        auto shape =
+            std::array<int64_t, 2>{inputs[1].size(0), inputs[1].size(1)};
+        auto output = TPack<Int, 2, device_t>::empty(shape);
+        auto scores = TPack<int64_t, 2, device_t>::empty(shape);
+        auto indices = TPack<Int, 2, device_t>::empty(shape);
+        CanonicalCandidateContext<Int, device_t> c{
+            TCAST(inputs[0]),
+            TCAST(inputs[1]),
+            TCAST(inputs[2]),
+            TCAST(inputs[3]),
+            TCAST(inputs[4]),
+            TCAST(inputs[5]),
+            TCAST(inputs[6]),
+            TCAST(inputs[7]),
+            TCAST(inputs[8]),
+            TCAST(inputs[9]),
+            output.view,
+            scores.view,
+            indices.view};
+        CanonicalCandidates<score::common::DeviceOperations, device_t, Int>::f(
+            mgr, c);
+        selected = output.tensor;
+        score = scores.tensor;
+        candidate_index = indices.tensor;
+      }));
+  return {selected, score, candidate_index};
+}
+
 TMOL_LIBRARY(tmol_io, m) {
+  m.def("select_canonical_candidates", TMOL_FN(&select_canonical_candidates));
   m.def("gen_pose_leaf_atoms", TMOL_FN(&pose_leaf_atom_gen_op));
   m.def("resolve_his_taut", TMOL_FN(&resolve_his_tautomerization));
 }

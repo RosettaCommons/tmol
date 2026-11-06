@@ -21,3 +21,15 @@ template struct GeneratePoseLeafAtoms<
 }  // namespace details
 }  // namespace io
 }  // namespace tmol
+
+#include <tmol/io/details/compiled/canonical_candidates.impl.hh>
+namespace tmol::io::details::compiled {
+template struct CanonicalCandidates<
+    score::common::DeviceOperations,
+    Device::CPU,
+    int32_t>;
+template struct CanonicalCandidates<
+    score::common::DeviceOperations,
+    Device::CPU,
+    int64_t>;
+}  // namespace tmol::io::details::compiled

@@ -539,87 +539,36 @@ def _select_best_block_type_candidate(  # noqa: C901
     termini_variants: Tensor[torch.int64][:, :],
     res_type_variants64: Tensor[torch.int64][:, :],
 ):
-    # what is the problem we are trying to solve?
-    # we have a number of "io_equiv_class"es that we want to map
-    # to particular block types
-    # where the user/the chain connectivity
-    # can specify things such as:
-    # "is it down-term?", "is it up-term?", "is it neither?,"
-    # "is it disulfide-bonded?", "is it a particular kind of HIS?"
-    # and the user has given us a list of atoms that are
-    # present or absent. These atoms will help us decide
-    # which block type the user is requesting, e.g.,
-    # phospho-serine by providing a P atom.
-    # The algorithm for deciding which block type
-    # from a set of candidates will be:
-    # from the set of bts with the "appropriate" termini,
-    # and given the list of provided atoms for a given residue,
-    # find the bt whose atom list has all of the provided atoms
-    # and is missing the fewest atoms that were not provided
-    # e.g. if atoms A, B and C were provided and
-    # BT #1 has atoms A and B
-    # BT #2 has atoms A B C and D, and
-    # BT #3 has atoms A B C D and E, and
-    # then the best match is not BT #1 because it does not have
-    # provided atom C,
-    # and BT #2 is preferred to BT #3 because BT #3 is missing
-    # more atoms.
-    # so if we have array
-    # p  [1, 1, 1, 0, 0] representing provided atoms A, B, and C, and
-    # b1 [1, 1, 0, 0, 0] for BT #1, and
-    # b2 [1, 1, 1, 1, 0] for BT #2, and
-    # b3 [1, 1, 1, 1, 1] for BT #3,
-    # then
-    # sum((p - b1) == 1) = sum(p & ~b1) ==> 1
-    # sum((p - b2) == 1) = sum(p & ~b2) ==> 0
-    # sum((p - b3) == 1) = sum(p & ~b3) ==> 0
-    # so we would eliminate b1
-    # and then
-    # sum((b1 - p) == 1) = sum(b1 & ~p) ==> 0  but note this option will have been eliminated
-    # sum((b2 - p) == 1) = sum(b2 & ~p) ==> 1
-    # sum((b3 - p) == 1) = sum(b3 & ~p) ==> 2
-    # so if we take the minimum among the non-eliminated set of b2 and b3
-    # that would tell us to assign b2 to this residue.
-
-    # However, sometimes residues are given to us without the atoms that define
-    # the termini, and we are expected to build those atoms. We may not be able
-    # to tell the difference between termini-type X and termini-type Y in terms
-    # of how many atoms are missing, or rather, it might be some exotic termini
-    # type has fewer missing atoms than the generic run-of-the-mill termini
-    # type. So the user is allowed to (must) specify which termini patches
-    # are the default ones. We then want to select the default-termini-patched
-    # block type regardless of how many or few of the termini-placed atoms
-    # are missing, so long as we don't have any provided atom that tells us to
-    # choose something else.
-    # Therefore, we have to ignore the atoms added by termini patches when
-    # counting how many atoms in the provided set are missing from the bt's set
-    # so e.g. if
-    # bt1 has atoms [A B C Q R] after its term patch added atoms Q and R, and
-    # bt2 has atoms [A B C S ] after its term patch added atom S, and
-    # the present set has atoms [A B C], and
-    # bt1 has been declared the "default"
-    # then both bt1 and bt2 would have the same score of 0 and
-    # the tie would go to bt1.
-    # logically, this would happen with
-    # sum(p & ~b1) as before for looking to make sure all atoms in p are contained in b1
-    # but the second part would become
-    # sum(b1_sans_termini_additions & ~p) counting only non-termini-patch-added atoms
-    # of b1 that are absent from p against b1.
-    #
-    # how is that going to be encoded???
-    # bt2 since it is not the default atom can be given a small penalty so that
-    # it is worse than bt1 if they both have the same number of non-termini atoms
-    # present but will not be worse than if some non-termini atom is missing
-    # from bt1 but not from bt2.
-    # We can do that by setting the score as
-    # 2 * n-non-termini-atoms-missing + is-non-default-term
+    """Select by missing/extraneous atoms and terminal preference in the common kernel."""
+    from tmol.io.details.compiled._compiled import _select_canonical_candidates
 
     device = pbt.device
-    n_poses = atom_is_present.shape[0]
-    max_n_res = atom_is_present.shape[1]
+    n_poses, max_n_res = is_real_res.shape
     can_ann = pbt.canonical_ordering_annotation
-    max_n_candidates = can_ann.max_n_candidates_for_var_combo
+    inputs = [
+        atom_is_present,
+        is_real_res,
+        res_types64,
+        termini_variants,
+        res_type_variants64,
+        can_ann.var_combo_candidate_bt_index,
+        can_ann.var_combo_is_real_candidate,
+        can_ann.bt_canonical_atom_is_absent,
+        can_ann.bt_non_term_patch_added_canonical_atom_is_present,
+        can_ann.bt_is_non_default_terminus,
+    ]
+    # Metal pose construction uses the same native CPU metadata kernel.
+    if device.type == "mps":
+        inputs = [x.cpu() for x in inputs]
+    selected, best_candidate_score, _ = _select_canonical_candidates(inputs)
+    selected, best_candidate_score = selected.to(device), best_candidate_score.to(
+        device
+    )
+    warning_threshold = 2 * (canonical_ordering.max_n_canonical_atoms + 1)
+    if not torch.any(best_candidate_score >= warning_threshold):
+        return selected
 
+    max_n_candidates = can_ann.max_n_candidates_for_var_combo
     block_type_candidates = torch.full(
         (n_poses, max_n_res, max_n_candidates),
         -1,
@@ -655,10 +604,6 @@ def _select_best_block_type_candidate(  # noqa: C901
         atom_is_present[is_real_candidate], real_candidate_atom_is_absent
     )
 
-    real_candidate_n_extraneous_atoms_provided = torch.count_nonzero(
-        real_candidate_provided_atoms_absent, dim=1
-    )
-
     atom_is_absent = torch.logical_not(atom_is_present)
     real_candidate_non_term_patch_atom_is_present = (
         can_ann.bt_non_term_patch_added_canonical_atom_is_present[
@@ -669,44 +614,6 @@ def _select_best_block_type_candidate(  # noqa: C901
     real_candidate_canonical_atom_was_not_provided = torch.logical_and(
         atom_is_absent[is_real_candidate], real_candidate_non_term_patch_atom_is_present
     )
-    real_candidate_is_non_default_term = can_ann.bt_is_non_default_terminus[
-        real_candidate_block_type
-    ].to(torch.int64)
-
-    real_candidate_n_canonical_atoms_not_provided = torch.sum(
-        real_candidate_canonical_atom_was_not_provided, dim=1
-    )
-    warning_threshold = 2 * (canonical_ordering.max_n_canonical_atoms + 1)
-    real_candidate_misalignment_score = (
-        2 * real_candidate_n_canonical_atoms_not_provided
-        + warning_threshold * real_candidate_n_extraneous_atoms_provided
-        + real_candidate_is_non_default_term
-    )
-    candidate_misalignment_score2 = torch.full(
-        (
-            n_poses,
-            max_n_res,
-            max_n_candidates,
-        ),
-        1 << 30,  # big number
-        dtype=torch.int64,
-        device=device,
-    )
-    candidate_misalignment_score2[is_real_candidate] = real_candidate_misalignment_score
-
-    best_candidate_ind2 = torch.argmin(candidate_misalignment_score2, dim=2)
-
-    # ok, we need to do some quality checks. If the best fit variant's score is
-    # 2 * (canonical_ordering.max_n_canonical_atoms + 1) or worse, then we have
-    # a problem. It's hard to know what to do at this point!
-    best_candidate_score = torch.zeros(
-        (n_poses, max_n_res), dtype=torch.int64, device=device
-    )
-    best_candidate_score[is_real_res] = candidate_misalignment_score2[
-        nz_is_real_res[:, 0],
-        nz_is_real_res[:, 1],
-        best_candidate_ind2[is_real_res],
-    ]
     if torch.any(best_candidate_score >= warning_threshold):
         nz_is_real_candidate = torch.nonzero(is_real_candidate)
         err_msg = []
@@ -782,14 +689,7 @@ def _select_best_block_type_candidate(  # noqa: C901
             raise RuntimeError(err_msg + "Best candidate exceeds failure threshold")
         logger.warning(err_msg)
 
-    block_type_ind64_2 = torch.full_like(res_types64, -1)
-    block_type_ind64_2[is_real_res] = block_type_candidates[
-        nz_is_real_res[:, 0],
-        nz_is_real_res[:, 1],
-        best_candidate_ind2[is_real_res],
-    ]
-
-    return block_type_ind64_2
+    return selected
 
 
 @_validate_args
