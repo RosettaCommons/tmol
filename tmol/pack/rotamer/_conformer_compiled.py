@@ -21,3 +21,5 @@ opth_sampling_counts = _ops.opth_sampling_counts
 opth_sampling_fill = _ops.opth_sampling_fill
 
 opth_sampling_proton = _ops.opth_sampling_proton
+
+conformer_row_indices = _ops.conformer_row_indices

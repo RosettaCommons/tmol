@@ -108,9 +108,12 @@ struct ConformerRowCopy {
   View<Real, 2> source_values, target_values;
 };
 
+struct ConformerRowIndices {
+  int64_t source, target;
+};
 template <typename Ctx>
-TMOL_DEVICE_FUNC void copy_conformer_row(
-    Ctx const& c, int row, int root_shift) {
+TMOL_DEVICE_FUNC ConformerRowIndices
+conformer_row_lookup(Ctx const& c, int row, int root_shift) {
   int begin = 0, end = c.source_offsets.size(0);
   // Find the selected conformer containing this packed atom. Equal offsets
   // skip empty conformers, including leading and trailing empty segments.
@@ -122,8 +125,16 @@ TMOL_DEVICE_FUNC void copy_conformer_row(
       end = middle;
   }
   auto local = row - c.packed_offsets[begin];
-  auto source = c.source_offsets[begin] + local + root_shift;
-  auto target = c.target_offsets[begin] + local + root_shift;
+  int64_t source = c.source_offsets[begin] + local + root_shift;
+  int64_t target = c.target_offsets[begin] + local + root_shift;
+  return {source, target};
+}
+
+template <typename Ctx>
+TMOL_DEVICE_FUNC void copy_conformer_row(
+    Ctx const& c, int row, int root_shift) {
+  auto indices = conformer_row_lookup(c, row, root_shift);
+  auto source = indices.source, target = indices.target;
   for (int component = 0; component < c.target_values.size(1); ++component)
     c.target_values[target][component] = c.source_values[source][component];
 }
@@ -138,6 +149,23 @@ void launch_copy_conformer_rows(
       context, count, [=] TMOL_DEVICE_FUNC(int i) {
         copy_conformer_row(c, i, root_shift);
       });
+}
+
+template <template <typename, int> class View, typename Int>
+struct ConformerRowIndexPlan {
+  View<Int, 1> source_offsets, target_offsets, packed_offsets;
+  View<int64_t, 2> indices;
+};
+template <template <Device> class Ops, Device D, typename Context, typename Ctx>
+void launch_conformer_row_indices(Context& context, Ctx c, int root_shift) {
+  LAUNCH_BOX_128;
+  int n = score::common::checked_dispatch_size(
+      c.indices.size(1), "conformer row indices");
+  Ops<D>::template forall<launch_t>(context, n, [=] TMOL_DEVICE_FUNC(int row) {
+    auto i = conformer_row_lookup(c, row, root_shift);
+    c.indices[0][row] = i.source;
+    c.indices[1][row] = i.target;
+  });
 }
 
 // Projected-vector atan2 definition used by tmol.numeric.coord_dihedrals.

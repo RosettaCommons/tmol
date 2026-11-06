@@ -105,6 +105,18 @@ void check_rows() {
               actual == expected
               || (std::isnan(actual) && std::isnan(expected)));
         }
+      int64_t indices[10];
+      ConformerRowIndexPlan<Binder::template View, Int> plan{
+          view(source_offsets, {5}),
+          view(target_offsets, {5}),
+          view(packed_offsets, {6}),
+          view(indices, {2, 5})};
+      launch_conformer_row_indices<tmol_test::SerialOps, tmol::Device::CPU>(
+          mgr, plan, shift);
+      for (int i = 0; i < 5; ++i) {
+        assert(indices[i] == origins[i] + shift);
+        assert(indices[5 + i] == destinations[i] + shift);
+      }
       launch_copy_conformer_rows<tmol_test::SerialOps, tmol::Device::CPU>(
           mgr, c, 0, shift);
     }

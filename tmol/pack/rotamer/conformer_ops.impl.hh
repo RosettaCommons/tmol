@@ -20,4 +20,9 @@ void ConformerDofKernels<Ops, D, Real, Int>::correct(
     ContextManager& mgr, Correction c) {
   launch_correct_chi_dofs<Ops, D, Real>(mgr, c);
 }
+template <template <Device> class Ops, Device D, typename Real, typename Int>
+void ConformerDofKernels<Ops, D, Real, Int>::row_indices(
+    ContextManager& mgr, RowIndices c, int shift) {
+  launch_conformer_row_indices<Ops, D>(mgr, c, shift);
+}
 }  // namespace tmol::pack::rotamer
