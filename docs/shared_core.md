@@ -147,3 +147,11 @@ retains its existing objectives, dtypes and LBFGS execution. Supplying complete
 MOL2 coordinates and authoritative charges needs no executor; regeneration
 requires one explicitly. This boundary does not establish JAX conformer-generation
 support or optimizer parity until that adapter and complete workflows are tested.
+
+For a connected third backbone residue in either endpoint's correlation group,
+backbone scoring resolves its atom from the matching local conformer and that
+conformer's actual residue type. The same global atom index receives its weighted
+coordinate derivative. The optional final `lockstep_group_for_block` view selects
+this behavior; an empty view retains fixed-background resolution. Adapters must
+validate group counts, local-state correspondence and compatible connection
+layouts. A third independently varying block remains outside this pairwise model.

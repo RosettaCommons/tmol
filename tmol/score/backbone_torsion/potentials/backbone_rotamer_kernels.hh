@@ -177,7 +177,8 @@ void backbone_rotamer_score_native(
     TView<Vec<Real, 3>, 2, Dev> dV_dxyz,
     TView<Real, 2, Dev> dTdV,
     bool output_block_pair_energies,
-    bool accumulate_derivs) {
+    bool accumulate_derivs,
+    TView<Int, 2, Dev> lockstep_group_for_block = {}) {
   using tmol::score::common::accumulate;
   LAUNCH_BOX_32;
   auto rama_omega_func = ([=] TMOL_DEVICE_FUNC(int ind) {
@@ -240,7 +241,9 @@ void backbone_rotamer_score_native(
             first_rot_for_block,
             first_rot_block_type,
             pose_stack_inter_block_connections,
-            block_type_atom_downstream_of_conn);
+            block_type_atom_downstream_of_conn,
+            lockstep_group_for_block,
+            block_type_ind_for_rot);
         valid_phipsi &= phi_ats[i] != -1;
       }
       CoordQuad<Real> phi_coords;
@@ -266,7 +269,9 @@ void backbone_rotamer_score_native(
             first_rot_for_block,
             first_rot_block_type,
             pose_stack_inter_block_connections,
-            block_type_atom_downstream_of_conn);
+            block_type_atom_downstream_of_conn,
+            lockstep_group_for_block,
+            block_type_ind_for_rot);
         valid_phipsi &= psi_ats[i] != -1;
       }
       CoordQuad<Real> psi_coords;
@@ -332,7 +337,9 @@ void backbone_rotamer_score_native(
             first_rot_for_block,
             first_rot_block_type,
             pose_stack_inter_block_connections,
-            block_type_atom_downstream_of_conn);
+            block_type_atom_downstream_of_conn,
+            lockstep_group_for_block,
+            block_type_ind_for_rot);
 
         // omega_atom_ind == -1 -> UAID resolution failed
         if (omega_ats[i] == -1)
