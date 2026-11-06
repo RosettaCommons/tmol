@@ -1,27 +1,4 @@
-"""JAX-friendly port of ``tmol.database.scoring``.
-
-Exposes one :class:`ScoringDatabase` aggregating every scoring-term
-sub-database, plus a :meth:`ScoringDatabase.from_file` classmethod that
-reads the full set of YAMLs (and the optional tables binaries) from a
-directory.
-
-Individual term databases live in submodules and can also be loaded
-and used in isolation:
-
-* :mod:`.ljlk` — Lennard-Jones / Lazaridis-Karplus parameters.
-* :mod:`.elec` — electrostatics (sigmoidal dielectric) parameters.
-* :mod:`.hbond` — hydrogen-bond donor/acceptor + polynomial parameters.
-* :mod:`.cartbonded` — Cartesian-bonded per-residue bond/angle/torsion
-  parameters.
-* :mod:`.ref` — per-residue reference energies.
-* :mod:`.rama` — Ramachandran energy-grid mappings (tables read from
-  ``rama.npz``; legacy archives must be converted at build time).
-* :mod:`.omega_bbdep` — backbone-dependent omega mean / sigma tables
-  (read from ``omega_bbdep.npz``; legacy archives require build-time conversion).
-* :mod:`.dunbrack_libraries` — rotamer libraries (read from
-  ``dunbrack.npz``; legacy archives require build-time conversion).
-* :mod:`.disulfide` — disulfide polynomial / gaussian mixture globals.
-"""
+"""Shared scoring parameters with JAX-compatible table archive readers."""
 
 from __future__ import annotations
 
@@ -29,11 +6,7 @@ import os
 from typing import Optional
 
 import attr
-from tmol_core.database.generated import (
-    GENERATED_CARTBONDED_FILES,
-    GENERATED_ELEC_FILES,
-    GENERATED_REF_FILES,
-)
+from tmol_core.database.scoring import load_scoring_parameters
 
 from tmol_core.database.metal_coordination import MetalCoordinationDatabase
 from tmol_core.database.na_torsion import NaTorsionDatabase
@@ -85,37 +58,20 @@ class ScoringDatabase:
             path = os.path.join(os.path.dirname(__file__), "..", "default", "scoring")
         path = os.path.abspath(path)
 
-        return cls(
-            na_torsion=NaTorsionDatabase.from_file(
-                os.path.join(path, "na_torsion.yaml")
+        parameters = load_scoring_parameters(
+            path,
+            dun_loader=lambda root: DunbrackRotamerLibrary.from_file(
+                os.path.join(root, "dunbrack.yaml")
             ),
-            metal_coordination=MetalCoordinationDatabase.from_file(
-                os.path.join(path, "metal_coordination.yaml")
+            rama_loader=lambda root: RamaDatabase.from_file(
+                os.path.join(root, "rama.yaml")
             ),
-            ljlk=LJLKDatabase.from_file(os.path.join(path, "ljlk.yaml")),
-            elec=ElecDatabase.from_file(
-                os.path.join(path, "elec.yaml"),
-                generated=[os.path.join(path, f) for f in GENERATED_ELEC_FILES],
-            ),
-            hbond=HBondDatabase.from_file(os.path.join(path, "hbond.yaml")),
-            cartbonded=CartBondedDatabase.from_file(
-                os.path.join(path, "cartbonded.yaml"),
-                generated=[os.path.join(path, f) for f in GENERATED_CARTBONDED_FILES],
-            ),
-            genbonded=GenBondedDatabase.from_file(os.path.join(path, "genbonded.yaml")),
-            ref=RefDatabase.from_file(
-                os.path.join(path, "ref.yaml"),
-                generated=[os.path.join(path, f) for f in GENERATED_REF_FILES],
-            ),
-            rama=RamaDatabase.from_file(os.path.join(path, "rama.yaml")),
-            dunbrack=DunbrackRotamerLibrary.from_file(
-                os.path.join(path, "dunbrack.yaml")
-            ),
-            disulfide=DisulfideDatabase.from_file(os.path.join(path, "disulfide.yaml")),
-            omega_bbdep=OmegaBBDepDatabase.from_file(
-                os.path.join(path, "omega_bbdep.yaml")
+            omega_loader=lambda root: OmegaBBDepDatabase.from_file(
+                os.path.join(root, "omega_bbdep.yaml")
             ),
         )
+        parameters["dunbrack"] = parameters.pop("dun")
+        return cls(**parameters)
 
 
 __all__ = [
