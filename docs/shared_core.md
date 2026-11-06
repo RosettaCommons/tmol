@@ -115,6 +115,7 @@ per-block correlation groups. Empty metadata preserves independent sampling;
 equal nonnegative IDs select matching local conformer indices. Callers must
 validate equal active counts and correspondence with the shared correlation
 plan. Native preparation preserves connection identity and separate metal bridge
-contributions. This does not resolve backbone dependencies on a third sampled
-block or the directed bonds of a two-residue cycle; those workflow boundaries
-remain explicit until their complete energies and derivatives are validated.
+contributions. A two-residue cycle has one sparse conformer pair whose energy
+and coordinate derivatives include both directed peptide bonds. Dependencies on
+a third independently sampled backbone block still require an explicit workflow
+boundary; pair selection alone cannot represent that higher-body interaction.

@@ -61,6 +61,17 @@ void check() {
   counts[0] = counts[1] = 50000;
   count();
   assert(sizes[0] == INT64_C(2500000000));
+  counts[0] = 2;
+  counts[1] = 3;
+  connections[3][0] = 0;
+  sizes[0] = sizes[1] = 0;
+  count();
+  assert(sizes[0] == 6 && sizes[1] == 0);
+  fill(6);
+  for (int i = 0; i < 6; ++i) {
+    assert(pairs[6 + i] == i / 3);
+    assert(pairs[12 + i] == 2 + i % 3);
+  }
   backbone_rotamer_count_native<SerialOps, tmol::Device::CPU, double, Int>(
       mgr,
       view(counts, {0, 4}),
