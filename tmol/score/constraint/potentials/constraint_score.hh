@@ -29,6 +29,21 @@ struct GetTorsionAngleDispatch {
       -> std::tuple<TPack<Real, 1, D>, TPack<Vec<Real, 3>, 2, D>>;
 };
 
+template <template <tmol::Device> class Ops, tmol::Device D, typename Int>
+struct ConstraintCandidateDispatch {
+  static std::
+      tuple<tmol::native::Tensor, tmol::native::Tensor, tmol::native::Tensor>
+      forward(
+          ContextManager& mgr,
+          TView<Vec<Int, 3>, 2, D> atoms,
+          TView<Int, 1, D> n_unique,
+          TView<Vec<Int, 3>, 1, D> unique_blocks,
+          TView<Int, 1, D> coordinate_offsets,
+          TView<Int, 2, D> n_conformers,
+          TView<Int, 2, D> first_conformer,
+          bool expanded);
+};
+
 }  // namespace potentials
 }  // namespace constraint
 }  // namespace score

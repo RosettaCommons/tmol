@@ -25,6 +25,7 @@ def stage_native_headers(root, stage):
         "score/disulfide/potentials",
         "score/hbond/potentials",
         "score/na_torsion/potentials",
+        "score/constraint/potentials",
         "score/dunbrack/potentials",
         "score/ljlk/potentials",
         "score/elec/potentials",

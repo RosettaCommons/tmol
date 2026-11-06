@@ -85,8 +85,35 @@ Tensor get_torsion_angle_op(Tensor coords) {
   return GetTorsionAngleOp<DispatchMethod>::apply(coords);
 }
 
+std::tuple<Tensor, Tensor, Tensor> expand_constraint_candidates(
+    Tensor atoms,
+    Tensor n_unique,
+    Tensor unique_blocks,
+    Tensor coordinate_offsets,
+    Tensor n_conformers,
+    Tensor first_conformer,
+    bool expanded) {
+  std::tuple<Tensor, Tensor, Tensor> result;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      atoms.options(), "constraint_candidate_topology", ([&] {
+        result =
+            ConstraintCandidateDispatch<DeviceOperations, device_t, scalar_t>::
+                forward(
+                    mgr,
+                    TCAST(atoms),
+                    TCAST(n_unique),
+                    TCAST(unique_blocks),
+                    TCAST(coordinate_offsets),
+                    TCAST(n_conformers),
+                    TCAST(first_conformer),
+                    expanded);
+      }));
+  return result;
+}
+
 // See https://stackoverflow.com/a/3221914
 TMOL_LIBRARY(tmol_constraint, m) {
+  m.def("expand_constraint_candidates", TMOL_FN(&expand_constraint_candidates));
   m.def("get_torsion_angle", TMOL_FN(&get_torsion_angle_op<DeviceOperations>));
 }
 
