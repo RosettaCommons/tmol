@@ -195,8 +195,8 @@ rejects an empty identity set without partially changing the task; it never
 re-enables a previously excluded choice. Sampler bundles use `expand_into_task`.
 Budget-frozen torsions retain measured input geometry. Dynamic output sizes
 require an eager host allocation barrier, so sampling is not differentiable,
-jittable or vmappable. Coordinate assembly and native repacking are available below; full design
-policy and FastRelax remain unfinished.
+jittable or vmappable. Coordinate assembly, native repacking and the shared FastRelax protocol are
+available below; complete design/API compatibility remains unfinished.
 
 `NaChiRotamerSampler.from_database(db, chi_sample_level=1, sample_syn=True)`
 samples DNA/RNA glycosidic and proton chi from the same shared chemical metadata,
@@ -292,8 +292,9 @@ search schedules. CUDA phase seeds come from a local NumPy PCG64 generator;
 packing leaves global random state unchanged. For already parameterized covalent
 groups, `ConjugatedChiSampler` and `add_conjugated_group_sampler` share task masks,
 chi budgets and correlation declarations with Torch; native joint kinematics
-preserve attachment geometry. Full correlated backbone scoring and automatic
-structure-file ligand preparation remain unfinished. FastRelax shares the mature
+preserve attachment geometry. Biotin and O/N-glycan prepared groups have full
+score/gradient and packing checks; arbitrary custom groups remain unvalidated.
+Structure-file ligand preparation uses the shared input pipeline. FastRelax shares the mature
 schedule, task callbacks and per-pose acceptance; its JAX optimizer retains the
 minimization limitations described above.
 
@@ -438,10 +439,10 @@ accepts prepared ligands, noncanonical/D residues and metal coordination using
 the common normalization and hydrogen policies. Use the returned context for
 scoring. Missing sidechains and default OptH use the mature shared sampler
 routing and native packing; `no_optH=True` disables OptH and `packer_seed` makes
-packing reproducible. Fragmented-ligand imposition still raises explicitly.
+packing reproducible. Fragment imposition uses common original-atom plans.
 `pose_stack_from_file()` reads PDB, CIF, MOL2 and SDF through the common reader;
-optional residue bounds select a half-open range. Complete metadata round trips
-and Atom37 coordinate overrides remain parity gaps. Shared CPU workflows check
+optional residue bounds select a half-open range. Shared AtomArray export preserves
+molecular metadata; Atom37 coordinate overrides remain a parity gap. Shared CPU workflows check
 physical atom identity, neutral-terminal hydrogen names, missing HYP/D
 sidechains, file input, and all 25 score-channel derivatives. This does not
 establish complete input or end-to-end speed/memory parity.

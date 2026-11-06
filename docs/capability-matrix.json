@@ -152,7 +152,7 @@
         "tests/jax/test_optimization.py",
         "tests/scientific/test_molecular_minimization.py"
       ],
-      "implementation_status": "Complete 25-channel objectives decrease for ligand, noncanonical, D, modified-DNA, metal and mixed cases on CPU/CUDA. Frozen atoms and input immutability tested; optimizer trajectories need not match Torch. Independent per-pose Armijo behavior is a parity gap: current JAX minimization uses one summed batch objective."
+      "implementation_status": "Complete 25-channel objectives decrease for ligand, noncanonical, D, modified-DNA, metal and mixed cases. The default strong-Wolfe optimizer uses one summed batch objective. Opt-in optimizer=\"armijo\" now executes shared independent-segment policy and compact native transitions; matching mature trajectories, runtime and memory remain pending."
     },
     {
       "domain": "packing_design_mutation",
@@ -166,7 +166,7 @@
         "tests/scientific/test_correlated_graph.py",
         "tests/jax/test_pose_imposition.py"
       ],
-      "implementation_status": "Common native CPU/CUDA sampling, sparse scoring, graph construction, annealing and imposition support repacking and selected L/D design choices. Task identity masks, budgets and bundles tested. Producer-declared joint groups now share graph collapse and original-member identity expansion, tested against both native graph backends. Prepared conjugated groups now fold with common native kinematics and emit correlated member coordinates. Native bump pruning preserves retained original identities, validated through full ligand/D/mixed packing and independent assignment-energy reconstruction on CPU. Automatic ligand preparation, correlated backbone context and full design policy remain unfinished."
+      "implementation_status": "Common native CPU/CUDA sampling, sparse scoring, graph construction, annealing and imposition support repacking and selected L/D design choices. Task masks, budgets, bundles, correlation collapse and bump pruning preserve original member identities. Prepared biotin, O-glycan and N-glycan groups have full all-channel energies, physical gradients and native packing checks. Changed-port design and identity changes with attached constraints still reject; complete task/design API parity and corrected-source artifact gates remain open."
     },
     {
       "domain": "kinematics",
@@ -216,7 +216,7 @@
         "tests/scientific/test_metal_placement.py",
         "tests/scientific/test_atom_array_input.py"
       ],
-      "implementation_status": "ResidueBlock and canonical input preserve named atoms, selected chemistry, dtype, topology and database context through common chemistry/native policies. Context-heavy and generated-H reconstruction cover ligands/noncanonical polymers; generated-H CPU/CUDA values/gradients and second reverse derivatives pass. Public metal/protonation/custom-slot CPU/CUDA checks pass. PDB CONECT and Biotite covalent/disulfide/metal bonds now use the common atom mapper, with mixed/cyclic/heterochiral/metal CPU fixtures. Latest strict-donor/default-precedence and frontend changes still require fresh CUDA/artifact validation. Input preparation is eager; native stages support jit/vmap. General CIF/AtomWorks input is absent; measured constructor overhead remains a performance gap."
+      "implementation_status": "ResidueBlock, canonical, public AtomArray and PDB/CIF/MOL2/SDF inputs share chemistry, atom mapping, hydrogen/protonation, metal and connectivity preparation. Default missing-sidechain/OptH native packing and fragment imposition retain parameter context. Common AtomArray export has molecular CPU roundtrip checks. Atom37 coordinate overrides and exhaustive public API parity remain gaps; input preparation is eager. Corrected-source artifact/device gates and complete workflow runtime/memory parity remain pending."
     },
     {
       "domain": "jit_vmap_reverse_ad",
@@ -455,5 +455,25 @@
       "repro_fixture": "tests/scientific/test_constraints.py",
       "coverage": "Framework-native callbacks over common atom identities/geometry; coordinate and parameter derivatives."
     }
+  },
+  "acceptance_gaps": {
+    "mature_functionality": [
+      "Fragment interaction attribution and full block-pair public scoring API",
+      "Atom37 coordinate overrides and remaining public input contracts",
+      "Complete task/design API compatibility, changed-port and constrained-identity imposition",
+      "Mature optimizer checkpoint/API behavior and matched trajectory validation",
+      "Exhaustive custom database/public score-option compatibility"
+    ],
+    "validation_and_performance": [
+      "Corrected CObb source: clean installed CPU and actual CUDA gates running",
+      "Matched mature end-to-end cold/warm runtime and peak host/device memory unresolved",
+      "Core measured mature molecular minimization regressions remain under investigation",
+      "Corrected-chemistry final Apple validation belongs to Metal owner"
+    ],
+    "framework_specific_or_not_mature_parity": [
+      "Higher derivatives through native torsion/forward-kinematics kernels are not advertised by mature Torch either",
+      "Dynamic topology/sampling/graph allocation remains eager; JAX jit/vmap extensions beyond mature execution are tracked separately",
+      "Independent varying third-backbone context lacks a validated mature native contract; do not count it as established Torch capability"
+    ]
   }
 }
