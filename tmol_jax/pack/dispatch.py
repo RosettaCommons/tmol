@@ -58,7 +58,11 @@ def _narrow_prefix(offsets):
 def _candidate_layout(arguments, *, begin, count, reach):
     shape = jax.ShapeDtypeStruct
     counts, overflow = _stage(
-        arguments, operation=2, begin=begin, count=count, reach=reach,
+        arguments,
+        operation=2,
+        begin=begin,
+        count=count,
+        reach=reach,
         outputs=(shape((count,), np.int32), shape((1, 8), np.uint8)),
     )
     offsets = prefix_counts(_wide_nonnegative(counts))
