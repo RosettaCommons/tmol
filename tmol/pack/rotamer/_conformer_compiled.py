@@ -28,3 +28,7 @@ chi_dof_indices = _ops.chi_dof_indices
 
 conformer_copy_plan = _ops.conformer_copy_plan
 opth_reset_plan = _ops.opth_reset_plan
+
+mainchain_dof_indices = _ops.mainchain_dof_indices
+
+mainchain_row_indices = _ops.mainchain_row_indices

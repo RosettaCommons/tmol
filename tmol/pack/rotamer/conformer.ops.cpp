@@ -339,7 +339,79 @@ Tensor opth_reset_plan(
                              }));
   return result;
 }
+Tensor mainchain_row_indices(std::vector<Tensor> inputs, int64_t sampler) {
+  TORCH_CHECK(
+      inputs.size() == 8,
+      "Mainchain row indices require eight metadata buffers");
+  int n = score::common::checked_dispatch_product(
+      inputs[0].numel(), inputs[5].size(1), "mainchain copy atoms");
+  Tensor result;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[0].options(), "mainchain_row_indices", ([&] {
+        using Kernels = ConformerDofKernels<
+            score::common::DeviceOperations,
+            device_t,
+            float,
+            int64_t>;
+        auto indices = TPack<int64_t, 2, device_t>::empty({2, n});
+        typename Kernels::MainchainIndices c{
+            TCAST(inputs[0]),
+            TCAST(inputs[1]),
+            TCAST(inputs[2]),
+            TCAST(inputs[3]),
+            TCAST(inputs[4]),
+            TCAST(inputs[5]),
+            TCAST(inputs[6]),
+            TCAST(inputs[7]),
+            int(sampler)};
+        Kernels::mainchain_rows(conformer_context, c, indices.view);
+        result = indices.tensor;
+      }));
+  return result;
+}
+Tensor mainchain_dof_indices(std::vector<Tensor> inputs, int64_t sampler) {
+  TORCH_CHECK(inputs.size() == 10, "Mainchain DOF indices require ten buffers");
+  TORCH_CHECK(
+      inputs[8].dim() == 2 && inputs[8].size(1) == 9 && inputs[9].dim() == 2
+          && inputs[9].size(1) == 9,
+      "Mainchain DOFs require nine components");
+  int atoms = score::common::checked_dispatch_product(
+      inputs[0].numel(), inputs[5].size(1), "mainchain copy atoms");
+  int n = score::common::checked_dispatch_product(
+      atoms, 9, "mainchain copy values");
+  Tensor result;
+  TMOL_DISPATCH_FLOATING_DEVICE(
+      inputs[8].options(), "mainchain_dof_indices", ([&] {
+        using Kernels = ConformerDofKernels<
+            score::common::DeviceOperations,
+            device_t,
+            scalar_t,
+            int64_t>;
+        auto indices = TPack<int64_t, 2, device_t>::empty({2, n});
+        typename Kernels::Copy c{
+            TCAST(inputs[0]),
+            TCAST(inputs[1]),
+            TCAST(inputs[2]),
+            TCAST(inputs[3]),
+            TCAST(inputs[4]),
+            TCAST(inputs[5]),
+            TCAST(inputs[6]),
+            TCAST(inputs[7]),
+            TCAST(inputs[8]),
+            TCAST(inputs[9]),
+            int(sampler)};
+        Kernels::mainchain_indices(conformer_context, c, indices.view);
+        result = indices.tensor;
+      }));
+  return result;
+}
 TMOL_LIBRARY(tmol_conformer_dofs, m) {
+  m.def(
+      "mainchain_row_indices(Tensor[] inputs, int sampler) -> Tensor",
+      TMOL_FN(&mainchain_row_indices));
+  m.def(
+      "mainchain_dof_indices(Tensor[] inputs, int sampler) -> Tensor",
+      TMOL_FN(&mainchain_dof_indices));
   m.def(
       "conformer_copy_plan(Tensor[] inputs) -> Tensor",
       TMOL_FN(&conformer_copy_plan));

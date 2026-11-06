@@ -206,3 +206,62 @@ def test_opth_reset_preserves_ideal_and_untouched_dof_derivatives(dtype):
     expected_ho = (weights * do).index_fill(0, destination, 0)
     torch.testing.assert_close(hi, expected_hi)
     torch.testing.assert_close(ho, expected_ho)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_mainchain_copy_preserves_finite_source_and_ideal_derivatives(dtype):
+    from tmol.pack.rotamer._conformer_execution import copy_mainchain_dofs
+
+    source = torch.linspace(0.1, 0.9, 27, dtype=dtype).reshape(3, 9)
+    source[2, 4:7] = torch.tensor(
+        [float("nan"), float("inf"), -float("inf")], dtype=dtype
+    )
+    source.requires_grad_()
+    ideal = torch.linspace(0.2, 1.0, 81, dtype=dtype).reshape(9, 9).requires_grad_()
+    out = ideal.clone()
+    copy_mainchain_dofs(
+        torch.tensor([0, 0, 1]),
+        torch.tensor([0, 0, 0]),
+        torch.tensor([1, 1, 1]),
+        torch.tensor([2, 4, 0]),
+        torch.tensor([0, -1]),
+        torch.tensor([[0, 1], [-1, -1]]),
+        torch.tensor([[[[-1, -1], [1, -1]]]]),
+        torch.tensor([[1, 0], [0, 1]]),
+        source,
+        out,
+        0,
+    )
+    assert torch.isfinite(out).all()
+    # One mapped atom is copied into each of rows4 and6, except its nonfinite
+    # components4:7, which must keep their independent ideal values.
+    components = torch.tensor([0, 1, 2, 3, 7, 8])
+    src = (18 + components).repeat(2)
+    dst = torch.cat((36 + components, 54 + components))
+    weights = torch.linspace(0.3, 0.9, 81, dtype=dtype)
+    gs, gi = torch.autograd.grad(
+        (weights * out.flatten().square() / 2).sum(),
+        (source, ideal),
+        create_graph=True,
+        allow_unused=True,
+    )
+    assert gs is not None and gi is not None
+    expected_s = (
+        torch.zeros(27, dtype=dtype)
+        .index_add(0, src, weights[dst] * source.flatten()[src])
+        .reshape_as(source)
+    )
+    expected_i = (weights * ideal.flatten()).index_fill(0, dst, 0).reshape_as(ideal)
+    torch.testing.assert_close(gs, expected_s)
+    torch.testing.assert_close(gi, expected_i)
+    ds = torch.linspace(0.2, 0.7, 27, dtype=dtype).reshape_as(source)
+    di = torch.linspace(0.4, 0.8, 81, dtype=dtype).reshape_as(ideal)
+    hs, hi = torch.autograd.grad((gs * ds).sum() + (gi * di).sum(), (source, ideal))
+    expected_hs = (
+        torch.zeros(27, dtype=dtype)
+        .index_add(0, src, weights[dst] * ds.flatten()[src])
+        .reshape_as(source)
+    )
+    expected_hi = (weights * di.flatten()).index_fill(0, dst, 0).reshape_as(ideal)
+    torch.testing.assert_close(hs, expected_hs)
+    torch.testing.assert_close(hi, expected_hi)

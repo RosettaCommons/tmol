@@ -139,57 +139,22 @@ def _copy_dofs_from_orig_to_rotamers_for_sampler(
     orig_dofs_kto: Tensor[torch.float32][:, 9],
     rot_dofs_kto: Tensor[torch.float32][:, 9],
 ) -> None:
-    if poses.device.type != "mps":
-        if conf_inds_for_sampler.numel() == 0:
-            return
-        pbt = poses.packed_block_types
-        fingerprints = pbt.mc_fingerprints
-        if fingerprints.atom_mapping.shape[1] == 0:
-            return
-        from tmol.pack.rotamer._build_rotamers import _kinforest_device_indices
-        from tmol.pack.rotamer._conformer_compiled import copy_mainchain_dofs
-
-        types = poses.block_type_ind.reshape(-1).long()
-        counts = pbt.n_atoms[types.clamp_min(0)].long()
-        counts = torch.where(types >= 0, counts, 0)
-        source_offsets = torch.cumsum(counts, 0) - counts
-        source_residues = task.global_block_ind_for_considered_block_types[
-            gbt_for_rot[conf_inds_for_sampler]
-        ]
-        copy_mainchain_dofs(
-            types[source_residues],
-            source_offsets[source_residues],
-            block_type_ind_for_rot[conf_inds_for_sampler],
-            n_dof_atoms_offset_for_rot[conf_inds_for_sampler],
-            fingerprints.source_fingerprint,
-            fingerprints.source_atom_mapping,
-            fingerprints.atom_mapping,
-            _kinforest_device_indices(pbt, pbt.device),
-            orig_dofs_kto,
-            rot_dofs_kto,
-            fingerprints.sampler_mapping[sampler_name],
-        )
+    if conf_inds_for_sampler.numel() == 0:
         return
+    if poses.packed_block_types.mc_fingerprints.atom_mapping.shape[1] == 0:
+        return
+    from ._conformer_execution import mainchain_copy_metadata, copy_mainchain_dofs
 
-    dst, src = _create_dof_inds_to_copy_from_orig_to_rotamers_for_sampler(
+    metadata, sampler = mainchain_copy_metadata(
         poses,
         task,
         sampler_name,
         gbt_for_rot,
         block_type_ind_for_rot,
         conf_inds_for_sampler,
-        sampler_n_rots_for_gbt,
-        sampler_gbt_for_rotamer,
         n_dof_atoms_offset_for_rot,
     )
-
-    # Missing sidechains can also leave dependent mainchain hydrogens unresolved
-    # (e.g. N-terminal proline H2/H3 depend on CD). Keep their ideal DOFs rather
-    # than overwriting freshly generated conformers with non-finite measurements.
-    measured = orig_dofs_kto[src]
-    rot_dofs_kto[dst] = torch.where(
-        torch.isfinite(measured), measured, rot_dofs_kto[dst]
-    )
+    copy_mainchain_dofs(*metadata, orig_dofs_kto, rot_dofs_kto, sampler)
 
 
 def _create_dof_inds_to_copy_from_orig_to_rotamers_for_sampler(
@@ -217,37 +182,19 @@ def _create_dof_inds_to_copy_from_orig_to_rotamers_for_sampler(
     if fingerprints.atom_mapping.shape[1] == 0:
         empty = conf_inds_for_sampler[:0]
         return empty, empty
-    from tmol.pack.rotamer._build_rotamers import _kinforest_device_indices
+    from ._conformer_execution import mainchain_copy_metadata, mainchain_row_indices
 
-    kfo = _kinforest_device_indices(pbt, pbt.device)
-    flat_types = poses.block_type_ind.reshape(-1).long()
-    counts = pbt.n_atoms[flat_types.clamp_min(0)].long()
-    counts = torch.where(flat_types >= 0, counts, 0)
-    source_offsets = torch.cumsum(counts, 0) - counts
-    considered = gbt_for_rot[conf_inds_for_sampler]
-    source_residues = task.global_block_ind_for_considered_block_types[considered]
-    source_types = flat_types[source_residues]
-    target_types = block_type_ind_for_rot[conf_inds_for_sampler]
-    source_fingerprints = fingerprints.source_fingerprint[source_types]
-    source_atoms = fingerprints.source_atom_mapping[source_types]
-    source_local = kfo[source_types[:, None], source_atoms.clamp_min(0)]
-    source_local.masked_fill_(source_atoms < 0, -1)
-    del source_atoms
-    target_atoms = fingerprints.atom_mapping[
-        fingerprints.sampler_mapping[sampler_name],
-        source_fingerprints.clamp_min(0),
-        target_types,
-    ]
-    target_local = kfo[target_types[:, None], target_atoms.clamp_min(0)]
-    target_local.masked_fill_(target_atoms < 0, -1)
-    del target_atoms
-    present = (
-        (source_fingerprints[:, None] >= 0) & (source_local >= 0) & (target_local >= 0)
+    metadata, sampler = mainchain_copy_metadata(
+        poses,
+        task,
+        sampler_name,
+        gbt_for_rot,
+        block_type_ind_for_rot,
+        conf_inds_for_sampler,
+        n_dof_atoms_offset_for_rot,
     )
-    # Both DOF arrays reserve their first row for the virtual root.
-    source_local.add_(source_offsets[source_residues, None] + 1)
-    target_local.add_(n_dof_atoms_offset_for_rot[conf_inds_for_sampler, None] + 1)
-    return target_local[present], source_local[present]
+    src, dst = mainchain_row_indices(metadata, sampler, poses.device)
+    return dst, src
 
 
 @_validate_args
@@ -276,36 +223,15 @@ def _assign_chi_dofs_from_samples(
         _kinforest_device_indices,
     )
 
-    if pbt.device.type != "mps":
-        from tmol.pack.rotamer._conformer_execution import assign_chi_dofs
+    from tmol.pack.rotamer._conformer_execution import assign_chi_dofs
 
-        assign_chi_dofs(
-            block_type_ind_for_rot,
-            n_dof_atoms_offset_for_rot,
-            conf_inds_for_sampler,
-            chi_atoms,
-            chi,
-            _kinforest_device_indices(pbt, pbt.device),
-            _build_ring_chi_phi_c_corrections(pbt).to(dtype=chi.dtype),
-            rot_dofs_kto,
-        )
-        return
-
-    rows, columns = torch.nonzero(chi_atoms != -1, as_tuple=True)
-    atoms = chi_atoms[rows, columns]
-    values = chi[rows, columns]
-    conformers = conf_inds_for_sampler[rows]
-    del rows, columns
-    types = block_type_ind_for_rot[conformers]
-    offsets = n_dof_atoms_offset_for_rot[conformers]
-    del conformers
-    destinations = _kinforest_device_indices(pbt, pbt.device)[types, atoms]
-    # Both DOF arrays reserve their first row for the virtual root.
-    destinations.add_(offsets).add_(1)
-    del offsets
-    # Ring-closing chi retain their ideal-geometry offset; ordinary chi have
-    # zero offset here and are corrected by coordinate measurement later.
-    corrections = _build_ring_chi_phi_c_corrections(pbt)[types, atoms]
-    # These are fresh gathers, so input samples and static tables stay intact.
-    values.sub_(corrections)
-    rot_dofs_kto[destinations, 3] = values
+    assign_chi_dofs(
+        block_type_ind_for_rot,
+        n_dof_atoms_offset_for_rot,
+        conf_inds_for_sampler,
+        chi_atoms,
+        chi,
+        _kinforest_device_indices(pbt, pbt.device),
+        _build_ring_chi_phi_c_corrections(pbt).to(dtype=chi.dtype),
+        rot_dofs_kto,
+    )

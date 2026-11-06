@@ -21,28 +21,96 @@ struct MainchainDofCopy {
   int sampler;
 };
 
+// Metadata-only row selection also serves devices without a compiled binding.
+// This plan is independent of floating DOFs; the scalar derivative plan below
+// additionally masks nonfinite measurements and must be refreshed per call.
+template <template <typename, int> class View, typename Int>
+struct MainchainDofIndexPlan {
+  View<Int, 1> source_types, source_offsets, target_types, target_offsets;
+  View<Int, 1> source_fingerprint;
+  View<Int, 2> source_atoms;
+  View<Int, 4> target_atoms;
+  View<Int, 2> kinematic_index;
+  int sampler;
+};
+
+struct MainchainDofRows {
+  int64_t source, target;
+};
+template <typename Ctx>
+TMOL_DEVICE_FUNC MainchainDofRows
+mainchain_dof_lookup(Ctx const& c, int index) {
+  int width = c.source_atoms.size(1), row = index / width, atom = index % width;
+  auto source_type = c.source_types[row],
+       fingerprint = c.source_fingerprint[source_type];
+  if (fingerprint < 0) return {-1, -1};
+  auto source_atom = c.source_atoms[source_type][atom],
+       target_type = c.target_types[row];
+  auto target_atom = c.target_atoms[c.sampler][fingerprint][target_type][atom];
+  if (source_atom < 0 || target_atom < 0) return {-1, -1};
+  auto source = c.kinematic_index[source_type][source_atom],
+       target = c.kinematic_index[target_type][target_atom];
+  if (source < 0 || target < 0) return {-1, -1};
+  return {
+      source + c.source_offsets[row] + 1, target + c.target_offsets[row] + 1};
+}
+template <
+    template <Device> class Ops,
+    Device D,
+    typename Context,
+    typename Ctx,
+    typename Indices>
+void launch_mainchain_row_indices(Context& context, Ctx c, Indices indices) {
+  LAUNCH_BOX_128;
+  int n = score::common::checked_dispatch_product(
+      c.source_types.size(0), c.source_atoms.size(1), "mainchain copy atoms");
+  Ops<D>::template forall<launch_t>(
+      context, n, [=] TMOL_DEVICE_FUNC(int index) {
+        auto rows = mainchain_dof_lookup(c, index);
+        indices[0][index] = rows.source;
+        indices[1][index] = rows.target;
+      });
+}
+template <typename Real, typename Ctx>
+TMOL_DEVICE_FUNC bool finite_mainchain_value(
+    Ctx const& c, int64_t source, int dof, Real& value) {
+  if (source < 0) return false;
+  value = c.source_dofs[source][dof];
+  return std::isfinite(value);
+}
 template <typename Real, typename Ctx>
 TMOL_DEVICE_FUNC void copy_mainchain_dof(Ctx const& c, int index) {
-  int const width = c.source_atoms.size(1);
-  int const row = index / width, atom = index % width;
-  auto source_type = c.source_types[row];
-  auto fingerprint = c.source_fingerprint[source_type];
-  if (fingerprint < 0) return;
-  auto source_atom = c.source_atoms[source_type][atom];
-  auto target_type = c.target_types[row];
-  auto target_atom = c.target_atoms[c.sampler][fingerprint][target_type][atom];
-  if (source_atom < 0 || target_atom < 0) return;
-  auto source = c.kinematic_index[source_type][source_atom];
-  auto target = c.kinematic_index[target_type][target_atom];
-  if (source < 0 || target < 0) return;
-  source += c.source_offsets[row] + 1;
-  target += c.target_offsets[row] + 1;
+  auto rows = mainchain_dof_lookup(c, index);
+  if (rows.source < 0) return;
   for (int dof = 0; dof < 9; ++dof) {
-    Real value = c.source_dofs[source][dof];
-    // Missing side chains can leave dependent mainchain hydrogens unresolved.
-    // Preserve the already initialized ideal DOF for each nonfinite component.
-    if (std::isfinite(value)) c.target_dofs[target][dof] = value;
+    Real value;
+    // Missing sidechain-dependent hydrogens preserve the initialized ideal DOF.
+    if (finite_mainchain_value(c, rows.source, dof, value))
+      c.target_dofs[rows.target][dof] = value;
   }
+}
+template <
+    template <Device> class Ops,
+    Device D,
+    typename Real,
+    typename Context,
+    typename Ctx,
+    typename Indices>
+void launch_mainchain_dof_indices(Context& context, Ctx c, Indices indices) {
+  LAUNCH_BOX_128;
+  int n = score::common::checked_dispatch_product(
+      c.source_types.size(0), c.source_atoms.size(1), "mainchain copy atoms");
+  Ops<D>::template forall<launch_t>(
+      context, n, [=] TMOL_DEVICE_FUNC(int index) {
+        auto rows = mainchain_dof_lookup(c, index);
+        for (int dof = 0; dof < 9; ++dof) {
+          Real value;
+          bool finite = finite_mainchain_value(c, rows.source, dof, value);
+          int64_t slot = int64_t(index) * 9 + dof;
+          indices[0][slot] = finite ? rows.source * 9 + dof : -1;
+          indices[1][slot] = finite ? rows.target * 9 + dof : -1;
+        }
+      });
 }
 
 template <

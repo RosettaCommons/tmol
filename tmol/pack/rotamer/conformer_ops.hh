@@ -22,6 +22,10 @@ struct ConformerDofKernels {
   using Correction = ChiDofCorrection<Binder::template View, Real, Int>;
   static void correct(ContextManager&, Correction);
   static void copy(ContextManager&, Copy);
+  using ValueIndices = typename Binder::template View<int64_t, 2>;
+  using MainchainIndices = MainchainDofIndexPlan<Binder::template View, Int>;
+  static void mainchain_rows(ContextManager&, MainchainIndices, ValueIndices);
+  static void mainchain_indices(ContextManager&, Copy, ValueIndices);
   static void assign(ContextManager&, Chi);
 };
 }  // namespace tmol::pack::rotamer

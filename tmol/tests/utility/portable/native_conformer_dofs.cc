@@ -40,6 +40,22 @@ void check() {
       bool copied = (row == 4 || row == 6) && (dof < 4 || dof > 6);
       assert(target[row * 9 + dof] == (copied ? Real(dof) : Real(-7)));
     }
+  int64_t mainchain_indices[72], row_indices[8];
+  launch_mainchain_dof_indices<tmol_test::SerialOps, tmol::Device::CPU, Real>(
+      mgr, c, view(mainchain_indices, {2, 36}));
+  launch_mainchain_row_indices<tmol_test::SerialOps, tmol::Device::CPU>(
+      mgr, c, view(row_indices, {2, 4}));
+  for (int row = 0; row < 4; ++row) {
+    assert(row_indices[row] == (row % 2 == 0 ? 2 : -1));
+    assert(row_indices[4 + row] == (row % 2 == 0 ? 4 + row : -1));
+    for (int dof = 0; dof < 9; ++dof) {
+      bool copied = row % 2 == 0 && (dof < 4 || dof > 6);
+      int slot = row * 9 + dof;
+      assert(mainchain_indices[slot] == (copied ? 18 + dof : -1));
+      assert(
+          mainchain_indices[36 + slot] == (copied ? (4 + row) * 9 + dof : -1));
+    }
+  }
   Int conformers[] = {1, 0};
   int32_t atoms[] = {1, -1, 0, 1};
   Real chi[] = {
