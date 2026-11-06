@@ -145,8 +145,15 @@ def test_canonical_input_retains_molecular_state(backend, case):
         for p, row in enumerate(CASES[case].sequences)
     ] == expected_names
     channels, gradient = b.channel_values_and_gradients(b.coords())
-    np.testing.assert_array_equal(channels, expected_channels)
-    np.testing.assert_array_equal(gradient, expected_gradient)
+    if b.requested_device == "cpu":
+        np.testing.assert_array_equal(channels, expected_channels)
+        np.testing.assert_array_equal(gradient, expected_gradient)
+    else:
+        # Native CUDA electrostatics uses atomic reductions: unchanged repeated
+        # evaluations also differ. Retain the shared molecular scoring bound;
+        # coordinates, atom/type identities and topology above stay exact.
+        np.testing.assert_allclose(channels, expected_channels, rtol=3e-5, atol=3e-5)
+        np.testing.assert_allclose(gradient, expected_gradient, rtol=3e-5, atol=3e-5)
     assert np.isfinite(gradient).all() and np.linalg.norm(gradient) > 0
     assert np.any(channels != 0)
     if case in ("ligand", "connected_noncanonical", "mixed_batch"):
