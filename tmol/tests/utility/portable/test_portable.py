@@ -312,3 +312,10 @@ def test_native_interaction_graph_without_torch(tmp_path):
         HERE / "native_interaction_graph.cc", tmp_path / "interaction_graph", run=True
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_native_graph_retention_without_torch(tmp_path):
+    proc = _compile(
+        HERE / "native_graph_retention.cc", tmp_path / "graph_retention", run=True
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
