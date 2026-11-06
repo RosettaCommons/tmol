@@ -54,6 +54,18 @@ def test_conformer_assembly_without_fallback_preserves_empty_selection(platform)
     assert result.coords.shape == (0, 3) and result.n_rotamers_total == 0
     np.testing.assert_array_equal(result.n_rots_for_block, 0)
     np.testing.assert_array_equal(result.first_rot_block_type, -1)
+    from tmol_jax.pack.bonded_scoring import (
+        prepare_rotamer_genbonded,
+        sparse_genbonded_scores,
+    )
+
+    state = prepare_rotamer_genbonded(backend.pose, result, backend.parameter_database)
+    values, indices = sparse_genbonded_scores(result.coords, state)
+    assert values.shape == (1, 0) and indices.shape == (3, 0)
+    gradient = jax.grad(lambda x: sparse_genbonded_scores(x, state)[0].sum())(
+        result.coords
+    )
+    assert gradient.shape == (0, 3)
 
 
 def test_conformer_assembly_rejects_unknown_sampler_science():
