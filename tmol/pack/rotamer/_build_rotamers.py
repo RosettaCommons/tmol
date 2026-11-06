@@ -495,10 +495,11 @@ def _merge_conformer_samples(
     list[Tensor[torch.bool][:]],
     list[Tensor[torch.int64][:]],
 ]:
-    """Execute a shared count/prefix plan without copying GPU source rows."""
+    """Execute common ordering policies with host or device-native arrays."""
     from tmol_core.pack.conformer_merge import (
         prepare_conformer_merge,
-        prepare_conformer_merge_counts,
+        conformer_merge_prefixes,
+        validate_conformer_counts,
         conformer_rows_are_ordered,
         conformer_destinations,
     )
@@ -526,25 +527,29 @@ def _merge_conformer_samples(
         destinations = [torch.from_numpy(value) for value in plan.destinations]
     else:
         counts = torch.stack([sample[0] for sample in conformer_samples])
-        plan = prepare_conformer_merge_counts(
-            counts.cpu().numpy(), [sample[1].numel() for sample in conformer_samples]
-        )
-        intervals = torch.as_tensor(plan.intervals, device=device)
-        offsets = torch.as_tensor(plan.offsets, device=device)
+        sizes = [sample[1].numel() for sample in conformer_samples]
+        total = validate_conformer_counts([], sizes, counts.shape[1])
+        wide = counts.long()
+        merged, ends, offsets = conformer_merge_prefixes(wide)
         choices = torch.arange(counts.shape[1], device=device)
         valid = [
-            conformer_rows_are_ordered(
-                sample[1], *intervals[:, i].unbind(0), counts[i] > 0, choices
-            )
+            conformer_rows_are_ordered(sample[1], wide[i], ends[i], choices)
             for i, sample in enumerate(conformer_samples)
         ]
-        if not bool(torch.stack(valid).all()):
-            raise ValueError("Conformer source rows do not match ordered sample counts")
+        totals = wide.sum(1)
+        minima, maxima = (
+            (wide.amin(1), wide.amax(1)) if counts.shape[1] else (totals, totals)
+        )
+        validate_conformer_counts(
+            torch.stack((totals, minima, maxima, torch.stack(valid)), 1).tolist(),
+            sizes,
+            counts.shape[1],
+        )
         index_dtype = conformer_samples[0][1].dtype
         for sample in conformer_samples[1:]:
             index_dtype = torch.promote_types(index_dtype, sample[1].dtype)
-        samplers = torch.empty(plan.total, dtype=torch.int64, device=device)
-        considered = torch.empty(plan.total, dtype=index_dtype, device=device)
+        samplers = torch.empty(total, dtype=torch.int64, device=device)
+        considered = torch.empty(total, dtype=index_dtype, device=device)
         destinations = []
         for i, sample in enumerate(conformer_samples):
             indices = sample[1].long()
@@ -554,7 +559,7 @@ def _merge_conformer_samples(
             samplers[destination] = i
             considered[destination] = indices.to(index_dtype)
             destinations.append(destination)
-        counts = torch.as_tensor(plan.counts, device=device)
+        counts = merged.to(counts.dtype)
     return (
         counts,
         samplers,
@@ -636,28 +641,25 @@ def _get_rotamer_origin_data(
 ]:
     from tmol_core.pack.conformer_merge import (
         prepare_conformer_origins,
-        conformer_origin_counts,
+        conformer_origin_prefixes,
     )
 
     shape = task.per_block_orig_block_type.shape
-    poses, blocks = task.cons_bt_pose.cpu().numpy(), task.cons_bt_block.cpu().numpy()
     device = gbt_for_rot.device
     if device.type == "cpu":
         return tuple(
             torch.from_numpy(value)
             for value in prepare_conformer_origins(
-                shape, poses, blocks, gbt_for_rot.numpy()
+                shape,
+                task.cons_bt_pose.numpy(),
+                task.cons_bt_block.numpy(),
+                gbt_for_rot.numpy(),
             )
         )
-    counts = torch.bincount(gbt_for_rot.long(), minlength=len(poses)).cpu().numpy()
-    return (
-        *(
-            torch.as_tensor(value, device=device)
-            for value in conformer_origin_counts(shape, poses, blocks, counts)
-        ),
-        task.cons_bt_pose[gbt_for_rot.long()].long(),
-        task.cons_bt_block[gbt_for_rot.long()].int(),
-    )
+    poses = task.cons_bt_pose[gbt_for_rot.long()].long()
+    blocks = task.cons_bt_block[gbt_for_rot.long()].int()
+    counts = torch.bincount(poses * shape[1] + blocks, minlength=shape[0] * shape[1])
+    return (*conformer_origin_prefixes(counts, shape), poses, blocks)
 
 
 def _correlated_groups_for_samples(task, samples):

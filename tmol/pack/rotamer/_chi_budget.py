@@ -71,17 +71,32 @@ def _checked_sample_count(counts, expanded_limit, limit):
 
 
 def _check_task_sample_budget(task, samples):
-    """Bound combined sampler/type rows through the common host policy."""
-    from tmol_core.pack.conformer_merge import check_task_sample_budget
+    """Bound combined sampler/type rows through the common budget policy."""
+    from tmol_core.pack.conformer_merge import (
+        check_task_sample_budget,
+        validate_task_sample_budget,
+    )
     import numpy
+    import torch
 
     budget = getattr(task, "chi_sample_budget", None)
-    if budget is None or not all(task.per_block_orig_block_type.shape):
+    shape = task.per_block_orig_block_type.shape
+    if budget is None or not all(shape):
         return
-    check_task_sample_budget(
-        task.per_block_orig_block_type.shape,
-        task.cons_bt_pose.cpu().numpy(),
-        task.cons_bt_block.cpu().numpy(),
-        numpy.stack([sample[0].cpu().numpy() for sample in samples]),
-        budget,
+    if samples[0][0].device.type == "cpu":
+        check_task_sample_budget(
+            shape,
+            task.cons_bt_pose.numpy(),
+            task.cons_bt_block.numpy(),
+            numpy.stack([sample[0].numpy() for sample in samples]),
+            budget,
+        )
+        return
+    counts = torch.stack([sample[0].long() for sample in samples]).sum(0)
+    per_block = torch.zeros(
+        shape[0] * shape[1], dtype=torch.int64, device=counts.device
     )
+    per_block.index_add_(0, task.cons_bt_pose * shape[1] + task.cons_bt_block, counts)
+    largest, index = per_block.max(0)
+    largest, index = torch.stack((largest, index)).tolist()
+    validate_task_sample_budget(largest, index, shape, budget)
