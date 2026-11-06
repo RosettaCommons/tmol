@@ -72,3 +72,18 @@ def test_unknown_input_atom_is_not_silently_dropped():
     lines[first] = lines[first][:12] + " ZZ " + lines[first][16:]
     with pytest.raises(ValueError, match="atom ZZ"):
         canonical_form_from_pdb("\n".join(lines))
+
+
+@pytest.mark.parametrize(
+    "option,value",
+    (
+        ("ligand_hydrogens", "names"),
+        ("find_additional_metal_coordination", True),
+        ("protonation_variants", np.zeros((1, 3), np.int32)),
+    ),
+)
+def test_unimplemented_input_inference_is_explicit(option, value):
+    canonical = _three_residues()
+    canonical[option] = value
+    with pytest.raises(NotImplementedError):
+        pose_stack_from_canonical_form(canonical, default_packed_block_types())

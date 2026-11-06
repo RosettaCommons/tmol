@@ -45,6 +45,7 @@ def pose_stack_from_residue_blocks(
     connections=None,
     return_context=False,
     build_missing_leaf_atoms=False,
+    build_missing_context=False,
 ):
     """Build a heterogeneous batch of fully specified residue blocks.
 
@@ -60,6 +61,8 @@ def pose_stack_from_residue_blocks(
     native construction frames. Observed coordinates remain exact. Unknown or
     duplicate atom names and missing non-leaf atoms still raise; this does not
     perform general missing-heavy-atom or ligand generation.
+    Set ``build_missing_context=True`` to also build anchored missing heavy atoms
+    with the shared context planner; unanchored or unavailable frames still raise.
     """
     if context is not None and parameter_database is not None:
         raise ValueError("pass either context or parameter_database")
@@ -82,9 +85,10 @@ def pose_stack_from_residue_blocks(
             PackedBlockTypes.from_restypes(parameter_database.chemical, types),
         )
     pbt = context.packed_block_types
+    complete_missing = build_missing_leaf_atoms or build_missing_context
     type_indices = {rt.name: i for i, rt in enumerate(pbt.active_block_types)}
     rows, coordinates, availability = [], [], []
-    if build_missing_leaf_atoms:
+    if complete_missing:
         from tmol_core.io.missing_atoms import prepare_leaf_atom_flags
 
         leaves = prepare_leaf_atom_flags(
@@ -106,7 +110,7 @@ def pose_stack_from_residue_blocks(
             if (
                 len(set(names)) != len(names)
                 or extra_names
-                or (missing_names and not build_missing_leaf_atoms)
+                or (missing_names and not complete_missing)
             ):
                 raise ValueError(
                     f"atoms must match {block.residue_type} exactly; "
@@ -120,10 +124,10 @@ def pose_stack_from_residue_blocks(
                     "block coordinates must be finite with shape [atoms, 3]"
                 )
             indices = {name: i for i, name in enumerate(names)}
-            if build_missing_leaf_atoms:
+            if complete_missing:
                 present = np.array([name in indices for name in expected], bool)
                 nonleaf = ~present & ~leaves[kind, : len(expected)]
-                if nonleaf.any():
+                if nonleaf.any() and not build_missing_context:
                     raise ValueError(
                         f"missing non-leaf atoms on {block.residue_type}: "
                         + ", ".join(np.asarray(expected)[nonleaf])
@@ -148,8 +152,10 @@ def pose_stack_from_residue_blocks(
         [list(range(1, len(p) + 1)) for p in blocks],
         connections_per_pose=[()] * len(blocks) if connections is None else connections,
     )
-    if build_missing_leaf_atoms:
+    if complete_missing:
         from ._missing import complete_missing_atoms
 
-        pose = complete_missing_atoms(pose, availability)
+        pose = complete_missing_atoms(
+            pose, availability, build_context=build_missing_context
+        )
     return (pose, context) if return_context else pose

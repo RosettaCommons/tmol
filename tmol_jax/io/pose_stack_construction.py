@@ -86,14 +86,14 @@ def _canonical_rows(value, shape, default, name):
     return array
 
 
-def _map_residue_atoms(residue, source, present, mapping, leaf):
+def _map_residue_atoms(residue, source, present, mapping, leaf, allow_nonleaf=False):
     mapping = mapping[: residue.n_atoms]
     valid = (mapping >= 0) & (mapping < source.shape[0])
     safe = np.where(valid, mapping, 0)
     available = valid & present[safe]
     coords = np.where(available[:, None], source[safe], 0)
     missing = ~available & ~leaf[: residue.n_atoms]
-    if missing.any():
+    if missing.any() and not allow_nonleaf:
         atoms = ", ".join(
             residue.atoms[index].name for index in np.flatnonzero(missing)
         )
@@ -156,12 +156,14 @@ def pose_stack_from_canonical_form(
     res_num=None,
     *,
     compact_padding=False,
+    build_missing_context=False,
 ):
     """Select chemical variants and build a pose from canonical atom identities.
 
     The palette and canonical ordering may describe noncanonical polymers,
     ligands and mixed batches. Missing leaf atoms use shared construction frames;
-    missing non-leaf atoms currently raise. Explicit disulfides, cycles and
+    missing non-leaf atoms raise unless ``build_missing_context=True`` selects
+    the shared anchored context reconstruction. Explicit disulfides, cycles and
     prepared covalent connections use common chemistry and port validation.
 
     ``res_not_connected`` retains the JAX input convention of a terminated chain
@@ -273,6 +275,7 @@ def pose_stack_from_canonical_form(
                 present[p, r],
                 prepared.bt_canonical_atom_ind_map[kind],
                 leaves[kind],
+                allow_nonleaf=build_missing_context,
             )
             for r, kind in zip(indices, kinds)
         ]
@@ -299,7 +302,7 @@ def pose_stack_from_canonical_form(
         residue_names,
         _connection_table=table,
     )
-    result = complete_missing_atoms(result, masks)
+    result = complete_missing_atoms(result, masks, build_context=build_missing_context)
     return result.replace(pdb_info=attrs.evolve(result.pdb_info, chain_id=authors))
 
 

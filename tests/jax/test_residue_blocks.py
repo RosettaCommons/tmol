@@ -244,3 +244,33 @@ def test_explicit_missing_leaf_input_preserves_chemistry_and_observations(
                 connections=case.connections(),
                 build_missing_leaf_atoms=True,
             )
+        # The separate opt-in uses common context placement before leaf frames.
+        recovered = pose_stack_from_residue_blocks(
+            invalid,
+            context=context,
+            connections=case.connections(),
+            build_missing_context=True,
+        )
+        assert np.isfinite(np.asarray(recovered.coords)).all()
+        for p, row in enumerate(invalid):
+            for r, block in enumerate(row):
+                residue = recovered.block_type(p, r)
+                offset = int(recovered.block_coord_offset[p, r])
+                indices = [
+                    offset + residue.atom_to_idx[name] for name in block.atom_names
+                ]
+                np.testing.assert_array_equal(
+                    recovered.coords[p, indices], block.coords
+                )
+        b.pose = recovered.to(b.device)
+        energy, gradient = b.value_and_grad(b.coords())
+        assert np.isfinite(energy).all() and np.isfinite(gradient).all()
+        assert np.any(energy != 0) and np.linalg.norm(gradient) > 0
+        if case_name == "ligand":
+            empty = [
+                [ResidueBlock(complete[0][0].residue_type, (), np.empty((0, 3), dtype))]
+            ]
+            with pytest.raises(ValueError, match="could not be reconstructed"):
+                pose_stack_from_residue_blocks(
+                    empty, context=context, build_missing_context=True
+                )

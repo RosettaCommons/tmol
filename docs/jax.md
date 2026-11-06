@@ -302,11 +302,11 @@ matching the Torch canonical-input contract. Input preparation runs on the host;
 the individual native decision stages support `jit` and `vmap`.
 
 The default PDB/Biotite palette still contains canonical proteins. General metal
-geometry/donor inference, protonation-state inference, context-heavy completion,
+geometry/donor inference, protonation-state inference,
 and generated-hydrogen rebuilding remain unfinished. This loader preserves
 supplied hydrogen coordinates; comparisons to Torch must request its matching
-`ligand_hydrogens="input"` policy. Missing non-leaf atoms and unsupported declared
-inference options raise. Use exact residue blocks for prepared metal states.
+`ligand_hydrogens="input"` policy. Missing non-leaf atoms raise unless `build_missing_context=True` enables
+the shared context planner. Unsupported declared inference options raise. Use exact residue blocks for prepared metal states.
 `res_not_connected` retains the JAX terminated-break convention; `res_gap`
 suppresses bonds without forcing terminal variants.
 
@@ -316,7 +316,13 @@ named connection ports. Full residue names include variants; by default every at
 present exactly once. Set `build_missing_leaf_atoms=True` to reconstruct omitted
 leaf atoms from common chemical frames and native geometry. Observed atoms remain
 exact; missing non-leaf atoms and unavailable frames raise. This option does not
-generate ligands or infer bonds. The loader preserves atom identity and floating precision,
+generate ligands or infer bonds. `build_missing_context=True` additionally builds
+anchored missing heavy atoms using common geometry and clash-selected rotations,
+then completes leaf atoms. Observed atoms stay exact; unanchored components raise.
+Context choices run on the host and receive the actual executed coordinates
+between build waves. The fixed placement plan supports JAX `jit`, `vmap` and
+first coordinate derivatives; this does not make discrete input planning differentiable.
+The loader preserves atom identity and floating precision,
 and does not infer bonds or change chemistry. `return_context=True` returns the
 pose and a context whose `parameter_database` must be used for scoring. Molecular
 input support does not imply complete scoring support: see the current

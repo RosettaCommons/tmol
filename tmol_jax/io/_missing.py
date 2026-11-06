@@ -3,7 +3,7 @@
 import numpy as np
 
 
-def complete_missing_atoms(pose, available):
+def complete_missing_atoms(pose, available, *, build_context=False):
     """Arrange missing masks and execute the shared chemical reconstruction."""
     import jax
     from tmol_core.chemical.packed import PackedBlockTypesData
@@ -21,6 +21,18 @@ def complete_missing_atoms(pose, available):
             missing[p, r, : len(mask)] = ~mask
             start = offsets[p, r]
             flat_missing[p, start : start + len(mask)] = ~mask
+    if build_context:
+        from ._context import prepare_context_completion
+
+        coords, built, _ = prepare_context_completion(pose, flat_missing, flat_missing)
+        pose = pose.replace(coords=coords)
+        flat_missing &= ~built
+        for p, row in enumerate(available):
+            for r, mask in enumerate(row):
+                start = offsets[p, r]
+                missing[p, r, : len(mask)] &= ~built[p, start : start + len(mask)]
+        if not flat_missing.any():
+            return pose
     info = prepare_leaf_icoor_metadata(
         pbt.active_block_types, np.asarray(pbt.atom_is_hydrogen), pbt.max_n_atoms
     )

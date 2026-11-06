@@ -97,6 +97,14 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
         dslf,
     ), conjugations = _execution_metadata(pbt, prepared)
     real = types >= 0
+    if cf.get("find_additional_metal_coordination", False):
+        raise NotImplementedError(
+            "automatic canonical metal coordination is not implemented"
+        )
+    if cf.get("ligand_hydrogens", "input") != "input":
+        raise NotImplementedError(
+            "canonical generated-hydrogen rebuilding is not implemented"
+        )
     for name in ("metal_sites", "metal_coordination", "protonation_variants"):
         if cf.get(name) is not None:
             raise NotImplementedError(
