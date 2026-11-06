@@ -548,3 +548,39 @@ def test_bump_threshold_retains_available_conformers(torch_device, energies):
     assert graph[8].tolist() == [0, 1]
     assert graph[4].tolist() == [[2]]
     torch.testing.assert_close(graph[10], torch.tensor(energies, device=torch_device))
+
+
+@pytest.mark.parametrize("fixed", [False, True])
+def test_bump_bounds_preserve_holes_and_fixed_sources(torch_device, fixed):
+    metadata = graph_metadata([[3, 2, 0], [0, 0, 0]], torch_device)
+    rows = [(0, i, i) for i in range(5)]
+    rows += [(0, a, b) for a in range(3) for b in (3, 4)]
+    rows.append((0, 0, 3))  # duplicate contributes to the same pair
+    values = [1, 8, 9 if fixed else 2, 3, 4, 1, 5, 4, 1, 0, 3, 1]
+    graph = _build_interaction_graph(
+        True,
+        2,
+        1,
+        *metadata,
+        torch.tensor(rows, dtype=torch.int32, device=torch_device).T.contiguous(),
+        torch.tensor(values, dtype=torch.float64, device=torch_device),
+        11,
+        False,
+    )
+    if fixed:
+        assert graph[8].tolist() == [3, 4]
+        assert graph[7][0, 0].item() == 0
+        torch.testing.assert_close(
+            graph[9], torch.tensor([1, 0], dtype=torch.float64, device=torch_device)
+        )
+        torch.testing.assert_close(
+            graph[10], torch.tensor([5, 9], dtype=torch.float64, device=torch_device)
+        )
+    else:
+        assert graph[8].tolist() == [0, 2, 3, 4]
+        torch.testing.assert_close(
+            graph[10],
+            torch.tensor([1, 2, 3, 4], dtype=torch.float64, device=torch_device),
+        )
+        assert sorted(graph[15].tolist()) == [0, 0, 2, 2, 3, 3, 5, 5]
+    assert graph[3][1].item() == len(graph[8])
