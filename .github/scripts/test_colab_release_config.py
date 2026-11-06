@@ -130,6 +130,17 @@ def _tutorial_notebooks() -> list[Path]:
     return notebooks
 
 
+def test_tutorial_notebooks_do_not_commit_execution_artifacts():
+    for path in _tutorial_notebooks():
+        notebook = json.loads(path.read_text(encoding="utf-8"))
+        for cell in notebook["cells"]:
+            if cell["cell_type"] != "code":
+                continue
+            assert cell["outputs"] == [], (path.name, cell.get("id"))
+            assert cell["execution_count"] is None, (path.name, cell.get("id"))
+            assert "execution" not in cell["metadata"], (path.name, cell.get("id"))
+
+
 def _notebook_code(path: Path) -> str:
     notebook = json.loads(path.read_text(encoding="utf-8"))
     return "\n".join(
