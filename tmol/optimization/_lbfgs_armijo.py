@@ -1,7 +1,4 @@
 from contextlib import nullcontext
-from math import isfinite
-from numbers import Integral, Real
-from types import SimpleNamespace
 from typing import Any
 
 import torch
@@ -10,6 +7,11 @@ from torch.optim import Optimizer
 from tmol_core.optimization.armijo import armijo_linesearch_segmented
 from tmol_core.optimization.lbfgs import compact_lbfgs_direction
 from tmol_core.optimization.segmented import SegmentedLBFGSPolicy
+from tmol_core.optimization.setup import (
+    LBFGS_DEFAULTS,
+    migrate_settings,
+    validate_settings,
+)
 
 from tmol.optimization._armijo_compiled import (
     _armijo_classify,
@@ -225,19 +227,19 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
     def __init__(
         self,
         params,
-        lr=1,
-        max_iter=200,
-        rtol=None,
-        atol=1e-2,
-        gradtol=None,
-        history_size=128,
-        minstep=1e-12,
-        verbose=False,
+        lr=LBFGS_DEFAULTS["lr"],
+        max_iter=LBFGS_DEFAULTS["max_iter"],
+        rtol=LBFGS_DEFAULTS["rtol"],
+        atol=LBFGS_DEFAULTS["atol"],
+        gradtol=LBFGS_DEFAULTS["gradtol"],
+        history_size=LBFGS_DEFAULTS["history_size"],
+        minstep=LBFGS_DEFAULTS["minstep"],
+        verbose=LBFGS_DEFAULTS["verbose"],
         segment_ids=None,
-        fixed_iterations=False,
+        fixed_iterations=LBFGS_DEFAULTS["fixed_iterations"],
         *,
-        patience=5,
-        value_only_line_search: bool = False,
+        patience=LBFGS_DEFAULTS["patience"],
+        value_only_line_search: bool = LBFGS_DEFAULTS["value_only_line_search"],
     ):
         defaults = dict(
             lr=lr,
@@ -252,19 +254,7 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
         super(LBFGS_Armijo, self).__init__(params, defaults)
 
         group = self.param_groups[0]
-        patience = group["patience"]
-        if (
-            isinstance(patience, bool)
-            or not isinstance(patience, Integral)
-            or patience < 1
-        ):
-            raise ValueError("patience must be a positive integer")
-        for name in ("rtol", "atol", "gradtol"):
-            value = group[name]
-            if value is not None and (
-                not isinstance(value, Real) or not isfinite(value) or value < 0
-            ):
-                raise ValueError(f"{name} must be None or a finite nonnegative number")
+        validate_settings(group, value_only_line_search)
 
         if len(self.param_groups) != 1:
             raise ValueError(
@@ -274,8 +264,6 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
         self._params = self.param_groups[0]["params"]
         self._minstep = minstep
         self.verbose = verbose
-        if not isinstance(value_only_line_search, bool):
-            raise TypeError("value_only_line_search must be bool")
         self.value_only_line_search = value_only_line_search
 
         self._last_loss_vec = None
@@ -292,14 +280,7 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
     def __setstate__(self, state):
         super().__setstate__(state)
         group = self.param_groups[0]
-        if "patience" not in group:
-            # Older checkpoints stopped after one small step and used dtype
-            # tolerances for None; new checkpoints use None to disable them.
-            group["patience"] = 1
-            tolerance = float(torch.finfo(group["params"][0].dtype).eps ** 0.5)
-            for name in ("rtol", "atol"):
-                if group[name] is None:
-                    group[name] = tolerance
+        migrate_settings(group, float(torch.finfo(group["params"][0].dtype).eps ** 0.5))
 
     def reset(self) -> None:
         """Reset trajectory state while retaining shape-compatible scratch.
@@ -331,58 +312,40 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
         self._last_loss_vec = None
 
     def _init_segments(self, segment_ids):
-        """Set up the mapping from parameter elements to independent blocks.
-
-        Builds the index that scatters a parameter-shaped vector into a dense
-        (n_segments, segment_size) layout, so all per-segment reductions are
-        batched tensor ops rather than a loop over segments.
-        """
         assert len(self._params) == 1, "segment_ids requires a single tensor"
-        param = self._params[0]
-        segment_ids = segment_ids.reshape(-1).to(torch.int64)
-        assert (
-            segment_ids.numel() == param.numel()
-        ), "segment_ids needs one entry per parameter element"
-        assert bool((segment_ids >= 0).all()), "segment_ids must be non-negative"
+        super()._init_segments(segment_ids)
 
-        n_segments = int(segment_ids.max().item()) + 1
-        if n_segments == 1:
-            self._segment_ids = segment_ids
-            self._n_segments = 1
-            self._segment_size = segment_ids.numel()
-            self._segments_are_dense = True
-            self._pad_index = None
-            return
+    _parameter_size = staticmethod(torch.Tensor.numel)
 
-        counts = torch.bincount(segment_ids, minlength=n_segments)
-        assert bool((counts > 0).all()), "segment_ids must not skip a segment"
-        segment_size = int(counts.max().item())
+    @staticmethod
+    def _segment_vector(segment_ids):
+        return segment_ids.reshape(-1).to(torch.int64)
 
-        # Avoid sorting the overwhelmingly common dense layout: one pose, or
-        # equal-sized poses stored contiguously. Dense reductions only reshape
-        # the parameter vector and never consult ``_pad_index``.
-        segments_are_dense = False
-        if bool((counts == segment_size).all()):
-            expected = torch.arange(n_segments, device=segment_ids.device)
-            expected = expected.repeat_interleave(segment_size)
-            segments_are_dense = torch.equal(segment_ids, expected)
+    @staticmethod
+    def _all_true(value):
+        return bool(value.all())
 
-        self._segment_ids = segment_ids
-        self._n_segments = n_segments
-        self._segment_size = segment_size
-        self._segments_are_dense = segments_are_dense
-        if segments_are_dense:
-            self._pad_index = None
-            return
+    @staticmethod
+    def _max_index(value):
+        return int(value.max().item())
 
-        # rank of each element within its own segment
+    @staticmethod
+    def _segment_counts(segment_ids, n_segments):
+        return torch.bincount(segment_ids, minlength=n_segments)
+
+    @staticmethod
+    def _dense_segment_order(segment_ids, n_segments, segment_size):
+        expected = torch.arange(n_segments, device=segment_ids.device)
+        return torch.equal(segment_ids, expected.repeat_interleave(segment_size))
+
+    @staticmethod
+    def _segment_ranks(segment_ids, counts):
         order = torch.argsort(segment_ids, stable=True)
         offsets = torch.cumsum(counts, 0) - counts
         rank = torch.empty_like(order)
         arange = torch.arange(segment_ids.numel(), device=order.device)
         rank[order] = arange - offsets[segment_ids[order]]
-
-        self._pad_index = segment_ids * segment_size + rank
+        return rank
 
     def _seg_sum(self, values):
         """Sum a parameter-shaped vector within each segment."""
@@ -467,154 +430,37 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
 
         return wrapped
 
-    def _step_setup(self, closure):
-        """Prepare for L-BFGS:
-        read config
-        initialize state (history buffers, x_ref, preallocate d and x_backup)
-        evaluate initial loss and gradient
-        returns a SimpleNamespace ctx"""
-        # lbfgs only works w/ single parameter group
+    def _setup_group(self):
         assert len(self.param_groups) == 1
         assert len(self._params) == 1, "This version requires single tensor"
+        return self.param_groups[0]
 
-        group = self.param_groups[0]
-        lr = group["lr"]
-        max_iter = group["max_iter"]
-        rtol = group["rtol"]
-        atol = group["atol"]
-        patience = group["patience"]
-        gradtol = group["gradtol"]
-        history_size = group["history_size"]
-        fixed_iterations = group["fixed_iterations"]
-        # At most one curvature pair is created after each iteration beyond
-        # the first. Short protocols should not allocate the default 128 slots.
-        history_size = min(history_size, max(1, max_iter - 1))
+    def _setup_parameter(self):
+        return self._params[0]
 
-        # tolerances below sqrt(eps) of the parameter dtype cannot be resolved
-        #   float32 : eps~3.45e-4
-        #   float64 : eps~1.49e-8
-        dtype_based_tol = float(torch.finfo(self._params[0].dtype).eps ** 0.5)
-        if rtol is not None and 0 < rtol < dtype_based_tol:
-            print(f"  WARNING: rtol ({rtol}) is too low for dtype! ({dtype_based_tol})")
-        if atol is not None and 0 < atol < dtype_based_tol:
-            print(f"  WARNING: atol ({atol}) is too low for dtype! ({dtype_based_tol})")
+    def _setup_state(self, param):
+        return self.state[param]
 
-        param = self._params[0]
+    def _dtype_tolerance(self):
+        return float(torch.finfo(self._params[0].dtype).eps ** 0.5)
 
-        # NOTE: LBFGS has only global state, but we register it as state for
-        # the first param, because this helps with casting in load_state_dict
-        state = self.state[param]
-        state.setdefault("func_evals", 0)
-        state.setdefault("n_iter", 0)
+    @staticmethod
+    def _setup_vectors(param):
+        return param.data.view(-1), param.grad.data.view(-1)
 
-        # evaluate initial f(x)
-        orig_loss = closure()
-        # The optimizer uses the per-segment tensor below for all line-search
-        # and convergence decisions. Materializing a Python scalar here forces
-        # a device synchronization and is only useful for verbose reporting.
-        loss = float(orig_loss.detach()) if self.verbose else None
-        loss_vec = self._last_loss_vec
-        state["func_evals"] += 1
+    _empty_like = staticmethod(torch.empty_like)
 
-        x = param.data.view(-1)
-        flat_grad = param.grad.data.view(-1)
+    @staticmethod
+    def _allocate(shape, reference, kind, *, zero):
+        dtype = {"real": reference.dtype, "bool": torch.bool, "index": torch.int64}[
+            kind
+        ]
+        allocate = torch.zeros if zero else torch.empty
+        return allocate(shape, dtype=dtype, device=reference.device)
 
-        # Preallocate on first call. `d` and `x_backup` must have stable
-        # tensor identity so linefn (defined once in step) can capture them.
-        L = x.numel()
-        if state.get("d") is None:
-            state["d"] = torch.empty_like(x)
-            state["x_backup"] = torch.empty_like(x)
-            if self._segment_ids is None:
-                hist_shape = (history_size, L)
-            else:
-                hist_shape = (history_size, self._n_segments, self._segment_size)
-                if not self._segments_are_dense:
-                    state["grad_pad"] = torch.zeros(
-                        hist_shape[1:], device=x.device, dtype=x.dtype
-                    )
-            # Only ``history_count`` written slots are consumed. Non-dense
-            # segmented writes explicitly zero their own padding.
-            state["old_dirs_mat"] = torch.empty(
-                hist_shape, device=x.device, dtype=x.dtype
-            )
-            state["old_stps_mat"] = torch.empty(
-                hist_shape, device=x.device, dtype=x.dtype
-            )
-            state["history_start"] = 0  # Circular buffer start index
-            state["history_count"] = 0  # Number of items in history
-            state["x_ref"] = x.clone()  # reference position for s computation
-            flags = dict(dtype=torch.bool, device=x.device)
-            # stationary segments; segments that gave up; segments owed a
-            # steepest-descent restart after a failed line search
-            state["converged"] = torch.zeros(self._n_segments, **flags)
-            state["stalled"] = torch.zeros(self._n_segments, **flags)
-            state["needs_reset"] = torch.zeros(self._n_segments, **flags)
-            state["was_reset"] = torch.zeros(self._n_segments, **flags)
-            state["any_was_reset"] = False
-        # consecutive small iterations per segment; old state dictionaries lack it
-        if state.get("small_steps") is None:
-            state["small_steps"] = torch.zeros(
-                self._n_segments, dtype=torch.int64, device=x.device
-            )
-
-        # State loading casts tensor masks to the parameter's floating dtype.
-        for key in ("converged", "stalled", "needs_reset", "was_reset"):
-            state[key] = state[key].bool()
-        state["small_steps"] = state["small_steps"].long()
-
-        return SimpleNamespace(
-            # Keep the wrapped closure local to this step. Storing it on the
-            # optimizer creates a cycle through the wrapper's self reference.
-            closure=closure,
-            # config
-            max_iter=max_iter,
-            lr=lr,
-            rtol=rtol,
-            atol=atol,
-            patience=patience,
-            gradtol=gradtol,
-            history_size=history_size,
-            fixed_iterations=fixed_iterations,
-            # torch / state
-            state=state,
-            param=param,
-            x=x,
-            flat_grad=flat_grad,
-            # preallocated scratch (stable refs captured by linefn)
-            d=state["d"],
-            x_backup=state["x_backup"],
-            # cached across steps
-            t=state.get("t"),
-            prev_flat_grad=state.get("prev_flat_grad"),
-            prev_loss_vec=state.get("prev_loss_vec"),
-            # history
-            old_dirs_mat=state["old_dirs_mat"],
-            old_stps_mat=state["old_stps_mat"],
-            history_start=state["history_start"],
-            history_count=state["history_count"],
-            x_ref=state["x_ref"],
-            converged=state["converged"],
-            stalled=state["stalled"],
-            needs_reset=state["needs_reset"],
-            was_reset=state["was_reset"],
-            small_steps=state["small_steps"],
-            # Host mirrors of predicates already synchronized in the previous
-            # iteration. Reusing them avoids repeating identical device-to-host
-            # checks at the start of the next iteration.
-            any_needs_reset=state.get("any_needs_reset", False),
-            # Old state dictionaries lack this host mirror. Clear their mask
-            # once conservatively instead of trusting its contents.
-            any_was_reset=state.get("any_was_reset", "was_reset" in state),
-            any_inactive=state.get("any_inactive", False),
-            gtd_seg=None,
-            # current eval
-            orig_loss=orig_loss,
-            loss=loss,
-            loss_vec=loss_vec,
-            # line-search accounting
-            ls_evals=0,
-        )
+    @staticmethod
+    def _state_cast(value, kind):
+        return value.bool() if kind == "bool" else value.long()
 
     # Storage and execution hooks for the shared scientific policy.
     _copy = staticmethod(torch.Tensor.copy_)
