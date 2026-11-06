@@ -1,5 +1,6 @@
 import torch
 import attr
+from tmol_core.pack.conformer_policy import include_current_mask
 
 from typing import Tuple
 
@@ -50,18 +51,12 @@ class IncludeCurrentSampler(ConformerSampler):
         ), "This sampler is not in the PackerTask's conformer samplers"
         self_ind_in_packer_task = task.conformer_sampler_index[id(self)]
 
-        is_gbt_allowed_and_buildable = torch.logical_and(
-            task.per_block_is_block_type_allowed[
-                task.cons_bt_pose, task.cons_bt_block, task.cons_bt_which_block_type
-            ],
+        rows = (task.cons_bt_pose, task.cons_bt_block, task.cons_bt_which_block_type)
+        n_rots_for_gbt = include_current_mask(
+            task.per_block_considered_block_types_is_orig[rows],
+            task.per_block_is_block_type_allowed[rows],
             task.per_block_conformer_sampler_allowed[
                 task.cons_bt_pose, task.cons_bt_block, self_ind_in_packer_task
-            ],
-        )
-        n_rots_for_gbt = torch.logical_and(
-            is_gbt_allowed_and_buildable,
-            task.per_block_considered_block_types_is_orig[
-                task.cons_bt_pose, task.cons_bt_block, task.cons_bt_which_block_type
             ],
         ).to(torch.int32)
 
