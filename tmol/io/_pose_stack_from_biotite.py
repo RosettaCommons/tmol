@@ -208,8 +208,8 @@ class PreparedAtom37PoseBuilder:
     Calls accept float32 coordinates shaped ``[n_poses, n_tokens, 37, 3]`` on
     the context's device. The first call for a batch size prepares its fixed
     pose topology; up to four recently used batch sizes are cached. Inputs with
-    coordinate-dependent atom presence or ambiguous histidine hydrogens use the
-    normal uncached construction path.
+    coordinate-dependent atom presence, metal geometry, or ambiguous histidine
+    hydrogens use the normal uncached construction path.
 
     The builder owns a mutable topology cache and is not safe for concurrent
     calls. Use one builder per calling thread when pose construction overlaps.
@@ -499,7 +499,9 @@ def prepare_atom37_pose_builder(
             filtered, context.canonical_ordering
         ),
         fragment_mapping=fragment_mapping,
-        topology_cache_safe=not ambiguous_his,
+        # Metal virtuals require fitted site geometry, not leaf-atom icoors.
+        # Donor selection can also change when the input coordinates change.
+        topology_cache_safe=not ambiguous_his and not bool(_is_metal(filtered).any()),
     )
 
 
@@ -957,7 +959,10 @@ def _pose_stack_from_canonical_form_and_context(
             seed=packer_seed,
         )
 
-    if atom37_coords is not None and needs_packing:
+    # Canonical construction may rebuild noncanonical hydrogens even without
+    # packing. Supplied Atom37 coordinates remain authoritative on the initial
+    # call, just as they are when replaying a prepared topology.
+    if atom37_coords is not None:
         pose_stack = _restore_canonical_input_coords(
             pose_stack,
             cf.coords,
