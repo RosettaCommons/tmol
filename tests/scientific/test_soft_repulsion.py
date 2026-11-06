@@ -17,15 +17,32 @@ def test_soft_repulsion_matches_whole_pair_and_independent_derivatives(backend, 
         x = b.coords().astype(np.float64)
         old = b.score_function.render_whole_pose_scoring_module(b.pose)
         hard, hard_g = b.channel_values_and_gradients(x)
+        cuda = (
+            b.device.type == "cuda"
+            if b.framework == "torch"
+            else b.device.platform == "gpu"
+            and "cuda" in b.device.client.platform_version.lower()
+        )
+        if cuda:
+            repeated, repeated_g = b.channel_values_and_gradients(x)
+            np.testing.assert_allclose(repeated, hard, rtol=1e-12, atol=1e-12)
+            np.testing.assert_allclose(repeated_g, hard_g, rtol=1e-12, atol=1e-12)
         b.set_options({"soft_rep": True})
         soft, soft_g = b.channel_values_and_gradients(x)
         rep = b.channel_names().index("fa_ljrep")
         others = [i for i in range(len(hard)) if i != rep]
-        # CUDA atomics reorder even repeated identical double-precision calls.
-        # Keep the unchanged physics within a tight rounding tolerance; the
-        # independent derivative and whole/pair checks below remain unchanged.
-        np.testing.assert_allclose(soft[others], hard[others], rtol=1e-12, atol=1e-12)
-        np.testing.assert_allclose(soft_g[others], hard_g[others], rtol=1e-12, atol=1e-12)
+        # Only actual CUDA execution uses atomics with observed reduction-order
+        # noise. Preserve deterministic CPU equality and independent FD checks.
+        if cuda:
+            np.testing.assert_allclose(
+                soft[others], hard[others], rtol=1e-12, atol=1e-12
+            )
+            np.testing.assert_allclose(
+                soft_g[others], hard_g[others], rtol=1e-12, atol=1e-12
+            )
+        else:
+            np.testing.assert_array_equal(soft[others], hard[others])
+            np.testing.assert_array_equal(soft_g[others], hard_g[others])
         assert np.max(hard[rep] - soft[rep]) > 1e-3
         assert np.all(soft[rep] <= hard[rep] + 1e-10)
         direction = np.random.default_rng(55).normal(size=x.shape)
