@@ -70,3 +70,52 @@ def test_conformer_assembly_rejects_unknown_sampler_science():
     task.add_conformer_sampler(UnsupportedSampler())
     with pytest.raises(NotImplementedError, match="unsupported conformer payload"):
         build_rotamers(backend.pose, task)
+
+
+def test_reused_assembly_consumes_new_chi_payloads():
+    from tests.scientific.test_conformer_coordinates import coordinate_dihedral
+    from tmol_jax.pack import PackerTask, SetPackerTask, DunbrackChiSampler
+
+    class ShiftedSampler(DunbrackChiSampler):
+        shift = 0.0
+
+        def create_samples_for_poses(self, pose, task):
+            counts, choices, payload = super().create_samples_for_poses(pose, task)
+            return (
+                counts,
+                choices,
+                {
+                    **payload,
+                    "chi_for_rotamers": payload["chi_for_rotamers"] + self.shift,
+                },
+            )
+
+    b = Execution("jax-cpu")
+    b.molecule(DUNBRACK_CASES["l_peptide"], terms=("ref",))
+    sampler = ShiftedSampler.from_database(b.parameter_database)
+    task = PackerTask(b.pose)
+    task.restrict_to_repacking()
+    task.add_conformer_sampler(sampler)
+    task = SetPackerTask.from_packer_task(task)
+    _, first = build_rotamers(b.pose, task)
+    sampler.shift = 0.3
+    _, second = build_rotamers(b.pose, task)
+    np.testing.assert_array_equal(
+        first.block_type_ind_for_rot, second.block_type_ind_for_rot
+    )
+    block_types = b.pose.packed_block_types.active_block_types
+    checked = 0
+    for index, type_index in enumerate(np.asarray(first.block_type_ind_for_rot)):
+        block = block_types[type_index]
+        if block.name != "LEU":
+            continue
+        atoms = np.asarray(block.torsion_to_uaids["chi1"])[:, 0]
+        offset = int(first.coord_offset_for_rot[index])
+        before, after = (
+            coordinate_dihedral(np.asarray(r.coords)[offset + atoms])
+            for r in (first, second)
+        )
+        difference = np.arctan2(np.sin(after - before), np.cos(after - before))
+        np.testing.assert_allclose(difference, 0.3, atol=2e-5, rtol=0)
+        checked += 1
+    assert checked > 1
