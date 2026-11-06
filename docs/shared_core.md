@@ -64,6 +64,11 @@ frontend suites cover public APIs, device behavior, packing and minimization.
 Core code is BSD-3-Clause; vendored PySMILES retains its Apache-2.0 license and
 attribution, and native packages include their compiled dependencies' licenses.
 
+`tmol_core.pose.concatenation` validates growing chemical databases by residue
+identity, merges ordered palettes, and preserves batch offsets, fragment identities
+and PDB metadata. Frontends copy coordinate and topology buffers on the requested
+device and concatenate constraints; the common policy reads only shapes and host metadata.
+
 Conjugated sampling shares library projection, joint chi enumeration, budgets,
 current-state eligibility, and sampler ownership masks in `tmol_core.pack.conjugated`.
 Repeated local tree/scan plans and torsion-child lookup also use common host
