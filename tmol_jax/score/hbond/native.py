@@ -80,8 +80,21 @@ def prepare_hbond(pose, database):
         np.ascontiguousarray(params["pair_poly_table"]).view(np.uint8),
         params["global_param_table"],
     )
+    from tmol_jax._host import invoke
+
+    # Connectivity and chemical types are fixed for a rendered scorer. Execute
+    # the same native base planner as Torch once, then gather changing coordinates
+    # on the execution device. -1 is unused; -2 is an active unresolved base.
+    (indices,) = invoke(
+        15,
+        pose.coords.shape[0] * pose.coords.shape[1],
+        *(
+            arrays[i]
+            for i in (0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 22)
+        ),
+    )
     register("tmol_hbond")
-    return tuple(jnp.asarray(a) for a in arrays)
+    return tuple(jnp.asarray(a) for a in (*arrays, indices))
 
 
 def hbond_energy(coords, parameters):

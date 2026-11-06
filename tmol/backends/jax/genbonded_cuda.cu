@@ -343,7 +343,7 @@ ffi::Error run(
 }  // namespace
 }  // namespace tmol::jax
 
-extern "C" int tmol_jax_native_abi_version() { return 1; }
+extern "C" int tmol_jax_native_abi_version() { return 2; }
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_genbonded,
     tmol::jax::run<tmol::jax::GenBondedKernel>,

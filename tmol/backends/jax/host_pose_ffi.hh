@@ -4,6 +4,7 @@
 #include <tmol/kinematics/compiled/host_pose_kinematics.hh>
 #include <tmol/kinematics/compiled/native_kinematics.hh>
 #include <tmol/pack/rotamer/dunbrack/host_sampling.hh>
+#include <tmol/score/hbond/potentials/native_hbond_bases.hh>
 #include <cstdio>
 
 namespace tmol::jax {
@@ -76,6 +77,68 @@ inline auto sampling_host_offsets(
   total.view[0] = pack::rotamer::dunbrack::HostDunbrackSampling<
       float>::checked_sample_offsets(context, counts, offsets.view, budget);
   return std::make_tuple(offsets, total);
+}
+
+// Typed host storage for the canonical topology-only hydrogen-bond prepass.
+// Atom/bond traversal and unresolved-base semantics remain in the shared
+// kernel.
+template <template <Device> class Ops>
+auto hbond_host_indices(
+    ContextManager& context,
+    int64_t n_coordinates,
+    TView<int32_t, 1, Device::CPU> offsets,
+    TView<int32_t, 2, Device::CPU> first_rot,
+    TView<int32_t, 2, Device::CPU> first_type,
+    TView<int32_t, 1, Device::CPU> block_for_rot,
+    TView<int32_t, 1, Device::CPU> pose_for_rot,
+    TView<Vec<int32_t, 2>, 3, Device::CPU> connections,
+    TView<int32_t, 1, Device::CPU> n_atoms,
+    TView<int32_t, 1, Device::CPU> n_connections,
+    TView<int32_t, 2, Device::CPU> connection_atoms,
+    TView<int32_t, 1, Device::CPU> n_bonds,
+    TView<Vec<int32_t, 3>, 2, Device::CPU> bonds,
+    TView<Vec<int32_t, 2>, 2, Device::CPU> bond_ranges,
+    TView<int32_t, 2, Device::CPU> is_hydrogen,
+    TView<int32_t, 2, Device::CPU> n_donors,
+    TView<int32_t, 2, Device::CPU> n_acceptors,
+    TView<int32_t, 3, Device::CPU> donor_indices,
+    TView<int32_t, 3, Device::CPU> acceptor_indices,
+    TView<int32_t, 3, Device::CPU> hybridizations) {
+  using namespace score::hbond::potentials;
+  using I = int32_t;
+  constexpr auto D = Device::CPU;
+  auto rots = offsets.size(0);
+  if (n_coordinates < 0 || n_coordinates > INT32_MAX / 3
+      || first_rot.size(0) != first_type.size(0)
+      || first_rot.size(1) != first_type.size(1)
+      || first_type.size(0) * first_type.size(1) != rots
+      || block_for_rot.size(0) != rots || pose_for_rot.size(0) != rots)
+    throw std::invalid_argument("invalid hydrogen-bond topology layout");
+  auto result = OwnedHostTensor<I, 2, D>::full({n_coordinates, 3}, -1);
+  HBondBasesCtx<float, I, D> bases{};
+  bases.rot_coord_offset = offsets;
+  bases.first_rot_for_block = first_rot;
+  bases.first_rot_block_type = first_type;
+  bases.block_ind_for_rot = block_for_rot;
+  bases.pose_ind_for_rot = pose_for_rot;
+  bases.block_type_ind_for_rot =
+      contiguous_view<I, 1, D>(first_type.data(), {rots});
+  bases.pose_stack_inter_residue_connections = connections;
+  bases.block_type_n_atoms = n_atoms;
+  bases.block_type_n_interblock_bonds = n_connections;
+  bases.block_type_atoms_forming_chemical_bonds = connection_atoms;
+  bases.block_type_n_all_bonds = n_bonds;
+  bases.block_type_all_bonds = bonds;
+  bases.block_type_atom_all_bond_ranges = bond_ranges;
+  bases.block_type_atom_is_hydrogen = is_hydrogen;
+  bases.block_type_tile_n_donH = n_donors;
+  bases.block_type_tile_n_acc = n_acceptors;
+  bases.block_type_tile_donH_inds = donor_indices;
+  bases.block_type_tile_acc_inds = acceptor_indices;
+  bases.block_type_tile_hybridization = hybridizations;
+  bases.derived_atom_inds = result.view;
+  launch_hbond_bases<Ops, D, float, I, false>(context, bases);
+  return result;
 }
 }  // namespace tmol::jax
 
@@ -159,6 +222,13 @@ extern "C" int tmol_kinematic_host_prepare(
       case 14:
         tmol::jax::invoke_host(
             &tmol::jax::sampling_host_offsets, context, inputs, *output);
+        break;
+      case 15:
+        tmol::jax::invoke_host(
+            &tmol::jax::hbond_host_indices<tmol::jax::CpuOps>,
+            context,
+            inputs,
+            *output);
         break;
       default:
         throw std::invalid_argument("unknown native pose operation");
