@@ -1,6 +1,6 @@
 """Compose shared native sparse physics using frozen score configuration."""
 
-from functools import partial
+from functools import partial, lru_cache
 
 import jax
 import jax.numpy as jnp
@@ -165,50 +165,70 @@ class RotamerScorer:
         template = tuple(
             None if i in positions else leaf for i, leaf in enumerate(leaves)
         )
-        channels = self.score_types
-        sum_terms, apply_weights, shape = self.sum_terms, self.apply_weights, self.shape
-
-        @jax.jit
-        def score(x, arrays, candidates):
-            if x.shape != shape or x.dtype not in (jnp.float32, jnp.float64):
-                raise ValueError(f"expected float32/64 coordinates with shape {shape}")
-            state_leaves = list(template)
-            for i, value in zip(positions, arrays):
-                state_leaves[i] = value
-            states = tree.unflatten(state_leaves)
-            all_values, all_indices = [], []
-            for entry, state, indices in zip(self.entries, states, candidates):
-                provided, selected, weights, evaluate = entry[:4]
-                if indices is None:
-                    values, ids = evaluate(x, state)
-                else:
-                    values, ids = evaluate(x, state, indices), indices
-                values = values[jnp.asarray(selected)]
-                if apply_weights:
-                    values *= jnp.asarray([weights[i] for i in selected], x.dtype)[
-                        :, None
-                    ]
-                if sum_terms:
-                    values = values.sum(axis=0)
-                else:
-                    lanes = jnp.asarray([channels.index(provided[i]) for i in selected])
-                    values = (
-                        jnp.zeros((len(channels), values.shape[1]), x.dtype)
-                        .at[lanes]
-                        .set(values)
-                    )
-                all_values.append(values)
-                all_indices.append(ids)
-            if not all_values:
-                return (
-                    jnp.zeros((0,) if sum_terms else (0, 0), x.dtype),
-                    jnp.zeros((3, 0), jnp.int32),
-                )
-            return jnp.concatenate(all_values, axis=-1), jnp.concatenate(
-                all_indices, axis=1
-            )
-
-        return score
+        return _compiled_rotamer_execution(
+            tuple(entry[:4] for entry in self.entries),
+            self.score_types,
+            tree,
+            template,
+            positions,
+            self.sum_terms,
+            self.apply_weights,
+            self.shape,
+        )
 
     def __call__(self, coords):
         return self.prepare(coords)(coords)
+
+
+@lru_cache(maxsize=8)
+def _compiled_rotamer_execution(
+    entries,
+    channels,
+    tree,
+    template,
+    positions,
+    sum_terms,
+    apply_weights,
+    shape,
+):
+    """Reuse programs across renders; all topology and parameter arrays are operands."""
+
+    @jax.jit
+    def score(x, arrays, candidates):
+        if x.shape != shape or x.dtype not in (jnp.float32, jnp.float64):
+            raise ValueError(f"expected float32/64 coordinates with shape {shape}")
+        state_leaves = list(template)
+        for i, value in zip(positions, arrays):
+            state_leaves[i] = value
+        states = tree.unflatten(state_leaves)
+        all_values, all_indices = [], []
+        for entry, state, indices in zip(entries, states, candidates):
+            provided, selected, weights, evaluate = entry[:4]
+            if indices is None:
+                values, ids = evaluate(x, state)
+            else:
+                values, ids = evaluate(x, state, indices), indices
+            values = values[jnp.asarray(selected)]
+            if apply_weights:
+                values *= jnp.asarray([weights[i] for i in selected], x.dtype)[:, None]
+            if sum_terms:
+                values = values.sum(axis=0)
+            else:
+                lanes = jnp.asarray([channels.index(provided[i]) for i in selected])
+                values = (
+                    jnp.zeros((len(channels), values.shape[1]), x.dtype)
+                    .at[lanes]
+                    .set(values)
+                )
+            all_values.append(values)
+            all_indices.append(ids)
+        if not all_values:
+            return (
+                jnp.zeros((0,) if sum_terms else (0, 0), x.dtype),
+                jnp.zeros((3, 0), jnp.int32),
+            )
+        return jnp.concatenate(all_values, axis=-1), jnp.concatenate(
+            all_indices, axis=1
+        )
+
+    return score
