@@ -257,6 +257,13 @@ TMOL_JAX_STAGE(
     tmol_conformer_chi_derivatives,
     tmol::jax::run_graph_stage<tmol::jax::ConformerChiDerivativeStage>, );
 
+TMOL_JAX_STAGE(
+    tmol_leaf_atoms, tmol::jax::run_graph_stage<tmol::jax::LeafAtomStage>, );
+
+TMOL_JAX_STAGE(
+    tmol_canonical_candidates,
+    tmol::jax::run_graph_stage<tmol::jax::CanonicalCandidateStage>, );
+
 #undef TMOL_JAX_STAGE
 #undef TMOL_JAX_ENERGY
 #undef TMOL_JAX_TRAITS

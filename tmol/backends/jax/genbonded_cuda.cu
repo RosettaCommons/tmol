@@ -21,6 +21,7 @@
 #include "constraint_torsion_ffi.hh"
 #include "kinematics_ffi.hh"
 #include "conformer_ffi.hh"
+#include "io_ffi.hh"
 #include "conformer_copy_plan_ffi.hh"
 #include "graph_topology_ffi.hh"
 #include "graph_entries_ffi.hh"
