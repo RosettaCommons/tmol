@@ -96,3 +96,9 @@ an explicit database path still creates fresh chemistry. The bounded weak-owner
 cache is framework neutral, while the Torch adapter retains CUDA stream readiness.
 These host policies import neither framework. Ligand conformer optimization and
 the complete public ligand preparation pipeline still require further extraction.
+
+FastRelax schedule normalization, score-weight ramps, stage lifetime hooks,
+default task registration, and per-pose acceptance live in `tmol_core.relax`.
+Frontends provide packing/minimization execution and array/metadata selection.
+The public Torch defaults and callback signatures remain available; sharing the
+protocol does not establish equivalence of the frontend optimizers.
