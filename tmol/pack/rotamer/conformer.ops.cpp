@@ -73,7 +73,50 @@ void assign_chi_dofs(
                                   Kernels::assign(conformer_context, c);
                                 }));
 }
+void copy_conformer_rows(
+    Tensor source_offsets,
+    Tensor target_offsets,
+    Tensor packed_offsets,
+    Tensor source_values,
+    Tensor target_values,
+    int64_t n_rows,
+    int64_t root_shift) {
+  TORCH_CHECK(
+      source_values.dim() == 2 && target_values.dim() == 2
+          && source_values.size(1) == target_values.size(1),
+      "Conformer row widths must match");
+  TORCH_CHECK(
+      root_shift == 0 || root_shift == 1, "Invalid conformer root shift");
+  TORCH_CHECK(
+      n_rows == 0 || source_offsets.numel() > 0,
+      "Nonempty conformer copy requires segments");
+  TORCH_CHECK(
+      source_offsets.numel() == target_offsets.numel()
+          && packed_offsets.numel() == source_offsets.numel() + 1,
+      "Conformer copy offsets have inconsistent lengths");
+  TMOL_DISPATCH_FLOATING_DEVICE(
+      target_values.options(), "copy_conformer_rows", ([&] {
+        using Kernels = ConformerDofKernels<
+            score::common::DeviceOperations,
+            device_t,
+            scalar_t,
+            int64_t>;
+        Kernels::Rows c;
+        c.source_offsets = TCAST(source_offsets);
+        c.target_offsets = TCAST(target_offsets);
+        c.packed_offsets = TCAST(packed_offsets);
+        c.source_values = TCAST(source_values);
+        c.target_values = TCAST(target_values);
+        Kernels::rows(conformer_context, c, n_rows, root_shift);
+      }));
+}
+
 TMOL_LIBRARY(tmol_conformer_dofs, m) {
+  m.def(
+      "copy_conformer_rows(Tensor source_offsets, Tensor target_offsets, "
+      "Tensor packed_offsets, Tensor source_values, Tensor(a!) target_values, "
+      "int n_rows, int root_shift) -> ()",
+      TMOL_FN(&copy_conformer_rows));
   m.def(
       "copy_mainchain_dofs(Tensor source_types, Tensor source_offsets, Tensor "
       "target_types, Tensor target_offsets, Tensor source_fingerprint, Tensor "

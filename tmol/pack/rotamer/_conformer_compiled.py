@@ -8,3 +8,5 @@ _ops = _load_ops(
 )
 copy_mainchain_dofs = _ops.copy_mainchain_dofs
 assign_chi_dofs = _ops.assign_chi_dofs
+
+copy_conformer_rows = _ops.copy_conformer_rows
