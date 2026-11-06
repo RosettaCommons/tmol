@@ -51,7 +51,17 @@ def parse_pdb(pdb_input):
         atoms = atoms[0]
     # Retain actual CONECT records. include_bonds=True also invents bonds from
     # residue names, losing the declared/inferred distinction needed for gaps.
-    atoms.bonds = pdb._get_bonds(atoms.atom_id)
+    if hasattr(pdb, "_get_bonds"):
+        atoms.bonds = pdb._get_bonds(atoms.atom_id)
+    else:
+        # Biotite 1.8 moved the file-record reader into its Rust base class.
+        # The Python override adds inferred CCD bonds; the base reader retains
+        # only the declared records, with the same model/alternate selection.
+        from biotite.rust.structure.io.pdb import PDBFile as RecordPDBFile
+
+        atoms.bonds = RecordPDBFile.get_structure(
+            pdb, model=1, include_bonds=True
+        ).bonds
     return _records_from_biotite(atoms)
 
 
