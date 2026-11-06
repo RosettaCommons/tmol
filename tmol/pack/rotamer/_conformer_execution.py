@@ -208,3 +208,122 @@ def reset_opth_dofs(types, offsets, selected, chi_atoms, cache, ideal, target, f
     ).to(target.device)
     active = indices[0] >= 0
     target[indices[1, active]] = ideal.reshape(-1, 9)[indices[0, active]]
+
+
+def mainchain_copy_metadata(poses, task, sampler, considered, types, selected, offsets):
+    from ._build_rotamers import _kinforest_device_indices
+
+    pbt = poses.packed_block_types
+    fingerprints = pbt.mc_fingerprints
+    device = (
+        poses.device if poses.device.type in ("cpu", "cuda") else torch.device("cpu")
+    )
+    # Current-copy and mainchain-copy share the source-residue prefix plan.
+    _, source_offsets, target_offsets = current_conformer_copy_segments(
+        poses, task, considered, types, offsets, selected
+    )
+    residues = task.global_block_ind_for_considered_block_types[considered[selected]]
+    metadata = (
+        poses.block_type_ind.reshape(-1)[residues].long(),
+        source_offsets,
+        types[selected],
+        target_offsets,
+        fingerprints.source_fingerprint,
+        fingerprints.source_atom_mapping,
+        fingerprints.atom_mapping,
+        _kinforest_device_indices(pbt, pbt.device),
+    )
+    return [v.to(device).contiguous() for v in metadata], fingerprints.sampler_mapping[
+        sampler
+    ]
+
+
+def mainchain_row_indices(metadata, sampler, device):
+    from ._conformer_compiled import mainchain_row_indices as native_indices
+
+    indices = native_indices(metadata, sampler).to(device)
+    active = indices[0] >= 0
+    return indices[:, active]
+
+
+def copy_mainchain_dofs(
+    source_types,
+    source_offsets,
+    target_types,
+    target_offsets,
+    fingerprints,
+    source_atoms,
+    target_atoms,
+    kinematic_index,
+    source,
+    target,
+    sampler,
+):
+    from ._conformer_compiled import copy_mainchain_dofs as native_copy
+
+    if target.device.type not in ("cpu", "cuda"):
+        src, dst = mainchain_row_indices(
+            [
+                source_types,
+                source_offsets,
+                target_types,
+                target_offsets,
+                fingerprints,
+                source_atoms,
+                target_atoms,
+                kinematic_index,
+            ],
+            sampler,
+            target.device,
+        )
+        measured = source[src]
+        target[dst] = torch.where(torch.isfinite(measured), measured, target[dst])
+        return
+    operation = (
+        _CopyMainchainDofs.apply
+        if torch.is_grad_enabled() and (source.requires_grad or target.requires_grad)
+        else native_copy
+    )
+    operation(
+        source_types,
+        source_offsets,
+        target_types,
+        target_offsets,
+        fingerprints,
+        source_atoms,
+        target_atoms,
+        kinematic_index,
+        source,
+        target,
+        sampler,
+    )
+
+
+class _CopyMainchainDofs(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, *args):
+        from ._conformer_compiled import copy_mainchain_dofs, mainchain_dof_indices
+
+        indices = mainchain_dof_indices(list(args[:10]), args[10])
+        ctx.save_for_backward(indices)
+        ctx.source_shape = args[8].shape
+        ctx.source_size = args[8].numel()
+        ctx.mark_dirty(args[9])
+        copy_mainchain_dofs(*args)
+        return args[9]
+
+    @staticmethod
+    def backward(ctx, gradient):
+        (indices,) = ctx.saved_tensors
+        active = indices[0] >= 0
+        source, target = indices[:, active]
+        result = [None] * 11
+        if ctx.needs_input_grad[8]:
+            result[8] = (
+                gradient.new_zeros(ctx.source_size)
+                .index_add(0, source, gradient.flatten()[target])
+                .reshape(ctx.source_shape)
+            )
+        if ctx.needs_input_grad[9]:
+            result[9] = gradient.flatten().index_fill(0, target, 0).reshape_as(gradient)
+        return tuple(result)
