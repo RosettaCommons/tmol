@@ -147,3 +147,10 @@ retains its existing objectives, dtypes and LBFGS execution. Supplying complete
 MOL2 coordinates and authoritative charges needs no executor; regeneration
 requires one explicitly. This boundary does not establish JAX conformer-generation
 support or optimizer parity until that adapter and complete workflows are tested.
+
+The mature segmented Armijo optimizer now shares its native state transitions,
+compact H0=I direction, circular history, restart/retirement and independent
+convergence policy. Torch retains parameter storage, segmented reductions and
+linear-algebra execution. The common policy imports neither framework; a JAX
+executor must explicitly preserve per-pose objectives and failure semantics.
+This boundary alone does not establish JAX optimizer or full-workflow parity.

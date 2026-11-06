@@ -359,3 +359,11 @@ def test_native_candidate_invariants_without_frameworks(tmp_path, source):
     assert compile_result.returncode == 0, compile_result.stdout + compile_result.stderr
     run = subprocess.run([str(binary)], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
+
+
+@requires_cxx
+def test_native_armijo_without_torch(tmp_path):
+    proc = _compile(HERE / "native_armijo.cc", tmp_path / "armijo", run=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    run = subprocess.run([str(tmp_path / "armijo")], capture_output=True, text=True)
+    assert run.returncode == 0, run.stdout + run.stderr
