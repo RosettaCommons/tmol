@@ -9,6 +9,7 @@
 
 #include "streaming_interaction_graph.hh"
 #include "streaming_interaction_graph_kernels.hh"
+#include "interaction_graph_topology.hh"
 #include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
 #include <tmol/backends/metal/pack/compiled/streaming_interaction_graph_mps_kernels_source.h>
@@ -46,17 +47,8 @@ auto StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::initialize(
   auto orig_block_to_molten = orig_block_to_molten_tp.view;
 
   LAUNCH_BOX_32;
-  auto initialize_pose = ([=] TMOL_DEVICE_FUNC(int pose) {
-    int molten = 0;
-    for (int block = 0; block < max_n_blocks; ++block) {
-      if (n_rots_for_block[pose][block] <= 1) {
-        continue;
-      }
-      orig_block_to_molten[pose][block] = molten;
-      ++molten;
-    }
-  });
-  DeviceDispatch<D>::template forall<launch_t>(mgr, n_poses, initialize_pose);
+  launch_ig_initialize_pose<DeviceDispatch, D>(
+      mgr, n_rots_for_block, orig_block_to_molten);
 
   return {block_adjacency_tp, orig_block_to_molten_tp};
 }
@@ -126,26 +118,12 @@ auto StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::finalize(
       "streaming interaction-graph block dispatch");
 
   LAUNCH_BOX_32;
-  auto blocks_are_adjacent =
-      ([=] TMOL_DEVICE_FUNC(int pose, int block, int neighbor) {
-        int const word = neighbor / 32;
-        int32_t const mask = int32_t(uint32_t(1) << (neighbor % 32));
-        return (block_adjacency[pose][block][word] & mask) != 0;
-      });
 
   auto n_neighbors_for_block_tp =
       TPack<int64_t, 1, D>::zeros({int64_t(n_rows) + 1});
   auto n_neighbors_for_block = n_neighbors_for_block_tp.view;
-  auto count_neighbors = ([=] TMOL_DEVICE_FUNC(int row) {
-    int const pose = row / max_n_molten_blocks;
-    int const block = row % max_n_molten_blocks;
-    int64_t count = 0;
-    for (int neighbor = 0; neighbor < max_n_molten_blocks; ++neighbor) {
-      count += blocks_are_adjacent(pose, block, neighbor) ? 1 : 0;
-    }
-    n_neighbors_for_block[row] = count;
-  });
-  DeviceDispatch<D>::template forall<launch_t>(mgr, n_rows, count_neighbors);
+  launch_ig_count_neighbors<DeviceDispatch, D>(
+      mgr, block_adjacency, n_neighbors_for_block);
 
   auto neighbor_row_offsets_tp =
       TPack<int64_t, 1, D>::zeros({int64_t(n_rows) + 1});
@@ -166,24 +144,14 @@ auto StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::finalize(
       TPack<int64_t, 1, D>::zeros({n_directed_edges});
   auto neighbor_blocks = neighbor_blocks_tp.view;
   auto n_chunks_for_neighbor_pair = n_chunks_for_neighbor_pair_tp.view;
-  auto fill_neighbors = ([=] TMOL_DEVICE_FUNC(int row) {
-    int const pose = row / max_n_molten_blocks;
-    int const block = row % max_n_molten_blocks;
-    int64_t output = neighbor_row_offsets[row];
-    int const n_rots1 = n_bc_rots_for_molten_block[pose][block];
-    int const n_chunks1 = n_rots1 == 0 ? 0 : (n_rots1 - 1) / chunk_size + 1;
-    for (int neighbor = 0; neighbor < max_n_molten_blocks; ++neighbor) {
-      if (!blocks_are_adjacent(pose, block, neighbor)) {
-        continue;
-      }
-      int const n_rots2 = n_bc_rots_for_molten_block[pose][neighbor];
-      int const n_chunks2 = (n_rots2 - 1) / chunk_size + 1;
-      neighbor_blocks[output] = neighbor;
-      n_chunks_for_neighbor_pair[output] = int64_t(n_chunks1) * n_chunks2;
-      ++output;
-    }
-  });
-  DeviceDispatch<D>::template forall<launch_t>(mgr, n_rows, fill_neighbors);
+  launch_ig_fill_neighbors<DeviceDispatch, D>(
+      mgr,
+      chunk_size,
+      n_bc_rots_for_molten_block,
+      block_adjacency,
+      neighbor_row_offsets,
+      neighbor_blocks,
+      n_chunks_for_neighbor_pair);
 
   auto neighbor_chunk_offset_offsets_tp =
       TPack<int64_t, 1, D>::zeros({n_directed_edges});
@@ -201,12 +169,8 @@ auto StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::finalize(
       TPack<int64_t, 1, D>::zeros({n_directed_edges});
   auto n_chunk_words_for_neighbor_pair =
       n_chunk_words_for_neighbor_pair_tp.view;
-  auto count_chunk_words = ([=] TMOL_DEVICE_FUNC(int edge) {
-    n_chunk_words_for_neighbor_pair[edge] =
-        (n_chunks_for_neighbor_pair[edge] + 31) / 32;
-  });
-  DeviceDispatch<D>::template forall<launch_t>(
-      mgr, n_directed_edges_dispatch, count_chunk_words);
+  launch_ig_count_chunk_words<DeviceDispatch, D>(
+      mgr, n_chunks_for_neighbor_pair, n_chunk_words_for_neighbor_pair);
   auto neighbor_chunk_bitset_offsets_tp =
       TPack<int64_t, 1, D>::zeros({n_directed_edges});
   auto neighbor_chunk_bitset_offsets = neighbor_chunk_bitset_offsets_tp.view;
@@ -307,29 +271,13 @@ auto StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::finalize_chunks(
       TPack<int64_t, 1, D>::zeros({n_directed_edges});
   auto n_chunks_for_neighbor_pair = n_chunks_for_neighbor_pair_tp.view;
   LAUNCH_BOX_32;
-  auto count_chunk_pairs = ([=] TMOL_DEVICE_FUNC(int edge) {
-    int64_t lower = 0;
-    int64_t upper = n_rows;
-    while (lower < upper) {
-      int64_t const middle = lower + (upper - lower) / 2;
-      if (neighbor_row_offsets[middle + 1] <= edge) {
-        lower = middle + 1;
-      } else {
-        upper = middle;
-      }
-    }
-    int const row = lower;
-    int const pose = row / max_n_molten_blocks;
-    int const block1 = row % max_n_molten_blocks;
-    int const block2 = neighbor_blocks[edge];
-    int const n_rots1 = n_bc_rots_for_molten_block[pose][block1];
-    int const n_rots2 = n_bc_rots_for_molten_block[pose][block2];
-    int64_t const n_chunks1 = (n_rots1 - 1) / chunk_size + 1;
-    int64_t const n_chunks2 = (n_rots2 - 1) / chunk_size + 1;
-    n_chunks_for_neighbor_pair[edge] = n_chunks1 * n_chunks2;
-  });
-  DeviceDispatch<D>::template forall<launch_t>(
-      mgr, n_directed_edges, count_chunk_pairs);
+  launch_ig_count_chunk_pairs<DeviceDispatch, D>(
+      mgr,
+      chunk_size,
+      n_bc_rots_for_molten_block,
+      neighbor_row_offsets,
+      neighbor_blocks,
+      n_chunks_for_neighbor_pair);
   int64_t const n_chunk_pairs =
       DeviceDispatch<D>::template scan_and_return_total<
           tmol::portable::scan_type::exclusive>(
@@ -341,43 +289,16 @@ auto StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::finalize_chunks(
 
   auto chunk_pair_sizes_tp = TPack<int64_t, 1, D>::zeros({n_chunk_pairs});
   auto chunk_pair_sizes = chunk_pair_sizes_tp.view;
-  auto fill_chunk_pair_sizes = ([=] TMOL_DEVICE_FUNC(int edge) {
-    int64_t lower = 0;
-    int64_t upper = n_rows;
-    while (lower < upper) {
-      int64_t const middle = lower + (upper - lower) / 2;
-      if (neighbor_row_offsets[middle + 1] <= edge) {
-        lower = middle + 1;
-      } else {
-        upper = middle;
-      }
-    }
-    int const row = lower;
-    int const pose = row / max_n_molten_blocks;
-    int const block1 = row % max_n_molten_blocks;
-    int const block2 = neighbor_blocks[edge];
-    int const n_rots1 = n_bc_rots_for_molten_block[pose][block1];
-    int const n_rots2 = n_bc_rots_for_molten_block[pose][block2];
-    int const n_chunks1 = (n_rots1 - 1) / chunk_size + 1;
-    int const n_chunks2 = (n_rots2 - 1) / chunk_size + 1;
-    int64_t const output_begin = neighbor_chunk_offset_offsets[edge];
-    int64_t const bitset_begin = neighbor_chunk_bitset_offsets[edge];
-    for (int chunk1 = 0; chunk1 < n_chunks1; ++chunk1) {
-      int const chunk1_size = min(chunk_size, n_rots1 - chunk1 * chunk_size);
-      for (int chunk2 = 0; chunk2 < n_chunks2; ++chunk2) {
-        int64_t const bit = int64_t(chunk1) * n_chunks2 + chunk2;
-        int32_t const mask = int32_t(uint32_t(1) << static_cast<int>(bit % 32));
-        if ((chunk_adjacency[bitset_begin + bit / 32] & mask) != 0) {
-          int const chunk2_size =
-              min(chunk_size, n_rots2 - chunk2 * chunk_size);
-          chunk_pair_sizes[output_begin + bit] =
-              int64_t(chunk1_size) * chunk2_size;
-        }
-      }
-    }
-  });
-  DeviceDispatch<D>::template forall<launch_t>(
-      mgr, n_directed_edges, fill_chunk_pair_sizes);
+  launch_ig_fill_chunk_pair_sizes<DeviceDispatch, D>(
+      mgr,
+      chunk_size,
+      n_bc_rots_for_molten_block,
+      neighbor_row_offsets,
+      neighbor_blocks,
+      neighbor_chunk_offset_offsets,
+      neighbor_chunk_bitset_offsets,
+      chunk_adjacency,
+      chunk_pair_sizes);
 
   auto chunk_offsets_tp = TPack<int64_t, 1, D>::zeros({n_chunk_pairs});
   auto chunk_offsets = chunk_offsets_tp.view;
@@ -390,16 +311,8 @@ auto StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::finalize_chunks(
           n_chunk_pairs,
           tmol::portable::plus_t<int64_t>());
   auto energy2b_tp = TPack<Real, 1, D>::zeros({n_two_body_energies});
-  auto sentinel_empty_chunks = ([=] TMOL_DEVICE_FUNC(int index) {
-    if (chunk_pair_sizes[index] == 0) {
-      chunk_offsets[index] = -1;
-    }
-  });
-  DeviceDispatch<D>::template forall<launch_t>(
-      mgr,
-      score::common::checked_dispatch_size(
-          n_chunk_pairs, "streaming interaction-graph chunk dispatch"),
-      sentinel_empty_chunks);
+  launch_ig_sentinel_empty_chunks<DeviceDispatch, D>(
+      mgr, chunk_pair_sizes, chunk_offsets);
 
   return {chunk_offsets_tp, energy2b_tp};
 }
