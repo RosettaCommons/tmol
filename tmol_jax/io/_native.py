@@ -126,3 +126,36 @@ def canonical_atom_termini(present, types, variants, termini, broken, real, meta
     )[
         0
     ]
+
+
+@jax.jit
+def histidine_state(
+    coords, types, variants, selected_poses, selected_residues, present, atom_indices
+):
+    """Common discrete tautomer decisions and atom alias remapping.
+
+    Selected rows, remapping and state codes use opaque int64 transport; variant
+    codes remain int32. Input arrays are never mutated. Decisions have no AD rule.
+    """
+    register("tmol_histidine")
+    p, r, n, _ = coords.shape
+    return jax.ffi.ffi_call(
+        "tmol_histidine",
+        (
+            jax.ShapeDtypeStruct((p, r), np.int32),
+            jax.ShapeDtypeStruct((p, r, n, 8), np.uint8),
+            jax.ShapeDtypeStruct((p, r, 8), np.uint8),
+        ),
+        vmap_method="sequential",
+    )(
+        coords,
+        types,
+        variants,
+        selected_poses,
+        selected_residues,
+        present,
+        atom_indices,
+        operation=np.int64(0),
+        extent=np.int64(0),
+        width=np.int64(0),
+    )

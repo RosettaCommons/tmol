@@ -268,6 +268,9 @@ TMOL_JAX_STAGE(
     tmol_canonical_topology,
     tmol::jax::run_graph_stage<tmol::jax::CanonicalTopologyStage>, );
 
+TMOL_JAX_STAGE(
+    tmol_histidine, tmol::jax::run_graph_stage<tmol::jax::HistidineStage>, );
+
 #undef TMOL_JAX_STAGE
 #undef TMOL_JAX_ENERGY
 #undef TMOL_JAX_TRAITS

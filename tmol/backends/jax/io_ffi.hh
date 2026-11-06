@@ -4,6 +4,7 @@
 #include <tmol/io/details/compiled/leaf_atom_kernels.hh>
 #include <tmol/io/details/compiled/canonical_candidates.hh>
 #include <tmol/io/details/compiled/canonical_topology.hh>
+#include <tmol/io/details/compiled/histidine_kernels.hh>
 
 namespace tmol::jax {
 struct LeafAtomStage {
@@ -223,6 +224,84 @@ struct CanonicalTopologyStage {
       io::details::compiled::launch_canonical_atom_termini<Ops, D, int32_t>(
           manager, c);
     }
+  }
+};
+struct HistidineStage {
+  static int fill(int64_t, size_t) { return 0; }
+  static void validate(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out,
+      int64_t op,
+      int64_t,
+      int64_t) {
+    if (op || a.size() != 7 || out.size() != 3)
+      throw std::invalid_argument("invalid histidine resolution arguments");
+    auto real = a[0].element_type();
+    if (real != ffi::DataType::F32 && real != ffi::DataType::F64)
+      throw std::invalid_argument(
+          "histidine coordinates require float32 or float64");
+    require_shape(a[0], real, {-1, -1, -1, 3});
+    auto p = a[0].dimensions()[0], r = a[0].dimensions()[1],
+         n = a[0].dimensions()[2];
+    auto i = ffi::DataType::S32, b = ffi::DataType::PRED, w = ffi::DataType::U8;
+    require_shape(a[1], i, {p, r});
+    require_shape(a[2], i, {p, r});
+    graph_wide(a[3]);
+    graph_wide(a[4], a[3].dimensions()[0]);
+    require_shape(a[5], b, {p, r, n});
+    require_shape(a[6], i, {1, 8});
+    require_shape(out[0], i, {p, r});
+    require_shape(out[1], w, {p, r, n, 8});
+    require_shape(out[2], w, {p, r, 8});
+  }
+  template <template <Device> class Ops, Device D, typename Real>
+  static void launch(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out) {
+    using V = portable::Vec<Real, 3>;
+    using H = io::details::compiled::HisAtomIndsInCanonicalOrdering<int32_t>;
+    io::details::compiled::HisTautContext<Real, int32_t, D> c{
+        buffer_view<V, 3, D>(a[0]),
+        buffer_view<int32_t, 2, D>(a[1]),
+        buffer_view<int32_t, 2, D>(out[0]),
+        buffer_view<int64_t, 1, D>(a[3]),
+        buffer_view<int64_t, 1, D>(a[4]),
+        buffer_view<bool, 3, D>(a[5]),
+        buffer_view<H, 1, D>(a[6]),
+        buffer_view<int64_t, 3, D>(out[1]),
+        buffer_view<int64_t, 2, D>(out[2])};
+    auto source = buffer_view<int32_t, 2, D>(a[2]);
+    int rows = score::common::checked_dispatch_product(
+        c.coords.size(0), c.coords.size(1), "histidine rows");
+    int atoms = score::common::checked_dispatch_product(
+        rows, c.coords.size(2), "histidine remapping");
+    auto width = c.coords.size(1), na = c.coords.size(2);
+    ContextManager manager;
+    LAUNCH_BOX_128;
+    Ops<D>::template forall<launch_t>(
+        manager, std::max(rows, atoms), [=] TMOL_DEVICE_FUNC(int index) {
+          if (index < rows)
+            c.res_type_variants[index / width][index % width] =
+                source[index / width][index % width];
+          if (index < atoms)
+            c.his_remapping_dst_index[index / (width * na)]
+                                     [(index / na) % width][index % na] =
+                index % na;
+        });
+    io::details::compiled::launch_resolve_his_taut<Ops, D, Real, int32_t>(
+        manager, c);
+  }
+  template <template <Device> class Ops, Device D>
+  static void execute(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out,
+      int64_t,
+      int64_t,
+      int64_t) {
+    if (a[0].element_type() == ffi::DataType::F32)
+      launch<Ops, D, float>(a, out);
+    else
+      launch<Ops, D, double>(a, out);
   }
 };
 }  // namespace tmol::jax
