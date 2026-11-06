@@ -11,6 +11,7 @@
 #include <tmol/io/details/compiled/canonical_topology.hh>
 #include <tmol/io/details/compiled/canonical_policies.hh>
 #include <tmol/io/details/compiled/hydrogen_completion.hh>
+#include <tmol/io/details/compiled/protonation.hh>
 #include <tmol/utility/tensor/TensorPack.h>
 #include <tmol/io/details/compiled/resolve_his_taut.hh>
 
@@ -517,9 +518,43 @@ Tensor hydrogen_input(std::vector<Tensor> inputs, double tolerance) {
   return result;
 }
 
+std::tuple<Tensor, Tensor> protonation(
+    std::vector<Tensor> inputs, int64_t deprotonated) {
+  TORCH_CHECK(inputs.size() == 11, "Protonation requires eleven input buffers");
+  Tensor result, bad;
+  TMOL_DISPATCH_INDEX_DEVICE(
+      inputs[0].options(), "protonation_indices", ([&] {
+        using Int = scalar_t;
+        auto shape =
+            std::array<int64_t, 2>{inputs[0].size(0), inputs[0].size(1)};
+        auto out = TPack<Int, 2, device_t>::empty(shape);
+        auto unresolved = TPack<bool, 2, device_t>::empty(shape);
+        ProtonationContext<Int, device_t> c{
+            TCAST(inputs[0]),
+            TCAST(inputs[1]),
+            TCAST(inputs[2]),
+            TCAST(inputs[3]),
+            TCAST(inputs[4]),
+            TCAST(inputs[5]),
+            TCAST(inputs[6]),
+            TCAST(inputs[7]),
+            TCAST(inputs[8]),
+            TCAST(inputs[9]),
+            TCAST(inputs[10]),
+            Int(deprotonated),
+            out.view,
+            unresolved.view};
+        Protonation<score::common::DeviceOperations, device_t, Int>::f(mgr, c);
+        result = out.tensor;
+        bad = unresolved.tensor;
+      }));
+  return {result, bad};
+}
+
 TMOL_LIBRARY(tmol_io, m) {
   m.def("hydrogen_completion", TMOL_FN(&hydrogen_completion));
   m.def("hydrogen_input", TMOL_FN(&hydrogen_input));
+  m.def("protonation", TMOL_FN(&protonation));
   m.def("canonical_variants", TMOL_FN(&canonical_variants));
   m.def("canonical_cycles", TMOL_FN(&canonical_cycles));
   m.def("canonical_wiring", TMOL_FN(&canonical_wiring));
