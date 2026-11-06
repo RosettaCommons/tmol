@@ -109,3 +109,11 @@ contributions. A two-residue cycle has one sparse conformer pair whose energy
 and coordinate derivatives include both directed peptide bonds. Dependencies on
 a third independently sampled backbone block still require an explicit workflow
 boundary; pair selection alone cannot represent that higher-body interaction.
+
+For a connected third backbone residue in either endpoint's correlation group,
+backbone scoring resolves its atom from the matching local conformer and that
+conformer's actual residue type. The same global atom index receives its weighted
+coordinate derivative. The optional final `lockstep_group_for_block` view selects
+this behavior; an empty view retains fixed-background resolution. Adapters must
+validate group counts, local-state correspondence and compatible connection
+layouts. A third independently varying block remains outside this pairwise model.
