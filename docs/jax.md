@@ -264,8 +264,9 @@ For coordinate gradients or compiled repeated evaluation, first call
 list; refresh it after moving conformers. Calling the eager scorer itself under
 JAX transformations rejects explicitly. Native interaction-graph construction
 consumes these entries and shares background, one-body and chunked two-body
-accumulation with Torch. Bump pruning and correlated-group collapse remain absent
-from this JAX graph frontend.
+accumulation with Torch. Producer-declared correlated groups use the common
+collapse plan: incompatible joint states are removed and compatible member
+energies accumulate into one choice. Bump pruning remains absent.
 
 `tmol_jax.pack.pack_rotamers(pose, score_function, task, seed=123)` runs the
 complete sparse score, common interaction graph, native annealer and native
@@ -280,7 +281,9 @@ conjugated sampling and FastRelax remain unfinished.
 `prepare_pose_imposition(pose, rotamers, graph["retained"], assignments)` prepares
 discrete selection eagerly. Its `coordinates(rotamer_coords)` supports `jit`,
 `vmap`, coordinate gradients, JVPs and higher derivatives; `apply` returns a new
-pose. Identity changes compact atom storage and rebuild bond separation. The
+pose. Correlated graph choices expand back to every original member before
+identity and atom-layout reconstruction. Identity changes compact atom storage
+and rebuild bond separation. The
 frontend rejects changed connection-port layouts and identity changes with
 attached constraints. Design selection covers L/D ARG-to-LYS and fixed-amino-acid
 alternatives. Register `FixedAAChiSampler()` to generate Gly, Ala, D variants and

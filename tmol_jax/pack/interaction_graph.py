@@ -112,16 +112,13 @@ def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
 
     Inputs are uncoalesced scalar entries and [3, entries] pose/rotamer indices.
     Duplicate entries accumulate. Distinct alternatives of one block cannot
-    share an energy entry. All conformers are retained; bump pruning and
-    correlated-group collapse are not implemented here. Discrete allocation is
+    share an energy entry. Producer-declared joint conformers are collapsed
+    through the shared correspondence plan. Bump pruning is not implemented.
+    Discrete allocation is
     eager and energy-table construction currently has no AD rule.
     """
     if any(isinstance(a, jax.core.Tracer) for a in (values, indices)):
         raise TypeError("dynamic interaction graphs must be built outside jit/vmap/AD")
-    if rotamers.correlated_groups:
-        raise NotImplementedError(
-            "interaction graph lockstep collapse is not implemented"
-        )
     if not isinstance(chunk_size, (int, np.integer)) or not 0 < chunk_size < 1 << 31:
         raise ValueError("chunk_size must be a positive int32")
     if values.ndim != 1 or values.dtype not in (jnp.float32, jnp.float64):
@@ -150,6 +147,14 @@ def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
                 "sparse entries cannot join distinct alternatives of one block"
             )
     shape = jax.ShapeDtypeStruct
+    collapse = None
+    grouped = bool(rotamers.correlated_groups)
+    if grouped:
+        from ._correlation import collapse_for_graph
+
+        rotamers, values, indices, collapse = collapse_for_graph(
+            rotamers, values, indices
+        )
 
     def total(value):
         return int(np.asarray(value).copy().view(np.int64).reshape(-1)[0])
@@ -216,6 +221,8 @@ def build_interaction_graph(rotamers, values, indices, *, chunk_size=16):
             extent=n_rotamers,
             chunk_size=chunk_size,
         )
+    if grouped:
+        retained["group_collapse"] = collapse
     return dict(
         retained=retained,
         chunk_size=chunk_size,

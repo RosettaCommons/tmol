@@ -12,6 +12,73 @@ from tmol_jax.pack.imposition import prepare_pose_imposition
 
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
+def test_joint_design_expands_original_member_identity_before_atom_layout(platform):
+    from tests.scientific.molecules import MolecularCase
+    from tests.scientific.test_correlated_graph import joint_fixture
+    from tmol_jax.pack.interaction_graph import build_interaction_graph
+    from tmol_jax.pack.rotamer_set import ConformerContext
+    from tmol_jax.pose.pose_stack_builder import PoseStackBuilder
+
+    b = Execution("jax-" + platform)
+    with jax.default_device(b.device):
+        case = MolecularCase(
+            (), (("ARG", "ALA", "LYS", "VAL", "SER", "GLY"),), ((1,) * 6,)
+        )
+        b.molecule(case, terms=("ref",))
+        pbt = b.pose.packed_block_types
+        source = np.asarray(b.pose.coords)[0].copy()
+        offsets = np.asarray(b.pose.block_coord_offset)[0].copy()
+        types = np.asarray(b.pose.block_type_ind)[0].copy()
+        natoms = np.asarray(pbt.n_atoms)
+        blocks = [
+            source[start : start + natoms[kind]] for start, kind in zip(offsets, types)
+        ]
+        pose = PoseStackBuilder.from_block_types_and_coords(
+            pbt,
+            [[*types[[0, 2, 4]], -1], [-1] * 4],
+            [np.concatenate(blocks[::2]), np.empty((0, 3), np.float32)],
+            [[0, 1, 2, -1], [-1] * 4],
+            [[1, 2, 3, -1], [-1] * 4],
+            connections_per_pose=[(), ()],
+        )
+        r, indices, values = joint_fixture(b)
+        r.coords = jnp.asarray(source)
+        r.coord_offset_for_rot = jnp.asarray(offsets)
+        r.block_type_ind_for_rot = jnp.asarray(types)
+        r.context = ConformerContext(pose)
+        graph = build_interaction_graph(r, values, indices, chunk_size=2)
+        original = np.asarray(pose.coords).copy()
+        for state in range(2):
+            for external in range(2):
+                choices = jnp.asarray([[[state, external]], [[0, 0]]], jnp.int32)
+                plan = prepare_pose_imposition(pose, r, graph["retained"], choices)
+                out = plan.apply(r.coords)
+                selected = [state, 2 + external, 4 + state]
+                np.testing.assert_array_equal(
+                    out.block_type_ind, [[*types[selected], -1], [-1] * 4]
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(plan.selected).copy().view(np.int64).reshape(2, 4),
+                    [[*selected, -1], [-1] * 4],
+                )
+                expected = np.concatenate([blocks[i] for i in selected])
+                np.testing.assert_array_equal(
+                    np.asarray(out.coords)[0, : len(expected)], expected
+                )
+                np.testing.assert_array_equal(out.coords[1], 0)
+                np.testing.assert_array_equal(
+                    jax.jit(plan.coordinates)(r.coords), out.coords
+                )
+                np.testing.assert_array_equal(pose.coords, original)
+                assert out.packed_block_types is pbt
+                assert out.coords.device == b.device
+        invalid = dict(graph["retained"])
+        del invalid["group_collapse"]
+        with pytest.raises(ValueError, match="shared collapse plan"):
+            prepare_pose_imposition(pose, r, invalid, choices)
+
+
+@pytest.mark.parametrize("platform", ("cpu", "cuda"))
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
 def test_imposition_gaps_coordinate_ad_and_batching(platform, dtype):
     b = Execution("jax-" + platform)

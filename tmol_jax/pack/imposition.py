@@ -11,6 +11,7 @@ import numpy as np
 from .graph import prefix_counts, load_balance
 from .dispatch import _narrow_prefix
 from .scoring import validate_rotamer_context
+from ._correlation import expand_selected
 
 from ._ffi import stage
 
@@ -85,14 +86,15 @@ def prepare_pose_imposition(pose, rotamers, retained, assignments):
     int32[poses, trajectories, molten_blocks]; trajectory zero is selected.
     Atom layout changes require eager allocation. Fixed-layout coordinates
     remain on their input device, and unchanged layouts preserve gaps/capacity.
-    Constraints on a changed identity and correlated groups currently reject.
+    Joint choices expand to original member identities before atom layout.
+    Constraints on a changed identity currently reject.
     """
     if any(isinstance(x, jax.core.Tracer) for x in (pose.coords, assignments)):
         raise TypeError("pose imposition preparation requires eager discrete choices")
     validate_rotamer_context(pose, rotamers)
-    if rotamers.correlated_groups:
-        raise NotImplementedError(
-            "pose imposition of correlated groups is not implemented"
+    if rotamers.correlated_groups and "group_collapse" not in retained:
+        raise ValueError(
+            "correlated imposition requires a graph's shared collapse plan"
         )
     p, b = pose.block_type_ind.shape
     m = retained["block_rotamer_counts"].shape[1]
@@ -138,6 +140,9 @@ def prepare_pose_imposition(pose, rotamers, retained, assignments):
             (*args, flags, prefix), operation=1, outputs=(wide(p, b), integer(p, b))
         )
         _check_errors(errors)
+        selected = expand_selected(
+            selected, retained.get("group_collapse"), pose.device
+        )
         types, counts, changed, errors = _stage(
             (
                 original,
