@@ -101,6 +101,22 @@ def _map_residue_atoms(residue, source, present, mapping, leaf):
     return coords, available
 
 
+def _compact_palette(pbt, used):
+    from tmol_core.cache import AnnotationKey
+    from tmol_jax.pose.packed_block_types import PackedBlockTypes
+    import jax
+
+    types = tuple(pbt.active_block_types[k] for k in used)
+    device = jax.config.jax_default_device or jax.devices()[0]
+    key = AnnotationKey.from_sources(pbt.chem_db, *types, settings=(device,))
+    cached = getattr(pbt, "_canonical_compact_palette", None)
+    if cached is not None and cached[0].matches(key):
+        return cached[1]
+    compact = PackedBlockTypes.from_restypes(pbt.chem_db, types)
+    object.__setattr__(pbt, "_canonical_compact_palette", (key, compact))
+    return compact
+
+
 def _canonical_coordinates(cf, co):
     import jax
 
@@ -158,7 +174,6 @@ def pose_stack_from_canonical_form(
     from .canonical_ordering import default_canonical_ordering
     from ._selection import select_and_connect
     from ._missing import complete_missing_atoms
-    from tmol_jax.pose.packed_block_types import PackedBlockTypes
     from tmol_jax.pose.pose_stack_builder import PoseStackBuilder
 
     cf = dict(canonical_form_dict)
@@ -273,9 +288,7 @@ def pose_stack_from_canonical_form(
     used = np.unique(np.concatenate(rows))
     remap = np.full(pbt.n_types, -1, np.int32)
     remap[used] = np.arange(len(used), dtype=np.int32)
-    compact = PackedBlockTypes.from_restypes(
-        pbt.chem_db, [pbt.active_block_types[k] for k in used]
-    )
+    compact = _compact_palette(pbt, used)
     table = connections[:, : max(map(len, rows)), : compact.max_n_conn]
     result = PoseStackBuilder.from_block_types_and_coords(
         compact,

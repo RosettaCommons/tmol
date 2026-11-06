@@ -38,6 +38,39 @@ def _rows(cf, name, width, shape, endpoints):
     return values
 
 
+def _execution_metadata(pbt, prepared):
+    """One device snapshot for the current source-identity-keyed preparation."""
+    device = pbt.n_atoms.device
+    cached = getattr(pbt, "_canonical_execution_metadata", None)
+    if cached is not None and cached[0] is prepared and cached[1] == device:
+        return cached[2:]
+    types = pbt.active_block_types
+    arrays = jax.device_put(
+        (
+            (
+                prepared.var_combo_candidate_bt_index.astype(np.int32),
+                prepared.var_combo_is_real_candidate,
+                prepared.bt_canonical_atom_is_absent,
+                prepared.bt_non_term_patch_added_canonical_atom_is_present,
+                prepared.bt_is_non_default_terminus,
+            ),
+            prepared.co_equiv_class_is_polymeric,
+            prepared.co_polymer_connection_atoms.astype(np.int32),
+            prepared.co_polymer_connection_atoms[:, 1].astype(np.int32),
+            prepared.co_polymer_connection_atoms[:, 0].astype(np.int32),
+            np.array([bt.up_connection_ind for bt in types], np.int32),
+            np.array([bt.down_connection_ind for bt in types], np.int32),
+            np.array([bt.connection_to_cidx.get("dslf", -1) for bt in types], np.int32),
+        ),
+        device,
+    )
+    conjugations = prepare_conjugations(types)
+    object.__setattr__(
+        pbt, "_canonical_execution_metadata", (prepared, device, arrays, conjugations)
+    )
+    return arrays, conjugations
+
+
 def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, gaps):
     """Materialize the shared discrete input decisions on the palette's device.
 
@@ -53,6 +86,16 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
     def run(function, *values, **options):
         return function(*put(values), **options)
 
+    (
+        metadata,
+        class_polymeric,
+        class_ports,
+        class_up,
+        class_down,
+        up,
+        down,
+        dslf,
+    ), conjugations = _execution_metadata(pbt, prepared)
     real = types >= 0
     for name in ("metal_sites", "metal_coordination", "protonation_variants"):
         if cf.get(name) is not None:
@@ -99,23 +142,6 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
         coords = np.take_along_axis(coords, mapping[..., None], axis=2)
         present = np.take_along_axis(present, mapping, axis=2)
     cycles = _rows(cf, "cyclic_bonds", 3, types.shape, (1, 2))
-    if cf.get("find_additional_cyclic_closures", True):
-        ports = co.polymer_conn_inds
-        partners = np.asarray(
-            run(
-                _native.canonical_cycles,
-                types,
-                chains,
-                np.asarray(ports.up_atom_for_co_restype, np.int32),
-                np.asarray(ports.down_atom_for_co_restype, np.int32),
-                np.where(present[..., None], coords, np.nan),
-                cycles,
-            )
-        )
-        p, r = np.nonzero(partners >= 0)
-        cycles = np.concatenate(
-            (cycles, np.stack((p, r, partners[p, r]), axis=1).astype(np.int32))
-        )
     bonds = _rows(cf, "covalent_bonds", 5, types.shape, (1, 3))
     explicit_ports = np.zeros((*types.shape, 2), bool)
     if len(bonds):
@@ -126,28 +152,47 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
             ports = prepared.co_polymer_connection_atoms[types[p, r]]
             rows, sides = np.nonzero(a[:, None] == ports)
             explicit_ports[p[rows], r[rows], sides] = True
-    metadata = put(
-        (
-            prepared.var_combo_candidate_bt_index.astype(np.int32),
-            prepared.var_combo_is_real_candidate,
-            prepared.bt_canonical_atom_is_absent,
-            prepared.bt_non_term_patch_added_canonical_atom_is_present,
-            prepared.bt_is_non_default_terminus,
+    dtypes, dchains, dcoords, dpresent, dgaps, dreal, dvariants, dcycles, dexplicit = (
+        put(
+            (
+                types,
+                chains,
+                np.where(present[..., None], coords, np.nan),
+                present,
+                gaps,
+                real,
+                variants,
+                cycles,
+                explicit_ports,
+            )
         )
     )
-    termini, first, last, polymeric = run(
-        _native.canonical_chain_endings,
-        chains,
-        types,
-        gaps,
-        real,
-        prepared.co_equiv_class_is_polymeric,
-        prepared.co_polymer_connection_atoms.astype(np.int32),
-        cycles,
-        explicit_ports,
-    )
-    dpresent, dtypes, dvariants, dgaps, dreal = put(
-        (present, types, variants, gaps, real)
+    if cf.get("find_additional_cyclic_closures", True):
+        partners = np.asarray(
+            _native.canonical_cycles(
+                dtypes,
+                dchains,
+                class_up,
+                class_down,
+                dcoords,
+                dcycles,
+            )
+        )
+        p, r = np.nonzero(partners >= 0)
+        if len(p):
+            cycles = np.concatenate(
+                (cycles, np.stack((p, r, partners[p, r]), axis=1).astype(np.int32))
+            )
+            dcycles = put(cycles)
+    termini, first, last, polymeric = _native.canonical_chain_endings(
+        dchains,
+        dtypes,
+        dgaps,
+        dreal,
+        class_polymeric,
+        class_ports,
+        dcycles,
+        dexplicit,
     )
     termini = _native.canonical_atom_termini(
         dpresent,
@@ -181,7 +226,6 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
             "canonical input contains atoms absent from the best available chemical variant at %s",
             np.argwhere(real & (scores >= warning)).tolist(),
         )
-    conjugations = prepare_conjugations(pbt.active_block_types)
     covalent = prepare_covalent_connections(
         co, pbt.active_block_types, conjugations, selected, bonds
     )
@@ -200,22 +244,19 @@ def select_and_connect(co, pbt, prepared, cf, types, chains, coords, present, ga
     edges = np.asarray(covalent.connections + metal.connections, np.int32).reshape(
         -1, 5
     )
-    block_types = pbt.active_block_types
-    connections, status = run(
-        _native.canonical_connections,
-        selected,
+    dselected, ddisulfides, dedges = put((selected, disulfides, edges))
+    connections, status = _native.canonical_connections(
+        dselected,
         polymeric,
         first,
         last,
-        gaps,
-        np.array([bt.up_connection_ind for bt in block_types], np.int32),
-        np.array([bt.down_connection_ind for bt in block_types], np.int32),
-        np.array(
-            [bt.connection_to_cidx.get("dslf", -1) for bt in block_types], np.int32
-        ),
-        disulfides,
-        cycles,
-        edges,
+        dgaps,
+        up,
+        down,
+        dslf,
+        ddisulfides,
+        dcycles,
+        dedges,
         max_connections=pbt.max_n_conn,
     )
     if np.any(np.asarray(status)):
