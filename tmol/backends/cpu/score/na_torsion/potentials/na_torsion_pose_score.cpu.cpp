@@ -140,3 +140,10 @@ NARotamerTopologyOutput na_rotamer_topology_cpu(
 }  // namespace na_torsion
 }  // namespace score
 }  // namespace tmol
+
+#include <tmol/pack/rotamer/na_sampling_torch.impl.hh>
+namespace tmol::pack::rotamer {
+template struct NaSamplingTorchDispatch<
+    tmol::score::common::DeviceOperations,
+    tmol::Device::CPU>;
+}
