@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import numpy as np
 
-from tmol_core.chemical.atom_resolution import resolve_uaids
+from tmol_core.chemical.atom_resolution import resolve_uaids, torsion_atom_indices
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,7 @@ class DunbrackSamplingRequest:
     n_chi_for_bbt: np.ndarray
     frozen_requests: tuple
     frozen_destinations: np.ndarray
+    frozen_atom_indices: np.ndarray
     validate_frozen_chi: bool
 
 
@@ -136,6 +137,15 @@ def prepare_dunbrack_sampling_request(
         n_chi,
         tuple(requests),
         np.asarray(destinations, dtype=np.int64).reshape(-1, 2),
+        torsion_atom_indices(
+            block_types,
+            requests,
+            block_type_ind,
+            block_coord_offset,
+            inter_residue_connections,
+            atom_downstream_of_conn,
+            max_n_pose_atoms,
+        ),
         any(metadata.frozen_chi),
     )
 

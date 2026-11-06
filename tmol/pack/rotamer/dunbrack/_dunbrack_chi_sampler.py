@@ -248,11 +248,11 @@ class DunbrackChiSampler(ChiSampler):
             )
         measured = numpy.empty(0, dtype=numpy.float64)
         if request.frozen_requests:
-            from tmol.pose._util import _measure_torsions
+            from tmol.pose._util import _measure_torsion_indices
 
             with torch.no_grad():
-                measured = _measure_torsions(
-                    pose_stack, request.frozen_requests, degrees=False
+                measured = _measure_torsion_indices(
+                    pose_stack, request.frozen_atom_indices, degrees=False
                 )
         apply_frozen_chi(request, measured)
 

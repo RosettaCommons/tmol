@@ -14,6 +14,7 @@ import torch
 from tmol.chemical._restypes import _three2one
 from tmol.numeric import coord_dihedrals
 from tmol.pose._pose_stack import PoseStack
+from tmol_core.chemical.atom_resolution import torsion_atom_indices, resolve_atom_id
 
 
 def get_sequence(pose_stack: PoseStack, pose: int = 0) -> str:
@@ -321,35 +322,36 @@ def _torsion_requests(pose_stack, poses, blocks, names):  # noqa: C901
 
 def _resolve_uaid(pose_stack, pose, block, uaid):
     """Flat (pose, atom) coordinate index for a uaid, or -1 if unresolvable."""
-    atom, conn, sep = int(uaid[0]), int(uaid[1]), int(uaid[2])
-    pbt = pose_stack.packed_block_types
-    if conn == -1:
-        if atom == -1:
-            return -1
-        target_block, local = block, atom
-    else:
-        partner = pose_stack.inter_residue_connections64[pose, block, conn]
-        target_block, target_conn = int(partner[0]), int(partner[1])
-        if target_block == -1:
-            return -1
-        bt_ind = int(pose_stack.block_type_ind64[pose, target_block])
-        local = int(pbt.atom_downstream_of_conn[bt_ind, target_conn, sep])
-        if local == -1:
-            return -1
-    offset = int(pose_stack.block_coord_offset64[pose, target_block])
-    return pose * pose_stack.max_n_pose_atoms + offset + local
+    return resolve_atom_id(
+        pose,
+        block,
+        uaid,
+        pose_stack.block_type_ind64,
+        pose_stack.block_coord_offset64,
+        pose_stack.inter_residue_connections64,
+        pose_stack.packed_block_types.atom_downstream_of_conn,
+        pose_stack.max_n_pose_atoms,
+    )
 
 
 def _measure_torsions(pose_stack, requests, degrees):
+    if not requests:
+        return numpy.empty(0, dtype=numpy.float64)
     pbt = pose_stack.packed_block_types
-    inds = numpy.full((len(requests), 4), -1, dtype=numpy.int64)
-    for i, (pose, block, tor_ind, _) in enumerate(requests):
-        bt_ind = int(pose_stack.block_type_ind64[pose, block])
-        uaids = pbt.active_block_types[bt_ind].ordered_torsions[tor_ind]
-        for j in range(4):
-            inds[i, j] = _resolve_uaid(pose_stack, pose, block, uaids[j])
+    inds = torsion_atom_indices(
+        pbt.active_block_types,
+        requests,
+        pose_stack.block_type_ind64.cpu().numpy(),
+        pose_stack.block_coord_offset64.cpu().numpy(),
+        pose_stack.inter_residue_connections64.cpu().numpy(),
+        pbt.atom_downstream_of_conn.cpu().numpy(),
+        pose_stack.max_n_pose_atoms,
+    )
+    return _measure_torsion_indices(pose_stack, inds, degrees)
 
-    values = numpy.full(len(requests), numpy.nan)
+
+def _measure_torsion_indices(pose_stack, inds, degrees):
+    values = numpy.full(len(inds), numpy.nan)
     ok = (inds != -1).all(axis=1)
     if ok.any():
         flat = pose_stack.coords.reshape(-1, 3).double()

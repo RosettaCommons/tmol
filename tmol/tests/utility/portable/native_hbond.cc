@@ -1,5 +1,9 @@
 #include <tmol/score/hbond/potentials/native_hbond_pose.hh>
 #include <tmol/score/hbond/potentials/native_hbond_bases.hh>
+#if defined(TILE_SIZE) || defined(MAX_N_CONN) || defined(HBOND_ATOM_ENERGY)
+#error "Hydrogen-bond kernels leak private macros"
+#endif
+#include <tmol/score/elec/potentials/elec_pose_kernels.hh>
 #include "native_test_ops.hh"
 #include <cassert>
 #include <vector>

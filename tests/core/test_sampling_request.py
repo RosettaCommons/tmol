@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from tmol_core.chemical.atom_resolution import torsion_atom_indices
 from tmol_core.pack.dunbrack import DunSamplerPBTCache
 from tmol_core.pack.sampling_request import (
     apply_frozen_chi,
@@ -33,7 +34,12 @@ def metadata():
 
 def test_task_masks_and_frozen_chi_preserve_chemical_identity():
     cache = metadata()
-    types = [SimpleNamespace(torsions=[SimpleNamespace(name="chi1")])] * 2
+    types = [
+        SimpleNamespace(
+            torsions=[SimpleNamespace(name="chi1")],
+            ordered_torsions=cache.bbdihe_uaids[0, :1],
+        )
+    ] * 2
     request = prepare_dunbrack_sampling_request(
         types,
         cache,
@@ -56,6 +62,7 @@ def test_task_masks_and_frozen_chi_preserve_chemical_identity():
     )
     np.testing.assert_array_equal(request.n_chi_for_bbt, [2, 2])
     assert request.frozen_requests == ((0, 0, 0, "chi1"),)
+    np.testing.assert_array_equal(request.frozen_atom_indices, [[0, 1, 2, 3]])
     np.testing.assert_array_equal(request.frozen_destinations, [[0, 0]])
     result = apply_frozen_chi(request, [np.nan])
     np.testing.assert_array_equal(
@@ -83,3 +90,31 @@ def test_backbone_uses_destination_type_and_marks_missing_atoms():
     assert backbone_dihedral_indices(*args)[0, 0, 0, 0] == -1
     connections[0, 0, 0] = [-1, -1]
     assert backbone_dihedral_indices(*args)[0, 0, 0, 0] == -1
+
+
+def test_requested_torsion_crosses_types_and_preserves_batch_offsets():
+    uaids = np.array([[[0, -1, -1], [1, -1, -1], [-1, 0, 0], [-1, 0, 1]]])
+    types = [SimpleNamespace(ordered_torsions=uaids)] * 2
+    connections = np.full((2, 2, 1, 2), -1, dtype=np.int32)
+    connections[1, 0, 0] = [1, 0]
+    indices = torsion_atom_indices(
+        types,
+        [(1, 0, 0, "chi1"), (0, 0, 0, "chi1")],
+        np.array([[0, 1], [0, 1]]),
+        np.array([[0, 4], [0, 4]]),
+        connections,
+        np.array([[[0, 1]], [[3, -1]]]),
+        8,
+    )
+    np.testing.assert_array_equal(indices, [[8, 9, 15, -1], [0, 1, -1, -1]])
+    # A larger request exercises the vector path with the same chemical graph.
+    repeated = torsion_atom_indices(
+        types,
+        [(1, 0, 0, "chi1"), (0, 0, 0, "chi1")] * 2,
+        np.array([[0, 1], [0, 1]]),
+        np.array([[0, 4], [0, 4]]),
+        connections,
+        np.array([[[0, 1]], [[3, -1]]]),
+        8,
+    )
+    np.testing.assert_array_equal(repeated, np.tile(indices, (2, 1)))
