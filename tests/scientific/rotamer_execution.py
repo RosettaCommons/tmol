@@ -39,16 +39,26 @@ class RotamerExecution:
             from tmol_jax.pack.scoring import prepare_rotamer_nonbonded
             from tmol_jax.pack.dunbrack_scoring import prepare_rotamer_dunbrack
             from tmol_jax.pack.lk_ball_scoring import prepare_rotamer_lk_ball
-            from tmol_jax.pack.bonded_scoring import prepare_rotamer_genbonded
+            from tmol_jax.pack.bonded_scoring import (
+                prepare_rotamer_genbonded,
+                prepare_rotamer_cartbonded,
+            )
             from tmol_jax.pack.hbond_scoring import prepare_rotamer_hbond
 
             with backend.module.default_device(backend.device):
                 arguments = (backend.pose, self.rotamers, backend.parameter_database)
-                if self.family in ("dunbrack", "lk_ball", "genbonded", "hbond"):
+                if self.family in (
+                    "dunbrack",
+                    "lk_ball",
+                    "genbonded",
+                    "hbond",
+                    "cartbonded",
+                ):
                     prepare = {
                         "dunbrack": prepare_rotamer_dunbrack,
                         "lk_ball": prepare_rotamer_lk_ball,
                         "genbonded": prepare_rotamer_genbonded,
+                        "cartbonded": prepare_rotamer_cartbonded,
                         "hbond": prepare_rotamer_hbond,
                     }[self.family]
                     self.state = prepare(*arguments)
@@ -63,6 +73,7 @@ class RotamerExecution:
                 DunbrackEnergyTerm,
                 LKBallEnergyTerm,
                 GenBondedEnergyTerm,
+                CartBondedEnergyTerm,
                 HBondEnergyTerm,
             )
 
@@ -72,6 +83,7 @@ class RotamerExecution:
                 "dunbrack": DunbrackEnergyTerm,
                 "lk_ball": LKBallEnergyTerm,
                 "genbonded": GenBondedEnergyTerm,
+                "cartbonded": CartBondedEnergyTerm,
                 "hbond": HBondEnergyTerm,
             }[self.family]
             term = cls(param_db=backend.parameter_database, device=backend.device)
@@ -93,10 +105,10 @@ class RotamerExecution:
         x = self.array(coords)
         if self.backend.framework == "torch":
             return self.scorer(x)
-        if self.family == "genbonded":
-            from tmol_jax.pack.bonded_scoring import sparse_genbonded_scores
+        if self.family in ("genbonded", "cartbonded"):
+            from tmol_jax.pack.bonded_scoring import sparse_bonded_scores
 
-            return sparse_genbonded_scores(x, self.state)
+            return sparse_bonded_scores(x, self.state)
         if self.family == "dunbrack":
             from tmol_jax.pack.dunbrack_scoring import sparse_dunbrack_scores
 
@@ -138,10 +150,10 @@ class RotamerExecution:
         _, indices = self.scores(coords)
 
         def weighted(x):
-            if self.family == "genbonded":
-                from tmol_jax.pack.bonded_scoring import sparse_genbonded_scores
+            if self.family in ("genbonded", "cartbonded"):
+                from tmol_jax.pack.bonded_scoring import sparse_bonded_scores
 
-                values = sparse_genbonded_scores(x, self.state)[0]
+                values = sparse_bonded_scores(x, self.state)[0]
             elif self.family == "dunbrack":
                 from tmol_jax.pack.dunbrack_scoring import sparse_dunbrack_scores
 

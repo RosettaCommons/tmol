@@ -3,7 +3,12 @@
 import numpy as np
 import pytest
 
-from .molecules import DOMAIN_CASES
+from .molecules import DOMAIN_CASES, MolecularCase
+
+CARTESIAN_CASES = {
+    **DOMAIN_CASES,
+    "hydroxyls": MolecularCase((), (("SER", "THR", "TYR"),), ((3,),)),
+}
 
 TERMS = (
     "cart_lengths",
@@ -14,9 +19,9 @@ TERMS = (
 )
 
 
-@pytest.mark.parametrize("name", DOMAIN_CASES)
+@pytest.mark.parametrize("name", CARTESIAN_CASES)
 def test_cartesian_bonded_channels_and_coordinate_derivatives(backend, name):
-    backend.molecule(DOMAIN_CASES[name], terms=TERMS)
+    backend.molecule(CARTESIAN_CASES[name], terms=TERMS)
     x = backend.coords()
     values, gradients = backend.channel_values_and_gradients(x)
     assert np.isfinite(values).all() and np.isfinite(gradients).all()

@@ -7,6 +7,7 @@ import numpy as np
 
 from tmol_jax.score._native import register
 from tmol_jax.score.genbonded.genbonded_energy_term import GenBondedEnergyTerm
+from tmol_jax.score.cartbonded.cartbonded_energy_term import CartBondedEnergyTerm
 from .graph import prefix_counts, load_balance
 from .scoring import validate_rotamer_context, sparse_nonbonded_values
 
@@ -55,12 +56,12 @@ def connected_candidates(pose, rotamers):
     return owners, indices
 
 
-def prepare_rotamer_genbonded(pose, rotamers, database):
+def prepare_rotamer_bonded(pose, rotamers, database, *, cartesian=False):
     validate_rotamer_context(pose, rotamers)
     with jax.default_device(pose.device):
-        parameters = GenBondedEnergyTerm(database).setup_for_pose_stack(
-            pose, include_empty=True
-        )
+        cls = CartBondedEnergyTerm if cartesian else GenBondedEnergyTerm
+        options = {} if cartesian else {"include_empty": True}
+        parameters = cls(database).setup_for_pose_stack(pose, **options)
         owners, indices = connected_candidates(pose, rotamers)
     parameters = (
         rotamers.coord_offset_for_rot,
@@ -70,10 +71,22 @@ def prepare_rotamer_genbonded(pose, rotamers, database):
         rotamers.block_type_ind_for_rot,
         owners,
     )
-    return ("tmol_rotamer_genbonded", 1, parameters, 0.0), indices
+    target = "tmol_rotamer_cartbonded" if cartesian else "tmol_rotamer_genbonded"
+    return (target, 5 if cartesian else 1, parameters, 0.0), indices
 
 
-def sparse_genbonded_scores(coords, state):
+def prepare_rotamer_genbonded(pose, rotamers, database):
+    return prepare_rotamer_bonded(pose, rotamers, database)
+
+
+def prepare_rotamer_cartbonded(pose, rotamers, database):
+    return prepare_rotamer_bonded(pose, rotamers, database, cartesian=True)
+
+
+def sparse_bonded_scores(coords, state):
     """Score fixed connected candidates with native values and coordinate VJP."""
     prepared, indices = state
     return sparse_nonbonded_values(coords, prepared, indices), indices
+
+
+sparse_genbonded_scores = sparse_bonded_scores

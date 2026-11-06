@@ -7,6 +7,7 @@ import pytest
 
 from .molecules import CASES, DOMAIN_CASES
 from .hbond_molecules import HBOND_CASES
+from .test_cartbonded import CARTESIAN_CASES, TERMS as CART_TERMS
 from .rotamer_execution import RotamerExecution
 
 
@@ -25,17 +26,29 @@ from .rotamer_execution import RotamerExecution
         )
     ]
     + [("genbonded", name) for name in CASES]
-    + [("hbond", name) for name in HBOND_CASES],
+    + [("hbond", name) for name in HBOND_CASES]
+    + [
+        ("cartbonded", name)
+        for name in (
+            "ligand",
+            "noncanonical",
+            "connected_noncanonical",
+            "d_peptide",
+            "mixed_batch",
+            "hydroxyls",
+        )
+    ],
 )
 def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, family):
     terms = {
         "genbonded": ("gen_torsions",),
+        "cartbonded": CART_TERMS,
         "hbond": ("hbond",),
         "elec": ("fa_elec",),
         "ljlk": ("fa_ljatr", "fa_ljrep", "fa_lk"),
         "lk_ball": ("lk_ball_iso", "lk_ball", "lk_bridge", "lk_bridge_uncpl"),
     }[family]
-    cases = HBOND_CASES if family == "hbond" else DOMAIN_CASES
+    cases = HBOND_CASES if family == "hbond" else CARTESIAN_CASES
     backend.molecule(cases[case_name], terms=terms)
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
@@ -78,7 +91,9 @@ def test_sparse_nonbonded_values_and_coordinate_derivatives(backend, case_name, 
         np.testing.assert_array_equal(backend.numpy(execution.rotamers.coords), coords)
 
 
-@pytest.mark.parametrize("family", ("ljlk", "lk_ball", "genbonded", "hbond"))
+@pytest.mark.parametrize(
+    "family", ("ljlk", "lk_ball", "genbonded", "hbond", "cartbonded")
+)
 def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
     import attrs
 
@@ -97,6 +112,7 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
             "ljlk": (2, 4),
             "lk_ball": (3, 2),
             "genbonded": (1, 2),
+            "cartbonded": (1, 2),
             "hbond": (1, 2),
         }[family]
         weights = np.broadcast_to(
@@ -108,7 +124,25 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
         database = backend.parameter_database
         # Fourfold well depth doubles its float32 square-root table exactly;
         # this keeps the analytic scaling check free of parameter quantization.
-        if family == "hbond":
+        if family == "cartbonded":
+            source = database.scoring.cartbonded
+
+            def scale(record):
+                return attrs.evolve(
+                    record,
+                    length_parameters=tuple(
+                        attrs.evolve(p, K=2 * p.K) for p in record.length_parameters
+                    ),
+                )
+
+            changed = type(source).from_cartres_dict(
+                {name: scale(record) for name, record in source.residue_params.items()},
+                tuple(scale(record) for record in source.connection_params),
+            )
+            modified = attrs.evolve(
+                database, scoring=attrs.evolve(database.scoring, cartbonded=changed)
+            )
+        elif family == "hbond":
             source = database.scoring.hbond
             changed = attrs.evolve(
                 source,
@@ -193,7 +227,7 @@ def test_sparse_dunbrack_preserves_library_free_conformer_identity(backend):
     "family,case_name",
     [
         (family, case)
-        for family in ("ljlk", "elec", "dunbrack", "lk_ball", "genbonded")
+        for family in ("ljlk", "elec", "dunbrack", "lk_ball", "genbonded", "cartbonded")
         for case in ("l_peptide", "mixed_batch")
     ]
     + [("hbond", "sampled_ser_ligand")],
@@ -205,6 +239,7 @@ def test_sampled_ensemble_selection_conserves_energy_and_forces(
 
     terms = {
         "genbonded": ("gen_torsions",),
+        "cartbonded": CART_TERMS,
         "hbond": ("hbond",),
         "elec": ("fa_elec",),
         "ljlk": ("fa_ljatr", "fa_ljrep", "fa_lk"),
