@@ -659,6 +659,10 @@
 
     <span class="k">if</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">"cuda"</span><span class="p">:</span>
         <span class="n">free_bytes</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">mem_get_info</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="c1"># Blocks cached but unused by torch's allocator are free to the packer too.</span>
+        <span class="n">free_bytes</span> <span class="o">+=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">memory_reserved</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span>
+        <span class="p">)</span> <span class="o">-</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">memory_allocated</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="n">memory_budget</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">free_bytes</span> <span class="o">*</span> <span class="n">_PACKING_FREE_MEMORY_FRACTION</span><span class="p">)</span>
         <span class="n">estimated_bytes_per_pose</span> <span class="o">=</span> <span class="p">(</span>
             <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_n_blocks</span><span class="p">)</span> <span class="o">*</span> <span class="n">_ESTIMATED_PACKING_BYTES_PER_BLOCK</span>

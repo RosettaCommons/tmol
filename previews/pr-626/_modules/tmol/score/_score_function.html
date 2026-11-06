@@ -433,6 +433,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">ctypes</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">itertools</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
@@ -500,6 +501,19 @@
 <span class="n">_PACK_FUSED_ROTAMER_SCORE_WINDOW</span> <span class="o">=</span> <span class="mi">4</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span>
 <span class="n">_CPU_SCORE_TERM_EXECUTORS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">],</span> <span class="n">ThreadPoolExecutor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
 <span class="n">_CPU_SCORE_TERM_EXECUTOR_LOCK</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+<span class="n">_BOUND_WORKER_STARTS</span> <span class="o">=</span> <span class="n">itertools</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
+<span class="c1"># On macOS, capping each pool worker at an equal share of the thread budget</span>
+<span class="c1"># starves the expensive terms while the cheap ones idle; it made Metal-offloaded</span>
+<span class="c1"># minimization ~45% slower per evaluation and CPU-only ~18% slower. Workers</span>
+<span class="c1"># there keep the whole budget; _single_openmp_thread still applies.</span>
+<span class="n">_CAP_CPU_SCORE_WORKER_THREADS</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span> <span class="o">!=</span> <span class="s2">"darwin"</span>
+<span class="c1"># Terms whose every call repeats costly setup (hbond bases; lk_ball waters and</span>
+<span class="c1"># their backward), so each neighbor-list shard pays it again. Uncapped macOS</span>
+<span class="c1"># workers already run each such term on the whole thread budget, so sharding it</span>
+<span class="c1"># there only adds that setup: minimization measured ~10% slower per evaluation.</span>
+<span class="n">_UNSHARDED_PAIR_TERMS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="nb">frozenset</span><span class="p">((</span><span class="s2">"HBond"</span><span class="p">,</span> <span class="s2">"LKBall"</span><span class="p">))</span> <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span> <span class="o">==</span> <span class="s2">"darwin"</span> <span class="k">else</span> <span class="nb">frozenset</span><span class="p">()</span>
+<span class="p">)</span>
 <span class="n">_ScoreCallResult</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">"_ScoreCallResult"</span><span class="p">)</span>
 
 
@@ -577,14 +591,46 @@
     <span class="k">return</span> <span class="kc">None</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_share_cpu_threads_with_pool</span><span class="p">(</span><span class="n">n_threads</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Executor initializer: cap this worker's OpenMP team at its share.</span>
+<span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_openmp_place_cpus</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""CPUs of all OpenMP places; empty when OpenMP binding is off."""</span>
+    <span class="n">runtime</span> <span class="o">=</span> <span class="n">_openmp_runtime</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">runtime</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">runtime</span><span class="p">,</span> <span class="s2">"omp_get_num_places"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">frozenset</span><span class="p">()</span>
+    <span class="n">cpus</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">place</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">runtime</span><span class="o">.</span><span class="n">omp_get_num_places</span><span class="p">()):</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span> <span class="o">*</span> <span class="n">runtime</span><span class="o">.</span><span class="n">omp_get_place_num_procs</span><span class="p">(</span><span class="n">place</span><span class="p">))()</span>
+        <span class="n">runtime</span><span class="o">.</span><span class="n">omp_get_place_proc_ids</span><span class="p">(</span><span class="n">place</span><span class="p">,</span> <span class="n">ids</span><span class="p">)</span>
+        <span class="n">cpus</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">cpus</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_init_cpu_score_worker</span><span class="p">(</span><span class="n">n_threads</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Executor initializer: run on every bound CPU, then cap the OpenMP team.</span>
+
+<span class="sd">    Under OpenMP binding new threads inherit the main thread's single CPU, and a</span>
+<span class="sd">    thread that starts an OpenMP team is pinned to the first place with its team</span>
+<span class="sd">    after it. So under binding a worker takes every CPU of the places, starting</span>
+<span class="sd">    on a CPU of its own, and never starts a team.</span>
 
 <span class="sd">    Every thread that enters an OpenMP region gets its own team, sized by that</span>
-<span class="sd">    thread's OpenMP setting, so uncapped pool workers each start a full-size team</span>
-<span class="sd">    and oversubscribe the CPU. The setting is per thread, so the caller's budget</span>
-<span class="sd">    is unchanged. Query torch first: it seeds a new thread's setting on first use.</span>
+<span class="sd">    thread's OpenMP setting, so uncapped workers oversubscribe the CPU. With</span>
+<span class="sd">    n_threads the worker is capped at its share; the setting is per thread, so</span>
+<span class="sd">    the caller's budget is unchanged. Query torch first: it seeds a new thread's</span>
+<span class="sd">    setting on first use.</span>
 <span class="sd">    """</span>
+    <span class="n">cpus</span> <span class="o">=</span> <span class="n">_openmp_place_cpus</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">cpus</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">os</span><span class="p">,</span> <span class="s2">"sched_setaffinity"</span><span class="p">):</span>
+            <span class="c1"># Widening alone leaves the worker on the main thread's CPU; start</span>
+            <span class="c1"># it on its own CPU, counting down from the main team's places.</span>
+            <span class="n">ordered</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">cpus</span><span class="p">)</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="n">ordered</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span> <span class="o">-</span> <span class="nb">next</span><span class="p">(</span><span class="n">_BOUND_WORKER_STARTS</span><span class="p">)</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">ordered</span><span class="p">)]</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">sched_setaffinity</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="p">{</span><span class="n">start</span><span class="p">})</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">sched_setaffinity</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">cpus</span><span class="p">)</span>
+        <span class="n">n_threads</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">n_threads</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span>
     <span class="n">torch</span><span class="o">.</span><span class="n">get_num_threads</span><span class="p">()</span>
     <span class="n">runtime</span> <span class="o">=</span> <span class="n">_openmp_runtime</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">runtime</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -613,10 +659,13 @@
 
 <span class="sd">    With ``share_threads`` each worker gets an equal share of the thread budget.</span>
 <span class="sd">    Without it each worker may use the whole budget, which suits a few large</span>
-<span class="sd">    tasks that parallelize internally and finish at different times.</span>
+<span class="sd">    tasks that parallelize internally and finish at different times. Workers</span>
+<span class="sd">    are never capped on macOS (see _CAP_CPU_SCORE_WORKER_THREADS).</span>
 <span class="sd">    """</span>
     <span class="n">threads_per_worker</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">get_num_threads</span><span class="p">()</span> <span class="o">//</span> <span class="n">n_workers</span><span class="p">)</span> <span class="k">if</span> <span class="n">share_threads</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">get_num_threads</span><span class="p">()</span> <span class="o">//</span> <span class="n">n_workers</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">share_threads</span> <span class="ow">and</span> <span class="n">_CAP_CPU_SCORE_WORKER_THREADS</span>
+        <span class="k">else</span> <span class="kc">None</span>
     <span class="p">)</span>
     <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">n_workers</span><span class="p">,</span> <span class="n">threads_per_worker</span><span class="p">)</span>
     <span class="k">with</span> <span class="n">_CPU_SCORE_TERM_EXECUTOR_LOCK</span><span class="p">:</span>
@@ -625,8 +674,8 @@
             <span class="n">executor</span> <span class="o">=</span> <span class="n">ThreadPoolExecutor</span><span class="p">(</span>
                 <span class="n">max_workers</span><span class="o">=</span><span class="n">n_workers</span><span class="p">,</span>
                 <span class="n">thread_name_prefix</span><span class="o">=</span><span class="s2">"tmol-score"</span><span class="p">,</span>
-                <span class="n">initializer</span><span class="o">=</span><span class="p">(</span><span class="n">_share_cpu_threads_with_pool</span> <span class="k">if</span> <span class="n">share_threads</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
-                <span class="n">initargs</span><span class="o">=</span><span class="p">(</span><span class="n">threads_per_worker</span><span class="p">,)</span> <span class="k">if</span> <span class="n">share_threads</span> <span class="k">else</span> <span class="p">(),</span>
+                <span class="n">initializer</span><span class="o">=</span><span class="n">_init_cpu_score_worker</span><span class="p">,</span>
+                <span class="n">initargs</span><span class="o">=</span><span class="p">(</span><span class="n">threads_per_worker</span><span class="p">,),</span>
             <span class="p">)</span>
             <span class="n">_CPU_SCORE_TERM_EXECUTORS</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">executor</span>
         <span class="k">return</span> <span class="n">executor</span>
@@ -1732,6 +1781,7 @@
             <span class="n">index</span>
             <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">term</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_execution_modules</span><span class="p">)</span>
             <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">"block_neighbor_cutoff"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">"classname"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_UNSHARDED_PAIR_TERMS</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_pair_shards</span> <span class="o">=</span> <span class="p">(</span>
             <span class="nb">min</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">cpu_threads</span> <span class="o">//</span> <span class="mi">2</span><span class="p">))</span>
@@ -3076,7 +3126,13 @@
         <span class="p">)</span>
         <span class="n">use_fused</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_use_fused_ljlk_elec</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span>
         <span class="n">execution_terms</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execution_terms</span><span class="p">(</span><span class="n">use_fused</span><span class="p">)</span>
-        <span class="n">parallel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_term_workers</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">differentiable</span>
+        <span class="c1"># Under OpenMP binding workers cannot run teams; the terms' own OpenMP</span>
+        <span class="c1"># loops on this thread use every core instead.</span>
+        <span class="n">parallel</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_term_workers</span> <span class="o">&gt;=</span> <span class="mi">2</span>
+            <span class="ow">and</span> <span class="ow">not</span> <span class="n">differentiable</span>
+            <span class="ow">and</span> <span class="ow">not</span> <span class="n">_openmp_place_cpus</span><span class="p">()</span>
+        <span class="p">)</span>
         <span class="k">if</span> <span class="n">parallel</span><span class="p">:</span>
             <span class="n">executor</span> <span class="o">=</span> <span class="n">_cpu_score_term_executor</span><span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_term_workers</span><span class="p">,</span> <span class="n">share_threads</span><span class="o">=</span><span class="kc">False</span>

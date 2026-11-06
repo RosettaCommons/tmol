@@ -563,43 +563,45 @@ as above.</p>
 <section id="relax">
 <h2>Relax<a class="headerlink" href="#relax" title="Link to this heading">#</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">fast_relax()</span></code> combines repacking and minimization over a schedule of
-score-function weights:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol</span><span class="w"> </span><span class="kn">import</span> <span class="n">CartesianMoveMap</span><span class="p">,</span> <span class="n">FoldForest</span><span class="p">,</span> <span class="n">PackerPalette</span><span class="p">,</span> <span class="n">fast_relax</span>
+score-function weights. By default it minimizes every atom coordinate:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol</span><span class="w"> </span><span class="kn">import</span> <span class="n">fast_relax</span>
 
-<span class="n">palette</span> <span class="o">=</span> <span class="n">PackerPalette</span><span class="p">()</span>
-<span class="n">move_map</span> <span class="o">=</span> <span class="n">CartesianMoveMap</span><span class="p">()</span>  <span class="c1"># coord_mask=None allows all atom coordinates</span>
-<span class="n">fold_forest</span> <span class="o">=</span> <span class="n">FoldForest</span><span class="o">.</span><span class="n">reasonable_fold_forest</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">)</span>
+<span class="n">relaxed_pose_stack</span> <span class="o">=</span> <span class="n">fast_relax</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">minimizer</span></code> argument chooses the minimization mode and carries its
+settings. <code class="docutils literal notranslate"><span class="pre">CartesianRelaxMinimizer</span></code> minimizes atom coordinates, optionally
+restricted by a <code class="docutils literal notranslate"><span class="pre">CartesianMoveMap</span></code>. <code class="docutils literal notranslate"><span class="pre">KinematicRelaxMinimizer</span></code> minimizes
+torsions and jumps along a <code class="docutils literal notranslate"><span class="pre">FoldForest</span></code> (by default
+<code class="docutils literal notranslate"><span class="pre">FoldForest.reasonable_fold_forest</span></code> of the pose). Without a <code class="docutils literal notranslate"><span class="pre">MoveMap</span></code> it frees
+every mainchain and sidechain torsion and every jump; pass one to restrict it:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol</span><span class="w"> </span><span class="kn">import</span> <span class="n">KinematicRelaxMinimizer</span><span class="p">,</span> <span class="n">MoveMap</span>
 
-<span class="n">relaxed_pose_stack</span> <span class="o">=</span> <span class="n">fast_relax</span><span class="p">(</span>
-    <span class="n">pose_stack</span><span class="p">,</span>
-    <span class="n">sfxn</span><span class="p">,</span>
-    <span class="n">palette</span><span class="p">,</span>
-    <span class="n">move_map</span><span class="p">,</span>
-    <span class="n">fold_forest</span><span class="p">,</span>
+<span class="n">torsion_relaxed</span> <span class="o">=</span> <span class="n">fast_relax</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">,</span> <span class="n">minimizer</span><span class="o">=</span><span class="n">KinematicRelaxMinimizer</span><span class="p">())</span>
+
+<span class="n">move_map</span> <span class="o">=</span> <span class="n">MoveMap</span><span class="o">.</span><span class="n">from_pose_stack</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">)</span>  <span class="c1"># nothing moves until enabled</span>
+<span class="n">move_map</span><span class="o">.</span><span class="n">move_all_named_torsions</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="n">torsions_only</span> <span class="o">=</span> <span class="n">fast_relax</span><span class="p">(</span>
+    <span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">,</span> <span class="n">minimizer</span><span class="o">=</span><span class="n">KinematicRelaxMinimizer</span><span class="p">(</span><span class="n">move_map</span><span class="p">)</span>
 <span class="p">)</span>
 </pre></div>
 </div>
+<p>Each minimizer checks its move map type: a <code class="docutils literal notranslate"><span class="pre">CartesianMoveMap</span></code> cannot be given
+to the kinematic minimizer, nor a <code class="docutils literal notranslate"><span class="pre">MoveMap</span></code> to the Cartesian one. Any callable
+following the <code class="docutils literal notranslate"><span class="pre">tmol.relax.RelaxMinimizer</span></code> protocol can also be passed.</p>
 <p>Default repacking uses the score function’s parameter database, including
 nucleic-acid chi sampling and joint conformers for covalently attached groups.
 Free ligands retain their current conformation during packing and can move in
 Cartesian minimization. Custom <code class="docutils literal notranslate"><span class="pre">task_operations</span></code> replace this sampler setup.
 Supplemental Dunbrack chi products obey the sampling budget before enumeration;
 required library states are retained. Frozen chi keep their input angles for
-repacking, or generated ideal angles for a new chemical identity.</p>
-<p>The default minimizer is Cartesian and reads
-<code class="docutils literal notranslate"><span class="pre">CartesianMoveMap.coord_mask</span></code>; the fold forest is accepted by the common
-protocol but is not used by that minimizer. To minimize kinematic degrees of
-freedom, pass a configured <code class="docutils literal notranslate"><span class="pre">MoveMap</span></code>, a <code class="docutils literal notranslate"><span class="pre">FoldForest</span></code>, and a compatible
-kinematic <code class="docutils literal notranslate"><span class="pre">min_fn</span></code>.</p>
-<p>On CUDA, <code class="docutils literal notranslate"><span class="pre">fast_relax()</span></code> automatically uses graph replay for poses containing
-DNA or RNA, where repeated kernel-launch overhead is significant. Protein-only
-and protein–ligand poses remain eager by default because graph capture does
-not consistently recover its setup cost in a single relaxation. For repeated
-protein workloads, pass <code class="docutils literal notranslate"><span class="pre">cuda_graph=True</span></code> to favor steady-state throughput;
-pass <code class="docutils literal notranslate"><span class="pre">cuda_graph=False</span></code> to force eager execution.</p>
-<p>Graph replay reduces launch overhead and retains working tensors; measure both
-runtime and memory. Custom minimizers cannot use <code class="docutils literal notranslate"><span class="pre">cuda_graph=True</span></code>. CPU
-execution remains eager.</p>
+repacking, or generated ideal angles for a new chemical identity. The packer
+uses <code class="docutils literal notranslate"><span class="pre">PackerPalette()</span></code> unless <code class="docutils literal notranslate"><span class="pre">packer_palette</span></code> is given.</p>
+<p>On CUDA, both minimizers capture each stage’s forward/backward scoring path as
+a CUDA graph and replay it, which removes repeated kernel-launch overhead. Pass
+<code class="docutils literal notranslate"><span class="pre">cuda_graph=False</span></code> to the minimizer to force eager execution. Graph replay
+retains working tensors while a stage minimizes; measure memory for very large
+batches. CPU execution remains eager.</p>
 </section>
 <section id="examples-and-reference">
 <h2>Examples and reference<a class="headerlink" href="#examples-and-reference" title="Link to this heading">#</a></h2>
