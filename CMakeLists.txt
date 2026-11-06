@@ -366,6 +366,9 @@ set(_C_SOURCES
   # pack/compiled
   tmol/pack/compiled/compiled.ops.cpp
   tmol/backends/cpu/pack/compiled/compiled.cpu.cpp
+  # pack/rotamer shared reconstruction
+  tmol/pack/rotamer/conformer.ops.cpp
+  tmol/backends/cpu/pack/rotamer/conformer.cpu.cpp
   # pack/rotamer/dunbrack
   tmol/pack/rotamer/dunbrack/compiled.ops.cpp
   tmol/backends/cpu/pack/rotamer/dunbrack/compiled.cpu.cpp
@@ -419,6 +422,7 @@ if(TMOL_HAS_CUDA)
     tmol/backends/cuda/kinematics/compiled/compiled.cuda.cu
     tmol/backends/cuda/pack/compiled/compiled.cuda.cu
     tmol/backends/cuda/pack/rotamer/dunbrack/compiled.cuda.cu
+    tmol/backends/cuda/pack/rotamer/conformer.cuda.cu
     tmol/backends/cuda/score/backbone_torsion/potentials/backbone_torsion_pose_score.cuda.cu
     tmol/backends/cuda/score/cartbonded/potentials/cartbonded_pose_score.cuda.cu
     tmol/backends/cuda/score/genbonded/potentials/genbonded_pose_score.cuda.cu
