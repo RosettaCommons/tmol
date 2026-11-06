@@ -21,6 +21,26 @@ void instantiate() {
   launch_hbond_bases<SerialOps, tmol::Device::CPU, Real, int, false>(
       mgr, bases);
   gather_hbond_bases<SerialOps, tmol::Device::CPU, Real>(mgr, bases);
+  using Forward = HBondCtx<Real, int, tmol::Device::CPU, 2, 2, 2>;
+  using Backward = HBondCtx<Real, int, tmol::Device::CPU, 2, 2, 1>;
+  auto volatile forward = &launch_hbond_rotamer<
+      false,
+      SerialOps,
+      tmol::Device::CPU,
+      Real,
+      int,
+      tmol::ContextManager,
+      Forward>;
+  auto volatile backward = &launch_hbond_rotamer<
+      true,
+      SerialOps,
+      tmol::Device::CPU,
+      Real,
+      int,
+      tmol::ContextManager,
+      Backward>;
+  (void)forward;
+  (void)backward;
   HBondCtx<Real, int, tmol::Device::CPU> pose;
   launch_hbond_pose<SerialOps, tmol::Device::CPU, Real, int>(
       pose, 1, 2, 1, false, [](auto kernel) { kernel(0); });
