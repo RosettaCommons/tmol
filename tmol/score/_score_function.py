@@ -339,7 +339,7 @@ def _try_coalesce_cpu_rotamer_layouts(
 
 def _weighted_score_sum(weights: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
     """Reduce score lanes without materializing a lane-sized product."""
-    return torch.matmul(weights, scores)
+    return torch.matmul(weights.to(dtype=scores.dtype, device=scores.device), scores)
 
 
 class ScoreFunction:

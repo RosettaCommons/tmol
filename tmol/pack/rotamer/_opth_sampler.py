@@ -1,15 +1,12 @@
 import math
-import numpy
 import torch
 import attr
 
 from typing import Tuple
 
 from tmol.types._torch import Tensor
-from tmol.types._array import NDArray
 from tmol.types._functional import _validate_args
 from tmol.chemical import RefinedResidueType
-from tmol.database.chemical import _l_base_name
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
 from tmol.kinematics._datatypes import KinForest
@@ -21,104 +18,18 @@ from tmol.pack._packer_task import (
     DEFAULT_CHI_SAMPLE_EXPANDED_LIMIT,
     DEFAULT_CHI_SAMPLE_LIMIT,
 )
-from tmol.pack.rotamer._chi_budget import _apply_chi_sample_budget, _chi_depths
 from tmol.numeric import coord_dihedrals
 from tmol.utility.tensor._common_operations import _exclusive_cumsum1d
 
-# Residue categories that get NHQ flip treatment (requires flip_NHQ=True)
-_HIS_FLIP_BASES = frozenset(("HIS", "HIS_D"))
-
-
-@attr.s(auto_attribs=True, slots=True, frozen=True)
-class OptHSamplerRTCache:
-    """Per-residue-type annotation for OptHSampler.
-
-    Covers two orthogonal features:
-    1. Proton chi sampling (SER/THR/TYR/CYS): samples the terminal (proton)
-       chi angle using values from restype definition.
-    2. NHQ flip (ASN/GLN/any HIS state): generates the input conformation plus a
-       180-degree rotation about the terminal amide/ring chi angle, provided
-       it does not move an atom connected to another block.
-       HIS additionally generates both protonation states.
-    """
-
-    # proton chis (S/T/Y/C)
-    has_proton_chi: bool
-    n_chi_total: int
-    chi_defining_atom: NDArray[numpy.int32][:]
-    n_proton_samples: int
-    expanded_samples: NDArray[numpy.float32][:, :]
-    n_samples_per_chi: NDArray[numpy.int32][:]
-
-    # N/H/Q flips
-    nhq_chi_col: int  # chi index or -1
-    nhq_chi_atom: int
-    nhq_chi_4atoms: NDArray[numpy.int32][:]
-    nhq_downstream_kfo: NDArray[numpy.int32][:]
-    is_his: bool
-
-
-@attr.s(auto_attribs=True, slots=True, frozen=True)
-class OptHSamplerPackedBlockTypeCache:
-    opth_sample_for_bt: Tensor[torch.bool][:]
-    has_proton_chi: Tensor[torch.bool][:]
-    n_chi_total: Tensor[torch.int32][:]
-    chi_defining_atom: Tensor[torch.int32][:, :]
-    n_proton_samples: Tensor[torch.int32][:]
-    expanded_samples: Tensor[torch.float32][:, :, :]
-    n_samples_per_chi: Tensor[torch.int32][:, :]
-
-    nhq_chi_col: Tensor[torch.int32][:]
-    nhq_chi_atom: Tensor[torch.int32][:]
-    nhq_chi_4atoms: Tensor[torch.int32][:, 4]
-    nhq_downstream_kfo: Tensor[torch.int32][:, :]
-    nhq_downstream_count: Tensor[torch.int32][:]
-    is_his: Tensor[torch.bool][:]
-
-    # These two tensors use 0 or 1 as an index to dim=0 to represent
-    # either flip_NHQ=False or flip_NHQ=True
-    n_samples_for_bt_by_orig_bt: Tensor[torch.int32][2, :, :]
-    n_chi_needed_for_bt: Tensor[torch.int32][2, :]
-
-
-def _build_empty_proton_cache(
-    nhq_chi_col, nhq_chi_atom, nhq_chi_4atoms, nhq_downstream_kfo, is_his
-):
-    return OptHSamplerRTCache(
-        has_proton_chi=False,
-        n_chi_total=0,
-        chi_defining_atom=numpy.zeros(0, dtype=numpy.int32),
-        n_proton_samples=0,
-        expanded_samples=numpy.zeros((0, 0), dtype=numpy.float32),
-        n_samples_per_chi=numpy.zeros(0, dtype=numpy.int32),
-        nhq_chi_col=nhq_chi_col,
-        nhq_chi_atom=nhq_chi_atom,
-        nhq_chi_4atoms=nhq_chi_4atoms,
-        nhq_downstream_kfo=nhq_downstream_kfo,
-        is_his=is_his,
-    )
-
-
-def _compute_nhq_downstream_kfo(rt, nhq_rto: int) -> NDArray[numpy.int32]:
-    """Return KFO indices of all atoms downstream of rt's NHQ chi-defining atom.
-
-    Traverses the per-residue-type kinforest parent array starting from the
-    children of nhq_chi_atom.  Computed once during _annotate_residue_type and
-    cached on the OptHSamplerRTCache; returns an empty array for non-NHQ rts.
-    """
-    if nhq_rto < 0:
-        return numpy.zeros(0, dtype=numpy.int32)
-    kfidx = rt.rotamer_kinforest.kinforest_idx  # (n_atoms,) numpy, TO -> KFO
-    parents = rt.rotamer_kinforest.parent  # (n_atoms,) numpy, KFO -> parent KFO
-    kfo_nhq = int(kfidx[nhq_rto])
-    n_at = len(parents)
-    downstream = []
-    queue = [k for k in range(n_at) if int(parents[k]) == kfo_nhq]
-    while queue:
-        k = queue.pop()
-        downstream.append(k)
-        queue.extend(ch for ch in range(n_at) if int(parents[ch]) == k)
-    return numpy.array(downstream, dtype=numpy.int32)
+from tmol_core.pack.opth import (  # noqa: F401
+    OptHSamplerRTCache,
+    OptHSamplerPackedBlockTypeCache,
+    _build_empty_proton_cache,
+    _compute_nhq_downstream_kfo,
+    annotate_opth_residue,
+    pack_opth_metadata,
+    opth_builds_residue,
+)
 
 
 def _opth_fill_dofs(
@@ -257,141 +168,12 @@ class OptHSampler(ConformerSampler):
 
     @_validate_args
     def _annotate_residue_type(self, rt: RefinedResidueType):
-        key = (self.chi_sample_expanded_limit, self.chi_sample_limit)
-        if getattr(rt, "_opth_sampler_key", None) == key:
-            return
-
-        # A D residue flips on the same axis as the L form it mirrors, so read
-        # the L base name; DASN and friends match nothing otherwise and emit no
-        # rotamers at all. _fixed_aa_chi_sampler does the same.
-        base = _l_base_name(rt)
-
-        # NHQ flip annotation
-        nhq_chi_col = -1
-        nhq_chi_atom = -1
-        nhq_chi_4atoms = numpy.zeros(4, dtype=numpy.int32)
-        nhq_downstream_kfo = numpy.zeros(0, dtype=numpy.int32)
-        is_his = base in _HIS_FLIP_BASES
-
-        flip_chi = {"ASN": "chi2", "GLN": "chi3", "HIS": "chi2"}.get(base.split("_")[0])
-        uaids = rt.torsion_to_uaids.get(flip_chi)
-        if uaids is not None and all(u[0] >= 0 for u in uaids):
-            # An attachment may append more chis. The terminal amide/ring flip
-            # retains its own named axis, and cannot move a connection atom
-            # independently of the block bonded to it.
-            nhq_chi_atom = int(uaids[2][0])
-            _construct_single_residue_kinforest(rt)
-            nhq_downstream_kfo = _compute_nhq_downstream_kfo(rt, nhq_chi_atom)
-            connection_nodes = {
-                int(rt.rotamer_kinforest.kinforest_idx[rt.atom_to_idx[c.atom]])
-                for c in rt.connections
-            }
-            if connection_nodes.intersection(nhq_downstream_kfo):
-                nhq_chi_atom = -1
-                nhq_downstream_kfo = numpy.zeros(0, dtype=numpy.int32)
-                is_his = False
-            else:
-                nhq_chi_col = int(flip_chi[3:]) - 1
-                nhq_chi_4atoms = numpy.array(
-                    [int(u[0]) for u in uaids], dtype=numpy.int32
-                )
-        else:
-            is_his = False
-
-        # proton chi annotation. A chi that turns heavy atoms is sampled by the
-        #    packer alone, so optH never sees it.
-        proton_chi = [cs for cs in rt.chi_samples if cs.is_proton]
-        if proton_chi:
-            # chi_samples are stored unbudgeted so that what optH enumerates and
-            #    what the packer enumerates are each bounded on their own terms;
-            #    a hydroxyl-rich sugar is otherwise thousands of rotamers here
-            _construct_single_residue_kinforest(rt)
-            depths = _chi_depths(
-                rt.residue_kinforest_data,
-                [rt.torsion_to_uaids[cs.chi_dihedral][2][0] for cs in proton_chi],
-            )
-            proton_chi = list(
-                _apply_chi_sample_budget(
-                    proton_chi,
-                    depths,
-                    self.chi_sample_expanded_limit,
-                    self.chi_sample_limit,
-                )
-            )
-        if not proton_chi:
-            setattr(
-                rt,
-                "opth_sampler_cache",
-                _build_empty_proton_cache(
-                    nhq_chi_col,
-                    nhq_chi_atom,
-                    nhq_chi_4atoms,
-                    nhq_downstream_kfo,
-                    is_his,
-                ),
-            )
-            setattr(rt, "_opth_sampler_key", key)
-            return
-
-        deg_to_rad = math.pi / 180
-
-        chi_inds = [int(cs.chi_dihedral[3:]) - 1 for cs in proton_chi]
-        n_chi_total = max(chi_inds) + 1
-
-        chi_defining_atom = numpy.full(n_chi_total, -1, dtype=numpy.int32)
-        n_samples_per_chi = numpy.zeros(n_chi_total, dtype=numpy.int32)
-
-        max_n_expanded = max(
-            len(cs.samples) * (1 + 2 * len(cs.expansions)) for cs in proton_chi
-        )
-        expanded_samples = numpy.zeros(
-            (n_chi_total, max_n_expanded), dtype=numpy.float32
-        )
-
-        for cs in proton_chi:
-            ci = int(cs.chi_dihedral[3:]) - 1
-            chi_defining_atom[ci] = rt.torsion_to_uaids[cs.chi_dihedral][2][0]
-
-            n_samp = len(cs.samples)
-            n_exp_per_samp = 1 + 2 * len(cs.expansions)
-            n_samples_per_chi[ci] = n_samp * n_exp_per_samp
-
-            for i in range(n_samp):
-                for j in range(n_exp_per_samp):
-                    if j == 0:
-                        expanded_samples[ci, n_exp_per_samp * i] = (
-                            deg_to_rad * cs.samples[i]
-                        )
-                    else:
-                        exp_idx = (j - 1) // 2
-                        factor = -1 if (j - 1) % 2 == 0 else 1
-                        expanded_samples[ci, n_exp_per_samp * i + j] = deg_to_rad * (
-                            cs.samples[i] + factor * cs.expansions[exp_idx]
-                        )
-
-        n_proton_samples_total = 1
-        for n in n_samples_per_chi:
-            if n > 0:
-                n_proton_samples_total *= int(n)
-        setattr(
+        annotate_opth_residue(
             rt,
-            "opth_sampler_cache",
-            OptHSamplerRTCache(
-                has_proton_chi=True,
-                n_chi_total=n_chi_total,
-                chi_defining_atom=chi_defining_atom,
-                n_proton_samples=n_proton_samples_total,
-                expanded_samples=expanded_samples,
-                n_samples_per_chi=n_samples_per_chi,
-                nhq_chi_col=nhq_chi_col,
-                nhq_chi_atom=nhq_chi_atom,
-                nhq_chi_4atoms=nhq_chi_4atoms,
-                nhq_downstream_kfo=nhq_downstream_kfo,
-                is_his=is_his,
-            ),
+            self.chi_sample_expanded_limit,
+            self.chi_sample_limit,
+            _construct_single_residue_kinforest,
         )
-
-        setattr(rt, "_opth_sampler_key", key)
 
     @_validate_args
     def _annotate_packed_block_types(self, packed_block_types: PackedBlockTypes):
@@ -400,93 +182,19 @@ class OptHSampler(ConformerSampler):
             return
         for bt in packed_block_types.active_block_types:
             self._annotate_residue_type(bt)
-
-        block_types = packed_block_types.active_block_types
-        caches = [bt.opth_sampler_cache for bt in block_types]
-        n_types = packed_block_types.n_types
-        max_n_chi = max([0] + [c.n_chi_total for c in caches])
-        max_n_expanded = max(c.expanded_samples.shape[1] for c in caches)
-
-        # filled on the host and uploaded once: a write per element into a
-        #    device tensor costs a kernel launch or a copy each
-        opth_sample_for_bt = numpy.array(
-            [self.defines_rotamers_for_rt(bt) for bt in block_types], dtype=bool
+        host = pack_opth_metadata(
+            [bt.opth_sampler_cache for bt in packed_block_types.active_block_types],
+            packed_block_types.max_n_atoms,
+            self.flip_NHQ,
         )
-        has_proton_chi = numpy.zeros(n_types, dtype=bool)
-        n_chi_total = numpy.zeros(n_types, dtype=numpy.int32)
-        chi_defining_atom = numpy.full((n_types, max_n_chi), -1, dtype=numpy.int32)
-        n_proton_samples = numpy.zeros(n_types, dtype=numpy.int32)
-        expanded_samples = numpy.zeros(
-            (n_types, max_n_chi, max_n_expanded), dtype=numpy.float32
-        )
-        n_samples_per_chi = numpy.zeros((n_types, max_n_chi), dtype=numpy.int32)
-        nhq_chi_col = numpy.zeros(n_types, dtype=numpy.int32)
-        nhq_chi_atom = numpy.zeros(n_types, dtype=numpy.int32)
-        nhq_chi_4atoms = numpy.zeros((n_types, 4), dtype=numpy.int32)
-        nhq_downstream_kfo = numpy.zeros(
-            (n_types, packed_block_types.max_n_atoms), dtype=numpy.int32
-        )
-        nhq_downstream_count = numpy.zeros(n_types, dtype=numpy.int32)
-        is_his = numpy.zeros(n_types, dtype=bool)
-        n_samples_for_bt_by_orig_bt = numpy.zeros(
-            (2, n_types, n_types), dtype=numpy.int32
-        )
-        # the minimum chi tensor width needed for a GBT with non-zero rots
-        n_chi_needed_for_bt = numpy.ones((2, n_types), dtype=numpy.int32)
-        his_nhq = numpy.array(
-            [c.nhq_chi_col >= 0 and c.is_his for c in caches], dtype=bool
-        )
-
-        for i, c in enumerate(caches):
-            if c.has_proton_chi:
-                # use n_proton_samples wether or not we're in flip_NHQ mode
-                n_samples_for_bt_by_orig_bt[:, i, i] = c.n_proton_samples
-                n_chi_needed_for_bt[:, i] = c.n_chi_total
-            elif c.nhq_chi_col >= 0:
-                n_chi_needed_for_bt[1, i] = c.nhq_chi_col + 1
-                if c.is_his:
-                    # HIS/HIS_D: 2 rotamers for EVERY HIS/HIS_D considered block type
-                    n_samples_for_bt_by_orig_bt[1, i, i] = 2
-                    n_samples_for_bt_by_orig_bt[1, i, his_nhq] = 2
-                else:
-                    # ASN/GLN: 2 rotamers only for the original block type
-                    n_samples_for_bt_by_orig_bt[1, i, i] = 2
-            has_proton_chi[i] = c.has_proton_chi
-            n_chi_total[i] = c.n_chi_total
-            chi_defining_atom[i, : c.n_chi_total] = c.chi_defining_atom
-            n_proton_samples[i] = c.n_proton_samples
-            expanded_samples[i, : c.n_chi_total, : c.expanded_samples.shape[1]] = (
-                c.expanded_samples
-            )
-            n_samples_per_chi[i, : c.n_chi_total] = c.n_samples_per_chi
-            nhq_chi_col[i] = c.nhq_chi_col
-            nhq_chi_atom[i] = c.nhq_chi_atom
-            nhq_chi_4atoms[i, :] = c.nhq_chi_4atoms
-            nhq_downstream_kfo[i, : len(c.nhq_downstream_kfo)] = c.nhq_downstream_kfo
-            nhq_downstream_count[i] = len(c.nhq_downstream_kfo)
-            is_his[i] = c.is_his
-
-        def dev(x):
-            return torch.from_numpy(x).to(packed_block_types.device)
-
         cache = OptHSamplerPackedBlockTypeCache(
-            opth_sample_for_bt=dev(opth_sample_for_bt),
-            has_proton_chi=dev(has_proton_chi),
-            n_chi_total=dev(n_chi_total),
-            chi_defining_atom=dev(chi_defining_atom),
-            n_proton_samples=dev(n_proton_samples),
-            expanded_samples=dev(expanded_samples),
-            n_samples_per_chi=dev(n_samples_per_chi),
-            nhq_chi_col=dev(nhq_chi_col),
-            nhq_chi_atom=dev(nhq_chi_atom),
-            nhq_chi_4atoms=dev(nhq_chi_4atoms),
-            nhq_downstream_kfo=dev(nhq_downstream_kfo),
-            nhq_downstream_count=dev(nhq_downstream_count),
-            is_his=dev(is_his),
-            n_samples_for_bt_by_orig_bt=dev(n_samples_for_bt_by_orig_bt),
-            n_chi_needed_for_bt=dev(n_chi_needed_for_bt),
+            **{
+                field.name: torch.from_numpy(getattr(host, field.name)).to(
+                    packed_block_types.device
+                )
+                for field in attr.fields(OptHSamplerPackedBlockTypeCache)
+            }
         )
-
         setattr(packed_block_types, "opth_sample_cache", cache)
         setattr(packed_block_types, "_opth_sampler_key", key)
 
@@ -494,7 +202,7 @@ class OptHSampler(ConformerSampler):
     def defines_rotamers_for_rt(self, rt: RefinedResidueType):
         self._annotate_residue_type(rt)
         cache = rt.opth_sampler_cache
-        return cache.has_proton_chi or (self.flip_NHQ and cache.nhq_chi_col >= 0)
+        return opth_builds_residue(cache, self.flip_NHQ)
 
     def defines_rotamers_for_bts(
         self, pbt: PackedBlockTypes, bt_inds: Tensor[torch.int64]

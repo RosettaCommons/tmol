@@ -1176,7 +1176,9 @@ def test_rotamer_scorer_combines_identical_sparse_layouts(
     torch.testing.assert_close(coords.grad, torch.tensor(61.0, device=torch_device))
 
 
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_rotamer_weighted_reduction_preserves_layout_values_and_gradients(
+    dtype,
     torch_device: torch.device,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1212,6 +1214,7 @@ def test_rotamer_weighted_reduction_preserves_layout_values_and_gradients(
         torch.tensor([[7.0, 8.0, 9.0], [-3.0, 2.0, 1.0]], device=torch_device),
         torch.tensor([[2.0, 5.0], [4.0, -6.0]], device=torch_device),
     ]
+    score_lanes = [score.to(dtype=dtype) for score in score_lanes]
     weights = torch.tensor([0.0, 2.0, -1.0, 0.0, 4.0, -3.0, 0.5], device=torch_device)
     scorer = RotamerScoringModule(
         weights,
@@ -1222,7 +1225,7 @@ def test_rotamer_weighted_reduction_preserves_layout_values_and_gradients(
         ],
     )
     scorer.weights.requires_grad_(True)
-    coords = torch.tensor(1.25, device=torch_device, requires_grad=True)
+    coords = torch.tensor(1.25, dtype=dtype, device=torch_device, requires_grad=True)
 
     indices, values = scorer.forward_sparse_entries(coords)
 
@@ -1247,6 +1250,12 @@ def test_rotamer_weighted_reduction_preserves_layout_values_and_gradients(
     torch.testing.assert_close(values, reference_values)
     torch.testing.assert_close(actual_grads[0], reference_grads[0])
     torch.testing.assert_close(actual_grads[1].reshape(-1), reference_grads[1])
+    with torch.no_grad():
+        for workers in (0, 2):
+            scorer._cpu_term_workers = workers if torch_device.type == "cpu" else 0
+            repeated_indices, repeated_values = scorer.forward_sparse_entries(coords)
+            assert torch.equal(repeated_indices, indices)
+            torch.testing.assert_close(repeated_values, reference_values)
 
 
 def test_weighted_score_sum_has_output_sized_cuda_peak_growth(
