@@ -86,3 +86,13 @@ contributions. A two-residue cycle has one sparse conformer pair whose energy
 and coordinate derivatives include both directed peptide bonds. Dependencies on
 a third independently sampled backbone block still require an explicit workflow
 boundary; pair selection alone cannot represent that higher-body interaction.
+
+Structure-input protonation and terminal-hydrogen policy live in
+`tmol_core.io.protonation_input` and `tmol_core.io.input_termini`. They accept
+Biotite atom arrays and explicit chemical databases, retaining AtomWorks hydrogen
+assignment, custom residue identities, metal coordination and explicit termini.
+The default patched chemistry is shared with the Torch parameter context; loading
+an explicit database path still creates fresh chemistry. The bounded weak-owner
+cache is framework neutral, while the Torch adapter retains CUDA stream readiness.
+These host policies import neither framework. Ligand conformer optimization and
+the complete public ligand preparation pipeline still require further extraction.

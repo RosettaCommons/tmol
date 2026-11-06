@@ -47,6 +47,11 @@ class ParameterDatabase:
         """Load chemical and scoring parameters rooted at ``path``."""
         chemdb = ChemicalDatabase.from_file(os.path.join(path, "chemical"))
         patched_chemdb = PatchedChemicalDatabase.from_chem_db(chemdb)
+        return cls._from_file_with_chemical(path, patched_chemdb)
+
+    @classmethod
+    def _from_file_with_chemical(cls, path, patched_chemdb):
+        """Load scoring tables for an explicitly supplied immutable chemistry."""
         scoring = cls._load_scoring(os.path.join(path, "scoring"))
 
         # a d-amino acid's rotamer statistics are its l form's at negated
