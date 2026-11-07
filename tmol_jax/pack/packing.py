@@ -9,14 +9,15 @@ from .annealing import anneal_cpu, anneal_cuda
 from .imposition import impose_top_rotamer_assignments
 
 
-def pack_rotamers(pose_stack, sfxn, task, *, seed, chunk_size=16):
+def pack_rotamers(pose_stack, sfxn, task, *, seed=None, chunk_size=16):
     """Select conformers using the complete sparse score and native search.
 
     Returns a new pose. The task must register its samplers, including fallback
     for uncovered blocks. All enabled score terms are included. This eager,
-    discrete operation requires float32 coordinates and an explicit uint64
-    seed. Optional task bump checks use the mature native pruning rule.
-    Complete correlated backbone scoring remains unavailable.
+    discrete operation requires float32 coordinates. An explicit uint64 seed
+    makes search reproducible; None draws a fresh local seed. Optional task bump
+    checks use the mature native pruning rule. Correlated groups retain shared
+    lockstep context; independently varying third-backbone context is unsupported.
     CPU and CUDA use their respective mature search schedules. The CUDA phase
     seeds are drawn locally from NumPy PCG64; no global RNG state is changed.
     """
@@ -24,6 +25,8 @@ def pack_rotamers(pose_stack, sfxn, task, *, seed, chunk_size=16):
         raise TypeError("discrete packing requires eager coordinates and choices")
     if pose_stack.coords.dtype != np.float32:
         raise TypeError("native packing search requires float32 coordinates")
+    if seed is None:
+        seed = int(np.random.SeedSequence().generate_state(1, np.uint64)[0])
     if not isinstance(seed, (int, np.integer)) or not 0 <= seed < 1 << 64:
         raise ValueError("packing seed must be an unsigned 64-bit integer")
     pose, rotamers = build_rotamers(

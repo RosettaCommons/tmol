@@ -482,9 +482,9 @@
   },
   "acceptance_gaps": {
     "mature_functionality": [
-      "Public API audit: mutation, residue-label/query helpers and sequence construction await common-policy integration and JAX adapters. Public PDB/CIF reader/writer helpers and fragment/EdgeType aliases pass installed CPU and CUDA checks. Pose layout and constraint storage helpers pass source CPU checks; their matching artifact/device gate is pending.",
+      "Query and mutation adapters use shared policy and pass both-framework mixed-chemistry CPU identity/gradient checks. Extended-sequence and complete score lifecycle/public API compatibility remain under implementation. Public file/layout/constraint helpers pass exact installed CPU and actual CUDA gates; new query/mutation gates are pending.",
       "Complete task/design compatibility. Unchanged constrained atom identities pass installed CPU/CUDA checks; changed ports or constraint atom indices require a mature correctness audit before classification as parity gaps.",
-      "Optimizer defaults and callback compatibility. Explicit shared Armijo and checkpoint continuation pass installed CPU/CUDA gates. Strong-Wolfe remains the JAX public default; FastRelax default optimization therefore differs.",
+      "Public Cartesian/kinematic minimizers and FastRelax callbacks now default to shared per-pose Armijo and mature settings; explicit strong-Wolfe is retained. Source CPU molecular/default/legacy checks pass; exact installed and CUDA gates for this default change are pending. Torch-specific optimizer objects remain framework-specific.",
       "Exhaustive custom database/public score-option compatibility beyond the documented fixtures."
     ],
     "validation_and_performance": [
@@ -518,11 +518,20 @@
   },
   "public_pose_storage": {
     "torch": "supported",
-    "jax": "source_cpu_validated_artifact_cuda_pending",
+    "jax": "cpu_installed_cuda_validated",
     "repro_fixture": [
       "tests/scientific/test_pose_layout.py",
       "tests/scientific/test_constraint_storage.py"
     ],
     "implementation_status": "Layout masks/counts/expansion, pose splitting and constraint clone/device transport/replication preserve mixed molecular identity and coordinate/parameter derivatives. JAX immutable clones share arrays. Runtime adapters consume common topology and constraint policy."
+  },
+  "public_pose_queries_and_mutation": {
+    "torch": "supported",
+    "jax": "source_cpu_validated_artifact_cuda_pending",
+    "repro_fixture": [
+      "tests/scientific/test_pose_queries.py",
+      "tests/scientific/test_public_mutation.py"
+    ],
+    "implementation_status": "Common selection/query/mutation policy; mixed noncanonical/D/ligand identity, author insertion codes, frozen input/other blocks/poses and all-channel finite gradients tested on both CPU frameworks."
   }
 }

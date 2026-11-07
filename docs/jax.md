@@ -443,6 +443,14 @@ the full native integer range. The frontend does not change global JAX precision
 The initial implementation derives from
 [tudorcotet/jtmol](https://github.com/tudorcotet/jtmol); see `tmol_jax/NOTICE`.
 
+Public `get_sequence`, ligand/polymer masks and residue/atom label queries use
+common identity policy, including author insertion codes and named constraint
+atoms. Unknown one-letter identities remain `X`. `mutate_residue` and
+`mutate_to_sequence` use shared task restrictions and native packing; pass the
+custom parameter score function and an explicit seed for reproducibility. Other
+blocks and poses stay frozen. One-letter mutation retains its mature amino-acid
+contract; use exact residue identities for other supported types.
+
 Named geometry queries are available as `get_torsion_names(pose, pose_index,
 block_index)` and `get_named_torsions(pose, poses=None, blocks=None, names=None,
 degrees=True)`. They share selection and result conventions with Torch, including

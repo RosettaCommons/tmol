@@ -19,10 +19,29 @@ from .kinematics import (
 from .database import ParameterDatabase
 from .chemical.patched_chemdb import PatchedChemicalDatabase
 from .io.canonical_ordering import CanonicalOrdering
-from .pack import PackerPalette, PackerTask, pack_rotamers
+from .pack import (
+    PackerPalette,
+    PackerTask,
+    pack_rotamers,
+    mutate_residue,
+    mutate_to_sequence,
+)
 from .pose import ConstraintSet, PoseStack, PoseStackBuilder, PackedBlockTypes, PDBInfo
 from .score import ScoreFunction, ScoreType, beta2016_score_function
-from .pose import get_named_torsions, get_torsion_names
+from .pose import (
+    get_named_torsions,
+    get_torsion_names,
+    get_sequence,
+    get_ligand_mask,
+    get_polymer_type_mask,
+    metal_blocks,
+    residue_label,
+    atom_label,
+    block_for_residue_label,
+    blocks_for_residue_labels,
+    atom_for_residue_label,
+    constraint_atoms_for_labels,
+)
 from .relax import fast_relax
 
 from .score.fragment_interactions import (
@@ -31,6 +50,19 @@ from .score.fragment_interactions import (
 )
 
 __all__ = [
+    "mutate_residue",
+    "mutate_to_sequence",
+    "get_sequence",
+    "get_ligand_mask",
+    "get_polymer_type_mask",
+    "metal_blocks",
+    "residue_label",
+    "atom_label",
+    "block_for_residue_label",
+    "blocks_for_residue_labels",
+    "atom_for_residue_label",
+    "constraint_atoms_for_labels",
+] + [
     "calculate_fragment_interactions",
     "render_fragment_interactions",
     "fast_relax",

@@ -14,6 +14,24 @@ _EXPORTS = {
     "PDBInfo": "tmol_jax.pose.pdb_info",
 }
 
+_EXPORTS.update(
+    {
+        name: "tmol_jax.pose.query"
+        for name in (
+            "get_sequence",
+            "get_ligand_mask",
+            "get_polymer_type_mask",
+            "metal_blocks",
+            "residue_label",
+            "atom_label",
+            "block_for_residue_label",
+            "blocks_for_residue_labels",
+            "atom_for_residue_label",
+            "constraint_atoms_for_labels",
+        )
+    }
+)
+
 
 def __getattr__(name):
     module_path = _EXPORTS.get(name)

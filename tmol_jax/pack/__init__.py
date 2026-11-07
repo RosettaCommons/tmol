@@ -13,9 +13,12 @@ from .current import IncludeCurrentSampler, FallbackSampler
 from .rotamers import build_rotamers
 from .rotamer_set import RotamerSet
 from .packing import pack_rotamers
+from .mutation import mutate_residue, mutate_to_sequence
 from .imposition import prepare_pose_imposition, impose_top_rotamer_assignments
 
 __all__ = [
+    "mutate_residue",
+    "mutate_to_sequence",
     "PackerPalette",
     "ConjugatedChiSampler",
     "add_conjugated_group_sampler",
