@@ -22,6 +22,9 @@ coord_mask[:, ligand_atom_indices] = True
 minimized_pose_stack = run_cart_min(pose_stack, sfxn, coord_mask=coord_mask)
 ```
 
+A mask may freeze an entire pose, including the final pose in a batch. Frozen
+poses retain their coordinates and their per-pose energy slot during minimization.
+
 ## Constraints
 
 Constraints affect optimization only when they are attached to the pose and the

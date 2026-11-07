@@ -50,12 +50,13 @@ def migrate_settings(group, dtype_tolerance):
 
 
 class SegmentedLBFGSSetup:
-    def _init_segments(self, segment_ids):
+    def _init_segments(self, segment_ids, n_segments=None):
         """Set up the mapping from parameter elements to independent blocks.
 
         Builds the index that scatters a parameter-shaped vector into a dense
         (n_segments, segment_size) layout, so all per-segment reductions are
-        batched tensor ops rather than a loop over segments.
+        batched tensor ops rather than a loop over segments. An explicit count
+        preserves empty segments, including trailing fully frozen poses.
         """
         param = self._setup_parameter()
         segment_ids = self._segment_vector(segment_ids)
@@ -64,8 +65,19 @@ class SegmentedLBFGSSetup:
         ), "segment_ids needs one entry per parameter element"
         assert self._all_true(segment_ids >= 0), "segment_ids must be non-negative"
 
-        n_segments = self._max_index(segment_ids) + 1
-        if n_segments == 1:
+        explicit_count = n_segments is not None
+        if explicit_count:
+            if (
+                isinstance(n_segments, bool)
+                or not isinstance(n_segments, Integral)
+                or n_segments < 1
+            ):
+                raise ValueError("n_segments must be a positive integer")
+            if not self._all_true(segment_ids < n_segments):
+                raise ValueError("segment_ids must be smaller than n_segments")
+        else:
+            n_segments = self._max_index(segment_ids) + 1
+        if n_segments == 1 and segment_ids.shape[0]:
             self._segment_ids = segment_ids
             self._n_segments = 1
             self._segment_size = segment_ids.shape[0]
@@ -74,8 +86,11 @@ class SegmentedLBFGSSetup:
             return
 
         counts = self._segment_counts(segment_ids, n_segments)
-        assert self._all_true(counts > 0), "segment_ids must not skip a segment"
-        segment_size = self._max_index(counts)
+        if not explicit_count:
+            assert self._all_true(counts > 0), "segment_ids must not skip a segment"
+        # Empty/frozen poses have zero gradients. One padding slot also makes
+        # reductions well-defined when every pose is frozen.
+        segment_size = max(1, self._max_index(counts))
 
         # Avoid sorting the overwhelmingly common dense layout: one pose, or
         # equal-sized poses stored contiguously. Dense reductions only reshape

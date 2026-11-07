@@ -157,6 +157,8 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
         history_size (int): update history size (default: 128).
         segment_ids (Tensor): the segment (e.g. pose) each parameter element
             belongs to; each segment is minimized independently (default: one)
+        n_segments (int): explicit pose count, retaining empty/frozen segments.
+            If omitted, segment IDs must cover every segment.
         value_only_line_search (bool): evaluate Armijo trial points with a
             separate value-only closure and refresh the gradient only at the
             accepted point (default: False)
@@ -165,6 +167,7 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
     """
 
     supports_segments = True
+    supports_segment_count = True
 
     def add_param_group(self, param_group: dict[str, Any]) -> None:
         """Add the optimizer's sole parameter group without compiler imports.
@@ -238,6 +241,7 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
         segment_ids=None,
         fixed_iterations=LBFGS_DEFAULTS["fixed_iterations"],
         *,
+        n_segments=None,
         patience=LBFGS_DEFAULTS["patience"],
         value_only_line_search: bool = LBFGS_DEFAULTS["value_only_line_search"],
     ):
@@ -275,7 +279,7 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
                 dtype=torch.int64,
                 device=self._params[0].device,
             )
-        self._init_segments(segment_ids)
+        self._init_segments(segment_ids, n_segments)
 
     def __setstate__(self, state):
         super().__setstate__(state)
@@ -311,9 +315,9 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
         state["any_inactive"] = False
         self._last_loss_vec = None
 
-    def _init_segments(self, segment_ids):
+    def _init_segments(self, segment_ids, n_segments=None):
         assert len(self._params) == 1, "segment_ids requires a single tensor"
-        super()._init_segments(segment_ids)
+        super()._init_segments(segment_ids, n_segments)
 
     _parameter_size = staticmethod(torch.Tensor.numel)
 
@@ -363,7 +367,7 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
         """Maximum of a parameter-shaped vector within each segment."""
         if self._segments_are_dense:
             return values.view(self._n_segments, self._segment_size).amax(-1)
-        out = torch.empty(self._n_segments, dtype=values.dtype, device=values.device)
+        out = torch.zeros(self._n_segments, dtype=values.dtype, device=values.device)
         return out.scatter_reduce_(
             0, self._segment_ids, values, "amax", include_self=False
         )
