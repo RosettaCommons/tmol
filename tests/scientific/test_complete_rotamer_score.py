@@ -46,9 +46,7 @@ def test_complete_rotamer_score_conserves_whole_pose(backend, name, dtype):
         values, indices, dx = map(backend.numpy, (values, indices, dx))
         total = np.zeros(backend.pose.n_poses)
         np.add.at(total, indices[0], values)
-        whole, whole_gradient = backend.value_and_grad(
-            backend.coords().astype(dtype)
-        )
+        whole, whole_gradient = backend.value_and_grad(backend.coords().astype(dtype))
         np.testing.assert_allclose(total, whole, rtol=3e-6, atol=3e-5)
         assert np.isfinite(values).all() and np.any(np.abs(dx) > 1e-3)
         pbt = backend.pose.packed_block_types
