@@ -37,24 +37,31 @@ void water_gen_forward(ContextManager& mgr, WaterGenCtx<Real, Int, Dev> ctx) {
       mgr, ctx.n_rots_total, evaluate);
 }
 
-template <typename Real, typename Int, tmol::Device Dev>
+template <
+    typename Real,
+    typename Int,
+    tmol::Device Dev,
+    typename GradReal,
+    typename WaterReal>
 struct SeparateWaterDerivCtx : WaterGenCtx<Real, Int, Dev> {
-  TView<Vec<Real, 3>, 2, Dev> dE_dWxyz;
-  TView<Vec<Real, 3>, 1, Dev> dE_d_pose_coords;
+  TView<Vec<WaterReal, 3>, 2, Dev> dE_dWxyz;
+  TView<Vec<GradReal, 3>, 1, Dev> dE_d_pose_coords;
 };
 
 template <
     template <tmol::Device> class DeviceOps,
     tmol::Device Dev,
     typename Real,
-    typename Int>
+    typename Int,
+    typename GradReal = Real,
+    typename WaterReal = Real>
 void water_gen_backward(
     ContextManager& mgr,
     WaterGenCtx<Real, Int, Dev> base,
-    TView<Vec<Real, 3>, 2, Dev> dE_dWxyz,
-    TView<Vec<Real, 3>, 1, Dev> dE_d_pose_coords) {
+    TView<Vec<WaterReal, 3>, 2, Dev> dE_dWxyz,
+    TView<Vec<GradReal, 3>, 1, Dev> dE_d_pose_coords) {
   LAUNCH_BOX_32;
-  SeparateWaterDerivCtx<Real, Int, Dev> ctx;
+  SeparateWaterDerivCtx<Real, Int, Dev, GradReal, WaterReal> ctx;
   static_cast<WaterGenCtx<Real, Int, Dev>&>(ctx) = base;
   ctx.dE_dWxyz = dE_dWxyz;
   ctx.dE_d_pose_coords = dE_d_pose_coords;

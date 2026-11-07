@@ -1,3 +1,5 @@
+#include <cmath>
+#include <cstdlib>
 #include <tmol/score/lk_ball/potentials/lk_ball_pose_kernels.hh>
 #include <tmol/score/lk_ball/potentials/gen_pose_waters_native.hh>
 #include <tmol/score/ljlk/potentials/ljlk_elec_pose_kernels.hh>
@@ -29,6 +31,54 @@ auto wf64 = &water_gen_forward<SerialOps, tmol::Device::CPU, double, int>;
 auto wb32 = &water_gen_backward<SerialOps, tmol::Device::CPU, float, int>;
 auto wb64 = &water_gen_backward<SerialOps, tmol::Device::CPU, double, int>;
 
+// Explicitly instantiate wide outputs without introducing a framework ABI.
+auto fw = &lk_ball_pose_native<
+    false,
+    SerialOps,
+    tmol::Device::CPU,
+    float,
+    int,
+    double,
+    double>;
+auto bw = &lk_ball_pose_native<
+    true,
+    SerialOps,
+    tmol::Device::CPU,
+    float,
+    int,
+    double,
+    double>;
+auto rw = &lk_ball_rotamer_native<
+    true,
+    SerialOps,
+    tmol::Device::CPU,
+    float,
+    int,
+    double,
+    double>;
+auto ww = &water_gen_backward<
+    SerialOps,
+    tmol::Device::CPU,
+    float,
+    int,
+    double,
+    double>;
+
+void check_water_chain() {
+  using tmol::portable::Vec;
+  Vec<float, 3> donor{0.2f, -0.7f, 1.1f}, hydrogen{1.0f, 0.5f, -0.3f};
+  auto jacobian = build_don_water<float>::dV(donor, hydrogen, 2.65f);
+  Vec<double, 3> force{0.25, -0.4, 0.7}, d_donor{}, d_hydrogen{};
+  accumulate_water_derivative<tmol::Device::CPU>(d_donor, jacobian.dD, force);
+  accumulate_water_derivative<tmol::Device::CPU>(
+      d_hydrogen, jacobian.dH, force);
+  // Translating both parent atoms translates the water by the same amount.
+  for (int axis = 0; axis < 3; ++axis) {
+    if (std::abs(d_donor[axis] + d_hydrogen[axis] - force[axis]) > 1e-7)
+      std::abort();
+  }
+}
+
 template <class Real>
 void check_padding() {
   // Padded blocks can retain a valid rotamer slot but a negative type.
@@ -49,6 +99,7 @@ void check_padding() {
       mgr, ctx, view(candidates, {3}), 2);
 }
 int main() {
+  check_water_chain();
   check_padding<float>();
   check_padding<double>();
 }

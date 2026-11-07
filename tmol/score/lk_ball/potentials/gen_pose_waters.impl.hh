@@ -158,7 +158,7 @@ struct GeneratePoseWaters {
     ctx.n_rots_total = n_rots;
 
     int const n_blocks = n_poses * max_n_blocks;
-    if (Dev == tmol::Device::MPS) {
+    if constexpr (Dev == tmol::Device::MPS) {
       // Metal cannot launch a device lambda -- there is nowhere for a
       // closure to live, and entry points are compiled by a separate
       // toolchain -- so the same kernel body is reached through a named
@@ -253,7 +253,11 @@ struct GeneratePoseWaters {
 
     nvtx_range_push("watergen::setup");
 
-    auto dE_d_pose_coords_t = TPack<Vec<Real, 3>, 1, Dev>::zeros({n_atoms});
+    using GradReal = std::conditional_t<
+        Dev == Device::CUDA && std::is_same_v<Real, float>,
+        double,
+        Real>;
+    auto dE_d_pose_coords_t = TPack<Vec<GradReal, 3>, 1, Dev>::zeros({n_atoms});
     auto dE_d_pose_coords = dE_d_pose_coords_t.view;
 
     nvtx_range_pop();
@@ -264,7 +268,7 @@ struct GeneratePoseWaters {
 
     int const n_blocks = n_poses * max_n_blocks;
     nvtx_range_push("watergen::dgen");
-    if (Dev == tmol::Device::MPS) {
+    if constexpr (Dev == tmol::Device::MPS) {
       // Metal has nowhere for a closure to live, so the identical body is
       // reached through a named entry point instead.
       //
@@ -358,7 +362,7 @@ struct GeneratePoseWaters {
 
     nvtx_range_pop();
 
-    return dE_d_pose_coords_t;
+    return dE_d_pose_coords_t.template cast<Vec<Real, 3>>();
   };
 };
 
