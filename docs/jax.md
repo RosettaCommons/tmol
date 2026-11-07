@@ -99,7 +99,9 @@ Indices identify `(pose, block, local_atom)`; `(block, local_atom)` rows repeat
 across poses. `ConstraintEnergyTerm` provides shared harmonic distance/coordinate,
 bounded distance and circular harmonic formulas. JAX callbacks can also supply
 one energy per gathered four-atom row. Parameter arrays remain differentiable;
-pose selection preserves their atom identities. Topology preparation is on the
+pose selection preserves their atom identities. `clone()` and `to(device)`
+retain parameter differentiation; `replicate_constraints()` and
+`count_unique_blocks()` use the shared host topology policy. Topology preparation is on the
 host, and constraints spanning more than two distinct blocks reject explicitly.
 Harmonic/bounded arithmetic supports higher derivatives; the shared native
 torsion primitive supports first coordinate derivatives. The earlier coordinate

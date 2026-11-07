@@ -4,7 +4,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_core.pose.constraints import ConstraintTopology, merge_constraint_functions
+from tmol_core.pose.constraints import (
+    ConstraintTopology,
+    count_unique_blocks as _count_unique_blocks,
+    merge_constraint_functions,
+    replicate_constraint_atoms,
+)
 from tmol_jax.types import pytree_dataclass
 
 
@@ -102,6 +107,30 @@ class ConstraintSet:
         if atoms.ndim == 3 and atoms.shape[2] == 3:
             atoms = atoms[:, :, 1:]
         return self.add_constraints(fn, atoms, params)
+
+    def clone(self):
+        """Copy array storage while retaining callback and parameter history."""
+        return jax.tree_util.tree_map(jnp.copy, self)
+
+    def to(self, device):
+        """Return a constraint set whose arrays use the requested JAX device."""
+        return jax.device_put(self, device)
+
+    @staticmethod
+    def count_unique_blocks(atom_indices):
+        """Count referenced blocks through the shared host topology policy."""
+        return jax.device_put(
+            _count_unique_blocks(np.asarray(atom_indices)),
+            getattr(atom_indices, "device", None),
+        )
+
+    @staticmethod
+    def replicate_constraints(n_poses, c_atms, c_params):
+        """Replicate pose-independent atoms and differentiable parameters."""
+        atoms = replicate_constraint_atoms(n_poses, np.asarray(c_atms))
+        return jax.device_put(atoms, getattr(c_atms, "device", None)), (
+            None if c_params is None else jnp.tile(c_params, (n_poses, 1))
+        )
 
     def split(self, index):
         if index < 0 or index >= self.n_poses:
