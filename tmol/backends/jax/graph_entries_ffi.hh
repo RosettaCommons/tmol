@@ -1,6 +1,7 @@
 // Typed entry stages for the canonical streaming interaction graph.
 #pragma once
 #include "graph_topology_ffi.hh"
+#include <algorithm>
 #include <tmol/pack/compiled/streaming_interaction_graph_kernels.hh>
 
 namespace tmol::jax {
@@ -136,6 +137,37 @@ struct GraphEntryStage {
       launch<Ops, D, double>(a, out, op, width);
     else
       launch<Ops, D, float>(a, out, op, width);
+  }
+};
+// Add pages into caller-owned initialized storage; XLA handles copy-on-use.
+struct AdditiveGraphEntryStage : GraphEntryStage {
+  static int fill(int64_t, size_t) { return -1; }
+  static void validate(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out,
+      int64_t op,
+      int64_t extent,
+      int64_t width) {
+    if (a.size() < out.size())
+      throw std::invalid_argument("missing initialized graph buffers");
+    auto first = a.size() - out.size();
+    GraphEntryStage::validate(
+        std::vector<ffi::AnyBuffer>(a.begin(), a.begin() + first),
+        out,
+        op,
+        extent,
+        width);
+    for (size_t i = 0; i < out.size(); ++i) {
+      auto actual = a[first + i].dimensions(), expected = out[i].dimensions();
+      if (a[first + i].element_type() != out[i].element_type()
+          || actual.size() != expected.size()
+          || !std::equal(actual.begin(), actual.end(), expected.begin()))
+        throw std::invalid_argument(
+            "initialized graph buffer shape/dtype mismatch");
+      if (a[first + i].untyped_data() != out[i].untyped_data())
+        throw std::invalid_argument(
+            "graph accumulation requires aliased initialized buffers");
+    }
   }
 };
 }  // namespace tmol::jax

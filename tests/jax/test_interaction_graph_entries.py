@@ -41,7 +41,8 @@ def unpack(value):
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
-def test_native_graph_energy_for_every_assignment(platform, dtype):
+@pytest.mark.parametrize("paged", (False, True))
+def test_native_graph_energy_for_every_assignment(platform, dtype, paged):
     device = Execution("jax-" + platform).device
     with jax.enable_x64(dtype == np.float64), jax.default_device(device):
         counts = np.array([[2, 1, 3], [1, 2, 0]], np.int32)
@@ -63,6 +64,48 @@ def test_native_graph_energy_for_every_assignment(platform, dtype):
         graph = build_interaction_graph(
             rotamers, jnp.asarray(values), jnp.asarray(indices), chunk_size=2
         )
+        if paged:
+            from tmol_jax.pack.interaction_graph import additive_entry_stage
+            from tmol_jax.pack.graph import topology_stage, _wide
+
+            retained = graph["retained"]
+            mapping = topology_stage(
+                (rotamers.n_rots_for_block,),
+                operation=0,
+                outputs=_wide(*counts.shape),
+                chunk_size=2,
+            )
+            initial = tuple(
+                jnp.zeros_like(graph[k]) for k in ("background", "energy1b", "energy2b")
+            )
+            energies = initial
+            for begin in range(0, len(values), 3):
+                energies = additive_entry_stage(
+                    (
+                        jnp.asarray(indices[:, begin : begin + 3]),
+                        jnp.asarray(values[begin : begin + 3]),
+                        rotamers.block_ind_for_rot,
+                        mapping,
+                        rotamers.rot_offset_for_block,
+                        retained["fixed"],
+                        retained["block_rotamer_counts"],
+                        retained["block_rotamer_offsets"],
+                        graph["neighbor_row_offsets"],
+                        graph["neighbor_blocks"],
+                        graph["neighbor_chunk_offset_offsets"],
+                        graph["chunk_offsets"],
+                    ),
+                    energies,
+                    operation=2,
+                    extent=graph["energy1b"].size,
+                    chunk_size=2,
+                )
+            for key, value, original in zip(
+                ("background", "energy1b", "energy2b"), energies, initial
+            ):
+                np.testing.assert_array_equal(value, graph[key])
+                np.testing.assert_array_equal(original, np.zeros(original.shape))
+                graph[key] = value
         retained = graph["retained"]
         inv_blocks = unpack(retained["inverse_blocks"])
         block_pose_offsets = np.asarray(retained["block_pose_offsets"])

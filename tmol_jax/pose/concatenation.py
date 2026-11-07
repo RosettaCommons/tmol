@@ -159,4 +159,6 @@ def from_poses(pose_stacks, device=None):
             split_block_mapping=common.concatenate_split_mapping(pbt, poses),
             **_bondsep(poses, layout.max_n_blocks, pbt.max_n_conn),
         )
-        return jax.device_put(result, device)
+        # Arrays were assembled on this device above. Rebuilding the pytree
+        # here would replace the shared PackedBlockTypes object unnecessarily.
+        return result

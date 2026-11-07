@@ -23,6 +23,21 @@ def entry_stage(arguments, *, operation, outputs, extent=0, chunk_size=16):
     return stage(arguments, target, outputs, operation, extent, chunk_size)
 
 
+@partial(jax.jit, static_argnames=("operation", "extent", "chunk_size"))
+def additive_entry_stage(arguments, previous, *, operation, extent=0, chunk_size=16):
+    """Accumulate one native page, retaining JAX input value semantics."""
+    outputs = tuple(jax.ShapeDtypeStruct(a.shape, a.dtype) for a in previous)
+    return stage(
+        (*arguments, *previous),
+        "tmol_graph_entries_additive",
+        outputs,
+        operation,
+        extent,
+        chunk_size,
+        aliases={len(arguments) + i: i for i in range(len(previous))},
+    )
+
+
 @jax.jit
 def _valid_entries(values, indices, pose_for_rotamer, block_for_rotamer, pose_counts):
     valid = jnp.all(jnp.isfinite(values)) & jnp.all(indices >= 0)
