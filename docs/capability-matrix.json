@@ -482,14 +482,14 @@
   },
   "acceptance_gaps": {
     "mature_functionality": [
-      "Public API audit: mutation and residue-label/query helpers and sequence construction are absent from the JAX root API; their mature policy requires shared-core extraction. Public PDB/CIF reader/writer helpers and fragment/EdgeType aliases now have source CPU checks; their final installed gate is pending.",
+      "Public API audit: mutation, residue-label/query helpers and sequence construction await common-policy integration and JAX adapters. Public PDB/CIF reader/writer helpers and fragment/EdgeType aliases pass installed CPU and CUDA checks. Pose layout and constraint storage helpers pass source CPU checks; their matching artifact/device gate is pending.",
       "Complete task/design compatibility. Unchanged constrained atom identities pass installed CPU/CUDA checks; changed ports or constraint atom indices require a mature correctness audit before classification as parity gaps.",
       "Optimizer defaults and callback compatibility. Explicit shared Armijo and checkpoint continuation pass installed CPU/CUDA gates. Strong-Wolfe remains the JAX public default; FastRelax default optimization therefore differs.",
       "Exhaustive custom database/public score-option compatibility beyond the documented fixtures."
     ],
     "validation_and_performance": [
       "Matched mature end-to-end cold/warm runtime and peak host/device memory remain unresolved; scoring-only speedups do not establish packing or minimization parity.",
-      "Private b21326df4c canonical-construction/render/six-step Armijo/final energy-gradient workflows match mature d758 in all four domains at float64 2e-10. Fresh per-process caches, both orders: warm JAX/Torch ratios 0.410-0.685 for ligand/noncanonical/mixed and 6.995-7.554 for D-peptide; cold ratios 2.375-3.407. Host process peaks are lower, but include retained allocations and do not isolate native scratch or device memory. The subsequent Dunbrack precision-preparation candidate is under validation.",
+      "Matched canonical construction/render/six-step Armijo/final energy-gradient workflows against mature d758: CPU Cartesian 40b and kinematic 575 pass all four domains/both orders at float64 2e-10. Warm JAX/Torch ratios are 0.374-0.721 Cartesian and 0.407-0.663 kinematic; cold ratios remain 2.358-3.418 and 1.384-1.778 respectively. CUDA Cartesian ratios remain 1.614-3.328 warm and 2.645-4.091 cold. D-peptide CUDA total energy differs by 2.384186e-7 solely from coordinate-independent float32 reference reduction: identical coefficients, all other 24 terms and all 25 gradients pass 2e-10, physical total is bit-exact. Strict total equality remains unclaimed. CUDA D-peptide allocator peak is 322146560 versus 219586560 bytes. Host/device peaks include retained/setup allocations, not isolated native scratch. Full runtime/memory parity is unresolved.",
       "Corrected a0a, focused cf7 and bounded cf0e hydrogen Apple checks passed. Small Metal workflow runtime/memory exceptions remain. Hydrogen reconstruction executes CPU in the Metal scoring/annealing lane; JAX MPS is not claimed.",
       "Ordinary PyPI AtomWorks 3.0.4 can import installed Torch during host preparation. The documented immutable dependency constraint passes normal installation and full molecular input/scoring with Torch installed but unloaded. It does not change the PyPI default."
     ],
@@ -515,5 +515,14 @@
     "jax": "cpu_cuda_installed_validated",
     "repro_fixture": "tests/scientific/test_task_sampler_defaults.py",
     "implementation_status": "Tasks inherit palette defaults with sampler-instance deduplication and independent masks. Ligand, D-peptide and DNA default packing preserve coordinates/topology and all 25 per-term values and gradients on CPU. Custom palette instance ownership tested on both backends; exact installed and actual CUDA gates passed."
+  },
+  "public_pose_storage": {
+    "torch": "supported",
+    "jax": "source_cpu_validated_artifact_cuda_pending",
+    "repro_fixture": [
+      "tests/scientific/test_pose_layout.py",
+      "tests/scientific/test_constraint_storage.py"
+    ],
+    "implementation_status": "Layout masks/counts/expansion, pose splitting and constraint clone/device transport/replication preserve mixed molecular identity and coordinate/parameter derivatives. JAX immutable clones share arrays. Runtime adapters consume common topology and constraint policy."
   }
 }
