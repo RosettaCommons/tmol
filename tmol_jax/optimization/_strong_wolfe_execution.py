@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from tmol_core.optimization.lbfgs import two_loop_direction
+from tmol_jax._compilation import jit_without_autotuning
 
 
 class JaxStrongWolfeExecution:
@@ -11,7 +12,9 @@ class JaxStrongWolfeExecution:
     clone = staticmethod(lambda x: x)
     dot = staticmethod(jax.jit(jnp.dot))
     abs_max = staticmethod(jax.jit(lambda x: jnp.max(jnp.abs(x))))
-    abs_sum = staticmethod(jax.jit(lambda x: jnp.sum(jnp.abs(x))))
+    # The initial step depends on this reduction. Avoid autotuning-dependent
+    # reduction order while preserving the input dtype and common policy.
+    abs_sum = staticmethod(jit_without_autotuning(lambda x: jnp.sum(jnp.abs(x))))
     sqrt = staticmethod(jnp.sqrt)
     add_scaled = staticmethod(
         jax.jit(lambda x, y, alpha: x + jnp.asarray(alpha, dtype=x.dtype) * y)
