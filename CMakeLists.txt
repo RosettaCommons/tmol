@@ -353,6 +353,7 @@ endfunction()
 
 set(_C_SOURCES
   tmol/native.cpp
+  tmol/ligand/compiled/refinement.cpu.cpp
   # optimization
   tmol/optimization/armijo_compiled.ops.cpp
   tmol/backends/cpu/optimization/armijo_compiled.cpu.cpp
