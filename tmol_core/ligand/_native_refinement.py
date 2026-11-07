@@ -46,8 +46,8 @@ def _validate_arrays(x, p):
         raise TypeError("expected a NumPy coordinate matrix")
     if x.dtype not in (np.dtype("float32"), np.dtype("float64")):
         raise TypeError("coordinates must have float32 or float64 dtype")
-    if not x.flags.c_contiguous:
-        raise TypeError("coordinates must be contiguous")
+    if not x.flags.c_contiguous or not x.flags.aligned:
+        raise TypeError("coordinates must be contiguous and aligned")
     counts = (p.n_exact, p.n_lower, p.n_upper)
     if any(not isinstance(n, (int, np.integer)) or n < 0 for n in counts):
         raise ValueError("pair counts must be nonnegative integers")
@@ -63,8 +63,8 @@ def _validate_arrays(x, p):
     for array, dtype, shape in arrays:
         if not isinstance(array, np.ndarray) or array.dtype != dtype:
             raise TypeError("native metadata has an invalid array dtype")
-        if not array.flags.c_contiguous:
-            raise TypeError("native metadata must be contiguous")
+        if not array.flags.c_contiguous or not array.flags.aligned:
+            raise TypeError("native metadata must be contiguous and aligned")
         if (shape is None and array.ndim != 1) or (
             shape is not None and array.shape != shape
         ):
