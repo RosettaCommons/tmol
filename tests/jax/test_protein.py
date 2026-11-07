@@ -21,8 +21,12 @@ def _tripeptide_pdb(tmp_path):
 
 
 def test_protein_score_and_gradient_are_finite(tmp_path):
+    from tmol_jax.io import default_packed_block_types
+
     path = _tripeptide_pdb(tmp_path)
-    pose = pose_stack_from_pdb(path)
+    palette = default_packed_block_types()
+    palette_names = tuple(residue.name for residue in palette.active_block_types)
+    pose = pose_stack_from_pdb(path, packed_block_types=palette)
     from biotite.structure.io.pdb import PDBFile
     from biotite.structure import stack
     from tmol_jax.io import canonical_form_from_pdb
@@ -37,7 +41,13 @@ def test_protein_score_and_gradient_are_finite(tmp_path):
         )
     score_function = beta2016_score_function()
     energy, gradient = score_function.jitted_value_and_grad(pose)(pose.coords)
-    assert len(pose.packed_block_types.active_block_types) == 3
+    assert tuple(
+        residue.name for residue in pose.packed_block_types.active_block_types
+    ) == palette_names
+    np.testing.assert_array_equal(pose.n_res_per_pose, [3])
+    assert [pose.block_type(0, i).name3 for i in range(3)] == ["MET", "GLN", "ILE"]
+    used_types = np.asarray(pose.block_type_ind)
+    assert len(np.unique(used_types[used_types >= 0])) == 3
     # Cartesian setup must depend on topology, even when a real atom is at zero.
     cart = next(
         term
