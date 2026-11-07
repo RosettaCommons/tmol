@@ -30,6 +30,11 @@ def test_rotamer_preparation_preserves_cross_dtype_values_and_gradients(name):
         prepared = b.score_function.jitted_value_and_grad(b.pose.replace(coords=x64))
         for actual, reference in zip(prepared(x64), expected):
             np.testing.assert_allclose(actual, reference, rtol=2e-10, atol=2e-10)
+        batched = jax.jit(jax.vmap(prepared))(jnp.stack([x64, x64]))
+        for actual, reference in zip(batched, expected):
+            np.testing.assert_allclose(
+                actual, jnp.stack([reference, reference]), rtol=2e-10, atol=2e-10
+            )
         # A rendered scorer can still execute either coordinate dtype. Returning
         # to single precision must retain the source tables and old snapshots.
         for actual, reference in zip(prepared(x32), original(x32)):
