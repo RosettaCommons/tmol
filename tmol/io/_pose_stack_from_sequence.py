@@ -1,11 +1,8 @@
-from typing import Dict, List, Optional
+from typing import Optional
 
 import attr
-import math
 
 import numpy
-from atomworks.experimental.protonation.geometry import build_coordinates
-from tmol.ligand._icoor_tree import _vertex_angle
 import torch
 
 from tmol.chemical import ResidueTypeSet
@@ -21,6 +18,8 @@ from tmol.pose._sequence import (
     _tokenize_sequences,
 )
 from tmol.utility import resolve_device
+from tmol_core.io import extended as _extended
+from tmol_core.io.extended import EXTENDED_BACKBONE_TORSIONS  # noqa: F401
 
 
 def _create_pose_stack_from_sequences(
@@ -108,26 +107,6 @@ def _create_pose_stack_from_sequences(
 #    beta strand for protein / B-form DNA / A-form RNA
 # ---------------------------------------------------------------------------
 
-EXTENDED_BACKBONE_TORSIONS = {
-    "alpha_aa": {"phi": -135.0, "psi": 135.0, "omega": 180.0},
-    "dna": {
-        "alpha": -30.0,
-        "beta": 136.0,
-        "gamma": 31.0,
-        "epsilon": -141.0,
-        "zeta": -161.0,
-        "chi1": -98.0,
-    },
-    "rna": {
-        "alpha": -68.0,
-        "beta": 178.0,
-        "gamma": 54.0,
-        "epsilon": -153.0,
-        "zeta": -71.0,
-        "chi1": -158.0,
-    },
-}
-
 
 def extended_pose_stack_from_sequences(
     seqs,  # str | Sequence[str]
@@ -166,23 +145,10 @@ def _set_ideal_backbone_torsions(pose_stack: PoseStack) -> PoseStack:
     from tmol.pose._util import _measure_torsions
     from tmol.kinematics._pose_stack_kinematics import _apply_torsion_deltas
 
-    pbt = pose_stack.packed_block_types
-    requests, values = [], []
-    for pose in range(pose_stack.n_poses):
-        for block in range(pose_stack.max_n_blocks):
-            bt_ind = int(pose_stack.block_type_ind64[pose, block])
-            if bt_ind == -1:
-                continue
-            bt = pbt.active_block_types[bt_ind]
-            targets = EXTENDED_BACKBONE_TORSIONS.get(
-                bt.properties.polymer.backbone_type
-            )
-            if targets is None:
-                continue
-            for j, tor in enumerate(bt.torsions):
-                if tor.name in targets:
-                    requests.append((pose, block, j, tor.name))
-                    values.append(targets[tor.name])
+    requests, values = _extended.extended_torsion_requests(
+        pose_stack.packed_block_types.active_block_types,
+        pose_stack.block_type_ind64.cpu().numpy(),
+    )
     if not requests:
         return pose_stack
 
@@ -194,145 +160,27 @@ def _set_ideal_backbone_torsions(pose_stack: PoseStack) -> PoseStack:
 
 
 def _ideal_chained_coords(pose_stack: PoseStack) -> torch.Tensor:
-    pbt = pose_stack.packed_block_types
-    coords = numpy.zeros(pose_stack.coords.shape, dtype=numpy.float32)
-    for pose in range(pose_stack.n_poses):
-        placed: Dict[int, numpy.ndarray] = {}
-        for block in range(pose_stack.max_n_blocks):
-            bt_ind = int(pose_stack.block_type_ind64[pose, block])
-            if bt_ind == -1:
-                continue
-            bt = pbt.active_block_types[bt_ind]
-            local = numpy.asarray(bt.ideal_coords, dtype=numpy.float64)
-
-            prev = _bonded_predecessor(pose_stack, pose, block)
-            if prev is None:
-                placed[block] = local
-            else:
-                rot, trans = _junction_transform(
-                    pose_stack, pose, block, bt, local, prev, placed
-                )
-                placed[block] = local @ rot.T + trans
-
-        for block, block_coords in placed.items():
-            bt_ind = int(pose_stack.block_type_ind64[pose, block])
-            bt = pbt.active_block_types[bt_ind]
-            offset = int(pose_stack.block_coord_offset64[pose, block])
-            coords[pose, offset : offset + bt.n_atoms] = block_coords[
-                bt.at_to_icoor_ind
-            ]
+    coords = _extended.ideal_chained_coords(
+        pose_stack.packed_block_types.active_block_types,
+        pose_stack.block_type_ind64.cpu().numpy(),
+        pose_stack.block_coord_offset64.cpu().numpy(),
+        pose_stack.inter_residue_connections64.cpu().numpy(),
+        pose_stack.coords.shape,
+    )
     return torch.tensor(coords, dtype=torch.float32, device=pose_stack.device)
 
 
 def _separate_pose_stack_chains(pose_stack: PoseStack) -> PoseStack:
     """Slide each chain along x so no two chains overlap."""
-    separation = 6.0
-    pbt = pose_stack.packed_block_types
+    shifts = _extended.chain_separation_shifts(
+        pose_stack.packed_block_types.active_block_types,
+        pose_stack.block_type_ind64.cpu().numpy(),
+        pose_stack.block_coord_offset64.cpu().numpy(),
+        pose_stack.chain_id.cpu().numpy(),
+        pose_stack.coords.detach().cpu().numpy(),
+    )
     coords = pose_stack.coords.clone()
-    for pose in range(pose_stack.n_poses):
-        atoms_for_chain: Dict[int, List[numpy.ndarray]] = {}
-        for block in range(pose_stack.max_n_blocks):
-            bt_ind = int(pose_stack.block_type_ind64[pose, block])
-            if bt_ind == -1:
-                continue
-            offset = int(pose_stack.block_coord_offset64[pose, block])
-            n_atoms = int(pbt.n_atoms[bt_ind])
-            chain = int(pose_stack.chain_id[pose, block])
-            atoms_for_chain.setdefault(chain, []).append(
-                numpy.arange(offset, offset + n_atoms)
-            )
-        if len(atoms_for_chain) < 2:
-            continue
-
-        next_x = 0.0
-        for chain in sorted(atoms_for_chain):
-            inds = torch.from_numpy(numpy.concatenate(atoms_for_chain[chain])).to(
-                pose_stack.device
-            )
-            xs = coords[pose, inds, 0]
-            shift = next_x - float(xs.min())
-            coords[pose, inds, 0] += shift
-            next_x = float(xs.max()) + shift + separation
+    for pose, indices, shift in shifts:
+        inds = torch.from_numpy(indices).to(pose_stack.device)
+        coords[pose, inds, 0] += shift
     return attr.evolve(pose_stack, coords=coords)
-
-
-def _bonded_predecessor(pose_stack, pose, block):
-    bt_ind = int(pose_stack.block_type_ind64[pose, block])
-    bt = pose_stack.packed_block_types.active_block_types[bt_ind]
-    if bt.down_connection_ind == -1:
-        return None
-    partner = pose_stack.inter_residue_connections64[
-        pose, block, bt.down_connection_ind
-    ]
-    prev_block, prev_conn = int(partner[0]), int(partner[1])
-    if prev_block == -1 or prev_block >= block:
-        return None
-    prev_bt_ind = int(pose_stack.block_type_ind64[pose, prev_block])
-    prev_bt = pose_stack.packed_block_types.active_block_types[prev_bt_ind]
-    if prev_conn != prev_bt.up_connection_ind:
-        return None
-    return prev_block, prev_conn
-
-
-def _junction_transform(pose_stack, pose, block, bt, local, prev, placed):
-    pbt = pose_stack.packed_block_types
-    prev_block, prev_conn = prev
-    prev_bt = pbt.active_block_types[int(pose_stack.block_type_ind64[pose, prev_block])]
-    prev_coords = placed[prev_block]
-
-    prev_conn_name = prev_bt.connections[prev_conn].name
-    prev_mainchain = prev_bt.properties.polymer.mainchain_atoms
-    conn_atom = prev_bt.connections[prev_conn].atom
-    ref_atom = prev_mainchain[prev_mainchain.index(conn_atom) - 1]
-
-    ref = prev_coords[prev_bt.icoors_index[ref_atom]]
-    anchor = prev_coords[prev_bt.icoors_index[conn_atom]]
-    hinge = prev_coords[prev_bt.icoors_index[prev_conn_name]]
-
-    mainchain = bt.properties.polymer.mainchain_atoms
-    src = numpy.array(
-        [
-            local[bt.icoors_index[bt.connections[bt.down_connection_ind].name]],
-            local[bt.icoors_index[mainchain[0]]],
-            local[bt.icoors_index[mainchain[1]]],
-        ]
-    )
-    dist = numpy.linalg.norm(src[2] - src[1])
-    angle = _vertex_angle(src[0], src[1], src[2])
-    torsion = numpy.radians(_junction_torsion_value(prev_bt, prev_conn))
-
-    dst = numpy.array(
-        [
-            anchor,
-            hinge,
-            build_coordinates(hinge, anchor, ref, (dist, math.pi - angle, torsion)),
-        ]
-    )
-    return _rigid_transform(src, dst)
-
-
-def _junction_torsion_value(prev_bt, prev_conn):
-    targets = EXTENDED_BACKBONE_TORSIONS.get(
-        prev_bt.properties.polymer.backbone_type, {}
-    )
-    for tor in prev_bt.torsions:
-        uaids = prev_bt.torsion_to_uaids[tor.name]
-        spans = (
-            uaids[0][1] == -1
-            and uaids[1][1] == -1
-            and uaids[2][1] == prev_conn
-            and uaids[3][1] == prev_conn
-        )
-        if spans:
-            return targets.get(tor.name, 180.0)
-    return 180.0
-
-
-def _rigid_transform(src, dst):
-    src_center = src.mean(axis=0)
-    dst_center = dst.mean(axis=0)
-    h = (src - src_center).T @ (dst - dst_center)
-    u, _, vt = numpy.linalg.svd(h)
-    d = numpy.sign(numpy.linalg.det(vt.T @ u.T))
-    rot = vt.T @ numpy.diag([1.0, 1.0, d]) @ u.T
-    return rot, dst_center - rot @ src_center

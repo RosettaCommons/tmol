@@ -100,6 +100,16 @@ batch offsets, fragment identities and PDB metadata. It reads shapes and host
 metadata only. Frontends copy coordinate/topology buffers and concatenate
 constraints on the requested device.
 
+The molecular sequence grammar and ideal extended-chain geometry live in
+`tmol_core.pose.sequence` and `tmol_core.io.extended`. They use chemical residue
+records and host topology arrays, including explicit residue names, chain
+breaks and ligand SMILES. Frontends measure and apply torsions and place
+coordinates on their devices. Shared query and mutation policy preserves
+padding, author insertion codes, unknown one-letter identities and frozen
+background blocks; sampler execution remains in each frontend. The one-letter
+mutation API retains its mature amino-acid contract rather than accepting
+arbitrary chemical identities as sequence letters.
+
 ## Building and validating
 
 ```bash

@@ -141,3 +141,24 @@ np.testing.assert_array_equal(atoms.coord, original)
 assert common._get_all_residue_positions(atoms[:0]).shape == (0,)
 assert not {'torch', 'jax', 'tmol'}.intersection(sys.modules)
 """)
+
+
+def test_sequence_and_extended_geometry_policy_without_frameworks():
+    _assert_framework_free("""
+from tmol_core.pose.sequence import _tokenize_sequences, _smiles_in_tokens
+from tmol_core.io.extended import EXTENDED_BACKBONE_TORSIONS
+from tmol_core.pack.mutation import sequence_mutations
+from tmol_core.pose.query import sequence_from_types
+from tmol_core.chemical.default import default_patched_chemical_database
+import numpy as np
+by_name = {r.name: r for r in default_patched_chemical_database().residues}
+active = [by_name['ALA'], by_name['DALA'], by_name['DA'], by_name['HOH']]
+assert sequence_from_types(active, np.array([0,1,-1,2,3])) == 'AXXX'
+assert sequence_mutations(active, np.array([0,-1]), 'A', 0) == {}
+assert sequence_mutations(active, np.array([0,-1,0]), 'AG', 0) == {2: 'GLY'}
+tokens, lengths = _tokenize_sequences(['A:X[DALA]:ac:X(CCO)', 'A'])
+assert lengths == [[1,1,2,1], [1]]
+assert _smiles_in_tokens(tokens) == ['CCO']
+assert set(EXTENDED_BACKBONE_TORSIONS) == {'alpha_aa', 'dna', 'rna'}
+assert not {'torch', 'jax', 'tmol'}.intersection(sys.modules)
+""")
