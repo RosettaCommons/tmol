@@ -24,10 +24,12 @@ def test_weighted_lk_ball_preserves_channel_selection_and_gradients(weights):
     unweighted = backend.score_function.render_whole_pose_scoring_module(
         backend.pose, apply_weights=False
     )
+    # Mature TMol retains all subchannels while any weight keeps the term alive.
+    assert tuple(st.name for st in backend.score_function.all_score_types()) == TERMS
     x = backend.pose.coords
     for function, coefficients in (
         (weighted, weights),
-        (unweighted, np.not_equal(weights, 0)),
+        (unweighted, np.ones(len(TERMS))),
     ):
 
         def reference(x):

@@ -15,7 +15,11 @@ def test_preset_keeps_every_declared_weight():
         (default_directory() / "score_functions/beta2016.sfxn").read_text()
     )["weights"]
     score = beta2016_score_function()
-    assert {st.name: weight for st, weight in score.weights.items()} == expected
+    # The mature default stores float32 weights even for float64 coordinates.
+    assert score.weight_dtype == np.dtype(np.float32)
+    assert {st.name: weight for st, weight in score.weights.items()} == {
+        name: float(np.float32(weight)) for name, weight in expected.items()
+    }
     assert ScoreType.na_torsion in score.active_score_types()
     assert ScoreType.metal_coordination in score.active_score_types()
 

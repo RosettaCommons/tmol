@@ -675,3 +675,10 @@ analytic gradients and host optimizer; prepared poses still score on their
 selected JAX CPU/CUDA device. It requires matching native artifacts and remains
 opt-in: seeded geometry and parameter identity against the historical mature
 workflow, and complete cold/warm runtime and memory parity, remain open.
+
+
+The record-based `tmol_jax.io.write_pose_stack_pdb` writer restores fragmented
+ligands to their original residue names, author numbers, chains and insertion
+codes through the common fragment policy. Pass `merge_fragments=False` to keep
+separate fragment records. Its existing `pose_index` option selects one model;
+`pose_index=None` writes all models. PDB coordinates retain three decimal places.

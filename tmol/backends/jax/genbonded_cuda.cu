@@ -288,17 +288,15 @@ ffi::Error run_sampling(
   }
 }
 
-// Sparse whole-pose Dunbrack work otherwise occupies a single CUDA block.
-// Keep its independent residue evaluations on separate SM workgroups; the
-// common kernel owns all geometry, table lookup and analytic derivatives.
+// Preserve the common Dunbrack launch policy used by Torch. Adjacent residue
+// evaluations can accumulate derivatives into the same backbone atoms.
 template <Device D>
 struct DunbrackCudaOps : CudaOps<D> {
   template <typename Launch, typename F>
   static void forall_grouped(ContextManager&, int poses, int groups, F f) {
     int count = score::common::checked_dispatch_product(
         poses, groups, "JAX CUDA Dunbrack");
-    // Small batches need many workgroups; large batches fill active warp lanes.
-    int threads = count >= 2048 ? 16 : 1;
+    constexpr int threads = Launch::sm_ptx::nt;
     if (count)
       independent_work<<<
           (count + threads - 1) / threads,
@@ -461,8 +459,14 @@ extern "C" int tmol_jax_native_abi_version() { return 4; }
 extern "C" int tmol_cuda_memory_info(
     int device, uint64_t* free_bytes, uint64_t* total_bytes) {
   if (!free_bytes || !total_bytes) return cudaErrorInvalidValue;
+  // Reject invalid ordinals before calling cudaSetDevice: its failure leaves
+  // a runtime error that can poison subsequent unrelated XLA launches.
+  int count = 0;
+  auto status = cudaGetDeviceCount(&count);
+  if (status != cudaSuccess) return status;
+  if (device < 0 || device >= count) return cudaErrorInvalidDevice;
   int previous = -1;
-  auto status = cudaGetDevice(&previous);
+  status = cudaGetDevice(&previous);
   if (status != cudaSuccess) return status;
   status = cudaSetDevice(device);
   if (status != cudaSuccess) {

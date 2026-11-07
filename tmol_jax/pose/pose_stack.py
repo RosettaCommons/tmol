@@ -279,7 +279,7 @@ class PoseStack:
         ``is_real_block`` must be True.
         """
         return self.packed_block_types.active_block_types[
-            int(self.block_type_ind[pose_ind, block_ind])
+            int(np.asarray(self.block_type_ind)[pose_ind, block_ind])
         ]
 
     # Constructors
