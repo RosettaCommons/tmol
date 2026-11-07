@@ -31,7 +31,13 @@ class Execution:
                         "torch-mps lane requires a native TMol Metal build"
                     )
             # Apple execution is the supported CPU-pose/Metal-offload contract.
-            self.device = torch.device("cpu" if device == "mps" else device)
+            # Resolve CUDA's current-device alias so identity checks compare the
+            # actual indexed device reported by tensors, including copied tensors.
+            self.device = (
+                torch.device("cuda", torch.cuda.current_device())
+                if device == "cuda"
+                else torch.device("cpu")
+            )
         elif self.framework == "jax":
             self.module = pytest.importorskip("jax")
             try:
