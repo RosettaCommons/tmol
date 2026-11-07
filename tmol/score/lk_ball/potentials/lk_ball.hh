@@ -1402,6 +1402,7 @@ template <
     typename Real,
     tmol::Device Dev,
     bool UseSharedScratch = false,
+    typename GradReal = Real,
     typename PoseDerivView = void,
     typename WaterDerivView = void>
 TMOL_DEVICE_FUNC void lk_ball_atom_derivs_full(
@@ -1472,7 +1473,7 @@ TMOL_DEVICE_FUNC void lk_ball_atom_derivs_full(
            TMOL_THREAD Real3 const& derivs) {
         for (int j = 0; j < 3; ++j) {
           if (derivs[j] != 0) {
-            accumulate_grad<Dev, Real>::add(
+            accumulate_grad<Dev, GradReal>::add(
                 dV_d_pose_coords[block_dat.rot_coord_offset + atom_ind][j],
                 derivs[j]);
           }
@@ -1487,7 +1488,7 @@ TMOL_DEVICE_FUNC void lk_ball_atom_derivs_full(
            TMOL_THREAD tmol::portable::Mat<Real, MaxNWater, 3> const& derivs) {
         for (int j = 0; j < 3; ++j) {
           if (derivs(water_ind, j) != 0) {
-            accumulate_grad<Dev, Real>::add(
+            accumulate_grad<Dev, GradReal>::add(
                 dV_d_water_coords[block_dat.rot_coord_offset + atom_ind]
                                  [water_ind][j],
                 derivs(water_ind, j));

@@ -131,19 +131,26 @@ TMOL_DEVICE_FUNC void reverse_subgraph(Vec<Int, 4>& subgraph) {
   }
 }
 
-template <typename Real, typename Int, int N, tmol::Device D>
+template <
+    typename Real,
+    typename Int,
+    int N,
+    tmol::Device D,
+    typename GradReal = Real>
 TMOL_DEVICE_FUNC void accumulate_result(
     Real& val,
     common::tuple<Real, Vec<Vec<Real, 3>, N>> to_add,
     Vec<Int, N> atoms,
     bool accumulate_derivs,
-    TensorAccessor<Vec<Real, 3>, 1, D> dV,
+    TensorAccessor<Vec<GradReal, 3>, 1, D> dV,
     const Real& weight = 1.0) {
   val += common::get<0>(to_add);
   if (accumulate_derivs) {
     for (int i = 0; i < N; i++) {
-      accumulate<D, Vec<Real, 3>>::add(
-          dV[atoms[i]], common::get<1>(to_add)[i] * weight);
+      for (int axis = 0; axis < 3; ++axis)
+        accumulate<D, GradReal>::add(
+            dV[atoms[i]][axis],
+            GradReal(common::get<1>(to_add)[i][axis] * weight));
     }
   }
 }
@@ -398,7 +405,9 @@ template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
     typename Real,
-    typename Int>
+    typename Int,
+    typename GradReal = Real,
+    typename EnergyReal = Real>
 void cartbonded_pose_forward(
     ContextManager& mgr,
 
@@ -431,8 +440,8 @@ void cartbonded_pose_forward(
     bool output_block_pair_energies,
 
     bool compute_derivs,
-    TView<Real, 4, D> V,
-    TView<Vec<Real, 3>, 2, D> dV_dx) {
+    TView<EnergyReal, 4, D> V,
+    TView<Vec<GradReal, 3>, 2, D> dV_dx) {
   using tmol::score::common::get_connection_spanning_subgraphs_offset;
   using tmol::score::common::get_n_connection_spanning_subgraphs;
 
@@ -727,42 +736,45 @@ void cartbonded_pose_forward(
           // a residue may form more than one bond to another residue,
           // e.g. i to i+1 disulfide
           if (cta_length_score != 0.0) {
-            accumulate<D, Real>::add(
+            accumulate<D, EnergyReal>::add(
                 V[0][pose_ind][block_ind1][block_ind2], cta_length_score);
           }
           if (cta_angle_score != 0.0) {
-            accumulate<D, Real>::add(
+            accumulate<D, EnergyReal>::add(
                 V[1][pose_ind][block_ind1][block_ind2], cta_angle_score);
           }
           if (cta_torsion_score != 0.0) {
-            accumulate<D, Real>::add(
+            accumulate<D, EnergyReal>::add(
                 V[2][pose_ind][block_ind1][block_ind2], cta_torsion_score);
           }
           if (cta_improper_torsion_score != 0.0) {
-            accumulate<D, Real>::add(
+            accumulate<D, EnergyReal>::add(
                 V[3][pose_ind][block_ind1][block_ind2],
                 cta_improper_torsion_score);
           }
           if (cta_hxyl_torsion_score != 0.0) {
-            accumulate<D, Real>::add(
+            accumulate<D, EnergyReal>::add(
                 V[4][pose_ind][block_ind1][block_ind2], cta_hxyl_torsion_score);
           }
         } else {
           if (cta_length_score != 0.0) {
-            accumulate<D, Real>::add(V[0][pose_ind][0][0], cta_length_score);
+            accumulate<D, EnergyReal>::add(
+                V[0][pose_ind][0][0], cta_length_score);
           }
           if (cta_angle_score != 0.0) {
-            accumulate<D, Real>::add(V[1][pose_ind][0][0], cta_angle_score);
+            accumulate<D, EnergyReal>::add(
+                V[1][pose_ind][0][0], cta_angle_score);
           }
           if (cta_torsion_score != 0.0) {
-            accumulate<D, Real>::add(V[2][pose_ind][0][0], cta_torsion_score);
+            accumulate<D, EnergyReal>::add(
+                V[2][pose_ind][0][0], cta_torsion_score);
           }
           if (cta_improper_torsion_score != 0.0) {
-            accumulate<D, Real>::add(
+            accumulate<D, EnergyReal>::add(
                 V[3][pose_ind][0][0], cta_improper_torsion_score);
           }
           if (cta_hxyl_torsion_score != 0.0) {
-            accumulate<D, Real>::add(
+            accumulate<D, EnergyReal>::add(
                 V[4][pose_ind][0][0], cta_hxyl_torsion_score);
           }
         }
@@ -778,7 +790,8 @@ template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
     typename Real,
-    typename Int>
+    typename Int,
+    typename GradReal = Real>
 void cartbonded_pose_backward(
     ContextManager& mgr,
 
@@ -809,7 +822,7 @@ void cartbonded_pose_backward(
     TView<Int, 1, D> cart_subgraph_param_indices,
 
     TView<Real, 4, D> dTdV,
-    TView<Vec<Real, 3>, 2, D> dV_dx) {
+    TView<Vec<GradReal, 3>, 2, D> dV_dx) {
   int const n_poses = first_rot_for_block.size(0);
   int const max_n_blocks = first_rot_for_block.size(1);
 

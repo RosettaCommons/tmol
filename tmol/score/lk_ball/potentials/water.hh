@@ -558,6 +558,31 @@ void TMOL_DEVICE_FUNC build_water_for_acc(
       Wxyz;
 }
 
+// Water geometry stays in Real. A wider cotangent from the scoring kernel
+// remains wide through this chain rule and the final concurrent atom sum.
+template <
+    tmol::Device Dev,
+    typename GradReal,
+    typename Real,
+    typename WaterReal>
+TMOL_DEVICE_FUNC void accumulate_water_derivative(
+    TMOL_THREAD Vec<GradReal, 3>& target,
+    TMOL_THREAD tmol::portable::Mat<Real, 3, 3> const& jacobian,
+    TMOL_THREAD Vec<WaterReal, 3> const& cotangent) {
+  Vec<WaterReal, 3> product;
+  if constexpr (tmol::portable::is_same<Real, WaterReal>::value) {
+    product = jacobian * cotangent;
+  } else {
+    for (int i = 0; i < 3; ++i) {
+      product[i] = 0;
+      for (int j = 0; j < 3; ++j)
+        product[i] += WaterReal(jacobian(i, j)) * cotangent[j];
+    }
+  }
+  for (int i = 0; i < 3; ++i)
+    common::accumulate<Dev, GradReal>::add(target[i], GradReal(product[i]));
+}
+
 template <
     int TileSize,
     tmol::Device Dev,
@@ -593,12 +618,12 @@ void TMOL_DEVICE_FUNC d_build_water_for_don(
   int const D_atom_pose_ind = res_dat.rot_coord_offset + Dind;
   int const H_atom_pose_ind =
       res_dat.rot_coord_offset + tile_start + don_h_atom_tile_ind;
-  Real3 dE_dW = dE_dWxyz[D_atom_pose_ind][which_water];
+  auto dE_dW = dE_dWxyz[D_atom_pose_ind][which_water];
 
-  common::accumulate<Dev, Vec<Real, 3>>::add(
-      dE_d_pose_coords[D_atom_pose_ind], dW.dD * dE_dW);
-  common::accumulate<Dev, Vec<Real, 3>>::add(
-      dE_d_pose_coords[H_atom_pose_ind], dW.dH * dE_dW);
+  accumulate_water_derivative<Dev>(
+      dE_d_pose_coords[D_atom_pose_ind], dW.dD, dE_dW);
+  accumulate_water_derivative<Dev>(
+      dE_d_pose_coords[H_atom_pose_ind], dW.dH, dE_dW);
 }
 
 template <
@@ -706,24 +731,24 @@ void TMOL_DEVICE_FUNC d_build_water_for_acc(
       rot_coord_offset_for(acc_bases.B0, res_dat, context_dat)
       + acc_bases.B0.atom;
 
-  Real3 dE_dW = dE_dWxyz[A_atom_pose_ind][water_ind + water_offset];
+  auto dE_dW = dE_dWxyz[A_atom_pose_ind][water_ind + water_offset];
 
-  common::accumulate<Dev, Vec<Real, 3>>::add(
-      dE_d_pose_coords[A_atom_pose_ind], dW.dp * dE_dW);
+  accumulate_water_derivative<Dev>(
+      dE_d_pose_coords[A_atom_pose_ind], dW.dp, dE_dW);
   if (hyb == hbond::AcceptorHybridization::ring) {
     // Since the Bxyz coordinate for ring acceptors is the
     // bisector of the B and B0 atoms, apply half of the
     // derivative to B and half to B0
-    common::accumulate<Dev, Vec<Real, 3>>::add(
-        dE_d_pose_coords[B_atom_pose_ind], 0.5 * dW.dgp * dE_dW);
-    common::accumulate<Dev, Vec<Real, 3>>::add(
-        dE_d_pose_coords[B0_atom_pose_ind], 0.5 * dW.dgp * dE_dW);
+    accumulate_water_derivative<Dev>(
+        dE_d_pose_coords[B_atom_pose_ind], 0.5 * dW.dgp, dE_dW);
+    accumulate_water_derivative<Dev>(
+        dE_d_pose_coords[B0_atom_pose_ind], 0.5 * dW.dgp, dE_dW);
   } else {
-    common::accumulate<Dev, Vec<Real, 3>>::add(
-        dE_d_pose_coords[B_atom_pose_ind], dW.dgp * dE_dW);
+    accumulate_water_derivative<Dev>(
+        dE_d_pose_coords[B_atom_pose_ind], dW.dgp, dE_dW);
   }
-  common::accumulate<Dev, Vec<Real, 3>>::add(
-      dE_d_pose_coords[B0_atom_pose_ind], dW.dggp * dE_dW);
+  accumulate_water_derivative<Dev>(
+      dE_d_pose_coords[B0_atom_pose_ind], dW.dggp, dE_dW);
 }
 
 }  // namespace potentials

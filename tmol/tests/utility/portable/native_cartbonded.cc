@@ -25,3 +25,13 @@ auto forward64 =
     &cartbonded_pose_forward<SerialOps, tmol::Device::CPU, double, int>;
 auto backward64 =
     &cartbonded_pose_backward<SerialOps, tmol::Device::CPU, double, int>;
+
+auto forward_wide = &cartbonded_pose_forward<
+    SerialOps,
+    tmol::Device::CPU,
+    float,
+    int,
+    double,
+    double>;
+auto backward_wide =
+    &cartbonded_pose_backward<SerialOps, tmol::Device::CPU, float, int, double>;
