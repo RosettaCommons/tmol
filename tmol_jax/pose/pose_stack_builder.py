@@ -142,21 +142,25 @@ class PoseStackBuilder:
         atom_counts = np.asarray(pbt.n_atoms)
         rows = [row[:count] for row, count in zip(kinds, counts)]
         with jax.default_device(pbt.n_atoms.device):
-            return cls.from_block_types_and_coords(
-                pbt,
-                rows,
-                [
-                    np.zeros((int(atom_counts[row].sum()), 3), np.float32)
-                    for row in rows
-                ],
-                [
-                    [chr(ord("A") + int(c)) for c in row[:n]]
-                    for row, n in zip(chains, counts)
-                ],
-                [np.arange(1, n + 1) for n in counts],
-                _connection_table=connections,
-                _logical_chain_ids=chains,
-            ).to(pbt.n_atoms.device)
+            return (
+                cls.from_block_types_and_coords(
+                    pbt,
+                    rows,
+                    [
+                        np.zeros((int(atom_counts[row].sum()), 3), np.float32)
+                        for row in rows
+                    ],
+                    [
+                        [chr(ord("A") + int(c)) for c in row[:n]]
+                        for row, n in zip(chains, counts)
+                    ],
+                    [np.arange(1, n + 1) for n in counts],
+                    _connection_table=connections,
+                    _logical_chain_ids=chains,
+                )
+                .to(pbt.n_atoms.device)
+                .replace(packed_block_types=pbt)
+            )
 
     @classmethod
     def from_block_types_and_coords(
