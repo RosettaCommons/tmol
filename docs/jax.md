@@ -275,6 +275,11 @@ conformers are copied exactly; sampled coordinates preserve retained atoms and
 requested adjustable torsions. Custom chemical databases remain attached to the
 pose's packed types.
 
+`rotamer_set.to_atom_array(packed_block_types)` exports a visualization AtomArray
+through the shared host projection. Each rotamer is a numbered `model`, with
+named atoms, packed coordinates and one-based original block residue numbers.
+Element labels follow the mature atom-name policy.
+
 Assembly is eager because sampling determines output sizes; it does not support
 `jit`, `vmap` or coordinate differentiation through sampling/initialization. The
 native DOF operations support `jit` and `vmap`. Row copying and chi assignment
