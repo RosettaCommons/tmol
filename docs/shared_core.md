@@ -111,7 +111,10 @@ planar/chiral/stress refinement. Complete supplied coordinates and authoritative
 charges need no executor; this does not establish JAX regeneration support. Ligand
 refinement uses the shared host strong-Wolfe/L-BFGS policy in
 `tmol_core.optimization.strong_wolfe`; executors provide objective derivatives
-and native array reductions and scaled additions. The policy preserves stored
+and native array reductions and scaled additions. Generated bond and angle
+targets are measured from refined coordinates, so backend arithmetic can change
+parameters even with the same seed. Matched scoring comparisons must establish
+prepared parameter identity as well as coordinate identity. The policy preserves stored
 precision and does not import either framework. Its two-loop recurrence accepts
 host or compiled loops over fixed-capacity history; optional relative-loss and
 line-search controls leave the mature defaults intact.
