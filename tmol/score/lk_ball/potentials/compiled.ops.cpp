@@ -1,4 +1,5 @@
 #include <tmol/utility/tensor/native_library.hh>
+#include <tmol/utility/tensor/autograd_operator.hh>
 
 #include <tmol/utility/tensor/TensorCast.h>
 #include <tmol/utility/tensor/context_manager.hh>
@@ -325,86 +326,8 @@ class PoseWaterGen : public tmol::native::autograd::Function<PoseWaterGen> {
   };
 };
 
-Tensor pose_watergen_op(
-    // common params
-    Tensor rot_coords,
-    Tensor rot_coord_offset,
-    Tensor pose_ind_for_atom,
-    Tensor first_rot_for_block,
-    Tensor first_rot_block_type,
-    Tensor block_ind_for_rot,
-    Tensor pose_ind_for_rot,
-    Tensor block_type_ind_for_rot,
-    Tensor n_rots_for_pose,
-    Tensor rot_offset_for_pose,
-    Tensor n_rots_for_block,
-    Tensor rot_offset_for_block,
-    // blocks sharing an id >= 0 sample in lockstep
-    Tensor lockstep_group_for_block,
-    int64_t max_n_rots_per_pose,
-
-    // term specific params
-    Tensor pose_stack_inter_residue_connections,
-
-    Tensor block_type_n_atoms,
-
-    Tensor block_type_n_interblock_bonds,
-    Tensor block_type_atoms_forming_chemical_bonds,
-    Tensor block_type_n_all_bonds,
-    Tensor block_type_all_bonds,
-    Tensor block_type_atom_all_bond_ranges,
-
-    Tensor block_type_tile_n_donH,
-    Tensor block_type_tile_n_acc,
-    Tensor block_type_tile_donH_inds,
-    Tensor block_type_tile_don_hvy_inds,
-    Tensor block_type_tile_which_donH_for_hvy,
-
-    Tensor block_type_tile_acc_inds,
-    Tensor block_type_tile_hybridization,
-    Tensor block_type_tile_acc_n_attached_H,
-    Tensor block_type_atom_is_hydrogen,
-    Tensor global_params,
-
-    Tensor sp2_water_tors,
-    Tensor sp3_water_tors,
-    Tensor ring_water_tors) {
-  return PoseWaterGen::apply(
-      rot_coords,
-      rot_coord_offset,
-      pose_ind_for_atom,
-      first_rot_for_block,
-      first_rot_block_type,
-      block_ind_for_rot,
-      pose_ind_for_rot,
-      block_type_ind_for_rot,
-      n_rots_for_pose,
-      rot_offset_for_pose,
-      n_rots_for_block,
-      rot_offset_for_block,
-      lockstep_group_for_block,
-      max_n_rots_per_pose,
-      pose_stack_inter_residue_connections,
-      block_type_n_atoms,
-      block_type_n_interblock_bonds,
-      block_type_atoms_forming_chemical_bonds,
-      block_type_n_all_bonds,
-      block_type_all_bonds,
-      block_type_atom_all_bond_ranges,
-      block_type_tile_n_donH,
-      block_type_tile_n_acc,
-      block_type_tile_donH_inds,
-      block_type_tile_don_hvy_inds,
-      block_type_tile_which_donH_for_hvy,
-      block_type_tile_acc_inds,
-      block_type_tile_hybridization,
-      block_type_tile_acc_n_attached_H,
-      block_type_atom_is_hydrogen,
-      global_params,
-      sp2_water_tors,
-      sp3_water_tors,
-      ring_water_tors);
-};
+using pose_watergen_op_binding = native::AutogradOperator<PoseWaterGen>;
+;
 
 class LKBallPoseScoreOp
     : public tmol::native::autograd::Function<LKBallPoseScoreOp> {
@@ -1143,7 +1066,7 @@ TMOL_LIBRARY(tmol_lk_ball, m) {
       TMOL_FN(&lkball_pose_score));
   m.def("lk_ball_rotamer_score", TMOL_FN(&lkball_rotamer_score));
   m.def("lk_ball_rotamer_score_shared", TMOL_FN(&lkball_rotamer_score_shared));
-  m.def("gen_pose_waters", TMOL_FN(&pose_watergen_op));
+  m.def("gen_pose_waters", TMOL_FN(&pose_watergen_op_binding::call));
 }
 
 }  // namespace potentials

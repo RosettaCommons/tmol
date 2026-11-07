@@ -1,4 +1,5 @@
 #include <tmol/utility/tensor/native_library.hh>
+#include <tmol/utility/tensor/autograd_operator.hh>
 
 #include <tmol/utility/tensor/TensorCast.h>
 #include <tmol/utility/tensor/context_manager.hh>
@@ -600,69 +601,8 @@ class BackboneTorsionRotamerScoreOp
   }
 };
 
-template <template <tmol::Device> class DispatchMethod>
-std::vector<Tensor> backbone_torsion_pose_score_op(
-    // common params
-    Tensor rot_coords,
-    Tensor rot_coord_offset,
-    Tensor pose_ind_for_atom,
-    Tensor first_rot_for_block,
-    Tensor first_rot_block_type,
-    Tensor block_ind_for_rot,
-    Tensor pose_ind_for_rot,
-    Tensor block_type_ind_for_rot,
-    Tensor n_rots_for_pose,
-    Tensor rot_offset_for_pose,
-    Tensor n_rots_for_block,
-    Tensor rot_offset_for_block,
-    int64_t max_n_rots_per_pose,
-
-    Tensor pose_stack_block_type,
-    Tensor pose_stack_inter_block_connections,
-    Tensor block_type_atom_downstream_of_conn,
-
-    Tensor block_type_rama_table,
-    Tensor block_type_omega_table,
-    Tensor block_type_lower_conn_ind,
-    Tensor block_type_upper_conn_ind,
-    Tensor block_type_is_pro,
-    Tensor block_type_backbone_torsion_atoms,
-    Tensor rama_tables,
-    Tensor rama_table_params,
-    Tensor omega_tables,
-    Tensor omega_table_params,
-    bool output_block_pair_energies) {
-  return BackboneTorsionPoseScoreOp<DispatchMethod>::apply(
-      // common params
-      rot_coords,
-      rot_coord_offset,
-      pose_ind_for_atom,
-      first_rot_for_block,
-      first_rot_block_type,
-      block_ind_for_rot,
-      pose_ind_for_rot,
-      block_type_ind_for_rot,
-      n_rots_for_pose,
-      rot_offset_for_pose,
-      n_rots_for_block,
-      rot_offset_for_block,
-      max_n_rots_per_pose,
-
-      pose_stack_block_type,
-      pose_stack_inter_block_connections,
-      block_type_atom_downstream_of_conn,
-      block_type_rama_table,
-      block_type_omega_table,
-      block_type_lower_conn_ind,
-      block_type_upper_conn_ind,
-      block_type_is_pro,
-      block_type_backbone_torsion_atoms,
-      rama_tables,
-      rama_table_params,
-      omega_tables,
-      omega_table_params,
-      output_block_pair_energies);
-}
+using backbone_torsion_pose_score_op_binding = native::AutogradOperator<
+    BackboneTorsionPoseScoreOp<common::DeviceOperations>>;
 
 template <
     template <tmol::Device> class DispatchMethod,
@@ -736,7 +676,7 @@ std::vector<Tensor> backbone_torsion_rotamer_score_op(
 TMOL_LIBRARY(tmol_bb_torsion, m) {
   m.def(
       "backbone_torsion_pose_score",
-      TMOL_FN(&backbone_torsion_pose_score_op<DeviceOperations>));
+      TMOL_FN(&backbone_torsion_pose_score_op_binding::call));
   m.def(
       "backbone_torsion_rotamer_score",
       TMOL_FN(&backbone_torsion_rotamer_score_op<DeviceOperations>));

@@ -1,4 +1,5 @@
 #include <tmol/utility/tensor/native_library.hh>
+#include <tmol/utility/tensor/autograd_operator.hh>
 
 #include <tmol/utility/tensor/TensorCast.h>
 #include <tmol/utility/tensor/context_manager.hh>
@@ -524,69 +525,8 @@ class ElecRotamerScoreOp : public tmol::native::autograd::Function<
   }
 };
 
-template <template <tmol::Device> class DispatchMethod>
-std::vector<Tensor> elec_pose_scores_op(
-    // common params
-    Tensor rot_coords,
-    Tensor rot_coord_offset,
-    Tensor pose_ind_for_atom,
-    Tensor first_rot_for_block,
-    Tensor first_rot_block_type,
-    Tensor block_ind_for_rot,
-    Tensor pose_ind_for_rot,
-    Tensor block_type_ind_for_rot,
-    Tensor n_rots_for_pose,
-    Tensor rot_offset_for_pose,
-    Tensor n_rots_for_block,
-    Tensor rot_offset_for_block,
-    int64_t max_n_rots_per_pose,
-
-    Tensor pose_stack_near_blocks,
-    Tensor pose_stack_inter_block_bondsep,
-
-    Tensor block_type_n_atoms,
-    Tensor block_type_partial_charge,
-    Tensor block_type_n_interblock_bonds,
-    Tensor block_type_atoms_forming_chemical_bonds,
-    Tensor block_type_inter_repr_path_distance,
-
-    Tensor block_type_intra_repr_path_distance,
-    Tensor block_type_all_atoms_ligand_typed,
-    Tensor global_params,
-    double max_dis,
-    bool output_block_pair_energies,
-    Tensor shared_compact_block_neighbors) {
-  return ElecPoseScoreOp<DispatchMethod>::apply(
-      rot_coords,
-      rot_coord_offset,
-      pose_ind_for_atom,
-      first_rot_for_block,
-      first_rot_block_type,
-      block_ind_for_rot,
-      pose_ind_for_rot,
-      block_type_ind_for_rot,
-      n_rots_for_pose,
-      rot_offset_for_pose,
-      n_rots_for_block,
-      rot_offset_for_block,
-      max_n_rots_per_pose,
-
-      pose_stack_near_blocks,
-      pose_stack_inter_block_bondsep,
-
-      block_type_n_atoms,
-      block_type_partial_charge,
-      block_type_n_interblock_bonds,
-      block_type_atoms_forming_chemical_bonds,
-      block_type_inter_repr_path_distance,
-
-      block_type_intra_repr_path_distance,
-      block_type_all_atoms_ligand_typed,
-      global_params,
-      max_dis,
-      output_block_pair_energies,
-      shared_compact_block_neighbors);
-}
+using elec_pose_scores_op_binding =
+    native::AutogradOperator<ElecPoseScoreOp<common::DeviceOperations>>;
 
 template <template <tmol::Device> class DispatchMethod>
 std::vector<Tensor> elec_rotamer_scores_op(
@@ -728,9 +668,7 @@ std::vector<Tensor> elec_rotamer_scores_shared_op(
 
 // See https://stackoverflow.com/a/3221914
 TMOL_LIBRARY(tmol_elec, m) {
-  m.def(
-      "elec_pose_scores",
-      TMOL_FN(&elec_pose_scores_op<common::DeviceOperations>));
+  m.def("elec_pose_scores", TMOL_FN(&elec_pose_scores_op_binding::call));
   m.def(
       "elec_rotamer_scores",
       TMOL_FN(&elec_rotamer_scores_op<common::DeviceOperations>));

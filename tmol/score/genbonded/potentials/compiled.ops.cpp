@@ -1,4 +1,5 @@
 #include <tmol/utility/tensor/native_library.hh>
+#include <tmol/utility/tensor/autograd_operator.hh>
 
 #include <tmol/utility/tensor/TensorCast.h>
 #include <tmol/utility/tensor/context_manager.hh>
@@ -570,72 +571,8 @@ class GenBondedRotamerScoreOp
 // ---------------------------------------------------------------------------
 // Free-function wrappers (called by TORCH_LIBRARY registration)
 // ---------------------------------------------------------------------------
-template <template <tmol::Device> class DispatchMethod>
-std::vector<Tensor> genbonded_pose_scores_op(
-    Tensor rot_coords,
-    Tensor rot_coord_offset,
-    Tensor pose_ind_for_atom,
-    Tensor first_rot_for_block,
-    Tensor first_rot_block_type,
-    Tensor block_ind_for_rot,
-    Tensor pose_ind_for_rot,
-    Tensor block_type_ind_for_rot,
-    Tensor n_rots_for_pose,
-    Tensor rot_offset_for_pose,
-    Tensor n_rots_for_block,
-    Tensor rot_offset_for_block,
-    int64_t max_n_rots_per_pose,
-
-    Tensor pose_stack_inter_block_connections,
-    Tensor atom_paths_from_conn,
-    Tensor gen_intra_subgraphs,
-    Tensor gen_intra_subgraph_offsets,
-    Tensor gen_intra_params,
-    Tensor gen_atom_type_hierarchy,
-    Tensor gen_atom_is_rosetta,
-    Tensor gen_connection_bond_bins,
-    Tensor gen_conn_scored_elsewhere,
-    Tensor gen_source_atom_index,
-    Tensor gen_source_block_type_index,
-    Tensor gen_inter_torsion_hash_keys,
-    Tensor gen_inter_torsion_hash_values,
-    Tensor gen_inter_improper_hash_keys,
-    Tensor gen_inter_improper_hash_values,
-
-    bool output_block_pair_energies) {
-  return GenBondedPoseScoreOp<DispatchMethod>::apply(
-      rot_coords,
-      rot_coord_offset,
-      pose_ind_for_atom,
-      first_rot_for_block,
-      first_rot_block_type,
-      block_ind_for_rot,
-      pose_ind_for_rot,
-      block_type_ind_for_rot,
-      n_rots_for_pose,
-      rot_offset_for_pose,
-      n_rots_for_block,
-      rot_offset_for_block,
-      max_n_rots_per_pose,
-
-      pose_stack_inter_block_connections,
-      atom_paths_from_conn,
-      gen_intra_subgraphs,
-      gen_intra_subgraph_offsets,
-      gen_intra_params,
-      gen_atom_type_hierarchy,
-      gen_atom_is_rosetta,
-      gen_connection_bond_bins,
-      gen_conn_scored_elsewhere,
-      gen_source_atom_index,
-      gen_source_block_type_index,
-      gen_inter_torsion_hash_keys,
-      gen_inter_torsion_hash_values,
-      gen_inter_improper_hash_keys,
-      gen_inter_improper_hash_values,
-
-      output_block_pair_energies);
-}
+using genbonded_pose_scores_op_binding =
+    native::AutogradOperator<GenBondedPoseScoreOp<common::DeviceOperations>>;
 
 template <
     template <tmol::Device> class DispatchMethod,
@@ -711,7 +648,7 @@ std::vector<Tensor> genbonded_rotamer_scores_op(
 TMOL_LIBRARY(tmol_genbonded, m) {
   m.def(
       "genbonded_pose_scores",
-      TMOL_FN(&genbonded_pose_scores_op<DeviceOperations>));
+      TMOL_FN(&genbonded_pose_scores_op_binding::call));
   m.def(
       "genbonded_rotamer_scores",
       TMOL_FN(&genbonded_rotamer_scores_op<DeviceOperations>));
