@@ -1,6 +1,7 @@
 """Framework-neutral weak source identity for scientific preparation caches."""
 
 from dataclasses import dataclass
+from numbers import Integral
 import weakref
 
 
@@ -44,10 +45,16 @@ class PreparationCache:
 
     Values may retain their sources: the cache therefore belongs to a resolver
     or frontend object, never a global database registry. Each namespace retains
-    at most one entry, with eight namespaces retained per owner.
+    at most one entry. Capacity defaults to eight namespaces per owner; callers
+    may supply a positive integer bound for a larger or smaller working set.
     """
 
-    def __init__(self):
+    def __init__(self, max_entries=8):
+        if isinstance(max_entries, bool) or not isinstance(max_entries, Integral):
+            raise TypeError("max_entries must be a positive integer")
+        if max_entries <= 0:
+            raise ValueError("max_entries must be a positive integer")
+        self._max_entries = int(max_entries)
         self._entries = {}
 
     def get_or_create(self, name, key, prepare):
@@ -55,7 +62,7 @@ class PreparationCache:
         if old is not None and old[0].matches(key):
             return old[1]
         value = prepare()
-        if name not in self._entries and len(self._entries) == 8:
+        if name not in self._entries and len(self._entries) == self._max_entries:
             del self._entries[next(iter(self._entries))]
         self._entries[name] = (key, value)
         return value
