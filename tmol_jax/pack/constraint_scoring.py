@@ -61,6 +61,10 @@ def prepare_rotamer_constraints(pose, rotamers, database=None):
         if not isinstance(cs, ConstraintSet):
             raise TypeError("sparse constraints require a JAX ConstraintSet")
         _prepare_geometric_constraints(pose, cs)
+        if np.any(np.asarray(cs.constraint_num_unique_blocks) > 2):
+            raise NotImplementedError(
+                "sparse constraints spanning more than two blocks are not supported"
+            )
         arguments = (
             cs.constraint_atoms,
             cs.constraint_num_unique_blocks,

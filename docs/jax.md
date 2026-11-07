@@ -110,7 +110,9 @@ one energy per gathered four-atom row. Parameter arrays remain differentiable;
 pose selection preserves their atom identities. `clone()` and `to(device)`
 retain parameter differentiation; `replicate_constraints()` and
 `count_unique_blocks()` use the shared host topology policy. Topology preparation is on the
-host, and constraints spanning more than two distinct blocks reject explicitly.
+host. Whole-pose callbacks may span up to four blocks, using one physical atom
+from each block. Sparse packing supports at most two distinct blocks and rejects
+larger constraints explicitly.
 Harmonic/bounded arithmetic supports higher derivatives; the shared native
 torsion primitive supports first coordinate derivatives. The earlier coordinate
 restraint container in `tmol_jax.score.constraint` remains available.
