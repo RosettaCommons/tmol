@@ -102,51 +102,49 @@ class _Optimizer(SegmentedLBFGSPolicy):
 
         return wrapped
 
+    @property
+    def _storage_index(self):
+        return None if self._segments_are_dense else self._pad_index
+
     def _pad(self, values):
-        shape = (self._n_segments, self._segment_size)
-        if self._segments_are_dense:
-            return values.reshape(shape)
-        return (
-            jnp.zeros(np.prod(shape), values.dtype)
-            .at[self._pad_index]
-            .set(values)
-            .reshape(shape)
-        )
+        return _pad(values, self._storage_index, (self._n_segments, self._segment_size))
 
     def _unpad(self, values):
-        return (
-            values.reshape(-1)
-            if self._segments_are_dense
-            else values.reshape(-1)[self._pad_index]
-        )
+        return _unpad(values, self._storage_index)
 
     def _seg_sum(self, values):
-        return self._pad(values).sum(-1)
+        return _segment_sum(
+            values, self._storage_index, (self._n_segments, self._segment_size)
+        )
 
     def _seg_amax(self, values):
         return self._pad(values).max(-1)
 
     def _per_element(self, values):
-        return values[0] if self._n_segments == 1 else values[self._segment_ids]
+        return _per_element(values, self._segment_ids)
 
     def _initial_step(self, x, value):
         return jnp.full((self._n_segments,), value, x.dtype)
 
     def _update_trial(self, ctx, step):
-        self.x = ctx.x = _trial(ctx.x_backup, ctx.d, self._per_element(step))
+        self.x = ctx.x = _trial(ctx.x_backup, ctx.d, step, self._segment_ids)
 
     def _current_gradient(self, ctx):
         return self.gradient
 
     def _write_history(self, ctx, index, y, s, keep):
-        keep_element = self._per_element(keep)
-        ctx.old_dirs_mat = ctx.old_dirs_mat.at[index].set(
-            self._pad(jnp.where(keep_element, y, 0))
+        ctx.old_dirs_mat, ctx.old_stps_mat, ctx.x_ref = _write_history(
+            ctx.old_dirs_mat,
+            ctx.old_stps_mat,
+            ctx.x_ref,
+            ctx.x,
+            index,
+            y,
+            s,
+            keep,
+            self._segment_ids,
+            self._storage_index,
         )
-        ctx.old_stps_mat = ctx.old_stps_mat.at[index].set(
-            self._pad(jnp.where(keep_element, s, 0))
-        )
-        ctx.x_ref = jnp.where(keep_element, ctx.x, ctx.x_ref)
 
     def _history_direction(self, ctx, differences, steps):
         return self._unpad(
@@ -162,9 +160,43 @@ class _Optimizer(SegmentedLBFGSPolicy):
         ctx.old_stps_mat = jnp.where(keep, ctx.old_stps_mat, 0)
 
 
+@partial(jax.jit, static_argnames=("shape",))
+def _pad(values, index, shape):
+    if index is None:
+        return values.reshape(shape)
+    return jnp.zeros(np.prod(shape), values.dtype).at[index].set(values).reshape(shape)
+
+
 @jax.jit
-def _trial(x, direction, step):
-    return x + direction * step
+def _unpad(values, index):
+    flat = values.reshape(-1)
+    return flat if index is None else flat[index]
+
+
+@partial(jax.jit, static_argnames=("shape",))
+def _segment_sum(values, index, shape):
+    return _pad(values, index, shape).sum(-1)
+
+
+@jax.jit
+def _per_element(values, ids):
+    return values[0] if values.size == 1 else values[ids]
+
+
+@jax.jit
+def _write_history(differences, steps, reference, x, slot, y, s, keep, ids, index):
+    keep_element = _per_element(keep, ids)
+    shape = differences.shape[1:]
+    differences = differences.at[slot].set(
+        _pad(jnp.where(keep_element, y, 0), index, shape)
+    )
+    steps = steps.at[slot].set(_pad(jnp.where(keep_element, s, 0), index, shape))
+    return differences, steps, jnp.where(keep_element, x, reference)
+
+
+@jax.jit
+def _trial(x, direction, step, ids):
+    return x + direction * _per_element(step, ids)
 
 
 def armijo_minimize(
