@@ -7,7 +7,7 @@ import numpy as np
 
 from tmol_jax.score.genbonded.genbonded_energy_term import GenBondedEnergyTerm
 from tmol_jax.score.cartbonded.cartbonded_energy_term import CartBondedEnergyTerm
-from .graph import prefix_counts, load_balance
+from .graph import prefix_offsets_and_total, load_balance
 from .scoring import validate_rotamer_context, sparse_nonbonded_values
 
 from ._ffi import stage
@@ -40,18 +40,20 @@ def connected_candidates(pose, rotamers):
     counts = _connected_stage(
         arguments, operation=0, outputs=shape((count, 8), np.uint8)
     )
-    offsets = prefix_counts(counts)
-    total = int(np.asarray(offsets[-1]).copy().view(np.int64)[0])
-    owners = load_balance(offsets[:-1], total=total)
+    offsets, total = prefix_offsets_and_total(counts)
+    total = int(np.asarray(total).copy().view(np.int64)[0])
+    owners = load_balance(offsets, total=total)
     indices = _connected_stage(
-        (*arguments, rotamers.rot_offset_for_block, offsets[:-1], owners),
+        (*arguments, rotamers.rot_offset_for_block, offsets, owners),
         operation=1,
         outputs=shape((3, total), np.int32),
     )
     return owners, indices
 
 
-def prepare_rotamer_bonded(pose, rotamers, database, *, cartesian=False, term=None):
+def prepare_rotamer_bonded(
+    pose, rotamers, database, *, cartesian=False, term=None, candidates=None
+):
     validate_rotamer_context(pose, rotamers)
     with jax.default_device(pose.device):
         cls = CartBondedEnergyTerm if cartesian else GenBondedEnergyTerm
@@ -60,7 +62,9 @@ def prepare_rotamer_bonded(pose, rotamers, database, *, cartesian=False, term=No
         parameters = term.setup_for_pose_stack(pose, **options)
         if cartesian:
             parameters, _ = parameters
-        owners, indices = connected_candidates(pose, rotamers)
+        owners, indices = (
+            connected_candidates(pose, rotamers) if candidates is None else candidates
+        )
     parameters = (
         rotamers.coord_offset_for_rot,
         rotamers.block_ind_for_rot,
@@ -73,12 +77,16 @@ def prepare_rotamer_bonded(pose, rotamers, database, *, cartesian=False, term=No
     return (target, 5 if cartesian else 1, parameters, 0.0), indices
 
 
-def prepare_rotamer_genbonded(pose, rotamers, database, *, term=None):
-    return prepare_rotamer_bonded(pose, rotamers, database, term=term)
+def prepare_rotamer_genbonded(pose, rotamers, database, *, term=None, candidates=None):
+    return prepare_rotamer_bonded(
+        pose, rotamers, database, term=term, candidates=candidates
+    )
 
 
-def prepare_rotamer_cartbonded(pose, rotamers, database, *, term=None):
-    return prepare_rotamer_bonded(pose, rotamers, database, cartesian=True, term=term)
+def prepare_rotamer_cartbonded(pose, rotamers, database, *, term=None, candidates=None):
+    return prepare_rotamer_bonded(
+        pose, rotamers, database, cartesian=True, term=term, candidates=candidates
+    )
 
 
 def sparse_bonded_scores(coords, state):

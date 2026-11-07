@@ -8,7 +8,7 @@ import numpy as np
 
 from tmol_jax.score.disulfide.disulfide_energy_term import DisulfideEnergyTerm
 from tmol_jax.score.metal.metal_energy_term import MetalCoordinationEnergyTerm
-from .graph import prefix_counts
+from .graph import prefix_counts, prefix_offsets_and_total
 from .scoring import validate_rotamer_context, sparse_nonbonded_values
 
 from ._ffi import stage
@@ -17,6 +17,13 @@ from ._ffi import stage
 @partial(jax.jit, static_argnames=("target", "operation", "outputs", "extent", "width"))
 def _stage(arguments, *, target, operation, outputs, extent=0, width=0):
     return stage(arguments, target, outputs, operation, extent, width)
+
+
+@jax.jit
+def _connection_offsets(counts):
+    offsets, total = prefix_offsets_and_total(counts)
+    maximum = prefix_counts(counts, maximum=True)[-1]
+    return offsets, jnp.stack((total, maximum))
 
 
 def prepare_rotamer_connection(pose, rotamers, database, *, metal=False):
@@ -53,11 +60,8 @@ def prepare_rotamer_connection(pose, rotamers, database, *, metal=False):
             operation=0,
             outputs=shape((rotamers.n_rotamers_total, 8), np.uint8),
         )
-        offsets = prefix_counts(counts)
-        maximum = prefix_counts(counts, maximum=True)[-1]
-        total, largest = (
-            np.asarray(jnp.stack((offsets[-1], maximum))).copy().view(np.int64).ravel()
-        )
+        offsets, summary = _connection_offsets(counts)
+        total, largest = np.asarray(summary).copy().view(np.int64).ravel()
         total, largest = int(total), int(largest)
         extent = rotamers.n_rotamers_total * largest
         if max(total, largest, extent) > np.iinfo(np.int32).max:
@@ -69,7 +73,7 @@ def prepare_rotamer_connection(pose, rotamers, database, *, metal=False):
                 rotamers.coords,
                 *count_parameters,
                 counts,
-                offsets[:-1],
+                offsets,
                 rotamers.group_for_block,
             ),
             target=target,
