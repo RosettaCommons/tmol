@@ -458,6 +458,27 @@ ffi::Error run_graph_stage(
 
 extern "C" int tmol_jax_native_abi_version() { return 4; }
 
+extern "C" int tmol_cuda_memory_info(
+    int device, uint64_t* free_bytes, uint64_t* total_bytes) {
+  if (!free_bytes || !total_bytes) return cudaErrorInvalidValue;
+  int previous = -1;
+  auto status = cudaGetDevice(&previous);
+  if (status != cudaSuccess) return status;
+  status = cudaSetDevice(device);
+  if (status != cudaSuccess) {
+    cudaSetDevice(previous);
+    return status;
+  }
+  size_t available = 0, capacity = 0;
+  status = cudaMemGetInfo(&available, &capacity);
+  auto restored = cudaSetDevice(previous);
+  if (status != cudaSuccess) return status;
+  if (restored != cudaSuccess) return restored;
+  *free_bytes = available;
+  *total_bytes = capacity;
+  return cudaSuccess;
+}
+
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_forward_kinematics,
     tmol::jax::run_kinematic_scan<false>,
