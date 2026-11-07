@@ -566,7 +566,7 @@ template <
     typename Real,
     typename WaterReal>
 TMOL_DEVICE_FUNC void accumulate_water_derivative(
-    TMOL_THREAD Vec<GradReal, 3>& target,
+    TMOL_DEVICE_REF(Vec<GradReal, 3>) target,
     TMOL_THREAD tmol::portable::Mat<Real, 3, 3> const& jacobian,
     TMOL_THREAD Vec<WaterReal, 3> const& cotangent) {
   Vec<WaterReal, 3> product;
