@@ -640,3 +640,12 @@ Notebook `view`, `switchable_view`, `overlay_view` and `selection_gallery` use
 the common renderer, with lazy JAX pose export. They accept Biotite arrays and
 PDB text or paths as well as poses. Install the optional py3Dmol/IPython display
 dependencies to render notebook HTML; viewing does not change molecular data.
+
+
+An explicit native CPU ligand-preparation executor is available from
+`tmol_jax.ligand._native_refinement.native_conformer_execution()`. Pass it as
+`conformer_execution` to ligand preparation. It uses the common typed objective,
+analytic gradients and host optimizer; prepared poses still score on their
+selected JAX CPU/CUDA device. It requires matching native artifacts and remains
+opt-in: seeded geometry and parameter identity against the historical mature
+workflow, and complete cold/warm runtime and memory parity, remain open.
