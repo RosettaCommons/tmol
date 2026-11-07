@@ -229,7 +229,7 @@ counts, choices, defining_atoms, chi = sampler.sample_chi_for_poses(pose, task)
 Counts and choices refer to concrete task rows; defining atoms use residue-local
 indices. Ligands outside the sampler's amino-acid policy receive zero samples.
 Task masks and `set_chi_sample_budget(expanded_limit, limit)` control sampling.
-`restrict_absent_name3s(mask, names)` intersects choices at selected positions and
+`restrict_absent_name3s(names, block_mask=mask)` intersects choices at selected positions and
 rejects an empty identity set without partially changing the task; it never
 re-enables a previously excluded choice. Sampler bundles use `expand_into_task`.
 Budget-frozen torsions retain measured input geometry. Dynamic output sizes
