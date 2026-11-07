@@ -48,3 +48,35 @@ def test_planar_objective_batches_coordinates_without_mixing_gradients():
         single_value, single_gradient = jax.value_and_grad(objective)(batch[2])
         np.testing.assert_allclose(values[2], single_value, atol=1e-14)
         np.testing.assert_allclose(gradients[2], single_gradient, atol=1e-14)
+
+
+def test_seeded_ligand_context_is_independent_of_scoring_device():
+    from tmol_core.ligand._conformer_generation import _seeded_conformer
+    from tmol_jax.ligand import (
+        nonstandard_residue_info_from_smiles_via_mol2,
+        prepare_ligand_from_smiles,
+    )
+
+    results = []
+    try:
+        for device in (jax.devices("cpu")[0], jax.devices()[0]):
+            # Exercise fresh numerical preparation in both contexts; a seeded
+            # conformer cache must not conceal dependence on the first device.
+            _seeded_conformer.cache_clear()
+            with jax.default_device(device):
+                options = dict(res_name="LGP", protonate=False, seed=39)
+                smiles = "CC(=O)Oc1ccccc1C(=O)O"
+                info = nonstandard_residue_info_from_smiles_via_mol2(smiles, **options)
+                database, _ = prepare_ligand_from_smiles(smiles, **options)
+                residue = next(r for r in database.chemical.residues if r.name == "LGP")
+                charges = tuple(
+                    p
+                    for p in database.scoring.elec.atom_charge_parameters
+                    if p.res == "LGP"
+                )
+            results.append((np.array(info.coords), residue, charges))
+        np.testing.assert_array_equal(results[0][0], results[1][0])
+        assert results[0][1] == results[1][1]
+        assert results[0][2] == results[1][2]
+    finally:
+        _seeded_conformer.cache_clear()

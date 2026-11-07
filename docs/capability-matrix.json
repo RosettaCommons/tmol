@@ -53,7 +53,7 @@
         "tests/scientific/test_complete_preset.py",
         "tests/scientific/test_ligand_preparation.py"
       ],
-      "implementation_status": "Complete preset and nonzero genbonded on prepared ligands. Shared SMILES, MOL2 and automatic structure preparation retain caller database context, atom identity and charges. Generated L/D ligands, aspirin and supplied MOL2 have coordinate-gradient and minimization checks; input/scoring paths have CPU/CUDA and installed validation. Generated trajectories and complete preparation runtime/memory parity remain open."
+      "implementation_status": "Complete preset and nonzero genbonded on prepared ligands. Shared SMILES, MOL2 and automatic structure preparation retain caller database context, atom identity and charges. Generated L/D ligands, aspirin and supplied MOL2 have coordinate-gradient and minimization checks; input/scoring paths have CPU/CUDA and installed validation. Seeded numerical parameter preparation runs on CPU independently of the scoring device; prepared pose execution supports CPU/CUDA. Generated trajectories and complete preparation runtime/memory parity remain open."
     },
     {
       "domain": "protein_ligand_mixed",
@@ -179,7 +179,7 @@
         "tests/jax/test_native_kinematics.py",
         "tests/scientific/test_molecular_kinematics.py"
       ],
-      "implementation_status": "Shared molecular forest, native inverse/forward scans and first DOF reverse derivatives; jit/vmap and CPU/CUDA placement tested. Inverse-coordinate AD and forward-scan higher AD are absent. Float32 rotational cancellation persists in sensitive systems."
+      "implementation_status": "Shared molecular forest, native inverse/forward scans and first DOF reverse derivatives; jit/vmap and CPU/CUDA placement tested. Optional kin_dtype controls DOF precision independently of stored coordinates. Mixed float64 DOF/float32-coordinate mapping and minimization pass shared CPU/CUDA molecular checks in both frontends. Objective precision promotion is a new capability beyond the tested mature baseline. Inverse-coordinate AD and forward-scan higher AD are absent. Float32 rotational cancellation persists in sensitive systems."
     },
     {
       "domain": "fast_relax",
@@ -189,7 +189,7 @@
         "tests/scientific/test_fast_relax_execution.py",
         "tmol/tests/relax/test_fast_relax.py"
       ],
-      "implementation_status": "Common mature schedules, packing/minimization stages, task callbacks, release hooks and per-pose best acceptance. Full molecular CPU/CUDA and installed checks pass on the tested ligand/noncanonical/D/mixed cases. This does not establish complete workload runtime/memory parity."
+      "implementation_status": "Common mature schedules, packing/minimization stages, task callbacks, release hooks and per-pose best acceptance. Molecular CPU/CUDA and installed checks cover the listed fixtures. Strict repeated float32 CUDA relaxation has unresolved gradient variation that can grow through minimization; the matched mature Torch repeat control passes. This blocks complete workflow parity despite passing individual science checks."
     },
     {
       "domain": "fragment_interactions",
@@ -541,7 +541,8 @@
     "validation_and_performance": [
       "Matched mature complete workflow cold/warm runtime and peak host/device memory parity are not met. Packing, CUDA minimization and some sequence cases retain measured slowdowns; compilation contributes substantially to peak memory.",
       "Older mature torsion formulas and float32 reduction order differ from the current shared kernels; retain per-term numerical exceptions and independent derivative evidence.",
-      "Apple validation is a separate actual Torch/Metal gate; no native JAX MPS support is advertised."
+      "Apple validation is a separate actual Torch/Metal gate; no native JAX MPS support is advertised.",
+      "Float32 CUDA full FastRelax cold/warm repeat gradients exceed existing bounds on ligand/noncanonical/mixed fixtures; same-coordinate native nonbonded accumulation varies. Mature Torch passes the matched repeat control. This remains a correctness hold, separate from CPU cache speedups."
     ],
     "framework_specific_or_not_mature_parity": [
       "Higher derivatives through native torsion/forward-kinematics kernels are not advertised by mature Torch either",
@@ -549,6 +550,13 @@
       "Independent varying third-backbone context lacks a validated mature native contract; do not count it as established Torch capability",
       "JAX inferred-metal virtual translation derivatives exceed the mature detached-fit path; track separately from physical source-coordinate parity",
       "Torch design currently retains connection/constraint indices across identity changes; reordered or missing atom/port identities are not established mature-correct capabilities. JAX rejects these cases while the common scientific audit is pending."
+    ],
+    "unsupported_by_both": [
+      "Float64 discrete packing/FastRelax is not supported by the tested native sampling paths: JAX rejects it explicitly and mature Torch fails its native dtype contract. Float64 scoring and Cartesian minimization are distinct supported capabilities.",
+      "Changed-identity constraint atom remapping and changed connection-port design require capabilities absent from the tested mature imposition path as well."
+    ],
+    "jax_extensions": [
+      "Mixed float64 internal DOFs with float32 stored coordinates: mapping, AD and minimization are implemented in both frontends, with shared CPU/CUDA ligand/D-peptide checks. Torch promotes the objective to the parameter precision without lowering higher-precision losses. This is additional capability beyond the tested mature baseline, separate from mature-functionality parity."
     ]
   },
   "score_file_options": {

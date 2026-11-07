@@ -1,5 +1,6 @@
 """JAX residue-set defaults around shared framework-neutral refinement."""
 
+import copy
 import typing
 from typing import Dict, List, Mapping, Optional, Sequence
 import attr
@@ -12,8 +13,39 @@ from tmol_core.chemical.restypes import (  # noqa: F401
     ResName3,
     IcoorIndex,
     RefinedResidueType,
-    refined_from_raw as _refined_from_raw,
+    refined_from_raw,
 )
+
+
+from tmol_core.chemical import RawResidueType
+from tmol_core.weak_identity_cache import WeakIdentityLRU
+
+_REFINED = WeakIdentityLRU(capacity=512)
+_RAW_FIELDS = tuple(field.name for field in attr.fields(RawResidueType))
+_DERIVED_FIELDS = tuple(
+    field.name
+    for field in attr.fields(RefinedResidueType)
+    if field.name not in _RAW_FIELDS
+)
+
+
+def _refined_from_raw(raw):
+    # Raw records are mutable; include every input field so replacing geometry,
+    # identities or connectivity on the same owner cannot reuse stale topology.
+    inputs = tuple(getattr(raw, name) for name in _RAW_FIELDS)
+    try:
+        hash(inputs)
+    except TypeError:
+        return refined_from_raw(raw)
+    prototype = _REFINED.get_or_create(raw, inputs, lambda: refined_from_raw(raw))
+    # Preserve the common constructor's raw-field sharing, while computed arrays
+    # and mappings belong to each caller and can receive independent annotations.
+    result = copy.copy(prototype)
+    for name in _DERIVED_FIELDS:
+        # Common refinement produces arrays, scalars and flat immutable-value
+        # mappings/sets. Copy their storage without traversing chemistry again.
+        setattr(result, name, copy.copy(getattr(prototype, name)))
+    return result
 
 
 @attr.s(auto_attribs=True)

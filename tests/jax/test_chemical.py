@@ -57,3 +57,66 @@ def test_legacy_patched_database_keeps_shared_extension_operations():
     assert {"UXA", "UXA:nterm", "UXA:cterm"} <= names
     base = next(r for r in palette.active_block_types if r.name == "UXA")
     assert tuple(a.name for a in base.atoms) == tuple(a.name for a in alanine.atoms)
+
+
+def test_refinement_preserves_mutable_output_and_changed_raw_geometry():
+    import attrs
+    import numpy as np
+    from tmol_core.chemical.restypes import refined_from_raw
+    from tmol_jax.chemical.restypes import _refined_from_raw
+    from tmol_jax.database import ParameterDatabase
+
+    raw = attrs.evolve(
+        next(
+            r
+            for r in ParameterDatabase.get_default().chemical.residues
+            if r.name == "ALA"
+        )
+    )
+    first = _refined_from_raw(raw)
+    expected = refined_from_raw(raw)
+    first.ideal_coords[:] = 99
+    first.path_distance[:] = 0
+    first.atom_to_idx = {}
+    first.icoors_index.clear()
+    first.atom_names_set.clear()
+    second = _refined_from_raw(raw)
+    np.testing.assert_array_equal(second.ideal_coords, expected.ideal_coords)
+    np.testing.assert_array_equal(second.path_distance, expected.path_distance)
+    assert second.atom_to_idx == expected.atom_to_idx
+    assert second.icoors_index == expected.icoors_index
+    assert second.atom_names_set == expected.atom_names_set
+    assert second.atoms is raw.atoms
+    raw.icoors = tuple(
+        attrs.evolve(icoor, d=icoor.d + 0.25) if icoor.name == "CB" else icoor
+        for icoor in raw.icoors
+    )
+    changed = _refined_from_raw(raw)
+    cb, ca = (changed.icoors_index[name] for name in ("CB", "CA"))
+    old_length = np.linalg.norm(second.ideal_coords[cb] - second.ideal_coords[ca])
+    new_length = np.linalg.norm(changed.ideal_coords[cb] - changed.ideal_coords[ca])
+    np.testing.assert_allclose(new_length - old_length, 0.25, atol=1e-6)
+    np.testing.assert_array_equal(second.ideal_coords, expected.ideal_coords)
+
+
+def test_refinement_does_not_retain_custom_raw_owner():
+    import attrs
+    import gc
+    import weakref
+    from tmol_jax.chemical.restypes import _refined_from_raw
+    from tmol_jax.database import ParameterDatabase
+
+    raw = attrs.evolve(
+        next(
+            r
+            for r in ParameterDatabase.get_default().chemical.residues
+            if r.name == "ALA"
+        ),
+        name="CUSTOM",
+    )
+    reference = weakref.ref(raw)
+    residue = _refined_from_raw(raw)
+    del raw
+    gc.collect()
+    assert reference() is None
+    assert residue.name == "CUSTOM"
