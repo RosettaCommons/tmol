@@ -3,7 +3,7 @@
 import jax
 import numpy as np
 
-from tmol_core.scoring.ref import reference_weight
+from tmol_core.scoring.ref import reference_weight, reference_energies
 from tmol_jax.score.energy_term import EnergyTerm
 from tmol_jax.score.score_types import ScoreType
 
@@ -29,9 +29,8 @@ class RefEnergyTerm(EnergyTerm):
     def setup_for_pose_stack(self, pose_stack, pbt=None):
         pbt = pose_stack.packed_block_types if pbt is None else pbt
         values = self.block_type_values(pbt)
-        indices = np.asarray(pose_stack.block_type_ind)
-        per_block = np.where(indices >= 0, values[np.maximum(indices, 0)], 0)
-        return jax.device_put(per_block.sum(axis=1), device=pose_stack.coords.device)
+        _, per_pose = reference_energies(pose_stack.block_type_ind, values)
+        return jax.device_put(per_pose, device=pose_stack.coords.device)
 
     @classmethod
     def evaluate(cls, term_state, coords):
