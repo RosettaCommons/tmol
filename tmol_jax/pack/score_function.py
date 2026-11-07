@@ -1,6 +1,6 @@
 """Compose shared native sparse physics using frozen score configuration."""
 
-from functools import partial, lru_cache
+from functools import partial, lru_cache, cached_property
 
 import jax
 import jax.numpy as jnp
@@ -125,16 +125,19 @@ class RotamerScorer:
                     state = prepare(pose, rotamers, score_function.param_db, **options)
                 entries.append((provided, selected, weights, evaluate, state, spatial))
         self.entries = tuple(entries)
-        self._evaluate = self._compiled_evaluator()
+        self._evaluate, self._arrays = self._compiled_evaluator(self.entries)
 
-    def prepare(self, coords):
-        """Select discrete neighbors eagerly and return values/indices callable."""
+    def _validate_coordinates(self, coords):
         if isinstance(coords, jax.core.Tracer):
             raise ValueError("prepare sparse candidates outside JAX transformations")
         if coords.shape != self.shape or not np.isfinite(np.asarray(coords)).all():
             raise ValueError(f"expected finite coordinates with shape {self.shape}")
         if coords.device != self.rotamers.device:
             raise ValueError("coordinates and conformers must be on the same device")
+
+    def prepare(self, coords):
+        """Select discrete neighbors eagerly and return values/indices callable."""
+        self._validate_coordinates(coords)
         reaches = tuple(
             dict.fromkeys(entry[4][3] for entry in self.entries if entry[5])
         )
@@ -162,27 +165,86 @@ class RotamerScorer:
             self._evaluate, arrays=self._arrays, candidates=tuple(prepared_indices)
         )
 
-    def _compiled_evaluator(self):
+    def _compiled_evaluator(self, entries):
         # Floating tables remain explicit device operands, avoiding duplicate
         # embedded constants while compiling all runtime tensor operations once.
-        leaves, tree = jax.tree.flatten(tuple(entry[4] for entry in self.entries))
+        leaves, tree = jax.tree.flatten(tuple(entry[4] for entry in entries))
         positions = tuple(
             i for i, leaf in enumerate(leaves) if isinstance(leaf, jax.Array)
         )
-        self._arrays = tuple(leaves[i] for i in positions)
+        arrays = tuple(leaves[i] for i in positions)
         template = tuple(
             None if i in positions else leaf for i, leaf in enumerate(leaves)
         )
-        return _compiled_rotamer_execution(
-            tuple(entry[:4] for entry in self.entries),
-            self.score_types,
-            tree,
-            template,
-            positions,
-            self.sum_terms,
-            self.apply_weights,
-            self.shape,
+        return (
+            _compiled_rotamer_execution(
+                tuple(entry[:4] for entry in entries),
+                self.score_types,
+                tree,
+                template,
+                positions,
+                self.sum_terms,
+                self.apply_weights,
+                self.shape,
+            ),
+            arrays,
         )
+
+    @cached_property
+    def _packing_executions(self):
+        return tuple(self._compiled_evaluator((entry,)) for entry in self.entries)
+
+    def iter_packing_entries(
+        self, coords, *, block_pair_window, score_window, topology_only=False
+    ):
+        """Yield explicit bounded spatial pages through the native evaluators.
+
+        This eager packing adapter does not select a memory policy or construct
+        an interaction graph. Spatial candidates are limited by block-pair
+        windows and scored in smaller pages; nonspatial terms retain their
+        existing native layouts. Consume and release each page before advancing.
+        Correlated choices require the ordinary complete-table path.
+        """
+        self._validate_coordinates(coords)
+        for size in (block_pair_window, score_window):
+            if (
+                isinstance(size, bool)
+                or not isinstance(size, (int, np.integer))
+                or size < 1
+            ):
+                raise ValueError("packing page sizes must be positive integers")
+        if self.rotamers.correlated_groups:
+            raise ValueError("correlated packing requires the complete score table")
+        poses, blocks = self.rotamers.n_rots_for_block.shape
+        count = poses * blocks * (blocks + 1) // 2
+        for entry, (evaluate, arrays) in zip(self.entries, self._packing_executions):
+            if not entry[5]:
+                values, indices = evaluate(coords, arrays, (None,))
+                for start in range(0, indices.shape[1], score_window):
+                    stop = start + score_window
+                    yield (
+                        values[..., :0] if topology_only else values[..., start:stop],
+                        indices[:, start:stop],
+                    )
+                del values, indices
+                continue
+            for begin in range(0, count, block_pair_window):
+                indices = nonbonded_candidate_groups(
+                    self.rotamers,
+                    self.packed_block_types,
+                    reaches=(entry[4][3],),
+                    coords=coords,
+                    begin=begin,
+                    count=min(block_pair_window, count - begin),
+                )[0]
+                for start in range(0, indices.shape[1], score_window):
+                    page = indices[:, start : start + score_window]
+                    if topology_only:
+                        yield coords.reshape(-1)[:0], page
+                    else:
+                        yield evaluate(coords, arrays, (page,))
+                    del page
+                del indices
 
     def __call__(self, coords):
         return self.prepare(coords)(coords)
