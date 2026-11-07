@@ -273,7 +273,7 @@
         "tests/scientific/test_molecular_movement.py",
         "tests/jax/test_jax_move_map.py"
       ],
-      "implementation_status": "Shared MoveMap and native chemical DOF resolution with JAX L-BFGS; molecular objective decrease and frozen-DOF invariants tested CPU/CUDA. Full optimizer API parity remains incomplete. Explicit strong-Wolfe also consumes the shared policy and reusable compact molecular objective; ligand, connected noncanonical and D-peptide frozen-DOF contracts have CPU/CUDA checks."
+      "implementation_status": "Shared MoveMap and native chemical DOF resolution with JAX L-BFGS; molecular objective decrease and frozen-DOF invariants tested CPU/CUDA. Torch optimizer/module interfaces are framework-specific; the functional injection contract is recorded separately below. Explicit strong-Wolfe also consumes the shared policy and reusable compact molecular objective; ligand, connected noncanonical and D-peptide frozen-DOF contracts have CPU/CUDA checks."
     },
     {
       "domain": "named_torsion_queries",
@@ -640,5 +640,14 @@
       "tests/jax/test_score_function.py"
     ],
     "implementation_status": "Rendered whole-pose scorers accept per-call sum_terms/apply_weights and expose unweighted_scores. Alternate static reductions reuse prepared parameter/topology operands and retain original configuration after score-function mutation. Existing render defaults, mapped-coordinate execution and chemistry-owner lifetime are preserved; complete mature end-to-end parity remains separately gated."
+  },
+  "custom_optimizer_injection": {
+    "torch": "supported_closure_based_optimizer_class",
+    "jax": "functional_callable_cpu_scientific_checks",
+    "repro_fixture": [
+      "tests/scientific/test_custom_optimizer.py",
+      "tests/jax/test_optimizer_callable.py"
+    ],
+    "implementation_status": "Cartesian and kinematic public minimizers accept a functional optimizer over the existing compact-variable, frozen-coordinate and per-pose objective adapter. Shared tests check independent harmonic molecular motion and injected kinematic minimization. Result shape, dtype, device and finite gradients are required; settings and additional diagnostics pass through. Torch Optimizer/nn.Module/state_dict remain framework-specific; default algorithms and existing complete-workflow numerical/performance holds are unchanged. CPU: analytical ligand/noncanonical/mixed Cartesian and injected ligand/D kinematic assertions pass in both current frontends; actual mature Torch passes the same assertions with its normal complete chemistry palette for kinematics. A minimal zero-port mature ligand palette fails earlier fold-forest construction and is recorded separately. CUDA, installed-package and workflow cost gates remain pending."
   }
 }

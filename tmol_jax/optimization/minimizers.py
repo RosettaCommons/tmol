@@ -55,13 +55,14 @@ def run_cart_min(
     API spelling for ``move_mask``; supply only one non-None mask.
 
     Set ``return_result=True`` to receive ``(pose, diagnostics)`` where the
-    diagnostics mapping includes the final value, gradient, iteration count,
+    default diagnostics mapping includes the final value, gradient, iteration count,
     per-pose convergence and stalled flags. The default ``optimizer="armijo"`` uses the
     shared mature segmented policy on compact movable coordinates. Its convergence
     settings come from ``optimizer_kwargs`` (shared Torch names/defaults); the
     legacy ``gtol``, ``ftol`` and line-search limit apply only to explicit
     ``optimizer="strong_wolfe"``. Omitted iteration/history settings use the
-    common Armijo defaults (200 iterations, 128 history entries).
+    common Armijo defaults (200 iterations, 128 history entries). A callable
+    ``optimizer`` uses the compact functional protocol documented in the JAX guide.
     """
     if coord_mask is not None:
         if move_mask is not None:
@@ -75,7 +76,7 @@ def run_cart_min(
 
     def energy(x_flat):
         values = scorer(x_flat.reshape(shape))
-        return values if optimizer == "armijo" else values.sum()
+        return values.sum() if optimizer == "strong_wolfe" else values
 
     result = _minimize_selected(
         energy,
@@ -135,8 +136,8 @@ def _minimize_selected(
                 coordinate_scorer, initial, coordinate_map
             ),
         )
-    if optimizer != "armijo":
-        raise ValueError("optimizer must be 'armijo' or 'strong_wolfe'")
+    if optimizer != "armijo" and not callable(optimizer):
+        raise ValueError("optimizer must be 'armijo', 'strong_wolfe' or a callable")
     from ._segmented_minimization import minimize_pose_variables
 
     settings = dict(verbose=verbose)
@@ -154,6 +155,7 @@ def _minimize_selected(
             settings,
             coordinate_scorer=coordinate_scorer,
             coordinate_map=coordinate_map,
+            **({"minimize": optimizer} if callable(optimizer) else {}),
         )
     )
 
@@ -287,6 +289,8 @@ def run_kin_min(
     The default ``optimizer="armijo"`` uses the shared mature segmented policy, with
     ``optimizer_kwargs`` using Torch setting names. Only movable DOFs enter its
     history; independent poses retain independent line search and convergence.
+    A callable ``optimizer`` receives the same compact variables and movement
+    policy; its functional protocol is documented in the JAX guide.
     """
     from tmol_jax.kinematics import PoseStackKinematics
 
@@ -304,7 +308,7 @@ def run_kin_min(
 
     def energy(flat):
         values = scorer(coordinates(flat))
-        return values if optimizer == "armijo" else values.sum()
+        return values.sum() if optimizer == "strong_wolfe" else values
 
     node_pose = kinematics.atom_ids // pose_stack.max_n_atoms_per_pose
     result = _minimize_selected(

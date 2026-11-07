@@ -15,6 +15,7 @@ def minimize_pose_variables(
     settings,
     coordinate_scorer=None,
     coordinate_map=None,
+    minimize=armijo_minimize,
 ):
     """Optimize only movable elements, retaining fixed poses and padding."""
     shape = initial.shape
@@ -60,13 +61,29 @@ def minimize_pose_variables(
                 coordinate_map,
             )
             execution = dict(value_only=objective, value_and_grad=derivative)
-        result = armijo_minimize(
+        result = minimize(
             objective,
             flat[selected],
             segment_ids=jnp.asarray(ids, jnp.int32),
             **execution,
             **settings,
         )
+        if minimize is not armijo_minimize:
+            result = dict(result)
+            for name in ("x", "grad"):
+                value = result[name]
+                if not isinstance(value, jax.Array):
+                    raise TypeError(f"optimizer {name} must be a JAX array")
+                if value.shape != selected.shape or value.dtype != initial.dtype:
+                    raise ValueError(
+                        f"optimizer {name} must preserve variable shape and dtype"
+                    )
+                if value.device != initial.device:
+                    raise ValueError(
+                        f"optimizer {name} must remain on the input device"
+                    )
+                if not bool(jnp.isfinite(value).all()):
+                    raise FloatingPointError(f"optimizer {name} must be finite")
         result["x"] = expand(result["x"])
         result["grad"] = (
             jnp.zeros_like(flat).at[selected].set(result["grad"]).reshape(shape)

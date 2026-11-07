@@ -187,6 +187,18 @@ input device. Keep the same objective and parameter context; incompatible
 coordinates, masks, segment identities, dtype or history capacity reject.
 Checkpoint continuation is distinct from differentiating optimizer trajectories.
 
+Both public minimizers also accept `optimizer=callable`. The function receives
+`(objective, initial_variables, *, segment_ids, **settings)`, using compact movable
+variables and one objective value per active pose. `optimizer_kwargs` supplies
+settings; compiled `value_only` and `value_and_grad` callbacks are passed when
+available. The derivative callback returns `(pose_values, gradient_of_their_sum)`.
+Return a mapping with `x`, `grad`, scalar `initial_fun` and scalar `fun`; extra
+diagnostics are retained. Coordinates and gradients must keep the input JAX
+shape, dtype and device and remain finite. Frozen variables are restored by the
+existing adapter. This functional contract replaces Torch's optimizer-class
+injection; Torch `Optimizer`, `nn.Module` and `state_dict` interfaces stay
+framework-specific. It does not establish optimizer trajectory or cost parity.
+
 `CartesianMoveMap(coord_mask=mask)` carries an atom movement mask for Cartesian
 relax callbacks. `run_cart_min(..., coord_mask=mask)` accepts the mature keyword;
 `move_mask` remains available. Supply only one non-None mask.
