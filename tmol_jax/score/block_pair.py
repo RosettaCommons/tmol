@@ -34,6 +34,13 @@ def _pair_matrix(values, indices, block_shape, sum_terms):
     return matrix.sum(0) if sum_terms else matrix
 
 
+@partial(jax.jit, static_argnames=("block_shape", "sum_terms"))
+def _selected_pair_scores(values, indices, selected, *, block_shape, sum_terms):
+    scores = _pair_matrix(values, indices, block_shape, sum_terms)
+    i, j = selected.T
+    return scores.at[..., i, j].get(mode="fill").sum(axis=-1)
+
+
 def _current_conformers(pose):
     """View each physical block as one conformation without copying coordinates."""
     types = np.asarray(pose.block_type_ind)
@@ -169,9 +176,14 @@ class BlockPairScorer:
         traced indices produce NaN instead of silently selecting a boundary pair.
         """
         self._validate_indices(coords, block_pair_indices)
-        i, j = block_pair_indices.T
-        scores = self(coords, sum_terms=sum_terms, apply_weights=apply_weights)
-        return scores.at[..., i, j].get(mode="fill").sum(axis=-1)
+        values, indices = self.pair_values(coords, apply_weights)
+        return _selected_pair_scores(
+            values,
+            indices,
+            block_pair_indices,
+            block_shape=self.block_shape,
+            sum_terms=sum_terms,
+        )
 
     def _validate_indices(self, coords, block_pair_indices):
         if block_pair_indices.ndim != 2 or block_pair_indices.shape[1] != 2:
@@ -216,9 +228,13 @@ class BlockPairScorer:
                 weights=weights,
                 interaction_only=interaction_only,
             )
-            scores = _pair_matrix(values, indices, shape, sum_terms)
-            i, j = selected.T
-            return scores.at[..., i, j].get(mode="fill").sum(axis=-1)
+            return _selected_pair_scores(
+                values,
+                indices,
+                selected,
+                block_shape=shape,
+                sum_terms=sum_terms,
+            )
 
         return render_execution(
             _INTERACTION_EXECUTORS,
