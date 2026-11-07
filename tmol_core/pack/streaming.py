@@ -85,6 +85,38 @@ def should_stream_interaction_graph(device_kind, correlated_groups, bump_check):
     return device_kind == "cuda" and not correlated_groups and not bump_check
 
 
+def complete_table_fits_window(
+    block_pair_count,
+    score_count,
+    transient_bytes,
+    value_itemsize,
+    *,
+    block_pair_window=PACK_ROTAMER_BLOCK_PAIR_WINDOW,
+    score_window=PACK_FUSED_ROTAMER_SCORE_WINDOW,
+):
+    """Allow complete execution only within one existing bounded score page.
+
+    The executor supplies conservative counts and bytes for all simultaneously
+    live candidate, channel, index and native scratch buffers. An unknown bound
+    selects streaming. Persistent input tables and the final graph are common to
+    both routes and are outside this transient budget. This is an explicit
+    buffer bound, not an estimate of compiler/allocator/driver overhead.
+    """
+    if any(x is None for x in (block_pair_count, score_count, transient_bytes)):
+        return False
+    if min(block_pair_count, score_count, transient_bytes) < 0:
+        raise ValueError("packing buffer bounds must be nonnegative")
+    if min(value_itemsize, block_pair_window, score_window) <= 0:
+        raise ValueError("packing page dimensions must be positive")
+    # Each graph entry contains three int32 identities and one summed value.
+    byte_budget = score_window * (3 * 4 + value_itemsize)
+    return (
+        block_pair_count <= block_pair_window
+        and score_count <= score_window
+        and transient_bytes <= byte_budget
+    )
+
+
 def packing_windows(count, window):
     """Yield bounded (start, count) ranges in canonical candidate order."""
     if window <= 0:
