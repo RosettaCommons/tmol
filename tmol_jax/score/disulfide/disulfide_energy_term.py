@@ -17,7 +17,8 @@ from tmol_jax.score.score_types import ScoreType
 
 
 class DisulfideEnergyTerm(EnergyTerm):
-    def score_types_provided(self):
+    @staticmethod
+    def score_types_provided():
         return [ScoreType.disulfide]
 
     def setup_for_pose_stack(self, pose_stack, pbt=None):
@@ -36,8 +37,8 @@ class DisulfideEnergyTerm(EnergyTerm):
         register("tmol_disulfide")
         return jax.device_put(tuple(arrays), device=pose_stack.coords.device)
 
-    def __call__(self, pose_stack, term_state, coords_override=None):
-        coords = pose_stack.coords if coords_override is None else coords_override
+    @classmethod
+    def evaluate(cls, term_state, coords):
         return {
             ScoreType.disulfide: coordinate_energy(
                 "tmol_disulfide", coords, term_state, always_gradient=True

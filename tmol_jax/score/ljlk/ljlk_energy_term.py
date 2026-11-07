@@ -8,7 +8,8 @@ class LJLKEnergyTerm(EnergyTerm):
     def set_options(self, options):
         self.soft_repulsive = options.get("soft_rep", False)
 
-    def score_types_provided(self):
+    @staticmethod
+    def score_types_provided():
         return [ScoreType.fa_ljatr, ScoreType.fa_ljrep, ScoreType.fa_lk]
 
     def setup_for_pose_stack(self, pose_stack, pbt=None):
@@ -21,9 +22,9 @@ class LJLKEnergyTerm(EnergyTerm):
             soft_repulsive=getattr(self, "soft_repulsive", False),
         )
 
-    def __call__(self, pose_stack, term_state, coords_override=None):
+    @classmethod
+    def evaluate(cls, term_state, coords):
         from tmol_jax.score.nonbonded import independent_nonbonded_energy
 
-        coords = pose_stack.coords if coords_override is None else coords_override
         values = independent_nonbonded_energy(coords, term_state)
-        return dict(zip(self.score_types_provided(), values))
+        return dict(zip(cls.score_types_provided(), values))

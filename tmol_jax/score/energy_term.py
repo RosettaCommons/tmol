@@ -28,13 +28,18 @@ class EnergyTerm(ABC):
         """Return a pytree of coordinate-independent arrays for this topology."""
         return {}
 
-    @abstractmethod
     def __call__(self, pose_stack, term_state, coords_override=None):
         """Return {ScoreType: energy[poses]} without mutating state.
 
         Use coords_override when supplied; otherwise use pose_stack.coords.
         This evaluation must support jax.jit, differentiation and batching.
         """
+        coords = pose_stack.coords if coords_override is None else coords_override
+        return self.evaluate(term_state, coords)
+
+    @classmethod
+    def evaluate(cls, term_state, coords):
+        """Execute a stock term using only explicit prepared-state operands."""
         raise NotImplementedError
 
 

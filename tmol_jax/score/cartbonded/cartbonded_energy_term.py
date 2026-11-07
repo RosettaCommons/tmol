@@ -10,7 +10,8 @@ from tmol_jax.score.score_types import ScoreType
 
 
 class CartBondedEnergyTerm(EnergyTerm):
-    def score_types_provided(self):
+    @staticmethod
+    def score_types_provided():
         return [
             ScoreType.cart_lengths,
             ScoreType.cart_angles,
@@ -53,7 +54,7 @@ class CartBondedEnergyTerm(EnergyTerm):
             device=pose_stack.coords.device,
         )
 
-    def __call__(self, pose_stack, term_state, coords_override=None):
-        coords = pose_stack.coords if coords_override is None else coords_override
+    @classmethod
+    def evaluate(cls, term_state, coords):
         values = coordinate_energy("tmol_cartbonded", coords, term_state, channels=5)
-        return dict(zip(self.score_types_provided(), values))
+        return dict(zip(cls.score_types_provided(), values))
