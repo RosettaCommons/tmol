@@ -1,6 +1,7 @@
 """JAX scoring frontend for TMol; no PyTorch runtime dependency."""
 
-from importlib.metadata import version, PackageNotFoundError
+from importlib import import_module as _import_module
+from importlib.metadata import PackageNotFoundError, version
 
 try:
     __version__ = version("tmol-jax")
@@ -8,181 +9,168 @@ except PackageNotFoundError:
     __version__ = "0+source"
 
 
-from .io import ResidueBlock, pose_stack_from_pdb, pose_stack_from_residue_blocks
-from .optimization import run_cart_min, run_cart_relax, run_kin_min
-from .kinematics import (
-    CartesianMoveMap,
-    EdgeType,
-    FoldForest,
-    MoveMap,
-    PoseStackKinematics,
-    set_named_torsions,
-)
-from .database import ParameterDatabase
-from .chemical.patched_chemdb import PatchedChemicalDatabase
-from .io.canonical_ordering import CanonicalOrdering
-from .pack import (
-    PackerPalette,
-    PackerTask,
-    pack_rotamers,
-    mutate_residue,
-    mutate_to_sequence,
-)
-from .pose import ConstraintSet, PoseStack, PoseStackBuilder, PackedBlockTypes, PDBInfo
-from .score import ScoreFunction, ScoreType, beta2016_score_function
-from .pose import (
-    get_named_torsions,
-    get_torsion_names,
-    get_sequence,
-    get_ligand_mask,
-    get_polymer_type_mask,
-    metal_blocks,
-    residue_label,
-    atom_label,
-    block_for_residue_label,
-    blocks_for_residue_labels,
-    atom_for_residue_label,
-    constraint_atoms_for_labels,
-)
-from .relax import fast_relax
-
-from .score.fragment_interactions import (
-    calculate_fragment_interactions,
-    render_fragment_interactions,
-)
-
-
 def has_cuda():
-    """Whether the installed native adapter includes CUDA kernels.
-
-    This reports build support independently of available JAX devices.
-    """
+    """Whether the native adapter includes CUDA, independently of JAX devices."""
     from .score._native import libraries
 
     return "cuda" in libraries()
 
 
-__all__ = [
-    "has_cuda",
-    "mutate_residue",
-    "mutate_to_sequence",
-    "get_sequence",
-    "get_ligand_mask",
-    "get_polymer_type_mask",
-    "metal_blocks",
-    "residue_label",
-    "atom_label",
-    "block_for_residue_label",
-    "blocks_for_residue_labels",
-    "atom_for_residue_label",
-    "constraint_atoms_for_labels",
-] + [
-    "calculate_fragment_interactions",
-    "render_fragment_interactions",
-    "fast_relax",
-    "get_named_torsions",
-    "get_torsion_names",
-    "pose_stack_from_pdb",
-    "pose_stack_from_residue_blocks",
-    "ResidueBlock",
-    "ConstraintSet",
-    "PackerPalette",
-    "PackerTask",
-    "pack_rotamers",
-    "ParameterDatabase",
-    "PatchedChemicalDatabase",
-    "CanonicalOrdering",
-    "PoseStack",
-    "PoseStackBuilder",
-    "PackedBlockTypes",
-    "PDBInfo",
-    "FoldForest",
-    "EdgeType",
-    "PoseStackKinematics",
-    "set_named_torsions",
-    "MoveMap",
-    "CartesianMoveMap",
-    "run_cart_min",
-    "run_kin_min",
-    "run_cart_relax",
-    "ScoreFunction",
-    "ScoreType",
-    "beta2016_score_function",
-]
+_LAZY_ATTRS = {}
+for _module, _names in (
+    (
+        "tmol_jax.io",
+        (
+            "ResidueBlock",
+            "pose_stack_from_pdb",
+            "pose_stack_from_residue_blocks",
+            "extended_pose_stack_from_sequences",
+            "atom_array_from_pose_stack",
+            "build_context_from_atom_array",
+            "pose_stack_from_atom_array",
+            "pose_stack_from_file",
+            "atom_array_from_file",
+            "file_from_atom_array",
+            "file_from_pose_stack",
+            "PreparedAtom37PoseBuilder",
+            "atom37_slot_map_for_ordering",
+            "pose_stack_from_atom37",
+            "pose_stack_from_atom37_and_topology",
+            "prepare_atom37_pose_builder",
+            "prepare_atom37_tensor_builder",
+            "atomworks_from_pose_stack",
+            "pose_stack_from_canonical_aa_atom37",
+            "prepare_canonical_aa_atom37_builder",
+        ),
+    ),
+    (
+        "tmol_jax.optimization",
+        (
+            "run_cart_min",
+            "run_cart_relax",
+            "run_kin_min",
+        ),
+    ),
+    (
+        "tmol_jax.kinematics",
+        (
+            "CartesianMoveMap",
+            "EdgeType",
+            "FoldForest",
+            "MoveMap",
+            "PoseStackKinematics",
+            "set_named_torsions",
+        ),
+    ),
+    (
+        "tmol_jax.database",
+        ("ParameterDatabase",),
+    ),
+    (
+        "tmol_jax.chemical.patched_chemdb",
+        ("PatchedChemicalDatabase",),
+    ),
+    (
+        "tmol_jax.io.canonical_ordering",
+        ("CanonicalOrdering",),
+    ),
+    (
+        "tmol_jax.pack",
+        (
+            "PackerPalette",
+            "PackerTask",
+            "pack_rotamers",
+            "mutate_residue",
+            "mutate_to_sequence",
+        ),
+    ),
+    (
+        "tmol_jax.pose",
+        (
+            "ConstraintSet",
+            "PoseStack",
+            "PoseStackBuilder",
+            "PackedBlockTypes",
+            "PDBInfo",
+            "get_named_torsions",
+            "get_torsion_names",
+            "get_sequence",
+            "get_ligand_mask",
+            "get_polymer_type_mask",
+            "metal_blocks",
+            "residue_label",
+            "atom_label",
+            "block_for_residue_label",
+            "blocks_for_residue_labels",
+            "atom_for_residue_label",
+            "constraint_atoms_for_labels",
+        ),
+    ),
+    (
+        "tmol_jax.score",
+        (
+            "ScoreFunction",
+            "ScoreType",
+            "beta2016_score_function",
+        ),
+    ),
+    (
+        "tmol_jax.relax",
+        ("fast_relax",),
+    ),
+    (
+        "tmol_jax.score.fragment_interactions",
+        (
+            "calculate_fragment_interactions",
+            "render_fragment_interactions",
+        ),
+    ),
+    (
+        "tmol_jax.io.visualize",
+        (
+            "overlay_view",
+            "selection_gallery",
+            "switchable_view",
+            "view",
+        ),
+    ),
+    (
+        "tmol_core.ligand._fragmentation",
+        ("LigandFragmentDefinition",),
+    ),
+    (
+        "tmol_jax.ligand.fragment_imposition",
+        ("recombine_fragmented_ligands",),
+    ),
+):
+    _LAZY_ATTRS.update(dict.fromkeys(_names, _module))
+del _module, _names
 
-
-_SEQUENCE_INPUT = {"extended_pose_stack_from_sequences"}
-__all__ += sorted(_SEQUENCE_INPUT)
-
-
-_STRUCTURE_INPUT = {
-    "atom_array_from_pose_stack",
-    "build_context_from_atom_array",
-    "pose_stack_from_atom_array",
-    "pose_stack_from_file",
+__all__ = ["has_cuda", *_LAZY_ATTRS]
+_SUBMODULES = {
+    "chemical",
+    "database",
+    "io",
+    "kinematics",
+    "optimization",
+    "pack",
+    "pose",
+    "relax",
+    "score",
 }
-__all__ += sorted(_STRUCTURE_INPUT)
-
-_STRUCTURE_FILES = {
-    "atom_array_from_file",
-    "file_from_atom_array",
-    "file_from_pose_stack",
-}
-__all__ += sorted(_STRUCTURE_FILES)
-
-_FRAGMENT_API = {
-    "LigandFragmentDefinition": "tmol_core.ligand._fragmentation",
-    "recombine_fragmented_ligands": "tmol_jax.ligand.fragment_imposition",
-}
-__all__ += sorted(_FRAGMENT_API)
-
-
-_ATOM37_INPUT = {
-    "atom37_slot_map_for_ordering",
-    "prepare_atom37_pose_builder",
-    "prepare_atom37_tensor_builder",
-    "pose_stack_from_atom37",
-    "pose_stack_from_atom37_and_topology",
-    "PreparedAtom37PoseBuilder",
-}
-__all__ += sorted(_ATOM37_INPUT)
-
-
-_ATOMWORKS_INPUT = {
-    "prepare_canonical_aa_atom37_builder",
-    "pose_stack_from_canonical_aa_atom37",
-    "atomworks_from_pose_stack",
-}
-__all__ += sorted(_ATOMWORKS_INPUT)
-
-
-_VISUALIZATION = {"view", "switchable_view", "overlay_view", "selection_gallery"}
-__all__ += sorted(_VISUALIZATION)
 
 
 def __getattr__(name):
-    if name in _VISUALIZATION:
-        from importlib import import_module
+    module_name = _LAZY_ATTRS.get(name)
+    if module_name is not None:
+        value = getattr(_import_module(module_name), name)
+    elif name in _SUBMODULES:
+        value = _import_module(f"{__name__}.{name}")
+    else:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    globals()[name] = value
+    return value
 
-        value = getattr(import_module("tmol_jax.io.visualize"), name)
-        globals()[name] = value
-        return value
-    if name in _FRAGMENT_API:
-        from importlib import import_module
 
-        value = getattr(import_module(_FRAGMENT_API[name]), name)
-        globals()[name] = value
-        return value
-    if name in (
-        _ATOMWORKS_INPUT
-        | _ATOM37_INPUT
-        | _STRUCTURE_INPUT
-        | _STRUCTURE_FILES
-        | _SEQUENCE_INPUT
-    ):
-        from importlib import import_module
-
-        value = getattr(import_module(".io", __name__), name)
-        globals()[name] = value
-        return value
-    raise AttributeError(name)
+def __dir__():
+    return sorted(set(globals()) | set(__all__) | _SUBMODULES)
