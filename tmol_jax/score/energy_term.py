@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 
 from tmol_core.cache import AnnotationKey, PreparationCache
+from tmol_core.scoring.channels import TERM_CHANNELS
 
 
 class EnergyTerm(ABC):
@@ -57,6 +58,11 @@ def prepared_palette(
     attribute = "_scoring_preparations" if device is None else "_scoring_device_arrays"
     cache = getattr(pbt, attribute, None)
     if cache is None:
-        cache = PreparationCache()
+        # Whole-pose and sparse preparation share the finite score-family set.
+        cache = (
+            PreparationCache()
+            if device is None
+            else PreparationCache(max_entries=len(TERM_CHANNELS))
+        )
         setattr(pbt, attribute, cache)
     return cache.get_or_create(name, key, prepare)
