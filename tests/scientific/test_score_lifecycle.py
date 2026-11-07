@@ -56,7 +56,15 @@ def test_retained_zero_channels_removal_and_old_snapshot_are_consistent(
     np.testing.assert_allclose(fresh_values, -2 * values, rtol=3e-5, atol=3e-5)
     np.testing.assert_allclose(fresh_gradient, -2 * gradient, rtol=3e-5, atol=3e-5)
     old_values, old_gradient = evaluate(b, old)
-    np.testing.assert_array_equal(old_values, values)
-    np.testing.assert_array_equal(old_gradient, gradient)
+    for repeated, reference in ((old_values, values), (old_gradient, gradient)):
+        # Independent unchanged-scorer CUDA controls show float32 atomic-sum
+        # variation before mutation, with unchanged float64-oracle error after
+        # mutation. Bound only this fixed-fixture repeat check at two epsilons
+        # of its value/force scale; keep CPU snapshots bit-exact.
+        if b.requested_device == "cuda":
+            atol = 2 * np.finfo(reference.dtype).eps * np.max(np.abs(reference))
+            np.testing.assert_allclose(repeated, reference, rtol=0, atol=atol)
+        else:
+            np.testing.assert_array_equal(repeated, reference)
     sf.set_weight(channel, 0)
     assert not sf.all_terms() and not sf.all_score_types()
