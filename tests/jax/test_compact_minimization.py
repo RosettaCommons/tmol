@@ -104,3 +104,49 @@ def test_prepared_objective_callbacks_receive_the_original_parameter_shape():
         assert observed and all(shape == x.shape for shape in observed)
         assert np.isfinite(result["x"]).all()
         assert objective(result["x"]).sum() < objective(x).sum()
+
+
+def test_compact_kinematic_execution_retains_fresh_frames_and_fixed_dofs():
+    from tmol_jax import MoveMap, PoseStackKinematics
+
+    b = Execution(device_name()).molecule(DOMAIN_CASES["mixed_batch"], terms=())
+    b.use_beta2016()
+    with jax.default_device(b.device), jax.enable_x64():
+        pose = b.pose.replace(coords=b.pose.coords.astype(jnp.float64))
+        kinematics = PoseStackKinematics(pose)
+        movement = MoveMap.from_pose_stack(pose)
+        movement.move_all_named_torsions = True
+        selected = jax.device_put(
+            np.flatnonzero(np.asarray(kinematics.resolve_move_map(movement))).astype(
+                np.int32
+            ),
+            b.device,
+        )
+        active = jax.device_put(np.arange(pose.n_poses, dtype=np.int32), b.device)
+        scorer = b.score_function.render_whole_pose_scoring_module(pose)
+        original = kinematics.bind(pose.coords)
+        _, before = scorer.compact_objective(
+            original.initial_dofs, selected, active, original
+        )
+        saved = before(original.initial_dofs.reshape(-1)[selected])
+        changed = kinematics.bind(pose.coords * 1.01)
+        value, derivative = scorer.compact_objective(
+            changed.initial_dofs, selected, active, changed
+        )
+        compact = changed.initial_dofs.reshape(-1)[selected]
+        actual = derivative(compact)
+        expected = scorer(changed(changed.initial_dofs))
+        np.testing.assert_allclose(actual[0], expected, rtol=2e-10, atol=2e-10)
+        assert np.linalg.norm(actual[1]) > 1e-3
+        direction = jax.device_put(
+            np.random.default_rng(362).normal(size=compact.shape), b.device
+        )
+        h = 1e-5
+        numeric = value(compact + h * direction) - value(compact - h * direction)
+        numeric = numeric.sum() / (2 * h)
+        analytic = (actual[1] * direction).sum()
+        np.testing.assert_allclose(numeric, analytic, rtol=2e-5, atol=2e-5)
+        for current, expected in zip(
+            before(original.initial_dofs.reshape(-1)[selected]), saved
+        ):
+            np.testing.assert_allclose(current, expected, rtol=2e-10, atol=2e-10)

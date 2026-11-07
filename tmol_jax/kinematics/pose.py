@@ -207,6 +207,7 @@ class PoseStackKinematics:
         return jax.device_put(mask[:, :6], self.forest.device)
 
 
+@jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True, eq=False)
 class PoseCoordinates:
     """Map movable DOFs [nodes,6] to the original padded pose coordinates.
@@ -231,3 +232,10 @@ class PoseCoordinates:
             .set(coordinates[1:])
             .reshape(self._coordinates.shape)
         )
+
+    def tree_flatten(self):
+        return (self._mapping, self._atom_ids, self._coordinates), None
+
+    @classmethod
+    def tree_unflatten(cls, metadata, children):
+        return cls(*children)

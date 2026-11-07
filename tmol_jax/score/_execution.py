@@ -27,13 +27,14 @@ class RenderedScore:
     def value_and_grad(self):
         return partial(self._apply, self.executor[2])
 
-    def compact_objective(self, reference, selected, active):
+    def compact_objective(self, reference, selected, active, coordinate_map=None):
         """Bind fresh coordinate/parameter operands to reusable minimization code."""
         operands = dict(
             reference=reference,
             selected=selected,
             active=active,
             operands=self.arrays,
+            coordinate_map=coordinate_map,
         )
         return partial(self.executor[3], **operands), partial(
             self.executor[4], **operands
@@ -69,21 +70,31 @@ def render_execution(cache, configuration, evaluate, states, shape):
             (_, energies), gradient = differentiated(coords, operands)
             return energies, gradient
 
-        def compact_value(values, reference, selected, active, operands):
+        def compact_value(
+            values, reference, selected, active, operands, coordinate_map
+        ):
             coords = (
                 reference.reshape(-1).at[selected].set(values).reshape(reference.shape)
             )
+            if coordinate_map is not None:
+                coords = coordinate_map(coords)
             return execute(coords, operands)[active]
 
-        def compact_total(values, reference, selected, active, operands):
-            energies = compact_value(values, reference, selected, active, operands)
+        def compact_total(
+            values, reference, selected, active, operands, coordinate_map
+        ):
+            energies = compact_value(
+                values, reference, selected, active, operands, coordinate_map
+            )
             return energies.sum(), energies
 
         compact_gradient = jax.value_and_grad(compact_total, has_aux=True)
 
-        def compact_value_and_grad(values, reference, selected, active, operands):
+        def compact_value_and_grad(
+            values, reference, selected, active, operands, coordinate_map
+        ):
             (_, energies), gradient = compact_gradient(
-                values, reference, selected, active, operands
+                values, reference, selected, active, operands, coordinate_map
             )
             return energies, gradient
 

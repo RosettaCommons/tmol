@@ -93,6 +93,7 @@ class KinematicForest:
         return inverse_coordinates(jnp.asarray(coords), self._arrays)
 
 
+@jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True, eq=False, init=False)
 class KinematicCoordinates:
     """A fixed forest and reference frame, mapping movable DOFs to coordinates.
@@ -156,3 +157,31 @@ class KinematicCoordinates:
             raise TypeError("movable DOF dtype must match the bound initialization")
         packed = jnp.concatenate((dofs, self._reference_angles), axis=1)
         return forward_coordinates(packed, self._tree, self._forward, self._backward)
+
+    def tree_flatten(self):
+        # Generation boundaries configure native launches; forest indices and
+        # reference frames remain operands, including for a fresh binding.
+        plans = (self._forward, self._backward)
+        generations = tuple(tuple(map(tuple, plan[2].tolist())) for plan in plans)
+        return (
+            self.initial_dofs,
+            self._reference_angles,
+            self._tree,
+            *self._forward[:2],
+            *self._backward[:2],
+        ), generations
+
+    @classmethod
+    def tree_unflatten(cls, generations, children):
+        result = object.__new__(cls)
+        for name, value in zip(
+            ("initial_dofs", "_reference_angles", "_tree"), children[:3]
+        ):
+            object.__setattr__(result, name, value)
+        for index, name in enumerate(("_forward", "_backward")):
+            plan = (
+                *children[3 + 2 * index : 5 + 2 * index],
+                np.asarray(generations[index], dtype=np.int32).reshape(-1, 2),
+            )
+            object.__setattr__(result, name, plan)
+        return result

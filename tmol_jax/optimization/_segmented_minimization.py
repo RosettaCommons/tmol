@@ -8,7 +8,13 @@ from .armijo import armijo_minimize
 
 
 def minimize_pose_variables(
-    energy, initial, mask, pose_for_variable, settings, coordinate_scorer=None
+    energy,
+    initial,
+    mask,
+    pose_for_variable,
+    settings,
+    coordinate_scorer=None,
+    coordinate_map=None,
 ):
     """Optimize only movable elements, retaining fixed poses and padding."""
     shape = initial.shape
@@ -44,7 +50,14 @@ def minimize_pose_variables(
         execution = {}
         if coordinate_scorer is not None:
             objective, derivative = coordinate_scorer.compact_objective(
-                initial.reshape(coordinate_scorer.shape), selected, active
+                initial.reshape(
+                    coordinate_scorer.shape
+                    if coordinate_map is None
+                    else coordinate_map.initial_dofs.shape
+                ),
+                selected,
+                active,
+                coordinate_map,
             )
             execution = dict(value_only=objective, value_and_grad=derivative)
         result = armijo_minimize(

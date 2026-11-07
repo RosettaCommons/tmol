@@ -114,6 +114,7 @@ def _minimize_selected(
     optimizer,
     optimizer_kwargs,
     coordinate_scorer=None,
+    coordinate_map=None,
 ):
     if optimizer == "strong_wolfe":
         if optimizer_kwargs:
@@ -143,6 +144,7 @@ def _minimize_selected(
             pose_ids,
             settings,
             coordinate_scorer=coordinate_scorer,
+            coordinate_map=coordinate_map,
         )
     )
 
@@ -204,6 +206,12 @@ def _validate_minimum(result):
     return result
 
 
+@jax.jit
+def _kinematic_coordinates(mapping, flat, mask):
+    initial = mapping.initial_dofs
+    return mapping(jnp.where(mask, flat.reshape(initial.shape), initial))
+
+
 def run_kin_min(
     pose_stack,
     score_function,
@@ -244,8 +252,7 @@ def run_kin_min(
     def coordinates(flat):
         if not movable:
             return coords
-        dofs = jnp.where(mask, flat.reshape(initial.shape), initial)
-        return mapping(dofs)
+        return _kinematic_coordinates(mapping, flat, mask)
 
     def energy(flat):
         values = scorer(coordinates(flat))
@@ -265,8 +272,10 @@ def run_kin_min(
         verbose,
         optimizer,
         optimizer_kwargs,
+        coordinate_scorer=scorer if hasattr(scorer, "compact_objective") else None,
+        coordinate_map=mapping,
     )
-    final_coords = jax.jit(coordinates)(result["x"])
+    final_coords = coordinates(result["x"])
     if not bool(jnp.isfinite(final_coords).all()):
         raise FloatingPointError("minimization produced non-finite coordinates")
     minimized = pose_stack.replace(coords=final_coords)
