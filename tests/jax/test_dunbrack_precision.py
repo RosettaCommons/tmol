@@ -71,3 +71,50 @@ def test_fitted_tables_do_not_retain_source_library_and_sampler_owns_snapshot():
     gc.collect()
     assert owner() is None
     assert any(np.asarray(value).size for value in tables.scoring_db.values())
+
+
+def test_fitted_library_cache_observes_mutable_custom_probabilities():
+    import attrs
+
+    from tmol_jax import ParameterDatabase, ScoreFunction, ScoreType
+
+    database = DUNBRACK_CASES["l_peptide"].database(ParameterDatabase.get_default())
+    source = database.scoring.dunbrack
+    name = next(
+        row.dun_table_name for row in source.dun_lookup if row.residue_name == "LEU"
+    )
+    libraries = []
+    for library in source.rotameric_libraries:
+        if library.table_name == name:
+            probabilities = library.rotameric_data.rotamer_probabilities.copy()
+            library = attrs.evolve(
+                library,
+                rotameric_data=attrs.evolve(
+                    library.rotameric_data, rotamer_probabilities=probabilities
+                ),
+            )
+        libraries.append(library)
+    library = attrs.evolve(source, rotameric_libraries=tuple(libraries))
+    database = attrs.evolve(
+        database, scoring=attrs.evolve(database.scoring, dunbrack=library)
+    )
+    device = "cuda" if jax.devices()[0].platform == "gpu" else "cpu"
+    b = Execution(f"jax-{device}").molecule(
+        DUNBRACK_CASES["l_peptide"], terms=TERMS, parameter_database=database
+    )
+    with jax.default_device(b.device), jax.enable_x64():
+        coords = b.pose.coords.astype(jnp.float64)
+        original = b.score_function.jitted_value_and_grad(b.pose)
+        before = original(coords)
+        assert np.linalg.norm(before[1]) > 1e-3
+        probabilities *= 0.5
+        changed = ScoreFunction(database)
+        for term in TERMS:
+            changed.set_weight(getattr(ScoreType, term), 1.0)
+        after = changed.jitted_value_and_grad(b.pose)(coords)
+        # One LEU contributes -log(p); scaling all its probabilities adds log(2)
+        # without changing the physical coordinate derivative.
+        np.testing.assert_allclose(after[0] - before[0], np.log(2), atol=2e-5)
+        np.testing.assert_allclose(after[1], before[1], rtol=2e-5, atol=2e-5)
+        for actual, expected in zip(original(coords), before):
+            np.testing.assert_array_equal(actual, expected)
