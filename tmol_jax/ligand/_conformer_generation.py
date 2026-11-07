@@ -13,7 +13,8 @@ from tmol_core.ligand._conformer_generation import (
     STAGE_A_ANNEAL,
     STAGE_A_ITERS,
 )
-from tmol_jax.optimization.lbfgs import lbfgs_minimize
+from tmol_core.optimization.strong_wolfe import lbfgs_minimize
+from tmol_jax.optimization._strong_wolfe_execution import JaxStrongWolfeExecution
 
 
 class _JaxRefinement:
@@ -44,6 +45,7 @@ jax.tree_util.register_dataclass(
 
 
 _OPERATIONS = _JaxRefinement()
+_OPTIMIZER = JaxStrongWolfeExecution()
 flush_denormals = nullcontext
 
 
@@ -88,13 +90,11 @@ def _planar_value_and_grad(flat, first, second, target, *, shape):
 def _minimize(evaluate, coordinates, iterations):
     shape = coordinates.shape
     result = lbfgs_minimize(
-        lambda flat: evaluate(flat)[0],
+        evaluate,
         coordinates.reshape(-1),
+        _OPTIMIZER,
         max_iter=iterations,
-        history=50,
-        gtol=1e-7,
-        ftol=0,
-        value_and_grad=evaluate,
+        history_size=50,
     )
     output = result["x"].reshape(shape)
     if not np.isfinite(np.asarray(output)).all():
