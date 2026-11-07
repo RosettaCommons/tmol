@@ -53,7 +53,23 @@ def selected_positions(backend, task, result):
 
 def test_include_current_keeps_real_input_identities_and_respects_masks(backend):
     task, _, concrete = mixed_task(backend)
-    current, _ = current_samplers(backend)
+    current, fallback = current_samplers(backend)
+    for sampler in (current, fallback):
+        if backend.framework == "torch" and sampler is fallback:
+            # The mature fallback has no batch-query implementation. This is
+            # an explicit capability boundary, separate from sampling support.
+            with pytest.raises(NotImplementedError):
+                sampler.defines_rotamers_for_bts(
+                    backend.pose.packed_block_types, task.per_block_orig_block_type
+                )
+            continue
+        coverage = sampler.defines_rotamers_for_bts(
+            backend.pose.packed_block_types, task.per_block_orig_block_type
+        )
+        assert coverage.device == backend.device
+        np.testing.assert_array_equal(
+            backend.numpy(coverage), np.ones(task.per_block_orig_block_type.shape, bool)
+        )
     task.add_conformer_sampler(current)
     before = backend.coords().copy()
     fixed = concrete(task)

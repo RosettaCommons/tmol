@@ -5,7 +5,7 @@ import pytest
 
 from .na_molecules import NA_CASES
 from .test_conformer_coordinates import coordinate_dihedral
-from .test_molecular_sampling import block_mask
+from .test_molecular_sampling import block_mask, check_sampler_support
 from .test_current_conformers import ensure_fallback_sampler
 
 
@@ -51,6 +51,7 @@ def test_na_samples_preserve_chi_and_molecular_identity(backend, name, level):
         backend.numpy, sampler.sample_chi_for_poses(backend.pose, fixed)
     )
     assert counts.sum() == len(owners) > 0
+    check_sampler_support(backend, sampler, fixed, counts)
     np.testing.assert_array_equal(owners, np.repeat(np.arange(len(counts)), counts))
     assert atoms.shape == chi.shape and np.isfinite(chi).all()
     assert chi.dtype == np.float32
