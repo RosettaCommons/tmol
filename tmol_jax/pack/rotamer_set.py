@@ -57,3 +57,15 @@ class RotamerSet:
     @property
     def device(self):
         return self.coords.device
+
+    def to_atom_array(self, pbt):
+        """Export named conformers as Biotite models using the shared policy."""
+        from tmol_core.pack.rotamer_set import atom_array_from_rotamers
+
+        return atom_array_from_rotamers(
+            pbt.active_block_types,
+            np.asarray(self.coords),
+            np.asarray(self.block_type_ind_for_rot),
+            np.asarray(self.block_ind_for_rot),
+            np.asarray(self.coord_offset_for_rot),
+        )
