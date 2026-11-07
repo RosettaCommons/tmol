@@ -88,6 +88,14 @@ policy use explicit chemical contexts and preserve custom residue identities.
 The default patched chemistry is shared; loading an explicit path creates fresh
 chemistry. Host caches do not own frontend device-stream synchronization.
 
+`tmol_core.io.canonical_atom_array.prepare_canonical_atom_array` resolves prepared
+Biotite inputs into one canonical host plan: normalization, atom identities,
+metadata, supplied bonds, metal coordination and polymer gaps. Explicit termini
+remain authoritative across short same-chain gaps. Frontends place these arrays;
+Atom37 adapters overlay differentiable coordinates while the common plan keeps
+topology independent of coordinate updates. Legacy strict input modes retain their
+validation contract until explicitly adapted to this preparation policy.
+
 `tmol_core.ligand` owns typing, protonation routing, charge overrides, parameter
 files, residue registration, conjugate chemistry and chemical fragmentation.
 Distance-geometry preparation shares targets, bounds, planar embedding, seeds and

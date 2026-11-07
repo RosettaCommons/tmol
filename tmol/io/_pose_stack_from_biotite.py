@@ -10,7 +10,7 @@ import biotite
 import biotite.structure
 import logging
 
-from tmol_core.io.atom_metadata import (
+from tmol_core.io.atom_metadata import (  # noqa: F401
     populate_optional_atom_metadata as _populate_optional_atom_metadata,
 )
 from tmol_core.io.atom_array import (  # noqa: F401
@@ -1212,7 +1212,7 @@ def _bonds_from_pose_stack(pose_stack, structure, block_for_atom):
     return _bonds_from_pose_stack(pose, structure, block_for_atom)
 
 
-from tmol_core.io.canonical_atom_mapping import (  # noqa: E402
+from tmol_core.io.canonical_atom_mapping import (  # noqa: E402,F401
     map_atoms_to_canonical as _map_atoms_to_canonical,
     map_neutral_terminal_hydrogens,
 )
@@ -1263,19 +1263,10 @@ _without_chelated_metals = _structure_context._without_chelated_metals
 
 def _bonds_for_poses(bonds, n_poses, torch_device):
     """Prefix each bond row with its pose index."""
-    if bonds is None:
-        return None
-    if bonds.shape[0] == 0:
-        return torch.zeros(
-            (0, bonds.shape[1] + 1), dtype=torch.int64, device=torch_device
-        )
-    repeated = numpy.tile(bonds, (n_poses, 1))
-    pose_column = numpy.repeat(numpy.arange(n_poses), bonds.shape[0])
-    return torch.tensor(
-        numpy.column_stack((pose_column, repeated)),
-        dtype=torch.int64,
-        device=torch_device,
-    )
+    from tmol_core.io.canonical_atom_array import bonds_for_poses
+
+    values = bonds_for_poses(bonds, n_poses)
+    return None if values is None else torch.as_tensor(values, device=torch_device)
 
 
 _res_names_for_structure = _structure_context._res_names_for_structure
@@ -1308,7 +1299,7 @@ def _break_polymer_gaps(
     )
 
 
-from tmol_core.io.polymer_gaps import (  # noqa: E402
+from tmol_core.io.polymer_gaps import (  # noqa: E402,F401
     orient_polymer_gap_flags as _orient_polymer_gap_flags,
 )
 
@@ -1605,193 +1596,48 @@ def canonical_form_from_biotite(
     if co is None:
         co = _canonical_ordering_for_biotite()
 
-    biotite_structure = _normalize_input_identifiers(
-        biotite_structure, co.name3_aliases
-    )
-    biotite_structure = _with_input_chemistry_normalized(
-        biotite_structure, _metal_atom_names(co=co)
-    )
-    biotite_structure = _with_metal_coordination_typed(biotite_structure)
-    biotite_structure, not_connected = _filter_supported_atoms_and_connectivity(
+    if atom37_coords is not None:
+        _validate_atom37_coords(atom37_coords, torch_device)
+
+    from tmol_core.io.canonical_atom_array import prepare_canonical_atom_array
+
+    plan = prepare_canonical_atom_array(
         biotite_structure,
         co,
-        filter_missing_mainchain=(_filter_missing_mainchain and atom37_coords is None),
+        missing_density_distance_threshold=missing_density_distance_threshold,
+        filter_missing_mainchain=_filter_missing_mainchain,
         cut_partners=_cut_covalent_partners,
+        atom37_n_poses=None if atom37_coords is None else atom37_coords.shape[0],
     )
-    (
-        biotite_chain_id_for_res,
-        biotite_chain_labels,
-        biotite_insertion_codes,
-        biotite_residue_labels,
-        biotite_residues,
-    ) = _extract_residue_metadata(biotite_structure, not_connected)
-
-    atom_res_inds = _get_all_residue_positions(biotite_structure)
-    biotite_name_for_atom = biotite_structure.atom_name
-    biotite_res_name_for_atom = biotite_structure.res_name
-
-    restype_to_index = {name: i for i, name in enumerate(co.restype_io_equiv_classes)}
-    tmol_restypes = [restype_to_index[i_3lc] for i_3lc in biotite_residues]
-
-    valid_atom_mask, valid_atom_inds, valid_res_inds = _map_atoms_to_canonical(
-        co,
-        atom_res_inds,
-        biotite_res_name_for_atom,
-        biotite_name_for_atom,
-        biotite_structure.element,
-    )
-    # The neutral amino patch calls its first H "H1"; CCD inputs call it "H".
-    # Map that supplied coordinate into the selected terminal state's slot.
-    if PROTONATION_VARIANT in biotite_structure.get_annotation_categories():
-        map_neutral_terminal_hydrogens(
-            co,
-            atom_res_inds,
-            biotite_res_name_for_atom,
-            biotite_name_for_atom,
-            biotite_structure.get_annotation(PROTONATION_VARIANT),
-            valid_atom_mask,
-            valid_atom_inds,
-        )
-    covalent_bonds_np, disulfides_np, inferred_bonds = _covalent_bonds_from_biotite(
-        _template_array(biotite_structure),
-        co,
-        atom_res_inds,
-        tmol_restypes,
-        valid_atom_mask,
-        valid_atom_inds,
-    )
-    metal_coordination_np = _metal_coordination_from_biotite(
-        _template_array(biotite_structure),
-        atom_res_inds,
-        valid_atom_mask,
-        valid_atom_inds,
-    )
-    if atom37_coords is None:
-        tmol_coords, n_poses = _populate_canonical_coords(
-            biotite_structure,
-            torch_device,
-            co,
-            biotite_residues,
-            valid_atom_mask,
-            valid_res_inds,
-            valid_atom_inds,
-        )
-    else:
-        tmol_coords, n_poses = _populate_canonical_coords_from_atom37(
+    fields = plan.fields.copy()
+    if atom37_coords is not None:
+        fields["coords"], _ = _populate_canonical_coords_from_atom37(
             atom37_coords,
-            biotite_structure,
+            plan.structure,
             torch_device,
             co,
-            biotite_residues,
-            valid_atom_mask,
-            valid_res_inds,
-            valid_atom_inds,
+            plan.residue_names,
+            plan.valid_atom_mask,
+            plan.valid_res_inds,
+            plan.valid_atom_inds,
         )
         _validate_effective_mainchain_coords(
-            tmol_coords, _required_mainchain_entries(biotite_structure, co)
+            fields["coords"], _required_mainchain_entries(plan.structure, co)
         )
-    biotite_b_factors, biotite_occupancy = _populate_optional_atom_metadata(
-        biotite_structure,
-        n_poses,
-        len(biotite_residues),
-        co.max_n_canonical_atoms,
-        valid_res_inds,
-        valid_atom_inds,
-        valid_atom_mask,
-    )
-
-    # Format metadata for the CanonicalForm
-    def copy_for_all_poses(dat):
-        return numpy.repeat(dat[numpy.newaxis, ...], n_poses, axis=0)
-
-    biotite_residue_labels = copy_for_all_poses(biotite_residue_labels)
-    biotite_chain_labels = copy_for_all_poses(biotite_chain_labels)
-    biotite_insertion_codes = copy_for_all_poses(biotite_insertion_codes)
-    metal_origins = _metal_origins(biotite_structure)
-    if metal_origins is not None:
-        metal_origins = copy_for_all_poses(metal_origins)
-    residue_annotations = _residue_annotations(biotite_structure)
-    if residue_annotations is not None:
-        residue_annotations = copy_for_all_poses(residue_annotations)
-    protonation_variants = None
-    if PROTONATION_VARIANT in biotite_structure.get_annotation_categories():
-        protonation_variants = torch.tensor(
-            copy_for_all_poses(
-                biotite_structure.get_annotation(PROTONATION_VARIANT)[
-                    biotite.structure.get_residue_starts(biotite_structure)
-                ]
-            ),
-            dtype=torch.int64,
-            device=torch_device,
-        )
-
-    chain_id = (
-        torch.tensor(biotite_chain_id_for_res, dtype=torch.int32, device=torch_device)
-        .unsqueeze(0)
-        .repeat(n_poses, 1)
-    )
-    res_types = (
-        torch.tensor(tmol_restypes, dtype=torch.int32, device=torch_device)
-        .unsqueeze(0)
-        .repeat(n_poses, 1)
-    )
-    if EXPLICIT_TERMINI in biotite_structure.get_annotation_categories():
-        stated = biotite_structure.get_annotation(EXPLICIT_TERMINI)[
-            biotite.structure.get_residue_starts(biotite_structure)
-        ]
-        same_chain = biotite_chain_id_for_res[:-1] == biotite_chain_id_for_res[1:]
-        closed = same_chain & (((stated[:-1] & 2) != 0) | ((stated[1:] & 1) != 0))
-        not_connected[:-1, 1] |= closed
-        not_connected[1:, 0] |= closed
-    # Geometry-based missing density detection: break connections where the
-    # upper atom of residue i and lower atom of residue i+1 are too far apart.
-    # Skipped for the differentiable atom37 path: topology there is derived from
-    # chemical identity alone so it stays fixed across (possibly noisy) coordinate
-    # updates, and this check would both read a grad tensor and detach it.
-    if (
-        missing_density_distance_threshold > 0
-        and len(biotite_residues) > 1
-        and atom37_coords is None
+    else:
+        fields["coords"] = torch.as_tensor(fields["coords"], device=torch_device)
+    for name in (
+        "chain_id",
+        "res_types",
+        "res_not_connected",
+        "disulfides",
+        "covalent_bonds",
+        "metal_coordination",
+        "protonation_variants",
     ):
-        covalent_bonds_np = _break_polymer_gaps(
-            not_connected,
-            covalent_bonds_np,
-            inferred_bonds,
-            tmol_coords,
-            numpy.asarray(tmol_restypes),
-            biotite_chain_id_for_res,
-            co,
-            missing_density_distance_threshold,
-        )
-    _orient_polymer_gap_flags(
-        not_connected, biotite_chain_id_for_res, tmol_restypes, covalent_bonds_np, co
-    )
-    res_not_connected = (
-        torch.tensor(not_connected, dtype=torch.bool, device=torch_device)
-        .unsqueeze(0)
-        .repeat(n_poses, 1, 1)
-    )
-
-    # Return CanonicalForm with all converted data
-    return CanonicalForm(
-        chain_id=chain_id,
-        res_types=res_types,
-        coords=tmol_coords,
-        chain_labels=biotite_chain_labels.astype(object),
-        res_labels=biotite_residue_labels,
-        residue_insertion_codes=biotite_insertion_codes.astype(object),
-        atom_occupancy=biotite_occupancy,
-        atom_b_factor=biotite_b_factors,
-        disulfides=_bonds_for_poses(disulfides_np, n_poses, torch_device),
-        res_not_connected=res_not_connected,
-        covalent_bonds=_bonds_for_poses(covalent_bonds_np, n_poses, torch_device),
-        metal_coordination=_bonds_for_poses(
-            metal_coordination_np, n_poses, torch_device
-        ),
-        metal_origins=metal_origins,
-        residue_annotations=residue_annotations,
-        protonation_variants=protonation_variants,
-    )
+        if fields[name] is not None:
+            fields[name] = torch.as_tensor(fields[name], device=torch_device)
+    return CanonicalForm(**fields)
 
 
 @toolz.functoolz.memoize
