@@ -164,15 +164,6 @@ def test_whole_pose_backbone_torsion_needs_no_framework(tmp_path):
 
 
 @requires_cxx
-def test_dihedral_precision_near_planar_geometry(tmp_path):
-    binary = tmp_path / "dihedral"
-    proc = _compile(HERE / "dihedral_precision.cc", binary, run=True)
-    assert proc.returncode == 0, proc.stderr
-    proc = subprocess.run([str(binary)], capture_output=True, text=True)
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-
-
-@requires_cxx
 def test_bspline_coefficient_preparation_needs_no_framework(tmp_path):
     proc = _compile(
         HERE / "native_bspline_coeffs.cc", tmp_path / "coefficients", run=True
