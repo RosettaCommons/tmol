@@ -10,6 +10,7 @@ from tmol_core.kinematics.scan_ordering import scan_ordering_from_forward
 from tmol_jax.kinematics._native import inverse_coordinates, forward_coordinates
 
 
+@jax.tree_util.register_pytree_node_class
 class ConformerGeometry:
     def __init__(self, layout, device):
         self.total = layout.total
@@ -29,6 +30,31 @@ class ConformerGeometry:
             )
             for plan in (ordering.forward, ordering.backward)
         )
+
+    def tree_flatten(self):
+        arrays = (
+            self.ids,
+            self.forest,
+            self.inverse_indices,
+            tuple((nodes, scans) for nodes, scans, _ in self.plans),
+        )
+        metadata = (
+            self.total,
+            self.device,
+            tuple(tuple(map(tuple, plan[2])) for plan in self.plans),
+        )
+        return arrays, metadata
+
+    @classmethod
+    def tree_unflatten(cls, metadata, arrays):
+        obj = cls.__new__(cls)
+        obj.total, obj.device, generations = metadata
+        obj.ids, obj.forest, obj.inverse_indices, plans = arrays
+        obj.plans = tuple(
+            (nodes, scans, np.asarray(gens, np.int32).reshape(-1, 2))
+            for (nodes, scans), gens in zip(plans, generations)
+        )
+        return obj
 
     def inverse(self, coordinates):
         with jax.default_device(self.device):

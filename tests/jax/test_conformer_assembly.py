@@ -49,7 +49,16 @@ def test_conformer_assembly_without_fallback_preserves_empty_selection(
 ):
     backend = Execution(f"jax-{platform}")
     backend.molecule(DOMAIN_CASES["ligand"], terms=("ref",))
-    task, sampler, concrete = sampling_task(backend)
+    from tmol_jax.pack import PackerPalette, PackerTask
+
+    class NoFallbackPalette(PackerPalette):
+        def default_conformer_samplers(self):
+            return []
+
+    _, sampler, concrete = sampling_task(backend)
+    task = PackerTask(backend.pose, NoFallbackPalette())
+    task.restrict_to_repacking()
+    task.add_conformer_sampler(sampler)
     task.disable_sampler_by_block_mask(
         sampler, jax.device_put(np.ones(task.is_real_block.shape, bool), backend.device)
     )

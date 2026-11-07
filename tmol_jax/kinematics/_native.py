@@ -87,8 +87,7 @@ def forward_coordinates(dofs, tree, forward, backward):
     register("tmol_forward_kinematics")
     register("tmol_kinematic_vjp")
 
-    def execute(x, plan, derivative, *residual):
-        nodes, scans, generations = plan
+    def execute(x, tree, nodes, scans, generations, derivative, *residual):
         generations = np.asarray(generations)
         if (
             generations.dtype != np.int32
@@ -128,19 +127,22 @@ def forward_coordinates(dofs, tree, forward, backward):
         )
 
     @jax.custom_vjp
-    def transform(x):
-        return execute(x, forward, False)[0]
+    def transform(x, indices):
+        tree, fnodes, fscans, _, _ = indices
+        return execute(x, tree, fnodes, fscans, forward[2], False)[0]
 
-    def transform_forward(x):
-        coords, hts = execute(x, forward, False)
-        return coords, (x, hts)
+    def transform_forward(x, indices):
+        tree, fnodes, fscans, bnodes, bscans = indices
+        coords, hts = execute(x, tree, fnodes, fscans, forward[2], False)
+        return coords, (x, hts, tree, bnodes, bscans)
 
     def transform_backward(residual, dcoords):
-        x, hts = residual
-        return (execute(x, backward, True, dcoords, hts)[0],)
+        x, hts, tree, nodes, scans = residual
+        gradient = execute(x, tree, nodes, scans, backward[2], True, dcoords, hts)[0]
+        return gradient, None
 
     transform.defvjp(transform_forward, transform_backward)
-    return transform(dofs)
+    return transform(dofs, (tree, *forward[:2], *backward[:2]))
 
 
 @lru_cache(maxsize=None)

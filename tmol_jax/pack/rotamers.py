@@ -380,9 +380,6 @@ def _assembly_plan(
         row_plan(np.concatenate(copied), coordinate_offsets) if copied else None
     )
     selections = tuple(integer(s) for s in destinations)
-    dof_selections = tuple(
-        (i, selected) for i, selected in enumerate(selections) if not direct[i]
-    )
     chi_samplers = tuple(
         not (copy or coordinates) for copy, coordinates in zip(copy_input, direct)
     )
@@ -410,87 +407,48 @@ def _assembly_plan(
             for s, chi, selected in zip(samplers, chi_samplers, destinations)
         )
 
-    def copy_rows(target, source, plan, root_shift):
-        source_offsets, destination_offsets, prefix, n_rows = plan
-        return copy_conformer_rows(
-            target,
-            source,
-            source_offsets,
-            destination_offsets,
-            prefix,
-            n_rows=n_rows,
-            root_shift=root_shift,
-        )
+    def arrays(plans):
+        return tuple(None if p is None else p[:-1] for p in plans)
 
-    @jax.jit
-    def execute(coords, payloads):
-        if not has_chi:
-            coordinates = jnp.zeros((layout.total, 3), coords.dtype)
-            if copied_rows is not None:
-                coordinates = copy_rows(
-                    coordinates, coords.reshape(-1, 3), copied_rows, 0
+    def counts(plans):
+        return tuple(None if p is None else p[-1] for p in plans)
+
+    execute = partial(
+        _execute_assembly,
+        plan=(
+            geometry,
+            source_geometry,
+            ideal,
+            type_indices,
+            target_offsets,
+            selections,
+            tuple(chi_plans),
+            arrays(copy_plans),
+            arrays(coordinate_plans),
+            None if copied_rows is None else copied_rows[:-1],
+            (
+                (
+                    fingerprints.source_fingerprint,
+                    fingerprints.source_atom_mapping,
+                    fingerprints.atom_mapping,
                 )
-            return _copy_coordinate_payloads(coordinates, payloads, coordinate_plans)
-        dofs = ideal
-        source_dofs = source_geometry.inverse(coords)
-        for i, selected in dof_selections:
-            if copy_input[i]:
-                dofs = copy_rows(dofs, source_dofs, copy_plans[i], 1)
-            else:
-                if opth_options[i] is not None:
-                    dofs = copy_rows(dofs, source_dofs, copy_plans[i], 1)
-                    dofs = reset_opth_dofs(
-                        dofs,
-                        packed.dofs_ideal.astype(coords.dtype),
-                        type_indices,
-                        target_offsets,
-                        selected,
-                        payloads[i][1],
-                        opth_metadata[i]["nhq_downstream_kfo"],
-                        opth_metadata[i]["nhq_downstream_count"],
-                        flip=opth_options[i][0],
-                    )
-                elif len(selected) and fingerprints.atom_mapping.shape[1]:
-                    dofs = copy_conformer_dofs(
-                        dofs,
-                        source_dofs,
-                        *chi_plans[i],
-                        fingerprints.source_fingerprint,
-                        fingerprints.source_atom_mapping,
-                        fingerprints.atom_mapping,
-                        kinematic_index,
-                        sampler=sampler_indices[i],
-                    )
-                angles, defining = payloads[i]
-                dofs = assign_conformer_chi(
-                    dofs,
-                    angles,
-                    type_indices,
-                    target_offsets,
-                    selected,
-                    defining,
-                    kinematic_index,
-                    ring_corrections,
-                )
-        trial = geometry.forward(dofs)
-        for i, (copy, selected) in enumerate(zip(copy_input, selections)):
-            if chi_samplers[i]:
-                angles, defining = payloads[i]
-                dofs = correct_conformer_chi(
-                    dofs,
-                    angles,
-                    trial,
-                    type_indices,
-                    target_offsets,
-                    selected,
-                    defining,
-                    chi_atoms,
-                    kinematic_index,
-                )
-        coordinates = geometry.forward(dofs)
-        if copied_rows is not None:
-            coordinates = copy_rows(coordinates, coords.reshape(-1, 3), copied_rows, 0)
-        return _copy_coordinate_payloads(coordinates, payloads, coordinate_plans)
+                if has_chi
+                else ()
+            ),
+            kinematic_index if has_chi else None,
+            chi_atoms if has_chi else None,
+            ring_corrections if has_chi else None,
+            tuple(opth_metadata),
+            packed.dofs_ideal,
+        ),
+        total=layout.total,
+        copy_input=copy_input,
+        opth_options=tuple(None if opt is None else opt[0] for opt in opth_options),
+        sampler_indices=sampler_indices if has_chi else (),
+        copy_counts=counts(copy_plans),
+        coordinate_counts=counts(coordinate_plans),
+        copied_count=None if copied_rows is None else copied_rows[-1],
+    )
 
     origins = prepare_conformer_origins(shape, pose_of, block_of, choices)
     counts_pose, offsets_pose, counts_block, offsets_block, rot_pose, rot_block = map(
@@ -526,3 +484,145 @@ def _assembly_plan(
         context=ConformerContext(poses),
     )
     return execute, fields
+
+
+def _copy_rows(target, source, plan, root_shift):
+    source_offsets, destination_offsets, prefix, n_rows = plan
+    return copy_conformer_rows(
+        target,
+        source,
+        source_offsets,
+        destination_offsets,
+        prefix,
+        n_rows=n_rows,
+        root_shift=root_shift,
+    )
+
+
+@partial(
+    jax.jit,
+    static_argnames=(
+        "total",
+        "copy_input",
+        "opth_options",
+        "sampler_indices",
+        "copy_counts",
+        "coordinate_counts",
+        "copied_count",
+    ),
+)
+def _execute_assembly(
+    coords,
+    payloads,
+    plan,
+    *,
+    total,
+    copy_input,
+    opth_options,
+    sampler_indices,
+    copy_counts,
+    coordinate_counts,
+    copied_count,
+):
+    """Execute shared prepared topology with explicit arrays, reusable across tasks."""
+    (
+        geometry,
+        source_geometry,
+        ideal,
+        type_indices,
+        target_offsets,
+        selections,
+        chi_plans,
+        copy_arrays,
+        coordinate_arrays,
+        copied_arrays,
+        fingerprints,
+        kinematic_index,
+        chi_atoms,
+        ring_corrections,
+        opth_metadata,
+        packed_ideal,
+    ) = plan
+    copy_plans = tuple(
+        None if n is None else (*a, n) for a, n in zip(copy_arrays, copy_counts)
+    )
+    coordinate_plans = tuple(
+        None if n is None else (*a, n)
+        for a, n in zip(coordinate_arrays, coordinate_counts)
+    )
+    copied_rows = None if copied_count is None else (*copied_arrays, copied_count)
+    chi_samplers = tuple(
+        not (copy or count is not None)
+        for copy, count in zip(copy_input, coordinate_counts)
+    )
+    has_chi = any(chi_samplers)
+    dof_selections = tuple(
+        (i, selected)
+        for i, selected in enumerate(selections)
+        if coordinate_counts[i] is None
+    )
+    if not has_chi:
+        coordinates = jnp.zeros((total, 3), coords.dtype)
+        if copied_rows is not None:
+            coordinates = _copy_rows(coordinates, coords.reshape(-1, 3), copied_rows, 0)
+        return _copy_coordinate_payloads(coordinates, payloads, coordinate_plans)
+    dofs = ideal
+    source_dofs = source_geometry.inverse(coords)
+    for i, selected in dof_selections:
+        if copy_input[i]:
+            dofs = _copy_rows(dofs, source_dofs, copy_plans[i], 1)
+        else:
+            if opth_options[i] is not None:
+                dofs = _copy_rows(dofs, source_dofs, copy_plans[i], 1)
+                dofs = reset_opth_dofs(
+                    dofs,
+                    packed_ideal.astype(coords.dtype),
+                    type_indices,
+                    target_offsets,
+                    selected,
+                    payloads[i][1],
+                    opth_metadata[i]["nhq_downstream_kfo"],
+                    opth_metadata[i]["nhq_downstream_count"],
+                    flip=opth_options[i],
+                )
+            elif len(selected) and fingerprints[2].shape[1]:
+                dofs = copy_conformer_dofs(
+                    dofs,
+                    source_dofs,
+                    *chi_plans[i],
+                    fingerprints[0],
+                    fingerprints[1],
+                    fingerprints[2],
+                    kinematic_index,
+                    sampler=sampler_indices[i],
+                )
+            angles, defining = payloads[i]
+            dofs = assign_conformer_chi(
+                dofs,
+                angles,
+                type_indices,
+                target_offsets,
+                selected,
+                defining,
+                kinematic_index,
+                ring_corrections,
+            )
+    trial = geometry.forward(dofs)
+    for i, (copy, selected) in enumerate(zip(copy_input, selections)):
+        if chi_samplers[i]:
+            angles, defining = payloads[i]
+            dofs = correct_conformer_chi(
+                dofs,
+                angles,
+                trial,
+                type_indices,
+                target_offsets,
+                selected,
+                defining,
+                chi_atoms,
+                kinematic_index,
+            )
+    coordinates = geometry.forward(dofs)
+    if copied_rows is not None:
+        coordinates = _copy_rows(coordinates, coords.reshape(-1, 3), copied_rows, 0)
+    return _copy_coordinate_payloads(coordinates, payloads, coordinate_plans)
