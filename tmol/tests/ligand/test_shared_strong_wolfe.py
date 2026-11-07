@@ -179,3 +179,29 @@ def test_compiled_direction_hook_retains_optimizer_history_policy():
     assert max(counts) == 2
     assert 1 in counts
     assert hooked["fun"] < 1e-8
+
+
+def test_failed_search_is_not_relative_convergence():
+    from tmol_core.optimization.strong_wolfe import lbfgs_minimize
+
+    x = torch.zeros(1, dtype=torch.float64)
+
+    def evaluate(trial):
+        value = 1.0 if bool((trial == 0).all()) else float("inf")
+        return value, torch.ones_like(trial)
+
+    result = lbfgs_minimize(
+        evaluate,
+        x,
+        _TorchLBFGSExecution,
+        max_iter=3,
+        max_eval=float("inf"),
+        tolerance_change=None,
+        relative_loss_tolerance=1e-6,
+        line_search_max_iter=2,
+    )
+    assert result["reason"] == "line_search_failed"
+    assert result["n_iter"] == 1
+    assert result["fun"] == 1.0
+    torch.testing.assert_close(result["x"], x, rtol=0, atol=0)
+    assert torch.count_nonzero(result["grad"]) == 1

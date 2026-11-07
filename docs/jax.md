@@ -448,8 +448,8 @@ Unknown input atom names reject instead of being dropped. PDB loading selects
 the first model/alternate location; represent
 chain breaks explicitly. Float32 reductions and torsion formulas differ between
 execution routes, so energies and gradients need scientifically justified
-term-specific tolerances. The separate L-BFGS implementation need not follow the
-same trajectory or stopping point as Torch.
+term-specific tolerances. Both minimizers use common optimizer policies with framework-specific array
+execution. Floating reductions can still change trajectories and stopping points.
 
 Record setup, compilation and steady execution separately; synchronize with
 `block_until_ready()` for timing. Portable pair tables and the dense topology compatibility array still have
@@ -512,8 +512,12 @@ pass an explicit `seed`; `tmol_jax.relax.DefaultCartesianMinimizer(max_iter=...)
 and `DefaultKinematicMinimizer` configure minimization. Existing packing
 capability limits apply. The public minimizers and these callbacks default to
 shared per-pose L-BFGS/Armijo, including mature convergence, iteration and history
-settings. Explicit `optimizer="strong_wolfe"` retains the earlier summed-objective
-execution. End-to-end runtime and peak-memory parity remain unresolved.
+settings. Explicit `optimizer="strong_wolfe"` minimizes the summed objective with
+the common strong-Wolfe search and L-BFGS recurrence. JAX supplies fixed-capacity
+device history storage and compiled array operations; movement masks and public
+relative-loss stopping settings remain supported. The shared search can choose
+different trials from earlier JAX releases. End-to-end runtime and peak-memory
+parity remain unresolved.
 
 `tmol_jax.build_context_from_atom_array()` prepares reusable chemistry and
 parameters. `tmol_jax.pose_stack_from_atom_array(..., return_context=True)`
