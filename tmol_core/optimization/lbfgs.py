@@ -98,3 +98,32 @@ def compact_lbfgs_direction(
         result = q + execution.einsum("pi,ipk->pk", p, S)
     result = execution.cast(result, out_dtype)
     return result.squeeze(0) if unbatched else result
+
+
+def two_loop_direction(
+    gradient, steps, differences, inverse_curvatures, scale, count, execution
+):
+    """Apply chronological L-BFGS history with an explicit initial-Hessian scale.
+
+    Histories have shape (capacity, coordinates), or are host sequences of
+    coordinate arrays. Only the first ``count`` entries are active. Execution
+    owns compiled loops, dot/scaled-add operations and coefficient storage;
+    the two-loop recurrence is shared unchanged across frameworks.
+    """
+    coefficients = execution.zero_coefficients(inverse_curvatures)
+
+    def backward(offset, state):
+        q, coefficients = state
+        i = count - 1 - offset
+        alpha = execution.dot(steps[i], q) * inverse_curvatures[i]
+        q = execution.add_scaled(q, differences[i], -alpha)
+        coefficients = execution.set_coefficient(coefficients, i, alpha)
+        return q, coefficients
+
+    q, coefficients = execution.fori_loop(0, count, backward, (-gradient, coefficients))
+
+    def forward(i, direction):
+        beta = execution.dot(differences[i], direction) * inverse_curvatures[i]
+        return execution.add_scaled(direction, steps[i], coefficients[i] - beta)
+
+    return execution.fori_loop(0, count, forward, q * scale)

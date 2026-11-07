@@ -93,7 +93,13 @@ files, residue registration, conjugate chemistry and chemical fragmentation.
 Distance-geometry preparation shares targets, bounds, planar embedding, seeds and
 restart selection. Its `ConformerExecution` protocol requires an executor for
 planar/chiral/stress refinement. Complete supplied coordinates and authoritative
-charges need no executor; this does not establish JAX regeneration support.
+charges need no executor; this does not establish JAX regeneration support. Ligand
+refinement uses the shared host strong-Wolfe/L-BFGS policy in
+`tmol_core.optimization.strong_wolfe`; executors provide objective derivatives
+and native array reductions and scaled additions. The policy preserves stored
+precision and does not import either framework. Its two-loop recurrence accepts
+host or compiled loops over fixed-capacity history; optional relative-loss and
+line-search controls leave the mature defaults intact.
 
 Atom37 host routing validates residue/atom ranges and unique source slots;
 frameworks scatter coordinates using its paired indices. The default protein

@@ -4,3 +4,7 @@ University of Washington. See the distribution's BSD-3-Clause LICENSE.
 The vendored PySMILES implementation is Copyright 2018 Peter C Kroon,
 licensed under Apache-2.0. See extern/pysmiles/LICENSE.md and the notices
 in the individual source files.
+
+The shared strong-Wolfe/L-BFGS policy is adapted from PyTorch's optimizer,
+licensed under BSD-3-Clause. See optimization/PYTORCH_LICENSE for the original
+copyright notices and terms.

@@ -10,6 +10,9 @@ from tmol_core.io.pdb_info import (
 )
 
 
+_UNSPECIFIED = object()
+
+
 @attrs.define(init=False, slots=False)
 class PDBInfo(CommonPDBInfo):
     """Shared metadata with the original JAX label aliases and constructor."""
@@ -19,15 +22,15 @@ class PDBInfo(CommonPDBInfo):
 
     def __init__(
         self,
-        chain_id=None,
-        res_num=None,
+        chain_id=_UNSPECIFIED,
+        res_num=_UNSPECIFIED,
         res_name=None,
         atom_record_type=None,
         **metadata,
     ):
-        if chain_id is not None:
+        if chain_id is not _UNSPECIFIED:
             metadata["chain_labels"] = chain_id
-        if res_num is not None:
+        if res_num is not _UNSPECIFIED:
             metadata["residue_labels"] = res_num
         super().__init__(
             **{

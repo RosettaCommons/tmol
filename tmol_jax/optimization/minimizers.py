@@ -131,6 +131,9 @@ def _minimize_selected(
             ftol,
             line_search_max_iter,
             verbose,
+            value_and_grad=_rendered_wolfe_gradient(
+                coordinate_scorer, initial, coordinate_map
+            ),
         )
     if optimizer != "armijo":
         raise ValueError("optimizer must be 'armijo' or 'strong_wolfe'")
@@ -179,8 +182,44 @@ def _prepare_minimization(pose_stack, score_function, constraint_set):
     return coords, scorer
 
 
+@jax.jit
+def _sum_flat_gradient(values, gradient):
+    return values.sum(), gradient.reshape(-1)
+
+
+def _rendered_wolfe_gradient(scorer, initial, coordinate_map):
+    """Bind fresh scorer operands to its existing reusable gradient executable."""
+    if scorer is None:
+        return None
+    if coordinate_map is None:
+        evaluate = scorer.value_and_grad()
+        shape = scorer.shape
+    else:
+        shape = initial.shape
+        _, evaluate = scorer.compact_objective(
+            initial.reshape(coordinate_map.initial_dofs.shape),
+            jnp.arange(initial.size, dtype=jnp.int32, device=initial.device),
+            jnp.arange(scorer.shape[0], dtype=jnp.int32, device=initial.device),
+            coordinate_map,
+        )
+
+    def value_and_grad(flat):
+        return _sum_flat_gradient(*evaluate(flat.reshape(shape)))
+
+    return value_and_grad
+
+
 def _minimize(
-    energy, x0, mask, max_iter, history, gtol, ftol, line_search_max_iter, verbose
+    energy,
+    x0,
+    mask,
+    max_iter,
+    history,
+    gtol,
+    ftol,
+    line_search_max_iter,
+    verbose,
+    value_and_grad=None,
 ):
     with jax.default_device(x0.device):
         result = lbfgs_minimize(
@@ -193,7 +232,7 @@ def _minimize(
             grad_mask=mask,
             line_search_max_iter=line_search_max_iter,
             verbose=verbose,
-            value_and_grad=jax.jit(jax.value_and_grad(energy)),
+            value_and_grad=value_and_grad or jax.jit(jax.value_and_grad(energy)),
         )
     return _validate_minimum(result)
 
@@ -281,7 +320,9 @@ def run_kin_min(
         verbose,
         optimizer,
         optimizer_kwargs,
-        coordinate_scorer=scorer if hasattr(scorer, "compact_objective") else None,
+        coordinate_scorer=(
+            scorer if movable and hasattr(scorer, "compact_objective") else None
+        ),
         coordinate_map=mapping,
     )
     final_coords = coordinates(result["x"])
