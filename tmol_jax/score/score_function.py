@@ -14,7 +14,7 @@ from .score_types import ScoreType
 from ._execution import render_execution
 
 from tmol_core.scoring.channels import TERM_CHANNELS, TERM_N_BODIES
-from tmol_core.scoring.score_function import ScoreTermLifecycle
+from tmol_core.scoring.score_function import ScoreTermLifecycle, sorted_score_terms
 
 _TERM_TYPES = {
     module: (name, TERM_CHANNELS[module])
@@ -173,6 +173,14 @@ class ScoreFunction(ScoreTermLifecycle):
 
     def active_score_types(self):
         return sorted(st for st in self.all_score_types() if self.get_weight(st) != 0)
+
+    def pre_work_initialization(self, pose_stack):
+        """Prepare the active molecular topology and parameters without execution."""
+        self.render_whole_pose_scoring_module(pose_stack)
+
+    @staticmethod
+    def get_sorted_terms(term_list):
+        return sorted_score_terms(term_list, len(ScoreType), _provided_channels)
 
     def _setup(self, pose_stack, constraint_set=None, omit=()):
         if not np.isfinite(np.asarray(pose_stack.coords)).all():
