@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Optional
+from functools import partial
 
 import attr
 import jax
@@ -10,6 +11,20 @@ import jax.numpy as jnp
 import numpy as np
 
 from tmol_jax.types import pytree_dataclass
+
+
+@partial(jax.jit, static_argnames=("capacity",))
+def _atom_is_real(type_atom_counts, block_types, offsets, capacity):
+    """Compile the existing interval mask as one device computation."""
+    n_atoms = type_atom_counts[jnp.maximum(block_types, 0)]
+    real = block_types >= 0
+    counts = jnp.where(real, n_atoms, 0)
+    starts = jnp.maximum(offsets, 0)
+    pose = jnp.arange(block_types.shape[0])[:, None]
+    edges = jnp.zeros((block_types.shape[0], capacity + 1), jnp.int32)
+    edges = edges.at[pose, starts].add(real.astype(jnp.int32))
+    edges = edges.at[pose, starts + counts].add(-real.astype(jnp.int32))
+    return jnp.cumsum(edges[:, :-1], axis=1) > 0
 
 
 @pytree_dataclass
@@ -166,15 +181,12 @@ class PoseStack:
     @property
     def atom_is_real(self):
         """Mask packed atoms by topology, independent of their positions."""
-        n_atoms = self.packed_block_types.n_atoms[jnp.maximum(self.block_type_ind, 0)]
-        real = self.block_type_ind >= 0
-        counts = jnp.where(real, n_atoms, 0)
-        starts = jnp.maximum(self.block_coord_offset, 0)
-        pose = jnp.arange(self.n_poses)[:, None]
-        edges = jnp.zeros((self.n_poses, self.coords.shape[1] + 1), jnp.int32)
-        edges = edges.at[pose, starts].add(real.astype(jnp.int32))
-        edges = edges.at[pose, starts + counts].add(-real.astype(jnp.int32))
-        return jnp.cumsum(edges[:, :-1], axis=1) > 0
+        return _atom_is_real(
+            self.packed_block_types.n_atoms,
+            self.block_type_ind,
+            self.block_coord_offset,
+            self.coords.shape[1],
+        )
 
     @property
     def device(self):
