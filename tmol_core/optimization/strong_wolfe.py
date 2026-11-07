@@ -6,6 +6,8 @@ stopping rules match the mature optimizer. Array operations remain compiled
 backend primitives; this module imports neither framework nor NumPy.
 """
 
+from .lbfgs import two_loop_direction
+
 
 def _cubic_interpolate(execution, x1, f1, g1, x2, f2, g2, bounds=None):
     # ported from https://github.com/torch/optim/blob/master/polyinterp.lua
@@ -35,7 +37,7 @@ def _cubic_interpolate(execution, x1, f1, g1, x2, f2, g2, bounds=None):
         return (xmin_bound + xmax_bound) / 2.0
 
 
-def _strong_wolfe(
+def strong_wolfe(
     execution,
     obj_func,
     x,
@@ -49,6 +51,12 @@ def _strong_wolfe(
     tolerance_change=1e-9,
     max_ls=25,
 ):
+    """Return value, gradient, step and evaluation count from bracket/zoom.
+
+    ``obj_func(x, step, direction)`` evaluates one trial. ``max_ls`` counts
+    refinement iterations after the initial evaluation, as in the mature
+    optimizer. Frontends own objective validation and coordinate masks.
+    """
     # ported from https://github.com/torch/optim/blob/master/lswolfe.lua
     d_norm = execution.abs_max(d)
     g = execution.clone(g)
@@ -196,6 +204,40 @@ def _strong_wolfe(
     return f_new, g_new, t, ls_func_evals
 
 
+# Kept for callers of the initial shared implementation.
+_strong_wolfe = strong_wolfe
+
+
+class _HostTwoLoop:
+    def __init__(self, execution):
+        self.dot = execution.dot
+        self.add_scaled = execution.add_scaled
+
+    @staticmethod
+    def zero_coefficients(inverse_curvatures):
+        return [None] * len(inverse_curvatures)
+
+    @staticmethod
+    def set_coefficient(coefficients, index, value):
+        coefficients[index] = value
+        return coefficients
+
+    @staticmethod
+    def fori_loop(start, stop, body, state):
+        for index in range(start, stop):
+            state = body(index, state)
+        return state
+
+
+def _validate_wolfe_settings(c1, c2, line_search_max_iter, relative_loss_tolerance):
+    if not 0 < c1 < c2 < 1:
+        raise ValueError("expected 0 < c1 < c2 < 1")
+    if line_search_max_iter is not None and line_search_max_iter < 1:
+        raise ValueError("line_search_max_iter must be positive")
+    if relative_loss_tolerance is not None and relative_loss_tolerance < 0:
+        raise ValueError("relative_loss_tolerance must be nonnegative")
+
+
 def lbfgs_minimize(
     value_and_grad,
     x,
@@ -207,6 +249,11 @@ def lbfgs_minimize(
     max_eval=None,
     tolerance_grad=1e-7,
     tolerance_change=1e-9,
+    c1=1e-4,
+    c2=0.9,
+    line_search_max_iter=None,
+    relative_loss_tolerance=None,
+    accepted_step=None,
 ):
     """Minimize one flat real coordinate array with mature strong-Wolfe policy.
 
@@ -215,9 +262,22 @@ def lbfgs_minimize(
     sqrt. Reductions return backend scalars to preserve input precision. Neither
     execution nor the callback may mutate supplied arrays; add_scaled returns
     x + alpha*y with the backend's native scaled-add semantics.
+
+    Defaults retain the mature stopping order and evaluation budget. Pass
+    ``max_eval=float("inf")`` for no total evaluation limit, and
+    ``tolerance_change=None`` to disable absolute loss/step/directional stops.
+    ``line_search_max_iter`` caps objective evaluations per line search.
+    ``relative_loss_tolerance`` optionally tests twice the absolute loss change
+    against the tolerance times the sum of absolute losses plus 1e-10.
+    ``accepted_step(iteration, x, value, gradient)`` observes
+    each accepted update before stopping checks; it must not mutate arrays.
+    An optional execution.two_loop hook accepts gradient, chronological steps,
+    differences, inverse curvatures and scale; compiled adapters should call
+    the shared two_loop_direction recurrence with their storage/loop executor.
     """
     if max_iter < 0 or history_size < 1 or lr < 0:
         raise ValueError("invalid L-BFGS iteration, history or learning-rate setting")
+    _validate_wolfe_settings(c1, c2, line_search_max_iter, relative_loss_tolerance)
     if max_eval is None:
         max_eval = max_iter * 5 // 4
     x = execution.clone(x)
@@ -228,6 +288,8 @@ def lbfgs_minimize(
     old_dirs, old_steps, rho = [], [], []
     previous_gradient, direction, step = None, None, None
     scale = 1
+    two_loop = getattr(execution, "two_loop", None)
+    host_two_loop = _HostTwoLoop(execution)
     if execution.abs_max(gradient) <= tolerance_grad:
         reason = "gradient_tolerance"
     else:
@@ -247,24 +309,25 @@ def lbfgs_minimize(
                     old_steps.append(s)
                     rho.append(1.0 / ys)
                     scale = ys / execution.dot(y, y)
-                alpha = [None] * len(old_dirs)
-                q = -gradient
-                for i in range(len(old_dirs) - 1, -1, -1):
-                    alpha[i] = execution.dot(old_steps[i], q) * rho[i]
-                    q = execution.add_scaled(q, old_dirs[i], -alpha[i])
-                direction = q * scale
-                for i in range(len(old_dirs)):
-                    beta = execution.dot(old_dirs[i], direction) * rho[i]
-                    direction = execution.add_scaled(
-                        direction, old_steps[i], alpha[i] - beta
+                if two_loop is None:
+                    direction = two_loop_direction(
+                        gradient,
+                        old_steps,
+                        old_dirs,
+                        rho,
+                        scale,
+                        len(old_dirs),
+                        host_two_loop,
                     )
+                else:
+                    direction = two_loop(gradient, old_steps, old_dirs, rho, scale)
             previous_gradient = execution.clone(gradient)
             previous_loss = loss
             step = (
                 min(1.0, 1.0 / execution.abs_sum(gradient)) * lr if n_iter == 1 else lr
             )
             gtd = execution.dot(gradient, direction)
-            if gtd > -tolerance_change:
+            if tolerance_change is not None and gtd > -tolerance_change:
                 reason = "directional_derivative"
                 break
 
@@ -274,7 +337,7 @@ def lbfgs_minimize(
                 )
                 return float(value), grad
 
-            loss, gradient, step, evaluations = _strong_wolfe(
+            loss, gradient, step, evaluations = strong_wolfe(
                 execution,
                 evaluate,
                 x,
@@ -283,10 +346,18 @@ def lbfgs_minimize(
                 loss,
                 gradient,
                 gtd,
-                max_ls=max_eval - n_eval,
+                c1=c1,
+                c2=c2,
+                max_ls=(
+                    max_eval - n_eval
+                    if line_search_max_iter is None
+                    else min(max_eval - n_eval, line_search_max_iter - 1)
+                ),
             )
             x = execution.add_scaled(x, direction, step)
             n_eval += evaluations
+            if accepted_step is not None:
+                accepted_step(n_iter, x, loss, gradient)
             # Preserve the mature stopping order, including the evaluation
             # budget checked after a completed line search.
             if n_iter == max_iter:
@@ -298,11 +369,22 @@ def lbfgs_minimize(
             if execution.abs_max(gradient) <= tolerance_grad:
                 reason = "gradient_tolerance"
                 break
-            if execution.abs_max(direction * step) <= tolerance_change:
+            if (
+                tolerance_change is not None
+                and execution.abs_max(direction * step) <= tolerance_change
+            ):
                 reason = "step_tolerance"
                 break
-            if abs(loss - previous_loss) < tolerance_change:
+            if (
+                tolerance_change is not None
+                and abs(loss - previous_loss) < tolerance_change
+            ):
                 reason = "loss_tolerance"
+                break
+            if relative_loss_tolerance is not None and 2 * abs(
+                loss - previous_loss
+            ) <= relative_loss_tolerance * (abs(loss) + abs(previous_loss) + 1e-10):
+                reason = "relative_loss_tolerance"
                 break
     return dict(
         x=x, fun=loss, grad=gradient, n_iter=n_iter, n_eval=n_eval, reason=reason
