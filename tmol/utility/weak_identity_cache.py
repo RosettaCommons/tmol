@@ -7,6 +7,9 @@ import torch
 
 from tmol_core.weak_identity_cache import WeakIdentityLRU as _WeakIdentityLRU
 
+# Exact built-in scalars cannot contain tensors or participate in container cycles.
+_SCALAR_LEAF_TYPES = frozenset((str, bytes, int, float, complex, bool, type(None)))
+
 
 def _cuda_devices(value):
     """Find CUDA tensor devices nested in supported cache value containers."""
@@ -15,6 +18,8 @@ def _cuda_devices(value):
     seen = set()
     while pending:
         item = pending.pop()
+        if type(item) in _SCALAR_LEAF_TYPES:
+            continue
         item_id = id(item)
         if item_id in seen:
             continue
