@@ -21,7 +21,7 @@ class NativeBuildExt(build_ext):
             raise RuntimeError(f"Native build compiler unavailable: {compiler}")
         output = Path(self.get_ext_fullpath(extension.name)).resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
-        flags = ["-std=c++17", "-O3", "-shared"]
+        flags = ["-std=c++17", "-O3"]
         if cuda:
             flags += [
                 "--expt-relaxed-constexpr",
@@ -36,22 +36,57 @@ class NativeBuildExt(build_ext):
                     flags.append(f"-gencode=arch=compute_{arch},code=sm_{arch}")
         else:
             flags += ["-fPIC", "-pthread"]
-        command = [
-            *compiler,
-            *flags,
+        includes = [
             f"-I{jax.ffi.include_dir()}",
             "-Iinclude",
             "-Iinclude/tmol/extern",
-            *extension.sources,
-            "-o",
-            str(output),
         ]
-        subprocess.run(command, check=True)
+        commands = []
+        sources = extension.sources
+        if cuda:
+            objects = []
+            temporary = Path(self.build_temp).resolve()
+            temporary.mkdir(parents=True, exist_ok=True)
+            for source in sources:
+                obj = temporary / (Path(source).stem + ".o")
+                # Torch applies this policy to LJ/LK and electrostatic kernels.
+                # Never apply it to torsion, bonded or kinematic execution.
+                math_flags = (
+                    ["--use_fast_math"] if source == "nonbonded_cuda.cu" else []
+                )
+                commands.append(
+                    [
+                        *compiler,
+                        *flags,
+                        *math_flags,
+                        *includes,
+                        "-c",
+                        source,
+                        "-o",
+                        str(obj),
+                    ]
+                )
+                objects.append(str(obj))
+            command = [*compiler, "-shared", *objects, "-o", str(output)]
+        else:
+            command = [
+                *compiler,
+                *flags,
+                "-shared",
+                *includes,
+                *sources,
+                "-o",
+                str(output),
+            ]
+        commands.append(command)
+        for invocation in commands:
+            subprocess.run(invocation, check=True)
         manifest = {
             "compiler": subprocess.check_output(
                 [*compiler, "--version"], text=True
             ).strip(),
             "command": command,
+            "commands": commands,
             "jax_version": jax.__version__,
             "library_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
         }
@@ -64,7 +99,11 @@ extensions = [
     Extension("tmol_jax_native._tmol_cpu", ["genbonded_cpu.cpp", "refinement.cpu.cpp"])
 ]
 if os.environ.get("TMOL_JAX_NATIVE_CUDA", "0") == "1":
-    extensions.append(Extension("tmol_jax_native._tmol_cuda", ["genbonded_cuda.cu"]))
+    extensions.append(
+        Extension(
+            "tmol_jax_native._tmol_cuda", ["genbonded_cuda.cu", "nonbonded_cuda.cu"]
+        )
+    )
 
 setup(
     ext_modules=extensions,
