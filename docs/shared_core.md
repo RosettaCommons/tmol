@@ -115,6 +115,12 @@ membership and term ordering. Weight storage, term creation and device cache
 invalidation are frontend hooks; previously rendered scorers retain their
 snapshots when the score function changes.
 
+Notebook rendering lives in `tmol_core.io.visualize`. Frontends supply only a
+lazy pose-to-AtomArray conversion; PDB text, Biotite structures, atom selections
+and HTML rendering share one implementation. PDB display loads neither
+AtomWorks nor a numerical framework; CIF and ligand I/O load their dependencies
+when those operations are requested.
+
 ## Building and validating
 
 ```bash
