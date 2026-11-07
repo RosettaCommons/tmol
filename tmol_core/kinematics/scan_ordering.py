@@ -263,6 +263,8 @@ def validate_scan_plan(parent, nodes, scans, gens, *, reverse=False):
         raise ValueError("gens must contain start/end rows of two offsets")
     if numpy.any(gens[0] != 0) or numpy.any(gens[-1] != [len(nodes), len(scans)]):
         raise ValueError("gens endpoints must span all nodes and scans")
+    if numpy.any(gens < 0) or numpy.any(gens > [len(nodes), len(scans)]):
+        raise ValueError("gens offsets must stay within node and scan ranges")
     if numpy.any(numpy.diff(gens, axis=0) < 0):
         raise ValueError("gens offsets must be monotonic")
     if numpy.any(nodes < 0) or numpy.any(nodes >= len(parent)):
@@ -279,26 +281,34 @@ def validate_scan_plan(parent, nodes, scans, gens, *, reverse=False):
             raise ValueError("scan offsets must define nonempty disjoint paths")
     if reverse:
         nodes, scans, gens = _reverse_plan(nodes, scans, gens)
-    visited = numpy.zeros(len(parent), dtype=bool)
-    if len(parent):
-        visited[0] = True
-    ready = visited.copy()
-    for (nb, sb), (ne, se) in zip(gens[:-1], gens[1:]):
-        for index in range(sb, se):
-            begin = nb + scans[index]
-            end = nb + scans[index + 1] if index + 1 < se else ne
-            path = nodes[begin:end]
-            if not ready[path[0]]:
-                raise ValueError("scan path depends on an unfinished generation")
-            if numpy.any(parent[path[1:]] != path[:-1]):
-                raise ValueError("scan path does not follow the forest parent edges")
-            if numpy.any(visited[path[1:]]):
-                raise ValueError("a forest edge is visited more than once")
-            visited[path[1:]] = True
-        ready[:] = visited
-    if not numpy.all(visited):
-        raise ValueError("scan plan does not cover every forest edge")
+    _validate_scan_edges(parent, nodes, scans, gens)
     return plan
+
+
+def _validate_scan_edges(parent, nodes, scans, gens):
+    """Check all path edges together, without changing their execution order."""
+    node_counts = numpy.diff(gens[:, 0])
+    scan_counts = numpy.diff(gens[:, 1])
+    generation = numpy.arange(len(gens) - 1, dtype=numpy.int32)
+    scan_generation = numpy.repeat(generation, scan_counts)
+    starts = gens[scan_generation, 0] + scans
+    is_target = numpy.ones(len(nodes), dtype=bool)
+    is_target[starts] = False
+    targets = nodes[is_target]
+    if numpy.any(parent[targets] != nodes[:-1][is_target[1:]]):
+        raise ValueError("scan path does not follow the forest parent edges")
+    visits = numpy.bincount(targets, minlength=len(parent))
+    if numpy.any(visits[1:] > 1) or (len(visits) and visits[0]):
+        raise ValueError("a forest edge is visited more than once")
+    if numpy.any(visits[1:] != 1):
+        raise ValueError("scan plan does not cover every forest edge")
+    # Every non-root node is now known to be written exactly once. Reuse the
+    # count buffer to record its write generation; the virtual root is ready
+    # before generation zero. Starting nodes must come from an earlier one.
+    visits.fill(-1)
+    visits[targets] = numpy.repeat(generation, node_counts - scan_counts)
+    if numpy.any(visits[nodes[starts]] >= scan_generation):
+        raise ValueError("scan path depends on an unfinished generation")
 
 
 def prepare_scan_ordering(parent):
