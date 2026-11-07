@@ -10,7 +10,7 @@ from tmol_jax.score._native import (
     register,
     workspace_sizes,
 )
-from tmol_jax.score.energy_term import EnergyTerm
+from tmol_jax.score.energy_term import EnergyTerm, prepared_palette
 from tmol_jax.score.score_types import ScoreType
 
 
@@ -40,26 +40,36 @@ class CartBondedEnergyTerm(EnergyTerm):
         precise = pose_stack.coords.device.platform == "gpu"
         if precise:
             register("tmol_cartbonded_precise")
-        parameters = jax.device_put(
-            (
-                *bonded_pose_arguments(pose_stack, pbt),
-                host.atom_unique_ids,
-                host.atom_wildcard_ids,
-                host.atom_is_rosetta,
-                np.asarray([bt.is_ligand_fragment for bt in types], dtype=np.int32),
-                host.atom_cross_ids,
-                host.connection_hash_keys,
-                host.connection_spans,
-                host.connection_paths,
-                host.cartbonded_params_hash_keys,
-                host.cartbonded_params_hash_values,
-                host.cartbonded_subgraphs,
-                host.cartbonded_subgraph_offsets,
-                host.cartbonded_subgraph_type_counts,
-                host.cartbonded_subgraph_type_offsets,
-                host.cartbonded_subgraph_param_indices,
+        device = pose_stack.coords.device
+        chemical_arrays = prepared_palette(
+            pbt,
+            self.param_db,
+            "cartbonded",
+            lambda: jax.device_put(
+                (
+                    host.atom_unique_ids,
+                    host.atom_wildcard_ids,
+                    host.atom_is_rosetta,
+                    np.asarray([bt.is_ligand_fragment for bt in types], dtype=np.int32),
+                    host.atom_cross_ids,
+                    host.connection_hash_keys,
+                    host.connection_spans,
+                    host.connection_paths,
+                    host.cartbonded_params_hash_keys,
+                    host.cartbonded_params_hash_values,
+                    host.cartbonded_subgraphs,
+                    host.cartbonded_subgraph_offsets,
+                    host.cartbonded_subgraph_type_counts,
+                    host.cartbonded_subgraph_type_offsets,
+                    host.cartbonded_subgraph_param_indices,
+                ),
+                device=device,
             ),
-            device=pose_stack.coords.device,
+            device=device,
+        )
+        parameters = (
+            jax.device_put(bonded_pose_arguments(pose_stack, pbt), device=device)
+            + chemical_arrays
         )
 
         return parameters, precise

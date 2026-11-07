@@ -152,6 +152,8 @@ def pose_arguments(pose):
 
 def bonded_pose_arguments(pose, pbt):
     """Runtime layout and common connection paths for whole-pose kernels."""
+    if pbt.atom_paths_from_conn is not None:
+        return (*pose_arguments(pose), pbt.atom_paths_from_conn)
     from tmol_core.chemical.packed import PackedBlockTypesData
 
     paths = PackedBlockTypesData.join_atom_paths_from_conn(pbt.active_block_types)
@@ -167,13 +169,19 @@ def bonded_pose_arguments(pose, pbt):
 def atom_downstream_of_conn(pbt):
     """Shared downstream atom paths padded to the frontend's connection width."""
     from tmol_core.chemical.packed import PackedBlockTypesData
+    from tmol_jax.score.energy_term import prepared_palette
 
-    paths = PackedBlockTypesData.join_atom_downstream_of_conn(pbt.active_block_types)
-    return np.pad(
-        paths,
-        ((0, 0), (0, pbt.max_n_conn - paths.shape[1]), (0, 0)),
-        constant_values=-1,
-    )
+    def prepare():
+        paths = PackedBlockTypesData.join_atom_downstream_of_conn(
+            pbt.active_block_types
+        )
+        return np.pad(
+            paths,
+            ((0, 0), (0, pbt.max_n_conn - paths.shape[1]), (0, 0)),
+            constant_values=-1,
+        )
+
+    return prepared_palette(pbt, pbt.chem_db, "downstream", prepare)
 
 
 @lru_cache(maxsize=None)

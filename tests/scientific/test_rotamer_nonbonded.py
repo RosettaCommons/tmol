@@ -270,7 +270,7 @@ def test_sparse_custom_parameters_preserve_existing_scorer(backend, family):
             modified = attrs.evolve(
                 database, scoring=attrs.evolve(database.scoring, ljlk=ljlk)
             )
-        backend.molecule(case, terms=("ref",), parameter_database=modified)
+        backend.use_parameter_database(modified)
         changed = RotamerExecution(backend, family=family)
         actual, actual_gradient, actual_indices = changed.value_and_grad(
             coords, weights
