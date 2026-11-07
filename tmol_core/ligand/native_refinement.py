@@ -50,7 +50,7 @@ def prepare_native_refinement(
         components,
         chirals,
         index_array=lambda a: np.asarray(a, dtype=np.int32),
-        float_array=lambda a: np.asarray(a, dtype=dtype),
+        float_array=lambda a: np.ascontiguousarray(a, dtype=dtype),
     )
     offsets = np.asarray(
         [0, *np.cumsum([len(c) for c in parameters.components])], dtype=np.int32

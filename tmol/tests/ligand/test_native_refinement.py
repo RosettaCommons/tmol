@@ -21,6 +21,7 @@ from tmol_core.ligand.native_refinement import (
         "[NH3+][C@H](C)C(=O)[O-]",
         "[NH3+][C@@H](C)C(=O)[O-]",
         "CC(=O)Oc1ccccc1C(=O)O",
+        pytest.param("O=C([O-])CCCC[C@H]1SC[C@H]2NC(=O)N[C@@H]12", id="biotin"),
     ],
 )
 def chemical_plan(request):
