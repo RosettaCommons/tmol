@@ -72,14 +72,18 @@ def _sample_conformers(poses, task):
     return samplers, samples, choices, destinations, groups
 
 
-def _indices(value, *, device):
+def _host_indices(value):
     if (
         isinstance(value, np.ndarray)
         and value.size
         and (value.min() < -(1 << 31) or value.max() >= 1 << 31)
     ):
         raise OverflowError("conformer indices exceed the native int32 capacity")
-    return jax.device_put(np.asarray(value, dtype=np.int32), device)
+    return np.asarray(value, dtype=np.int32)
+
+
+def _indices(value, *, device):
+    return jax.device_put(_host_indices(value), device)
 
 
 def _validate_payloads(samples, coordinates):
@@ -451,22 +455,26 @@ def _assembly_plan(
     )
 
     origins = prepare_conformer_origins(shape, pose_of, block_of, choices)
-    counts_pose, offsets_pose, counts_block, offsets_block, rot_pose, rot_block = map(
-        integer, origins
+    # These identities are already prepared on the host. Transfer their final
+    # arrays together instead of launching device gathers for static metadata.
+    first_type = np.full(shape, -1, np.int32)
+    occupied = origins[2] > 0
+    first_type[occupied] = types[origins[3][occupied]]
+    group_ids = correlation_indices(shape, groups, origins[2])
+    atom_poses = np.repeat(origins[4], layout.n_atoms)
+    (
+        counts_pose,
+        offsets_pose,
+        counts_block,
+        offsets_block,
+        rot_pose,
+        rot_block,
+        first_type,
+        group_ids,
+        atom_poses,
+    ) = jax.device_put(
+        tuple(map(_host_indices, (*origins, first_type, group_ids, atom_poses))), device
     )
-    with jax.default_device(device):
-        first_type = (
-            jnp.where(
-                counts_block > 0,
-                type_indices[jnp.minimum(offsets_block, len(types) - 1)],
-                -1,
-            )
-            if len(types)
-            else jnp.full(shape, -1, jnp.int32)
-        )
-        atom_poses = jnp.repeat(
-            rot_pose, integer(layout.n_atoms), total_repeat_length=layout.total
-        )
     fields = dict(
         n_rots_for_pose=counts_pose,
         rot_offset_for_pose=offsets_pose,
@@ -476,7 +484,7 @@ def _assembly_plan(
         block_type_ind_for_rot=type_indices,
         block_ind_for_rot=rot_block,
         coord_offset_for_rot=target_offsets,
-        group_for_block=integer(correlation_indices(shape, groups, origins[2])),
+        group_for_block=group_ids,
         first_rot_block_type=first_type,
         pose_ind_for_atom=atom_poses,
         max_n_rots_per_pose=int(origins[0].max(initial=0)),
