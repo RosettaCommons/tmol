@@ -540,3 +540,46 @@ def test_lbfgs_armijo_wrapped_segment_histories(torch_device, first_segment_size
     optimizer.step(closure)
     assert optimizer.state[x]["n_iter"] > 4
     torch.testing.assert_close(x, torch.ones_like(x), atol=1e-6, rtol=0)
+
+
+@pytest.mark.parametrize("segmented", [False, True])
+@pytest.mark.parametrize("value_only", [False, True])
+def test_lower_precision_objective(torch_device, segmented, value_only):
+    """F64 parameters can minimize a differentiable F32 coordinate objective."""
+    x = torch.tensor(
+        [2.0, -3.0], device=torch_device, dtype=torch.float64, requires_grad=True
+    )
+    target = torch.tensor([1.0, 2.0], device=torch_device)
+    ids = torch.arange(2, device=torch_device) if segmented else None
+    optimizer = LBFGS_Armijo(
+        [x], max_iter=5, segment_ids=ids, value_only_line_search=value_only
+    )
+
+    def energy():
+        terms = (x.float() - target).square()
+        return terms if segmented else terms.sum()
+
+    def closure():
+        optimizer.zero_grad()
+        loss = energy()
+        loss.sum().backward()
+        return loss
+
+    loss = optimizer.step(closure, energy if value_only else None)
+    assert loss.dtype == x.dtype == x.grad.dtype == torch.float64
+    torch.testing.assert_close(x.float(), target, atol=1e-6, rtol=1e-6)
+    assert energy().dtype == torch.float32
+
+
+def test_objective_precision_is_not_lowered(torch_device):
+    x = torch.tensor([2.0], device=torch_device, requires_grad=True)
+    optimizer = LBFGS_Armijo([x], max_iter=2)
+
+    def closure():
+        optimizer.zero_grad()
+        loss = x.double().square().sum()
+        loss.backward()
+        return loss
+
+    with pytest.raises(TypeError, match="objective precision exceeds"):
+        optimizer.step(closure)

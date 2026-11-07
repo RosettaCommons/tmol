@@ -91,6 +91,12 @@ as above.
 
 Use Cartesian masks to select atoms; use a `MoveMap` to select torsions and jumps.
 
+Pass `kin_dtype=torch.float64` to `run_kin_min()` to use double-precision
+kinematic DOFs while retaining the pose coordinate dtype. The optimizer promotes
+lower-precision objective values to its parameter dtype for line-search storage;
+the score calculation retains its original precision. An objective with higher
+precision than the optimizer parameters raises an error.
+
 ## Relax
 
 `fast_relax()` combines repacking and minimization over a schedule of

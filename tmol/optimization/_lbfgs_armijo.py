@@ -414,10 +414,19 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
 
         A closure may return one energy per segment; the line search needs the
         total, while the convergence tests want the per-segment values.
+        Promote lower-precision objectives to parameter precision for the native
+        line search; never lower the precision of an objective.
         """
 
         def wrapped():
             loss = closure()
+            dtype = self._params[0].dtype
+            if torch.is_tensor(loss) and loss.dtype != dtype:
+                if torch.promote_types(loss.dtype, dtype) != dtype:
+                    raise TypeError(
+                        "objective precision exceeds optimizer parameter precision"
+                    )
+                loss = loss.to(dtype=dtype)
             if (
                 self._segment_ids is not None
                 and torch.is_tensor(loss)
