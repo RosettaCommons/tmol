@@ -333,7 +333,12 @@ packing leaves global random state unchanged. Independent CUDA tasks without bum
 pruning replay bounded score pages through the shared three-pass graph driver.
 CPU, correlated tasks and bump pruning retain complete score tables. Native
 graph tile widths default to 16 on CPU and 32 on CUDA; `chunk_size` overrides
-the width. Automatic memory-based pose batching is still pending.
+the width. Automatic pose batching uses the common memory policy and preserves
+task choices, constraints, fragment metadata and shared palette identity.
+`TMOL_PACK_MAX_POSES_PER_CHUNK` overrides the pose limit; it is separate from
+`chunk_size`. Chunk seeds are drawn locally from the supplied seed, so changing
+chunk boundaries can change discrete packing choices. Large-workflow runtime
+and peak-memory parity remain separately gated.
 For already parameterized covalent
 groups, `ConjugatedChiSampler` and `add_conjugated_group_sampler` share task masks,
 chi budgets and correlation declarations with Torch; native joint kinematics
