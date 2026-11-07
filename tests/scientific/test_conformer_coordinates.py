@@ -147,6 +147,30 @@ def test_sampled_conformer_coordinates_match_requested_dihedrals(backend, case_n
         backend, fixed, result, counts, choices, defining, angles, original
     )
     assert checked > 10
+    exported = result.to_atom_array(backend.pose.packed_block_types)
+    np.testing.assert_array_equal(exported.coord, backend.numpy(result.coords))
+    np.testing.assert_array_equal(
+        np.unique(exported.model), np.arange(result.n_rotamers_total)
+    )
+    assert set(exported.chain_id) == {"A"}
+    elements = {
+        atom_type.name: atom_type.element
+        for atom_type in backend.parameter_database.chemical.atom_types
+    }
+    for model, (type_index, block) in enumerate(
+        zip(
+            backend.numpy(result.block_type_ind_for_rot),
+            backend.numpy(result.block_ind_for_rot),
+        )
+    ):
+        residue = backend.pose.packed_block_types.active_block_types[type_index]
+        atoms = exported[exported.model == model]
+        assert set(atoms.res_id) == {block + 1}
+        assert set(atoms.res_name) == {residue.name3}
+        np.testing.assert_array_equal(atoms.atom_name, [a.name for a in residue.atoms])
+        np.testing.assert_array_equal(
+            atoms.element, [elements[a.atom_type] for a in residue.atoms]
+        )
 
 
 def check_sampled_dihedrals(
