@@ -59,11 +59,7 @@ def _metadata(poses, layout):
     # common metadata planner with its rectangular host-array contract.
     views = []
     for pose in poses:
-        info = copy.copy(pose.pdb_info)
-        chain_labels = np.full(info.residue_labels.shape, "", object)
-        for p, row in enumerate(info.chain_labels):
-            chain_labels[p, : len(row)] = row
-        info.chain_labels = chain_labels
+        info = pose.pdb_info._as_common()
         views.append(
             SimpleNamespace(pdb_info=info, n_poses=pose.n_poses, coords=pose.coords)
         )

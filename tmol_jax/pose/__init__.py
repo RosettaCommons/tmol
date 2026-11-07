@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib
 
 _EXPORTS = {
+    "select_blocks": "tmol_jax.pose.block_selection",
+    "repeat_pose_stack": "tmol_jax.pose.block_selection",
     "get_named_torsions": "tmol_jax.pose.query",
     "get_torsion_names": "tmol_jax.pose.query",
     "ConstraintSet": "tmol_jax.pose.constraint_set",

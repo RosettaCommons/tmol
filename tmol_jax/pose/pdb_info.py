@@ -40,6 +40,16 @@ class PDBInfo(CommonPDBInfo):
         self.res_name = res_name
         self.atom_record_type = atom_record_type
 
+    def _as_common(self):
+        """Rectangular host metadata for shared planners; accept legacy ragged labels."""
+        fields = {f.name: getattr(self, f.name) for f in attrs.fields(CommonPDBInfo)}
+        if self.chain_labels is not None:
+            labels = np.full(self.residue_labels.shape, "", object)
+            for pose, row in enumerate(self.chain_labels):
+                labels[pose, : len(row)] = row
+            fields["chain_labels"] = labels
+        return CommonPDBInfo(**fields)
+
     @property
     def chain_id(self):
         return self.chain_labels

@@ -471,6 +471,14 @@ Sequence/canonical input, splitting, concatenation and fragment reconstruction
 carry those indices. Poses constructed without explicit logical IDs infer them
 eagerly from the common physical polymer-connection policy.
 
+`tmol_jax.pose.select_blocks(pose, blocks)` preserves ordered atom identities,
+coordinate gradients, metadata and the original bond distances between retained
+blocks. It requires a homogeneous selected layout, drops constraints and rejects
+split-block metadata, matching the mature API. `repeat_pose_stack(pose, n_poses)`
+repeats one pose and its constraints with independent metadata copies. These eager
+topology operations support coordinate differentiation; render a new scorer
+after changing the layout.
+
 `set_named_torsions(pose, poses, blocks, names, values, degrees=True)` uses
 shared selection/validation and native inverse/forward kinematics. It preserves
 coordinate dtype and parameter context and returns a new pose. Scalar or batched
