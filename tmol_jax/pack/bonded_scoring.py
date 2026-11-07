@@ -51,12 +51,13 @@ def connected_candidates(pose, rotamers):
     return owners, indices
 
 
-def prepare_rotamer_bonded(pose, rotamers, database, *, cartesian=False):
+def prepare_rotamer_bonded(pose, rotamers, database, *, cartesian=False, term=None):
     validate_rotamer_context(pose, rotamers)
     with jax.default_device(pose.device):
         cls = CartBondedEnergyTerm if cartesian else GenBondedEnergyTerm
         options = {} if cartesian else {"include_empty": True}
-        parameters = cls(database).setup_for_pose_stack(pose, **options)
+        term = cls(database) if term is None else term
+        parameters = term.setup_for_pose_stack(pose, **options)
         owners, indices = connected_candidates(pose, rotamers)
     parameters = (
         rotamers.coord_offset_for_rot,
@@ -70,12 +71,12 @@ def prepare_rotamer_bonded(pose, rotamers, database, *, cartesian=False):
     return (target, 5 if cartesian else 1, parameters, 0.0), indices
 
 
-def prepare_rotamer_genbonded(pose, rotamers, database):
-    return prepare_rotamer_bonded(pose, rotamers, database)
+def prepare_rotamer_genbonded(pose, rotamers, database, *, term=None):
+    return prepare_rotamer_bonded(pose, rotamers, database, term=term)
 
 
-def prepare_rotamer_cartbonded(pose, rotamers, database):
-    return prepare_rotamer_bonded(pose, rotamers, database, cartesian=True)
+def prepare_rotamer_cartbonded(pose, rotamers, database, *, term=None):
+    return prepare_rotamer_bonded(pose, rotamers, database, cartesian=True, term=term)
 
 
 def sparse_bonded_scores(coords, state):

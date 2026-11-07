@@ -21,12 +21,11 @@ def _stage(arguments, *, operation, outputs):
     return stage(arguments, target, outputs, operation)
 
 
-def prepare_rotamer_backbone(pose, rotamers, database):
+def prepare_rotamer_backbone(pose, rotamers, database, *, term=None):
     validate_rotamer_context(pose, rotamers)
+    term = BackboneTorsionEnergyTerm(database) if term is None else term
     with jax.default_device(pose.device):
-        parameters = (
-            BackboneTorsionEnergyTerm(database).setup_for_pose_stack(pose).parameters
-        )
+        parameters = term.setup_for_pose_stack(pose).parameters
         arguments = (
             rotamers.n_rots_for_block,
             rotamers.first_rot_block_type,

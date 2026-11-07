@@ -115,7 +115,12 @@ class RotamerScorer:
                         if provided[0] == ScoreType.fa_ljatr
                         else {}
                     )
-                    if provided[0] == ScoreType.dunbrack_rot:
+                    if provided[0] in (
+                        ScoreType.dunbrack_rot,
+                        ScoreType.cart_lengths,
+                        ScoreType.gen_torsions,
+                        ScoreType.rama,
+                    ):
                         options["term"] = term
                     state = prepare(pose, rotamers, score_function.param_db, **options)
                 entries.append((provided, selected, weights, evaluate, state, spatial))

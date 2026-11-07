@@ -175,8 +175,9 @@ def fast_relax(
 
     Schedule, per-pose acceptance, task callbacks and release hooks match the
     mature protocol. The explicit unsigned 64-bit seed controls local packing
-    randomness. The default minimizer uses JAX strong-Wolfe L-BFGS on the summed
-    batch objective; mature Torch per-pose Armijo trajectories are not matched.
+    randomness. The default minimizer uses segmented Armijo L-BFGS with the
+    shared per-pose convergence, history and restart policy. Native sampling
+    seeds and finite-precision results can differ between frameworks.
     A custom minimizer receives fold_forest, move_map and verbose keywords.
     Existing packing capability boundaries apply to every stage.
     The score function's stage weights are updated as in the mature API.
