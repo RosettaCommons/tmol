@@ -78,10 +78,14 @@ def test_refinement_preserves_mutable_output_and_changed_raw_geometry():
     first.ideal_coords[:] = 99
     first.path_distance[:] = 0
     first.atom_to_idx = {}
+    first.icoors_index.clear()
+    first.atom_names_set.clear()
     second = _refined_from_raw(raw)
     np.testing.assert_array_equal(second.ideal_coords, expected.ideal_coords)
     np.testing.assert_array_equal(second.path_distance, expected.path_distance)
     assert second.atom_to_idx == expected.atom_to_idx
+    assert second.icoors_index == expected.icoors_index
+    assert second.atom_names_set == expected.atom_names_set
     assert second.atoms is raw.atoms
     raw.icoors = tuple(
         attrs.evolve(icoor, d=icoor.d + 0.25) if icoor.name == "CB" else icoor

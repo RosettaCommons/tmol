@@ -22,6 +22,11 @@ from tmol_core.weak_identity_cache import WeakIdentityLRU
 
 _REFINED = WeakIdentityLRU(capacity=512)
 _RAW_FIELDS = tuple(field.name for field in attr.fields(RawResidueType))
+_DERIVED_FIELDS = tuple(
+    field.name
+    for field in attr.fields(RefinedResidueType)
+    if field.name not in _RAW_FIELDS
+)
 
 
 def _refined_from_raw(raw):
@@ -35,7 +40,12 @@ def _refined_from_raw(raw):
     prototype = _REFINED.get_or_create(raw, inputs, lambda: refined_from_raw(raw))
     # Preserve the common constructor's raw-field sharing, while computed arrays
     # and mappings belong to each caller and can receive independent annotations.
-    return copy.deepcopy(prototype, {id(value): value for value in inputs})
+    result = copy.copy(prototype)
+    for name in _DERIVED_FIELDS:
+        # Common refinement produces arrays, scalars and flat immutable-value
+        # mappings/sets. Copy their storage without traversing chemistry again.
+        setattr(result, name, copy.copy(getattr(prototype, name)))
+    return result
 
 
 @attr.s(auto_attribs=True)
