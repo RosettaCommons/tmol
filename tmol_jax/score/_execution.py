@@ -82,6 +82,32 @@ class RenderedScore:
         )
 
 
+class WholePoseScorer(RenderedScore):
+    """Reuse prepared operands when callers select a different score reduction."""
+
+    def __init__(self, render, sum_terms, apply_weights):
+        default = render(sum_terms, apply_weights)
+        super().__init__(default.executor, default.arrays, default.shape)
+        self._default_options = (sum_terms, apply_weights)
+        self._render_variant = render
+        self._variants = {}
+
+    def __call__(self, coords, sum_terms=None, apply_weights=None):
+        options = tuple(
+            default if value is None else value
+            for default, value in zip(self._default_options, (sum_terms, apply_weights))
+        )
+        if options == self._default_options:
+            return super().__call__(coords)
+        if options not in self._variants:
+            self._variants[options] = self._render_variant(*options)
+        return self._variants[options](coords)
+
+    def unweighted_scores(self, coords):
+        """Return all retained channels in the rendered score-type order."""
+        return self(coords, sum_terms=False, apply_weights=False)
+
+
 def _jit_native(function):
     # These graphs dispatch fixed native physics kernels. GPU autotuning adds
     # large compilation-only allocations without choosing their algorithms.

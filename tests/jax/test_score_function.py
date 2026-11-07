@@ -247,3 +247,28 @@ def test_stock_programs_use_fresh_parameters_without_retaining_database_owners()
             jax.jit(jax.vmap(scorer))(jnp.stack([pose.coords, pose.coords])),
             [[expected], [expected]],
         )
+
+
+def test_per_call_reduction_options_transform_and_preserve_render_defaults():
+    import os
+
+    from tests.scientific.execution import Execution
+    from tests.scientific.molecules import CASES
+
+    lane = (
+        "jax-cuda"
+        if "jax-cuda" in os.environ.get("TMOL_TEST_BACKENDS", "")
+        else "jax-cpu"
+    )
+    b = Execution(lane).molecule(CASES["mixed_batch"], terms=("fa_ljatr",))
+    score = b.score_function.render_whole_pose_scoring_module(
+        b.pose, sum_terms=False, apply_weights=False
+    )
+    x = b.pose.coords
+    samples = jnp.stack((x, x + 0.25))
+    raw = jax.jit(jax.vmap(score))(samples)
+    total = jax.jit(jax.vmap(lambda x: score(x, sum_terms=True)))(samples)
+    np.testing.assert_allclose(total, raw.sum(1), rtol=2e-6, atol=2e-6)
+    np.testing.assert_array_equal(score(x), score.unweighted_scores(x))
+    weighted = jax.jit(lambda x: score(x, sum_terms=True, apply_weights=True))(x)
+    np.testing.assert_allclose(weighted, raw[0, 0], rtol=2e-6, atol=2e-6)

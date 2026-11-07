@@ -631,5 +631,14 @@
       "tests/jax/test_block_pair_transforms.py"
     ],
     "implementation_status": "Rendered block-pair scorers expose mature unweighted_scores and score_interactions over the existing shared native physics. Ligand, noncanonical and mixed-system contracts cover selected-energy conservation, physical gradients and repeated/empty selections. Invalid eager indices reject; invalid transformed indices produce NaN. This public API capability does not resolve mature whole-workflow numerical or runtime/memory gaps."
+  },
+  "rendered_whole_score_options": {
+    "torch": "supported",
+    "jax": "implemented",
+    "repro_fixture": [
+      "tests/scientific/test_rendered_score_options.py",
+      "tests/jax/test_score_function.py"
+    ],
+    "implementation_status": "Rendered whole-pose scorers accept per-call sum_terms/apply_weights and expose unweighted_scores. Alternate static reductions reuse prepared parameter/topology operands and retain original configuration after score-function mutation. Existing render defaults, mapped-coordinate execution and chemistry-owner lifetime are preserved; complete mature end-to-end parity remains separately gated."
   }
 }

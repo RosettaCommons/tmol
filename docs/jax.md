@@ -92,6 +92,9 @@ coordinate changes; render again after changing weights, parameters, types,
 connectivity or batch layout. `sum_terms=False` returns weighted channels in
 `all_score_types()` order, including zero-weight channels of retained terms;
 additionally set `apply_weights=False` for unweighted values.
+These two options can be set when rendering or overridden on each scorer call;
+`scorer.unweighted_scores(coords)` returns all retained unweighted channels.
+Per-call options are static under JAX transformations and reuse prepared operands.
 `all_terms()`, body-count groups and `weights_tensor()` use the common lifecycle.
 Setting a term's final nonzero weight to zero removes it; direct removal updates
 coverage immediately while existing rendered scorers retain their snapshots.
