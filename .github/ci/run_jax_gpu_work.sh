@@ -26,7 +26,7 @@ case "$(nvcc --version | sed -n 's/.*release \([0-9][0-9]*\)\..*/\1/p' | head -1
   *) echo "CUDA 12 or 13 is required" >&2; exit 1 ;;
 esac
 "${work}/env/bin/python" -m pip install --upgrade pip
-"${work}/env/bin/python" -m pip install pytest "jax[${extra}]>=0.11.2"
+"${work}/env/bin/python" -m pip install pytest 'ipython>=8.0' "jax[${extra}]>=0.11.2"
 core_wheels=("${JAX_DIST}"/tmol_core-*.whl)
 "${work}/env/bin/python" -m pip install \
   "${core_wheels[0]}[ligand]" "${JAX_DIST}"/tmol_jax-*.whl \
@@ -42,6 +42,7 @@ version=$("${work}/env/bin/python" -I -c \
   'from importlib.metadata import version; print(version("tmol-jax"))')
 (
   cd "${work}/source"
+  export JAX_ENABLE_X64=true
   TMOL_TEST_BACKENDS=jax-cuda "${work}/env/bin/python" -I -m pytest -ra tests
   "${work}/env/bin/python" -I \
     "${GITHUB_WORKSPACE}/scripts/smoke_installed_jax.py" \
