@@ -35,6 +35,7 @@ def test_retained_zero_channels_removal_and_old_snapshot_are_consistent(
     assert tuple(x.name for x in sf.all_score_types()) == channels
     assert len(sf.two_body_terms()) == 1
     assert not sf.one_body_terms() and not sf.multi_body_terms()
+    assert sf.pre_work_initialization(b.pose) is None
     raw, gradients = b.channel_values_and_gradients(b.coords())
     assert raw.shape == (len(channels), b.pose.n_poses)
     assert np.linalg.norm(raw[0]) > 1e-4
@@ -50,6 +51,7 @@ def test_retained_zero_channels_removal_and_old_snapshot_are_consistent(
     assert b.numpy(sf.weights_tensor()).size == 0
     assert not sf.score_type_covered_by_contained_term(channel)
     sf.set_weight(channel, -2)
+    assert sf.pre_work_initialization(b.pose) is None
     fresh_values, fresh_gradient = evaluate(
         b, sf.render_whole_pose_scoring_module(b.pose)
     )
@@ -68,3 +70,20 @@ def test_retained_zero_channels_removal_and_old_snapshot_are_consistent(
             np.testing.assert_array_equal(repeated, reference)
     sf.set_weight(channel, 0)
     assert not sf.all_terms() and not sf.all_score_types()
+
+
+def test_public_term_order_retains_native_channel_groups(backend):
+    b = backend.molecule(
+        BACKBONE_CASES["mixed"], terms=("gen_torsions", "omega", "fa_ljatr")
+    )
+    sf = b.score_function
+    terms, channels = sf.get_sorted_terms(reversed(sf.all_terms()))
+    assert terms == sf.all_terms()
+    assert tuple(st.name for st in channels) == (
+        "fa_ljatr",
+        "fa_ljrep",
+        "fa_lk",
+        "rama",
+        "omega",
+        "gen_torsions",
+    )
