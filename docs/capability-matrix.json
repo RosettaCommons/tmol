@@ -609,11 +609,11 @@
   },
   "public_palette_construction": {
     "torch": "supported",
-    "jax": "constructor_lookup_transport_implemented",
+    "jax": "constructor_lookup_transport_and_topology_helpers_implemented",
     "repro_fixture": [
       "tests/scientific/test_public_palette.py",
       "tests/jax/test_palette_runtime.py"
     ],
-    "implementation_status": "Common topology source, supplied chemistry/residue-set/active-object identity, ordered name lookup and CPU transport. Four ligand/noncanonical/D/mixed fixtures compare all25 values and coordinate gradients before/after reconstruction; JAX jit/vmap retain explicit context. Other mature low-level metadata-builder APIs remain a parity gap; this entry does not claim complete palette API equivalence."
+    "implementation_status": "Common topology source, supplied chemistry/residue-set/active-object identity, ordered name lookup and CPU transport. Public count/determine/join helpers and connection/bond/named-torsion metadata retain physical atom order and device placement. Preparation remains eager; metadata arrays are JAX pytree leaves. Shared ligand/noncanonical/D/DNA/metal contracts and JAX jit/vmap cover these APIs; full mature workflow numerical/runtime/memory acceptance remains separate."
   }
 }

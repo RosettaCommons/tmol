@@ -30,3 +30,7 @@ def test_explicit_palette_context_survives_jit_and_vmap():
         assert restored.restype_set is collection
         assert restored.chem_db is original.chem_db
         assert all(leaf.device == b.device for leaf in jax.tree.leaves(restored))
+        torsions = jax.jit(lambda p, i: (p.n_torsions[i], p.torsion_uaids[i]))
+        count, atoms = jax.jit(jax.vmap(torsions, in_axes=(None, 0)))(palette, indices)
+        np.testing.assert_array_equal(count, np.asarray(palette.n_torsions)[indices])
+        np.testing.assert_array_equal(atoms, np.asarray(palette.torsion_uaids)[indices])

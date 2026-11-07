@@ -496,8 +496,10 @@ contract; use exact residue identities for other supported types.
 device)` uses common topology preparation while retaining the supplied chemistry,
 residue collection and ordered active types. `inds_for_restypes` returns `-1`
 for absent names; `.cpu()` transfers palette arrays and retains that context.
-These arrays support `jit` and `vmap`. The mature palette's other low-level
-metadata-building methods are not yet all exposed by the JAX frontend.
+The connection, bond and named-torsion metadata arrays support `jit` and `vmap`.
+The public `count_*`, `determine_*` and `join_*` preparation methods use the same
+host topology source as Torch and transfer their results to the requested device.
+Preparation is eager; array execution and transport retain the supplied context.
 
 `extended_pose_stack_from_sequences(seqs, device=..., param_db=...,
 return_context=True)` consumes the common sequence grammar and ideal geometry:
