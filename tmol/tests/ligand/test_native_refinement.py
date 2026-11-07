@@ -119,6 +119,20 @@ def test_native_refinement_abi_rejects_invalid_buffers():
         backend.value_and_grad(
             xyz, replace(parameters, component_offsets=np.array([1], np.int32))
         )
+    unaligned = np.ndarray(
+        xyz.shape, dtype=xyz.dtype, buffer=np.zeros(xyz.nbytes + 1, np.uint8), offset=1
+    )
+    assert unaligned.flags.c_contiguous and not unaligned.flags.aligned
+    with pytest.raises(TypeError, match="aligned"):
+        backend.value_and_grad(unaligned, parameters)
+    pairs = np.ndarray(
+        parameters.pairs.shape,
+        dtype=np.int32,
+        buffer=np.zeros(parameters.pairs.nbytes + 1, np.uint8),
+        offset=1,
+    )
+    with pytest.raises(TypeError, match="aligned"):
+        backend.value_and_grad(xyz, replace(parameters, pairs=pairs))
     value, gradient = backend.value_and_grad(xyz, parameters)
     assert value > 0
     np.testing.assert_allclose(gradient.sum(0), 0, atol=1e-14)
