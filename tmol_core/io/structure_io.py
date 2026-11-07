@@ -11,13 +11,8 @@ from typing import IO, Literal, Optional, Union
 
 import biotite.structure as struc
 import numpy
-from atomworks.io.utils.io_utils import CIFWriteConfig, to_cif_string
-from atomworks.io.utils.link_chemistry import DEFAULT_VALENCE
 from biotite.structure.io.pdb import PDBFile
 from biotite.structure.io.pdbx import CIFCategory, CIFFile
-
-from tmol_core.io.assemble import _atom_array_from_small_molecule
-from tmol_core.io.cif import _atom_array_from_pdbx
 
 StructureFormat = Literal["pdb", "cif", "mol2", "sdf"]
 READ_FORMATS = ("pdb", "cif", "mol2", "sdf")
@@ -166,7 +161,11 @@ def atom_array_from_file(
 
 def _atom_array_from_path(path, fmt, model, assembly_id, res_name):
     if fmt in ("mol2", "sdf"):
+        from tmol_core.io.assemble import _atom_array_from_small_molecule
+
         return _atom_array_from_small_molecule(path, res_name=res_name)
+    from tmol_core.io.cif import _atom_array_from_pdbx
+
     return _atom_array_from_pdbx(path, model=model, assembly_id=assembly_id)
 
 
@@ -179,6 +178,8 @@ def _pdb_text(atom_array) -> str:
 
 
 def _cif_text(atom_array) -> str:
+    from atomworks.io.utils.io_utils import CIFWriteConfig, to_cif_string
+
     # chem_comp from the structure itself: a pose's components need not match the CCD
     config = CIFWriteConfig(
         id="tmol",
@@ -228,6 +229,8 @@ def _declare_links_without_valence(block, atom_array):
         return
     bonds = model.bonds.as_array()
     residue = struc.get_all_residue_positions(model)
+    from atomworks.io.utils.link_chemistry import DEFAULT_VALENCE
+
     no_valence = ~numpy.isin(model.element, list(DEFAULT_VALENCE))
     i, j = bonds[:, 0], bonds[:, 1]
     links = bonds[
