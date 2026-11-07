@@ -62,7 +62,10 @@ part of this boundary; traversal, connection identity and derivative accumulatio
 also belong to the common implementation.
 
 The same separation applies to sampling, kinematics, graph preparation, annealing
-and coordinate imposition. Size-discovery barriers and temporary-buffer lifetimes
+and coordinate imposition. Rotamer export uses one host projection in
+`tmol_core.pack.rotamer_set`, preserving model indices, source block numbering
+and the mature atom-name element policy. Frontends only transfer arrays.
+Size-discovery barriers and temporary-buffer lifetimes
 are execution requirements. An adapter must preserve them instead of substituting
 Python algorithms or silently dropping unsupported cases.
 
