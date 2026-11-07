@@ -289,7 +289,8 @@ auto DisulfideRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
 
   // Optimal launch box on v100 and a100 is nt=32, vt=1
   LAUNCH_BOX_32;
-  disulfide_rotamer_count_native<DeviceDispatch,D,Real,Int>(mgr,
+  disulfide_rotamer_count_native<DeviceDispatch, D, Real, Int>(
+      mgr,
       block_ind_for_rot,
       pose_ind_for_rot,
       block_type_ind_for_rot,
@@ -297,7 +298,6 @@ auto DisulfideRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
       pose_stack_inter_block_connections,
       disulfide_conns,
       n_energies_for_rot);
-
 
   int64_t const max_n_energies_for_rot_64 = DeviceDispatch<D>::reduce(
       mgr,
@@ -342,7 +342,8 @@ auto DisulfideRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
   // between two residues
   auto conns_for_dispatch_indices = conns_for_dispatch_indices_t.view;
 
-  disulfide_rotamer_fill_native<DeviceDispatch,D,Real,Int>(mgr,
+  disulfide_rotamer_fill_native<DeviceDispatch, D, Real, Int>(
+      mgr,
       first_rot_for_block,
       block_ind_for_rot,
       pose_ind_for_rot,
@@ -357,8 +358,8 @@ auto DisulfideRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
       max_n_energies_for_rot,
       candidate_dispatch);
 
-
-  disulfide_rotamer_score_native<false, DeviceDispatch,D,Real,Int>(mgr,
+  disulfide_rotamer_score_native<false, DeviceDispatch, D, Real, Int>(
+      mgr,
       rot_coords,
       rot_coord_offset,
       block_ind_for_rot,
@@ -371,7 +372,6 @@ auto DisulfideRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
       V,
       dV_dx,
       {});
-
 
   return {V_t, dV_dx_t, dispatch_indices_t, conns_for_dispatch_indices_t};
 }
@@ -450,7 +450,8 @@ auto DisulfideRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
   // Optimal launch box on v100 and a100 is nt=32, vt=1
   LAUNCH_BOX_32;
 
-  disulfide_rotamer_score_native<true,DeviceDispatch,D,Real,Int>(mgr,
+  disulfide_rotamer_score_native<true, DeviceDispatch, D, Real, Int>(
+      mgr,
       rot_coords,
       rot_coord_offset,
       block_ind_for_rot,

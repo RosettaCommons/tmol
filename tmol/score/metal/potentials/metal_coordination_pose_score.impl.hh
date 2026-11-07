@@ -204,7 +204,8 @@ auto MetalCoordinationRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::
 
   LAUNCH_BOX_32;
 
-  metal_rotamer_count_native<DeviceDispatch,D,Real,Int>(mgr,
+  metal_rotamer_count_native<DeviceDispatch, D, Real, Int>(
+      mgr,
       first_rot_block_type,
       block_ind_for_rot,
       pose_ind_for_rot,
@@ -220,7 +221,6 @@ auto MetalCoordinationRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::
       bridge_internal_metal,
       bridge_internal_d0,
       n_energies_for_rot);
-
 
   int64_t const max_n_energies_for_rot_64 = DeviceDispatch<D>::reduce(
       mgr,
@@ -259,7 +259,8 @@ auto MetalCoordinationRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::
   auto dispatch_indices = dispatch_indices_t.view;
   auto terms_for_dispatch = terms_for_dispatch_t.view;
 
-  metal_rotamer_fill_native<DeviceDispatch,D,Real,Int>(mgr,
+  metal_rotamer_fill_native<DeviceDispatch, D, Real, Int>(
+      mgr,
       first_rot_for_block,
       first_rot_block_type,
       block_ind_for_rot,
@@ -282,8 +283,8 @@ auto MetalCoordinationRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::
       max_n_energies_for_rot,
       candidate_dispatch);
 
-
-  metal_rotamer_score_native<false, DeviceDispatch,D,Real,Int>(mgr,
+  metal_rotamer_score_native<false, DeviceDispatch, D, Real, Int>(
+      mgr,
       rot_coords,
       rot_coord_offset,
       first_rot_block_type,
@@ -308,7 +309,6 @@ auto MetalCoordinationRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::
       V,
       dV_dx,
       {});
-
 
   return {V_t, dV_dx_t, dispatch_indices_t, terms_for_dispatch_t};
 }
@@ -362,7 +362,8 @@ auto MetalCoordinationRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::
 
   LAUNCH_BOX_32;
 
-  metal_rotamer_score_native<true,DeviceDispatch,D,Real,Int>(mgr,
+  metal_rotamer_score_native<true, DeviceDispatch, D, Real, Int>(
+      mgr,
       rot_coords,
       rot_coord_offset,
       first_rot_block_type,

@@ -11,5 +11,7 @@ auto backward32 = &na_torsion_weighted_derivative<float>;
 auto backward64 = &na_torsion_weighted_derivative<double>;
 auto indices32 = &na_torsion_block<double, tmol::Device::CPU, true, int32_t>;
 
-auto weighted32 = &na_torsion_block<float, tmol::Device::CPU, true,int32_t,true>;
-auto weighted64 = &na_torsion_block<double, tmol::Device::CPU, true,int64_t,true>;
+auto weighted32 =
+    &na_torsion_block<float, tmol::Device::CPU, true, int32_t, true>;
+auto weighted64 =
+    &na_torsion_block<double, tmol::Device::CPU, true, int64_t, true>;
