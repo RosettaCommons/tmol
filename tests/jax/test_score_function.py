@@ -269,6 +269,14 @@ def test_per_call_reduction_options_transform_and_preserve_render_defaults():
     raw = jax.jit(jax.vmap(score))(samples)
     total = jax.jit(jax.vmap(lambda x: score(x, sum_terms=True)))(samples)
     np.testing.assert_allclose(total, raw.sum(1), rtol=2e-6, atol=2e-6)
-    np.testing.assert_array_equal(score(x), score.unweighted_scores(x))
+    actual, expected = np.asarray(score(x)), np.asarray(score.unweighted_scores(x))
+    if b.device.platform == "gpu":
+        # Repeated calls to the unchanged float32 CUDA scorer also vary under
+        # atomic accumulation. Retain the score-lifecycle repeat bound; the
+        # shared per-channel float64 option/gradient checks remain at 2e-10.
+        bound = 2 * np.finfo(expected.dtype).eps * np.max(np.abs(expected))
+        np.testing.assert_allclose(actual, expected, rtol=0, atol=bound)
+    else:
+        np.testing.assert_array_equal(actual, expected)
     weighted = jax.jit(lambda x: score(x, sum_terms=True, apply_weights=True))(x)
     np.testing.assert_allclose(weighted, raw[0, 0], rtol=2e-6, atol=2e-6)
