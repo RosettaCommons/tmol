@@ -333,6 +333,9 @@ run the search separately from scoring; the result stays on the pose device.
 JAX annealing supports native CPU and CUDA. CUDA phase seeds come from a local NumPy PCG64 generator;
 packing leaves global random state unchanged. Independent CUDA tasks without bump
 pruning replay bounded score pages through the shared three-pass graph driver.
+Small tables use complete fused execution when a conservative bound on all
+explicit score/candidate/scratch buffers fits one common page; unknown bounds
+retain replay. This bounds explicit buffers, not compiler or allocator overhead.
 CPU, correlated tasks and bump pruning retain complete score tables. Native
 graph tile widths default to 16 on CPU and 32 on CUDA; `chunk_size` overrides
 the width. Automatic pose batching uses the common memory policy and preserves
