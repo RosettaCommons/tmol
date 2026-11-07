@@ -52,3 +52,22 @@ def test_reference_identity_and_parameter_context(backend, explicit_d):
     np.testing.assert_array_equal(backend.scores(xyz), [6.0, 6.0])
     backend.set_options({})
     np.testing.assert_array_equal(backend.scores(xyz), [4.0, 4.0])
+
+
+def test_reference_sum_retains_small_custom_weights(backend):
+    case = MolecularCase(
+        CASES["mixed_batch"].parameter_files,
+        (("DALA:nterm", "DLEU:cterm", "HYP", "LG1"),),
+        ((2, 1, 1),),
+    )
+    backend.molecule(case, terms=("ref",))
+    # The exactly representable total is 1.125. Summing in float32 can lose
+    # the unit contribution between the large opposite-sign constants.
+    backend.set_options(
+        {"ref_weights": {"ALA": 1e8, "LEU": 1.0, "HYP": -1e8, "LG1": 0.125}}
+    )
+    value, gradient = backend.value_and_grad(
+        backend.coords(), coordinate_independent=True
+    )
+    np.testing.assert_array_equal(value, [1.125])
+    np.testing.assert_array_equal(gradient, np.zeros_like(backend.coords()))

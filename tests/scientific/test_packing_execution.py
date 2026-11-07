@@ -27,6 +27,30 @@ from .test_current_conformers import current_samplers, ensure_fallback_sampler
 def test_complete_packing_selects_conformers_and_preserves_chemistry(
     backend, name, bump, soft_rep
 ):
+    check_complete_packing(backend, name, bump=bump, soft_rep=soft_rep)
+
+
+@pytest.mark.parametrize("name", ("ligand", "mixed_batch"))
+def test_complete_packing_with_cpu_annealing(backend, name):
+    check_complete_packing(backend, name, bump=True, anneal_device="cpu")
+
+
+def test_cpu_scoring_with_cuda_annealing(backend):
+    if backend.requested_device != "cuda":
+        pytest.skip("CPU-to-CUDA packing requires an explicit CUDA test lane")
+    from .execution import Execution
+
+    check_complete_packing(
+        Execution(f"{backend.framework}-cpu"),
+        "mixed_batch",
+        bump=True,
+        anneal_device="cuda:0",
+    )
+
+
+def check_complete_packing(
+    backend, name, *, bump=False, soft_rep=False, anneal_device=None
+):
     backend.molecule(CASES[name], terms=("ref",))
     task, _, concrete = (
         na_sampling_task(backend, level=1) if name == "dna" else sampling_task(backend)
@@ -48,7 +72,11 @@ def test_complete_packing_selects_conformers_and_preserves_chemistry(
         backend.set_options({"soft_rep": True})
     before = backend.coords().copy()
     energy_before = backend.scores(before)
-    packed = pack_rotamers(backend.pose, backend.score_function, task, seed=17)
+    options = {} if anneal_device is None else {"anneal_device": anneal_device}
+    packed = pack_rotamers(
+        backend.pose, backend.score_function, task, seed=17, **options
+    )
+    assert packed.coords.device == backend.pose.coords.device
     np.testing.assert_array_equal(backend.coords(), before)
     np.testing.assert_array_equal(
         backend.numpy(packed.block_type_ind), backend.numpy(backend.pose.block_type_ind)

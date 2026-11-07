@@ -35,3 +35,17 @@ def test_task_coordinate_reuse_topology_invalidation_and_eager_contract():
         jax.jit(sample)(coords)
     with pytest.raises(TypeError, match="eager"):
         jax.vmap(sample)(coords[None])
+
+
+def test_annealing_device_rejects_unsupported_platform_or_index():
+    from tmol_jax import pack_rotamers
+
+    b = Execution("jax-cpu").molecule(DUNBRACK_CASES["l_peptide"], terms=("ref",))
+    task = PackerTask(b.pose)
+    for device, error, message in (
+        ("mps", ValueError, "native CPU and CUDA"),
+        ("cpu:-1", ValueError, "index is out of range"),
+        (object(), TypeError, "JAX device or a device string"),
+    ):
+        with pytest.raises(error, match=message):
+            pack_rotamers(b.pose, b.score_function, task, seed=17, anneal_device=device)

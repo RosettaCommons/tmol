@@ -142,7 +142,7 @@
         "tests/jax/test_native_genbonded.py",
         "tests/scientific/test_complete_preset.py"
       ],
-      "implementation_status": "Molecular values/gradients, fixed/current conformers, pose imposition and repacking tested. Topology changes require new prepared scorers; stale plans reject."
+      "implementation_status": "Molecular values/gradients, fixed/current conformers, pose imposition and repacking tested. Topology changes require new prepared scorers; stale plans reject. The mature Torch packer has automatic memory-based pose chunking; JAX currently lacks that orchestration. Interaction-graph tile chunk_size is a separate setting."
     },
     {
       "domain": "cartesian_minimization",
@@ -167,7 +167,7 @@
         "tests/jax/test_pose_imposition.py",
         "tests/scientific/test_constrained_design.py"
       ],
-      "implementation_status": "Common native CPU/CUDA sampling, sparse scoring, graph construction, annealing and imposition support repacking and selected L/D design choices. Task masks, budgets, bundles, correlation collapse and bump pruning preserve original member identities. Prepared biotin, O-glycan and N-glycan groups have full all-channel energies, physical gradients and native packing checks. Constrained L/D design preserves unchanged backbone atom identities through compacted atom layouts; independent distance values/gradients pass both CPU backends, and full physical source gradients pass JAX. Changed connection ports or constrained atom indices still reject; complete task/design API parity remains open. Unchanged-identity constrained-design installed and actual CUDA checks passed."
+      "implementation_status": "Common native CPU/CUDA sampling, sparse scoring, graph construction, annealing and imposition support repacking and selected L/D design choices. Task masks, budgets, bundles, correlation collapse and bump pruning preserve original member identities. Prepared biotin, O-glycan and N-glycan groups have full all-channel energies, physical gradients and native packing checks. Constrained L/D design preserves unchanged backbone atom identities through compacted atom layouts; independent distance values/gradients pass both CPU backends, and full physical source gradients pass JAX. Changed connection ports or constrained atom indices still reject; complete task/design API parity remains open. Unchanged-identity constrained-design installed and actual CUDA checks passed. Explicit anneal_device selects native CPU/CUDA search independently of scoring and returns assignments to the pose device; mixed-system CPU-to-CUDA and CUDA-to-CPU molecular checks pass, including a clean installed Torch-free CUDA lane."
     },
     {
       "domain": "kinematics",
@@ -536,7 +536,8 @@
   "acceptance_gaps": {
     "mature_functionality": [
       "Continue auditing custom database, score-option and packing/design contracts beyond validated fixtures. Changed constraint atom indices and connection ports remain guarded; the mature imposition path also lacks identity remapping.",
-      "Public API and molecular fixture coverage do not establish exhaustive mature functionality."
+      "Public API and molecular fixture coverage do not establish exhaustive mature functionality.",
+      "Share mature bounded packing batch policy and port task/constraint/fragment-aware slicing before claiming large-batch packing parity."
     ],
     "validation_and_performance": [
       "Matched mature complete workflow cold/warm runtime and peak host/device memory parity are not met. Packing, CUDA minimization and some sequence cases retain measured slowdowns; compilation contributes substantially to peak memory.",
