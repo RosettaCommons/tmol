@@ -1,5 +1,7 @@
 """Shared chemical movement priorities and internal minimization invariants."""
 
+from contextlib import nullcontext
+
 import numpy as np
 import pytest
 
@@ -46,3 +48,38 @@ def test_internal_minimization_decreases_real_molecular_energy(backend, name):
     assert after < before - 1e-3
     assert np.linalg.norm(result - initial) > 1e-4
     np.testing.assert_array_equal(backend.coords(), initial)
+
+
+@pytest.mark.parametrize("name", ("ligand", "d_peptide"))
+def test_double_kinematics_preserves_float_coordinate_storage(backend, name):
+    context = (
+        backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
+    )
+    with context:
+        backend.molecule(DOMAIN_CASES[name], terms=MOLECULAR_KINEMATIC_TERMS)
+        initial = backend.coords().copy()
+        assert initial.dtype == np.float32
+        execution = MolecularKinematicExecution(backend, initial, kin_dtype=np.float64)
+        dofs = execution.initial_dofs
+        assert dofs.dtype == np.float64
+        rebuilt = execution.evaluate(dofs)
+        assert rebuilt.dtype == initial.dtype
+        np.testing.assert_allclose(rebuilt, initial, rtol=2e-6, atol=2e-6)
+        weights = (
+            np.random.default_rng(728).normal(size=initial.shape).astype(np.float32)
+        )
+        _, gradient = execution.evaluate(dofs, weights)
+        assert gradient.dtype == np.float64 and np.isfinite(gradient).all()
+        direction = np.random.default_rng(275).normal(size=dofs.shape)
+        direction /= np.linalg.norm(direction)
+        step = 2e-3
+        numeric = (
+            (
+                execution.evaluate(dofs + step * direction).astype(float)
+                - execution.evaluate(dofs - step * direction).astype(float)
+            )
+            * weights
+        ).sum() / (2 * step)
+        np.testing.assert_allclose(
+            (gradient * direction).sum(), numeric, rtol=2e-3, atol=2e-3
+        )

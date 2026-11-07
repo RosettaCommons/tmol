@@ -160,6 +160,12 @@ minimized, diagnostics = run_kin_min(
 )
 ```
 
+`run_kin_min(..., kin_dtype=jax.numpy.float64)` and
+`PoseStackKinematics.bind(kin_dtype=...)` select internal-coordinate precision
+without changing stored coordinate dtype. Enable JAX x64 for float64 DOFs.
+Mixed-precision objectives are promoted to DOF precision for native Armijo;
+objectives exceeding that precision reject instead of being truncated.
+
 `optimizer="armijo"` selects the common per-pose optimizer in `run_cart_min`
 and `run_kin_min`; `optimizer_kwargs` uses mature TMol setting names.
 `tmol_jax.optimization.armijo_minimize` runs the same policy on arrays and returns a

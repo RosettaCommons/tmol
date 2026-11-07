@@ -224,6 +224,7 @@ def run_kin_min(
     move_map,
     *,
     fold_forest=None,
+    kin_dtype=None,
     max_iter=None,
     history=None,
     gtol=1e-5,
@@ -241,6 +242,8 @@ def run_kin_min(
     disables every DOF. Padding and unselected DOFs remain fixed; atoms downstream
     of selected bonds or jumps move. The original pose is unchanged. Diagnostics
     contain flat DOFs and their masked gradient, rather than Cartesian coordinates.
+    ``kin_dtype`` optionally selects float32/64 internal DOFs while preserving
+    the stored coordinate dtype; float64 requires JAX x64 enabled.
     This host-controlled optimizer requires first reverse derivatives only.
     The default ``optimizer="armijo"`` uses the shared mature segmented policy, with
     ``optimizer_kwargs`` using Torch setting names. Only movable DOFs enter its
@@ -250,7 +253,7 @@ def run_kin_min(
 
     coords, scorer = _prepare_minimization(pose_stack, score_function, constraint_set)
     kinematics = PoseStackKinematics(pose_stack, fold_forest)
-    mapping = kinematics.bind(coords)
+    mapping = kinematics.bind(coords, kin_dtype=kin_dtype)
     mask = kinematics.resolve_move_map(move_map)
     initial = mapping.initial_dofs
     movable = bool(jnp.any(mask))

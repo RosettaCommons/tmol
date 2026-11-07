@@ -156,10 +156,22 @@ class PoseStackKinematics:
         root = jax.device_put(np.zeros((1, 3), dtype=coords.dtype), self.forest.device)
         return self.forest.inverse(jnp.concatenate((root, gathered), axis=0))
 
-    def bind(self, coords=None):
-        """Snapshot pose coordinates and return a differentiable six-column map."""
+    def bind(self, coords=None, *, kin_dtype=None):
+        """Snapshot coordinates and return a differentiable six-column DOF map.
+
+        ``kin_dtype`` selects internal precision; output retains coordinate dtype.
+        Float64 kinematics requires JAX x64 enabled, even with float32 storage.
+        """
         coords = self._coordinates(coords)
-        mapping = self.forest.bind(self.inverse(coords))
+        kin_coords = coords
+        if kin_dtype is not None:
+            dtype = jnp.dtype(kin_dtype)
+            if dtype not in (jnp.dtype("float32"), jnp.dtype("float64")):
+                raise TypeError("kin_dtype must be float32 or float64")
+            if dtype == jnp.dtype("float64") and not jax.config.x64_enabled:
+                raise ValueError("enable JAX float64 before using float64 kinematics")
+            kin_coords = coords.astype(dtype)
+        mapping = self.forest.bind(self.inverse(kin_coords))
         return PoseCoordinates(mapping, self.atom_ids[1:], coords)
 
     def resolve_move_map(self, move_map):
@@ -229,7 +241,7 @@ class PoseCoordinates:
         return (
             self._coordinates.reshape((-1, 3))
             .at[self._atom_ids]
-            .set(coordinates[1:])
+            .set(coordinates[1:].astype(self._coordinates.dtype))
             .reshape(self._coordinates.shape)
         )
 

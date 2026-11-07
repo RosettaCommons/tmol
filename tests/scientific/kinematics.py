@@ -102,7 +102,7 @@ class KinematicExecution:
 class MolecularKinematicExecution(KinematicExecution):
     """Framework adapters around independently prepared molecular forests."""
 
-    def __init__(self, backend, coordinates):
+    def __init__(self, backend, coordinates, *, kin_dtype=None):
         self.backend = backend
         if backend.requested_device == "mps":
             raise NotImplementedError("native Metal kinematic scans are not exposed")
@@ -110,7 +110,7 @@ class MolecularKinematicExecution(KinematicExecution):
             from tmol_jax import PoseStackKinematics
 
             self.module = PoseStackKinematics(backend.pose)
-            mapping = self.module.bind(coordinates)
+            mapping = self.module.bind(coordinates, kin_dtype=kin_dtype)
             self.forward = backend.module.jit(mapping)
             self.initial_dofs = backend.numpy(mapping.initial_dofs)
             self.atom_ids = backend.numpy(self.module.atom_ids)
@@ -128,6 +128,8 @@ class MolecularKinematicExecution(KinematicExecution):
             ids = forest.id[1:].to(torch.int64)
             template = torch.tensor(coordinates, device=backend.device)
             packed = torch.cat((template.new_zeros((1, 3)), template.view(-1, 3)[ids]))
+            if kin_dtype is not None:
+                packed = packed.to(getattr(torch, np.dtype(kin_dtype).name))
             reference = _inverse_kin(
                 packed,
                 forest.parent,
@@ -141,7 +143,7 @@ class MolecularKinematicExecution(KinematicExecution):
             def forward(dofs):
                 packed = self.module(torch.cat((dofs, reference[:, 6:]), dim=1))
                 result = template.reshape(-1, 3).clone()
-                result[ids] = packed[1:]
+                result[ids] = packed[1:].to(template.dtype)
                 return result.reshape(template.shape)
 
             self.forward = forward

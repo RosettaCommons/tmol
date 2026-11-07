@@ -97,6 +97,12 @@ class _Optimizer(SegmentedLBFGSPolicy):
             values = closure()
             if values.size != self._n_segments:
                 raise ValueError("objective must return one energy per segment")
+            if values.dtype != self.x.dtype:
+                if values.dtype.itemsize > self.x.dtype.itemsize:
+                    raise TypeError(
+                        "objective precision exceeds optimizer parameter precision"
+                    )
+                values = values.astype(self.x.dtype)
             self._last_loss_vec = values.reshape(self._n_segments)
             return values.sum()
 
