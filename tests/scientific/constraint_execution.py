@@ -43,7 +43,7 @@ class Constraints:
         constraints = self.set_type.create_empty(b.device, b.pose.n_poses)
         for name, atoms, parameters in entries:
             constraints = constraints.add_constraints(
-                getattr(self.term_type, name),
+                getattr(self.term_type, name) if isinstance(name, str) else name,
                 self.array(np.asarray(atoms, np.int32)),
                 self.array(np.asarray(parameters, np.float32)),
             )

@@ -132,7 +132,7 @@
         "tests/scientific/test_constraints.py",
         "tests/jax/test_general_constraints.py"
       ],
-      "implementation_status": "Whole-pose and sparse two-block callback constraints preserve physical atom order and parameter derivatives. Sparse candidates preserve joint-state correspondence; constraints on more than two distinct blocks reject. Higher coordinate derivatives depend on native geometry and callback."
+      "implementation_status": "Whole-pose callbacks support up to four atoms spanning multiple blocks; sparse two-block constraints preserve physical atom order and parameter derivatives. Sparse candidates preserve joint-state correspondence and reject constraints on more than two distinct blocks. Whole-pose three/four-block callback energy and gradient identities pass both CPU frontends; JAX masked minimization and jit/vmap pass. Mature and current Torch masked minimization fail when trailing poses have no movable atoms; this is tracked separately from the supported scoring contract. Higher coordinate derivatives depend on native geometry and callback."
     },
     {
       "domain": "heterogeneous_batches",

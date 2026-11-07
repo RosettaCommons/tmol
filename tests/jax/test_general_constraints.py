@@ -101,3 +101,22 @@ def test_native_constraint_torsion_transforms(dtype):
         np.testing.assert_allclose(tangent, jnp.sum(gradient * direction), atol=1e-7)
         np.testing.assert_allclose(value, np.pi / 2, rtol=1e-6)
         assert jax.jit(fn)(xyz[:0]).shape == (0,)
+
+
+def test_multi_block_constraints_transform_and_reject_sparse_expansion():
+    from tests.scientific.test_constraints import attach_multi_block_constraint
+    from tests.scientific.rotamer_execution import RotamerExecution
+
+    device = "cuda" if jax.devices()[0].platform == "gpu" else "cpu"
+    backend = Execution(f"jax-{device}")
+    attach_multi_block_constraint(backend)
+    scorer = backend.score_function.render_whole_pose_scoring_module(backend.pose)
+    coords = backend.pose.coords
+    expected = scorer(coords)
+    batched = jax.jit(jax.vmap(scorer))(jnp.stack((coords, coords + 0.25)))
+    np.testing.assert_allclose(batched, jnp.stack((expected, expected)), rtol=2e-6)
+    gradient = jax.jit(jax.grad(lambda x: scorer(x).sum()))(coords)
+    np.testing.assert_allclose(gradient.sum(axis=1), 0, atol=3e-6)
+    assert np.any(np.abs(gradient) > 1)
+    with pytest.raises(NotImplementedError, match="sparse constraints"):
+        RotamerExecution(backend, family="constraint")

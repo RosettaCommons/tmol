@@ -202,10 +202,6 @@ def _prepare_geometric_constraints(pose, constraints):
         atoms[..., 0][actual] != np.broadcast_to(atoms[:, :1, 0], actual.shape)[actual]
     ):
         raise ValueError("a constraint cannot contain atoms from multiple poses")
-    if np.any(np.asarray(constraints.constraint_num_unique_blocks) > 2):
-        raise NotImplementedError(
-            "constraints spanning more than two blocks are not supported"
-        )
     p, b, a = np.moveaxis(atoms, -1, 0)
     if (
         np.any(p[actual] >= pose.n_poses)
