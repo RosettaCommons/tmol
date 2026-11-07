@@ -6,7 +6,8 @@ from tmol_jax.score.score_types import ScoreType
 
 
 class LKBallEnergyTerm(EnergyTerm):
-    def score_types_provided(self):
+    @staticmethod
+    def score_types_provided():
         return [
             ScoreType.lk_ball_iso,
             ScoreType.lk_ball,
@@ -17,12 +18,11 @@ class LKBallEnergyTerm(EnergyTerm):
     def setup_for_pose_stack(self, pose_stack, pbt=None):
         return prepare_lk_ball(pose_stack, self.param_db)
 
-    def __call__(self, pose_stack, term_state, coords_override=None):
-        coords = pose_stack.coords if coords_override is None else coords_override
-        return dict(
-            zip(self.score_types_provided(), lk_ball_energy(coords, term_state))
-        )
+    @classmethod
+    def evaluate(cls, term_state, coords):
+        return dict(zip(cls.score_types_provided(), lk_ball_energy(coords, term_state)))
 
-    def weighted_energy(self, term_state, coords, weights):
+    @staticmethod
+    def weighted_energy(term_state, coords, weights):
         """Compose the four channel derivatives in one common reverse pass."""
         return lk_ball_energy(coords, term_state, weights)

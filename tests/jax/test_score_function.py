@@ -161,7 +161,9 @@ def test_rerender_keeps_topology_parameters_and_callback_identity_fresh():
         (2, 3.0, squared_xyz),
         (2, 5.0, linear_x),
     ):
-        cs = ConstraintSet.create_empty(device=pose.coords.device, n_poses=2).add_constraints(
+        cs = ConstraintSet.create_empty(
+            device=pose.coords.device, n_poses=2
+        ).add_constraints(
             callback,
             jnp.array([[[0, 0, atom]]], jnp.int32),
             jnp.array([[scale]], jnp.float32),
@@ -205,3 +207,43 @@ def test_explicit_double_weight_storage_and_clone(scorer):
         ScoreFunction(None, weight_dtype=np.float16)
     with pytest.raises(ValueError, match="finite"):
         scorer.set_weight(ScoreType.fa_ljatr, 1e100)
+
+
+def test_stock_programs_use_fresh_parameters_without_retaining_database_owners():
+    import attrs
+    import gc
+    import weakref
+
+    from tests.scientific.execution import Execution
+    from tests.scientific.dunbrack_molecules import DUNBRACK_CASES
+
+    backend = Execution("jax-cpu").molecule(DUNBRACK_CASES["d_peptide"], terms=())
+    pose, original = backend.pose, backend.parameter_database
+    rendered, owners = [], []
+    for scale in (2.0, 7.0):
+        database = attrs.evolve(
+            original,
+            scoring=attrs.evolve(
+                original.scoring,
+                ref=attrs.evolve(
+                    original.scoring.ref,
+                    weights={"ALA": scale, "LEU": scale, "ARG": scale, "PHE": scale},
+                ),
+            ),
+        )
+        owners.append(weakref.ref(database))
+        sf = ScoreFunction(database)
+        sf.set_weight(ScoreType.ref, 1.0)
+        rendered.append(sf.render_whole_pose_scoring_module(pose))
+    del database, sf
+    gc.collect()
+    assert all(owner() is None for owner in owners)
+    # First execution after both owners expire must still use each snapshot.
+    for scorer, expected in zip(rendered, (8.0, 28.0)):
+        values, gradient = scorer.value_and_grad()(pose.coords)
+        np.testing.assert_array_equal(values, [expected])
+        np.testing.assert_array_equal(gradient, 0)
+        np.testing.assert_array_equal(
+            jax.jit(jax.vmap(scorer))(jnp.stack([pose.coords, pose.coords])),
+            [[expected], [expected]],
+        )

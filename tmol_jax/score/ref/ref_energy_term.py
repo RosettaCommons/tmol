@@ -12,7 +12,8 @@ class RefEnergyTerm(EnergyTerm):
     def set_options(self, options):
         self.weights_override = options.get("ref_weights")
 
-    def score_types_provided(self):
+    @staticmethod
+    def score_types_provided():
         return [ScoreType.ref]
 
     def block_type_values(self, pbt):
@@ -32,8 +33,8 @@ class RefEnergyTerm(EnergyTerm):
         per_block = np.where(indices >= 0, values[np.maximum(indices, 0)], 0)
         return jax.device_put(per_block.sum(axis=1), device=pose_stack.coords.device)
 
-    def __call__(self, pose_stack, term_state, coords_override=None):
-        coords = pose_stack.coords if coords_override is None else coords_override
+    @classmethod
+    def evaluate(cls, term_state, coords):
         return {ScoreType.ref: term_state.astype(coords.dtype)}
 
 

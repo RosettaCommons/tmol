@@ -39,6 +39,10 @@ _TERM_FOR_TYPE = {
     for module, (class_name, names) in _TERM_TYPES.items()
     for name in names
 }
+# Stock executables retain array signatures and scalar options, never chemistry
+# owners. Numeric state is supplied afresh by every rendered score.
+_STOCK_EXECUTORS = {}
+
 _FUSED_PAIR_TYPES = (
     ScoreType.fa_ljatr,
     ScoreType.fa_ljrep,
@@ -275,13 +279,29 @@ class ScoreFunction(ScoreTermLifecycle):
             )
             else None
         )
-        evaluation_pose = None if cache is not None else pose_stack
+        if cache is not None and ScoreType.constraint not in channels:
+            cache = _STOCK_EXECUTORS
+            evaluators = tuple(type(term).evaluate for term in terms)
+            weighted_evaluators = tuple(
+                getattr(type(term), "weighted_energy", None) for term in terms
+            )
+        else:
+            # Custom terms may use their instance or pose, including callbacks.
+            def bind(term):
+                return lambda state, coords: term(pose_stack, state, coords)
+
+            evaluators = tuple(bind(term) for term in terms)
+            weighted_evaluators = tuple(
+                getattr(term, "weighted_energy", None) for term in terms
+            )
+        provided_channels = tuple(tuple(term.score_types_provided()) for term in terms)
+        has_fused = bool(fused_terms)
 
         def score(coords, prepared):
             term_states, pair_state = prepared
             energies = {}
             weighted_pair = None
-            if fused_terms:
+            if has_fused:
                 if sum_terms and apply_weights:
                     weighted_pair = nonbonded_energy(coords, pair_state, pair_weights)
                 else:
@@ -290,10 +310,10 @@ class ScoreFunction(ScoreTermLifecycle):
                     )
             weighted_terms = []
             combined_channels = set()
-            for term, state in zip(terms, term_states):
-                weighted = getattr(term, "weighted_energy", None)
+            for evaluate, weighted, provided, state in zip(
+                evaluators, weighted_evaluators, provided_channels, term_states
+            ):
                 if sum_terms and weighted is not None:
-                    provided = term.score_types_provided()
                     term_weights = tuple(
                         weights.get(st, 0) if apply_weights else int(st in channels)
                         for st in provided
@@ -301,9 +321,7 @@ class ScoreFunction(ScoreTermLifecycle):
                     weighted_terms.append(weighted(state, coords, term_weights))
                     combined_channels.update(provided)
                 else:
-                    energies.update(
-                        term(evaluation_pose, state, coords_override=coords)
-                    )
+                    energies.update(evaluate(state, coords))
             if weighted_pair is not None:
                 weighted_terms.append(weighted_pair)
                 combined_channels.update(_FUSED_PAIR_TYPES)
