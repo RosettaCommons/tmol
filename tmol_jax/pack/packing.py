@@ -9,7 +9,9 @@ from .annealing import anneal_cpu, anneal_cuda
 from .imposition import impose_top_rotamer_assignments
 
 
-def pack_rotamers(pose_stack, sfxn, task, *, seed=None, chunk_size=16):
+def pack_rotamers(
+    pose_stack, sfxn, task, *, seed=None, chunk_size=16, anneal_device=None
+):
     """Select conformers using the complete sparse score and native search.
 
     Returns a new pose. The task must register its samplers, including fallback
@@ -20,6 +22,8 @@ def pack_rotamers(pose_stack, sfxn, task, *, seed=None, chunk_size=16):
     lockstep context; independently varying third-backbone context is unsupported.
     CPU and CUDA use their respective mature search schedules. The CUDA phase
     seeds are drawn locally from NumPy PCG64; no global RNG state is changed.
+    ``anneal_device`` may select a CPU/CUDA device independently of scoring.
+    Only prepared graph arrays move; the returned pose stays on its input device.
     """
     if isinstance(pose_stack.coords, jax.core.Tracer):
         raise TypeError("discrete packing requires eager coordinates and choices")
@@ -29,6 +33,20 @@ def pack_rotamers(pose_stack, sfxn, task, *, seed=None, chunk_size=16):
         seed = int(np.random.SeedSequence().generate_state(1, np.uint64)[0])
     if not isinstance(seed, (int, np.integer)) or not 0 <= seed < 1 << 64:
         raise ValueError("packing seed must be an unsigned 64-bit integer")
+    device = pose_stack.device if anneal_device is None else anneal_device
+    if isinstance(device, str):
+        platform, _, index = device.partition(":")
+        if platform not in ("cpu", "cuda", "gpu"):
+            raise ValueError("annealing supports native CPU and CUDA devices")
+        index = int(index or 0)
+        devices = jax.devices(platform)
+        if not 0 <= index < len(devices):
+            raise ValueError("annealing device index is out of range")
+        device = devices[index]
+    if not isinstance(device, jax.Device):
+        raise TypeError("anneal_device must be a JAX device or a device string")
+    if device.platform not in ("cpu", "gpu"):
+        raise ValueError("annealing supports native CPU and CUDA devices")
     pose, rotamers = build_rotamers(
         pose_stack, task, pose_stack.packed_block_types.chem_db
     )
@@ -60,14 +78,18 @@ def pack_rotamers(pose_stack, sfxn, task, *, seed=None, chunk_size=16):
             "energy2b",
         )
     )
-    if pose.device.platform == "cpu":
+    if device != pose.device:
+        arguments = jax.device_put(arguments, device)
+    if device.platform == "cpu":
         _, assignments = anneal_cpu(*arguments, chunk_size=chunk_size, seed=seed)
     else:
         seeds = np.random.PCG64(int(seed)).random_raw(3).view(np.uint8).reshape(3, 8)
         _, assignments = anneal_cuda(
             *arguments,
             chunk_size=chunk_size,
-            phase_seeds=jax.device_put(seeds, pose.device),
+            phase_seeds=jax.device_put(seeds, device),
             max_rotamers=int(np.asarray(r["rotamer_pose_counts"]).max(initial=0)),
         )
+    if device != pose.device:
+        assignments = jax.device_put(assignments, pose.device)
     return impose_top_rotamer_assignments(pose, rotamers, graph, assignments)

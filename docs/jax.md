@@ -326,7 +326,9 @@ pose imposition. It requires float32 coordinates; tasks inherit palette defaults
 and accept additional samplers. Ligand, noncanonical, D-peptide,
 mixed and DNA repacking fixtures check selected coordinates, immutable chemistry
 and the resulting whole-pose energy. CPU and CUDA retain their different mature
-search schedules. CUDA phase seeds come from a local NumPy PCG64 generator;
+search schedules. Set `anneal_device="cpu"`, `"cuda:0"`, or a JAX device to
+run the search separately from scoring; the result stays on the pose device.
+JAX annealing supports native CPU and CUDA. CUDA phase seeds come from a local NumPy PCG64 generator;
 packing leaves global random state unchanged. For already parameterized covalent
 groups, `ConjugatedChiSampler` and `add_conjugated_group_sampler` share task masks,
 chi budgets and correlation declarations with Torch; native joint kinematics
