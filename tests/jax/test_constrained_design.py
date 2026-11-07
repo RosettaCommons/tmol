@@ -30,6 +30,7 @@ def test_constrained_design_source_gradient_and_changed_atom_guard():
 
     def objective(x):
         return score(plan.coordinates(x)).sum()
+
     value, gradient = jax.jit(jax.value_and_grad(objective))(rotamers.coords)
     assert np.isfinite(value) and np.isfinite(gradient).all()
     assert np.linalg.norm(gradient) > 1
