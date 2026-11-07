@@ -10,7 +10,7 @@ from tmol_core.scoring.na_torsion import _block_type_params
 from tmol_core.scoring.na_torsion_params import prepare_na_torsion_parameters
 from tmol_core.scoring.na_torsion_topology import prepare_na_torsion_topology
 from tmol_jax.score._native import atom_downstream_of_conn, coordinate_energy, register
-from tmol_jax.score.energy_term import EnergyTerm
+from tmol_jax.score.energy_term import EnergyTerm, prepared_palette
 from tmol_jax.score.score_types import ScoreType
 
 
@@ -20,8 +20,11 @@ class NaTorsionTermState(NamedTuple):
 
 
 def na_block_parameters(pbt):
-    elements = {at.name: at.element for at in pbt.chem_db.atom_types}
-    return [_block_type_params(bt, elements) for bt in pbt.active_block_types]
+    def prepare():
+        elements = {at.name: at.element for at in pbt.chem_db.atom_types}
+        return [_block_type_params(bt, elements) for bt in pbt.active_block_types]
+
+    return prepared_palette(pbt, pbt.chem_db, "na_blocks", prepare)
 
 
 def na_parameter_state(database, device=None):
@@ -59,6 +62,26 @@ def na_parameter_state(database, device=None):
     )
 
 
+def na_packed_state(pbt, database, device):
+    """Reuse chemical metadata and parameters; pose topology stays separate."""
+
+    def prepare():
+        blocks = na_block_parameters(pbt)
+        metadata = jax.device_put(
+            (
+                np.asarray(atom_downstream_of_conn(pbt), np.int32),
+                *(
+                    np.asarray([row[name] for row in blocks], np.int32)
+                    for name in ("base", "uaids", "ring", "down")
+                ),
+            ),
+            device=device,
+        )
+        return metadata, na_parameter_state(database, device)
+
+    return prepared_palette(pbt, database, "na_torsion", prepare, device=device)
+
+
 class NaTorsionEnergyTerm(EnergyTerm):
     @staticmethod
     def score_types_provided():
@@ -84,7 +107,7 @@ class NaTorsionEnergyTerm(EnergyTerm):
             np.asarray(pose_stack.inter_residue_connections),
             pose_stack.coords.shape[1],
         )
-        state = na_parameter_state(self.param_db, pose_stack.coords.device)
+        _, state = na_packed_state(pbt, self.param_db, pose_stack.coords.device)
         register("tmol_na_torsion")
         return NaTorsionTermState(
             jax.device_put(

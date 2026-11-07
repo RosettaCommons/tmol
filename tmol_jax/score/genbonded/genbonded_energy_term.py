@@ -6,7 +6,7 @@ import numpy as np
 
 from tmol_core.scoring.genbonded import GenBondedPreparation
 from tmol_jax.score._native import coordinate_energy, register, bonded_pose_arguments
-from tmol_jax.score.energy_term import EnergyTerm
+from tmol_jax.score.energy_term import EnergyTerm, prepared_palette
 from tmol_jax.score.score_types import ScoreType
 
 
@@ -45,13 +45,20 @@ class GenBondedEnergyTerm(EnergyTerm):
                 padding = [(0, 0)] * packed[i].ndim
                 padding[1] = (0, ports - packed[i].shape[1])
                 packed[i] = np.pad(packed[i], padding)
-        return jax.device_put(
-            (
-                *bonded_pose_arguments(pose_stack, pbt),
-                *packed,
-                *self._prepared("inter_tables", prep.inter_tables),
+        device = pose_stack.coords.device
+        chemical_arrays = prepared_palette(
+            pbt,
+            self.param_db,
+            "genbonded",
+            lambda: jax.device_put(
+                (*packed, *self._prepared("inter_tables", prep.inter_tables)),
+                device=device,
             ),
-            device=pose_stack.coords.device,
+            device=device,
+        )
+        return (
+            jax.device_put(bonded_pose_arguments(pose_stack, pbt), device=device)
+            + chemical_arrays
         )
 
     @classmethod

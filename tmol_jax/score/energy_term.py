@@ -43,14 +43,17 @@ class EnergyTerm(ABC):
         raise NotImplementedError
 
 
-def prepared_palette(pbt, database, name, prepare, *, settings=()):
-    """Owner-local immutable host preparation, shared by terms using a palette."""
+def prepared_palette(pbt, database, name, prepare, *, settings=(), device=None):
+    """Bounded palette preparation keyed by live sources and execution device."""
     key = AnnotationKey.from_sources(
         database,
         *pbt.active_block_types,
-        settings=(pbt.max_n_atoms, pbt.max_n_conn, *settings),
+        settings=(pbt.max_n_atoms, pbt.max_n_conn, device, *settings),
     )
-    cache = getattr(pbt, "_scoring_preparations", None)
+    # Device copies must not evict the common host records used to prepare them.
+    attribute = "_scoring_preparations" if device is None else "_scoring_device_arrays"
+    cache = getattr(pbt, attribute, None)
     if cache is None:
-        cache = pbt._scoring_preparations = PreparationCache()
+        cache = PreparationCache()
+        setattr(pbt, attribute, cache)
     return cache.get_or_create(name, key, prepare)

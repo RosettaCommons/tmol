@@ -106,22 +106,6 @@ def _require_rebuildable(residue, available, leaf):
         raise ValueError(f"missing non-leaf atoms on {residue.name}: {atoms}")
 
 
-def _compact_palette(pbt, used):
-    from tmol_core.cache import AnnotationKey
-    from tmol_jax.pose.packed_block_types import PackedBlockTypes
-    import jax
-
-    types = tuple(pbt.active_block_types[k] for k in used)
-    device = jax.config.jax_default_device or jax.devices()[0]
-    key = AnnotationKey.from_sources(pbt.chem_db, *types, settings=(device,))
-    cached = getattr(pbt, "_canonical_compact_palette", None)
-    if cached is not None and cached[0].matches(key):
-        return cached[1]
-    compact = PackedBlockTypes.from_restypes(pbt.chem_db, types)
-    object.__setattr__(pbt, "_canonical_compact_palette", (key, compact))
-    return compact
-
-
 def _canonical_coordinates(cf, co):
     import jax
 
@@ -194,6 +178,8 @@ def pose_stack_from_canonical_form(
     covalent and metal connections use common chemistry and port validation.
     Metal donors grow the palette; protonation uses observed hydrogen evidence
     and optional explicit states. Missing metal sites use shared placement plans.
+    Supplied residue types remain available for later tautomer sampling and
+    design, including types not selected in the input coordinates.
 
     ``res_not_connected`` retains the JAX input convention of a terminated chain
     break; ``res_gap`` suppresses bonds without forcing terminal chemistry.
@@ -347,14 +333,10 @@ def pose_stack_from_canonical_form(
             [co.restype_io_equiv_classes[types[p, r]] for r in indices]
         )
         chain_rows.append(chain_indices[p, indices])
-    used = np.unique(np.concatenate(rows))
-    remap = np.full(pbt.n_types, -1, np.int32)
-    remap[used] = np.arange(len(used), dtype=np.int32)
-    compact = _compact_palette(pbt, used)
-    table = connections[:, : max(map(len, rows)), : compact.max_n_conn]
+    table = connections[:, : max(map(len, rows)), : pbt.max_n_conn]
     result = PoseStackBuilder.from_block_types_and_coords(
-        compact,
-        [remap[row] for row in rows],
+        pbt,
+        rows,
         xyz,
         chain_rows,
         residue_numbers,

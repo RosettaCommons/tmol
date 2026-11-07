@@ -84,11 +84,17 @@ Score weights default to float32 storage, matching mature Torch defaults even
 when coordinates use float64. `ScoreFunction(db, weight_dtype=np.float64)` selects
 explicit double-precision weights; clones retain that choice.
 
+Immutable chemical parameter arrays are cached by live database/residue context and
+execution device. Pose connectivity and coordinate-dependent work remain fresh.
+
 Rendered scorers snapshot weights, term options and topology. Reuse them for
 coordinate changes; render again after changing weights, parameters, types,
 connectivity or batch layout. `sum_terms=False` returns weighted channels in
 `all_score_types()` order, including zero-weight channels of retained terms;
 additionally set `apply_weights=False` for unweighted values.
+These two options can be set when rendering or overridden on each scorer call;
+`scorer.unweighted_scores(coords)` returns all retained unweighted channels.
+Per-call options are static under JAX transformations and reuse prepared operands.
 `all_terms()`, body-count groups and `weights_tensor()` use the common lifecycle.
 Setting a term's final nonzero weight to zero removes it; direct removal updates
 coverage immediately while existing rendered scorers retain their snapshots.
@@ -492,12 +498,23 @@ custom parameter score function and an explicit seed for reproducibility. Other
 blocks and poses stay frozen. One-letter mutation retains its mature amino-acid
 contract; use exact residue identities for other supported types.
 
+`PackedBlockTypes.from_restype_list(chem_db, restype_set, active_block_types,
+device)` uses common topology preparation while retaining the supplied chemistry,
+residue collection and ordered active types. `inds_for_restypes` returns `-1`
+for absent names; `.cpu()` transfers palette arrays and retains that context.
+The connection, bond and named-torsion metadata arrays support `jit` and `vmap`.
+The public `count_*`, `determine_*` and `join_*` preparation methods use the same
+host topology source as Torch and transfer their results to the requested device.
+Preparation is eager; array execution and transport retain the supplied context.
+
 `extended_pose_stack_from_sequences(seqs, device=..., param_db=...,
 return_context=True)` consumes the common sequence grammar and ideal geometry:
 uppercase protein, lowercase DNA, exact `X[NAME]` variants, `X(SMILES)` ligands,
 and `:` chain breaks. Use the returned context's parameter database for scoring.
 Context reuse retains prepared ligand identities; `termini=False` preserves
-uncapped types. `PoseStackBuilder.from_block_type_names(palette, names,
+uncapped types. Canonical construction retains the supplied residue palette,
+including unused tautomers and legal design identities; compacting coordinate
+padding does not remove chemistry choices. `PoseStackBuilder.from_block_type_names(palette, names,
 chain_lengths)` creates zero coordinates with the same named-connection parser.
 A `--port-label` bond requires paired labels; unmatched labels have the mature
 parser's ignored-label behavior. Invalid ports and multiply used labels raise.
@@ -655,6 +672,11 @@ Reference sums use the common float64 accumulator and cast once to the stored pa
 has quadratic block storage; all physical pair identities remain candidates so
 coordinate motion cannot invalidate a captured neighbor list. Rendering is eager;
 execution supports `jit`, `vmap` and first reverse coordinate derivatives.
+The rendered scorer also provides `unweighted_scores(coords)` and
+`score_interactions(coords, block_pair_indices, sum_terms=True, apply_weights=True)`.
+Pair indices have shape `[pairs, 2]` and apply to every pose; repeated pairs count
+repeatedly and an empty selection returns zero. Invalid indices raise in eager
+execution and yield NaN under JAX transformations.
 
 `calculate_fragment_interactions(pose, partner_mask, sfxn=score_function)` returns
 per-fragment partner scores and original column records. The Boolean partner mask

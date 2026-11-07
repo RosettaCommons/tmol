@@ -16,7 +16,7 @@ from tmol_jax.score._native import (
     pose_arguments,
     register,
 )
-from tmol_jax.score.energy_term import EnergyTerm
+from tmol_jax.score.energy_term import EnergyTerm, prepared_palette
 from tmol_jax.score.score_types import ScoreType
 
 
@@ -59,10 +59,13 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
             settings=(fit_bspline_coefficients,),
         )
         register("tmol_backbone_torsion")
-        return BackboneTorsionTermState(
-            jax.device_put(
+        device = pose_stack.coords.device
+        chemical_arrays = prepared_palette(
+            pbt,
+            self.param_db,
+            "backbone",
+            lambda: jax.device_put(
                 (
-                    *pose_arguments(pose_stack),
                     atom_downstream_of_conn(pbt),
                     *(
                         host[name]
@@ -80,8 +83,13 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
                     ot.tables,
                     np.concatenate((ot.bbstarts, ot.bbsteps), axis=1),
                 ),
-                device=pose_stack.coords.device,
-            )
+                device=device,
+            ),
+            device=device,
+        )
+        return BackboneTorsionTermState(
+            jax.device_put(tuple(pose_arguments(pose_stack)), device=device)
+            + chemical_arrays
         )
 
     @classmethod

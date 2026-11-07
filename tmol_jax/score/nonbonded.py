@@ -100,15 +100,30 @@ def _validate_native_connections(pbt):
         )
 
 
+def _ljlk_distances(pose, database):
+    pbt, device = pose.packed_block_types, pose.coords.device
+    return prepared_palette(
+        pbt,
+        database,
+        "ljlk_distances",
+        lambda: jax.device_put(
+            packed_ljlk_distances(
+                pbt.active_block_types,
+                pbt.max_n_atoms,
+                database.scoring.genbonded.rosetta_typed,
+            ),
+            device,
+        ),
+        settings=(device,),
+    )
+
+
 def prepare_nonbonded(pose, database, *, soft_repulsive=False):
     """Materialize canonical chemistry/parameters in the native operand layout."""
     pbt = pose.packed_block_types
-    types = pbt.active_block_types
     lj, lj_global = _ljlk_parameters(pose, database, soft_repulsive=soft_repulsive)
     elec = _electrostatic_parameters(pose, database)
-    lj_paths, generic = packed_ljlk_distances(
-        types, pbt.max_n_atoms, database.scoring.genbonded.rosetta_typed
-    )
+    lj_paths, generic = _ljlk_distances(pose, database)
     offsets, first, indices, _ = pose_arguments(pose)
     poses, blocks = indices.shape
     near, separation = _pose_connections(pose)
@@ -175,7 +190,6 @@ def prepare_independent_nonbonded(
     pbt = pose.packed_block_types
     _validate_native_connections(pbt)
     types = pbt.active_block_types
-    rosetta_typed = database.scoring.genbonded.rosetta_typed
     offsets, first, indices, _ = pose_arguments(pose)
     poses, blocks = indices.shape
     near, separation = _pose_connections(pose)
@@ -193,7 +207,7 @@ def prepare_independent_nonbonded(
         parameters, globals_ = _ljlk_parameters(
             pose, database, soft_repulsive=soft_repulsive
         )
-        paths, generic = packed_ljlk_distances(types, pbt.max_n_atoms, rosetta_typed)
+        paths, generic = _ljlk_distances(pose, database)
         specific = (pbt.atom_types, paths, parameters, globals_)
         target, channels, reach = "tmol_ljlk", 3, globals_[0, 0]
     operands = (

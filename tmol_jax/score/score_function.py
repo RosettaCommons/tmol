@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from .score_types import ScoreType
-from ._execution import render_execution
+from ._execution import WholePoseScorer, render_execution
 
 from tmol_core.scoring.channels import TERM_CHANNELS, TERM_N_BODIES
 from tmol_core.scoring.score_function import ScoreTermLifecycle, sorted_score_terms
@@ -297,7 +297,7 @@ class ScoreFunction(ScoreTermLifecycle):
         provided_channels = tuple(tuple(term.score_types_provided()) for term in terms)
         has_fused = bool(fused_terms)
 
-        def score(coords, prepared):
+        def score(coords, prepared, sum_terms, apply_weights):
             term_states, pair_state = prepared
             energies = {}
             weighted_pair = None
@@ -345,25 +345,34 @@ class ScoreFunction(ScoreTermLifecycle):
                 return sum(weighted_terms, result)
             return values
 
-        configuration = (
-            tuple(type(term) for term in terms),
-            tuple(sorted(weights.items())),
-            sum_terms,
-            apply_weights,
-            bool(fused_terms),
+        native_only = (
+            cache is not None
+            and ScoreType.constraint not in channels
+            and pose_stack.coords.device.platform == "gpu"
         )
-        return render_execution(
-            cache,
-            configuration,
-            score,
-            prepared,
-            shape,
-            native_only=(
-                cache is not None
-                and ScoreType.constraint not in channels
-                and pose_stack.coords.device.platform == "gpu"
-            ),
-        )
+        term_classes = tuple(type(term) for term in terms)
+        weight_items = tuple(sorted(weights.items()))
+
+        def render(sum_terms, apply_weights):
+            configuration = (
+                term_classes,
+                weight_items,
+                sum_terms,
+                apply_weights,
+                bool(fused_terms),
+            )
+            return render_execution(
+                cache,
+                configuration,
+                lambda coords, prepared: score(
+                    coords, prepared, sum_terms, apply_weights
+                ),
+                prepared,
+                shape,
+                native_only=native_only,
+            )
+
+        return WholePoseScorer(render, sum_terms, apply_weights)
 
     def jitted(self, pose_stack):
         """Compile execution; reuse its program across fresh prepared states."""

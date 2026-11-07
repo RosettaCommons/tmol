@@ -6,10 +6,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_jax.score._native import register, atom_downstream_of_conn
+from tmol_jax.score._native import register
 from tmol_jax.score.na_torsion.na_torsion_energy_term import (
-    na_block_parameters,
-    na_parameter_state,
+    na_packed_state,
 )
 from .scoring import coordinate_vjp, validate_rotamer_context
 
@@ -37,8 +36,8 @@ def _topology(arguments):
 def prepare_rotamer_na_torsion(pose, rotamers, database):
     validate_rotamer_context(pose, rotamers)
     pbt = pose.packed_block_types
-    blocks = na_block_parameters(pbt)
     with jax.default_device(pose.device):
+        metadata, tables = na_packed_state(pbt, database, pose.device)
         arguments = (
             rotamers.block_type_ind_for_rot,
             rotamers.pose_for_rot,
@@ -47,16 +46,11 @@ def prepare_rotamer_na_torsion(pose, rotamers, database):
             rotamers.rot_offset_for_block,
             rotamers.first_rot_block_type,
             pose.inter_residue_connections,
-            jnp.asarray(atom_downstream_of_conn(pbt), jnp.int32),
-            *(
-                jnp.asarray(np.asarray([row[name] for row in blocks]), jnp.int32)
-                for name in ("base", "uaids", "ring", "down")
-            ),
+            *metadata,
         )
         base, previous, is_na, torsions, _, torsion_ok, rings, ring_ok = _topology(
             arguments
         )
-        tables = na_parameter_state(database, pose.device)
     return (
         (
             base,

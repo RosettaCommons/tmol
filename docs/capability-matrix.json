@@ -250,7 +250,7 @@
     {
       "domain": "native_cpu",
       "torch": "supported",
-      "jax": "partial",
+      "jax": "common_native_scoring_and_packing_with_parity_gaps",
       "repro_fixture": [
         "tests/jax/test_native_genbonded.py"
       ],
@@ -259,7 +259,7 @@
     {
       "domain": "native_cuda",
       "torch": "supported",
-      "jax": "partial",
+      "jax": "common_native_scoring_and_packing_with_parity_gaps",
       "repro_fixture": [
         "tests/jax/test_native_genbonded.py"
       ],
@@ -356,7 +356,7 @@
         "tests/scientific/test_atomworks_encoding.py",
         "tests/scientific/test_stated_termini.py"
       ],
-      "implementation_status": "Shared atom routing; native leaf/H and fixed metal reconstruction; shared input packing and finite-input/frozen-block derivative restoration. Eight molecular first/replay cases, GLN/HIS OptH and four public AtomArray/topology overload cases pass CPU checks in both frameworks. Missing HYP/D-proline native packing and source-energy gradients pass JAX; The native exact-zero-cotangent guard fixes the previously recorded21-NaN Torch HYP source gradient; CPU/CUDA caller gates and bounded actual Apple callers pass. Geometry searches for extra disulfides/cycles are off by default; prepared chemistry and sampling choices are fixed. Tensor-only API now shares the validated common routing plan, with custom layouts, explicit bonds and suppressed polymer connections. Seven canonical/noncanonical molecular CPU full source-energy/gradient and directional-difference checks pass both backends; two JAX jit/vmap/invalid-input contracts pass. Frozen cf0e43 tensor/OptH adapters passed exact installed45+380, JAXCUDA48 and TorchCUDA39. Canonical AtomWorks compatibility input/export, common library-record aliases, tensor-gap semantics and optional identity metadata passed exact installed CPU and actual CUDA gates. Prepared input now consumes one common canonical plan including supplied terminal chemistry and explicit protonation variants. Both CPU frontends preserve CCD-style terminal H coordinates and exact source derivatives; actual CUDA and installed gates for this extension remain pending. These are bounded cases, not exhaustive API parity."
+      "implementation_status": "Shared atom routing; native leaf/H and fixed metal reconstruction; shared input packing and finite-input/frozen-block derivative restoration. Eight molecular first/replay cases, GLN/HIS OptH and four public AtomArray/topology overload cases pass CPU checks in both frameworks. Missing HYP/D-proline native packing and source-energy gradients pass JAX; The native exact-zero-cotangent guard fixes the previously recorded21-NaN Torch HYP source gradient; CPU/CUDA caller gates and bounded actual Apple callers pass. Geometry searches for extra disulfides/cycles are off by default; prepared chemistry and sampling choices are fixed. Tensor-only API now shares the validated common routing plan, with custom layouts, explicit bonds and suppressed polymer connections. Seven canonical/noncanonical molecular CPU full source-energy/gradient and directional-difference checks pass both backends; two JAX jit/vmap/invalid-input contracts pass. Frozen cf0e43 tensor/OptH adapters passed exact installed45+380, JAXCUDA48 and TorchCUDA39. Canonical AtomWorks compatibility input/export, common library-record aliases, tensor-gap semantics and optional identity metadata passed exact installed CPU and actual CUDA gates. Prepared input now consumes one common canonical plan including supplied terminal chemistry and explicit protonation variants. Both frontends preserve CCD-style terminal H coordinates and source derivatives; this extension has CPU/CUDA and Torch-free installed checks. These are bounded cases, not exhaustive API parity."
     },
     {
       "domain": "pose_concatenation",
@@ -556,7 +556,8 @@
       "Apple validation is a separate actual Torch/Metal gate; no native JAX MPS support is advertised.",
       "Earlier float32 CUDA FastRelax repeat failures motivated shared precise accumulation for nonbonded, cartbonded, LKBall and water gradients. Both the corrected component and combined source pass five tested molecular domains with five repeats in both current frontends. Matched mature complete workflows retain numerical/runtime/memory holds, and final actual Apple validation remains separate; earlier failures are retained.",
       "Shared native ligand preparation retains historical seeded geometry, derived-parameter and downstream energy/gradient differences. Pointwise analytic-gradient and molecular-invariant passes do not establish historical prepared-system equivalence.",
-      "Long float64 CUDA minimization with history_size=128 and max_iter=140 can exceed the retained 2e-10 repeat-gradient bound on ubiquitin. This occurs in the current baseline as well as held compilation experiments; the five-domain float32 FastRelax repeat checks do not establish this longer-workflow contract."
+      "Long float64 CUDA minimization with history_size=128 and max_iter=140 can exceed the retained 2e-10 repeat-gradient bound on ubiquitin. This occurs in the current baseline as well as held compilation experiments; the five-domain float32 FastRelax repeat checks do not establish this longer-workflow contract.",
+      "Complete CUDA allocation-event traces distinguish device allocations, static storage and pinned host buffers from driver/context residency. They retain canonical and mixed-system memory differences versus mature Torch; neither allocator counters nor sampled residency establish total physical peak-memory parity."
     ],
     "framework_specific_or_not_mature_parity": [
       "Higher derivatives through native torsion/forward-kinematics kernels are not advertised by mature Torch either",
@@ -606,5 +607,38 @@
       "tests/scientific/test_public_mutation.py"
     ],
     "implementation_status": "Common selection/query/mutation policy; mixed noncanonical/D/ligand identity, author insertion codes, frozen input/other blocks/poses and all-channel finite gradients tested on both CPU frameworks."
+  },
+  "canonical_palette_retention": {
+    "torch": "supported",
+    "jax": "cpu_cuda_installed_scientific_checks",
+    "repro_fixture": "tests/scientific/test_canonical_palette_choices.py",
+    "implementation_status": "Canonical input preserves the supplied residue choices. L/D histidine keeps both neutral tautomers and four OptH samples; unused custom ligand and GLY design identities remain available. CPU/CUDA and Torch-free installed checks cover topology, full-preset values/gradients and design choices. Restored ligand choices can change packing trajectories; complete mature equivalence remains open."
+  },
+  "public_palette_construction": {
+    "torch": "supported",
+    "jax": "cpu_cuda_installed_construction_lookup_transport_topology",
+    "repro_fixture": [
+      "tests/scientific/test_public_palette.py",
+      "tests/jax/test_palette_runtime.py"
+    ],
+    "implementation_status": "Common topology source preserves supplied chemistry, residue-set and active-object identity, ordered lookup, counts, connections, bonds and named torsions. Shared ligand/noncanonical/D/DNA/metal cases and JAX jit/vmap verify physical atom order and device placement, including Torch-free installs. Preparation remains eager; metadata arrays are pytree leaves."
+  },
+  "selected_block_pair_api": {
+    "torch": "supported",
+    "jax": "implemented",
+    "repro_fixture": [
+      "tests/scientific/test_selected_pair_scoring.py",
+      "tests/jax/test_block_pair_transforms.py"
+    ],
+    "implementation_status": "Rendered block-pair scorers expose mature unweighted_scores and score_interactions over the existing shared native physics. Ligand, noncanonical and mixed-system contracts cover selected-energy conservation, physical gradients and repeated/empty selections. Invalid eager indices reject; invalid transformed indices produce NaN. This public API capability does not resolve mature whole-workflow numerical or runtime/memory gaps."
+  },
+  "rendered_whole_score_options": {
+    "torch": "supported",
+    "jax": "implemented",
+    "repro_fixture": [
+      "tests/scientific/test_rendered_score_options.py",
+      "tests/jax/test_score_function.py"
+    ],
+    "implementation_status": "Rendered whole-pose scorers accept per-call sum_terms/apply_weights and expose unweighted_scores. Alternate static reductions reuse prepared parameter/topology operands and retain original configuration after score-function mutation. Existing render defaults, mapped-coordinate execution and chemistry-owner lifetime are preserved; complete mature end-to-end parity remains separately gated."
   }
 }

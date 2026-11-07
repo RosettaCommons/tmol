@@ -6,7 +6,7 @@ import numpy as np
 
 from tmol_core.scoring.metal import MetalCoordinationPreparation, validate_donors
 from tmol_jax.score._native import coordinate_energy, pose_arguments, register
-from tmol_jax.score.energy_term import EnergyTerm
+from tmol_jax.score.energy_term import EnergyTerm, prepared_palette
 from tmol_jax.score.score_types import ScoreType
 
 
@@ -22,37 +22,50 @@ class MetalCoordinationEnergyTerm(EnergyTerm):
         used = np.unique(indices[indices >= 0])
         if not include_empty and all(not types[i].metal_sites for i in used):
             return ()
-        prep = MetalCoordinationPreparation(self.param_db.scoring.metal_coordination)
-        host = prep.prepare_packed(
-            types, pbt.chem_db.atom_types, max_n_conn=pbt.max_n_conn
+        device = pose_stack.coords.device
+
+        def prepare():
+            prep = MetalCoordinationPreparation(
+                self.param_db.scoring.metal_coordination
+            )
+            host = prep.prepare_packed(
+                types, pbt.chem_db.atom_types, max_n_conn=pbt.max_n_conn
+            )
+            arrays = jax.device_put(
+                (
+                    pbt.conn_atoms,
+                    *(
+                        host["metal_coordination_" + name]
+                        for name in (
+                            "conn_metal",
+                            "conn_virt",
+                            "conn_key",
+                            "site_params",
+                            "fan_atoms",
+                            "fan_params",
+                            "bridge_internal_metal",
+                            "bridge_internal_d0",
+                            "bridge_params",
+                        )
+                    ),
+                ),
+                device=device,
+            )
+            return (
+                host["metal_coordination_conn_virt"],
+                host["metal_coordination_conn_key"],
+                arrays,
+            )
+
+        virtuals, keys, chemical = prepared_palette(
+            pbt, self.param_db, "metal", prepare, device=device
         )
         validate_donors(
-            indices,
-            np.asarray(pose_stack.inter_residue_connections),
-            host["metal_coordination_conn_virt"],
-            host["metal_coordination_conn_key"],
+            indices, np.asarray(pose_stack.inter_residue_connections), virtuals, keys
         )
         register("tmol_metal_coordination")
-        return jax.device_put(
-            (
-                *pose_arguments(pose_stack),
-                pbt.conn_atoms,
-                *(
-                    host["metal_coordination_" + name]
-                    for name in (
-                        "conn_metal",
-                        "conn_virt",
-                        "conn_key",
-                        "site_params",
-                        "fan_atoms",
-                        "fan_params",
-                        "bridge_internal_metal",
-                        "bridge_internal_d0",
-                        "bridge_params",
-                    )
-                ),
-            ),
-            device=pose_stack.coords.device,
+        return (
+            jax.device_put(tuple(pose_arguments(pose_stack)), device=device) + chemical
         )
 
     @classmethod
