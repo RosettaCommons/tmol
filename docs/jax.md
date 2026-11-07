@@ -456,6 +456,15 @@ custom parameter score function and an explicit seed for reproducibility. Other
 blocks and poses stay frozen. One-letter mutation retains its mature amino-acid
 contract; use exact residue identities for other supported types.
 
+`set_named_torsions(pose, poses, blocks, names, values, degrees=True)` uses
+shared selection/validation and native inverse/forward kinematics. It preserves
+coordinate dtype and parameter context and returns a new pose. Scalar or batched
+requests follow the selected fold forest; duplicate requests add their deltas.
+Missing-neighbor and non-bonded forest degrees of freedom raise. This eager
+initialization is outside autodiff; bound kinematic maps provide differentiable
+DOF execution. Mixed protein/ligand, D and beta peptides, DNA and RNA target and
+bond-geometry checks pass on both CPU frontends; final artifact/CUDA gates remain.
+
 Named geometry queries are available as `get_torsion_names(pose, pose_index,
 block_index)` and `get_named_torsions(pose, poses=None, blocks=None, names=None,
 degrees=True)`. They share selection and result conventions with Torch, including

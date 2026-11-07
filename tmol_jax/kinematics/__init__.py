@@ -13,7 +13,11 @@ from tmol_core.kinematics.fold_forest import EdgeType
 from .pose import PoseStackKinematics, PoseCoordinates
 from .move_map import CartesianMoveMap, MoveMap
 
+from .torsion_updates import set_named_torsions, torsion_labels
+
 __all__ = [
+    "set_named_torsions",
+    "torsion_labels",
     "KinematicForest",
     "KinematicCoordinates",
     "PoseStackKinematics",

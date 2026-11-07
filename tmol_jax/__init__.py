@@ -15,6 +15,7 @@ from .kinematics import (
     FoldForest,
     MoveMap,
     PoseStackKinematics,
+    set_named_torsions,
 )
 from .database import ParameterDatabase
 from .chemical.patched_chemdb import PatchedChemicalDatabase
@@ -85,6 +86,7 @@ __all__ = [
     "FoldForest",
     "EdgeType",
     "PoseStackKinematics",
+    "set_named_torsions",
     "MoveMap",
     "CartesianMoveMap",
     "run_cart_min",
