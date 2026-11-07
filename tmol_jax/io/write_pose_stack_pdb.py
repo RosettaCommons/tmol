@@ -53,6 +53,8 @@ def _format_atom_name(name: str) -> str:
 def atom_records_from_pose_stack(
     pose_stack: Any,
     pose_index: Optional[int] = None,
+    *,
+    merge_fragments: bool = True,
 ) -> List[Dict[str, Any]]:
     """Build a list of per-atom dicts from a PoseStack.
 
@@ -63,7 +65,8 @@ def atom_records_from_pose_stack(
 
     When ``pose_index`` is given, only atoms of that pose are emitted;
     otherwise we emit every pose and number them with ``modeli`` /
-    ``model`` as MODEL records.
+    ``model`` as MODEL records. Fragmented ligands recover their original
+    residue identities unless ``merge_fragments=False``.
     """
 
     pbt = pose_stack.packed_block_types
@@ -96,6 +99,8 @@ def atom_records_from_pose_stack(
     poses_to_emit = range(n_poses) if pose_index is None else [int(pose_index)]
 
     for p in poses_to_emit:
+        first_record = len(records)
+        block_names = []
         chain_label_to_int: Dict[str, int] = {}
         atom_counter = 0
         real_res_counter = 0
@@ -106,6 +111,7 @@ def atom_records_from_pose_stack(
                 continue
             bt = pbt.active_block_types[bt_ind]
             n_atoms = int(n_atoms_per_bt[bt_ind])
+            block_names.extend([bt.name] * n_atoms)
             resn = str(getattr(bt, "name3", "") or getattr(bt, "name", ""))[:3]
 
             # Chain label
@@ -192,7 +198,52 @@ def atom_records_from_pose_stack(
                     }
                 )
 
+        if merge_fragments:
+            _restore_fragment_identities(
+                records[first_record:], block_names, pose_stack, p
+            )
+
     return records
+
+
+def _restore_fragment_identities(records, block_names, pose, pose_index):
+    mapping = pose.split_block_mapping
+    if mapping is None or not mapping.entries:
+        return
+    import biotite.structure as struc
+    from tmol_core.ligand.fragment_imposition import recombine_fragmented_ligands
+
+    structure = struc.AtomArray(len(records))
+    structure.res_name = np.asarray(block_names)
+    for field, key in (
+        ("res_id", "resi"),
+        ("chain_id", "chain"),
+        ("ins_code", "insert"),
+    ):
+        setattr(structure, field, np.asarray([record[key] for record in records]))
+    restored = recombine_fragmented_ligands(
+        structure,
+        mapping.split(pose_index),
+        np.asarray(pose.pdb_info.residue_labels)[pose_index : pose_index + 1],
+        np.asarray(pose.block_type_ind)[pose_index : pose_index + 1],
+        pose.packed_block_types.active_block_types,
+    )
+    changed = (
+        (restored.res_name != structure.res_name)
+        | (restored.res_id != structure.res_id)
+        | (restored.chain_id != structure.chain_id)
+        | (restored.ins_code != structure.ins_code)
+    )
+    for index in np.flatnonzero(changed):
+        records[index].update(
+            resn=str(restored.res_name[index])[:3],
+            resi=int(restored.res_id[index]),
+            chain=str(restored.chain_id[index]),
+            insert=str(restored.ins_code[index]),
+        )
+    chains = {}
+    for record in records:
+        record["chaini"] = chains.setdefault(record["chain"], len(chains))
 
 
 # --------------------------------------------------------------------------- #
@@ -310,6 +361,8 @@ def write_pose_stack_pdb(
     pose_stack: Any,
     path_or_file: Union[str, Path, TextIO],
     pose_index: Optional[int] = 0,
+    *,
+    merge_fragments: bool = True,
 ) -> None:
     """Write a PoseStack (or a single pose of a stack) to a PDB file.
 
@@ -322,9 +375,14 @@ def write_pose_stack_pdb(
     pose_index :
         Pose index to emit. Defaults to ``0`` (first pose). Pass
         ``None`` to emit all poses as separate MODEL records.
+    merge_fragments :
+        Restore original ligand residue identities by default; pass ``False``
+        to retain separate fragment residue labels.
     """
 
-    records = atom_records_from_pose_stack(pose_stack, pose_index=pose_index)
+    records = atom_records_from_pose_stack(
+        pose_stack, pose_index=pose_index, merge_fragments=merge_fragments
+    )
     multi_model = pose_index is None
 
     pdb_str = _pdb_string_from_records(records, multi_model=multi_model)
