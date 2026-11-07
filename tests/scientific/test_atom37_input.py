@@ -156,10 +156,7 @@ def test_atom37_molecular_identity_batch_and_source_gradient(backend, name):
             assert abs(terms[b.channel_names().index("gen_torsions")]).max() > 1e-3
 
 
-@pytest.mark.parametrize("start,stop", ((0, 2), (66, 69)))
-def test_atom37_opth_preserves_observed_atoms_and_frozen_leaf_derivatives(
-    backend, start, stop
-):
+def atom37_opth_fixture(backend, start, stop):
     from pathlib import Path
     import biotite.structure as struc
     import biotite.structure.io as structure_io
@@ -188,6 +185,16 @@ def test_atom37_opth_preserves_observed_atoms_and_frozen_leaf_derivatives(
         def bound(y):
             return builder(y, opt_h=True)
 
+    return b, atoms, source, context, x, plain, bound
+
+
+@pytest.mark.parametrize("start,stop", ((0, 2), (66, 69)))
+def test_atom37_opth_preserves_observed_atoms_and_frozen_leaf_derivatives(
+    backend, start, stop
+):
+    b, atoms, source, context, x, plain, bound = atom37_opth_fixture(
+        backend, start, stop
+    )
     pose, reference = bound(x), plain(x)
     types, offsets = map(b.numpy, (pose.block_type_ind, pose.block_coord_offset))
     mask = np.zeros(pose.coords.shape[:2], bool)

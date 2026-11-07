@@ -111,3 +111,32 @@ def test_prepared_source_execution_observes_custom_charge_parameters():
     restored = executions[0](x)
     np.testing.assert_allclose(restored[0], original[0], rtol=2e-10, atol=2e-10)
     np.testing.assert_allclose(restored[1], original[1], rtol=2e-5, atol=2e-5)
+
+
+def test_prepared_source_execution_keeps_sampled_and_frozen_derivatives():
+    from tests.scientific.test_atom37_input import atom37_opth_fixture
+
+    b, _, source, context, x, _, bound = atom37_opth_fixture(execution(), 0, 2)
+    b.pose, b.parameter_database = bound(x), context.parameter_database
+    b.use_beta2016()
+    score = b.score_function.render_whole_pose_scoring_module(b.pose)
+    mapped = score.value_and_grad(coordinate_map=bound, coordinate_dtype=np.float64)
+    objective = jax.jit(lambda y: score(bound(y).coords.astype(np.float64)).sum())
+    expected, gradient = jax.value_and_grad(objective)(x)
+    actual = mapped(x)
+    np.testing.assert_allclose(actual[0].sum(), expected, rtol=2e-10, atol=2e-10)
+    np.testing.assert_allclose(actual[1], gradient, rtol=2e-5, atol=2e-5)
+    assert np.isfinite(actual[1]).all() and np.linalg.norm(actual[1]) > 1e-3
+    direction = np.where(
+        np.isfinite(source), np.random.default_rng(619).normal(size=source.shape), 0
+    ).astype(np.float32)
+    direction /= np.linalg.norm(direction)
+    direction = jax.device_put(direction, b.device)
+    for step in (1e-3, 3e-3):
+        numerical = (
+            mapped(x + step * direction)[0].sum()
+            - mapped(x - step * direction)[0].sum()
+        ) / (2 * step)
+        np.testing.assert_allclose(
+            numerical, (actual[1] * direction).sum(), rtol=4e-3, atol=4e-3
+        )
