@@ -9,8 +9,6 @@ from tmol_core.io.atom37 import (
     atom37_mapping,
     required_mainchain_entries,
 )
-from tmol_core.io import structure_context as common
-from tmol_core.io.canonical_atom_mapping import map_atoms_to_canonical
 
 
 def atom37_slot_map_for_ordering(canonical_ordering, atom_names_by_slot, device=None):
@@ -307,8 +305,8 @@ class PreparedAtom37PoseBuilder:
 
 def prepare_atom37_pose_builder(structure, context):
     """Resolve shared atom identity and connectivity once for Atom37 binding."""
-    import biotite.structure as struc
-    from .pose_stack_from_biotite import canonical_form_from_biotite
+    from tmol_core.io.canonical_atom_array import prepare_canonical_atom_array
+    from .pose_stack_from_biotite import _canonical_form_from_plan
 
     mapping = None
     if context.fragment_definitions:
@@ -318,35 +316,22 @@ def prepare_atom37_pose_builder(structure, context):
             structure, context.fragment_definitions
         )
     co = context.canonical_ordering
-    structure = common._normalize_input_identifiers(structure, co.name3_aliases)
-    structure = common._with_input_chemistry_normalized(
-        structure, common._metal_atom_names(co=co)
-    )
-    structure, _ = common._filter_supported_atoms_and_connectivity(
+    plan = prepare_canonical_atom_array(
         structure,
         co,
-        filter_missing_mainchain=False,
-        cut_partners=context.cut_covalent_partners,
-    )
-    template = canonical_form_from_biotite(
-        structure,
-        canonical_ordering=co,
-        prepare_input=True,
         missing_density_distance_threshold=0,
         filter_missing_mainchain=False,
         cut_partners=context.cut_covalent_partners,
+        chemical_database=context.parameter_database.chemical,
     )
+    structure = plan.structure
+    template = _canonical_form_from_plan(plan)
     template.update(
         find_additional_disulfides=False, find_additional_cyclic_closures=False
     )
-    valid, atoms, residues = map_atoms_to_canonical(
-        co,
-        struc.get_all_residue_positions(structure),
-        structure.res_name,
-        structure.atom_name,
-        structure.element,
+    routing = atom37_mapping(
+        structure, plan.valid_atom_mask, plan.valid_res_inds, plan.valid_atom_inds
     )
-    routing = atom37_mapping(structure, valid, residues, atoms)
     return PreparedAtom37PoseBuilder(
         context, template, routing, mapping, required_mainchain_entries(structure, co)
     )

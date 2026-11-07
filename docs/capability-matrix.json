@@ -42,7 +42,7 @@
         "tests/scientific/test_backbone_torsion.py",
         "tests/scientific/test_stated_termini.py"
       ],
-      "implementation_status": "Shared selection retains HYP, HIS_D/HIS_POS, CYD, terminal patches and modified nucleotides. Public input, protonation and explicit canonical fixtures exercise variant selection. Chemistry without the necessary variant/terminal records is not silently converted to a canonical residue. Prepared AtomArray input now consumes the complete common canonical host plan; supplied neutral termini suppress short-gap polymer connections, including bondless consecutive labels. Shared CPU checks retain supplied coordinates, disconnected ports, all25 finite values/gradients and minimization; broader artifact/CUDA gates remain pending for this change."
+      "implementation_status": "Shared selection retains HYP, HIS_D/HIS_POS, CYD, terminal patches and modified nucleotides. Public input, protonation and explicit canonical fixtures exercise variant selection. Chemistry without the necessary variant/terminal records is not silently converted to a canonical residue. Prepared AtomArray input now consumes the complete common canonical host plan; supplied neutral termini suppress short-gap polymer connections, including bondless consecutive labels. Source CPU/CUDA and installed checks retain supplied coordinates, disconnected ports, all 25 finite values/gradients and minimization. Complete mature workflow equivalence remains separate."
     },
     {
       "domain": "ligand_only",
@@ -134,7 +134,7 @@
         "tests/scientific/test_constraints.py",
         "tests/jax/test_general_constraints.py"
       ],
-      "implementation_status": "Whole-pose callbacks support up to four atoms spanning multiple blocks; sparse two-block constraints preserve physical atom order and parameter derivatives. Sparse candidates preserve joint-state correspondence and reject constraints on more than two distinct blocks. Whole-pose three/four-block callback energy and gradient identities pass both CPU frontends; JAX masked minimization and jit/vmap pass. Mature and current Torch masked minimization fail when trailing poses have no movable atoms; this is tracked separately from the supported scoring contract. Higher coordinate derivatives depend on native geometry and callback."
+      "implementation_status": "Whole-pose callbacks support up to four atoms spanning multiple blocks; sparse two-block constraints preserve physical atom order and parameter derivatives. Sparse candidates preserve joint-state correspondence and reject constraints on more than two distinct blocks. Whole-pose three/four-block callback energy and gradient identities have CPU/CUDA checks. The common segment-count correction preserves trailing poses without movable atoms during masked minimization; JAX jit/vmap and installed contracts pass. Higher coordinate derivatives depend on native geometry and callback."
     },
     {
       "domain": "heterogeneous_batches",
@@ -196,7 +196,7 @@
         "tests/scientific/test_fast_relax_execution.py",
         "tmol/tests/relax/test_fast_relax.py"
       ],
-      "implementation_status": "Common mature schedules, packing/minimization stages, task callbacks, release hooks and per-pose best acceptance. Molecular CPU/CUDA and installed checks cover the listed fixtures. Strict repeated float32 CUDA relaxation has unresolved gradient variation that can grow through minimization; the matched mature Torch repeat control passes. This blocks complete workflow parity despite passing individual science checks."
+      "implementation_status": "Common mature schedules, packing/minimization stages, task callbacks, release hooks and per-pose best acceptance. CPU/CUDA and installed checks cover the listed molecular fixtures. Shared precise derivative accumulation resolves the earlier float32 CUDA repeat failures on five tested domains in both current frontends, including the combined source. Historical mature trajectory, complete runtime/memory and actual final Metal equivalence remain unresolved; passing these bounded fixtures does not establish full parity."
     },
     {
       "domain": "fragment_interactions",
@@ -301,7 +301,7 @@
         "tests/scientific/test_atom_array_input.py",
         "tests/scientific/test_stated_termini.py"
       ],
-      "implementation_status": "Shared normalization, hydrogen/protonation, strict heavy atom identity, neutral-terminal mapping and reusable custom parameter context. Default missing-sidechain/OptH routing uses shared policy and native packing; noncanonical HYP and D missing-sidechain cases, ligand MOL2/CIF and metal/disulfide CPU workflows have finite full25E/G plus derivative and identity checks in both frameworks. Fragmented reconstruction and Atom37 replay use common plans; exact installed CPU and actual CUDA gates cover input packing, source gradients and tested metadata round trips. Complete public API compatibility remains open. Prepared AtomArray input now consumes the complete common canonical host plan; supplied neutral termini suppress short-gap polymer connections, including bondless consecutive labels. Shared CPU checks retain supplied coordinates, disconnected ports, all25 finite values/gradients and minimization; broader artifact/CUDA gates remain pending for this change."
+      "implementation_status": "Shared normalization, hydrogen/protonation, strict heavy atom identity, neutral-terminal mapping and reusable custom parameter context. Default missing-sidechain/OptH routing uses shared policy and native packing; noncanonical HYP and D missing-sidechain cases, ligand MOL2/CIF and metal/disulfide CPU workflows have finite full25E/G plus derivative and identity checks in both frameworks. Fragmented reconstruction and Atom37 replay use common plans; exact installed CPU and actual CUDA gates cover input packing, source gradients and tested metadata round trips. Complete public API compatibility remains open. Prepared AtomArray input now consumes the complete common canonical host plan; supplied neutral termini suppress short-gap polymer connections, including bondless consecutive labels. Source CPU/CUDA and installed checks retain supplied coordinates, disconnected ports, all 25 finite values/gradients and minimization; mature complete workflow equivalence remains separate."
     },
     {
       "domain": "structure_metadata",
@@ -351,9 +351,10 @@
         "tests/jax/test_atom37_transforms.py",
         "tests/scientific/test_atom37_tensor_input.py",
         "tests/jax/test_atom37_tensor_transforms.py",
-        "tests/scientific/test_atomworks_encoding.py"
+        "tests/scientific/test_atomworks_encoding.py",
+        "tests/scientific/test_stated_termini.py"
       ],
-      "implementation_status": "Shared atom routing; native leaf/H and fixed metal reconstruction; shared input packing and finite-input/frozen-block derivative restoration. Eight molecular first/replay cases, GLN/HIS OptH and four public AtomArray/topology overload cases pass CPU checks in both frameworks. Missing HYP/D-proline native packing and source-energy gradients pass JAX; The native exact-zero-cotangent guard fixes the previously recorded21-NaN Torch HYP source gradient; CPU/CUDA caller gates and bounded actual Apple callers pass. Geometry searches for extra disulfides/cycles are off by default; prepared chemistry and sampling choices are fixed. Tensor-only API now shares the validated common routing plan, with custom layouts, explicit bonds and suppressed polymer connections. Seven canonical/noncanonical molecular CPU full source-energy/gradient and directional-difference checks pass both backends; two JAX jit/vmap/invalid-input contracts pass. Frozen cf0e43 tensor/OptH adapters passed exact installed45+380, JAXCUDA48 and TorchCUDA39. Canonical AtomWorks compatibility input/export, common library-record aliases, tensor-gap semantics and optional identity metadata passed exact installed CPU and actual CUDA gates. These are bounded cases, not exhaustive API parity."
+      "implementation_status": "Shared atom routing; native leaf/H and fixed metal reconstruction; shared input packing and finite-input/frozen-block derivative restoration. Eight molecular first/replay cases, GLN/HIS OptH and four public AtomArray/topology overload cases pass CPU checks in both frameworks. Missing HYP/D-proline native packing and source-energy gradients pass JAX; The native exact-zero-cotangent guard fixes the previously recorded21-NaN Torch HYP source gradient; CPU/CUDA caller gates and bounded actual Apple callers pass. Geometry searches for extra disulfides/cycles are off by default; prepared chemistry and sampling choices are fixed. Tensor-only API now shares the validated common routing plan, with custom layouts, explicit bonds and suppressed polymer connections. Seven canonical/noncanonical molecular CPU full source-energy/gradient and directional-difference checks pass both backends; two JAX jit/vmap/invalid-input contracts pass. Frozen cf0e43 tensor/OptH adapters passed exact installed45+380, JAXCUDA48 and TorchCUDA39. Canonical AtomWorks compatibility input/export, common library-record aliases, tensor-gap semantics and optional identity metadata passed exact installed CPU and actual CUDA gates. Prepared input now consumes one common canonical plan including supplied terminal chemistry and explicit protonation variants. Both CPU frontends preserve CCD-style terminal H coordinates and exact source derivatives; actual CUDA and installed gates for this extension remain pending. These are bounded cases, not exhaustive API parity."
     },
     {
       "domain": "pose_concatenation",
@@ -551,7 +552,7 @@
       "Matched mature complete workflow cold/warm runtime and peak host/device memory parity are not met. Packing, CUDA minimization and some sequence cases retain measured slowdowns; compilation contributes substantially to peak memory.",
       "Older mature torsion formulas and float32 reduction order differ from the current shared kernels; retain per-term numerical exceptions and independent derivative evidence.",
       "Apple validation is a separate actual Torch/Metal gate; no native JAX MPS support is advertised.",
-      "Earlier float32 CUDA FastRelax repeat failures motivated shared double-scratch accumulation for nonbonded, cartbonded, LKBall and water gradients. The isolated corrected native component passes five molecular domains with five repeats in both frameworks. Final combined source, caches, public strong-Wolfe workflows, matched mature cost/memory and actual Apple validation remain required; earlier failed runs are retained.",
+      "Earlier float32 CUDA FastRelax repeat failures motivated shared precise accumulation for nonbonded, cartbonded, LKBall and water gradients. Both the corrected component and combined source pass five tested molecular domains with five repeats in both current frontends. Matched mature complete workflows retain numerical/runtime/memory holds, and final actual Apple validation remains separate; earlier failures are retained.",
       "Shared native ligand preparation retains historical seeded geometry, derived-parameter and downstream energy/gradient differences. Pointwise analytic-gradient and molecular-invariant passes do not establish historical prepared-system equivalence."
     ],
     "framework_specific_or_not_mature_parity": [

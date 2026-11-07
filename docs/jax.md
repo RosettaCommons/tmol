@@ -553,8 +553,10 @@ sidechains, file input, and all 25 score-channel derivatives. This does not
 establish complete input or end-to-end speed/memory parity.
 
 
-`prepare_atom37_pose_builder(atoms, context)` uses shared atom identity and
-connectivity routing. Call `bind = builder.prepare(example_coords)` eagerly,
+`prepare_atom37_pose_builder(atoms, context)` consumes the shared canonical input
+plan, including supplied terminal chemistry and protonation variants from the
+context's chemical database. Supplied terminal hydrogens retain their source
+coordinates and derivatives. Call `bind = builder.prepare(example_coords)` eagerly,
 then use `bind(coords)` inside `jit`, `vmap` or reverse differentiation. Inputs
 are float32 `[poses, tokens, 37, 3]`; mapped all-NaN triplets mean missing atoms.
 Preparation fixes chemistry, nonleaf presence and inferred metal-site geometry.

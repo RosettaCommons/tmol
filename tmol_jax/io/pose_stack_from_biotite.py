@@ -127,6 +127,11 @@ def _prepared_canonical_form(atoms, co, distance, filter_mainchain, cut_partners
         filter_missing_mainchain=filter_mainchain,
         cut_partners=cut_partners,
     )
+    return _canonical_form_from_plan(plan)
+
+
+def _canonical_form_from_plan(plan):
+    """Apply frontend field aliases without repeating chemical preparation."""
     aliases = {
         "res_labels": "res_num",
         "residue_insertion_codes": "res_ins_codes",
