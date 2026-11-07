@@ -19,7 +19,11 @@ from tmol_jax.score._native import (
 )
 from tmol_jax.score.energy_term import EnergyTerm
 from tmol_jax.score.score_types import ScoreType
-from .parameters import prepare_dunbrack_parameters
+from .parameters import (
+    device_dunbrack_tables,
+    native_parameters,
+    prepare_dunbrack_parameters,
+)
 
 
 class DunbrackTermState(NamedTuple):
@@ -74,28 +78,17 @@ class DunbrackEnergyTerm(EnergyTerm):
         if not np.any(blocks["rotamer_table_set"] >= 0):
             return ()
         register("tmol_dunbrack")
-        arrays = (
-            atom_downstream_of_conn(pbt),
-            *tables.scoring_db.values(),
-            *blocks.values(),
+        device = pbt.n_atoms.device
+        # Only library tables are shared across poses. Atom connections and
+        # residue-specific topology are prepared independently for each palette.
+        downstream = native_parameters(
+            (atom_downstream_of_conn(pbt),), coordinate_dtype, device
         )
-        parameters = []
-        for array in arrays:
-            array = np.asarray(array)
-            if np.issubdtype(array.dtype, np.integer):
-                if array.size and (
-                    array.min() < np.iinfo(np.int32).min
-                    or array.max() > np.iinfo(np.int32).max
-                ):
-                    raise ValueError("native Dunbrack indices exceed int32")
-                array = array.astype(np.int32)
-            elif np.issubdtype(array.dtype, np.floating):
-                # Native tables share coordinate precision. Convert once during
-                # preparation instead of every objective evaluation. The common
-                # fitted coefficients retain their original precision.
-                array = array.astype(coordinate_dtype, copy=False)
-            parameters.append(jax.device_put(array, device=pbt.n_atoms.device))
-        return tuple(parameters)
+        return (
+            downstream
+            + device_dunbrack_tables(tables, coordinate_dtype, device)
+            + native_parameters(blocks.values(), coordinate_dtype, device)
+        )
 
     @classmethod
     def evaluate(cls, term_state, coords):

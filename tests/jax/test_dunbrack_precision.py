@@ -118,3 +118,27 @@ def test_fitted_library_cache_observes_mutable_custom_probabilities():
         np.testing.assert_allclose(after[1], before[1], rtol=2e-5, atol=2e-5)
         for actual, expected in zip(original(coords), before):
             np.testing.assert_array_equal(actual, expected)
+
+
+def test_device_tables_do_not_retain_fitted_host_snapshot():
+    import gc
+    import weakref
+
+    from tmol_core.scoring.dunbrack import DunbrackTableData
+    from tmol_jax.score.dunbrack.parameters import device_dunbrack_tables
+
+    # A compact table snapshot isolates lifetime from the bounded host cache.
+    values = np.array([0.25, 1.125], dtype=np.float32)
+    tables = DunbrackTableData({"values": values}, {}, {}, {}, {}, {})
+    owner = weakref.ref(tables)
+    device = jax.devices()[0]
+    with jax.enable_x64():
+        prepared32 = device_dunbrack_tables(tables, np.float32, device)
+        prepared64 = device_dunbrack_tables(tables, np.float64, device)
+        del tables
+        gc.collect()
+        assert owner() is None
+        for prepared, dtype in [(prepared32, np.float32), (prepared64, np.float64)]:
+            assert prepared[0].dtype == dtype
+            assert prepared[0].device == device
+            np.testing.assert_array_equal(prepared[0], values)
