@@ -51,9 +51,9 @@ class DunbrackEnergyTerm(EnergyTerm):
         if not parameters:
             return DunbrackTermState(())
         return DunbrackTermState(
-            tuple(
-                jax.device_put(a, device=pose_stack.coords.device)
-                for a in pose_arguments(pose_stack)
+            jax.device_put(
+                tuple(pose_arguments(pose_stack)),
+                device=pose_stack.coords.device,
             )
             + parameters
         )

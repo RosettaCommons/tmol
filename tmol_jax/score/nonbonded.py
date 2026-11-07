@@ -113,9 +113,8 @@ def prepare_nonbonded(pose, database, *, soft_repulsive=False):
     poses, blocks = indices.shape
     near, separation = _pose_connections(pose)
     _validate_native_connections(pbt)
-    parameters = tuple(
-        jax.device_put(a, device=pose.coords.device)
-        for a in (
+    parameters = jax.device_put(
+        (
             offsets,
             first,
             np.tile(np.arange(blocks, dtype=np.int32), poses),
@@ -135,7 +134,8 @@ def prepare_nonbonded(pose, database, *, soft_repulsive=False):
             elec.inter,
             elec.intra,
             elec.global_parameters,
-        )
+        ),
+        device=pose.coords.device,
     )
     for target in ("tmol_nonbonded", "tmol_nonbonded_weighted"):
         register(target)
@@ -203,7 +203,7 @@ def prepare_independent_nonbonded(
     return (
         target,
         channels,
-        tuple(jax.device_put(a, device=pose.coords.device) for a in operands),
+        jax.device_put(tuple(operands), device=pose.coords.device),
         float(reach),
     )
 

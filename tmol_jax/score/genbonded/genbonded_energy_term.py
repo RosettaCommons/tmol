@@ -44,13 +44,13 @@ class GenBondedEnergyTerm(EnergyTerm):
                 padding = [(0, 0)] * packed[i].ndim
                 padding[1] = (0, ports - packed[i].shape[1])
                 packed[i] = np.pad(packed[i], padding)
-        return tuple(
-            jax.device_put(a, device=pose_stack.coords.device)
-            for a in (
+        return jax.device_put(
+            (
                 *bonded_pose_arguments(pose_stack, pbt),
                 *packed,
                 *self._prepared("inter_tables", prep.inter_tables),
-            )
+            ),
+            device=pose_stack.coords.device,
         )
 
     def __call__(self, pose_stack, term_state, coords_override=None):

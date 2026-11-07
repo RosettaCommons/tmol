@@ -59,9 +59,8 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
         )
         register("tmol_backbone_torsion")
         return BackboneTorsionTermState(
-            tuple(
-                jax.device_put(a, device=pose_stack.coords.device)
-                for a in (
+            jax.device_put(
+                (
                     *pose_arguments(pose_stack),
                     atom_downstream_of_conn(pbt),
                     *(
@@ -79,7 +78,8 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
                     np.concatenate((rt.bbstarts, rt.bbsteps), axis=1),
                     ot.tables,
                     np.concatenate((ot.bbstarts, ot.bbsteps), axis=1),
-                )
+                ),
+                device=pose_stack.coords.device,
             )
         )
 

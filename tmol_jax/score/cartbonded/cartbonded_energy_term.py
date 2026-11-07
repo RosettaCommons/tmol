@@ -31,9 +31,8 @@ class CartBondedEnergyTerm(EnergyTerm):
         types = pbt.active_block_types
         host = self._prepared("packed", lambda: prep.prepare_packed(types), *types)
         register("tmol_cartbonded")
-        return tuple(
-            jax.device_put(a, device=pose_stack.coords.device)
-            for a in (
+        return jax.device_put(
+            (
                 *bonded_pose_arguments(pose_stack, pbt),
                 host.atom_unique_ids,
                 host.atom_wildcard_ids,
@@ -50,7 +49,8 @@ class CartBondedEnergyTerm(EnergyTerm):
                 host.cartbonded_subgraph_type_counts,
                 host.cartbonded_subgraph_type_offsets,
                 host.cartbonded_subgraph_param_indices,
-            )
+            ),
+            device=pose_stack.coords.device,
         )
 
     def __call__(self, pose_stack, term_state, coords_override=None):
