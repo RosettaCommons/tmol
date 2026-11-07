@@ -631,7 +631,7 @@ roundtrip checks including all-term gradients, with installed CPU and CUDA gates
 `score_function.render_block_pair_scoring_module(pose)` retains directed block
 entries, with the same weighted/unweighted and summed/per-term options as Torch.
 Summing both block axes recovers the whole-pose physical energies and gradients.
-Reference tables retain their mature float32 accumulation precision. Dense output
+Reference sums use the common float64 accumulator and cast once to the stored parameter dtype. Dense output
 has quadratic block storage; all physical pair identities remain candidates so
 coordinate motion cannot invalidate a captured neighbor list. Rendering is eager;
 execution supports `jit`, `vmap` and first reverse coordinate derivatives.

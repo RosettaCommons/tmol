@@ -51,9 +51,10 @@
         "tests/scientific/test_cartbonded.py",
         "tests/scientific/test_molecular_nonbonded.py",
         "tests/scientific/test_complete_preset.py",
-        "tests/scientific/test_ligand_preparation.py"
+        "tests/scientific/test_ligand_preparation.py",
+        "tests/scientific/test_native_ligand_preparation.py"
       ],
-      "implementation_status": "Complete preset and nonzero genbonded on prepared ligands. Shared SMILES, MOL2 and automatic structure preparation retain caller database context, atom identity and charges. Generated L/D ligands, aspirin and supplied MOL2 have coordinate-gradient and minimization checks; input/scoring paths have CPU/CUDA and installed validation. Seeded numerical parameter preparation runs on CPU independently of the scoring device; prepared pose execution supports CPU/CUDA. Generated trajectories and complete preparation runtime/memory parity remain open."
+      "implementation_status": "Complete preset and nonzero genbonded on prepared ligands. Shared SMILES, MOL2 and automatic structure preparation retain caller database context, atom identity and charges. Generated L/D ligands, aspirin and supplied MOL2 have coordinate-gradient and minimization checks; input/scoring paths have CPU/CUDA and installed validation. Seeded numerical parameter preparation runs on CPU independently of the scoring device; prepared pose execution supports CPU/CUDA. Generated trajectories and complete preparation runtime/memory parity remain open. An opt-in shared native CPU conformer executor passes generated L/D, aspirin and protonation molecular contracts in both frontends. Its generated geometries and derived parameters differ from historical mature preparation; defaults remain unchanged and full historical numerical parity is unresolved."
     },
     {
       "domain": "protein_ligand_mixed",
@@ -142,7 +143,9 @@
         "tests/jax/test_native_genbonded.py",
         "tests/scientific/test_complete_preset.py",
         "tests/jax/test_packing_pages.py",
-        "tests/scientific/test_packing_execution.py"
+        "tests/scientific/test_packing_execution.py",
+        "tests/scientific/test_packing_batches.py",
+        "tests/jax/test_complete_table_budget.py"
       ],
       "implementation_status": "Molecular values/gradients, fixed/current conformers, pose imposition and repacking tested. Topology changes require new prepared scorers; stale plans reject. JAX now consumes the common automatic memory-based pose-chunk policy with task/constraint/fragment-aware slicing and preserved shared palette identity. Mixed-system bump and nonbump packing, constrained repeated-fragment batches, and independent CUDA device-memory query/restoration have CPU/CUDA checks. Interaction-graph tile chunk_size is a separate setting. Independent CUDA packing without bump pruning replays bounded spatial score pages through the shared three-pass graph driver; retained graph/value identities and public molecular packing pass CPU/CUDA checks. Nonspatial terms retain their native per-term layouts. Complete workflow speed and peak-memory parity remain separately gated."
     },
@@ -152,9 +155,10 @@
       "jax": "complete_preset_on_molecular_fixtures",
       "repro_fixture": [
         "tests/jax/test_optimization.py",
-        "tests/scientific/test_molecular_minimization.py"
+        "tests/scientific/test_molecular_minimization.py",
+        "tests/jax/test_shared_wolfe.py"
       ],
-      "implementation_status": "Complete 25-channel objectives decrease for ligand, noncanonical, D, modified DNA, metal and mixed cases. The default segmented Armijo executor shares mature per-pose convergence/history/restart policy and supports masks and checkpoint continuation. Explicit strong_wolfe retains a separate JAX algorithm. Matched full CPU/CUDA minimization workloads retain cold-time, CUDA warm-time and device-peak gaps."
+      "implementation_status": "Complete 25-channel objectives decrease for ligand, noncanonical, D, modified DNA, metal and mixed cases. The default segmented Armijo executor shares mature per-pose convergence/history/restart policy and supports masks and checkpoint continuation. Explicit strong_wolfe uses the shared line search and L-BFGS policy with a fixed-capacity JAX history and reusable rendered gradients. Nonfinite trial failure cannot report convergence. Matched full CPU/CUDA minimization workloads retain cold-time, CUDA warm-time and device-peak gaps."
     },
     {
       "domain": "packing_design_mutation",
@@ -267,7 +271,7 @@
         "tests/scientific/test_molecular_movement.py",
         "tests/jax/test_jax_move_map.py"
       ],
-      "implementation_status": "Shared MoveMap and native chemical DOF resolution with JAX L-BFGS; molecular objective decrease and frozen-DOF invariants tested CPU/CUDA. Full optimizer API parity remains incomplete."
+      "implementation_status": "Shared MoveMap and native chemical DOF resolution with JAX L-BFGS; molecular objective decrease and frozen-DOF invariants tested CPU/CUDA. Full optimizer API parity remains incomplete. Explicit strong-Wolfe also consumes the shared policy and reusable compact molecular objective; ligand, connected noncanonical and D-peptide frozen-DOF contracts have CPU/CUDA checks."
     },
     {
       "domain": "named_torsion_queries",
@@ -545,7 +549,8 @@
       "Matched mature complete workflow cold/warm runtime and peak host/device memory parity are not met. Packing, CUDA minimization and some sequence cases retain measured slowdowns; compilation contributes substantially to peak memory.",
       "Older mature torsion formulas and float32 reduction order differ from the current shared kernels; retain per-term numerical exceptions and independent derivative evidence.",
       "Apple validation is a separate actual Torch/Metal gate; no native JAX MPS support is advertised.",
-      "Float32 CUDA full FastRelax cold/warm repeat gradients exceed existing bounds on ligand/noncanonical/mixed fixtures; same-coordinate native nonbonded accumulation varies. Mature Torch passes the matched repeat control. This remains a correctness hold, separate from CPU cache speedups."
+      "Earlier float32 CUDA FastRelax repeat failures motivated shared double-scratch accumulation for nonbonded, cartbonded, LKBall and water gradients. The isolated corrected native component passes five molecular domains with five repeats in both frameworks. Final combined source, caches, public strong-Wolfe workflows, matched mature cost/memory and actual Apple validation remain required; earlier failed runs are retained.",
+      "Shared native ligand preparation retains historical seeded geometry, derived-parameter and downstream energy/gradient differences. Pointwise analytic-gradient and molecular-invariant passes do not establish historical prepared-system equivalence."
     ],
     "framework_specific_or_not_mature_parity": [
       "Higher derivatives through native torsion/forward-kinematics kernels are not advertised by mature Torch either",

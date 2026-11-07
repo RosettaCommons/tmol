@@ -9,7 +9,6 @@ from tmol_core.io.pdb_info import (
     DEFAULT_ATOM_B_FACTOR,
 )
 
-
 _UNSPECIFIED = object()
 
 
@@ -47,7 +46,15 @@ class PDBInfo(CommonPDBInfo):
         """Rectangular host metadata for shared planners; accept legacy ragged labels."""
         fields = {f.name: getattr(self, f.name) for f in attrs.fields(CommonPDBInfo)}
         if self.chain_labels is not None:
-            labels = np.full(self.residue_labels.shape, "", object)
+            shape = (
+                self.residue_labels.shape
+                if self.residue_labels is not None
+                else (
+                    len(self.chain_labels),
+                    max(map(len, self.chain_labels), default=0),
+                )
+            )
+            labels = np.full(shape, "", object)
             for pose, row in enumerate(self.chain_labels):
                 labels[pose, : len(row)] = row
             fields["chain_labels"] = labels

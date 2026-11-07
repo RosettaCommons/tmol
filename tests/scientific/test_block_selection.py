@@ -108,3 +108,28 @@ def test_repeat_constraints_and_selection_limits(backend):
         front.repeat_pose_stack(b.pose, 2)
     with pytest.raises(ValueError, match="homogeneous"):
         front.select_blocks(b.pose, [0])
+
+
+@pytest.mark.parametrize("field", ("residue_labels", "chain_labels"))
+def test_repeat_retains_absent_labels_and_independent_present_metadata(backend, field):
+    b = backend.molecule(BACKBONE_CASES["mixed"], terms=())
+    front = import_module("tmol_jax.pose" if b.framework == "jax" else "tmol.pose")
+    pose = b.pose.split(0)
+    metadata = attrs.evolve(pose.pdb_info, **{field: None})
+    pose = (
+        pose.replace(pdb_info=metadata)
+        if b.framework == "jax"
+        else attrs.evolve(pose, pdb_info=metadata)
+    )
+    repeated = front.repeat_pose_stack(pose, 3)
+    assert getattr(repeated.pdb_info, field) is None
+    np.testing.assert_array_equal(
+        b.numpy(repeated.coords), np.repeat(b.numpy(pose.coords), 3, axis=0)
+    )
+    present = "chain_labels" if field == "residue_labels" else "residue_labels"
+    original = np.asarray(getattr(pose.pdb_info, present)).copy()
+    actual = getattr(repeated.pdb_info, present)
+    np.testing.assert_array_equal(actual, np.repeat(original, 3, axis=0))
+    actual[1, 0] = "changed" if present == "chain_labels" else -99
+    np.testing.assert_array_equal(getattr(pose.pdb_info, present), original)
+    np.testing.assert_array_equal(actual[0], original[0])
