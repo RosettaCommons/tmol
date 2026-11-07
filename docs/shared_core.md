@@ -110,6 +110,11 @@ background blocks; sampler execution remains in each frontend. The one-letter
 mutation API retains its mature amino-acid contract rather than accepting
 arbitrary chemical identities as sequence letters.
 
+`ScoreTermLifecycle` owns lazy term construction/removal, shared-channel
+membership and term ordering. Weight storage, term creation and device cache
+invalidation are frontend hooks; previously rendered scorers retain their
+snapshots when the score function changes.
+
 ## Building and validating
 
 ```bash
