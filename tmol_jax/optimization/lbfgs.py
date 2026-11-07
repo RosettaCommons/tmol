@@ -7,6 +7,14 @@ from tmol_core.optimization.strong_wolfe import lbfgs_minimize as _minimize
 from ._strong_wolfe_execution import JaxLBFGSExecution
 
 
+@jax.jit
+def _masked_finite_gradient(value, gradient, mask):
+    if mask is not None:
+        gradient = gradient * mask
+    finite = jnp.isfinite(value) & jnp.isfinite(gradient).all()
+    return jnp.where(finite, value, jnp.inf), gradient
+
+
 def lbfgs_minimize(
     fn,
     x0,
@@ -48,11 +56,7 @@ def lbfgs_minimize(
     evaluate = value_and_grad or jax.jit(jax.value_and_grad(fn))
 
     def masked(y):
-        value, gradient = evaluate(y)
-        if mask is not None:
-            gradient = gradient * mask
-        finite = jnp.isfinite(value) & jnp.isfinite(gradient).all()
-        return jnp.where(finite, value, jnp.inf), gradient
+        return _masked_finite_gradient(*evaluate(y), mask)
 
     initial_value, initial_gradient = masked(x)
     if not bool(jnp.isfinite(initial_value)):
