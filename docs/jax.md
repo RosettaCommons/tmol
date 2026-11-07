@@ -570,8 +570,8 @@ coordinate derivatives. Missing sampled sidechains follow the same boundary.
 Prepare again to reselect packing choices after coordinate motion.
 For repeated source-gradient scoring, render a scorer from `bind(coords)` and
 call `scorer.value_and_grad(coordinate_map=bind)`. This returns per-pose energies
-and gradients with respect to the Atom37 input, reusing execution across fresh
-prepared bindings without retaining their coordinate or parameter values.
+and gradients with respect to the Atom37 input. Reused programs receive fresh
+coordinate and parameter operands; each callable retains its prepared snapshot.
 `coordinate_dtype=jnp.float64` evaluates mapped coordinates in double precision
 while retaining float32 source gradients; JAX x64 must be enabled. Ordinary
 `jit`, `vmap` and differentiation of `bind` remain available.
