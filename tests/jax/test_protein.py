@@ -41,9 +41,10 @@ def test_protein_score_and_gradient_are_finite(tmp_path):
         )
     score_function = beta2016_score_function()
     energy, gradient = score_function.jitted_value_and_grad(pose)(pose.coords)
-    assert tuple(
-        residue.name for residue in pose.packed_block_types.active_block_types
-    ) == palette_names
+    assert (
+        tuple(residue.name for residue in pose.packed_block_types.active_block_types)
+        == palette_names
+    )
     np.testing.assert_array_equal(pose.n_res_per_pose, [3])
     assert [pose.block_type(0, i).name3 for i in range(3)] == ["MET", "GLN", "ILE"]
     used_types = np.asarray(pose.block_type_ind)
