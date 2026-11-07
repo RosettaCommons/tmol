@@ -13,6 +13,8 @@ from tmol_jax.score._native import libraries
         ("dunbrack", (3, 7)),
         ("nonbonded", (2, 3)),
         ("nonbonded_weighted", (2, 3)),
+        ("nonbonded_precise", (2, 3, 17)),
+        ("nonbonded_weighted_precise", (2, 3, 17)),
         ("ljlk", (2, 3)),
         ("elec", (2, 3)),
         ("inverse_kinematics", (7,)),
@@ -45,3 +47,21 @@ def test_workspace_query_precision_and_invalid_extents(target, dimensions):
             assert query(*dimensions, bits, derivative) == invalid
     if target != "graph_prefix":
         assert query(*dimensions, 64, 0) >= query(*dimensions, 32, 0)
+
+
+@pytest.mark.parametrize("weighted", (False, True))
+def test_wide_nonbonded_workspace_only_changes_float_derivatives(weighted):
+    from tmol_jax.score._native import workspace_sizes
+
+    target = "tmol_nonbonded" + ("_weighted" if weighted else "")
+    for bits in (32, 64):
+        old = workspace_sizes(target, (2, 3), bits)
+        precise = workspace_sizes(target + "_precise", (2, 3, 17), bits)
+        assert old[0] == precise[0]
+        if bits == 64:
+            assert old == precise
+        else:
+            assert precise[1] > precise[0]
+    # Reject layouts whose derivative element dispatch would narrow to int32.
+    with pytest.raises(ValueError, match="workspace layout"):
+        workspace_sizes(target + "_precise", (1 << 20, 1, 1 << 20), 32)

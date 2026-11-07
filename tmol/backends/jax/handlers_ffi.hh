@@ -62,6 +62,16 @@ TMOL_JAX_ENERGY(
     .Attr<double>("reach"));
 
 TMOL_JAX_ENERGY(
+    tmol_nonbonded_precise,
+    (tmol::jax::run<tmol::jax::NonbondedKernel<false, true>, double>),
+    .Attr<double>("reach"));
+
+TMOL_JAX_ENERGY(
+    tmol_nonbonded_weighted_precise,
+    (tmol::jax::run<tmol::jax::NonbondedKernel<true, true>, double>),
+    .Attr<double>("reach"));
+
+TMOL_JAX_ENERGY(
     tmol_constraint_torsion,
     tmol::jax::run<tmol::jax::ConstraintTorsionKernel>, );
 

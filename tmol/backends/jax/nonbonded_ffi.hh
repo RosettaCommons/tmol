@@ -11,8 +11,13 @@ struct NonbondedWorkspace {
   Real* spheres;
   int32_t* neighbors;
   double* accumulation;
+  double* gradient_accumulation;
   size_t neighbor_capacity;
-  NonbondedWorkspace(size_t poses, size_t blocks, void* data = nullptr)
+  NonbondedWorkspace(
+      size_t poses,
+      size_t blocks,
+      void* data = nullptr,
+      size_t gradient_values = 0)
       : storage(data) {
     auto pairs = score::common::checked_triangular_size(
         blocks, true, "JAX native neighbors");
@@ -22,10 +27,11 @@ struct NonbondedWorkspace {
     spheres = storage.take<Real>(poses * blocks * 4);
     neighbors = storage.take<int32_t>(neighbor_capacity);
     accumulation = storage.take<double>((Weighted ? 1 : 4) * poses);
+    gradient_accumulation = storage.take<double>(gradient_values);
   }
 };
 
-template <bool Weighted = false>
+template <bool Weighted = false, bool PreciseGradient = false>
 struct NonbondedKernel {
   static constexpr int channels = Weighted ? 1 : 4;
   // Every pose/channel is assigned from the zeroed double accumulator.
@@ -78,12 +84,22 @@ struct NonbondedKernel {
     }
     if (poses * atoms > INT32_MAX || rots > INT32_MAX)
       throw std::invalid_argument("nonbonded flattened layout exceeds int32");
+    if constexpr (PreciseGradient) {
+      if (gradient && real == ffi::DataType::F32)
+        score::common::checked_dispatch_product(
+            poses * atoms, channels * 3, "JAX nonbonded gradient values");
+    }
   }
 
-  static size_t workspace_bytes(const std::vector<ffi::AnyBuffer>& a, bool) {
+  static size_t workspace_bytes(
+      const std::vector<ffi::AnyBuffer>& a, bool derivative) {
     auto poses = a[2].dimensions()[0], blocks = a[2].dimensions()[1];
+    size_t gradient_values = PreciseGradient && derivative
+                                 ? channels * poses * a[0].dimensions()[1] * 3
+                                 : 0;
     return a[0].element_type() == ffi::DataType::F32
-               ? NonbondedWorkspace<float, Weighted>(poses, blocks)
+               ? NonbondedWorkspace<float, Weighted>(
+                     poses, blocks, nullptr, gradient_values)
                      .storage.size_bytes()
                : NonbondedWorkspace<double, Weighted>(poses, blocks)
                      .storage.size_bytes();
@@ -101,6 +117,8 @@ struct NonbondedKernel {
       ffi::AnyBuffer workspace,
       double reach) {
     using I = int32_t;
+    constexpr bool precise = PreciseGradient && std::is_same_v<Real, float>;
+    using GradReal = std::conditional_t<precise, double, Real>;
     using LJType = score::ljlk::potentials::LJLKTypeParams<Real>;
     using LJGlobal = score::ljlk::potentials::LJGlobalParams<Real>;
     using ElecGlobal = score::elec::potentials::ElecGlobalParams<Real>;
@@ -113,7 +131,10 @@ struct NonbondedKernel {
         a[0].untyped_data(), {poses * atoms});
     auto types = contiguous_view<I, 1, D>(a[5].untyped_data(), {rots});
     NonbondedWorkspace<Real, Weighted> work(
-        poses, blocks, workspace.untyped_data());
+        poses,
+        blocks,
+        workspace.untyped_data(),
+        precise && Derivative ? channels * poses * atoms * 3 : 0);
     auto spheres =
         contiguous_view<Real, 3, D>(work.spheres, {poses, blocks, 4});
     auto neighbors = contiguous_view<I, 1, D>(
@@ -141,6 +162,9 @@ struct NonbondedKernel {
               neighbors,
               Real(reach));
     }
+    auto* gradient_data = precise && Derivative
+                              ? static_cast<void*>(work.gradient_accumulation)
+                              : (gradient ? gradient->untyped_data() : nullptr);
     // Whole-pose scoring has no rotamer dispatch or upstream-gradient operand.
     // Empty optional views are the canonical native mode contract.
     score::ljlk::potentials::
@@ -174,10 +198,22 @@ struct NonbondedKernel {
             I(rots),
             contiguous_view<Real, 4, D>(
                 energy.untyped_data(), {channels, poses, 1, 1}),
-            contiguous_view<Vec<Real, 3>, 2, D>(
-                gradient ? gradient->untyped_data() : nullptr,
-                {channels, gradient ? poses * atoms : 0}),
+            contiguous_view<Vec<GradReal, 3>, 2, D>(
+                gradient_data, {channels, gradient ? poses * atoms : 0}),
             work.accumulation);
+    if constexpr (precise && Derivative) {
+      // Pair physics stays in the coordinate dtype. Accumulate across CUDA
+      // blocks in double precision, then round once into the public gradient.
+      auto* accumulated = work.gradient_accumulation;
+      auto* result = static_cast<Real*>(gradient->untyped_data());
+      LAUNCH_BOX_128;
+      Ops<D>::template forall<launch_t>(
+          context,
+          channels * poses * atoms * 3,
+          [=] TMOL_DEVICE_FUNC(int64_t i) {
+            result[i] = Real(accumulated[i]);
+          });
+    }
   }
 
   template <template <Device> class Ops, Device D, typename Real>
