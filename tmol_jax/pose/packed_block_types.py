@@ -6,6 +6,7 @@ Torsion-specific annotations are prepared by the scoring terms."""
 
 from __future__ import annotations
 
+from functools import cached_property
 from typing import Any, Sequence, Tuple
 
 import attrs
@@ -16,6 +17,13 @@ import numpy as np
 from tmol_jax.types import pytree_dataclass
 
 # PackedBlockTypes                                                             #
+
+
+@attrs.frozen(eq=False)
+class _ResidueContext:
+    # Residue collections contain NumPy arrays. Their generated structural
+    # equality is not a valid JAX static-metadata comparison; retain identity.
+    value: Any
 
 
 @pytree_dataclass
@@ -61,6 +69,27 @@ class PackedBlockTypes:
 
     intrares_path_distance: jnp.ndarray
     # [n_types, max_n_atoms, max_n_atoms] int32
+    _restype_context: Any = None
+
+    @property
+    def device(self):
+        return self.n_atoms.device
+
+    @property
+    def restype_set(self):
+        if self._restype_context is None:
+            from tmol_jax.chemical.restypes import ResidueTypeSet
+
+            self._restype_context = _ResidueContext(
+                ResidueTypeSet.from_database(self.chem_db)
+            )
+        return self._restype_context.value
+
+    @cached_property
+    def restype_index(self):
+        import pandas
+
+        return pandas.Index([restype.name for restype in self.active_block_types])
 
     # Core builder                                                        #
     @classmethod
@@ -108,6 +137,23 @@ class PackedBlockTypes:
 
     # Convenience constructors                                            #
     @classmethod
+    def from_restype_list(cls, chem_db, restype_set, active_block_types, device):
+        """Pack the supplied chemistry and ordered types on a concrete device.
+
+        This accepts the mature constructor's arguments. The supplied residue
+        set remains the context; active types are never replaced by defaults.
+        """
+        from tmol_jax.io.structure import _device
+
+        active_block_types = tuple(active_block_types)
+        if not active_block_types:
+            raise ValueError("Cannot pack an empty residue-type palette")
+        with jax.default_device(_device(device)):
+            result = cls.from_restypes(chem_db, active_block_types)
+        result._restype_context = _ResidueContext(restype_set)
+        return result
+
+    @classmethod
     def default(cls, chem_db: Any | None = None) -> "PackedBlockTypes":
         """Build the shared default molecular palette on the current JAX device.
 
@@ -128,6 +174,13 @@ class PackedBlockTypes:
         return cls.from_restypes(chem_db, selected)
 
     # Lookup helpers                                                      #
+    def inds_for_restypes(self, res_types):
+        """Resolve ordered residue names, returning -1 for absent types."""
+        return self.restype_index.get_indexer([restype.name for restype in res_types])
+
+    def cpu(self):
+        """Transfer palette arrays while retaining their exact chemistry context."""
+        return jax.device_put(self, jax.devices("cpu")[0])
 
 
 __all__ = ["PackedBlockTypes"]

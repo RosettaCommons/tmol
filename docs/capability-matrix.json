@@ -606,5 +606,14 @@
       "tests/scientific/test_public_mutation.py"
     ],
     "implementation_status": "Common selection/query/mutation policy; mixed noncanonical/D/ligand identity, author insertion codes, frozen input/other blocks/poses and all-channel finite gradients tested on both CPU frameworks."
+  },
+  "public_palette_construction": {
+    "torch": "supported",
+    "jax": "constructor_lookup_transport_implemented",
+    "repro_fixture": [
+      "tests/scientific/test_public_palette.py",
+      "tests/jax/test_palette_runtime.py"
+    ],
+    "implementation_status": "Common topology source, supplied chemistry/residue-set/active-object identity, ordered name lookup and CPU transport. Four ligand/noncanonical/D/mixed fixtures compare all25 values and coordinate gradients before/after reconstruction; JAX jit/vmap retain explicit context. Other mature low-level metadata-builder APIs remain a parity gap; this entry does not claim complete palette API equivalence."
   }
 }
