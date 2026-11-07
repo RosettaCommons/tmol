@@ -70,6 +70,12 @@ def minimize_pose_variables(
         )
         if minimize is not armijo_minimize:
             result = dict(result)
+            for name in ("initial_fun", "fun"):
+                value = jnp.asarray(result[name])
+                if value.shape:
+                    raise ValueError(f"optimizer {name} must be a scalar")
+                if not bool(jnp.isfinite(value)):
+                    raise FloatingPointError(f"optimizer {name} must be finite")
             for name in ("x", "grad"):
                 value = result[name]
                 if not isinstance(value, jax.Array):
