@@ -5,7 +5,7 @@ import numpy as np
 
 from .rotamers import build_rotamers
 from .interaction_graph import build_interaction_graph
-from .annealing import anneal_cpu, anneal_cuda
+from .annealing import anneal_cpu, anneal_cuda, cuda_phase_seeds
 from .imposition import impose_top_rotamer_assignments
 
 
@@ -20,19 +20,26 @@ def pack_rotamers(
     makes search reproducible; None draws a fresh local seed. Optional task bump
     checks use the mature native pruning rule. Correlated groups retain shared
     lockstep context; independently varying third-backbone context is unsupported.
-    CPU and CUDA use their respective mature search schedules. The CUDA phase
-    seeds are drawn locally from NumPy PCG64; no global RNG state is changed.
+    CPU and CUDA use their respective mature search schedules and seed streams:
+    MT19937 on CPU and the shared Philox generator on CUDA. Chunked calls advance
+    the same local stream; no global RNG state is changed.
     ``anneal_device`` may select a CPU/CUDA device independently of scoring.
     Only prepared graph arrays move; the returned pose stays on its input device.
     """
-    if isinstance(pose_stack.coords, jax.core.Tracer):
-        raise TypeError("discrete packing requires eager coordinates and choices")
-    if pose_stack.coords.dtype != np.float32:
-        raise TypeError("native packing search requires float32 coordinates")
     if seed is None:
         seed = int(np.random.SeedSequence().generate_state(1, np.uint64)[0])
     if not isinstance(seed, (int, np.integer)) or not 0 <= seed < 1 << 64:
         raise ValueError("packing seed must be an unsigned 64-bit integer")
+    return _pack_rotamers(pose_stack, sfxn, task, int(seed), chunk_size, anneal_device)
+
+
+def _pack_rotamers(
+    pose_stack, sfxn, task, seed, chunk_size, anneal_device, seed_state=None
+):
+    if isinstance(pose_stack.coords, jax.core.Tracer):
+        raise TypeError("discrete packing requires eager coordinates and choices")
+    if pose_stack.coords.dtype != np.float32:
+        raise TypeError("native packing search requires float32 coordinates")
     device = pose_stack.device if anneal_device is None else anneal_device
     if isinstance(device, str):
         platform, _, index = device.partition(":")
@@ -47,6 +54,10 @@ def pack_rotamers(
         raise TypeError("anneal_device must be a JAX device or a device string")
     if device.platform not in ("cpu", "gpu"):
         raise ValueError("annealing supports native CPU and CUDA devices")
+    if seed_state is None:
+        # Torch seeds its CPU MT19937 engine with the low 32 bits. Each native
+        # annealer call consumes one full-width draw, including across chunks.
+        seed_state = _new_seed_stream(device, seed)
     task._validate_pose(pose_stack)
     from .batching import max_poses_per_chunk, slice_task
 
@@ -55,18 +66,18 @@ def pack_rotamers(
         from tmol_core.pack.streaming import packing_windows
         from tmol_jax.pose.pose_stack_builder import PoseStackBuilder
 
-        seeds = np.random.PCG64(int(seed))
         chunks = []
         for first, count in packing_windows(pose_stack.n_poses, limit):
             pose = pose_stack[first : first + count]
             chunks.append(
-                pack_rotamers(
+                _pack_rotamers(
                     pose,
                     sfxn,
                     slice_task(task, pose, first, first + count),
-                    seed=int(seeds.random_raw()),
+                    seed=seed,
                     chunk_size=chunk_size,
                     anneal_device=device,
+                    seed_state=seed_state,
                 )
             )
         return PoseStackBuilder.from_poses(chunks, pose_stack.device)
@@ -123,9 +134,12 @@ def pack_rotamers(
     if device != pose.device:
         arguments = jax.device_put(arguments, device)
     if device.platform == "cpu":
-        _, assignments = anneal_cpu(*arguments, chunk_size=chunk_size, seed=seed)
+        words = seed_state.randint(0, 1 << 32, 2, dtype=np.uint64)
+        native_seed = (int(words[0]) << 32) | int(words[1])
+        _, assignments = anneal_cpu(*arguments, chunk_size=chunk_size, seed=native_seed)
     else:
-        seeds = np.random.PCG64(int(seed)).random_raw(3).view(np.uint8).reshape(3, 8)
+        seeds = cuda_phase_seeds(seed, seed_state[0])
+        seed_state[0] += 1
         _, assignments = anneal_cuda(
             *arguments,
             chunk_size=chunk_size,
@@ -135,3 +149,7 @@ def pack_rotamers(
     if device != pose.device:
         assignments = jax.device_put(assignments, pose.device)
     return impose_top_rotamer_assignments(pose, rotamers, graph, assignments)
+
+
+def _new_seed_stream(device, seed):
+    return np.random.RandomState(seed & 0xFFFFFFFF) if device.platform == "cpu" else [0]

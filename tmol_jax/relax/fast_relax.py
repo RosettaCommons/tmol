@@ -13,8 +13,8 @@ from tmol_jax.pack import (
     FixedAAChiSampler,
     IncludeCurrentSampler,
     NaChiRotamerSampler,
-    pack_rotamers,
 )
+from tmol_jax.pack.packing import _pack_rotamers, _new_seed_stream
 from tmol_jax.pack.conjugated import add_conjugated_group_sampler
 from tmol_jax.optimization import run_cart_min, run_kin_min
 from tmol_jax.score.score_types import ScoreType
@@ -117,7 +117,8 @@ class _JaxRelaxExecution:
     select_pose = staticmethod(_select_pose)
 
     def __init__(self, seed):
-        self.random = np.random.PCG64(seed)
+        self.seed = seed
+        self.seed_states = {}
 
     @staticmethod
     def clone(pose):
@@ -128,7 +129,11 @@ class _JaxRelaxExecution:
         pose.coords.block_until_ready()
 
     def pack(self, pose, sfxn, task, verbose):
-        return pack_rotamers(pose, sfxn, task, seed=int(self.random.random_raw()))
+        if pose.device not in self.seed_states:
+            self.seed_states[pose.device] = _new_seed_stream(pose.device, self.seed)
+        return _pack_rotamers(
+            pose, sfxn, task, self.seed, None, None, self.seed_states[pose.device]
+        )
 
     @staticmethod
     def select_scores(best, candidate, better):
@@ -177,7 +182,8 @@ def fast_relax(
     mature protocol. The explicit unsigned 64-bit seed controls local packing
     randomness. The default minimizer uses segmented Armijo L-BFGS with the
     shared per-pose convergence, history and restart policy. Native sampling
-    seeds and finite-precision results can differ between frameworks.
+    seeds follow the mature CPU/CUDA streams across stages and pose chunks;
+    finite-precision results can still differ between frameworks.
     A custom minimizer receives fold_forest, move_map and verbose keywords.
     Existing packing capability boundaries apply to every stage.
     The score function's stage weights are updated as in the mature API.

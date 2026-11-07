@@ -5,9 +5,24 @@
 #include <tmol/kinematics/compiled/native_kinematics.hh>
 #include <tmol/pack/rotamer/dunbrack/host_sampling.hh>
 #include <tmol/score/hbond/potentials/native_hbond_bases.hh>
+#include <tmol/utility/portable/philox.hh>
 #include <cstdio>
+#include <cstring>
 
 namespace tmol::jax {
+inline auto annealing_phase_seeds(ContextManager&, int64_t seed, int64_t call) {
+  if (call < 0)
+    throw std::invalid_argument("annealing seed call must be nonnegative");
+  auto result = TPack<int64_t, 1, Device::CPU>::empty({3});
+  for (uint64_t phase = 0; phase < 3; ++phase) {
+    portable::Philox4x32_10 generator(uint64_t(seed), phase, uint64_t(call));
+    auto words = generator.next4();
+    uint64_t bits = (uint64_t(words.x) << 32) | words.y;
+    std::memcpy(&result.view[phase], &bits, sizeof(bits));
+  }
+  return result;
+}
+
 // Host allocation/dispatch only; the inverse operation is the runtime kernel.
 template <typename Real>
 auto host_inverse_kinematics(
@@ -246,6 +261,10 @@ extern "C" int tmol_kinematic_host_prepare(
             context,
             inputs,
             *output);
+        break;
+      case 17:
+        tmol::jax::invoke_host(
+            &tmol::jax::annealing_phase_seeds, context, inputs, *output);
         break;
       default:
         throw std::invalid_argument("unknown native pose operation");

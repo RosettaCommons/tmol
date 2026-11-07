@@ -10,6 +10,21 @@ from tests.jax.test_native_annealing import independent_graph
 from tmol_jax.pack.annealing import anneal_cuda
 
 
+def test_host_cuda_phase_seeds_preserve_full_width_and_call_offsets():
+    from tests.scientific.test_packing_seed import CUDA_SEEDS
+    from tmol_jax.pack.annealing import cuda_phase_seeds
+
+    for seed, calls in CUDA_SEEDS.items():
+        for call, expected in enumerate(calls):
+            actual = cuda_phase_seeds(seed, call)
+            assert actual.dtype == np.uint8 and actual.shape == (3, 8)
+            np.testing.assert_array_equal(
+                actual.view(np.uint64).ravel(), np.asarray(expected, np.uint64)
+            )
+    with pytest.raises(ValueError, match="nonnegative"):
+        cuda_phase_seeds(0, -1)
+
+
 @pytest.mark.parametrize("empty", (False, True))
 def test_cuda_annealer_minima_seed_bits_and_transforms(empty):
     device = Execution("jax-cuda").device

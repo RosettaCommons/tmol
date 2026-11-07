@@ -339,8 +339,10 @@ mixed and DNA repacking fixtures check selected coordinates, immutable chemistry
 and the resulting whole-pose energy. CPU and CUDA retain their different mature
 search schedules. Set `anneal_device="cpu"`, `"cuda:0"`, or a JAX device to
 run the search separately from scoring; the result stays on the pose device.
-JAX annealing supports native CPU and CUDA. CUDA phase seeds come from a local NumPy PCG64 generator;
-packing leaves global random state unchanged. Independent CUDA tasks without bump
+JAX annealing supports native CPU and CUDA. Explicit seeds use the mature
+MT19937 CPU and shared Philox CUDA seed streams while leaving global random state
+unchanged. This changes seeded choices from earlier JAX releases; matching seeds
+alone does not establish complete numerical parity. Independent CUDA tasks without bump
 pruning replay bounded score pages through the shared three-pass graph driver.
 Small tables use complete fused execution when a conservative bound on all
 explicit score/candidate/scratch buffers fits one common page; unknown bounds
@@ -350,7 +352,7 @@ graph tile widths default to 16 on CPU and 32 on CUDA; `chunk_size` overrides
 the width. Automatic pose batching uses the common memory policy and preserves
 task choices, constraints, fragment metadata and shared palette identity.
 `TMOL_PACK_MAX_POSES_PER_CHUNK` overrides the pose limit; it is separate from
-`chunk_size`. Chunk seeds are drawn locally from the supplied seed, so changing
+`chunk_size`. Pose chunks advance the same local seed stream, so changing
 chunk boundaries can change discrete packing choices. Large-workflow runtime
 and peak-memory parity remain separately gated.
 For already parameterized covalent
@@ -536,7 +538,8 @@ pass an explicit `seed`; `tmol_jax.relax.DefaultCartesianMinimizer(max_iter=...)
 and `DefaultKinematicMinimizer` configure minimization. Existing packing
 capability limits apply. The public minimizers and these callbacks default to
 shared per-pose L-BFGS/Armijo, including mature convergence, iteration and history
-settings. Explicit `optimizer="strong_wolfe"` minimizes the summed objective with
+settings. Packing stages and pose chunks advance one local seed stream per device.
+Explicit `optimizer="strong_wolfe"` minimizes the summed objective with
 the common strong-Wolfe search and L-BFGS recurrence. JAX supplies fixed-capacity
 device history storage and compiled array operations; movement masks and public
 relative-loss stopping settings remain supported. The shared search can choose

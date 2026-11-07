@@ -7,6 +7,14 @@ import jax
 import numpy as np
 
 
+def cuda_phase_seeds(seed, call):
+    """Use the shared Philox generator for mature CUDA phase-seed draws."""
+    from tmol_jax._host import invoke
+
+    (values,) = invoke(17, np.uint64(seed).view(np.int64), call)
+    return values.view(np.uint8).reshape(3, 8)
+
+
 @lru_cache(maxsize=1)
 def _register_cpu_annealer():
     from tmol_jax.score._native import libraries
