@@ -286,29 +286,34 @@ def validate_scan_plan(parent, nodes, scans, gens, *, reverse=False):
 
 
 def _validate_scan_edges(parent, nodes, scans, gens):
-    """Check all path edges together, without changing their execution order."""
-    node_counts = numpy.diff(gens[:, 0])
-    scan_counts = numpy.diff(gens[:, 1])
-    generation = numpy.arange(len(gens) - 1, dtype=numpy.int32)
-    scan_generation = numpy.repeat(generation, scan_counts)
-    starts = gens[scan_generation, 0] + scans
-    is_target = numpy.ones(len(nodes), dtype=bool)
-    is_target[starts] = False
-    targets = nodes[is_target]
-    if numpy.any(parent[targets] != nodes[:-1][is_target[1:]]):
-        raise ValueError("scan path does not follow the forest parent edges")
-    visits = numpy.bincount(targets, minlength=len(parent))
-    if numpy.any(visits[1:] > 1) or (len(visits) and visits[0]):
-        raise ValueError("a forest edge is visited more than once")
-    if numpy.any(visits[1:] != 1):
+    """Validate a generation together, before exposing its writes to the next."""
+    visited = numpy.zeros(len(parent), dtype=bool)
+    visited_count = int(bool(len(parent)))
+    if len(parent):
+        visited[0] = True
+    for (nb, sb), (ne, se) in zip(gens[:-1], gens[1:]):
+        if nb == ne:
+            continue
+        paths, starts = nodes[nb:ne], scans[sb:se]
+        if numpy.any(~visited[paths[starts]]):
+            raise ValueError("scan path depends on an unfinished generation")
+        if len(starts) == 1:
+            targets, predecessors = paths[1:], paths[:-1]
+        else:
+            is_target = numpy.ones(len(paths), dtype=bool)
+            is_target[starts] = False
+            targets = paths[is_target]
+            predecessors = paths[:-1][is_target[1:]]
+        if numpy.any(parent[targets] != predecessors):
+            raise ValueError("scan path does not follow the forest parent edges")
+        # A repeated edge (including a root write) cannot increase the number
+        # of visited nodes. Check once per generation, not once per scan path.
+        visited[targets] = True
+        visited_count += len(targets)
+        if numpy.count_nonzero(visited) != visited_count:
+            raise ValueError("a forest edge is visited more than once")
+    if visited_count != len(parent):
         raise ValueError("scan plan does not cover every forest edge")
-    # Every non-root node is now known to be written exactly once. Reuse the
-    # count buffer to record its write generation; the virtual root is ready
-    # before generation zero. Starting nodes must come from an earlier one.
-    visits.fill(-1)
-    visits[targets] = numpy.repeat(generation, node_counts - scan_counts)
-    if numpy.any(visits[nodes[starts]] >= scan_generation):
-        raise ValueError("scan path depends on an unfinished generation")
 
 
 def prepare_scan_ordering(parent):
