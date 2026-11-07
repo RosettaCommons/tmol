@@ -46,15 +46,6 @@ def __getattr__(name):
 
 
 TORCH_DTYPE = torch.float32
-# Optimizer construction normally enters ``torch._disable_dynamo`` through
-# ``add_param_group`` and imports the full TorchDynamo stack on first use. This
-# ligand-only optimizer is never compiled; bypassing that wrapper saves seconds
-# of cold-start work while retaining the same validation and state setup.
-_ADD_PARAM_GROUP = getattr(
-    torch.optim.Optimizer.add_param_group,
-    "__wrapped__",
-    torch.optim.Optimizer.add_param_group,
-)
 
 
 @contextlib.contextmanager
@@ -67,9 +58,49 @@ def _flush_denormals():
         torch.set_flush_denormal(False)
 
 
-class _LigandLBFGS(torch.optim.LBFGS):
-    def add_param_group(self, param_group: dict[str, object]) -> None:
-        _ADD_PARAM_GROUP(self, param_group)
+class _TorchLBFGSExecution:
+    clone = staticmethod(torch.clone)
+    dot = staticmethod(torch.dot)
+    abs_max = staticmethod(lambda x: x.abs().max())
+    abs_sum = staticmethod(lambda x: x.abs().sum())
+    sqrt = staticmethod(torch.sqrt)
+
+    @staticmethod
+    def add_scaled(x, y, alpha):
+        return torch.add(x, y, alpha=alpha)
+
+
+class _LigandLBFGS:
+    """Bind the shared host optimizer to one Torch ligand coordinate tensor."""
+
+    def __init__(self, parameters, *, max_iter, history_size, line_search_fn):
+        if len(parameters) != 1 or line_search_fn != "strong_wolfe":
+            raise ValueError("ligand refinement requires one strong-Wolfe parameter")
+        self.coordinates = parameters[0]
+        self.max_iter = max_iter
+        self.history_size = history_size
+
+    @torch.no_grad()
+    def step(self, closure):
+        from tmol_core.optimization.strong_wolfe import lbfgs_minimize
+
+        coordinates = self.coordinates
+
+        def evaluate(values):
+            coordinates.copy_(values.reshape_as(coordinates))
+            with torch.enable_grad():
+                loss = closure()
+            return float(loss), coordinates.grad.reshape(-1).clone()
+
+        result = lbfgs_minimize(
+            evaluate,
+            coordinates.detach().reshape(-1),
+            _TorchLBFGSExecution,
+            max_iter=self.max_iter,
+            history_size=self.history_size,
+        )
+        coordinates.copy_(result["x"].reshape_as(coordinates))
+        return result
 
 
 def _atom_distances(coords, i, j):
