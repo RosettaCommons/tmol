@@ -288,17 +288,15 @@ ffi::Error run_sampling(
   }
 }
 
-// Sparse whole-pose Dunbrack work otherwise occupies a single CUDA block.
-// Keep its independent residue evaluations on separate SM workgroups; the
-// common kernel owns all geometry, table lookup and analytic derivatives.
+// Preserve the common Dunbrack launch policy used by Torch. Adjacent residue
+// evaluations can accumulate derivatives into the same backbone atoms.
 template <Device D>
 struct DunbrackCudaOps : CudaOps<D> {
   template <typename Launch, typename F>
   static void forall_grouped(ContextManager&, int poses, int groups, F f) {
     int count = score::common::checked_dispatch_product(
         poses, groups, "JAX CUDA Dunbrack");
-    // Small batches need many workgroups; large batches fill active warp lanes.
-    int threads = count >= 2048 ? 16 : 1;
+    constexpr int threads = Launch::sm_ptx::nt;
     if (count)
       independent_work<<<
           (count + threads - 1) / threads,
