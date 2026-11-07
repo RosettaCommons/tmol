@@ -10,7 +10,8 @@ trap 'rm -rf "${work}"' EXIT
 python -m venv "${work}/env"
 "${work}/env/bin/python" -m pip install --upgrade pip
 "${work}/env/bin/python" -m pip install pytest "${JAX_SPEC:-jax>=0.11.2}"
-"${work}/env/bin/python" -m pip install "${JAX_DIST}"/tmol_core-*.whl "${JAX_DIST}"/tmol_jax-*.whl
+core_wheels=("${JAX_DIST}"/tmol_core-*.whl)
+"${work}/env/bin/python" -m pip install "${core_wheels[0]}[ligand]" "${JAX_DIST}"/tmol_jax-*.whl
 "${work}/env/bin/python" -m pip install build 'setuptools>=77' wheel
 "${work}/env/bin/python" scripts/build_jax_native.py --outdir "${work}/native-dist"
 "${work}/env/bin/python" -m pip install "${work}/native-dist"/tmol_jax_native-*.whl
@@ -19,22 +20,7 @@ python -m venv "${work}/env"
   --core-wheel "${JAX_DIST}"/tmol_core-*.whl --wheel "${JAX_DIST}"/tmol_jax-*.whl \
   --native-wheel "${work}/native-dist"/tmol_jax_native-*.whl --output "${work}/release.json"
 
-mkdir -p "${work}/source/tests" "${work}/source/tmol/tests/data/pdb"
-cp -R tests/jax "${work}/source/tests/jax"
-cp -R tests/core "${work}/source/tests/core"
-if [ -d tests/scientific ]; then
-  cp -R tests/scientific "${work}/source/tests/scientific"
-fi
-cp tmol/tests/data/pdb/{1ubq,3plc}.pdb "${work}/source/tmol/tests/data/pdb/"
-mkdir -p "${work}/source/tmol/tests/data/ligand_params" \
-  "${work}/source/tmol/tests/data/protein_ligand_test"
-cp tmol/tests/data/ligand_params/noncanonical_{alpha,nonstandard}_aa.tmol \
-  "${work}/source/tmol/tests/data/ligand_params/"
-cp tmol/tests/data/protein_ligand_test/hsp90.xtal-lig.mmff94.tmol \
-  "${work}/source/tmol/tests/data/protein_ligand_test/"
-mkdir -p "${work}/source/tmol/database/default/scoring"
-cp tmol/database/default/scoring/hbond.yaml \
-  "${work}/source/tmol/database/default/scoring/hbond.yaml"
+bash .github/ci/stage_jax_tests.sh "${work}/source"
 
 version=$("${work}/env/bin/python" -I -c \
   'from importlib.metadata import version; print(version("tmol-jax"))')

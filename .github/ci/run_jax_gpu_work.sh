@@ -27,30 +27,17 @@ case "$(nvcc --version | sed -n 's/.*release \([0-9][0-9]*\)\..*/\1/p' | head -1
 esac
 "${work}/env/bin/python" -m pip install --upgrade pip
 "${work}/env/bin/python" -m pip install pytest "jax[${extra}]>=0.11.2"
+core_wheels=("${JAX_DIST}"/tmol_core-*.whl)
 "${work}/env/bin/python" -m pip install \
-  "${JAX_DIST}"/tmol_core-*.whl "${JAX_DIST}"/tmol_jax-*.whl \
+  "${core_wheels[0]}[ligand]" "${JAX_DIST}"/tmol_jax-*.whl \
   "${JAX_CUDA_DIST}"/tmol_jax_native-*.whl
 
 "${JAX_BUILD_PYTHON}" scripts/jax_release_manifest.py --revision "$(git rev-parse HEAD)" \
   --core-wheel "${JAX_DIST}"/tmol_core-*.whl --wheel "${JAX_DIST}"/tmol_jax-*.whl \
   --native-wheel "${JAX_CUDA_DIST}"/tmol_jax_native-*.whl --output "${work}/release.json"
 
-mkdir -p "${work}/source/tests" "${work}/source/tmol/tests/data/pdb"
-cp -R tests/jax "${work}/source/tests/jax"
-cp -R tests/core "${work}/source/tests/core"
-if [ -d tests/scientific ]; then
-  cp -R tests/scientific "${work}/source/tests/scientific"
-fi
-cp tmol/tests/data/pdb/{1ubq,3plc}.pdb "${work}/source/tmol/tests/data/pdb/"
-mkdir -p "${work}/source/tmol/tests/data/ligand_params" \
-  "${work}/source/tmol/tests/data/protein_ligand_test"
-cp tmol/tests/data/ligand_params/noncanonical_{alpha,nonstandard}_aa.tmol \
-  "${work}/source/tmol/tests/data/ligand_params/"
-cp tmol/tests/data/protein_ligand_test/hsp90.xtal-lig.mmff94.tmol \
-  "${work}/source/tmol/tests/data/protein_ligand_test/"
-mkdir -p "${work}/source/tmol/database/default/scoring"
-cp tmol/database/default/scoring/hbond.yaml \
-  "${work}/source/tmol/database/default/scoring/hbond.yaml"
+bash .github/ci/stage_jax_tests.sh "${work}/source"
+
 version=$("${work}/env/bin/python" -I -c \
   'from importlib.metadata import version; print(version("tmol-jax"))')
 (
