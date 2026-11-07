@@ -83,3 +83,9 @@ def test_double_kinematics_preserves_float_coordinate_storage(backend, name):
         np.testing.assert_allclose(
             (gradient * direction).sum(), numeric, rtol=2e-3, atol=2e-3
         )
+        movement = execution.move_map()
+        movement.move_all_named_torsions = True
+        minimized = execution.minimize(movement, 5)
+        assert minimized.dtype == initial.dtype
+        assert backend.scores(minimized).sum() < backend.scores(initial).sum() - 1e-3
+        np.testing.assert_array_equal(backend.coords(), initial)
