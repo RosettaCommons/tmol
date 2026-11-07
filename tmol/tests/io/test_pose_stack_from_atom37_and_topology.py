@@ -776,3 +776,34 @@ def test_geometric_gap_drops_bond_inferred_from_consecutive_numbering(
         (bonds[:, 1] == 4) & (bonds[:, 3] == 3)
     )
     assert not bool(across.any())
+
+
+def test_neutral_terminal_ccd_h_direct_and_batched_prepared_source_gradients():
+    """The source H identity and variant survive direct and cached batch binding."""
+    from tmol import atom_array_from_file
+
+    atoms = atom_array_from_file(
+        data_path("sweep_regressions", "stated_terminus_5lh4.pdb")
+    )
+    atoms = atoms[atoms.res_id == 132]
+    hydrogen = int(np.flatnonzero(atoms.atom_name == "H1")[0])
+    atoms.atom_name[hydrogen] = "H"
+    topology, coordinates = _atomized_atom37(atoms, torch.device("cpu"), n_poses=2)
+    _, context = pose_stack_from_atom_array(
+        atoms, torch.device("cpu"), no_optH=True, return_context=True
+    )
+    builder = prepare_atom37_pose_builder(topology, context)
+    for mode in ("direct", "prepared", "cached"):
+        source = coordinates.clone().requires_grad_(True)
+        if mode == "direct":
+            pose = pose_stack_from_atom37_and_topology(
+                source, topology, context, no_optH=True
+            )
+        else:
+            pose = builder(source)
+        slot = pose.block_type(0, 0).atom_to_idx["H1"]
+        torch.testing.assert_close(pose.coords[:, slot], source[:, hydrogen, 1])
+        gradient = torch.autograd.grad(pose.coords[:, slot].sum(), source)[0]
+        expected = torch.zeros_like(source)
+        expected[:, hydrogen, 1] = 1
+        torch.testing.assert_close(gradient, expected, rtol=0, atol=0)

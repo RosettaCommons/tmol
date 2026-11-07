@@ -93,7 +93,11 @@ Biotite inputs into one canonical host plan: normalization, atom identities,
 metadata, supplied bonds, metal coordination and polymer gaps. Explicit termini
 remain authoritative across short same-chain gaps. Frontends place these arrays;
 Atom37 adapters overlay differentiable coordinates while the common plan keeps
-topology independent of coordinate updates. Legacy strict input modes retain their
+topology independent of coordinate updates. With an explicit chemical database,
+fixed Atom37 topology also recognizes supplied neutral-terminal hydrogens, including
+CCD-style `H`, without generating atoms or reading external tensor coordinates.
+Explicit variants are preserved and ensemble models must agree on chemistry.
+Legacy strict input modes retain their
 validation contract until explicitly adapted to this preparation policy.
 
 `tmol_core.ligand` owns typing, protonation routing, charge overrides, parameter

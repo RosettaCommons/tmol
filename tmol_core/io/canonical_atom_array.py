@@ -76,6 +76,7 @@ def prepare_canonical_atom_array(
     filter_missing_mainchain=True,
     cut_partners=frozenset(),
     atom37_n_poses=None,
+    chemical_database=None,
 ):
     """Resolve prepared chemistry once for all poses with the same topology.
 
@@ -83,12 +84,16 @@ def prepare_canonical_atom_array(
     coordinate tensor. It disables coordinate-based filtering and gap detection,
     and leaves ``fields['coords']`` unset (None); the frontend validates and
     overlays that tensor without detaching its gradients. Ordinary coordinates
-    retain the mature float32 canonical storage contract.
+    retain the mature float32 canonical storage contract. An explicit
+    ``chemical_database`` additionally annotates complete supplied terminal
+    chemistry without generating atoms or protonating incomplete input.
     """
     atoms = context._normalize_input_identifiers(atoms, co.name3_aliases)
     atoms = context._with_input_chemistry_normalized(
         atoms, context._metal_atom_names(co=co)
     )
+    if chemical_database is not None:
+        atoms = context.with_supplied_terminal_chemistry(atoms, chemical_database, co)
     atoms = with_metal_coordination_typed(atoms)
     atoms, gaps = context._filter_supported_atoms_and_connectivity(
         atoms,

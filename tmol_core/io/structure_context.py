@@ -578,6 +578,42 @@ def _normalize_input_identifiers(biotite_structure, name3_aliases):
     return renamed
 
 
+def with_supplied_terminal_chemistry(structure, chemical_database, co):
+    """Annotate complete supplied termini without generating or protonating atoms.
+
+    The reference structure's finite atoms and bonds define this fixed state;
+    an external coordinate tensor never enters the decision. Existing explicit
+    protonation variants remain authoritative. Ensemble models must agree.
+    """
+    from .protonation_input import _map_stack_chemistry, _stated_terminal_variants
+
+    if isinstance(structure, biotite.structure.AtomArrayStack):
+        return _map_stack_chemistry(
+            structure,
+            lambda model: with_supplied_terminal_chemistry(
+                model, chemical_database, co
+            ),
+            "Supplied terminal chemistry differs between models of this stack",
+        )
+    structure = _with_stated_termini(structure, chemical_database, co)
+    _validate_connection_hydrogens(structure, chemical_database)
+    if PROTONATION_VARIANT in structure.get_annotation_categories():
+        return structure
+    if EXPLICIT_TERMINI not in structure.get_annotation_categories() or not numpy.any(
+        structure.get_annotation(EXPLICIT_TERMINI) & 1
+    ):
+        return structure
+    forms = _database_forms(chemical_database)
+    starts, lacking = _residues_lacking_hydrogens(
+        structure, co.restype_io_equiv_classes, forms
+    )
+    variant = _stated_terminal_variants(structure, starts, lacking, forms)
+    if (variant >= 0).any():
+        structure = structure.copy()
+        structure.set_annotation(PROTONATION_VARIANT, variant)
+    return structure
+
+
 def _with_input_hydrogens(
     biotite_structure,
     ph,

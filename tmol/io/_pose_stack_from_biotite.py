@@ -54,7 +54,6 @@ from tmol.io._pose_stack_deconstruction import (  # noqa: F401
 from tmol.io._build_context import PoseBuildContext
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
-from tmol.utility._biotite_util import _get_all_residue_positions
 from tmol.utility import resolve_device
 
 from tmol_core.io import structure_context as _structure_context
@@ -398,6 +397,8 @@ class PreparedAtom37PoseBuilder:
             covalent_bonds=bonds_for_poses(template.covalent_bonds),
             metal_coordination=bonds_for_poses(template.metal_coordination),
             residue_annotations=array_for_poses(template.residue_annotations),
+            metal_origins=array_for_poses(template.metal_origins),
+            protonation_variants=tensor_for_poses(template.protonation_variants),
         )
 
 
@@ -425,34 +426,20 @@ def prepare_atom37_pose_builder(
             biotite_structure, context.fragment_definitions
         )
 
-    biotite_structure = _normalize_input_identifiers(
-        biotite_structure, context.canonical_ordering.name3_aliases
-    )
-    biotite_structure = _with_input_chemistry_normalized(
-        biotite_structure, _metal_atom_names(co=context.canonical_ordering)
-    )
-    filtered, _ = _filter_supported_atoms_and_connectivity(
+    from tmol_core.io.canonical_atom_array import prepare_canonical_atom_array
+
+    plan = prepare_canonical_atom_array(
         biotite_structure,
         context.canonical_ordering,
-        filter_missing_mainchain=False,
-    )
-    canonical_template = canonical_form_from_biotite(
-        filtered,
-        device,
-        co=context.canonical_ordering,
         missing_density_distance_threshold=0.0,
-        _filter_missing_mainchain=False,
+        filter_missing_mainchain=False,
+        chemical_database=context.parameter_database.chemical,
+        cut_partners=context.cut_covalent_partners,
     )
-    atom_residue = _get_all_residue_positions(filtered)
-    valid_mask, valid_atom, valid_residue = _map_atoms_to_canonical(
-        context.canonical_ordering,
-        atom_residue,
-        filtered.res_name,
-        filtered.atom_name,
-        filtered.element,
-    )
+    filtered = plan.structure
+    canonical_template = _canonical_form_from_host_plan(plan, device)
     token_id, slot, mapped_residue, mapped_atom = _atom37_mapping(
-        filtered, valid_mask, valid_residue, valid_atom
+        filtered, plan.valid_atom_mask, plan.valid_res_inds, plan.valid_atom_inds
     )
     mapped_token_id = torch.as_tensor(token_id, device=device)
     mapped_slot = torch.as_tensor(slot, device=device)
@@ -789,6 +776,9 @@ def pose_stack_from_atom_array(  # noqa: C901
         missing_density_distance_threshold=missing_density_distance_threshold,
         atom37_coords=atom37_coords,
         _cut_covalent_partners=context.cut_covalent_partners,
+        _chemical_database=(
+            context.parameter_database.chemical if atom37_coords is not None else None
+        ),
     )
     disconnected = kwargs.pop("res_not_connected", None)
     if disconnected is not None:
@@ -1550,6 +1540,7 @@ def canonical_form_from_biotite(
     atom37_coords: torch.Tensor | None = None,
     _filter_missing_mainchain: bool = True,
     _cut_covalent_partners: frozenset[str] = frozenset(),
+    _chemical_database=None,
 ) -> CanonicalForm:
     """Convert a Biotite AtomArray or AtomArrayStack to a CanonicalForm.
 
@@ -1608,10 +1599,11 @@ def canonical_form_from_biotite(
         filter_missing_mainchain=_filter_missing_mainchain,
         cut_partners=_cut_covalent_partners,
         atom37_n_poses=None if atom37_coords is None else atom37_coords.shape[0],
+        chemical_database=_chemical_database,
     )
-    fields = plan.fields.copy()
+    coordinates = None
     if atom37_coords is not None:
-        fields["coords"], _ = _populate_canonical_coords_from_atom37(
+        coordinates, _ = _populate_canonical_coords_from_atom37(
             atom37_coords,
             plan.structure,
             torch_device,
@@ -1622,10 +1614,19 @@ def canonical_form_from_biotite(
             plan.valid_atom_inds,
         )
         _validate_effective_mainchain_coords(
-            fields["coords"], _required_mainchain_entries(plan.structure, co)
+            coordinates, _required_mainchain_entries(plan.structure, co)
         )
-    else:
-        fields["coords"] = torch.as_tensor(fields["coords"], device=torch_device)
+    return _canonical_form_from_host_plan(plan, torch_device, coordinates)
+
+
+def _canonical_form_from_host_plan(plan, torch_device, coordinates=None):
+    """Place one common canonical plan, retaining an optional differentiable overlay."""
+    fields = plan.fields.copy()
+    fields["coords"] = (
+        torch.as_tensor(fields["coords"], device=torch_device)
+        if coordinates is None
+        else coordinates
+    )
     for name in (
         "chain_id",
         "res_types",

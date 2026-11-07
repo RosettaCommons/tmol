@@ -204,25 +204,33 @@ def _stated_terminal_variants(template, starts, lacking, forms):
     return variant
 
 
-def _protonate_stack(structure, **kwargs):
+def _map_stack_chemistry(structure, transform, mismatch_message):
     """Keep an ensemble only when independently assigned models share chemistry."""
     models = list(structure)
     registry = getattr(structure, "_custom_ccd_registry", None)
     if registry is not None:
         for model in models:
             model._custom_ccd_registry = registry
-    marked = [_with_atomworks_hydrogens(model, **kwargs) for model in models]
+    marked = [transform(model) for model in models]
     if all(result is model for result, model in zip(marked, models)):
         return structure
     if any(
         not model.equal_annotations(marked[0]) or model.bonds != marked[0].bonds
         for model in marked[1:]
     ):
-        raise ValueError("AtomWorks protonates the models of this stack differently")
+        raise ValueError(mismatch_message)
     result = struc.stack(marked)
     if registry is not None:
         result._custom_ccd_registry = registry
     return result
+
+
+def _protonate_stack(structure, **kwargs):
+    return _map_stack_chemistry(
+        structure,
+        lambda model: _with_atomworks_hydrogens(model, **kwargs),
+        "AtomWorks protonates the models of this stack differently",
+    )
 
 
 def _with_atomworks_hydrogens(
