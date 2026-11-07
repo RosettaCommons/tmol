@@ -13,7 +13,7 @@ namespace tmol::jax {
 inline auto annealing_phase_seeds(ContextManager&, int64_t seed, int64_t call) {
   if (call < 0)
     throw std::invalid_argument("annealing seed call must be nonnegative");
-  auto result = TPack<int64_t, 1, Device::CPU>::empty({3});
+  auto result = OwnedHostTensor<int64_t, 1, Device::CPU>::empty({3});
   for (uint64_t phase = 0; phase < 3; ++phase) {
     portable::Philox4x32_10 generator(uint64_t(seed), phase, uint64_t(call));
     auto words = generator.next4();
