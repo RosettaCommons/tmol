@@ -17,7 +17,9 @@ from tests.scientific.test_complete_preset import CASES
     + [("d_peptide", True)],
 )
 def test_packing_pages_conserve_all_terms(name, sampled):
-    backend = Execution(os.environ.get("TMOL_TEST_BACKENDS", "jax-cpu"))
+    backend = Execution(
+        "jax-cuda" if "jax-cuda" in os.environ.get("TMOL_TEST_BACKENDS", "") else "jax-cpu"
+    )
     with jax.enable_x64():
         backend.molecule(CASES[name], terms=())
         execution = RotamerExecution(backend, family="genbonded", sampled=sampled)
