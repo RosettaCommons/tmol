@@ -26,14 +26,15 @@ def complete_rotamer_scorer(backend, *, sampled=False):
 
 
 @pytest.mark.parametrize("name", CASES)
-def test_complete_rotamer_score_conserves_whole_pose(backend, name):
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_complete_rotamer_score_conserves_whole_pose(backend, name, dtype):
     precision = (
         backend.module.enable_x64() if backend.framework == "jax" else nullcontext()
     )
     with precision:
         backend.molecule(CASES[name], terms=("ref",))
         e, score = complete_rotamer_scorer(backend)
-        xyz = backend.numpy(e.rotamers.coords).astype(np.float64)
+        xyz = backend.numpy(e.rotamers.coords).astype(dtype)
         x = e.array(xyz)
         if backend.framework == "jax":
             values, indices = backend.module.jit(score)(x)
@@ -46,7 +47,7 @@ def test_complete_rotamer_score_conserves_whole_pose(backend, name):
         total = np.zeros(backend.pose.n_poses)
         np.add.at(total, indices[0], values)
         whole, whole_gradient = backend.value_and_grad(
-            backend.coords().astype(np.float64)
+            backend.coords().astype(dtype)
         )
         np.testing.assert_allclose(total, whole, rtol=3e-6, atol=3e-5)
         assert np.isfinite(values).all() and np.any(np.abs(dx) > 1e-3)
