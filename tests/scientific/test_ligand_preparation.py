@@ -11,7 +11,9 @@ import pytest
 @pytest.mark.parametrize(
     "source", ("l_alanine", "d_alanine", "aspirin", "carboxylate", "mol2")
 )
-def test_public_ligand_preparation_scoring_and_minimization(backend, source):
+def test_public_ligand_preparation_scoring_and_minimization(
+    backend, source, conformer_execution=None
+):
     frontend = "tmol_jax" if backend.framework == "jax" else "tmol"
     ligand = import_module(frontend + ".ligand")
     database_type = import_module(frontend + ".database").ParameterDatabase
@@ -39,6 +41,8 @@ def test_public_ligand_preparation_scoring_and_minimization(backend, source):
             "carboxylate": "CC(=O)O",
         }[source]
         options = dict(res_name="LG1", protonate=source == "carboxylate", seed=47)
+        if conformer_execution is not None:
+            options["conformer_execution"] = conformer_execution
         info = ligand.nonstandard_residue_info_from_smiles_via_mol2(smiles, **options)
         database, ordering = ligand.prepare_ligand_from_smiles(
             smiles, param_db=base, **options

@@ -173,3 +173,16 @@ energies, gradients, topology and full cold/warm workflows, including peak host
 and device memory. Kernel tests alone do not establish end-to-end parity. See
 [development](user_guide/development.md) and [benchmarking](user_guide/benchmarking.md).
 Core code is BSD-3-Clause; vendored PySMILES retains Apache-2.0 attribution.
+
+The optional CPU ligand refinement executor uses one typed native objective and
+analytic gradient, one validated host ABI, and the common L-BFGS policy. Each
+frontend supplies its native library path; the common NumPy binding imports
+neither framework. It supports distance bounds, planar components, signed chiral
+volumes, and fourth-coordinate annealing in float32/float64. The scoped denormal
+policy restores the calling thread's previous state, including on exceptions.
+
+This executor is currently explicit, with existing frontend defaults retained.
+Pointwise objective/gradient agreement does not establish identical conformers:
+small arithmetic differences can change the optimization trajectory and derived
+parameters. Seeded full preparation, scientific workflow and cold/warm memory
+and runtime comparisons remain prerequisites for adopting it by default.

@@ -19,6 +19,7 @@ def stage_native_headers(root, stage):
     # Include canonical source headers, never a second scientific implementation.
     for relative in (
         "score/common",
+        "ligand/compiled",
         "score/genbonded/potentials",
         "score/cartbonded/potentials",
         "score/backbone_torsion/potentials",
@@ -86,6 +87,7 @@ def stage_native(root, stage, source_revision=None):
     backend = root / "tmol/backends/jax"
     for path in (
         backend / "genbonded_cpu.cpp",
+        root / "tmol/ligand/compiled/refinement.cpu.cpp",
         backend / "genbonded_cuda.cu",
         *backend.glob("*_ffi.hh"),
     ):

@@ -60,7 +60,9 @@ class NativeBuildExt(build_ext):
         )
 
 
-extensions = [Extension("tmol_jax_native._tmol_cpu", ["genbonded_cpu.cpp"])]
+extensions = [
+    Extension("tmol_jax_native._tmol_cpu", ["genbonded_cpu.cpp", "refinement.cpu.cpp"])
+]
 if os.environ.get("TMOL_JAX_NATIVE_CUDA", "0") == "1":
     extensions.append(Extension("tmol_jax_native._tmol_cuda", ["genbonded_cuda.cu"]))
 
