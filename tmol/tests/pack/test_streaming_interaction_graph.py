@@ -4,12 +4,9 @@ import pytest
 import torch
 
 from tmol.pack.compiled._compiled import (
-    _accumulate_interaction_graph_entries,
     _build_interaction_graph,
-    _finalize_interaction_graph_chunk_topology,
     _finalize_interaction_graph_topology,
     _initialize_interaction_graph_topology,
-    _note_interaction_graph_chunk_topology,
     _note_interaction_graph_topology,
     _pack_anneal,
 )
@@ -131,87 +128,20 @@ def test_interaction_graph_empty_pose_offsets(
 
 
 def staged_graph(metadata, term_entries, chunk_size):
+    from tmol.pack.compiled import _compiled as execution
+    from tmol_core.pack.streaming import build_streaming_interaction_graph
+
     device = metadata[0].device
     empty_indices = torch.empty((3, 0), dtype=torch.int32, device=device)
     empty_values = torch.empty(0, dtype=torch.float32, device=device)
-    base = list(
-        _build_interaction_graph(
-            False,
-            chunk_size,
-            1,
-            *metadata,
-            empty_indices,
-            empty_values,
-            -1,  # the table is coalesced: every key distinct
-            False,
-        )
+
+    def entries(*, topology_only):
+        for term, (indices, values) in enumerate(term_entries):
+            yield term, indices, empty_values if topology_only else values
+
+    return build_streaming_interaction_graph(
+        entries, (1, *metadata), chunk_size, empty_indices, empty_values, execution
     )
-    topology = list(
-        _initialize_interaction_graph_topology(metadata[2], base[4], empty_values)
-    )
-    for indices, values in term_entries:
-        (topology[0],) = _note_interaction_graph_topology(
-            metadata[6],
-            topology[1],
-            topology[0],
-            indices,
-            values,
-        )
-    chunk_topology = list(
-        _finalize_interaction_graph_topology(
-            chunk_size,
-            base[4],
-            topology[0],
-            empty_values,
-        )
-    )
-    for indices, values in term_entries:
-        (chunk_topology[4],) = _note_interaction_graph_chunk_topology(
-            chunk_size,
-            metadata[2],
-            metadata[3],
-            metadata[6],
-            topology[1],
-            base[4],
-            chunk_topology[0],
-            chunk_topology[1],
-            chunk_topology[3],
-            chunk_topology[4],
-            indices,
-            values,
-        )
-    base[11:14] = chunk_topology[:3]
-    base[14:16] = _finalize_interaction_graph_chunk_topology(
-        chunk_size,
-        base[4],
-        chunk_topology[0],
-        chunk_topology[1],
-        chunk_topology[2],
-        chunk_topology[3],
-        chunk_topology[4],
-        empty_values,
-    )
-    for indices, values in term_entries:
-        base[9], base[10], base[15] = _accumulate_interaction_graph_entries(
-            chunk_size,
-            metadata[2],
-            metadata[3],
-            metadata[6],
-            topology[1],
-            base[7],
-            base[4],
-            base[5],
-            base[11],
-            base[12],
-            base[13],
-            base[14],
-            base[9],
-            base[10],
-            base[15],
-            indices,
-            values,
-        )
-    return tuple(base)
 
 
 @pytest.mark.parametrize(
