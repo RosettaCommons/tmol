@@ -486,7 +486,7 @@ requests follow the selected fold forest; duplicate requests add their deltas.
 Missing-neighbor and non-bonded forest degrees of freedom raise. This eager
 initialization is outside autodiff; bound kinematic maps provide differentiable
 DOF execution. Mixed protein/ligand, D and beta peptides, DNA and RNA target and
-bond-geometry checks pass on both CPU frontends; final artifact/CUDA gates remain.
+bond-geometry checks pass on both CPU frontends and the matching installed/CUDA gates.
 
 Named geometry queries are available as `get_torsion_names(pose, pose_index,
 block_index)` and `get_named_torsions(pose, poses=None, blocks=None, names=None,

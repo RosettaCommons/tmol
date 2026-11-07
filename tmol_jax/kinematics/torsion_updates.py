@@ -63,7 +63,9 @@ def _apply_torsion_deltas(pose_stack, requests, deltas, fold_forest=None):
         node = resolve(*request[:3])
         require_bonded_node(node, kin.forest._indices.doftype, request)
         # Repeated requests may alias one controlling node: add sequentially.
-        dofs = dofs.at[node, BondDOFTypes.phi_c].add(delta)
+        dofs = dofs.at[node, BondDOFTypes.phi_c].add(
+            np.asarray(delta, dtype=dofs.dtype)
+        )
     return pose_stack.replace(coords=mapping(dofs))
 
 
