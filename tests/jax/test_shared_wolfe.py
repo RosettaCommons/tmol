@@ -94,3 +94,29 @@ def test_invalid_trial_does_not_report_convergence():
     np.testing.assert_array_equal(result["x"], [0])
     assert np.isfinite(result["fun"])
     assert not result["converged"]
+
+
+@pytest.mark.parametrize("name", ("ligand", "connected_noncanonical", "d_peptide"))
+def test_kinematic_wolfe_retains_shared_molecular_minimization_contract(
+    monkeypatch, name
+):
+    from tmol_jax import run_kin_min
+    from tests.scientific.kinematics import MolecularKinematicExecution
+    from tests.scientific.test_molecular_movement import (
+        test_internal_minimization_decreases_real_molecular_energy as check,
+    )
+
+    def minimize(execution, move_map, iterations):
+        backend = execution.backend
+        with jax.default_device(backend.device):
+            pose = run_kin_min(
+                backend.pose,
+                backend.score_function,
+                move_map,
+                max_iter=iterations,
+                optimizer="strong_wolfe",
+            )
+        return backend.numpy(pose.coords)
+
+    monkeypatch.setattr(MolecularKinematicExecution, "minimize", minimize)
+    check(Execution("jax-" + jax.devices()[0].platform), name)
