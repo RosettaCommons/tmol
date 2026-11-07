@@ -1261,3 +1261,21 @@ def test_pack_a_capped_structure(stem, torch_device):
     after = packed.block_type_ind64.cpu()
     assert torch.equal(before, after), "repacking must not change the cap types"
     assert torch.all(torch.isfinite(packed.coords))
+
+
+def test_common_packing_budget_and_page_conservation():
+    from tmol_core.pack.streaming import packing_pose_chunk_size, packing_windows
+
+    previous = 0
+    for free_bytes in (0, 1 << 20, 1 << 30, 1 << 40):
+        count = packing_pose_chunk_size(76, free_bytes)
+        assert previous <= count <= 25
+        assert count == 1 or count * 76 * (2 << 20) <= free_bytes // 4
+        previous = count
+    assert packing_pose_chunk_size(76, 0, "7") == 7
+    for count in (0, 1, 7, 8, 18):
+        pages = list(packing_windows(count, 7))
+        assert all(0 < size <= 7 for _, size in pages)
+        assert [i for begin, size in pages for i in range(begin, begin + size)] == list(
+            range(count)
+        )

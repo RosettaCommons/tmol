@@ -7,6 +7,12 @@ import threading
 from typing import Callable, Dict, Sequence, TypeVar
 import warnings
 
+from tmol_core.pack.streaming import (
+    PACK_ROTAMER_BLOCK_PAIR_WINDOW as _PACK_ROTAMER_BLOCK_PAIR_WINDOW,
+    PACK_FUSED_ROTAMER_SCORE_WINDOW as _PACK_FUSED_ROTAMER_SCORE_WINDOW,
+    packing_windows,
+)
+
 import torch
 
 from tmol.types._torch import Tensor
@@ -63,8 +69,8 @@ _CUDA_WEIGHTED_FUSED_MIN_SINGLE_POSE_ATOMS = 15_000
 _CUDA_WEIGHTED_FUSED_MIN_BATCH_ATOMS_PER_POSE = 2_000
 _CUDA_WEIGHTED_FUSED_MIN_GRAD_COORD_ELEMENTS = 64 * 1024
 # Bound dispatch scratch while amortizing CUDA launches across block pairs.
-_PACK_ROTAMER_BLOCK_PAIR_WINDOW = 32 * 1024
-_PACK_FUSED_ROTAMER_SCORE_WINDOW = 4 * 1024 * 1024
+
+
 _CPU_SCORE_TERM_EXECUTORS: dict[int, ThreadPoolExecutor] = {}
 _CPU_SCORE_TERM_EXECUTOR_LOCK = threading.Lock()
 _ScoreCallResult = TypeVar("_ScoreCallResult")
@@ -1894,7 +1900,9 @@ class _FusedLJLKAndElecRotamerModule(torch.nn.Module):
         native_args = self._native_arguments(coords)
         n_poses, max_n_blocks = native_args[3].shape
         n_candidates = n_poses * max_n_blocks * (max_n_blocks + 1) // 2
-        for begin in range(0, n_candidates, _PACK_ROTAMER_BLOCK_PAIR_WINDOW):
+        for begin, count in packing_windows(
+            n_candidates, _PACK_ROTAMER_BLOCK_PAIR_WINDOW
+        ):
             yield _ljlk_elec_rotamer_dispatch(
                 native_args[0],
                 native_args[1],
@@ -1906,7 +1914,7 @@ class _FusedLJLKAndElecRotamerModule(torch.nn.Module):
                 native_args[16],
                 native_args[-1],
                 begin,
-                min(_PACK_ROTAMER_BLOCK_PAIR_WINDOW, n_candidates - begin),
+                count,
             )
 
     def iter_packing_entries(self, coords, score_weights, *, topology_only):
@@ -1920,12 +1928,10 @@ class _FusedLJLKAndElecRotamerModule(torch.nn.Module):
         native_args = self._native_arguments(coords)
         empty_values = score_weights.new_empty(0)
         for dispatch_indices in self.iter_packing_dispatches(coords):
-            for begin in range(
-                0, dispatch_indices.shape[1], _PACK_FUSED_ROTAMER_SCORE_WINDOW
+            for begin, count in packing_windows(
+                dispatch_indices.shape[1], _PACK_FUSED_ROTAMER_SCORE_WINDOW
             ):
-                indices = dispatch_indices[
-                    :, begin : begin + _PACK_FUSED_ROTAMER_SCORE_WINDOW
-                ]
+                indices = dispatch_indices[:, begin : begin + count]
                 if topology_only:
                     yield indices, empty_values
                     del indices
@@ -2222,11 +2228,8 @@ class RotamerScoringModule:
                 for dispatch in dispatches:
                     dispatch_windows = (
                         (
-                            dispatch[
-                                :, begin : begin + _PACK_FUSED_ROTAMER_SCORE_WINDOW
-                            ]
-                            for begin in range(
-                                0,
+                            dispatch[:, begin : begin + count]
+                            for begin, count in packing_windows(
                                 dispatch.shape[1],
                                 _PACK_FUSED_ROTAMER_SCORE_WINDOW,
                             )
