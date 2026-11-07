@@ -229,7 +229,11 @@ class _HostTwoLoop:
         return state
 
 
-def _validate_wolfe_settings(c1, c2, line_search_max_iter, relative_loss_tolerance):
+def _validate_optimizer_settings(
+    max_iter, history_size, lr, c1, c2, line_search_max_iter, relative_loss_tolerance
+):
+    if max_iter < 0 or history_size < 1 or lr < 0:
+        raise ValueError("invalid L-BFGS iteration, history or learning-rate setting")
     if not 0 < c1 < c2 < 1:
         raise ValueError("expected 0 < c1 < c2 < 1")
     if line_search_max_iter is not None and line_search_max_iter < 1:
@@ -275,9 +279,15 @@ def lbfgs_minimize(
     differences, inverse curvatures and scale; compiled adapters should call
     the shared two_loop_direction recurrence with their storage/loop executor.
     """
-    if max_iter < 0 or history_size < 1 or lr < 0:
-        raise ValueError("invalid L-BFGS iteration, history or learning-rate setting")
-    _validate_wolfe_settings(c1, c2, line_search_max_iter, relative_loss_tolerance)
+    _validate_optimizer_settings(
+        max_iter,
+        history_size,
+        lr,
+        c1,
+        c2,
+        line_search_max_iter,
+        relative_loss_tolerance,
+    )
     if max_eval is None:
         max_eval = max_iter * 5 // 4
     x = execution.clone(x)
@@ -356,6 +366,15 @@ def lbfgs_minimize(
             )
             x = execution.add_scaled(x, direction, step)
             n_eval += evaluations
+            if (
+                relative_loss_tolerance is not None
+                and step == 0
+                and execution.abs_max(gradient) > tolerance_grad
+            ):
+                # Exhausting the search without a descent step is not relative
+                # convergence. Keep the mature default stopping order intact.
+                reason = "line_search_failed"
+                break
             if accepted_step is not None:
                 accepted_step(n_iter, x, loss, gradient)
             # Preserve the mature stopping order, including the evaluation
