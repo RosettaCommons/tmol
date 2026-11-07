@@ -165,7 +165,7 @@ class RotamerScorer:
             self._evaluate, arrays=self._arrays, candidates=tuple(prepared_indices)
         )
 
-    def _compiled_evaluator(self, entries):
+    def _compiled_evaluator(self, entries, *, paged=False):
         # Floating tables remain explicit device operands, avoiding duplicate
         # embedded constants while compiling all runtime tensor operations once.
         leaves, tree = jax.tree.flatten(tuple(entry[4] for entry in entries))
@@ -176,8 +176,11 @@ class RotamerScorer:
         template = tuple(
             None if i in positions else leaf for i, leaf in enumerate(leaves)
         )
+        compile_program = (
+            _compiled_page_execution if paged else _compiled_rotamer_execution
+        )
         return (
-            _compiled_rotamer_execution(
+            compile_program(
                 tuple(entry[:4] for entry in entries),
                 self.score_types,
                 tree,
@@ -192,7 +195,9 @@ class RotamerScorer:
 
     @cached_property
     def _packing_executions(self):
-        return tuple(self._compiled_evaluator((entry,)) for entry in self.entries)
+        return tuple(
+            self._compiled_evaluator((entry,), paged=True) for entry in self.entries
+        )
 
     def iter_packing_entries(
         self, coords, *, block_pair_window, score_window, topology_only=False
@@ -215,30 +220,32 @@ class RotamerScorer:
                 raise ValueError("packing page sizes must be positive integers")
         if self.rotamers.correlated_groups:
             raise ValueError("correlated packing requires the complete score table")
+        from tmol_core.pack.streaming import packing_windows
+
         poses, blocks = self.rotamers.n_rots_for_block.shape
         count = poses * blocks * (blocks + 1) // 2
         for entry, (evaluate, arrays) in zip(self.entries, self._packing_executions):
             if not entry[5]:
                 values, indices = evaluate(coords, arrays, (None,))
-                for start in range(0, indices.shape[1], score_window):
-                    stop = start + score_window
+                for start, size in packing_windows(indices.shape[1], score_window):
+                    stop = start + size
                     yield (
                         values[..., :0] if topology_only else values[..., start:stop],
                         indices[:, start:stop],
                     )
                 del values, indices
                 continue
-            for begin in range(0, count, block_pair_window):
+            for begin, size in packing_windows(count, block_pair_window):
                 indices = nonbonded_candidate_groups(
                     self.rotamers,
                     self.packed_block_types,
                     reaches=(entry[4][3],),
                     coords=coords,
                     begin=begin,
-                    count=min(block_pair_window, count - begin),
+                    count=size,
                 )[0]
-                for start in range(0, indices.shape[1], score_window):
-                    page = indices[:, start : start + score_window]
+                for start, size in packing_windows(indices.shape[1], score_window):
+                    page = indices[:, start : start + size]
                     if topology_only:
                         yield coords.reshape(-1)[:0], page
                     else:
@@ -302,3 +309,10 @@ def _compiled_rotamer_execution(
         )
 
     return score
+
+
+# A preset has more families than the complete-scorer cache has slots. Separate
+# page programs so repeated packing does not evict/recompile every family.
+_compiled_page_execution = lru_cache(maxsize=128)(
+    _compiled_rotamer_execution.__wrapped__
+)

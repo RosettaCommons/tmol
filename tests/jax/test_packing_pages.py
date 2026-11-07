@@ -18,7 +18,9 @@ from tests.scientific.test_complete_preset import CASES
 )
 def test_packing_pages_conserve_all_terms(name, sampled):
     backend = Execution(
-        "jax-cuda" if "jax-cuda" in os.environ.get("TMOL_TEST_BACKENDS", "") else "jax-cpu"
+        "jax-cuda"
+        if "jax-cuda" in os.environ.get("TMOL_TEST_BACKENDS", "")
+        else "jax-cpu"
     )
     with jax.enable_x64():
         backend.molecule(CASES[name], terms=())
@@ -70,6 +72,21 @@ def test_packing_pages_conserve_all_terms(name, sampled):
             np.testing.assert_allclose(total, whole, rtol=3e-6, atol=3e-5)
         else:
             assert np.max(np.asarray(execution.rotamers.n_rots_for_block)) > 2
+        from tmol_jax.pack.interaction_graph import build_interaction_graph
+        from tmol_jax.pack.streaming import streaming_interaction_graph
+
+        scalar = backend.score_function.render_rotamer_scoring_module(
+            backend.pose, execution.rotamers
+        )
+        values, indices = scalar(coords)
+        full_graph = build_interaction_graph(
+            execution.rotamers, values, indices, chunk_size=2
+        )
+        streamed = streaming_interaction_graph(
+            scalar, coords, chunk_size=2, block_pair_window=2, score_window=7
+        )
+        for left, right in zip(jax.tree.leaves(full_graph), jax.tree.leaves(streamed)):
+            np.testing.assert_allclose(left, right, rtol=2e-10, atol=2e-10)
         topology_only = []
         for values, indices in scorer.iter_packing_entries(
             coords, block_pair_window=2, score_window=3, topology_only=True

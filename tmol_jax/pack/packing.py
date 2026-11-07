@@ -10,7 +10,7 @@ from .imposition import impose_top_rotamer_assignments
 
 
 def pack_rotamers(
-    pose_stack, sfxn, task, *, seed=None, chunk_size=16, anneal_device=None
+    pose_stack, sfxn, task, *, seed=None, chunk_size=None, anneal_device=None
 ):
     """Select conformers using the complete sparse score and native search.
 
@@ -47,14 +47,31 @@ def pack_rotamers(
         raise TypeError("anneal_device must be a JAX device or a device string")
     if device.platform not in ("cpu", "gpu"):
         raise ValueError("annealing supports native CPU and CUDA devices")
+    from tmol_core.pack.streaming import (
+        interaction_graph_chunk_size,
+        should_stream_interaction_graph,
+    )
+
+    kind = "cuda" if pose_stack.device.platform == "gpu" else pose_stack.device.platform
+    if chunk_size is None:
+        chunk_size = interaction_graph_chunk_size(kind)
     pose, rotamers = build_rotamers(
         pose_stack, task, pose_stack.packed_block_types.chem_db
     )
     scorer = sfxn.render_rotamer_scoring_module(pose, rotamers)
-    values, indices = scorer(rotamers.coords)
-    graph = build_interaction_graph(
-        rotamers, values, indices, chunk_size=chunk_size, bump_check=task.bump_check
-    )
+    if should_stream_interaction_graph(
+        kind, rotamers.correlated_groups, task.bump_check
+    ):
+        from .streaming import streaming_interaction_graph
+
+        graph = streaming_interaction_graph(
+            scorer, rotamers.coords, chunk_size=chunk_size
+        )
+    else:
+        values, indices = scorer(rotamers.coords)
+        graph = build_interaction_graph(
+            rotamers, values, indices, chunk_size=chunk_size, bump_check=task.bump_check
+        )
     r = graph["retained"]
     arguments = tuple(
         r[name]
