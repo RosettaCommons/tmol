@@ -1,7 +1,7 @@
 """JAX execution of the shared ligand distance-geometry objectives."""
 
 from contextlib import nullcontext
-from functools import partial
+from functools import partial, wraps
 
 import jax
 import jax.numpy as jnp
@@ -102,6 +102,19 @@ def _minimize(evaluate, coordinates, iterations):
     return output
 
 
+def _host_refinement(function):
+    @wraps(function)
+    def execute(*args, **kwargs):
+        # These coordinates become shared chemical parameters, including ideal
+        # hydrogen geometry. They must not depend on the eventual scoring device
+        # or the device active when a seeded conformer cache is first populated.
+        with jax.default_device(jax.devices("cpu")[0]):
+            return function(*args, **kwargs)
+
+    return execute
+
+
+@_host_refinement
 def planar_refine(coordinates, pair_targets, max_iters):
     # Planar target construction in the mature pipeline explicitly uses doubles,
     # even when the eventual molecular coordinates and scoring use float32.
@@ -119,6 +132,7 @@ def planar_refine(coordinates, pair_targets, max_iters):
         return np.array(result, copy=True)
 
 
+@_host_refinement
 def chiral_anneal(coordinates, L0, U0, L, U, components, chirals, rng_seed):
     parameters = _parameters(L0, U0, L, U, components, chirals)
     fourth = np.random.default_rng(rng_seed).normal(0, 0.5, (len(coordinates), 1))
@@ -134,6 +148,7 @@ def chiral_anneal(coordinates, L0, U0, L, U, components, chirals, rng_seed):
     return np.array(x[:, :3], copy=True)
 
 
+@_host_refinement
 def stress_refine(coordinates, L0, U0, L, U, components, chirals):
     parameters = _parameters(L0, U0, L, U, components, chirals)
     result = _minimize(
