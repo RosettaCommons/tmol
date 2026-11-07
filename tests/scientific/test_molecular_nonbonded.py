@@ -30,4 +30,6 @@ def test_molecular_nonbonded_channels(backend, name):
     numeric = backend.float64_directional_derivative(x, direction)
     analytic = (gradient * direction).sum(axis=(2, 3))
     np.testing.assert_allclose(analytic, numeric, rtol=3e-3, atol=3e-3)
-    np.testing.assert_allclose(gradient.sum(axis=2), 0, atol=1e-3)
+    # Measure cancellation in float64 without changing the computed gradients.
+    # Float32 summation can obscure a small net force among large pair forces.
+    np.testing.assert_allclose(gradient.sum(axis=2, dtype=np.float64), 0, atol=1e-3)
