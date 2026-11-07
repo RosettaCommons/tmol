@@ -32,9 +32,8 @@ class MetalCoordinationEnergyTerm(EnergyTerm):
             host["metal_coordination_conn_key"],
         )
         register("tmol_metal_coordination")
-        return tuple(
-            jax.device_put(a, device=pose_stack.coords.device)
-            for a in (
+        return jax.device_put(
+            (
                 *pose_arguments(pose_stack),
                 pbt.conn_atoms,
                 *(
@@ -51,7 +50,8 @@ class MetalCoordinationEnergyTerm(EnergyTerm):
                         "bridge_params",
                     )
                 ),
-            )
+            ),
+            device=pose_stack.coords.device,
         )
 
     def __call__(self, pose_stack, term_state, coords_override=None):

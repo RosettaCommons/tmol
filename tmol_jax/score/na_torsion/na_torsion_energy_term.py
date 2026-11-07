@@ -27,25 +27,30 @@ def na_block_parameters(pbt):
 def na_parameter_state(database, device=None):
     params = prepare_na_torsion_parameters(database.scoring.na_torsion)
     return NaTorsionTermState(
-        tuple(
-            jax.device_put(params[name], device=device)
-            for name in (
-                "backbone_means",
-                "backbone_sdev",
-                "sugar_means",
-                "chi_means",
-                "sdev_sugar",
-                "sdev_chi",
-                "well_pucker",
-                "well_alpha_gamma",
-                "well_bibii_pucker",
-                "well_alphanext_bibii",
-                "well_chi_syn",
-                "is_north",
-                "weight_bb",
-                "weight_chi",
-                "weight_sugar",
-            )
+        jax.device_put(
+            tuple(
+                (
+                    params[name]
+                    for name in (
+                        "backbone_means",
+                        "backbone_sdev",
+                        "sugar_means",
+                        "chi_means",
+                        "sdev_sugar",
+                        "sdev_chi",
+                        "well_pucker",
+                        "well_alpha_gamma",
+                        "well_bibii_pucker",
+                        "well_alphanext_bibii",
+                        "well_chi_syn",
+                        "is_north",
+                        "weight_bb",
+                        "weight_chi",
+                        "weight_sugar",
+                    )
+                )
+            ),
+            device=device,
         ),
         {
             name: np.float64(params[name])
@@ -81,12 +86,11 @@ class NaTorsionEnergyTerm(EnergyTerm):
         state = na_parameter_state(self.param_db, pose_stack.coords.device)
         register("tmol_na_torsion")
         return NaTorsionTermState(
-            tuple(
-                jax.device_put(
-                    a.astype(np.int32) if a.dtype.kind == "i" else a,
-                    device=pose_stack.coords.device,
-                )
-                for a in topology
+            jax.device_put(
+                tuple(
+                    (a.astype(np.int32) if a.dtype.kind == "i" else a for a in topology)
+                ),
+                device=pose_stack.coords.device,
             )
             + state.parameters,
             state.attributes,

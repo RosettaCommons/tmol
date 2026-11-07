@@ -103,7 +103,7 @@ def prepare_lk_ball(pose, database):
         native_lk_ball_global_parameters(globals_),
     )
     register("tmol_lk_ball")
-    return tuple(jax.device_put(a, device=pose.coords.device) for a in arrays), float(
+    return jax.device_put(tuple(arrays), device=pose.coords.device), float(
         globals_.max_dis
     )
 

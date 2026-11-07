@@ -132,13 +132,13 @@ def prepare_hbond(pose, database, *, rotamers=None):
         *((rotamers.block_type_ind_for_rot,) if rotamers is not None else ()),
     )
     register("tmol_hbond" if rotamers is None else "tmol_rotamer_hbond")
-    return tuple(
-        jax.device_put(a, device=pose.coords.device)
-        for a in (
+    return jax.device_put(
+        (
             *arrays,
             indices,
             *((rotamers.block_type_ind_for_rot,) if rotamers is not None else ()),
-        )
+        ),
+        device=pose.coords.device,
     )
 
 
