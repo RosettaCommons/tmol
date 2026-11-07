@@ -66,7 +66,10 @@ def test_public_palette_context_lookup_and_cpu_transport(backend, name):
         after = b.channel_values_and_gradients(coords)
     for expected, actual in zip(before, after):
         assert np.isfinite(actual).all()
-        np.testing.assert_array_equal(actual, expected)
+        # Native CUDA atomic reductions need not repeat bitwise even with the
+        # identical palette. Use the existing float64 score-repeat tolerance;
+        # chemistry, ordering and topology above still compare exactly.
+        np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
     assert np.linalg.norm(after[1]) > 1
     with pytest.raises(ValueError, match="empty residue-type palette"):
         front.PackedBlockTypes.from_restype_list(
