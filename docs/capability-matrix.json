@@ -555,7 +555,8 @@
       "Older mature torsion formulas and float32 reduction order differ from the current shared kernels; retain per-term numerical exceptions and independent derivative evidence.",
       "Apple validation is a separate actual Torch/Metal gate; no native JAX MPS support is advertised.",
       "Earlier float32 CUDA FastRelax repeat failures motivated shared precise accumulation for nonbonded, cartbonded, LKBall and water gradients. Both the corrected component and combined source pass five tested molecular domains with five repeats in both current frontends. Matched mature complete workflows retain numerical/runtime/memory holds, and final actual Apple validation remains separate; earlier failures are retained.",
-      "Shared native ligand preparation retains historical seeded geometry, derived-parameter and downstream energy/gradient differences. Pointwise analytic-gradient and molecular-invariant passes do not establish historical prepared-system equivalence."
+      "Shared native ligand preparation retains historical seeded geometry, derived-parameter and downstream energy/gradient differences. Pointwise analytic-gradient and molecular-invariant passes do not establish historical prepared-system equivalence.",
+      "Long float64 CUDA minimization with history_size=128 and max_iter=140 can exceed the retained 2e-10 repeat-gradient bound on ubiquitin. This occurs in the current baseline as well as held compilation experiments; the five-domain float32 FastRelax repeat checks do not establish this longer-workflow contract."
     ],
     "framework_specific_or_not_mature_parity": [
       "Higher derivatives through native torsion/forward-kinematics kernels are not advertised by mature Torch either",
