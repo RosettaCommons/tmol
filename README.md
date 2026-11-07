@@ -91,9 +91,13 @@ for reusable coding-agent instructions.
 
 If you use TMol in your work, please cite:
 
-> Andrew Leaver-Fay, Jeff Flatten, Alex Ford, Joseph Kleinhenz, Henry Solberg,
-> David Baker, Andrew M. Watkins, Brian Kuhlman, Frank DiMaio, *tmol: a
-> GPU-accelerated, PyTorch implementation of Rosetta's relax protocol*
+> Andrew Leaver-Fay\*, Kieran Didi\*, Jeff Flatten\*, Alex Ford, Guangfeng Zhou,
+> Nathaniel Corley, Hahnbeom Park, Maxwell W. Kazman, Rafael I. Brent,
+> Joseph Kleinhenz, Henry Solberg, Andrew M. Watkins, Brian Kuhlman, David Baker,
+> Frank DiMaio, *tmol: a GPU-accelerated implementation of the Rosetta energy
+> function for machine learning*
 > (manuscript in preparation).
+
+\* Core contributor.
 
 TMol is available under the terms in [LICENSE](https://github.com/RosettaCommons/tmol/blob/master/LICENSE).
