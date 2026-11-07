@@ -612,5 +612,14 @@
     "jax": "implemented_cpu_scientific_checks",
     "repro_fixture": "tests/scientific/test_canonical_palette_choices.py",
     "implementation_status": "Canonical input preserves supplied residue choices rather than narrowing to types used in coordinates. L/D histidine keeps both neutral tautomers and four OptH samples; unused custom ligand and GLY design identities remain available with full preset finite values/gradients. Existing canonical molecular topology/score checks retained; complete workflow runtime/memory and mature parity remain separate gates."
+  },
+  "public_palette_construction": {
+    "torch": "supported",
+    "jax": "constructor_lookup_transport_and_topology_helpers_implemented",
+    "repro_fixture": [
+      "tests/scientific/test_public_palette.py",
+      "tests/jax/test_palette_runtime.py"
+    ],
+    "implementation_status": "Common topology source, supplied chemistry/residue-set/active-object identity, ordered name lookup and CPU transport. Public count/determine/join helpers and connection/bond/named-torsion metadata retain physical atom order and device placement. Preparation remains eager; metadata arrays are JAX pytree leaves. Shared ligand/noncanonical/D/DNA/metal contracts and JAX jit/vmap cover these APIs; full mature workflow numerical/runtime/memory acceptance remains separate."
   }
 }

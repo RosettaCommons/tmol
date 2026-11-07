@@ -492,6 +492,15 @@ custom parameter score function and an explicit seed for reproducibility. Other
 blocks and poses stay frozen. One-letter mutation retains its mature amino-acid
 contract; use exact residue identities for other supported types.
 
+`PackedBlockTypes.from_restype_list(chem_db, restype_set, active_block_types,
+device)` uses common topology preparation while retaining the supplied chemistry,
+residue collection and ordered active types. `inds_for_restypes` returns `-1`
+for absent names; `.cpu()` transfers palette arrays and retains that context.
+The connection, bond and named-torsion metadata arrays support `jit` and `vmap`.
+The public `count_*`, `determine_*` and `join_*` preparation methods use the same
+host topology source as Torch and transfer their results to the requested device.
+Preparation is eager; array execution and transport retain the supplied context.
+
 `extended_pose_stack_from_sequences(seqs, device=..., param_db=...,
 return_context=True)` consumes the common sequence grammar and ideal geometry:
 uppercase protein, lowercase DNA, exact `X[NAME]` variants, `X(SMILES)` ligands,
