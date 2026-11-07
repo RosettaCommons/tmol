@@ -64,7 +64,9 @@ def test_neutral_terminus_preserves_atoms_ports_and_physics(
 
 
 @pytest.mark.parametrize("ccd_h_name", [False, True])
-def test_neutral_terminus_atom37_preserves_hydrogen_source_gradient(backend, ccd_h_name):
+def test_neutral_terminus_atom37_preserves_hydrogen_source_gradient(
+    backend, ccd_h_name
+):
     front = import_module("tmol_jax" if backend.framework == "jax" else "tmol")
     path = Path(__file__).parents[2] / (
         "tmol/tests/data/sweep_regressions/stated_terminus_5lh4.pdb"
@@ -76,7 +78,7 @@ def test_neutral_terminus_atom37_preserves_hydrogen_source_gradient(backend, ccd
         atoms.atom_name[hydrogen] = "H"
     atoms.set_annotation("token_id", np.arange(len(atoms), dtype=np.int64))
     atoms.set_annotation("atom37_slot", np.ones(len(atoms), dtype=np.int64))
-    _, context = front.pose_stack_from_atom_array(
+    ordinary, context = front.pose_stack_from_atom_array(
         atoms, backend.device, no_optH=True, return_context=True
     )
     builder = import_module(front.__name__ + ".io").prepare_atom37_pose_builder(
@@ -94,7 +96,19 @@ def test_neutral_terminus_atom37_preserves_hydrogen_source_gradient(backend, ccd
         )
         bind = builder
     pose = bind(x)
-    h1 = pose.block_type(0, 0).atom_to_idx["H1"]
+    residue = pose.block_type(0, 0)
+    # Retaining H1 alone would also pass an incorrect charged NH3 terminus.
+    # This supplied neutral terminal group has exactly two N-bound hydrogens.
+    hydrogen_flags = backend.numpy(pose.packed_block_types.atom_is_hydrogen)[
+        int(backend.numpy(pose.block_type_ind)[0, 0])
+    ]
+    bonds = np.asarray(residue.bond_indices).reshape(-1, 2)
+    nitrogen = residue.atom_to_idx["N"]
+    assert (
+        np.count_nonzero((bonds[:, 0] == nitrogen) & hydrogen_flags[bonds[:, 1]]) == 2
+    )
+    assert residue.name == ordinary.block_type(0, 0).name
+    h1 = residue.atom_to_idx["H1"]
     np.testing.assert_allclose(
         backend.numpy(pose.coords)[0, h1], coordinates[0, hydrogen, 1], atol=1e-6
     )
