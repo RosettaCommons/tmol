@@ -537,8 +537,10 @@ parity remain unresolved.
 `tmol_jax.build_context_from_atom_array()` prepares reusable chemistry and
 parameters. `tmol_jax.pose_stack_from_atom_array(..., return_context=True)`
 accepts prepared ligands, noncanonical/D residues and metal coordination using
-the common normalization and hydrogen policies. Use the returned context for
-scoring. Missing sidechains and default OptH use the mature shared sampler
+the complete common canonical host plan for normalization, atom identity,
+metadata, connectivity and terminal chemistry. Supplied neutral termini close
+polymer gaps even when residue labels are consecutive and atoms are close. Use
+the returned context for scoring. Missing sidechains and default OptH use the mature shared sampler
 routing and native packing; `no_optH=True` disables OptH and `packer_seed` makes
 packing reproducible. Fragment imposition uses common original-atom plans.
 `pose_stack_from_file()` reads PDB, CIF, MOL2 and SDF through the common reader;

@@ -30,60 +30,24 @@ def canonical_form_from_biotite(
     from tmol_core.io.polymer_gaps import break_polymer_gaps, orient_polymer_gap_flags
 
     co = canonical_ordering or default_canonical_ordering()
-    initial_gaps = None
     if prepare_input:
-        from tmol_core.io import structure_context as common
-
-        atoms = common._normalize_input_identifiers(atoms, co.name3_aliases)
-        atoms = common._with_input_chemistry_normalized(
-            atoms, common._metal_atom_names(co=co)
-        )
-        atoms, initial_gaps = common._filter_supported_atoms_and_connectivity(
+        return _prepared_canonical_form(
             atoms,
             co,
-            cut_partners=cut_partners,
-            filter_missing_mainchain=filter_missing_mainchain,
+            missing_density_distance_threshold,
+            filter_missing_mainchain,
+            cut_partners,
         )
     atoms = with_metal_coordination_typed(atoms)
     models = list(atoms) if isinstance(atoms, struc.AtomArrayStack) else [atoms]
     if not models:
         raise ValueError("structure contains no models")
-    prepared_atom_indices = None
-    if prepare_input:
-        from tmol_core.io.canonical_atom_mapping import (
-            map_atoms_to_canonical,
-            map_neutral_terminal_hydrogens,
-        )
-        from tmol_core.io.protonation_input import PROTONATION_VARIANT
-
-        template = models[0]
-        residue_indices = struc.get_all_residue_positions(template)
-        valid, indices, _ = map_atoms_to_canonical(
-            co,
-            residue_indices,
-            template.res_name,
-            template.atom_name,
-            template.element,
-        )
-        if PROTONATION_VARIANT in template.get_annotation_categories():
-            indices = map_neutral_terminal_hydrogens(
-                co,
-                residue_indices,
-                template.res_name,
-                template.atom_name,
-                template.get_annotation(PROTONATION_VARIANT),
-                valid,
-                indices,
-            )
-        prepared_atom_indices = np.full(len(template), -1, np.int64)
-        prepared_atom_indices[valid] = indices
     mapped = [
         _canonical_form_from_records(
             _records_from_biotite(model),
             co,
             missing_density_distance_threshold=0,
             return_atom_mapping=True,
-            prepared_atom_indices=prepared_atom_indices,
         )
         for model in models
     ]
@@ -92,27 +56,6 @@ def canonical_form_from_biotite(
         key: np.concatenate([form[key] for form in forms], axis=0) for key in forms[0]
     }
     residues, valid, slots = mapped[0][1]
-    if prepare_input:
-        chain_ids, chain_labels, insertion_codes, labels, _ = (
-            common._extract_residue_metadata(atoms, initial_gaps)
-        )
-        count = len(models)
-        for name, values in (
-            ("chain_id", chain_ids),
-            ("chain_labels", chain_labels),
-            ("res_ins_codes", insertion_codes),
-            ("res_num", labels),
-        ):
-            combined[name] = np.broadcast_to(values, (count, len(values))).copy()
-        from tmol_core.io.protonation_input import PROTONATION_VARIANT
-
-        if PROTONATION_VARIANT in atoms.get_annotation_categories():
-            values = atoms.get_annotation(PROTONATION_VARIANT)[
-                struc.get_residue_starts(atoms)
-            ]
-            combined["protonation_variants"] = np.broadcast_to(
-                values, (count, len(values))
-            ).copy()
     from tmol_core.io.atom_metadata import populate_optional_atom_metadata
     from tmol_core.io import structure_context as metadata_policy
 
@@ -142,7 +85,7 @@ def canonical_form_from_biotite(
         valid,
         slots,
     )
-    gaps = np.zeros((len(types), 2), bool) if initial_gaps is None else initial_gaps
+    gaps = np.zeros((len(types), 2), bool)
     bonds = break_polymer_gaps(
         gaps,
         bonds,
@@ -171,6 +114,34 @@ def canonical_form_from_biotite(
         metal_coordination_from_biotite(models[0], residues, valid, slots)
     )
     return combined
+
+
+def _prepared_canonical_form(atoms, co, distance, filter_mainchain, cut_partners):
+    """Expose the common complete molecular input plan with JAX field aliases."""
+    from tmol_core.io.canonical_atom_array import prepare_canonical_atom_array
+
+    plan = prepare_canonical_atom_array(
+        atoms,
+        co,
+        missing_density_distance_threshold=distance,
+        filter_missing_mainchain=filter_mainchain,
+        cut_partners=cut_partners,
+    )
+    aliases = {
+        "res_labels": "res_num",
+        "residue_insertion_codes": "res_ins_codes",
+        "res_not_connected": "res_gap",
+    }
+    fields = {
+        aliases.get(name, name): value
+        for name, value in plan.fields.items()
+        if value is not None
+    }
+    fields["res_name"] = np.broadcast_to(
+        np.asarray(plan.residue_names, dtype=object), fields["res_types"].shape
+    ).copy()
+    fields["atom_is_present"] = np.isfinite(fields["coords"]).all(axis=-1)
+    return fields
 
 
 def pose_stack_from_biotite(

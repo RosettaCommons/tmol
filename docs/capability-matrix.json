@@ -39,9 +39,10 @@
       "torch": "supported",
       "jax": "explicit_prepared_types",
       "repro_fixture": [
-        "tests/scientific/test_backbone_torsion.py"
+        "tests/scientific/test_backbone_torsion.py",
+        "tests/scientific/test_stated_termini.py"
       ],
-      "implementation_status": "Shared selection retains HYP, HIS_D/HIS_POS, CYD, terminal patches and modified nucleotides. Public input, protonation and explicit canonical fixtures exercise variant selection. Chemistry without the necessary variant/terminal records is not silently converted to a canonical residue."
+      "implementation_status": "Shared selection retains HYP, HIS_D/HIS_POS, CYD, terminal patches and modified nucleotides. Public input, protonation and explicit canonical fixtures exercise variant selection. Chemistry without the necessary variant/terminal records is not silently converted to a canonical residue. Prepared AtomArray input now consumes the complete common canonical host plan; supplied neutral termini suppress short-gap polymer connections, including bondless consecutive labels. Shared CPU checks retain supplied coordinates, disconnected ports, all25 finite values/gradients and minimization; broader artifact/CUDA gates remain pending for this change."
     },
     {
       "domain": "ligand_only",
@@ -297,9 +298,10 @@
       "torch": "supported_including_default_input_packing_and_fragments",
       "jax": "shared_preparation_default_input_packing_file_loading",
       "repro_fixture": [
-        "tests/scientific/test_atom_array_input.py"
+        "tests/scientific/test_atom_array_input.py",
+        "tests/scientific/test_stated_termini.py"
       ],
-      "implementation_status": "Shared normalization, hydrogen/protonation, strict heavy atom identity, neutral-terminal mapping and reusable custom parameter context. Default missing-sidechain/OptH routing uses shared policy and native packing; noncanonical HYP and D missing-sidechain cases, ligand MOL2/CIF and metal/disulfide CPU workflows have finite full25E/G plus derivative and identity checks in both frameworks. Fragmented reconstruction and Atom37 replay use common plans; exact installed CPU and actual CUDA gates cover input packing, source gradients and tested metadata round trips. Complete public API compatibility remains open."
+      "implementation_status": "Shared normalization, hydrogen/protonation, strict heavy atom identity, neutral-terminal mapping and reusable custom parameter context. Default missing-sidechain/OptH routing uses shared policy and native packing; noncanonical HYP and D missing-sidechain cases, ligand MOL2/CIF and metal/disulfide CPU workflows have finite full25E/G plus derivative and identity checks in both frameworks. Fragmented reconstruction and Atom37 replay use common plans; exact installed CPU and actual CUDA gates cover input packing, source gradients and tested metadata round trips. Complete public API compatibility remains open. Prepared AtomArray input now consumes the complete common canonical host plan; supplied neutral termini suppress short-gap polymer connections, including bondless consecutive labels. Shared CPU checks retain supplied coordinates, disconnected ports, all25 finite values/gradients and minimization; broader artifact/CUDA gates remain pending for this change."
     },
     {
       "domain": "structure_metadata",
