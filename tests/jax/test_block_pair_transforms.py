@@ -63,3 +63,95 @@ def test_selected_pairs_transform_dynamic_indices_and_invalid_bounds():
     with pytest.raises(IndexError, match="out of range"):
         pair.score_interactions(x, invalid)
     assert np.isnan(np.asarray(execute(jnp.stack((x, x)), invalid))).all()
+
+
+@pytest.mark.parametrize("name", ("ligand", "connected_noncanonical", "mixed_batch"))
+def test_prepared_pair_scores_use_fresh_selection_operands(name):
+    lane = (
+        "jax-cuda"
+        if "jax-cuda" in os.environ.get("TMOL_TEST_BACKENDS", "")
+        else "jax-cpu"
+    )
+    b = Execution(lane).molecule(CASES[name], terms=())
+    b.use_beta2016()
+    with jax.enable_x64():
+        pair = b.score_function.render_block_pair_scoring_module(b.pose)
+        x = b.pose.coords.astype(jnp.float64)
+        last = b.pose.max_n_blocks - 1
+        selections = [
+            np.array([[0, 0], [0, last]], np.int32),
+            np.array([[last, last], [0, last]], np.int32),
+        ]
+        observed = []
+        for summed, weighted in ((True, True), (False, False)):
+            for selection in selections:
+                indices = jax.device_put(selection, b.device)
+                prepared = pair.prepare_interactions(
+                    indices, sum_terms=summed, apply_weights=weighted
+                )
+
+                def reference(x):
+                    return pair.score_interactions(
+                        x, indices, sum_terms=summed, apply_weights=weighted
+                    )
+
+                expected = reference(x)
+                expected_gradient = jax.grad(lambda x: reference(x).sum())(x)
+                actual, gradient = prepared.value_and_grad()(x)
+                assert actual.device == gradient.device == b.device
+                np.testing.assert_allclose(actual, expected, rtol=2e-10, atol=2e-10)
+                np.testing.assert_allclose(
+                    gradient, expected_gradient, rtol=2e-10, atol=2e-10
+                )
+                np.testing.assert_allclose(
+                    prepared.jitted()(x), expected, rtol=2e-10, atol=2e-10
+                )
+                batched = jax.jit(jax.vmap(prepared))(jnp.stack((x, x + 0.25)))
+                np.testing.assert_allclose(
+                    batched, jnp.stack((expected, expected)), rtol=2e-10, atol=2e-10
+                )
+                observed.append(np.asarray(actual))
+        if last:
+            assert np.max(np.abs(observed[0] - observed[1])) > 1e-3
+
+
+def test_prepared_pair_custom_parameters_preserve_existing_snapshot():
+    import attrs
+
+    lane = (
+        "jax-cuda"
+        if "jax-cuda" in os.environ.get("TMOL_TEST_BACKENDS", "")
+        else "jax-cpu"
+    )
+    b = Execution(lane).molecule(CASES["mixed_batch"], terms=("fa_ljatr",))
+    with jax.enable_x64():
+        x = b.pose.coords.astype(jnp.float64)
+        indices = jax.device_put(np.array([[0, 0], [0, 1]], np.int32), b.device)
+        original = b.score_function.render_block_pair_scoring_module(
+            b.pose
+        ).prepare_interactions(indices)
+        value, gradient = original.value_and_grad()(x)
+        assert np.linalg.norm(gradient) > 1e-3
+        db = b.parameter_database
+        # Quadrupling well depth doubles its stored square-root parameters
+        # exactly, giving an independent fourfold energy/force invariant.
+        ljlk = attrs.evolve(
+            db.scoring.ljlk,
+            atom_type_parameters=tuple(
+                attrs.evolve(p, lj_wdepth=4 * p.lj_wdepth)
+                for p in db.scoring.ljlk.atom_type_parameters
+            ),
+        )
+        changed = attrs.evolve(db, scoring=attrs.evolve(db.scoring, ljlk=ljlk))
+        b.use_parameter_database(changed)
+        fresh = b.score_function.render_block_pair_scoring_module(
+            b.pose
+        ).prepare_interactions(indices)
+        actual, actual_gradient = fresh.value_and_grad()(x)
+        np.testing.assert_allclose(actual, 4 * value, rtol=2e-12, atol=2e-11)
+        np.testing.assert_allclose(
+            actual_gradient, 4 * gradient, rtol=2e-12, atol=2e-11
+        )
+        old_value, old_gradient = original.value_and_grad()(x)
+        np.testing.assert_allclose(old_value, value, rtol=2e-12, atol=2e-11)
+        np.testing.assert_allclose(old_gradient, gradient, rtol=2e-12, atol=2e-11)

@@ -677,6 +677,9 @@ The rendered scorer also provides `unweighted_scores(coords)` and
 Pair indices have shape `[pairs, 2]` and apply to every pose; repeated pairs count
 repeatedly and an empty selection returns zero. Invalid indices raise in eager
 execution and yield NaN under JAX transformations.
+For a fixed selection, `selected = scorer.prepare_interactions(block_pair_indices)`
+provides `selected.jitted()` and `selected.value_and_grad()` for repeated coordinate
+evaluation. A new selection or parameter context requires a new prepared scorer.
 
 `calculate_fragment_interactions(pose, partner_mask, sfxn=score_function)` returns
 per-fragment partner scores and original column records. The Boolean partner mask

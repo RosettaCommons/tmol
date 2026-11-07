@@ -10,6 +10,9 @@ from tmol_core.pack.conformer_merge import prepare_conformer_origins
 from tmol_core.pack.correlation import correlation_indices
 from tmol_jax.pack.rotamer_set import RotamerSet, ConformerContext
 from tmol_jax.pack.score_function import RotamerScorer
+from ._execution import render_execution
+
+_INTERACTION_EXECUTORS = {}
 
 
 @partial(jax.jit, static_argnames=("weights", "interaction_only"))
@@ -21,6 +24,14 @@ def _physical_pair_values(values, indices, blocks, *, weights, interaction_only)
     if weights is not None:
         values *= jnp.asarray(weights, values.dtype)[:, None]
     return values, (p, i, j)
+
+
+def _pair_matrix(values, indices, block_shape, sum_terms):
+    p, i, j = indices
+    poses, blocks = block_shape
+    matrix = jnp.zeros((values.shape[0], poses, blocks, blocks), values.dtype)
+    matrix = matrix.at[:, p, i, j].add(values)
+    return matrix.sum(0) if sum_terms else matrix
 
 
 def _current_conformers(pose):
@@ -141,11 +152,8 @@ class BlockPairScorer:
         )
 
     def __call__(self, coords, sum_terms=True, apply_weights=True):
-        values, (p, i, j) = self.pair_values(coords, apply_weights)
-        poses, blocks = self.block_shape
-        matrix = jnp.zeros((len(self.weights), poses, blocks, blocks), coords.dtype)
-        matrix = matrix.at[:, p, i, j].add(values)
-        return matrix.sum(0) if sum_terms else matrix
+        values, indices = self.pair_values(coords, apply_weights)
+        return _pair_matrix(values, indices, self.block_shape, sum_terms)
 
     def unweighted_scores(self, coords):
         """Return all retained channels with shape [channels, poses, blocks, blocks]."""
@@ -160,6 +168,12 @@ class BlockPairScorer:
         follow ordinary array indexing. Invalid eager indices raise; invalid
         traced indices produce NaN instead of silently selecting a boundary pair.
         """
+        self._validate_indices(coords, block_pair_indices)
+        i, j = block_pair_indices.T
+        scores = self(coords, sum_terms=sum_terms, apply_weights=apply_weights)
+        return scores.at[..., i, j].get(mode="fill").sum(axis=-1)
+
+    def _validate_indices(self, coords, block_pair_indices):
         if block_pair_indices.ndim != 2 or block_pair_indices.shape[1] != 2:
             raise ValueError("block_pair_indices must have shape [n_pairs, 2]")
         if block_pair_indices.dtype not in (jnp.int32, jnp.int64):
@@ -175,6 +189,42 @@ class BlockPairScorer:
             blocks = self.block_shape[1]
             if np.any((indices < -blocks) | (indices >= blocks)):
                 raise IndexError("block pair index out of range")
-        i, j = block_pair_indices.T
-        scores = self(coords, sum_terms=sum_terms, apply_weights=apply_weights)
-        return scores.at[..., i, j].get(mode="fill").sum(axis=-1)
+
+    def prepare_interactions(
+        self, block_pair_indices, *, sum_terms=True, apply_weights=True
+    ):
+        """Bind a fixed selection for reusable compiled scores and gradients.
+
+        Prepare outside transformations, then call the returned scorer,
+        ``jitted()`` or ``value_and_grad()`` on fresh coordinates. A new selection
+        gets fresh index operands while sharing the same executable when possible.
+        """
+        if isinstance(block_pair_indices, jax.core.Tracer):
+            raise ValueError("prepare pair selections outside JAX transformations")
+        self._validate_indices(self.blocks, block_pair_indices)
+        evaluate = self.sparse._evaluate
+        weights = self.weights if apply_weights else None
+        interaction_only, shape = self.interaction_only, self.block_shape
+
+        def execute(coords, state):
+            arrays, candidates, blocks, selected = state
+            values, indices = evaluate(coords.reshape(-1, 3), arrays, candidates)
+            values, indices = _physical_pair_values(
+                values,
+                indices,
+                blocks,
+                weights=weights,
+                interaction_only=interaction_only,
+            )
+            scores = _pair_matrix(values, indices, shape, sum_terms)
+            i, j = selected.T
+            return scores.at[..., i, j].get(mode="fill").sum(axis=-1)
+
+        return render_execution(
+            _INTERACTION_EXECUTORS,
+            (evaluate, weights, interaction_only, shape, sum_terms),
+            execute,
+            (self.sparse._arrays, self.candidates, self.blocks, block_pair_indices),
+            self.shape,
+            native_only=False,
+        )
