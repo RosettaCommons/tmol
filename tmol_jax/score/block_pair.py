@@ -146,3 +146,35 @@ class BlockPairScorer:
         matrix = jnp.zeros((len(self.weights), poses, blocks, blocks), coords.dtype)
         matrix = matrix.at[:, p, i, j].add(values)
         return matrix.sum(0) if sum_terms else matrix
+
+    def unweighted_scores(self, coords):
+        """Return all retained channels with shape [channels, poses, blocks, blocks]."""
+        return self(coords, sum_terms=False, apply_weights=False)
+
+    def score_interactions(
+        self, coords, block_pair_indices, *, sum_terms=True, apply_weights=True
+    ):
+        """Sum selected pairs, including repeated entries, for every pose.
+
+        Indices have shape [pairs, 2] on the coordinate device. Negative indices
+        follow ordinary array indexing. Invalid eager indices raise; invalid
+        traced indices produce NaN instead of silently selecting a boundary pair.
+        """
+        if block_pair_indices.ndim != 2 or block_pair_indices.shape[1] != 2:
+            raise ValueError("block_pair_indices must have shape [n_pairs, 2]")
+        if block_pair_indices.dtype not in (jnp.int32, jnp.int64):
+            raise TypeError("block_pair_indices must have an integer dtype")
+        if not isinstance(block_pair_indices, jax.core.Tracer):
+            if not isinstance(coords, jax.core.Tracer) and (
+                block_pair_indices.device != coords.device
+            ):
+                raise ValueError(
+                    "block_pair_indices must be on the same device as coordinates"
+                )
+            indices = np.asarray(block_pair_indices)
+            blocks = self.block_shape[1]
+            if np.any((indices < -blocks) | (indices >= blocks)):
+                raise IndexError("block pair index out of range")
+        i, j = block_pair_indices.T
+        scores = self(coords, sum_terms=sum_terms, apply_weights=apply_weights)
+        return scores.at[..., i, j].get(mode="fill").sum(axis=-1)

@@ -622,5 +622,14 @@
       "tests/jax/test_palette_runtime.py"
     ],
     "implementation_status": "Common topology source preserves supplied chemistry, residue-set and active-object identity, ordered lookup, counts, connections, bonds and named torsions. Shared ligand/noncanonical/D/DNA/metal cases and JAX jit/vmap verify physical atom order and device placement, including Torch-free installs. Preparation remains eager; metadata arrays are pytree leaves."
+  },
+  "selected_block_pair_api": {
+    "torch": "supported",
+    "jax": "implemented",
+    "repro_fixture": [
+      "tests/scientific/test_selected_pair_scoring.py",
+      "tests/jax/test_block_pair_transforms.py"
+    ],
+    "implementation_status": "Rendered block-pair scorers expose mature unweighted_scores and score_interactions over the existing shared native physics. Ligand, noncanonical and mixed-system contracts cover selected-energy conservation, physical gradients and repeated/empty selections. Invalid eager indices reject; invalid transformed indices produce NaN. This public API capability does not resolve mature whole-workflow numerical or runtime/memory gaps."
   }
 }

@@ -669,6 +669,11 @@ Reference sums use the common float64 accumulator and cast once to the stored pa
 has quadratic block storage; all physical pair identities remain candidates so
 coordinate motion cannot invalidate a captured neighbor list. Rendering is eager;
 execution supports `jit`, `vmap` and first reverse coordinate derivatives.
+The rendered scorer also provides `unweighted_scores(coords)` and
+`score_interactions(coords, block_pair_indices, sum_terms=True, apply_weights=True)`.
+Pair indices have shape `[pairs, 2]` and apply to every pose; repeated pairs count
+repeatedly and an empty selection returns zero. Invalid indices raise in eager
+execution and yield NaN under JAX transformations.
 
 `calculate_fragment_interactions(pose, partner_mask, sfxn=score_function)` returns
 per-fragment partner scores and original column records. The Boolean partner mask
