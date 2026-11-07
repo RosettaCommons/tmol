@@ -493,8 +493,7 @@ auto CartBondedRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
       dV_dx,
       {},
       output_block_pair_energies,
-      accumulate_derivs,
-      compute_derivs);
+      accumulate_derivs);
 
   return {
       V_t,
@@ -646,7 +645,6 @@ auto CartBondedRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
       {},
       dV_dx,
       dTdV,
-      true,
       true,
       true);
 
