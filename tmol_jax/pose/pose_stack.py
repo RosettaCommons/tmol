@@ -87,6 +87,62 @@ class PoseStack:
         return self.max_n_atoms_per_block
 
     @property
+    def max_n_block_atoms(self) -> int:
+        return self.max_n_atoms_per_block
+
+    @property
+    def max_n_pose_atoms(self) -> int:
+        return self.max_n_atoms_per_pose
+
+    @property
+    def n_ats_per_block(self):
+        counts = self.packed_block_types.n_atoms[jnp.maximum(self.block_type_ind, 0)]
+        return jnp.where(self.block_type_ind >= 0, counts, 0)
+
+    @property
+    def real_atoms(self):
+        return self.atom_is_real
+
+    @property
+    def n_res_per_pose(self):
+        return jnp.sum(self.block_type_ind >= 0, axis=1)
+
+    def is_real_block(self, pose_ind: int, block_ind: int):
+        return self.block_type_ind[pose_ind, block_ind] >= 0
+
+    def get_constraint_set(self):
+        return self.constraint_set
+
+    def block_identity_map(self):
+        return jnp.broadcast_to(
+            jnp.arange(
+                self.max_n_blocks,
+                dtype=self.block_coord_offset.dtype,
+                device=getattr(self.coords, "device", None),
+            ),
+            self.block_coord_offset.shape,
+        )
+
+    def expand_coords(self):
+        """Return residue-major coordinates and a mask, preserving gradients."""
+        atom = jnp.arange(
+            self.max_n_block_atoms, device=getattr(self.coords, "device", None)
+        )
+        real = atom < self.n_ats_per_block[..., None]
+        if not self.max_n_pose_atoms:
+            return (
+                jnp.zeros(
+                    real.shape + (3,),
+                    self.coords.dtype,
+                    device=getattr(self.coords, "device", None),
+                ),
+                real,
+            )
+        indices = jnp.where(real, self.block_coord_offset[..., None] + atom, 0)
+        coords = self.coords[jnp.arange(self.n_poses)[:, None, None], indices]
+        return jnp.where(real[..., None], coords, 0), real
+
+    @property
     def atom_is_real(self):
         """Mask packed atoms by topology, independent of their positions."""
         n_atoms = self.packed_block_types.n_atoms[jnp.maximum(self.block_type_ind, 0)]
@@ -154,6 +210,10 @@ class PoseStack:
             ),
         )
 
+    def split(self, index: int) -> "PoseStack":
+        """Select one pose, retaining its constraints and input metadata."""
+        return self[index]
+
     # Copy semantics
 
     def to(self, device) -> "PoseStack":
@@ -167,6 +227,10 @@ class PoseStack:
         via :meth:`replace` / functional updates instead.
         """
         return self
+
+    def clone_sharing_topology(self) -> "PoseStack":
+        """Share immutable arrays, as with :meth:`clone`."""
+        return self.clone()
 
     def replace(self, **updates) -> "PoseStack":
         """Functional field update helper."""

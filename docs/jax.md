@@ -524,6 +524,12 @@ preserves coordinate derivatives, constraints and sparse bond distances, pads
 the batch, and retains the coordinate dtype. As in Torch, independently rebuilt
 chemical databases must be resolved to one shared context before concatenation.
 
+Pose layout helpers (`n_ats_per_block`, `real_atoms`, `n_res_per_pose`,
+`block_identity_map`, and `expand_coords`) expose the shared molecular layout.
+`expand_coords()` preserves coordinate derivatives and zeros padding. `split(i)`
+retains that pose's input metadata and constraints. JAX arrays are immutable, so
+`clone()` and `clone_sharing_topology()` share arrays; use `replace` for updates.
+
 ## Fragmented ligands
 
 `pose_stack_from_atom_array` accepts the common ligand fragment annotation and
