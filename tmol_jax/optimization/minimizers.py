@@ -88,6 +88,7 @@ def run_cart_min(
         verbose,
         optimizer,
         optimizer_kwargs,
+        coordinate_scorer=scorer if hasattr(scorer, "compact_objective") else None,
     )
     final_coords = result["x"].reshape(shape).astype(coords.dtype)
     final_coords = jnp.where(mask, final_coords, coords)
@@ -112,6 +113,7 @@ def _minimize_selected(
     verbose,
     optimizer,
     optimizer_kwargs,
+    coordinate_scorer=None,
 ):
     if optimizer == "strong_wolfe":
         if optimizer_kwargs:
@@ -134,7 +136,14 @@ def _minimize_selected(
     settings = dict(max_iter=max_iter, history_size=history, verbose=verbose)
     settings.update(optimizer_kwargs or {})
     return _validate_minimum(
-        minimize_pose_variables(energy, initial, mask, pose_ids, settings)
+        minimize_pose_variables(
+            energy,
+            initial,
+            mask,
+            pose_ids,
+            settings,
+            coordinate_scorer=coordinate_scorer,
+        )
     )
 
 

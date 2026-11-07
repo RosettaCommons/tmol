@@ -174,6 +174,7 @@ def armijo_minimize(
     segment_ids=None,
     grad_mask=None,
     value_and_grad=None,
+    value_only=None,
     checkpoint=None,
     **settings,
 ):
@@ -190,6 +191,8 @@ def armijo_minimize(
     Pass a returned ``checkpoint`` with its ``x`` to resume the common history.
     Segment identities, movement mask, coordinate dtype and history capacity must
     match. The caller must retain the same objective and parameter context.
+    Prepared ``value_and_grad`` and ``value_only`` callbacks may reuse compiled
+    execution; both receive the original parameter shape.
     """
     settings = checkpoint_settings(checkpoint, settings)
     if checkpoint is not None:
@@ -227,7 +230,8 @@ def armijo_minimize(
             return values.sum(), values
 
         evaluate = jax.jit(jax.value_and_grad(total, has_aux=True))
-        value_only = jax.jit(lambda flat: fn(flat.reshape(x.shape)))
+        if value_only is None:
+            value_only = jax.jit(lambda flat: fn(flat.reshape(x.shape)))
 
         def closure():
             if value_and_grad is None:
@@ -238,7 +242,9 @@ def armijo_minimize(
             optimizer.gradient = gradient * mask.reshape(-1)
             return values
 
-        initial = optimizer.step(closure, lambda: value_only(optimizer.x))
+        initial = optimizer.step(
+            closure, lambda: value_only(optimizer.x.reshape(x.shape))
+        )
         return {
             "x": optimizer.x.reshape(x.shape),
             "initial_fun": initial,

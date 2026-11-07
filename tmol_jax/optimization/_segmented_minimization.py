@@ -7,7 +7,9 @@ import numpy as np
 from .armijo import armijo_minimize
 
 
-def minimize_pose_variables(energy, initial, mask, pose_for_variable, settings):
+def minimize_pose_variables(
+    energy, initial, mask, pose_for_variable, settings, coordinate_scorer=None
+):
     """Optimize only movable elements, retaining fixed poses and padding."""
     shape = initial.shape
     selected = np.flatnonzero(np.asarray(mask).reshape(-1))
@@ -35,13 +37,21 @@ def minimize_pose_variables(energy, initial, mask, pose_for_variable, settings):
         def expand(values):
             return flat.at[selected].set(values).reshape(shape)
 
-        def objective(values):
+        def fallback_objective(values):
             return energy(expand(values))[active]
 
+        objective = fallback_objective
+        execution = {}
+        if coordinate_scorer is not None:
+            objective, derivative = coordinate_scorer.compact_objective(
+                initial.reshape(coordinate_scorer.shape), selected, active
+            )
+            execution = dict(value_only=objective, value_and_grad=derivative)
         result = armijo_minimize(
             objective,
             flat[selected],
             segment_ids=jnp.asarray(ids, jnp.int32),
+            **execution,
             **settings,
         )
         result["x"] = expand(result["x"])

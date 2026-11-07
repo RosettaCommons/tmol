@@ -27,6 +27,18 @@ class RenderedScore:
     def value_and_grad(self):
         return partial(self._apply, self.executor[2])
 
+    def compact_objective(self, reference, selected, active):
+        """Bind fresh coordinate/parameter operands to reusable minimization code."""
+        operands = dict(
+            reference=reference,
+            selected=selected,
+            active=active,
+            operands=self.arrays,
+        )
+        return partial(self.executor[3], **operands), partial(
+            self.executor[4], **operands
+        )
+
 
 def render_execution(cache, configuration, evaluate, states, shape):
     # Numeric arrays are runtime operands. Reach constants and constraint
@@ -57,7 +69,31 @@ def render_execution(cache, configuration, evaluate, states, shape):
             (_, energies), gradient = differentiated(coords, operands)
             return energies, gradient
 
-        executor = (execute, jax.jit(execute), jax.jit(value_and_grad))
+        def compact_value(values, reference, selected, active, operands):
+            coords = (
+                reference.reshape(-1).at[selected].set(values).reshape(reference.shape)
+            )
+            return execute(coords, operands)[active]
+
+        def compact_total(values, reference, selected, active, operands):
+            energies = compact_value(values, reference, selected, active, operands)
+            return energies.sum(), energies
+
+        compact_gradient = jax.value_and_grad(compact_total, has_aux=True)
+
+        def compact_value_and_grad(values, reference, selected, active, operands):
+            (_, energies), gradient = compact_gradient(
+                values, reference, selected, active, operands
+            )
+            return energies, gradient
+
+        executor = (
+            execute,
+            jax.jit(execute),
+            jax.jit(value_and_grad),
+            jax.jit(compact_value),
+            jax.jit(compact_value_and_grad),
+        )
         if cache is not None:
             # Bound retained executable configurations, including callback sets.
             if len(cache) == 8:
