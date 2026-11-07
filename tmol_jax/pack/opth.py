@@ -158,7 +158,7 @@ class OptHSampler(IncludeCurrentSampler):
         cache = self.annotate_residue_type(restype)
         chis = [cs.chi_dihedral for cs in restype.chi_samples if cs.is_proton]
         if self.flip_NHQ and cache.nhq_chi_col >= 0:
-            chis.append(f"chi{cache.nhq_chi_col+1}")
+            chis.append(f"chi{cache.nhq_chi_col + 1}")
         return sidechain_roots_for_chis(restype, chis)
 
     def _metadata(self, pbt, device, budget):
