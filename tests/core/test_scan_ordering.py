@@ -55,3 +55,57 @@ def test_rejects_unsafe_native_scan_plans(nodes, scans, gens, reason):
         validate_scan_plan(
             np.array([0, 0, 1, 1]), np.array(nodes), np.array(scans), np.array(gens)
         )
+
+
+def test_scan_validation_owns_snapshots_after_caller_mutation():
+    parent = np.array([0, 0, 1, 1], np.int32)
+    nodes = np.array([0, 1, 2, 1, 3], np.int32)
+    scans = np.array([0, 0], np.int32)
+    gens = np.array([[0, 0], [3, 1], [5, 2]], np.int32)
+    plan = validate_scan_plan(parent, nodes, scans, gens)
+    expected = [array.copy() for array in (plan.nodes, plan.scans, plan.gens)]
+    for caller in (parent, nodes, scans, gens):
+        caller[:] = -1
+    for snapshot, before in zip((plan.nodes, plan.scans, plan.gens), expected):
+        np.testing.assert_array_equal(snapshot, before)
+        assert not snapshot.flags.writeable
+
+
+def test_generation_dependencies_apply_to_single_node_paths():
+    # A redundant one-node path reads its start even though it writes no edge.
+    # Node one becomes available only after the first generation finishes.
+    parent = np.array([0, 0], np.int32)
+    nodes = np.array([0, 1, 1], np.int32)
+    scans = np.array([0, 2], np.int32)
+    gens = np.array([[0, 0], [3, 2]], np.int32)
+    with pytest.raises(ValueError, match="unfinished"):
+        validate_scan_plan(parent, nodes, scans, gens)
+    scans[1] = 0
+    gens = np.array([[0, 0], [2, 1], [2, 1], [3, 2]], np.int32)
+    plan = validate_scan_plan(parent, nodes, scans, gens)
+    np.testing.assert_array_equal(plan.nodes, nodes)
+
+
+def test_rejects_root_written_as_an_edge_in_either_direction():
+    parent = np.array([0, 0], np.int32)
+    for reverse, nodes in [(False, [0, 0, 1]), (True, [1, 0, 0])]:
+        with pytest.raises(ValueError, match="more than once"):
+            validate_scan_plan(
+                parent,
+                np.array(nodes),
+                np.array([0]),
+                np.array([[0, 0], [3, 1]]),
+                reverse=reverse,
+            )
+
+
+def test_generation_offsets_are_bounded_before_integer_differences():
+    # int32 subtraction alone can wrap and make these decreases look positive.
+    generations = np.array([[0, 0], [2**31 - 1, 2**31 - 1], [-2, -2], [0, 0]], np.int32)
+    with pytest.raises(ValueError, match="within"):
+        validate_scan_plan(
+            np.array([0], np.int32),
+            np.empty(0, np.int32),
+            np.empty(0, np.int32),
+            generations,
+        )
