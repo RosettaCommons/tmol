@@ -130,6 +130,18 @@ def test_modified_nucleotide_copy_plan_preserves_sugar_ring_and_sampler_union(ba
     backend.molecule(DOMAIN_CASES["modified_dna"], terms=("ref",))
     samplers = Sampler(False), Sampler(True)
     plan = _copy_plan(backend, samplers)
+    # New instances and reversed ownership must not reuse stale sampler aliases
+    # or a different retained region, even when their class names are identical.
+    replacements = Sampler(False), Sampler(True)
+    repeated = _copy_plan(backend, replacements)
+    reversed_plan = _copy_plan(backend, tuple(reversed(replacements)))
+    for old, new in zip(samplers, replacements):
+        expected = backend.numpy(plan.atom_mapping)[plan.sampler_mapping[id(old)]]
+        for other in (repeated, reversed_plan):
+            np.testing.assert_array_equal(
+                backend.numpy(other.atom_mapping)[other.sampler_mapping[id(new)]],
+                expected,
+            )
     source = backend.numpy(plan.source_atom_mapping)
     source_ids = backend.numpy(plan.source_fingerprint)
     mapping = backend.numpy(plan.atom_mapping)

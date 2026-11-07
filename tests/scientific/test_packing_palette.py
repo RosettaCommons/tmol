@@ -90,6 +90,13 @@ def test_task_identity_restrictions_preserve_unselected_chemistry(backend):
     with pytest.raises(ValueError, match="no allowed block type"):
         task.restrict_absent_name3s({"ALA"}, ligand)
     np.testing.assert_array_equal(b.numpy(task.per_block_is_block_type_allowed), before)
+    independent = PackerTask(b.pose, PackerPalette())
+    np.testing.assert_array_equal(
+        b.numpy(independent.per_block_is_block_type_allowed), original
+    )
+    np.testing.assert_array_equal(
+        b.numpy(independent.per_block_considered_block_types), choices
+    )
     task.restrict_absent_name3s({"ALA", "GLY"}, selected)
     np.testing.assert_array_equal(b.numpy(task.per_block_is_block_type_allowed), before)
     # Framework execution supports the same bundle protocol without requiring
