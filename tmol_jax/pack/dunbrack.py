@@ -18,9 +18,8 @@ from tmol_core.pack.sampling_request import (
     apply_frozen_chi,
 )
 from tmol_core.pack.kinematics import annotate_residue_rotamer_kinematics
-from tmol_core.scoring.dunbrack import prepare_dunbrack_tables
 from tmol_jax.kinematics._host import NativePosePlanner
-from tmol_jax.score._native import fit_bspline_coefficients
+from tmol_jax.score.dunbrack.parameters import prepare_dunbrack_parameters
 
 
 class DunbrackChiSampler:
@@ -62,11 +61,9 @@ class DunbrackChiSampler:
         )
 
     @classmethod
-    def from_database(cls, parameter_database, **limits):
-        tables = prepare_dunbrack_tables(
-            parameter_database.scoring.dunbrack,
-            lambda values: [fit_bspline_coefficients(value) for value in values],
-        )
+    def from_database(cls, parameter_database, *, owner=None, **limits):
+        """Snapshot parameters, optionally reusing fitted tables on a pose palette."""
+        tables = prepare_dunbrack_parameters(parameter_database, owner)
         sampler = cls(tables, **limits)
         sampler._parameter_database = parameter_database
         return sampler

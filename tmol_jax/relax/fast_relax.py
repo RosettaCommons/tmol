@@ -141,7 +141,9 @@ class _JaxRelaxExecution:
     @staticmethod
     def default_task_operations(pose, sfxn):
         samplers = [
-            DunbrackChiSampler.from_database(sfxn.param_db),
+            DunbrackChiSampler.from_database(
+                sfxn.param_db, owner=pose.packed_block_types
+            ),
             FixedAAChiSampler(),
             IncludeCurrentSampler(),
         ]
