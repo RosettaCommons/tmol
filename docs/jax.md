@@ -619,3 +619,8 @@ Fragment attribution prepares only the requested fragment/partner pair identitie
 and reduces their native contributions directly, without allocating a full
 block-by-block matrix. Coordinate-dependent physical cutoffs remain native.
 The general block-pair API still returns its requested dense matrix.
+
+Notebook `view`, `switchable_view`, `overlay_view` and `selection_gallery` use
+the common renderer, with lazy JAX pose export. They accept Biotite arrays and
+PDB text or paths as well as poses. Install the optional py3Dmol/IPython display
+dependencies to render notebook HTML; viewing does not change molecular data.

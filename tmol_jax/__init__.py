@@ -143,7 +143,17 @@ _ATOMWORKS_INPUT = {
 __all__ += sorted(_ATOMWORKS_INPUT)
 
 
+_VISUALIZATION = {"view", "switchable_view", "overlay_view", "selection_gallery"}
+__all__ += sorted(_VISUALIZATION)
+
+
 def __getattr__(name):
+    if name in _VISUALIZATION:
+        from importlib import import_module
+
+        value = getattr(import_module("tmol_jax.io.visualize"), name)
+        globals()[name] = value
+        return value
     if name in _FRAGMENT_API:
         from importlib import import_module
 
