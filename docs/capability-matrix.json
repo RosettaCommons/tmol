@@ -140,9 +140,11 @@
       "jax": "values_gradients_on_molecular_fixtures",
       "repro_fixture": [
         "tests/jax/test_native_genbonded.py",
-        "tests/scientific/test_complete_preset.py"
+        "tests/scientific/test_complete_preset.py",
+        "tests/jax/test_packing_pages.py",
+        "tests/scientific/test_packing_execution.py"
       ],
-      "implementation_status": "Molecular values/gradients, fixed/current conformers, pose imposition and repacking tested. Topology changes require new prepared scorers; stale plans reject. The mature Torch packer has automatic memory-based pose chunking; JAX currently lacks that orchestration. Interaction-graph tile chunk_size is a separate setting."
+      "implementation_status": "Molecular values/gradients, fixed/current conformers, pose imposition and repacking tested. Topology changes require new prepared scorers; stale plans reject. The mature Torch packer has automatic memory-based pose chunking; JAX currently lacks that orchestration. Interaction-graph tile chunk_size is a separate setting. Independent CUDA packing without bump pruning replays bounded spatial score pages through the shared three-pass graph driver; retained graph/value identities and public molecular packing pass CPU/CUDA checks. Nonspatial terms retain their native per-term layouts. Complete workflow speed and peak-memory parity remain separately gated."
     },
     {
       "domain": "cartesian_minimization",
