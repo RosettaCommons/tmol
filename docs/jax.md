@@ -51,7 +51,8 @@ Build shared CPU/CUDA physics with
 `python scripts/build_jax_native.py --cuda --cuda-architectures "80;90" --outdir dist/jax`.
 The shared adapter supports float32/64; install a matching JAX CUDA runtime,
 such as `jax[cuda13]`. Build with the CUDA toolkit appropriate to the deployment.
-Its ABI marker is checked before registration. Dispatch follows the compilation
+`tmol_jax.has_cuda()` reports native CUDA build support independently of
+available JAX devices. Its ABI marker is checked before registration. Dispatch follows the compilation
 platform, including CPU arrays in a GPU process. Native adapters recompute
 spatial neighbors from current coordinates. The former `tmol-jax-cuda` prototype
 is superseded by `tmol-jax-native`.

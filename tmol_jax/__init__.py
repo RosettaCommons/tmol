@@ -7,6 +7,7 @@ try:
 except PackageNotFoundError:
     __version__ = "0+source"
 
+
 from .io import ResidueBlock, pose_stack_from_pdb, pose_stack_from_residue_blocks
 from .optimization import run_cart_min, run_cart_relax, run_kin_min
 from .kinematics import (
@@ -50,7 +51,19 @@ from .score.fragment_interactions import (
     render_fragment_interactions,
 )
 
+
+def has_cuda():
+    """Whether the installed native adapter includes CUDA kernels.
+
+    This reports build support independently of available JAX devices.
+    """
+    from .score._native import libraries
+
+    return "cuda" in libraries()
+
+
 __all__ = [
+    "has_cuda",
     "mutate_residue",
     "mutate_to_sequence",
     "get_sequence",
