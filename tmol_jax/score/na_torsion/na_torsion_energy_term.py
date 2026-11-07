@@ -60,7 +60,8 @@ def na_parameter_state(database, device=None):
 
 
 class NaTorsionEnergyTerm(EnergyTerm):
-    def score_types_provided(self):
+    @staticmethod
+    def score_types_provided():
         return [ScoreType.na_torsion, ScoreType.na_torsion_well]
 
     def setup_for_pose_stack(self, pose_stack, pbt=None):
@@ -96,8 +97,8 @@ class NaTorsionEnergyTerm(EnergyTerm):
             state.attributes,
         )
 
-    def __call__(self, pose_stack, term_state, coords_override=None):
-        coords = pose_stack.coords if coords_override is None else coords_override
+    @classmethod
+    def evaluate(cls, term_state, coords):
         values = (
             coordinate_energy(
                 "tmol_na_torsion",
@@ -109,4 +110,4 @@ class NaTorsionEnergyTerm(EnergyTerm):
             if term_state.parameters
             else jnp.zeros((2, coords.shape[0]), coords.dtype)
         )
-        return dict(zip(self.score_types_provided(), values))
+        return dict(zip(cls.score_types_provided(), values))

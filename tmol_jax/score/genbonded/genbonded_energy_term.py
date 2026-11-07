@@ -11,7 +11,8 @@ from tmol_jax.score.score_types import ScoreType
 
 
 class GenBondedEnergyTerm(EnergyTerm):
-    def score_types_provided(self):
+    @staticmethod
+    def score_types_provided():
         return [ScoreType.gen_torsions]
 
     def setup_for_pose_stack(self, pose_stack, pbt=None, *, include_empty=False):
@@ -53,8 +54,8 @@ class GenBondedEnergyTerm(EnergyTerm):
             device=pose_stack.coords.device,
         )
 
-    def __call__(self, pose_stack, term_state, coords_override=None):
-        coords = pose_stack.coords if coords_override is None else coords_override
+    @classmethod
+    def evaluate(cls, term_state, coords):
         if not term_state:
             value = jnp.zeros(coords.shape[0], coords.dtype)
         else:

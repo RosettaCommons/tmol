@@ -25,7 +25,8 @@ class BackboneTorsionTermState(NamedTuple):
 
 
 class BackboneTorsionEnergyTerm(EnergyTerm):
-    def score_types_provided(self):
+    @staticmethod
+    def score_types_provided():
         return [ScoreType.rama, ScoreType.omega]
 
     def setup_for_pose_stack(self, pose_stack, pbt=None):
@@ -83,9 +84,9 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
             )
         )
 
-    def __call__(self, pose_stack, term_state, coords_override=None):
-        coords = pose_stack.coords if coords_override is None else coords_override
+    @classmethod
+    def evaluate(cls, term_state, coords):
         values = coordinate_energy(
             "tmol_backbone_torsion", coords, term_state.parameters, channels=2
         )
-        return dict(zip(self.score_types_provided(), values))
+        return dict(zip(cls.score_types_provided(), values))

@@ -28,7 +28,8 @@ class DunbrackTermState(NamedTuple):
 
 
 class DunbrackEnergyTerm(EnergyTerm):
-    def score_types_provided(self):
+    @staticmethod
+    def score_types_provided():
         return [
             ScoreType.dunbrack_rot,
             ScoreType.dunbrack_rotdev,
@@ -103,8 +104,8 @@ class DunbrackEnergyTerm(EnergyTerm):
             parameters.append(jax.device_put(array, device=pbt.n_atoms.device))
         return tuple(parameters)
 
-    def __call__(self, pose_stack, term_state, coords_override=None):
-        coords = pose_stack.coords if coords_override is None else coords_override
+    @classmethod
+    def evaluate(cls, term_state, coords):
         parameters = term_state.parameters
         if parameters:
             dimensions = (parameters[0].size, parameters[24].shape[1])
@@ -119,4 +120,4 @@ class DunbrackEnergyTerm(EnergyTerm):
             )
         else:
             values = jnp.zeros((3, coords.shape[0]), coords.dtype)
-        return dict(zip(self.score_types_provided(), values))
+        return dict(zip(cls.score_types_provided(), values))
