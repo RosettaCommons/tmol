@@ -7,9 +7,22 @@ formula live here once. Flags select the mature reduction layout explicitly.
 
 
 def compact_lbfgs_direction(
-    grad, dirs, stps, history_start=0, *, execution, single_segment=False, use_bmm=False
+    grad,
+    dirs,
+    stps,
+    history_start=0,
+    *,
+    execution,
+    single_segment=False,
+    use_bmm=False,
+    rotate_history=False,
 ):
-    """Compact solve with histories kept in their physical circular slots."""
+    """Compact solve with histories kept in their physical circular slots.
+
+    Set ``rotate_history=True`` when the executor accepts a dynamic offset.
+    This always rotates the small products, avoiding host truth conversion of
+    ``history_start``. The default retains the mature zero-offset fast path.
+    """
     unbatched = grad.ndim == 1
     if unbatched:
         grad = grad[None, :]
@@ -42,7 +55,7 @@ def compact_lbfgs_direction(
     # Moving entire (history, pose, coordinate) arrays after every wrap would
     # duplicate both histories. Coefficients return to physical slot order
     # before multiplying by S or Y below.
-    if history_start:
+    if rotate_history or history_start:
         a = execution.roll(a, -history_start, dims=-1)
         SY = execution.roll(SY, (-history_start, -history_start), dims=(-2, -1))
     R = execution.triu(SY)  # upper-triangular incl. diagonal
@@ -56,7 +69,7 @@ def compact_lbfgs_direction(
     u = execution.solve_triangular(R, a[..., None], upper=True).squeeze(-1)
     # q = g - Y u; v = D u - Y^T q avoids forming Y^T Y.
     Du = D * u
-    if history_start:
+    if rotate_history or history_start:
         u = execution.roll(u, history_start, dims=-1)
     if single_segment:
         q = (q[0] - execution.mv(Y_one.T, u[0]))[None, ...]
@@ -67,14 +80,14 @@ def compact_lbfgs_direction(
     else:
         q = q - execution.einsum("pi,ipk->pk", u, Y)
         v = execution.einsum("ipk,pk->pi", Y, q)
-    if history_start:
+    if rotate_history or history_start:
         v = execution.roll(v, -history_start, dims=-1)
     v = Du - v
     # p = R^-T v
     p = execution.solve_triangular(
         R.swapaxes(-2, -1), v[..., None], upper=False
     ).squeeze(-1)
-    if history_start:
+    if rotate_history or history_start:
         p = execution.roll(p, history_start, dims=-1)
     # result = q + S p
     if single_segment:
