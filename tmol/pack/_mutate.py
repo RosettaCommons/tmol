@@ -1,6 +1,6 @@
 import torch
 
-from tmol.chemical._restypes import _one2three
+from tmol_core.pack.mutation import sequence_mutations, configure_mutation_task
 from tmol.database import ParameterDatabase
 from tmol.pose._pose_stack import PoseStack
 from tmol.score._score_function import ScoreFunction
@@ -32,20 +32,14 @@ def _mutate_blocks(
     if param_db is None:
         param_db = getattr(score_function, "_param_db", None)
 
-    target_mask = torch.zeros(
-        (pose_stack.n_poses, pose_stack.max_n_blocks),
-        dtype=torch.bool,
-        device=pose_stack.device,
-    )
-    for block in name3_by_block:
-        target_mask[pose_index, block] = True
-
     task = PackerTask(pose_stack, PackerPalette())
-    task.disable_packing_by_block_mask(~target_mask)
-    for block, name3 in name3_by_block.items():
-        single_mask = torch.zeros_like(target_mask)
-        single_mask[pose_index, block] = True
-        task.restrict_absent_name3s({name3}, single_mask)
+    configure_mutation_task(
+        task,
+        (pose_stack.n_poses, pose_stack.max_n_blocks),
+        pose_index,
+        name3_by_block,
+        lambda mask: torch.as_tensor(mask, dtype=torch.bool, device=pose_stack.device),
+    )
     task.add_conformer_sampler(
         create_dunbrack_sampler_from_database(param_db, pose_stack.device)
     )
@@ -122,24 +116,12 @@ def mutate_to_sequence(
     Returns:
         A new PoseStack with every differing position mutated to match.
     """
-    pbt = pose_stack.packed_block_types
-    block_type_ind = pose_stack.block_type_ind64[pose_index]
-    real_blocks = torch.nonzero(block_type_ind >= 0).flatten().tolist()
-    if len(sequence) != len(real_blocks):
-        raise ValueError(
-            f"sequence has {len(sequence)} residues but pose {pose_index} has "
-            f"{len(real_blocks)} real blocks"
-        )
-
-    name3_by_block = {}
-    for block, letter in zip(real_blocks, sequence):
-        new_name3 = _one2three(letter)
-        if new_name3 is None:
-            raise ValueError(f"{letter!r} is not a valid one-letter amino acid code")
-        current_name3 = pbt.active_block_types[int(block_type_ind[block])].name3
-        if new_name3 != current_name3:
-            name3_by_block[block] = new_name3
-
+    name3_by_block = sequence_mutations(
+        pose_stack.packed_block_types.active_block_types,
+        pose_stack.block_type_ind64[pose_index].cpu().numpy(),
+        sequence,
+        pose_index,
+    )
     if not name3_by_block:
         return pose_stack
 
