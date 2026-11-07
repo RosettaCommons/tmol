@@ -15,20 +15,23 @@ class ConformerGeometry:
     def __init__(self, layout, device):
         self.total = layout.total
         self.device = device
-        self.ids = jax.device_put(layout.forest[0], device)
-        self.forest = jax.device_put(layout.forest.T, device)
-        # Inverse order is parent/frame_x/frame_y/frame_z/doftype.
-        self.inverse_indices = tuple(self.forest[:, i] for i in (2, 3, 4, 5, 1))
         ordering = scan_ordering_from_forward(
             layout.forest[2], layout.nodes, layout.scans, layout.gens
         )
-        self.plans = tuple(
+        plans = (ordering.forward, ordering.backward)
+        # Inverse order is parent/frame_x/frame_y/frame_z/doftype. Transfer the
+        # existing host indices directly instead of gathering them on device.
+        self.ids, self.forest, self.inverse_indices, scans = jax.device_put(
             (
-                jax.device_put(plan.nodes, device),
-                jax.device_put(plan.scans, device),
-                plan.gens,
-            )
-            for plan in (ordering.forward, ordering.backward)
+                layout.forest[0],
+                layout.forest.T,
+                tuple(layout.forest[i] for i in (2, 3, 4, 5, 1)),
+                tuple((plan.nodes, plan.scans) for plan in plans),
+            ),
+            device,
+        )
+        self.plans = tuple(
+            (nodes, scan, plan.gens) for (nodes, scan), plan in zip(scans, plans)
         )
 
     def tree_flatten(self):
