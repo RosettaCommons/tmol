@@ -11,7 +11,7 @@ from tmol_core.pack.streaming import (
     PACK_ROTAMER_BLOCK_PAIR_WINDOW,
     PACK_FUSED_ROTAMER_SCORE_WINDOW,
 )
-from .graph import topology_stage, prefix_offsets_and_total, _wide, _integer
+from .graph import topology_stage, prefix_offsets_and_total, _wide
 from .interaction_graph import (
     build_interaction_graph,
     additive_entry_stage,
