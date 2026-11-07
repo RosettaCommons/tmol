@@ -24,8 +24,49 @@ class RenderedScore:
     def jitted(self):
         return partial(self._apply, self.executor[1])
 
-    def value_and_grad(self):
-        return partial(self._apply, self.executor[2])
+    def value_and_grad(self, *, coordinate_map=None, coordinate_dtype=None):
+        """Return energies and source gradients, optionally through a prepared map.
+
+        An Atom37 binding supplies fixed chemistry and fresh numeric operands.
+        Executable reuse never caches its coordinates or score parameters.
+        ``coordinate_dtype`` casts mapped coordinates before scoring while source
+        gradients retain the input precision, as with an explicit JAX cast.
+        """
+        if coordinate_map is None:
+            if coordinate_dtype is not None:
+                raise ValueError("coordinate_dtype requires a coordinate_map")
+            return partial(self._apply, self.executor[2])
+        if coordinate_dtype is not None:
+            coordinate_dtype = np.dtype(coordinate_dtype)
+            if coordinate_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
+                raise TypeError("mapped score coordinates require float32/64")
+        transform, state = coordinate_map._coordinate_execution()
+        evaluate = self.executor[0]
+
+        def score(source, operands):
+            mapping, parameters = operands
+            coords = transform(source, mapping)
+            if coordinate_dtype is not None:
+                coords = coords.astype(coordinate_dtype)
+            return evaluate(coords, parameters)
+
+        rendered = render_execution(
+            self.executor[5],
+            (transform, coordinate_dtype),
+            score,
+            (state, self.arrays),
+            coordinate_map.input_shape,
+            native_only=False,
+        )
+        gradient = rendered.value_and_grad()
+
+        def execute(source):
+            coordinate_map._validate(source)
+            if coordinate_dtype == np.dtype(np.float64) and not jax.config.x64_enabled:
+                raise ValueError("float64 mapped scoring requires JAX x64 enabled")
+            return gradient(source)
+
+        return execute
 
     def compact_objective(self, reference, selected, active, coordinate_map=None):
         """Bind fresh coordinate/parameter operands to reusable minimization code."""
@@ -124,6 +165,7 @@ def render_execution(cache, configuration, evaluate, states, shape, *, native_on
             compile_execution(value_and_grad),
             compile_execution(compact_value),
             compile_execution(compact_value_and_grad),
+            {},  # Coordinate-map executables share this scorer's bounded lifetime.
         )
         if cache is not None:
             # Bound retained executable configurations, including callback sets.

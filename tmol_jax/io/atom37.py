@@ -66,39 +66,54 @@ class _CoordinateReplay:
         )
         self.h_distances, self.h_metadata = execution_metadata(pose, missing)
 
-    def valid(self, canonical_coords):
-        finite = jnp.isfinite(canonical_coords).all(-1)
-        return jnp.all(self.variable_presence | (finite == self.observed))
-
-    def __call__(self, canonical_coords):
-        from ._native import generate_leaf_atoms
-        from ._hydrogen import complete_hydrogens
-
-        source = canonical_coords[tuple(self.canonical)]
-        finite = jnp.isfinite(source).all(-1)
-        p, b, atom, flat = self.packed
-        # Discrete nonleaf presence belongs to preparation. Native leaf masks
-        # may vary without changing residue identity or the packed atom layout.
-        valid = self.valid(canonical_coords)
-        value = jnp.where(finite[:, None], source, self.pose.coords[p, flat])
-        coords = self.pose.coords.at[p, flat].set(value)
-        missing = self.leaf_metadata[0].at[p, b, atom].set(self.leaf & ~finite)
-        flat_missing = self.leaf_metadata[1].at[p, flat].set(self.leaf & ~finite)
-        metal = getattr(self.pose, "_canonical_metal_replay", None)
-        if metal is not None:
-            from ._metal import execute_metal_placement
-
-            coords = execute_metal_placement(coords, *metal)
-        if self.context_plan:
-            from ._context import execute_context_plan
-
-            coords = execute_context_plan(coords, self.context_plan)
-        coords = generate_leaf_atoms(
-            coords, (missing, flat_missing, *self.leaf_metadata[2:])
+    def execution(self):
+        return _replay_coordinates, dict(
+            coords=self.pose.coords,
+            canonical=self.canonical,
+            packed=self.packed,
+            leaf=self.leaf,
+            observed=self.observed,
+            variable_presence=self.variable_presence,
+            leaf_metadata=self.leaf_metadata,
+            h_distances=self.h_distances,
+            h_metadata=self.h_metadata,
+            metal=getattr(self.pose, "_canonical_metal_replay", None),
+            context_plan=self.context_plan,
         )
-        h_metadata = (*self.h_metadata[:4], missing, *self.h_metadata[5:])
-        coords = complete_hydrogens(coords, self.h_distances, h_metadata)
-        return self.pose.replace(coords=jnp.where(valid, coords, jnp.nan))
+
+
+def _valid_source(canonical_coords, state):
+    finite = jnp.isfinite(canonical_coords).all(-1)
+    return jnp.all(state["variable_presence"] | (finite == state["observed"]))
+
+
+def _replay_coordinates(canonical_coords, state):
+    from ._native import generate_leaf_atoms
+    from ._hydrogen import complete_hydrogens
+
+    source = canonical_coords[tuple(state["canonical"])]
+    finite = jnp.isfinite(source).all(-1)
+    p, b, atom, flat = state["packed"]
+    # Discrete nonleaf presence belongs to preparation. Native leaf masks
+    # may vary without changing residue identity or the packed atom layout.
+    valid = _valid_source(canonical_coords, state)
+    value = jnp.where(finite[:, None], source, state["coords"][p, flat])
+    coords = state["coords"].at[p, flat].set(value)
+    leaf_metadata = state["leaf_metadata"]
+    missing = leaf_metadata[0].at[p, b, atom].set(state["leaf"] & ~finite)
+    flat_missing = leaf_metadata[1].at[p, flat].set(state["leaf"] & ~finite)
+    if state["metal"] is not None:
+        from ._metal import execute_metal_placement
+
+        coords = execute_metal_placement(coords, *state["metal"])
+    if state["context_plan"]:
+        from ._context import execute_context_plan
+
+        coords = execute_context_plan(coords, state["context_plan"])
+    coords = generate_leaf_atoms(coords, (missing, flat_missing, *leaf_metadata[2:]))
+    h_metadata = (*state["h_metadata"][:4], missing, *state["h_metadata"][5:])
+    coords = complete_hydrogens(coords, state["h_distances"], h_metadata)
+    return jnp.where(valid, coords, jnp.nan)
 
 
 class _PackedReplay:
@@ -125,18 +140,62 @@ class _PackedReplay:
             np.asarray((rows, source, target), np.int32), packed.device
         )
 
-    def __call__(self, canonical):
-        rebuilt = self.original(canonical).coords
-        p, source, target = self.frozen_indices
-        coords = self.pose.coords.at[p, target].set(rebuilt[p, source])
-        source = canonical[tuple(self.canonical)]
-        p, _, _, target = self.packed
-        coords = coords.at[p, target].set(
-            jnp.where(jnp.isfinite(source).all(-1)[:, None], source, coords[p, target])
+    def execution(self):
+        return _packed_coordinates, (
+            self.original.execution()[1],
+            self.pose.coords,
+            self.frozen_indices,
+            self.canonical,
+            self.packed,
         )
-        return self.pose.replace(
-            coords=jnp.where(self.original.valid(canonical), coords, jnp.nan)
-        )
+
+
+def _packed_coordinates(canonical, state):
+    original, coords, frozen, canonical_indices, packed_indices = state
+    rebuilt = _replay_coordinates(canonical, original)
+    p, source, target = frozen
+    coords = coords.at[p, target].set(rebuilt[p, source])
+    source = canonical[tuple(canonical_indices)]
+    p, _, _, target = packed_indices
+    coords = coords.at[p, target].set(
+        jnp.where(jnp.isfinite(source).all(-1)[:, None], source, coords[p, target])
+    )
+    return jnp.where(_valid_source(canonical, original), coords, jnp.nan)
+
+
+def _bind_coordinates(coords, state):
+    base, sources, targets, replay, operands = state
+    source = coords[sources]
+    valid = jnp.isfinite(source).all(-1) | jnp.isnan(source).all(-1)
+    canonical = jnp.where(jnp.all(valid), base.at[targets].set(source), jnp.nan)
+    return replay(canonical, operands)
+
+
+class _BoundAtom37:
+    """Fixed chemistry with fresh source coordinates and reusable array operands."""
+
+    def __init__(self, builder, example, replay, outputs):
+        self.builder = builder
+        self.pose = replay.pose
+        self.input_shape = example.shape
+        self.outputs = outputs
+        self.state = (*builder._execution_routing(example), *replay.execution())
+
+    def _validate(self, coords):
+        if coords.shape[0] != self.input_shape[0]:
+            raise ValueError("prepared Atom37 batch size changed; prepare again")
+        self.builder._validate_coords(coords)
+
+    def _coordinate_execution(self):
+        return _bind_coordinates, self.state
+
+    def coordinates(self, coords):
+        self._validate(coords)
+        return _bind_coordinates(coords, self.state)
+
+    def __call__(self, coords):
+        result = self.pose.replace(coords=self.coordinates(coords))
+        return (result, dict(self.outputs)) if self.outputs else result
 
 
 class PreparedAtom37PoseBuilder:
@@ -156,7 +215,7 @@ class PreparedAtom37PoseBuilder:
         self.fragment_mapping = fragment_mapping
         self.mainchain = mainchain
 
-    def _canonical_coords(self, coords):
+    def _validate_coords(self, coords):
         device = self.context.packed_block_types.n_atoms.device
         if coords.ndim != 4 or coords.shape[-2:] != (37, 3):
             raise ValueError("atom37_coords must have shape [n_poses, n_tokens, 37, 3]")
@@ -170,6 +229,12 @@ class PreparedAtom37PoseBuilder:
         template = self.template["coords"]
         if template.shape[0] not in (1, coords.shape[0]):
             raise ValueError("topology and atom37_coords pose counts differ")
+        return device
+
+    def _canonical_coords(self, coords):
+        device = self._validate_coords(coords)
+        tokens, slots, residues, atoms = self.routing
+        template = self.template["coords"]
         base = jnp.broadcast_to(
             jax.device_put(template, device), (coords.shape[0], *template.shape[1:])
         )
@@ -178,6 +243,16 @@ class PreparedAtom37PoseBuilder:
         return jnp.where(
             jnp.all(valid), base.at[:, residues, atoms].set(source), jnp.nan
         )
+
+    def _execution_routing(self, example):
+        tokens, slots, residues, atoms = self.routing
+        count = example.shape[0]
+        poses = np.repeat(np.arange(count, dtype=np.int32), len(tokens))
+        source = (poses, np.tile(tokens, count), np.tile(slots, count))
+        target = (poses, np.tile(residues, count), np.tile(atoms, count))
+        template = self.template["coords"]
+        base = np.broadcast_to(template, (count, *template.shape[1:]))
+        return jax.device_put((base, source, target), example.device)
 
     def _mapped_source(self, coords):
         return coords[:, self.routing[0], self.routing[1]]
@@ -291,13 +366,7 @@ class PreparedAtom37PoseBuilder:
                 canonical_atom_mappings(packed, self.context.canonical_ordering)
             )
 
-        def bind(coords):
-            if coords.shape[0] != count:
-                raise ValueError("prepared Atom37 batch size changed; prepare again")
-            result = replay(self._canonical_coords(coords))
-            return (result, dict(outputs)) if outputs else result
-
-        return bind
+        return _BoundAtom37(self, example_coords, replay, outputs)
 
     def __call__(self, coords, *, opt_h=False, seed=None, **return_options):
         return self.prepare(coords, opt_h=opt_h, seed=seed, **return_options)(coords)
@@ -390,7 +459,7 @@ class _TensorAtom37Builder(PreparedAtom37PoseBuilder):
     def _mapped_source(self, coords):
         return coords[self.routing.source_indices]
 
-    def _canonical_coords(self, coords):
+    def _validate_coords(self, coords):
         expected = (*self.routing.canonical_shape[:2], self.n_slots, 3)
         if coords.shape != expected:
             raise ValueError(f"Atom37 coordinates must have shape {expected}")
@@ -399,6 +468,10 @@ class _TensorAtom37Builder(PreparedAtom37PoseBuilder):
         device = self.context.packed_block_types.n_atoms.device
         if not isinstance(coords, jax.core.Tracer) and coords.device != device:
             raise ValueError("atom37_coords and context must be on the same device")
+        return device
+
+    def _canonical_coords(self, coords):
+        device = self._validate_coords(coords)
         source = self._mapped_source(coords)
         valid = jnp.isfinite(source).all(-1) | jnp.isnan(source).all(-1)
         base = jax.device_put(
@@ -406,6 +479,13 @@ class _TensorAtom37Builder(PreparedAtom37PoseBuilder):
         )
         return jnp.where(
             jnp.all(valid), base.at[self.routing.target_indices].set(source), jnp.nan
+        )
+
+    def _execution_routing(self, example):
+        base = np.full((*self.routing.canonical_shape, 3), np.nan, np.float32)
+        return jax.device_put(
+            (base, self.routing.source_indices, self.routing.target_indices),
+            example.device,
         )
 
 
