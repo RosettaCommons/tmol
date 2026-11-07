@@ -10,6 +10,8 @@ from tmol_core.io.atom37 import (
     required_mainchain_entries,
 )
 
+_binding_executors = {}
+
 
 def atom37_slot_map_for_ordering(canonical_ordering, atom_names_by_slot, device=None):
     """Return the common residue-specific slot layout on the requested device."""
@@ -175,11 +177,21 @@ class _BoundAtom37:
     """Fixed chemistry with fresh source coordinates and reusable array operands."""
 
     def __init__(self, builder, example, replay, outputs):
+        from tmol_jax.score._execution import render_execution
+
         self.builder = builder
         self.pose = replay.pose
         self.input_shape = example.shape
         self.outputs = outputs
         self.state = (*builder._execution_routing(example), *replay.execution())
+        self._execution = render_execution(
+            _binding_executors,
+            (),
+            _bind_coordinates,
+            self.state,
+            self.input_shape,
+            native_only=False,
+        )
 
     def _validate(self, coords):
         if coords.shape[0] != self.input_shape[0]:
@@ -191,7 +203,9 @@ class _BoundAtom37:
 
     def coordinates(self, coords):
         self._validate(coords)
-        return _bind_coordinates(coords, self.state)
+        # Input validation permits unused extra tokens; each shape is compiled
+        # independently while numeric mapping operands remain fresh.
+        return self._execution.executor[1](coords, self._execution.arrays)
 
     def __call__(self, coords):
         result = self.pose.replace(coords=self.coordinates(coords))
