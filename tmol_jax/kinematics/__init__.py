@@ -9,6 +9,7 @@ from tmol_core.kinematics import (
 )
 from .forest import KinematicForest, KinematicCoordinates
 from .fold_forest import FoldForest
+from tmol_core.kinematics.fold_forest import EdgeType
 from .pose import PoseStackKinematics, PoseCoordinates
 from .move_map import CartesianMoveMap, MoveMap
 
@@ -21,6 +22,7 @@ __all__ = [
     "CartesianMoveMap",
     "NodeType",
     "FoldForest",
+    "EdgeType",
     "BondDOFTypes",
     "JumpDOFTypes",
     "n_movable_bond_dof_types",

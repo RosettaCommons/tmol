@@ -9,7 +9,13 @@ except PackageNotFoundError:
 
 from .io import ResidueBlock, pose_stack_from_pdb, pose_stack_from_residue_blocks
 from .optimization import run_cart_min, run_cart_relax, run_kin_min
-from .kinematics import CartesianMoveMap, FoldForest, MoveMap, PoseStackKinematics
+from .kinematics import (
+    CartesianMoveMap,
+    EdgeType,
+    FoldForest,
+    MoveMap,
+    PoseStackKinematics,
+)
 from .database import ParameterDatabase
 from .chemical.patched_chemdb import PatchedChemicalDatabase
 from .io.canonical_ordering import CanonicalOrdering
@@ -45,6 +51,7 @@ __all__ = [
     "PackedBlockTypes",
     "PDBInfo",
     "FoldForest",
+    "EdgeType",
     "PoseStackKinematics",
     "MoveMap",
     "CartesianMoveMap",
@@ -64,6 +71,19 @@ _STRUCTURE_INPUT = {
     "pose_stack_from_file",
 }
 __all__ += sorted(_STRUCTURE_INPUT)
+
+_STRUCTURE_FILES = {
+    "atom_array_from_file",
+    "file_from_atom_array",
+    "file_from_pose_stack",
+}
+__all__ += sorted(_STRUCTURE_FILES)
+
+_FRAGMENT_API = {
+    "LigandFragmentDefinition": "tmol_core.ligand._fragmentation",
+    "recombine_fragmented_ligands": "tmol_jax.ligand.fragment_imposition",
+}
+__all__ += sorted(_FRAGMENT_API)
 
 
 _ATOM37_INPUT = {
@@ -86,27 +106,16 @@ __all__ += sorted(_ATOMWORKS_INPUT)
 
 
 def __getattr__(name):
-    if name in _ATOMWORKS_INPUT:
+    if name in _FRAGMENT_API:
         from importlib import import_module
 
-        value = getattr(import_module(".io.atomworks", __name__), name)
+        value = getattr(import_module(_FRAGMENT_API[name]), name)
         globals()[name] = value
         return value
-    if name in _ATOM37_INPUT:
+    if name in _ATOMWORKS_INPUT | _ATOM37_INPUT | _STRUCTURE_INPUT | _STRUCTURE_FILES:
         from importlib import import_module
 
-        value = getattr(import_module(".io.atom37", __name__), name)
-        globals()[name] = value
-        return value
-    if name in _STRUCTURE_INPUT:
-        from importlib import import_module
-
-        module = (
-            ".io.structure_export"
-            if name == "atom_array_from_pose_stack"
-            else ".io.structure"
-        )
-        value = getattr(import_module(module, __name__), name)
+        value = getattr(import_module(".io", __name__), name)
         globals()[name] = value
         return value
     raise AttributeError(name)

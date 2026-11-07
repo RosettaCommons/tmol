@@ -1,4 +1,4 @@
-"""Protein structure loading and writing."""
+"""Molecular structure loading and writing."""
 
 from .pdb_parsing import parse_pdb, pose_stack_from_pdb
 from .canonical_ordering import (
@@ -41,6 +41,13 @@ _STRUCTURE_INPUT = {
 }
 __all__ += sorted(_STRUCTURE_INPUT)
 
+_STRUCTURE_FILES = {
+    "atom_array_from_file",
+    "file_from_atom_array",
+    "file_from_pose_stack",
+}
+__all__ += sorted(_STRUCTURE_FILES)
+
 
 _ATOM37_INPUT = {
     "atom37_slot_map_for_ordering",
@@ -62,6 +69,12 @@ __all__ += sorted(_ATOMWORKS_INPUT)
 
 
 def __getattr__(name):
+    if name in _STRUCTURE_FILES:
+        from importlib import import_module
+
+        value = getattr(import_module(".structure_files", __name__), name)
+        globals()[name] = value
+        return value
     if name in _ATOMWORKS_INPUT:
         from importlib import import_module
 

@@ -167,7 +167,7 @@
         "tests/jax/test_pose_imposition.py",
         "tests/scientific/test_constrained_design.py"
       ],
-      "implementation_status": "Common native CPU/CUDA sampling, sparse scoring, graph construction, annealing and imposition support repacking and selected L/D design choices. Task masks, budgets, bundles, correlation collapse and bump pruning preserve original member identities. Prepared biotin, O-glycan and N-glycan groups have full all-channel energies, physical gradients and native packing checks. Constrained L/D design preserves unchanged backbone atom identities through compacted atom layouts; independent distance values/gradients pass both CPU backends, and full physical source gradients pass JAX. Changed connection ports or constrained atom indices still reject; complete task/design API parity remains open. Latest constrained-design artifact/CUDA validation is pending."
+      "implementation_status": "Common native CPU/CUDA sampling, sparse scoring, graph construction, annealing and imposition support repacking and selected L/D design choices. Task masks, budgets, bundles, correlation collapse and bump pruning preserve original member identities. Prepared biotin, O-glycan and N-glycan groups have full all-channel energies, physical gradients and native packing checks. Constrained L/D design preserves unchanged backbone atom identities through compacted atom layouts; independent distance values/gradients pass both CPU backends, and full physical source gradients pass JAX. Changed connection ports or constrained atom indices still reject; complete task/design API parity remains open. Unchanged-identity constrained-design installed and actual CUDA checks passed."
     },
     {
       "domain": "kinematics",
@@ -189,7 +189,7 @@
         "tests/scientific/test_fast_relax_execution.py",
         "tmol/tests/relax/test_fast_relax.py"
       ],
-      "implementation_status": "Shared mature schedules, actual packing/minimization stages, task callbacks, release hooks and per-pose best acceptance. Ligand, connected noncanonical, D-peptide and mixed CPU workflows pass both backends. CUDA and full conjugated workflows pending. JAX strong-Wolfe summed-batch minimization differs from mature per-pose Armijo; performance and memory parity remain unestablished."
+      "implementation_status": "Shared mature schedules, actual packing/minimization stages, task callbacks, release hooks and per-pose best acceptance. Ligand, connected noncanonical, D-peptide and mixed CPU workflows pass both backends. CUDA and full conjugated workflows pending. Default JAX strong-Wolfe differs from mature per-pose Armijo; explicit Armijo minimizer options are available; performance and memory parity remain unestablished."
     },
     {
       "domain": "fragment_interactions",
@@ -219,7 +219,7 @@
         "tests/scientific/test_metal_placement.py",
         "tests/scientific/test_atom_array_input.py"
       ],
-      "implementation_status": "ResidueBlock, canonical, public AtomArray and PDB/CIF/MOL2/SDF inputs share chemistry, atom mapping, hydrogen/protonation, metal and connectivity preparation. Default missing-sidechain/OptH native packing and fragment imposition retain parameter context. Common AtomArray export has molecular CPU roundtrip checks. Prepared and tensor Atom37 coordinate overrides are implemented and validated; exhaustive public API compatibility remains open; input preparation is eager. Corrected-source artifact/device gates and complete workflow runtime/memory parity remain pending."
+      "implementation_status": "ResidueBlock, canonical, public AtomArray and PDB/CIF/MOL2/SDF inputs share chemistry, atom mapping, hydrogen/protonation, metal and connectivity preparation. Default missing-sidechain/OptH native packing and fragment imposition retain parameter context. Common AtomArray export has molecular CPU roundtrip checks. Prepared and tensor Atom37 coordinate overrides are implemented and validated; exhaustive public API compatibility remains open; input preparation is eager. Corrected-source installed CPU and actual CUDA gates passed for the listed workflows; complete runtime/memory parity remains pending."
     },
     {
       "domain": "jit_vmap_reverse_ad",
@@ -284,7 +284,7 @@
       "repro_fixture": [
         "tests/scientific/test_ligand_preparation.py"
       ],
-      "implementation_status": "Common typing, protonation, bounds, objectives, restart and parameter injection; thin execution adapters. Torch original seeded conformers unchanged in extraction checks. JAX public generating/supplied workflows run with Torch imports blocked. CIF requires explicit reader; integrated automatic mixed/modified structure input and final installed/CUDA validation remain pending. Optimization trajectories and end-to-end cold/warm/peak-memory parity are unestablished."
+      "implementation_status": "Common typing, protonation, bounds, objectives, restart and parameter injection; thin execution adapters. Torch original seeded conformers unchanged in extraction checks. JAX public generating/supplied workflows run with Torch imports blocked. CIF and mixed/modified structure input use common readers; generated-conformer checks currently establish CPU behavior; full preparation performance remains under evaluation. Optimization trajectories and end-to-end cold/warm/peak-memory parity are unestablished."
     },
     {
       "domain": "public_atom_array_context",
@@ -303,27 +303,27 @@
         "tests/scientific/test_structure_metadata.py",
         "tests/scientific/test_pose_imposition.py"
       ],
-      "implementation_status": "Common metadata and split-block models; preserves insertion codes, source occupancy/B factors, residue annotations and metal origins during canonical projection. JAX legacy labels retained; design follows mature defaults for changed residue identities. Common AtomArray export now retains original fragment/metal identity and rejects conflicting multi-model metadata. New metadata integration awaits exact package/CUDA validation."
+      "implementation_status": "Common metadata and split-block models; preserves insertion codes, source occupancy/B factors, residue annotations and metal origins during canonical projection. JAX legacy labels retained; design follows mature defaults for changed residue identities. Common AtomArray export now retains original fragment/metal identity and rejects conflicting multi-model metadata. Metadata integration passed exact installed and actual CUDA checks."
     },
     {
       "domain": "fragmented_ligand_input_and_reconstruction",
       "torch": "supported_with_repeated_identity_fix",
-      "jax": "cpu_full_term_and_physical_gradient_checks",
+      "jax": "cpu_cuda_installed_values_and_physical_gradients",
       "repro_fixture": [
         "tests/scientific/test_fragment_input.py"
       ],
-      "implementation_status": "Common named cut-bond and original-atom plans; independent physical groups for repeated ligands. Real protein-ligand and repeated ligand-only CPU cases preserve all 25 term values and physical gradients against uncut molecules in float64 (2e-6 tolerance), nonzero genbonded, default input packing and ligand minimization. Reconstruction preserves coordinate dtype/autodiff, original author labels, per-atom metadata and constraint atoms. Shared fixes also improve Torch; complete fragment interaction attribution and fresh CUDA/package gates remain pending. Externally bonded fragmented-ligand generation is not established by these cases."
+      "implementation_status": "Common named cut-bond and original-atom plans; independent physical groups for repeated ligands. Real protein-ligand and repeated ligand-only CPU cases preserve all 25 term values and physical gradients against uncut molecules in float64 (2e-6 tolerance), nonzero genbonded, default input packing and ligand minimization. Reconstruction preserves coordinate dtype/autodiff, original author labels, per-atom metadata and constraint atoms. Shared fixes also improve Torch; fragment attribution and exact installed CPU/CUDA gates passed. Externally bonded fragmented-ligand generation is not established by these cases."
     },
     {
       "domain": "mature_segmented_armijo",
       "torch": "supported",
-      "jax": "opt_in_cartesian_kinematic_and_array_minimization_cpu",
+      "jax": "opt_in_cartesian_kinematic_checkpoint_cpu_cuda_installed",
       "repro_fixture": [
         "tests/scientific/test_armijo_execution.py",
         "tests/jax/test_armijo_native.py",
         "tests/scientific/test_armijo_checkpoint.py"
       ],
-      "implementation_status": "Common settings/setup, compact H0=I direction, history, restart/retirement and per-segment convergence; typed shared native Armijo transitions through JAX FFI. Dense/scattered independent objectives, full25-channel molecular objectives and public compact Cartesian/kinematic execution pass CPU invariants in both frameworks. Existing strong-Wolfe default remains; exact a0a CUDA/package and bounded Apple portable execution passed; matched trajectories, cold/warm time and peak memory remain pending. JAX checkpoint continuation now uses the common persistent history: scattered objectives and full ligand/mixed physical objectives match uninterrupted six-step execution on CPU; frozen atoms remain exact. Host-array restoration and incompatible context rejection pass. Checkpoint CUDA/artifact validation and complete optimizer API compatibility remain pending."
+      "implementation_status": "Shared settings, segmented history, restart/convergence policy and typed native Armijo transitions. Public Cartesian/kinematic molecular minimization and scattered objectives pass CPU/CUDA checks. Checkpoint continuation of real ligand/mixed objectives matches uninterrupted history; frozen atoms remain exact and incompatible restoration rejects. Exact32 installed/CUDA checks passed. Four-domain fixed-iteration Cartesian final trajectories match mature Torch at float64 2e-10; complete optimizer/default compatibility and cold/warm/peak-memory parity remain open."
     },
     {
       "domain": "molecular_atomarray_export",
@@ -355,7 +355,7 @@
       "implementation_status": "Common exact chemical-prefix identity, merged palettes, metadata and fragment maps; JAX buffer copying preserves coordinate dtype/derivatives, sparse bond distances and constraints. Four CPU checks per backend cover mixed ligand/noncanonical/D batches, all26 per-term values/gradients, distinct palettes and repeated fragment identity. Exact71c9 CUDA/install gates passed; complete workflow runtime/memory parity remains pending."
     }
   ],
-  "validation": "PR629 remains OPEN DRAFT at corrected a0a9f43. Exact privatecf0e43 CPU45+380,JAXCUDA48,TorchCUDA39 passed. Its native hydrogen fix is handed to root for bounded actual Apple validation; earlier a0a/cf7 Apple evidence remains valid for those sources. Later canonical encoding/library-record/gap adapters have CPU evidence but need matching artifacts/device gates. Normal commit-qualified AtomWorks resolution with Torch installed/unloaded and full9278 input/25fragmentE/G passed. Matched mature d758 warm ratios .721/.747, cold1.382/1.603 and higher host peaks retain cold/memory holds. Complete supported mature functionality and matched runtime/peak-memory acceptance remain incomplete.",
+  "validation": "PR629 is OPEN DRAFT at 32bafe247a. That source passed six matching artifact builds, 26 affected clean-installed checks without Torch, 22 JAX CUDA and 5 actual Torch CUDA checks. Earlier b1ffb6d35e passed the broader 45 molecular +394 shared installed checks, 60 CUDA checks and five full-value/gradient CPU/second-GPU comparisons. The common native binary is unchanged. Private Cartesian-objective and Dunbrack-precision improvements require their own final artifact/device/performance gates. Complete mature functionality and matched cold/warm runtime/peak-memory acceptance remain incomplete.",
   "score_terms": {
     "nonbonded": {
       "torch": "implemented",
@@ -482,18 +482,16 @@
   },
   "acceptance_gaps": {
     "mature_functionality": [
-      "Constructor chain/atom/missing metadata and context precedence have focused CPU evidence. Complete public task/design compatibility still requires implementation or matched validation.",
-      "Standard AtomWorks encoding, tensor-gap semantics, default chemistry and optional constructor metadata passed exact installed CPU and actual CUDA gates. New direct host transfers and palette defaults await their final matching artifacts/device results.",
-      "Complete task/design API compatibility audit. Mature-supported unchanged constraint atom identities passed exact installed CPU and actual CUDA gates. Changed-port/constraint-index design needs a mature correctness audit before classifying it as parity or new capability.",
-      "Complete optimizer API compatibility and matched mature trajectories/performance. JAX shared-history checkpoint continuation has CPU independent/molecular evidence; final artifact/CUDA gate pending.",
-      "Exhaustive custom database/public score-option compatibility"
+      "Public API audit: mutation and residue-label/query helpers and sequence construction are absent from the JAX root API; their mature policy requires shared-core extraction. Public PDB/CIF reader/writer helpers and fragment/EdgeType aliases now have source CPU checks; their final installed gate is pending.",
+      "Complete task/design compatibility. Unchanged constrained atom identities pass installed CPU/CUDA checks; changed ports or constraint atom indices require a mature correctness audit before classification as parity gaps.",
+      "Optimizer defaults and callback compatibility. Explicit shared Armijo and checkpoint continuation pass installed CPU/CUDA gates. Strong-Wolfe remains the JAX public default; FastRelax default optimization therefore differs.",
+      "Exhaustive custom database/public score-option compatibility beyond the documented fixtures."
     ],
     "validation_and_performance": [
-      "Frozen30128 has exact six-artifact clean installed45molecular+390shared gates,48JAXCUDA checks,five fullmolecular CPU/secondGPU comparisons and2TorchCUDA metadata checks. Its first transfer approach regressed warm time; direct transfers at7946 correct that regression with matched before/after evidence. Latest palette defaults are still under final validation.",
-      "Matched mature end-to-end cold/warm runtime and peak host/device memory unresolved",
-      "Core measured mature molecular minimization regressions remain under investigation",
-      "Corrected a0a, focused cf7 and bounded cf0e hydrogen Apple checks passed. Small workflow Metal runtime/memory and earlier biotin/minimization exceptions remain; native hydrogen reconstruction executes CPU even in the Metal scoring/annealing lane.",
-      "Ordinary PyPI AtomWorks3.0.4 can import installed Torch during host preparation. The documented immutable dependency constraint was resolved and validated by normal pip installation with Torch installed/unloaded, no import blocker, and full 9278-atom fragment values/gradients. This explicit route does not change the PyPI default. Cold-time and host-memory gaps against mature Torch remain."
+      "Matched mature end-to-end cold/warm runtime and peak host/device memory remain unresolved; scoring-only speedups do not establish packing or minimization parity.",
+      "Private b21326df4c canonical-construction/render/six-step Armijo/final energy-gradient workflows match mature d758 in all four domains at float64 2e-10. Fresh per-process caches, both orders: warm JAX/Torch ratios 0.410-0.685 for ligand/noncanonical/mixed and 6.995-7.554 for D-peptide; cold ratios 2.375-3.407. Host process peaks are lower, but include retained allocations and do not isolate native scratch or device memory. The subsequent Dunbrack precision-preparation candidate is under validation.",
+      "Corrected a0a, focused cf7 and bounded cf0e hydrogen Apple checks passed. Small Metal workflow runtime/memory exceptions remain. Hydrogen reconstruction executes CPU in the Metal scoring/annealing lane; JAX MPS is not claimed.",
+      "Ordinary PyPI AtomWorks 3.0.4 can import installed Torch during host preparation. The documented immutable dependency constraint passes normal installation and full molecular input/scoring with Torch installed but unloaded. It does not change the PyPI default."
     ],
     "framework_specific_or_not_mature_parity": [
       "Higher derivatives through native torsion/forward-kinematics kernels are not advertised by mature Torch either",
@@ -514,8 +512,8 @@
   },
   "task_sampler_defaults": {
     "torch": "supported",
-    "jax": "cpu_validated",
+    "jax": "cpu_cuda_installed_validated",
     "repro_fixture": "tests/scientific/test_task_sampler_defaults.py",
-    "implementation_status": "Tasks inherit palette defaults with sampler-instance deduplication and independent masks. Ligand, D-peptide and DNA default packing preserve coordinates/topology and all 25 per-term values and gradients on CPU. Custom palette instance ownership tested on both backends; new artifact/CUDA gate pending."
+    "implementation_status": "Tasks inherit palette defaults with sampler-instance deduplication and independent masks. Ligand, D-peptide and DNA default packing preserve coordinates/topology and all 25 per-term values and gradients on CPU. Custom palette instance ownership tested on both backends; exact installed and actual CUDA gates passed."
   }
 }
