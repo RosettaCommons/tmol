@@ -154,7 +154,6 @@ struct RotamerBondedStage {
                 gradient,
                 weights,
                 true,
-                Backward,
                 Backward);
           },
           cartbonded_tables<D, Real>(a));

@@ -37,13 +37,14 @@ void cartbonded_rotamer_score_native(
     TView<Vec<Real, 3>, 2, D> dV_dx,
     TView<Real, 2, D> dTdV,
     bool output_block_pair_energies,
-    bool accumulate_derivs,
-    bool compute_derivs) {
+    bool accumulate_derivs) {
   LAUNCH_BOX_32;
   CTA_REAL_REDUCE_T_TYPEDEF;
   int const max_n_conns = pose_stack_inter_block_connections.size(2);
   int const n_block_types = cart_subgraph_offsets.size(0);
   int const n_subgraphs = cart_subgraphs.size(0);
+  // Sparse forward values use the same arithmetic with or without autograd.
+  // Their derivatives are recomputed in backward, not accumulated here.
   auto eval_subgraphs_for_interaction = ([=] TMOL_DEVICE_FUNC(int cta) {
     // Only one element of this union: the shared memory array for
     // the reduction, which itself only will take any space if NT > 32
@@ -83,7 +84,7 @@ void cartbonded_rotamer_score_native(
       // Real score;
       switch (type) {
         case subgraph_type::length: {
-          if (Backward || compute_derivs) {
+          if (Backward || accumulate_derivs) {
             auto eval = cblength_V_dV(atom1, atom2, params[2], params[1]);
             accumulate_result<Real, Int, 2, D>(
                 length_score,
@@ -100,7 +101,7 @@ void cartbonded_rotamer_score_native(
         }
         case subgraph_type::angle: {
           Vec<Real, 3> atom3 = rot_coords[atoms[2]];
-          if (Backward || compute_derivs) {
+          if (Backward || accumulate_derivs) {
             auto eval = cbangle_V_dV(atom1, atom2, atom3, params[2], params[1]);
             accumulate_result<Real, Int, 3, D>(
                 angle_score,
@@ -121,7 +122,7 @@ void cartbonded_rotamer_score_native(
           Real& tor_score = (score_type == 3)   ? improper_torsion_score
                             : (score_type == 4) ? hxyl_torsion_score
                                                 : torsion_score;
-          if (Backward || compute_derivs) {
+          if (Backward || accumulate_derivs) {
             auto eval = cbtorsion_V_dV(
                 atom1,
                 atom2,
