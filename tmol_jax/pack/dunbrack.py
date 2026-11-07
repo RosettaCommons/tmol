@@ -20,9 +20,10 @@ from tmol_core.pack.sampling_request import (
 from tmol_core.pack.kinematics import annotate_residue_rotamer_kinematics
 from tmol_jax.kinematics._host import NativePosePlanner
 from tmol_jax.score.dunbrack.parameters import prepare_dunbrack_parameters
+from ._sampler import SamplerSupport
 
 
-class DunbrackChiSampler:
+class DunbrackChiSampler(SamplerSupport):
     """Prepare and sample library or explicit chi on native CPU/CUDA.
 
     Sampling is eager because its output cardinality depends on the pose.

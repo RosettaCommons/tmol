@@ -25,6 +25,7 @@ from .graph import prefix_counts, load_balance
 from .task import PackerTask, SetPackerTask
 
 from ._ffi import stage
+from ._sampler import SamplerSupport
 
 
 @partial(jax.jit, static_argnames=("operation", "outputs", "policy"))
@@ -193,7 +194,7 @@ class PreparedNaSamples:
         return self.counts, self.owners, atoms, chi
 
 
-class NaChiRotamerSampler:
+class NaChiRotamerSampler(SamplerSupport):
     """Sample DNA/RNA glycosidic and proton chi with the scoring distributions."""
 
     samples_after_other_samplers = False

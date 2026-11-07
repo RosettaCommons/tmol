@@ -38,6 +38,18 @@ def block_mask(backend, value):
     )
 
 
+def check_sampler_support(backend, sampler, task, counts):
+    """Advertised support must agree with real samples at allowed task rows."""
+    support = sampler.defines_rotamers_for_bts(
+        backend.pose.packed_block_types, task.cons_bt_block_type
+    )
+    assert support.device == backend.device
+    support = backend.numpy(support)
+    allowed = backend.numpy(task.is_cons_bt_allowed)
+    assert support.shape == counts.shape and support.dtype == np.bool_
+    np.testing.assert_array_equal(support[allowed], counts[allowed] > 0)
+
+
 @pytest.mark.parametrize("case_name", DUNBRACK_CASES)
 def test_public_sampling_counts_atoms_and_monotone_masks(backend, case_name):
     backend.molecule(DUNBRACK_CASES[case_name], terms=("ref",))
@@ -52,6 +64,7 @@ def test_public_sampling_counts_atoms_and_monotone_masks(backend, case_name):
     assert atoms.shape == chi.shape and np.isfinite(chi).all()
     considered = backend.numpy(fixed.cons_bt_block_type)
     allowed = backend.numpy(fixed.is_cons_bt_allowed)
+    check_sampler_support(backend, sampler, fixed, counts)
     blocks = backend.pose.packed_block_types.active_block_types
     for row, type_index in enumerate(considered):
         block = blocks[type_index]

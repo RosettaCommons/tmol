@@ -8,6 +8,7 @@ import jax.numpy as jnp
 
 from tmol_core.pack.conformer_policy import fallback_mask, include_current_mask
 from .task import PackerTask, SetPackerTask
+from ._sampler import SamplerSupport
 
 
 @partial(jax.jit, static_argnames=("fallback",))
@@ -29,7 +30,7 @@ def _selection(
     )
 
 
-class IncludeCurrentSampler:
+class IncludeCurrentSampler(SamplerSupport):
     """Select allowed original identities for subsequent coordinate assembly.
 
     ``create_samples_for_poses`` returns considered-choice counts and indices,

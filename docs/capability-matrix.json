@@ -174,7 +174,7 @@
         "tests/jax/test_pose_imposition.py",
         "tests/scientific/test_constrained_design.py"
       ],
-      "implementation_status": "Common native CPU/CUDA sampling, sparse scoring, graph construction, annealing and imposition support repacking and selected L/D design choices. Task masks, budgets, bundles, correlation collapse and bump pruning preserve original member identities. Prepared biotin, O-glycan and N-glycan groups have full all-channel energies, physical gradients and native packing checks. Constrained L/D design preserves unchanged backbone atom identities through compacted atom layouts; independent distance values/gradients pass both CPU backends, and full physical source gradients pass JAX. Changed connection ports or constrained atom indices still reject; complete task/design API parity remains open. Unchanged-identity constrained-design installed and actual CUDA checks passed. Explicit anneal_device selects native CPU/CUDA search independently of scoring and returns assignments to the pose device; mixed-system CPU-to-CUDA and CUDA-to-CPU molecular checks pass, including a clean installed Torch-free CUDA lane."
+      "implementation_status": "Common native CPU/CUDA sampling, sparse scoring, graph construction, annealing and imposition support repacking and selected L/D design choices. Task masks, budgets, bundles, correlation collapse and bump pruning preserve original member identities. Prepared biotin, O-glycan and N-glycan groups have full all-channel energies, physical gradients and native packing checks. Constrained L/D design preserves unchanged backbone atom identities through compacted atom layouts; independent distance values/gradients pass both CPU backends, and full physical source gradients pass JAX. Changed connection ports or constrained atom indices still reject; complete task/design API parity remains open. Unchanged-identity constrained-design installed and actual CUDA checks passed. Explicit anneal_device selects native CPU/CUDA search independently of scoring and returns assignments to the pose device; mixed-system CPU-to-CUDA and CUDA-to-CPU molecular checks pass, including a clean installed Torch-free CUDA lane. Eager defines_rotamers_for_bts queries use existing residue policies; shared native sampling checks cover Dunbrack, nucleic-acid, fixed-amino-acid, current and ligand OptH support."
     },
     {
       "domain": "kinematics",
@@ -568,7 +568,8 @@
       "Changed-identity constraint atom remapping and changed connection-port design require capabilities absent from the tested mature imposition path as well."
     ],
     "jax_extensions": [
-      "Mixed float64 internal DOFs with float32 stored coordinates: mapping, AD and minimization are implemented in both frontends, with shared CPU/CUDA ligand/D-peptide checks. Torch promotes the objective to the parameter precision without lowering higher-precision losses. This is additional capability beyond the tested mature baseline, separate from mature-functionality parity."
+      "Mixed float64 internal DOFs with float32 stored coordinates: mapping, AD and minimization are implemented in both frontends, with shared CPU/CUDA ligand/D-peptide checks. Torch promotes the objective to the parameter precision without lowering higher-precision losses. This is additional capability beyond the tested mature baseline, separate from mature-functionality parity.",
+      "FallbackSampler batch support queries are available in JAX; the mature Torch method raises NotImplementedError. Fallback conformer sampling itself is implemented in both. The shared test asserts that boundary explicitly."
     ]
   },
   "score_file_options": {

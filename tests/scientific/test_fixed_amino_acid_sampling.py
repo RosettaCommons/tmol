@@ -3,7 +3,7 @@
 import numpy as np
 
 from .molecules import CASES, MolecularCase
-from .test_molecular_sampling import block_mask
+from .test_molecular_sampling import block_mask, check_sampler_support
 from .test_current_conformers import ensure_fallback_sampler
 
 
@@ -39,6 +39,7 @@ def test_fixed_amino_acid_ideal_samples_and_masks(backend):
     blocks = b.pose.packed_block_types.active_block_types
     considered = b.numpy(fixed.cons_bt_block_type)
     allowed = b.numpy(fixed.is_cons_bt_allowed)
+    check_sampler_support(b, sampler, fixed, counts)
     for row, (type_index, enabled) in enumerate(zip(considered, allowed)):
         name = blocks[type_index].name.split(":")[0]
         assert counts[row] == int(enabled and name in ("ALA", "DALA", "GLY"))

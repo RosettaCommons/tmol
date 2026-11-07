@@ -228,6 +228,10 @@ counts, choices, defining_atoms, chi = sampler.sample_chi_for_poses(pose, task)
 
 Counts and choices refer to concrete task rows; defining atoms use residue-local
 indices. Ligands outside the sampler's amino-acid policy receive zero samples.
+`sampler.defines_rotamers_for_bts(packed_block_types, indices)` queries residue
+support before task restrictions, returning a boolean array on the palette's
+device with the index shape. This preparation query uses the same chemical and
+parameter policy as sampling and runs eagerly.
 Task masks and `set_chi_sample_budget(expanded_limit, limit)` control sampling.
 `restrict_absent_name3s(mask, names)` intersects choices at selected positions and
 rejects an empty identity set without partially changing the task; it never

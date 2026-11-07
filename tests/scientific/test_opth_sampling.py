@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from .molecules import MolecularCase, DOMAIN_CASES
-from .test_molecular_sampling import block_mask
+from .test_molecular_sampling import block_mask, check_sampler_support
 
 OPTH_CASES = {
     "protein": MolecularCase(
@@ -73,6 +73,7 @@ def test_opth_molecular_samples_and_masks(backend, name, flip):
         assert counts.sum() > 0 and np.any(np.abs(chi) > 0.1)
     if name == "ligand":
         assert counts.sum() == 81
+        check_sampler_support(b, sampler, concrete(task), counts)
         assert np.all((atoms >= 0).sum(axis=1) == 2)
         assert len(np.unique(chi, axis=0)) == 81
     np.testing.assert_array_equal(b.coords(), before)
