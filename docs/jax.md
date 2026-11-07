@@ -453,10 +453,10 @@ FastRelax uses the shared mature schedule, packing/minimization stages, release
 hooks, and per-pose acceptance policy. Import `fast_relax` from `tmol_jax` and
 pass an explicit `seed`; `tmol_jax.relax.DefaultCartesianMinimizer(max_iter=...)`
 and `DefaultKinematicMinimizer` configure minimization. Existing packing
-capability limits apply. JAX's strong-Wolfe L-BFGS currently minimizes the summed
-batch objective by default. Pass `optimizer="armijo"` to the minimizer callback
-for the shared per-pose policy. Default behavior and end-to-end performance
-remain parity gaps.
+capability limits apply. The public minimizers and these callbacks default to
+shared per-pose L-BFGS/Armijo, including mature convergence, iteration and history
+settings. Explicit `optimizer="strong_wolfe"` retains the earlier summed-objective
+execution. End-to-end runtime and peak-memory parity remain unresolved.
 
 `tmol_jax.build_context_from_atom_array()` prepares reusable chemistry and
 parameters. `tmol_jax.pose_stack_from_atom_array(..., return_context=True)`

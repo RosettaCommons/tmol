@@ -24,7 +24,7 @@ def test_internal_minimizer_fixed_dofs_and_disabled_identity(dtype):
             pose, backend.score_function, move_map, return_result=True
         )
         np.testing.assert_array_equal(unchanged.coords, pose.coords)
-        assert result["n_iter"] == 0 and result["converged"]
+        assert result["n_iter"] == 0 and np.asarray(result["converged"]).all()
         move_map.move_all_named_torsions = True
         mask = np.asarray(module.resolve_move_map(move_map)).reshape(-1)
         minimized, result = run_kin_min(

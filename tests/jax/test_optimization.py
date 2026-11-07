@@ -76,7 +76,8 @@ class _QuadraticTerm(EnergyTerm):
         return {ScoreType.fa_ljatr: (coords_override**2).sum(axis=(1, 2))}
 
 
-def test_run_cart_min_freezes_mask_and_padding(monkeypatch):
+@pytest.mark.parametrize("optimizer", ("armijo", "strong_wolfe"))
+def test_run_cart_min_freezes_mask_and_padding(monkeypatch, optimizer):
     original = scoring.importlib.import_module
     monkeypatch.setattr(
         scoring.importlib,
@@ -100,6 +101,7 @@ def test_run_cart_min_freezes_mask_and_padding(monkeypatch):
         score_function,
         move_mask,
         max_iter=10,
+        optimizer=optimizer,
         return_result=True,
     )
     np.testing.assert_allclose(minimized.coords[:, 0], 0, atol=1e-6)

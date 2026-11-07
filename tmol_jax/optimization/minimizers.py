@@ -34,19 +34,19 @@ def run_cart_min(
     score_function: Any,
     move_mask: Optional[Any] = None,
     *,
-    max_iter: int = 100,
-    history: int = 5,
+    max_iter: Optional[int] = None,
+    history: Optional[int] = None,
     gtol: float = 1e-5,
     ftol: float = 1e-6,
     line_search_max_iter: int = 25,
     verbose: bool = False,
     return_result: bool = False,
     constraint_set: Optional[Any] = None,
-    optimizer="strong_wolfe",
+    optimizer="armijo",
     optimizer_kwargs=None,
     coord_mask=None,
 ):
-    """Minimize Cartesian coordinates with L-BFGS and strong-Wolfe search.
+    """Minimize Cartesian coordinates with the shared segmented L-BFGS/Armijo policy.
 
     The score function is rendered once because topology and atom layout stay
     fixed. ``move_mask`` may select atoms (``[poses, atoms]``) or individual
@@ -56,10 +56,12 @@ def run_cart_min(
 
     Set ``return_result=True`` to receive ``(pose, diagnostics)`` where the
     diagnostics mapping includes the final value, gradient, iteration count,
-    convergence flag, and termination status. ``optimizer="armijo"`` uses the
+    per-pose convergence and stalled flags. The default ``optimizer="armijo"`` uses the
     shared mature segmented policy on compact movable coordinates. Its convergence
     settings come from ``optimizer_kwargs`` (shared Torch names/defaults); the
-    legacy ``gtol``, ``ftol`` and line-search limit apply only to strong Wolfe.
+    legacy ``gtol``, ``ftol`` and line-search limit apply only to explicit
+    ``optimizer="strong_wolfe"``. Omitted iteration/history settings use the
+    common Armijo defaults (200 iterations, 128 history entries).
     """
     if coord_mask is not None:
         if move_mask is not None:
@@ -123,8 +125,8 @@ def _minimize_selected(
             energy,
             initial,
             mask,
-            max_iter,
-            history,
+            100 if max_iter is None else max_iter,
+            5 if history is None else history,
             gtol,
             ftol,
             line_search_max_iter,
@@ -134,7 +136,11 @@ def _minimize_selected(
         raise ValueError("optimizer must be 'armijo' or 'strong_wolfe'")
     from ._segmented_minimization import minimize_pose_variables
 
-    settings = dict(max_iter=max_iter, history_size=history, verbose=verbose)
+    settings = dict(verbose=verbose)
+    if max_iter is not None:
+        settings["max_iter"] = max_iter
+    if history is not None:
+        settings["history_size"] = history
     settings.update(optimizer_kwargs or {})
     return _validate_minimum(
         minimize_pose_variables(
@@ -218,15 +224,15 @@ def run_kin_min(
     move_map,
     *,
     fold_forest=None,
-    max_iter=100,
-    history=5,
+    max_iter=None,
+    history=None,
     gtol=1e-5,
     ftol=1e-6,
     line_search_max_iter=25,
     verbose=False,
     return_result=False,
     constraint_set=None,
-    optimizer="strong_wolfe",
+    optimizer="armijo",
     optimizer_kwargs=None,
 ):
     """Minimize selected internal DOFs through shared native molecular kinematics.
@@ -236,7 +242,7 @@ def run_kin_min(
     of selected bonds or jumps move. The original pose is unchanged. Diagnostics
     contain flat DOFs and their masked gradient, rather than Cartesian coordinates.
     This host-controlled optimizer requires first reverse derivatives only.
-    ``optimizer="armijo"`` selects the shared mature segmented policy, with
+    The default ``optimizer="armijo"`` uses the shared mature segmented policy, with
     ``optimizer_kwargs`` using Torch setting names. Only movable DOFs enter its
     history; independent poses retain independent line search and convergence.
     """

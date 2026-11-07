@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import jax.numpy as jnp
 from typing import Any, Optional, Sequence
 
 from tmol_jax.score.constraint import create_mainchain_coordinate_constraints
@@ -116,6 +117,13 @@ def run_cart_relax(
                 constraint_set=constraint_set,
             )
             candidate_energy = full_energy(current)
+            converged = bool(jnp.asarray(min_result["converged"]).all())
+            status = min_result.get("status")
+            if status is None:
+                stalled = bool(jnp.asarray(min_result.get("stalled", False)).any())
+                status = (
+                    "converged" if converged else "stalled" if stalled else "max_iter"
+                )
             stage_results.append(
                 {
                     "cycle": cycle,
@@ -124,8 +132,8 @@ def run_cart_relax(
                     "scaled_fun": float(min_result["fun"]),
                     "full_fun": candidate_energy,
                     "n_iter": int(min_result["n_iter"]),
-                    "converged": bool(min_result["converged"]),
-                    "status": min_result["status"],
+                    "converged": converged,
+                    "status": status,
                 }
             )
             if candidate_energy < best_energy:

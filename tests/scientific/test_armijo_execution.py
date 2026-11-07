@@ -280,8 +280,6 @@ def test_public_molecular_armijo_minimizers(backend, kind, name):
         max_iter=6, history_size=3, fixed_iterations=True, value_only_line_search=True
     )
     options = dict(optimizer_kwargs=settings)
-    if b.framework == "jax":
-        options["optimizer"] = "armijo"
     before = b.coords().copy()
     if kind == "cartesian":
         result = frontend.run_cart_min(b.pose, b.score_function, **options)
