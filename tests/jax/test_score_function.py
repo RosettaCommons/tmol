@@ -161,7 +161,7 @@ def test_rerender_keeps_topology_parameters_and_callback_identity_fresh():
         (2, 3.0, squared_xyz),
         (2, 5.0, linear_x),
     ):
-        cs = ConstraintSet.create_empty(n_poses=2).add_constraints(
+        cs = ConstraintSet.create_empty(device=pose.coords.device, n_poses=2).add_constraints(
             callback,
             jnp.array([[[0, 0, atom]]], jnp.int32),
             jnp.array([[scale]], jnp.float32),
