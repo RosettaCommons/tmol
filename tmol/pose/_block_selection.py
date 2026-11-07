@@ -3,13 +3,18 @@
 from typing import Sequence
 
 import attr
-import numpy
 import torch
+
+from tmol_core.pose.block_selection import (
+    selection_plan,
+    select_pdb_info,
+    repeat_pdb_info,
+    validate_repeat,
+)
 
 from tmol.chemical._constants import MAX_SIG_BOND_SEPARATION
 
 from ._inter_block_bondsep import InterBlockBondsep
-from ._pdb_info import PDBInfo
 from ._pose_stack import PoseStack
 from ._constraint_set import ConstraintSet
 
@@ -53,60 +58,27 @@ def select_blocks(pose_stack: PoseStack, blocks: Sequence[int]) -> PoseStack:
     block mappings are dropped.
     """
 
-    if pose_stack.split_block_mapping:
-        raise ValueError("selecting blocks does not support split-block metadata")
     device = pose_stack.device
-    keep = torch.as_tensor(list(blocks), dtype=torch.int64, device=device)
-    block_types = pose_stack.block_type_ind64
-    if keep.numel() == 0 or bool(torch.any(block_types[:, keep] < 0)):
-        raise ValueError("blocks must be a non-empty set present in every pose")
-    selected_types = block_types[:, keep]
-    if not bool(torch.all(selected_types == selected_types[0:1])):
-        raise ValueError("selecting blocks requires a homogeneous block layout")
-
-    old_to_new = torch.full(
-        (pose_stack.max_n_blocks,), -1, dtype=torch.int64, device=device
-    )
-    old_to_new[keep] = torch.arange(keep.numel(), dtype=torch.int64, device=device)
-    connections = pose_stack.inter_residue_connections64[:, keep].clone()
-    partners = connections[..., 0]
-    real = partners >= 0
-    mapped = torch.full_like(partners, -1)
-    mapped[real] = old_to_new[partners[real]]
-    connections[real & (mapped < 0)] = -1
-    partners[mapped >= 0] = mapped[mapped >= 0]
-
-    new_types = block_types[:, keep].clone()
     pbt = pose_stack.packed_block_types
-    n_atoms = pbt.n_atoms[new_types[0]].to(torch.int64)
-    offsets = torch.zeros_like(new_types)
-    offsets[:, 1:] = torch.cumsum(n_atoms[:-1], dim=0)[None, :]
-    source_atoms = torch.cat(
-        [
-            pose_stack.block_coord_offset64[0, b]
-            + torch.arange(int(n), dtype=torch.int64, device=device)
-            for b, n in zip(keep, n_atoms)
-        ]
+    plan = selection_plan(
+        blocks,
+        pose_stack.block_type_ind64.cpu().numpy(),
+        pose_stack.block_coord_offset64.cpu().numpy(),
+        [bt.n_atoms for bt in pbt.active_block_types],
+        pose_stack.inter_residue_connections64.cpu().numpy(),
+        split_block_mapping=pose_stack.split_block_mapping,
     )
-
-    keep_np, atoms_np = keep.cpu().numpy(), source_atoms.cpu().numpy()
-    pdb = pose_stack.pdb_info
-    by_residue = {
-        name: getattr(pdb, name)[:, keep_np].copy()
-        for name in (
-            "residue_labels",
-            "residue_insertion_codes",
-            "chain_labels",
-            "metal_origins",
-            "residue_annotations",
+    keep, source_atoms, new_types, offsets, connections = (
+        torch.as_tensor(value, dtype=torch.int64, device=device)
+        for value in (
+            plan.blocks,
+            plan.source_atoms,
+            plan.block_types,
+            plan.offsets,
+            plan.connections,
         )
-        if getattr(pdb, name) is not None
-    }
-    pdb_info = PDBInfo(
-        atom_occupancy=pdb.atom_occupancy[:, atoms_np].copy(),
-        atom_b_factor=pdb.atom_b_factor[:, atoms_np].copy(),
-        **by_residue,
     )
+    pdb_info = select_pdb_info(pose_stack.pdb_info, plan)
     chains = pose_stack.chain_id64[:, keep].clone()
     return PoseStack(
         packed_block_types=pbt,
@@ -132,10 +104,7 @@ def repeat_pose_stack(pose_stack: PoseStack, n_poses: int) -> PoseStack:
     Unlike :meth:`PoseStackBuilder.from_poses` this keeps the coordinate dtype
     and the constraint set.
     """
-    if pose_stack.n_poses != 1:
-        raise ValueError("only a single reference pose can be replicated")
-    if pose_stack.split_block_mapping:
-        raise ValueError("replicating split-block metadata is not supported")
+    validate_repeat(pose_stack.n_poses, pose_stack.split_block_mapping)
 
     def tile(value: torch.Tensor) -> torch.Tensor:
         return value.repeat((n_poses,) + (1,) * (value.ndim - 1))
@@ -146,12 +115,7 @@ def repeat_pose_stack(pose_stack: PoseStack, n_poses: int) -> PoseStack:
         n_poses=n_poses,
         ps_offset=torch.arange(n_poses, dtype=torch.int64),
     )
-    pdb_info = PDBInfo(
-        **{
-            name: None if value is None else numpy.repeat(value, n_poses, axis=0)
-            for name, value in attr.asdict(pose_stack.pdb_info, recurse=False).items()
-        }
-    )
+    pdb_info = repeat_pdb_info(pose_stack.pdb_info, n_poses)
     tensors = (
         "coords",
         "block_coord_offset",
