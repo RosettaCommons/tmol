@@ -23,6 +23,44 @@ _FIXTURE_PATH = os.path.join(
 )
 
 
+def test_export_uses_pose_chemistry_with_unused_nonprotein_palette(torch_device):
+    from tmol import extended_pose_stack_from_sequences
+
+    pose = extended_pose_stack_from_sequences(["ACD", "GA"], device=torch_device)
+    assert any(
+        bt.io_equiv_class == "AIB" for bt in pose.packed_block_types.active_block_types
+    )
+    pose.coords.requires_grad_(True)
+    coords, tokens, chains = atomworks_from_pose_stack(pose)
+    expected = torch.zeros_like(coords)
+    cotangent = torch.zeros_like(pose.coords)
+    for p, row in enumerate(pose.block_type_ind.tolist()):
+        for b, t in enumerate(row):
+            if t < 0:
+                assert tokens[p, b] == 0
+                continue
+            residue = pose.packed_block_types.active_block_types[t]
+            assert tokens[p, b] == ATOMWORKS_NAME3S.index(residue.io_equiv_class)
+            slots = ATOMWORKS_ATOM37_NAMES[residue.io_equiv_class]
+            offset = int(pose.block_coord_offset[p, b])
+            for a, atom in enumerate(residue.atoms):
+                if atom.name in slots:
+                    expected[p, b, slots.index(atom.name)] = pose.coords[p, offset + a]
+                    cotangent[p, offset + a] = 1
+    torch.testing.assert_close(coords, expected, rtol=0, atol=0)
+    derivative = torch.autograd.grad(coords.sum(), pose.coords)[0]
+    torch.testing.assert_close(derivative, cotangent, rtol=0, atol=0)
+    assert torch.all(chains[tokens > 0] == 0)
+
+
+def test_export_rejects_present_nonprotein_residues(torch_device):
+    from tmol import extended_pose_stack_from_sequences
+
+    pose = extended_pose_stack_from_sequences("A[AIB]", device=torch_device)
+    with pytest.raises(ValueError, match="cannot represent nonprotein"):
+        atomworks_from_pose_stack(pose)
+
+
 @pytest.fixture(scope="session")
 def ubq_atomworks_data():
     """Load the ubiquitin atomworks fixture (device-agnostic, loaded once)."""
