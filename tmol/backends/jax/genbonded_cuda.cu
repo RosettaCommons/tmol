@@ -461,8 +461,14 @@ extern "C" int tmol_jax_native_abi_version() { return 4; }
 extern "C" int tmol_cuda_memory_info(
     int device, uint64_t* free_bytes, uint64_t* total_bytes) {
   if (!free_bytes || !total_bytes) return cudaErrorInvalidValue;
+  // Reject invalid ordinals before calling cudaSetDevice: its failure leaves
+  // a runtime error that can poison subsequent unrelated XLA launches.
+  int count = 0;
+  auto status = cudaGetDeviceCount(&count);
+  if (status != cudaSuccess) return status;
+  if (device < 0 || device >= count) return cudaErrorInvalidDevice;
   int previous = -1;
-  auto status = cudaGetDevice(&previous);
+  status = cudaGetDevice(&previous);
   if (status != cudaSuccess) return status;
   status = cudaSetDevice(device);
   if (status != cudaSuccess) {
