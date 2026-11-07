@@ -35,6 +35,19 @@ def test_complete_packing_with_cpu_annealing(backend, name):
     check_complete_packing(backend, name, bump=True, anneal_device="cpu")
 
 
+def test_cpu_scoring_with_cuda_annealing(backend):
+    if backend.requested_device != "cuda":
+        pytest.skip("CPU-to-CUDA packing requires an explicit CUDA test lane")
+    from .execution import Execution
+
+    check_complete_packing(
+        Execution(f"{backend.framework}-cpu"),
+        "mixed_batch",
+        bump=True,
+        anneal_device="cuda:0",
+    )
+
+
 def check_complete_packing(
     backend, name, *, bump=False, soft_rep=False, anneal_device=None
 ):
