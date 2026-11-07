@@ -78,6 +78,12 @@ def test_custom_dunbrack_width_changes_only_deviation_channel(backend):
     changed = type(backend)(backend.name).molecule(
         case, terms=TERMS, parameter_database=custom
     )
+    # Parameter contexts may share a chemical palette. The new widths must
+    # replace that palette's prior scoring preparation without changing the
+    # original score function's parameter snapshot.
+    changed.pose = backend.pose
+    if backend.framework == "torch":
+        changed._render_torch()
     new_values, new_gradients = changed.channel_values_and_gradients(x)
     np.testing.assert_allclose(new_values[[0, 2]], values[[0, 2]], rtol=2e-6, atol=2e-6)
     np.testing.assert_allclose(
@@ -85,3 +91,7 @@ def test_custom_dunbrack_width_changes_only_deviation_channel(backend):
     )
     np.testing.assert_allclose(new_values[1], values[1] / 4, rtol=2e-6, atol=2e-6)
     np.testing.assert_allclose(new_gradients[1], gradients[1] / 4, rtol=2e-6, atol=2e-6)
+
+    retained_values, retained_gradients = backend.channel_values_and_gradients(x)
+    np.testing.assert_allclose(retained_values, values, rtol=2e-6, atol=2e-6)
+    np.testing.assert_allclose(retained_gradients, gradients, rtol=2e-6, atol=2e-6)

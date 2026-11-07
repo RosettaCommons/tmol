@@ -6,7 +6,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_core.scoring.dunbrack import prepare_dunbrack_tables
 from tmol_core.scoring.dunbrack_topology import (
     pack_dunbrack_blocks,
     prepare_dunbrack_block,
@@ -14,13 +13,13 @@ from tmol_core.scoring.dunbrack_topology import (
 from tmol_jax.score._native import (
     atom_downstream_of_conn,
     coordinate_energy,
-    fit_bspline_coefficients,
     pose_arguments,
     register,
     workspace_sizes,
 )
 from tmol_jax.score.energy_term import EnergyTerm
 from tmol_jax.score.score_types import ScoreType
+from .parameters import prepare_dunbrack_parameters
 
 
 class DunbrackTermState(NamedTuple):
@@ -61,10 +60,7 @@ class DunbrackEnergyTerm(EnergyTerm):
     def _packed_parameters(self, pbt, coordinate_dtype):
         tables = self._prepared(
             "tables",
-            lambda: prepare_dunbrack_tables(
-                self.param_db.scoring.dunbrack,
-                lambda tables: [fit_bspline_coefficients(t) for t in tables],
-            ),
+            lambda: prepare_dunbrack_parameters(self.param_db, pbt),
         )
         lookup = (
             tables.all_table_indices,
