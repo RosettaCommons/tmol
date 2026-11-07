@@ -179,7 +179,7 @@
         "tests/jax/test_native_kinematics.py",
         "tests/scientific/test_molecular_kinematics.py"
       ],
-      "implementation_status": "Shared molecular forest, native inverse/forward scans and first DOF reverse derivatives; jit/vmap and CPU/CUDA placement tested. Optional kin_dtype controls DOF precision independently of stored coordinates. Mixed float64 DOF/float32-coordinate mapping works in both frontends; JAX normalizes objective dtype for Armijo, while the tested Torch minimizer rejects that combination. Inverse-coordinate AD and forward-scan higher AD are absent. Float32 rotational cancellation persists in sensitive systems."
+      "implementation_status": "Shared molecular forest, native inverse/forward scans and first DOF reverse derivatives; jit/vmap and CPU/CUDA placement tested. Optional kin_dtype controls DOF precision independently of stored coordinates. Mixed float64 DOF/float32-coordinate mapping and minimization pass shared CPU/CUDA molecular checks in both frontends. Objective precision promotion is a new capability beyond the tested mature baseline. Inverse-coordinate AD and forward-scan higher AD are absent. Float32 rotational cancellation persists in sensitive systems."
     },
     {
       "domain": "fast_relax",
