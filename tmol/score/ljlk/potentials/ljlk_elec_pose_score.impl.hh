@@ -108,7 +108,21 @@ auto ljlk_elec_forward_impl(
   auto dV_dcoords_t =
       require_gradient ? TPack<Real3, 2, D>::zeros({n_output_scores, n_atoms})
                        : TPack<Real3, 2, D>::empty({n_output_scores, 0});
-  auto dV_dcoords = dV_dcoords_t.view;
+  // Concurrent float atomics vary with scheduling. Accumulate the unchanged
+  // float pair derivatives in double and cast once after all pairs complete.
+  constexpr bool wide_gradient = require_gradient && D == tmol::Device::CUDA
+                                 && std::is_same_v<Real, float>;
+  using GradReal = std::conditional_t<wide_gradient, double, Real>;
+  TPack<tmol::portable::Vec<GradReal, 3>, 2, D> gradient_accum_t;
+  auto gradient_accum = [&]() {
+    if constexpr (wide_gradient) {
+      gradient_accum_t = TPack<tmol::portable::Vec<GradReal, 3>, 2, D>::zeros(
+          {n_output_scores, n_atoms});
+      return gradient_accum_t.view;
+    } else {
+      return dV_dcoords_t.view;
+    }
+  }();
 
   ljlk_elec_native_forward<
       require_gradient,
@@ -145,8 +159,19 @@ auto ljlk_elec_forward_impl(
       output_gradients,
       n_valid_rots,
       output,
-      dV_dcoords,
+      gradient_accum,
       pose_accum);
+  if constexpr (wide_gradient) {
+    auto dV_dcoords = dV_dcoords_t.view;
+    LAUNCH_BOX_32;
+    DeviceOperations<D>::template forall<launch_t>(
+        mgr, n_output_scores * n_atoms, [=] TMOL_DEVICE_FUNC(int index) {
+          int const term = index / n_atoms, atom = index % n_atoms;
+          for (int axis = 0; axis < 3; ++axis)
+            dV_dcoords[term][atom][axis] =
+                Real(gradient_accum[term][atom][axis]);
+        });
+  }
   return {output_t, dV_dcoords_t};
 }
 
