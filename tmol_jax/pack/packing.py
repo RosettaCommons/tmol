@@ -2,6 +2,7 @@
 
 import jax
 import numpy as np
+import time
 
 from .rotamers import build_rotamers
 from .interaction_graph import build_interaction_graph
@@ -10,13 +11,20 @@ from .imposition import impose_top_rotamer_assignments
 
 
 def pack_rotamers(
-    pose_stack, sfxn, task, *, seed=None, chunk_size=None, anneal_device=None
+    pose_stack,
+    sfxn,
+    task,
+    *,
+    seed=None,
+    chunk_size=None,
+    anneal_device=None,
+    verbose=False,
 ):
     """Select conformers using the complete sparse score and native search.
 
     Returns a new pose. The task must register its samplers, including fallback
     for uncovered blocks. All enabled score terms are included. This eager,
-    discrete operation requires float32 coordinates. An explicit uint64 seed
+    discrete operation requires float32 coordinates. An explicit integer seed
     makes search reproducible; None draws a fresh local seed. Optional task bump
     checks use the mature native pruning rule. Correlated groups retain shared
     lockstep context; independently varying third-backbone context is unsupported.
@@ -25,12 +33,25 @@ def pack_rotamers(
     the same local stream; no global RNG state is changed.
     ``anneal_device`` may select a CPU/CUDA device independently of scoring.
     Only prepared graph arrays move; the returned pose stays on its input device.
+    ``verbose`` reports synchronized total packing time.
     """
     if seed is None:
         seed = int(np.random.SeedSequence().generate_state(1, np.uint64)[0])
-    if not isinstance(seed, (int, np.integer)) or not 0 <= seed < 1 << 64:
-        raise ValueError("packing seed must be an unsigned 64-bit integer")
-    return _pack_rotamers(pose_stack, sfxn, task, int(seed), chunk_size, anneal_device)
+    seed = _seed_value(seed)
+    if verbose:
+        pose_stack.coords.block_until_ready()
+        started = time.perf_counter()
+    result = _pack_rotamers(pose_stack, sfxn, task, seed, chunk_size, anneal_device)
+    if verbose:
+        result.coords.block_until_ready()
+        print(f"Packed {result.n_poses} poses in {time.perf_counter() - started:.3f}s")
+    return result
+
+
+def _seed_value(seed):
+    if not isinstance(seed, (int, np.integer)) or not -(1 << 63) <= int(seed) < 1 << 64:
+        raise ValueError("search seed must be an integer in [-2**63, 2**64)")
+    return int(seed) & ((1 << 64) - 1)
 
 
 def _pack_rotamers(

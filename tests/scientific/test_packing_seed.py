@@ -13,6 +13,7 @@ SEEDS = {
     17: (5435609932269944049, 9787598041570588038),
     (1 << 64) - 1: (1800993050274709794, 16830492821160766535),
 }
+SEEDS[-1] = SEEDS[(1 << 64) - 1]  # Independently observed Torch seed alias.
 
 
 CUDA_SEEDS = {
@@ -87,11 +88,14 @@ def test_search_seed_stream_preserves_molecular_packing(
 ):
     monkeypatch.setenv("TMOL_PACK_MAX_POSES_PER_CHUNK", "1" if chunked else "2")
     cuda = backend.requested_device == "cuda"
-    expected = (CUDA_SEEDS if cuda else SEEDS)[seed][: 2 if chunked else 1]
+    reference_seed = (1 << 64) - 1 if seed == -1 else seed
+    expected = (CUDA_SEEDS if cuda else SEEDS)[reference_seed][: 2 if chunked else 1]
     observed, front = observe_native_seed_stream(backend, monkeypatch)
     pack = front.pack_rotamers
 
     def preserving_globals(*args, **kwargs):
+        # Exercise the mature public verbosity option without changing search.
+        kwargs["verbose"] = seed < 0
         numpy_state = np.random.get_state()
         if backend.framework == "torch":
             torch = backend.module

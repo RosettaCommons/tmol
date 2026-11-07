@@ -339,9 +339,12 @@ mixed and DNA repacking fixtures check selected coordinates, immutable chemistry
 and the resulting whole-pose energy. CPU and CUDA retain their different mature
 search schedules. Set `anneal_device="cpu"`, `"cuda:0"`, or a JAX device to
 run the search separately from scoring; the result stays on the pose device.
+`verbose=True` reports synchronized total packing time.
 JAX annealing supports native CPU and CUDA. Explicit seeds use the mature
 MT19937 CPU and shared Philox CUDA seed streams while leaving global random state
-unchanged. This changes seeded choices from earlier JAX releases; matching seeds
+unchanged. Integers in `[-2**63, 2**64)` are accepted; negative seeds use their
+unsigned 64-bit representation, as in Torch. This changes seeded choices from
+earlier JAX releases; matching seeds
 alone does not establish complete numerical parity. Independent CUDA tasks without bump
 pruning replay bounded score pages through the shared three-pass graph driver.
 Small tables use complete fused execution when a conservative bound on all

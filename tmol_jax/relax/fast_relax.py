@@ -14,7 +14,7 @@ from tmol_jax.pack import (
     IncludeCurrentSampler,
     NaChiRotamerSampler,
 )
-from tmol_jax.pack.packing import _pack_rotamers, _new_seed_stream
+from tmol_jax.pack.packing import _pack_rotamers, _new_seed_stream, _seed_value
 from tmol_jax.pack.conjugated import add_conjugated_group_sampler
 from tmol_jax.optimization import run_cart_min, run_kin_min
 from tmol_jax.score.score_types import ScoreType
@@ -179,7 +179,7 @@ def fast_relax(
     """Execute shared FastRelax with native packing and a JAX minimizer.
 
     Schedule, per-pose acceptance, task callbacks and release hooks match the
-    mature protocol. The explicit unsigned 64-bit seed controls local packing
+    mature protocol. The explicit integer seed controls local packing
     randomness. The default minimizer uses segmented Armijo L-BFGS with the
     shared per-pose convergence, history and restart policy. Native sampling
     seeds follow the mature CPU/CUDA streams across stages and pose chunks;
@@ -188,8 +188,7 @@ def fast_relax(
     Existing packing capability boundaries apply to every stage.
     The score function's stage weights are updated as in the mature API.
     """
-    if not isinstance(seed, (int, np.integer)) or not 0 <= seed < 1 << 64:
-        raise ValueError("FastRelax seed must be an unsigned 64-bit integer")
+    seed = _seed_value(seed)
     if isinstance(pose_stack.coords, jax.core.Tracer):
         raise TypeError("FastRelax requires eager discrete packing")
     with jax.default_device(pose_stack.device):
@@ -199,7 +198,7 @@ def fast_relax(
             packer_pallete,
             move_map,
             fold_forest,
-            execution=_JaxRelaxExecution(int(seed)),
+            execution=_JaxRelaxExecution(seed),
             task_operations=task_operations,
             num_repeats=num_repeats,
             ramp_constraints=ramp_constraints,

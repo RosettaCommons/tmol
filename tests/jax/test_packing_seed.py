@@ -13,12 +13,16 @@ from tests.scientific.test_packing_seed import (
 
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
-def test_relax_advances_search_stream_between_molecular_stages(platform, monkeypatch):
+@pytest.mark.parametrize("seed", (17, -1))
+def test_relax_advances_search_stream_between_molecular_stages(
+    platform, monkeypatch, seed
+):
     backend = Execution("jax-" + platform)
     monkeypatch.setenv("TMOL_PACK_MAX_POSES_PER_CHUNK", "2")
     observed, _ = observe_native_seed_stream(backend, monkeypatch)
-    check_fast_relax_molecular_stages(backend, "mixed_batch", seed=17)
-    expected = (CUDA_SEEDS if platform == "cuda" else SEEDS)[17]
+    check_fast_relax_molecular_stages(backend, "mixed_batch", seed=seed)
+    reference_seed = (1 << 64) - 1 if seed == -1 else seed
+    expected = (CUDA_SEEDS if platform == "cuda" else SEEDS)[reference_seed]
     np.testing.assert_array_equal(
         np.asarray(observed, dtype=np.uint64), np.asarray(expected, dtype=np.uint64)
     )
