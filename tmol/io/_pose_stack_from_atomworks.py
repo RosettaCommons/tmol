@@ -242,11 +242,13 @@ def atomworks_from_pose_stack(
     """
     from tmol.io._pose_stack_deconstruction import _canonical_form_from_pose_stack
 
-    co = _canonical_ordering_for_atomworks()
+    co = CanonicalOrdering.from_chemdb(pose_stack.packed_block_types.chem_db)
     cf = _canonical_form_from_pose_stack(co, pose_stack)
 
     device = cf.coords.device
-    tmol_2_aw_rtmap, tmol_2_aw_atmap, tmol_at_is_real = _get_tmol_2_aw_mappings(device)
+    tmol_2_aw_rtmap, tmol_2_aw_atmap, tmol_at_is_real = (
+        torch.as_tensor(x, device=device) for x in canonical_to_atomworks_mappings(co)
+    )
 
     n_poses, max_n_res = cf.res_types.shape
     res_types_i64 = cf.res_types.to(torch.int64)
@@ -255,6 +257,10 @@ def atomworks_from_pose_stack(
     # Map residue types: tmol restype index -> atomworks index
     aw_res_types = torch.zeros((n_poses, max_n_res), dtype=torch.int64, device=device)
     aw_res_types[is_real_res] = tmol_2_aw_rtmap[res_types_i64[is_real_res]]
+    if torch.any(is_real_res & (aw_res_types == 0)):
+        raise ValueError(
+            "AtomWorks protein encoding cannot represent nonprotein residues"
+        )
 
     # Build per-residue atom mapping using the restype of each position
     # Clamp to 0 for padding positions (they won't be used because of

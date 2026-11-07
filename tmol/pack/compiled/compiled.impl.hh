@@ -118,8 +118,15 @@ auto InteractionGraphBuilder<DeviceDispatch, D, Real, Int>::f(
   // Fixed-block selection below depends solely on the retained rotamer mask.
   if (bump_check) {
     auto bounds = prepare_ig_bump_bounds<DeviceDispatch, D, Real, Int, TPack>(
-        mgr, chunk_size, n_rots_for_block, rot_offset_for_block, pose_for_rot,
-        block_ind_for_rot, sparse_inds, sparse_energies, n_unique);
+        mgr,
+        chunk_size,
+        n_rots_for_block,
+        rot_offset_for_block,
+        pose_for_rot,
+        block_ind_for_rot,
+        sparse_inds,
+        sparse_energies,
+        n_unique);
     auto best_energy_for_rot = std::get<0>(bounds).view;
     auto best_energy_per_block = std::get<1>(bounds).view;
 

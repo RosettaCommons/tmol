@@ -170,7 +170,7 @@ def current_conformer_copy_segments(poses, task, considered, types, offsets, sel
         considered,
         task.global_block_ind_for_considered_block_types,
         types,
-        offsets,
+        offsets.to(torch.int64),
         selected,
     ]
     return conformer_copy_plan([v.to(device).contiguous() for v in inputs])
