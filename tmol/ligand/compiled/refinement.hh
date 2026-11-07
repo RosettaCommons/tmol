@@ -50,7 +50,8 @@ RefinementStatus validate_refinement_input(const RefinementInput<Real>& p) {
   const auto max_count = std::numeric_limits<std::int32_t>::max();
   if (p.n_exact > max_count || p.n_lower > max_count || p.n_upper > max_count
       || p.n_components > max_count || p.n_component_atoms > max_count
-      || p.n_chiral > max_count) return RefinementStatus::invalid_shape;
+      || p.n_chiral > max_count)
+    return RefinementStatus::invalid_shape;
   const auto n_pairs = p.n_exact + p.n_lower + p.n_upper;
   if ((n_pairs && (p.pairs == nullptr || p.distances == nullptr))
       || (p.n_components && p.component_offsets == nullptr)
@@ -59,7 +60,9 @@ RefinementStatus validate_refinement_input(const RefinementInput<Real>& p) {
       || (p.n_components == 0 && p.n_component_atoms != 0)) {
     return RefinementStatus::invalid_shape;
   }
-  auto valid_atom = [&](std::int32_t atom) { return atom >= 0 && atom < p.n_atoms; };
+  auto valid_atom = [&](std::int32_t atom) {
+    return atom >= 0 && atom < p.n_atoms;
+  };
   for (std::int64_t i = 0; i < 2 * n_pairs; ++i) {
     if (!valid_atom(p.pairs[i])) return RefinementStatus::invalid_index;
   }
@@ -77,7 +80,8 @@ RefinementStatus validate_refinement_input(const RefinementInput<Real>& p) {
     }
   }
   for (std::int64_t i = 0; i < p.n_component_atoms; ++i) {
-    if (!valid_atom(p.component_atoms[i])) return RefinementStatus::invalid_index;
+    if (!valid_atom(p.component_atoms[i]))
+      return RefinementStatus::invalid_index;
   }
   for (std::int64_t i = 0; i < 4 * p.n_chiral; ++i) {
     if (!valid_atom(p.chiral_atoms[i])) return RefinementStatus::invalid_index;
@@ -114,7 +118,8 @@ RefinementStatus refinement_value_gradient(
     const auto i = p.pairs[2 * k], j = p.pairs[2 * k + 1];
     Real delta[4], squared = Real(0);
     for (int d = 0; d < p.n_dims; ++d) {
-      delta[d] = p.coordinates[i * p.n_dims + d] - p.coordinates[j * p.n_dims + d];
+      delta[d] =
+          p.coordinates[i * p.n_dims + d] - p.coordinates[j * p.n_dims + d];
       squared += delta[d] * delta[d];
     }
     const Real distance = std::sqrt(std::max(squared, Real(1e-12)));
@@ -164,7 +169,8 @@ RefinementStatus refinement_value_gradient(
     mean_derivative /= count;
     for (auto i = begin; i < end; ++i) {
       const Vec centered = point(p.component_atoms[i]) - mean;
-      const Vec derivative = Real(2) * p.weights[2] * centered.dot(normal) * normal;
+      const Vec derivative =
+          Real(2) * p.weights[2] * centered.dot(normal) * normal;
       scatter(p.component_atoms[i], derivative - mean_derivative);
     }
   }
@@ -178,7 +184,8 @@ RefinementStatus refinement_value_gradient(
     const Vec c = point(atom[3]) - origin;
     const Vec da = b.cross(c), db = c.cross(a), dc = a.cross(b);
     const Real volume = a.dot(da);
-    const Real hinge = std::max(p.weights[4] - p.chiral_sign[k] * volume, Real(0));
+    const Real hinge =
+        std::max(p.weights[4] - p.chiral_sign[k] * volume, Real(0));
     chiral_loss += hinge * hinge;
     const Real scale = -Real(2) * p.weights[3] * p.chiral_sign[k] * hinge;
     scatter(atom[1], scale * da);

@@ -396,8 +396,16 @@ auto CartBondedRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
   auto n_output_intxns_for_rot_conn_offset =
       n_output_intxns_for_rot_conn_offset_t.view;
 
-  tmol::score::common::connected_rotamer_count_native<DeviceDispatch,D,Real,Int>(mgr,block_ind_for_rot,pose_ind_for_rot,block_type_ind_for_rot,n_rots_for_block,lockstep_group_for_block,pose_stack_inter_block_connections,n_output_intxns_for_rot_conn);
-
+  tmol::score::common::
+      connected_rotamer_count_native<DeviceDispatch, D, Real, Int>(
+          mgr,
+          block_ind_for_rot,
+          pose_ind_for_rot,
+          block_type_ind_for_rot,
+          n_rots_for_block,
+          lockstep_group_for_block,
+          pose_stack_inter_block_connections,
+          n_output_intxns_for_rot_conn);
 
   // Scan and LBS on n output intxns: figure out how many rotamer pair
   // interactions there are and which pair each work unit should be assigned to.
@@ -436,8 +444,17 @@ auto CartBondedRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
   auto dV_dx = dV_dx_t.view;
   auto dispatch_indices = dispatch_indices_t.view;
 
-  tmol::score::common::connected_rotamer_fill_native<DeviceDispatch,D,Real,Int>(mgr,first_rot_for_block,block_ind_for_rot,pose_ind_for_rot,lockstep_group_for_block,pose_stack_inter_block_connections,n_output_intxns_for_rot_conn_offset,rotconn_for_output_intxn,dispatch_indices);
-
+  tmol::score::common::
+      connected_rotamer_fill_native<DeviceDispatch, D, Real, Int>(
+          mgr,
+          first_rot_for_block,
+          block_ind_for_rot,
+          pose_ind_for_rot,
+          lockstep_group_for_block,
+          pose_stack_inter_block_connections,
+          n_output_intxns_for_rot_conn_offset,
+          rotconn_for_output_intxn,
+          dispatch_indices);
 
   if (topology_only) {
     return {
@@ -448,7 +465,36 @@ auto CartBondedRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
         rotconn_for_output_intxn_t};
   }
 
-  cartbonded_rotamer_score_native<false,DeviceDispatch,D,Real,Int>(mgr,rot_coords,rot_coord_offset,block_ind_for_rot,pose_ind_for_rot,block_type_ind_for_rot,pose_stack_inter_block_connections,atom_paths_from_conn,atom_unique_ids,atom_wildcard_ids,atom_is_rosetta,block_type_is_fragment,atom_cross_ids,connection_hash_keys,connection_spans,connection_paths,hash_keys,hash_values,cart_subgraphs,cart_subgraph_offsets,cart_subgraph_param_indices,rotconn_for_output_intxn,dispatch_indices,V,dV_dx,{},output_block_pair_energies,accumulate_derivs,compute_derivs);
+  cartbonded_rotamer_score_native<false, DeviceDispatch, D, Real, Int>(
+      mgr,
+      rot_coords,
+      rot_coord_offset,
+      block_ind_for_rot,
+      pose_ind_for_rot,
+      block_type_ind_for_rot,
+      pose_stack_inter_block_connections,
+      atom_paths_from_conn,
+      atom_unique_ids,
+      atom_wildcard_ids,
+      atom_is_rosetta,
+      block_type_is_fragment,
+      atom_cross_ids,
+      connection_hash_keys,
+      connection_spans,
+      connection_paths,
+      hash_keys,
+      hash_values,
+      cart_subgraphs,
+      cart_subgraph_offsets,
+      cart_subgraph_param_indices,
+      rotconn_for_output_intxn,
+      dispatch_indices,
+      V,
+      dV_dx,
+      {},
+      output_block_pair_energies,
+      accumulate_derivs,
+      compute_derivs);
 
   return {
       V_t,
@@ -573,7 +619,36 @@ auto CartBondedRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
   auto V = V_t.view;
   auto dV_dx = dV_dx_t.view;
 
-  cartbonded_rotamer_score_native<true,DeviceDispatch,D,Real,Int>(mgr,rot_coords,rot_coord_offset,block_ind_for_rot,pose_ind_for_rot,block_type_ind_for_rot,pose_stack_inter_block_connections,atom_paths_from_conn,atom_unique_ids,atom_wildcard_ids,atom_is_rosetta,block_type_is_fragment,atom_cross_ids,connection_hash_keys,connection_spans,connection_paths,hash_keys,hash_values,cart_subgraphs,cart_subgraph_offsets,cart_subgraph_param_indices,rotconn_for_output_intxn,dispatch_indices,{},dV_dx,dTdV,true,true,true);
+  cartbonded_rotamer_score_native<true, DeviceDispatch, D, Real, Int>(
+      mgr,
+      rot_coords,
+      rot_coord_offset,
+      block_ind_for_rot,
+      pose_ind_for_rot,
+      block_type_ind_for_rot,
+      pose_stack_inter_block_connections,
+      atom_paths_from_conn,
+      atom_unique_ids,
+      atom_wildcard_ids,
+      atom_is_rosetta,
+      block_type_is_fragment,
+      atom_cross_ids,
+      connection_hash_keys,
+      connection_spans,
+      connection_paths,
+      hash_keys,
+      hash_values,
+      cart_subgraphs,
+      cart_subgraph_offsets,
+      cart_subgraph_param_indices,
+      rotconn_for_output_intxn,
+      dispatch_indices,
+      {},
+      dV_dx,
+      dTdV,
+      true,
+      true,
+      true);
 
   return dV_dx_t;
 
