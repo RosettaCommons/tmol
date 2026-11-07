@@ -59,10 +59,12 @@ def pack_rotamers(
         pose_stack, task, pose_stack.packed_block_types.chem_db
     )
     scorer = sfxn.render_rotamer_scoring_module(pose, rotamers)
-    if should_stream_interaction_graph(
+    from .streaming import streaming_interaction_graph, use_complete_table
+
+    stream = should_stream_interaction_graph(
         kind, rotamers.correlated_groups, task.bump_check
-    ):
-        from .streaming import streaming_interaction_graph
+    )
+    if stream and not use_complete_table(scorer, rotamers.coords):
 
         graph = streaming_interaction_graph(
             scorer, rotamers.coords, chunk_size=chunk_size
