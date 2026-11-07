@@ -56,6 +56,11 @@ def test_atom37_rejects_invalid_triplets_and_prepares_missing_leaf_atoms():
     bind = builder.prepare(x)
     with pytest.raises(ValueError, match="batch size"):
         bind(jnp.concatenate((x, x)))
+    # Unrouted extra tokens do not change the molecule or acquire derivatives.
+    padded = jnp.pad(x, ((0, 0), (0, 2), (0, 0), (0, 0)), constant_values=jnp.nan)
+    np.testing.assert_array_equal(bind(padded).coords, bind(x).coords)
+    padded_gradient = jax.grad(lambda y: jnp.sin(bind(y).coords).sum())(padded)
+    np.testing.assert_array_equal(padded_gradient[:, -2:], 0)
     bad = jax.jit(lambda y: bind(y).coords)(x.at[0, 0, 1, 0].set(jnp.nan))
     assert np.isnan(np.asarray(bad)).all()
     from tmol_jax import atom_array_from_pose_stack
