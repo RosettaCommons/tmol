@@ -43,3 +43,31 @@ def test_rotamer_preparation_preserves_cross_dtype_values_and_gradients(name):
         restored = b.score_function.jitted_value_and_grad(b.pose.replace(coords=x32))
         for actual, reference in zip(restored(x64), expected):
             np.testing.assert_allclose(actual, reference, rtol=2e-10, atol=2e-10)
+
+
+def test_fitted_tables_do_not_retain_source_library_and_sampler_owns_snapshot():
+    import attrs
+    import gc
+    import weakref
+
+    from tmol_jax import ParameterDatabase
+    from tmol_jax.pack import DunbrackChiSampler
+    from tmol_jax.score.dunbrack.parameters import prepare_dunbrack_parameters
+
+    original = ParameterDatabase.get_default()
+    library = attrs.evolve(original.scoring.dunbrack)
+    database = attrs.evolve(
+        original, scoring=attrs.evolve(original.scoring, dunbrack=library)
+    )
+    owner = weakref.ref(library)
+    tables = prepare_dunbrack_parameters(database)
+    sampler = DunbrackChiSampler.from_database(database)
+    # Samplers own their mutable table arrays even when preparation is shared.
+    for key, values in tables.scoring_db.items():
+        if isinstance(values, np.ndarray):
+            np.testing.assert_array_equal(sampler.tables.scoring_db[key], values)
+            assert not np.shares_memory(sampler.tables.scoring_db[key], values)
+    del sampler, database, library
+    gc.collect()
+    assert owner() is None
+    assert any(np.asarray(value).size for value in tables.scoring_db.values())

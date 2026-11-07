@@ -61,9 +61,9 @@ class DunbrackChiSampler:
         )
 
     @classmethod
-    def from_database(cls, parameter_database, *, owner=None, **limits):
-        """Snapshot parameters, optionally reusing fitted tables on a pose palette."""
-        tables = prepare_dunbrack_parameters(parameter_database, owner)
+    def from_database(cls, parameter_database, **limits):
+        """Snapshot canonical fitted tables from this immutable parameter library."""
+        tables = prepare_dunbrack_parameters(parameter_database)
         sampler = cls(tables, **limits)
         sampler._parameter_database = parameter_database
         return sampler

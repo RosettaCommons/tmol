@@ -59,10 +59,7 @@ class DunbrackEnergyTerm(EnergyTerm):
         )
 
     def _packed_parameters(self, pbt, coordinate_dtype):
-        tables = self._prepared(
-            "tables",
-            lambda: prepare_dunbrack_parameters(self.param_db, pbt),
-        )
+        tables = prepare_dunbrack_parameters(self.param_db)
         lookup = (
             tables.all_table_indices,
             tables.rotameric_table_indices,
