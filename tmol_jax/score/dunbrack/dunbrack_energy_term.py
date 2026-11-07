@@ -39,9 +39,14 @@ class DunbrackEnergyTerm(EnergyTerm):
         pbt = pose_stack.packed_block_types if pbt is None else pbt
         parameters = self._prepared(
             "device_parameters",
-            lambda: self._packed_parameters(pbt),
+            lambda: self._packed_parameters(pbt, pose_stack.coords.dtype),
             *pbt.active_block_types,
-            settings=(pbt.max_n_atoms, pbt.max_n_conn, pbt.n_atoms.device),
+            settings=(
+                pbt.max_n_atoms,
+                pbt.max_n_conn,
+                pbt.n_atoms.device,
+                pose_stack.coords.dtype,
+            ),
         )
         if not parameters:
             return DunbrackTermState(())
@@ -53,7 +58,7 @@ class DunbrackEnergyTerm(EnergyTerm):
             + parameters
         )
 
-    def _packed_parameters(self, pbt):
+    def _packed_parameters(self, pbt, coordinate_dtype):
         tables = self._prepared(
             "tables",
             lambda: prepare_dunbrack_tables(
@@ -90,6 +95,11 @@ class DunbrackEnergyTerm(EnergyTerm):
                 ):
                     raise ValueError("native Dunbrack indices exceed int32")
                 array = array.astype(np.int32)
+            elif np.issubdtype(array.dtype, np.floating):
+                # Native tables share coordinate precision. Convert once during
+                # preparation instead of every objective evaluation. The common
+                # fitted coefficients retain their original precision.
+                array = array.astype(coordinate_dtype, copy=False)
             parameters.append(jax.device_put(array, device=pbt.n_atoms.device))
         return tuple(parameters)
 
