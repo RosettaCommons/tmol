@@ -45,7 +45,7 @@ def _restrict_bondsep(pose, blocks, device):
     inverse = (
         jnp.full((pose.max_n_blocks,), -1, jnp.int32)
         .at[keep]
-        .set(jnp.arange(len(blocks)))
+        .set(jnp.arange(len(blocks), dtype=jnp.int32))
     )
     old = pose.near_blocks[:, keep]
     mapped = inverse[jnp.maximum(old[..., 0], 0)]
