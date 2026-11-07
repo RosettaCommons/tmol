@@ -11,10 +11,11 @@ from tmol_jax.score.dunbrack.dunbrack_energy_term import DunbrackEnergyTerm
 from .scoring import coordinate_vjp, validate_rotamer_context
 
 
-def prepare_rotamer_dunbrack(pose, rotamers, database):
+def prepare_rotamer_dunbrack(pose, rotamers, database, *, term=None):
     validate_rotamer_context(pose, rotamers)
+    term = DunbrackEnergyTerm(database) if term is None else term
     with jax.default_device(pose.device):
-        parameters = DunbrackEnergyTerm(database).setup_for_pose_stack(pose).parameters
+        parameters = term.setup_for_pose_stack(pose).parameters
     if parameters:
         parameters = (
             rotamers.coord_offset_for_rot,
