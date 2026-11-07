@@ -47,6 +47,11 @@ composition. Frontend enums retain their types and serialization paths. Score
 file version parsing is shared; frontend score functions retain their constructors,
 options and weight storage.
 
+Reference-energy preparation resolves residue identities and sums the stored
+weights in `tmol_core.scoring.ref`. Pose sums accumulate in float64 and round
+once to the stored weight dtype. This removes frontend/device reduction-order
+differences; historical float32 totals can differ by a rounding unit.
+
 ## Native execution and derivatives
 
 Shared kernels accept typed views and caller-owned buffers. Torch registration
