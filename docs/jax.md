@@ -397,8 +397,8 @@ missing virtual sites use shared placement plans. `protonation_variants` supplie
 explicit states (`-1` means infer), while observed hydrogen evidence and required
 donors select chemical forms through the common native kernel. Disulfide states
 remain authoritative. These decisions use the supplied database, including custom
-L/D histidine and cysteine atom orderings. General CIF/AtomWorks input remains
-unimplemented. `ligand_hydrogens="input"` (the JAX default) retains generated named
+L/D histidine and cysteine atom orderings. Public PDB/CIF/MOL2/SDF loading uses
+shared structure preparation. `ligand_hydrogens="input"` (the JAX default) retains generated named
 hydrogens only when their observed heavy parent and bond distance are consistent
 with the common policy. `"names"` and `"rebuild"` reconstruct generated hydrogens.
 Common native geometry reorients eligible rebuilt hydrogens from heavy neighbors,
