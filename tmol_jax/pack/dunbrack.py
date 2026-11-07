@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from tmol_core.cache import AnnotationKey, PreparationCache
 from tmol_core.pack.dunbrack import (
     DunbrackSamplingMetadata,
     pack_dunbrack_sampler_metadata,
@@ -54,6 +55,7 @@ class DunbrackChiSampler(SamplerSupport):
                     value.setflags(write=False)
         self._parameter_database = None
         self._native_storage = None
+        self._metadata_cache = PreparationCache()
         self.expanded_limit, self.limit = chi_sample_budget(expanded_limit, limit)
         self.metadata = DunbrackSamplingMetadata(
             self.tables.all_table_indices,
@@ -93,10 +95,20 @@ class DunbrackChiSampler(SamplerSupport):
 
     def _host_metadata(self, pbt):
         types = pbt.active_block_types
-        return pack_dunbrack_sampler_metadata(
-            types,
-            [self.annotate_residue_type(rt) for rt in types],
-            [self.defines_rotamers_for_rt(rt) for rt in types],
+        key = AnnotationKey.from_sources(
+            self.metadata,
+            pbt.chem_db,
+            *types,
+            settings=(self.expanded_limit, self.limit),
+        )
+        return self._metadata_cache.get_or_create(
+            "sampling",
+            key,
+            lambda: pack_dunbrack_sampler_metadata(
+                types,
+                [self.annotate_residue_type(rt) for rt in types],
+                [self.defines_rotamers_for_rt(rt) for rt in types],
+            ),
         )
 
     def prepare_packed_block_types(self, packed_block_types):

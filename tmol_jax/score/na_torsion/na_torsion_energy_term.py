@@ -10,7 +10,7 @@ from tmol_core.scoring.na_torsion import _block_type_params
 from tmol_core.scoring.na_torsion_params import prepare_na_torsion_parameters
 from tmol_core.scoring.na_torsion_topology import prepare_na_torsion_topology
 from tmol_jax.score._native import atom_downstream_of_conn, coordinate_energy, register
-from tmol_jax.score.energy_term import EnergyTerm
+from tmol_jax.score.energy_term import EnergyTerm, prepared_palette
 from tmol_jax.score.score_types import ScoreType
 
 
@@ -20,8 +20,11 @@ class NaTorsionTermState(NamedTuple):
 
 
 def na_block_parameters(pbt):
-    elements = {at.name: at.element for at in pbt.chem_db.atom_types}
-    return [_block_type_params(bt, elements) for bt in pbt.active_block_types]
+    def prepare():
+        elements = {at.name: at.element for at in pbt.chem_db.atom_types}
+        return [_block_type_params(bt, elements) for bt in pbt.active_block_types]
+
+    return prepared_palette(pbt, pbt.chem_db, "na_blocks", prepare)
 
 
 def na_parameter_state(database, device=None):

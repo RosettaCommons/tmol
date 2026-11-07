@@ -50,6 +50,16 @@ def test_palette_preserves_termini_chirality_and_ligand_identity(
     np.testing.assert_array_equal(counts[1, 1:], 0)
     np.testing.assert_array_equal(choices[1, 1:], -1)
     assert not original[1, 1:].any() and not repack[1, 1:].any()
+    # Tasks on the same palette may request different design policies. Changing
+    # one policy must neither reuse its predecessor nor modify earlier choices.
+    _, changed, _, _ = backend.palette_choices(
+        noncanonical_design=not noncanonical_design
+    )
+    alternatives = {types[i].name for i in changed[0, 0] if i >= 0}
+    assert ("DALA" in alternatives) == (not noncanonical_design)
+    restored = backend.palette_choices(noncanonical_design=noncanonical_design)
+    for actual, expected in zip(restored, (counts, choices, original, repack)):
+        np.testing.assert_array_equal(actual, expected)
 
 
 def test_task_identity_restrictions_preserve_unselected_chemistry(backend):
