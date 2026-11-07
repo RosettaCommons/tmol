@@ -84,6 +84,9 @@ Score weights default to float32 storage, matching mature Torch defaults even
 when coordinates use float64. `ScoreFunction(db, weight_dtype=np.float64)` selects
 explicit double-precision weights; clones retain that choice.
 
+Immutable chemical parameter arrays are cached by live database/residue context and
+execution device. Pose connectivity and coordinate-dependent work remain fresh.
+
 Rendered scorers snapshot weights, term options and topology. Reuse them for
 coordinate changes; render again after changing weights, parameters, types,
 connectivity or batch layout. `sum_terms=False` returns weighted channels in
