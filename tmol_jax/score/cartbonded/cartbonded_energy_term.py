@@ -4,7 +4,12 @@ import jax
 import numpy as np
 
 from tmol_core.scoring.cartbonded import CartBondedPreparation
-from tmol_jax.score._native import bonded_pose_arguments, coordinate_energy, register
+from tmol_jax.score._native import (
+    bonded_pose_arguments,
+    coordinate_energy,
+    register,
+    workspace_sizes,
+)
 from tmol_jax.score.energy_term import EnergyTerm
 from tmol_jax.score.score_types import ScoreType
 
@@ -32,7 +37,10 @@ class CartBondedEnergyTerm(EnergyTerm):
         types = pbt.active_block_types
         host = self._prepared("packed", lambda: prep.prepare_packed(types), *types)
         register("tmol_cartbonded")
-        return jax.device_put(
+        precise = pose_stack.coords.device.platform == "gpu"
+        if precise:
+            register("tmol_cartbonded_precise")
+        parameters = jax.device_put(
             (
                 *bonded_pose_arguments(pose_stack, pbt),
                 host.atom_unique_ids,
@@ -54,7 +62,16 @@ class CartBondedEnergyTerm(EnergyTerm):
             device=pose_stack.coords.device,
         )
 
+        return parameters, precise
+
     @classmethod
     def evaluate(cls, term_state, coords):
-        values = coordinate_energy("tmol_cartbonded", coords, term_state, channels=5)
+        parameters, precise = term_state
+        target, sizes = "tmol_cartbonded", None
+        if precise and coords.dtype == np.float32:
+            target += "_precise"
+            sizes = workspace_sizes(target, coords.shape[:2], 32)
+        values = coordinate_energy(
+            target, coords, parameters, channels=5, workspace_bytes=sizes
+        )
         return dict(zip(cls.score_types_provided(), values))

@@ -20,6 +20,8 @@ from tmol_jax.score._native import libraries
         ("inverse_kinematics", (7,)),
         ("lk_ball", (2, 3, 17)),
         ("lk_ball_weighted", (2, 3, 17)),
+        ("lk_ball_precise", (2, 3, 17)),
+        ("lk_ball_weighted_precise", (2, 3, 17)),
         ("hbond", (2, 3, 17)),
         ("rotamer_lk_ball", (2, 3, 17)),
         ("rotamer_hbond", (2, 3, 17)),
@@ -65,3 +67,15 @@ def test_wide_nonbonded_workspace_only_changes_float_derivatives(weighted):
     # Reject layouts whose derivative element dispatch would narrow to int32.
     with pytest.raises(ValueError, match="workspace layout"):
         workspace_sizes(target + "_precise", (1 << 20, 1, 1 << 20), 32)
+
+
+def test_cartesian_accumulator_workspace_precision_and_overflow():
+    from tmol_jax.score._native import workspace_sizes
+
+    target = "tmol_cartbonded_precise"
+    energy, derivative = workspace_sizes(target, (2, 17), 32)
+    assert derivative > energy > 0
+    assert workspace_sizes(target, (2, 17), 64) == (0, 0)
+    for dimensions in ((-1, 17), (1 << 62, 17), (1 << 20, 1 << 20)):
+        with pytest.raises(ValueError, match="workspace layout"):
+            workspace_sizes(target, dimensions, 32)

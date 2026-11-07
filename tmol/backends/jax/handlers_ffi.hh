@@ -36,6 +36,9 @@
 TMOL_JAX_ENERGY(tmol_genbonded, tmol::jax::run<tmol::jax::GenBondedKernel>, );
 
 TMOL_JAX_ENERGY(tmol_cartbonded, tmol::jax::run<tmol::jax::CartBondedKernel>, );
+TMOL_JAX_ENERGY(
+    tmol_cartbonded_precise,
+    tmol::jax::run<tmol::jax::CartBondedPreciseKernel>, );
 
 TMOL_JAX_ENERGY(
     tmol_backbone_torsion, tmol::jax::run<tmol::jax::BackboneTorsionKernel>, );
@@ -95,6 +98,15 @@ TMOL_JAX_ENERGY(
 TMOL_JAX_ENERGY(
     tmol_lk_ball,
     (tmol::jax::run<tmol::jax::LKBallKernel, double>),
+    .Attr<double>("reach"));
+
+TMOL_JAX_ENERGY(
+    tmol_lk_ball_precise,
+    (tmol::jax::run<tmol::jax::LKBallPreciseKernel, double>),
+    .Attr<double>("reach"));
+TMOL_JAX_ENERGY(
+    tmol_lk_ball_weighted_precise,
+    (tmol::jax::run<tmol::jax::LKBallWeightedPreciseKernel, double>),
     .Attr<double>("reach"));
 
 TMOL_JAX_ENERGY(tmol_disulfide, tmol::jax::run<tmol::jax::DisulfideKernel>, );

@@ -381,6 +381,16 @@ extern "C" uint64_t tmol_nonbonded_weighted_precise_workspace_bytes(
       poses, blocks, atoms, bits, derivative);
 }
 
+extern "C" uint64_t tmol_cartbonded_precise_workspace_bytes(
+    int64_t poses, int64_t atoms, int bits, int derivative) {
+  return workspace_bytes(bits, {poses, atoms}, [&](auto) -> uint64_t {
+    return bits == 32 ? tmol::jax::CartBondedPreciseKernel::values(
+                            poses, atoms, derivative)
+                            * sizeof(double)
+                      : 0;
+  });
+}
+
 extern "C" uint64_t tmol_ljlk_workspace_bytes(
     int64_t poses, int64_t blocks, int bits, int) {
   return workspace_bytes(bits, {poses, blocks}, [&](auto real) -> uint64_t {
@@ -443,6 +453,34 @@ extern "C" uint64_t tmol_lk_ball_workspace_bytes(
                    poses, blocks, atoms, derivative)
             .storage.size_bytes();
       });
+}
+
+namespace {
+template <bool Weighted>
+uint64_t precise_lk_ball_workspace_bytes(
+    int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
+  return workspace_bytes(
+      bits, {poses, blocks, atoms}, [&](auto real) -> uint64_t {
+        if constexpr (std::is_same_v<decltype(real), float>)
+          return tmol::jax::LKBallWorkspace<float, Weighted, false, true>(
+                     poses, blocks, atoms, derivative)
+              .storage.size_bytes();
+        else
+          return tmol::jax::LKBallWorkspace<double, Weighted>(
+                     poses, blocks, atoms, derivative)
+              .storage.size_bytes();
+      });
+}
+}  // namespace
+extern "C" uint64_t tmol_lk_ball_precise_workspace_bytes(
+    int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
+  return precise_lk_ball_workspace_bytes<false>(
+      poses, blocks, atoms, bits, derivative);
+}
+extern "C" uint64_t tmol_lk_ball_weighted_precise_workspace_bytes(
+    int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
+  return precise_lk_ball_workspace_bytes<true>(
+      poses, blocks, atoms, bits, derivative);
 }
 
 extern "C" uint64_t tmol_hbond_workspace_bytes(
