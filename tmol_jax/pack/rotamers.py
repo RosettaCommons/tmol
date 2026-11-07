@@ -313,15 +313,7 @@ def _assembly_plan(
     source_offsets[real] = source_layout.offsets
     source_residues = global_blocks[choices]
     type_indices, target_offsets = integer(types), integer(layout.offsets)
-    with jax.default_device(device):
-        ideal = jnp.concatenate(
-            (
-                jnp.zeros((1, 9), poses.coords.dtype),
-                packed.dofs_ideal.reshape(-1, 9)[integer(layout.ideal_indices)].astype(
-                    poses.coords.dtype
-                ),
-            )
-        )
+    ideal_indices = integer(layout.ideal_indices)
 
     def row_plan(selected, offsets):
         # Cardinality is already known from the shared host layout. Prepare its
@@ -422,7 +414,7 @@ def _assembly_plan(
         plan=(
             geometry,
             source_geometry,
-            ideal,
+            ideal_indices,
             type_indices,
             target_offsets,
             selections,
@@ -536,7 +528,7 @@ def _execute_assembly(
     (
         geometry,
         source_geometry,
-        ideal,
+        ideal_indices,
         type_indices,
         target_offsets,
         selections,
@@ -551,6 +543,14 @@ def _execute_assembly(
         opth_metadata,
         packed_ideal,
     ) = plan
+    # Gather immutable ideal DOFs in the compiled assembly with its other
+    # coordinate operations, avoiding a separate eager gather/concatenation.
+    ideal = jnp.concatenate(
+        (
+            jnp.zeros((1, 9), coords.dtype),
+            packed_ideal.reshape(-1, 9)[ideal_indices].astype(coords.dtype),
+        )
+    )
     copy_plans = tuple(
         None if n is None else (*a, n) for a, n in zip(copy_arrays, copy_counts)
     )
