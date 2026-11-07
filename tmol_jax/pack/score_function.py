@@ -65,6 +65,13 @@ def _reference(coords, state):
     return values[None, :].astype(coords.dtype), indices
 
 
+@partial(jax.jit, static_argnums=(0,))
+def _packing_entry_indices(evaluate, coords, arrays):
+    # Keep the existing term's identity construction. XLA can discard its
+    # unconsumed energy computation during the two topology-only passes.
+    return evaluate(coords, arrays, (None,))[1]
+
+
 class RotamerScorer:
     """Eager candidate selection with a separately transformable evaluator.
 
@@ -226,7 +233,11 @@ class RotamerScorer:
         count = poses * blocks * (blocks + 1) // 2
         for entry, (evaluate, arrays) in zip(self.entries, self._packing_executions):
             if not entry[5]:
-                values, indices = evaluate(coords, arrays, (None,))
+                if topology_only:
+                    indices = _packing_entry_indices(evaluate, coords, arrays)
+                    values = coords.reshape(-1)[:0]
+                else:
+                    values, indices = evaluate(coords, arrays, (None,))
                 for start, size in packing_windows(indices.shape[1], score_window):
                     stop = start + size
                     yield (
