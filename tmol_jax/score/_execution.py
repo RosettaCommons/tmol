@@ -127,7 +127,16 @@ def _jit_native(function):
     return execute
 
 
-def render_execution(cache, configuration, evaluate, states, shape, *, native_only):
+def render_execution(
+    cache,
+    configuration,
+    evaluate,
+    states,
+    shape,
+    *,
+    native_only,
+    compile_gradient=True,
+):
     # Numeric arrays are runtime operands. Reach constants and constraint
     # callbacks are static, so changing either obtains a distinct executable.
     leaves, tree = jax.tree_util.tree_flatten(states)
@@ -136,7 +145,7 @@ def render_execution(cache, configuration, evaluate, states, shape, *, native_on
     )
     arrays = tuple(leaves[i] for i in positions)
     template = tuple(None if i in positions else leaf for i, leaf in enumerate(leaves))
-    key = (configuration, tree, template, native_only)
+    key = (configuration, tree, template, native_only, compile_gradient)
     executor = cache.get(key) if cache is not None else None
     if executor is None:
 
@@ -188,7 +197,7 @@ def render_execution(cache, configuration, evaluate, states, shape, *, native_on
         executor = (
             execute,
             compile_execution(execute),
-            compile_execution(value_and_grad),
+            compile_execution(value_and_grad) if compile_gradient else value_and_grad,
             compile_execution(compact_value),
             compile_execution(compact_value_and_grad),
             {},  # Coordinate-map executables share this scorer's bounded lifetime.

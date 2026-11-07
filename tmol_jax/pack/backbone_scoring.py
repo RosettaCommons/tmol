@@ -8,7 +8,7 @@ import numpy as np
 from tmol_jax.score.backbone_torsion.backbone_torsion_energy_term import (
     BackboneTorsionEnergyTerm,
 )
-from .graph import prefix_counts, load_balance
+from .graph import prefix_offsets_and_total, load_balance
 from .scoring import validate_rotamer_context
 from .bonded_scoring import sparse_bonded_scores
 
@@ -38,14 +38,14 @@ def prepare_rotamer_backbone(pose, rotamers, database, *, term=None):
             operation=0,
             outputs=shape((*rotamers.n_rots_for_block.shape, 8), np.uint8),
         )
-        offsets = prefix_counts(counts.reshape(-1, 8))
-        total = int(np.asarray(offsets[-1]).copy().view(np.int64)[0])
-        owners = load_balance(offsets[:-1], total=total)
+        offsets, total = prefix_offsets_and_total(counts.reshape(-1, 8))
+        total = int(np.asarray(total).copy().view(np.int64)[0])
+        owners = load_balance(offsets, total=total)
         indices = _stage(
             (
                 *arguments,
                 rotamers.rot_offset_for_block,
-                offsets[:-1].reshape(counts.shape),
+                offsets.reshape(counts.shape),
                 owners,
                 rotamers.group_for_block,
             ),

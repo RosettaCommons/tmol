@@ -15,6 +15,7 @@ from .scoring import (
     sparse_nonbonded_values,
 )
 from .bonded_scoring import (
+    connected_candidates,
     prepare_rotamer_genbonded,
     prepare_rotamer_cartbonded,
     sparse_bonded_scores,
@@ -89,6 +90,7 @@ class RotamerScorer:
         self.apply_weights = apply_weights
         self.shape = rotamers.coords.shape
         entries = []
+        bonded_candidates = None
         with jax.default_device(pose.device):
             for term in score_function.terms:
                 provided = tuple(term.score_types_provided())
@@ -129,6 +131,10 @@ class RotamerScorer:
                         ScoreType.rama,
                     ):
                         options["term"] = term
+                    if provided[0] in (ScoreType.cart_lengths, ScoreType.gen_torsions):
+                        if bonded_candidates is None:
+                            bonded_candidates = connected_candidates(pose, rotamers)
+                        options["candidates"] = bonded_candidates
                     state = prepare(pose, rotamers, score_function.param_db, **options)
                 entries.append((provided, selected, weights, evaluate, state, spatial))
         self.entries = tuple(entries)

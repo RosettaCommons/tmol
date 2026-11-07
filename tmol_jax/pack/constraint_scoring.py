@@ -12,7 +12,7 @@ from tmol_jax.score.constraint.constraint_energy_term import (
     ConstraintEnergyTerm,
     _prepare_geometric_constraints,
 )
-from .graph import prefix_counts, load_balance
+from .graph import prefix_offsets_and_total, load_balance
 from .scoring import validate_rotamer_context
 
 from ._ffi import stage
@@ -79,11 +79,11 @@ def prepare_rotamer_constraints(pose, rotamers, database=None):
             operation=0,
             outputs=shape((2 * cs.n_constraints, 8), np.uint8),
         )
-        offsets = prefix_counts(counts)
-        total = int(np.asarray(offsets[-1]).copy().view(np.int64)[0])
-        owners = load_balance(offsets[:-1], total=total)
+        offsets, total = prefix_offsets_and_total(counts)
+        total = int(np.asarray(total).copy().view(np.int64)[0])
+        owners = load_balance(offsets, total=total)
         sources, atoms, indices = _stage(
-            (*arguments, offsets[:-1], owners, rotamers.group_for_block),
+            (*arguments, offsets, owners, rotamers.group_for_block),
             operation=1,
             outputs=(
                 shape((total,), np.int32),

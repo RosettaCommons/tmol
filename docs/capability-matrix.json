@@ -630,7 +630,7 @@
       "tests/scientific/test_selected_pair_scoring.py",
       "tests/jax/test_block_pair_transforms.py"
     ],
-    "implementation_status": "Rendered block-pair scorers expose mature unweighted_scores and score_interactions over the existing shared native physics. Ligand, noncanonical and mixed-system contracts cover selected-energy conservation, physical gradients and repeated/empty selections. Invalid eager indices reject; invalid transformed indices produce NaN. This public API capability does not resolve mature whole-workflow numerical or runtime/memory gaps."
+    "implementation_status": "Rendered block-pair scorers expose mature unweighted_scores and score_interactions over the existing shared native physics. Ligand, noncanonical and mixed-system contracts cover selected-energy conservation, physical gradients and repeated/empty selections. Invalid eager indices reject; invalid transformed indices produce NaN. This public API capability does not resolve mature whole-workflow numerical or runtime/memory gaps. A fixed selection can reuse the ordinary RenderedScore compiled execution and autodiff adapter with fresh index/parameter operands. Custom well-depth changes have independent fourfold energy/gradient and old-snapshot invariants. This adapter targets measured preparation/execution overhead; mature runtime/memory parity remains pending."
   },
   "rendered_whole_score_options": {
     "torch": "supported",
