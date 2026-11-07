@@ -125,6 +125,9 @@ def coordinate_energy(
 
 def pose_arguments(pose):
     """Flattened coordinate offsets and pose/block indices for native kernels."""
+    cached = getattr(pose, "_native_pose_arguments", None)
+    if cached is not None:
+        return cached
     bti = np.asarray(pose.block_type_ind)
     poses, blocks = bti.shape
     first = np.arange(poses * blocks, dtype=np.int32).reshape(poses, blocks)
@@ -132,7 +135,19 @@ def pose_arguments(pose):
     offsets = np.asarray(pose.block_coord_offset) + (
         np.arange(poses, dtype=np.int32)[:, None] * pose.coords.shape[1]
     )
-    return offsets.reshape(-1), first, bti, pose.inter_residue_connections
+    arguments = jax.device_put(
+        (
+            offsets.reshape(-1),
+            first,
+            pose.block_type_ind,
+            pose.inter_residue_connections,
+        ),
+        device=pose.coords.device,
+    )
+    # A pose is immutable. Replacement and pytree reconstruction create a new
+    # owner, so changed layout/device/coordinate stride cannot reuse this entry.
+    object.__setattr__(pose, "_native_pose_arguments", arguments)
+    return arguments
 
 
 def bonded_pose_arguments(pose, pbt):
