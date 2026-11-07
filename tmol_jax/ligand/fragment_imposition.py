@@ -96,11 +96,7 @@ def unsplit_pose_stack(pose):
         }
     )
     types = np.asarray(pose.block_type_ind)
-    chains = np.full(types.shape, -1, np.int32)
-    for p, row in enumerate(metadata.chain_labels):
-        identities = {}
-        for b in np.flatnonzero(types[p] >= 0):
-            chains[p, b] = identities.setdefault(row[b], len(identities))
+    chains = np.asarray(pose.chain_id)
     host = SimpleNamespace(
         block_type_ind64=types,
         block_coord_offset=np.asarray(pose.block_coord_offset),
@@ -134,6 +130,7 @@ def unsplit_pose_stack(pose):
     return pose.replace(
         coords=coords,
         block_type_ind=jax.device_put(plan.block_types, device),
+        chain_id=jax.device_put(plan.chain_ids, device),
         block_coord_offset=jax.device_put(plan.block_offsets, device),
         inter_residue_connections=jax.device_put(
             plan.connections.astype(np.int32), device

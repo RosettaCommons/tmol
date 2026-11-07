@@ -33,6 +33,10 @@ __all__ = [
 ]
 
 
+_SEQUENCE_INPUT = {"extended_pose_stack_from_sequences"}
+__all__ += sorted(_SEQUENCE_INPUT)
+
+
 _STRUCTURE_INPUT = {
     "atom_array_from_pose_stack",
     "build_context_from_atom_array",
@@ -69,6 +73,11 @@ __all__ += sorted(_ATOMWORKS_INPUT)
 
 
 def __getattr__(name):
+    if name in _SEQUENCE_INPUT:
+        from .sequence import extended_pose_stack_from_sequences
+
+        globals()[name] = extended_pose_stack_from_sequences
+        return extended_pose_stack_from_sequences
     if name in _STRUCTURE_FILES:
         from importlib import import_module
 

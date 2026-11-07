@@ -360,6 +360,7 @@ def pose_stack_from_canonical_form(
         residue_numbers,
         residue_names,
         _connection_table=table,
+        _logical_chain_ids=chain_indices[:, : max(map(len, rows))],
     )
     from ._metal import prepare_metal_completion
 

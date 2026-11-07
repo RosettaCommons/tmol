@@ -152,7 +152,7 @@
         "tests/jax/test_optimization.py",
         "tests/scientific/test_molecular_minimization.py"
       ],
-      "implementation_status": "Complete 25-channel objectives decrease for ligand, noncanonical, D, modified-DNA, metal and mixed cases. The default strong-Wolfe optimizer uses one summed batch objective. Opt-in optimizer=\"armijo\" now executes shared independent-segment policy and compact native transitions; matching mature trajectories, runtime and memory remain pending. Public CartesianMoveMap and coord_mask spelling preserve fixed atoms and decrease full ligand/mixed objectives in both CPU backends; final artifact/CUDA checks pending."
+      "implementation_status": "Complete 25-channel objectives decrease for ligand, noncanonical, D, modified-DNA, metal and mixed cases. Public minimizers now default to shared per-pose L-BFGS/Armijo and mature settings; explicit optimizer=\"strong_wolfe\" retains the earlier summed-objective execution. CartesianMoveMap, coord_mask and checkpoint continuation preserve fixed atoms and independent segments. Matched mature CPU Cartesian/kinematic trajectories pass; CUDA reference-only float32 reduction differences, cold/warm performance and peak-memory gaps remain recorded. Latest default/source API changes await matching artifacts and CUDA gates."
     },
     {
       "domain": "packing_design_mutation",
@@ -189,7 +189,7 @@
         "tests/scientific/test_fast_relax_execution.py",
         "tmol/tests/relax/test_fast_relax.py"
       ],
-      "implementation_status": "Shared mature schedules, actual packing/minimization stages, task callbacks, release hooks and per-pose best acceptance. Ligand, connected noncanonical, D-peptide and mixed CPU workflows pass both backends. CUDA and full conjugated workflows pending. Default JAX strong-Wolfe differs from mature per-pose Armijo; explicit Armijo minimizer options are available; performance and memory parity remain unestablished."
+      "implementation_status": "Shared mature schedules, native packing/minimization, task callbacks, release hooks and per-pose acceptance. Ligand, connected noncanonical, D-peptide and mixed workflows pass both CPU backends; previous exact artifacts/CUDA cover the existing protocol. Default callbacks now use shared per-pose Armijo; latest default change awaits final artifact/CUDA gates. Complete cold/warm runtime and peak-memory parity remain unresolved."
     },
     {
       "domain": "fragment_interactions",
@@ -353,9 +353,47 @@
       "jax": "shared_policy_cpu_cuda_installed_validated",
       "repro_fixture": "tests/scientific/test_pose_concatenation.py",
       "implementation_status": "Common exact chemical-prefix identity, merged palettes, metadata and fragment maps; JAX buffer copying preserves coordinate dtype/derivatives, sparse bond distances and constraints. Four CPU checks per backend cover mixed ligand/noncanonical/D batches, all26 per-term values/gradients, distinct palettes and repeated fragment identity. Exact71c9 CUDA/install gates passed; complete workflow runtime/memory parity remains pending."
+    },
+    {
+      "domain": "named_torsion_updates",
+      "torch": "supported",
+      "jax": "source_cpu_validated_artifact_cuda_pending",
+      "repro_fixture": [
+        "tests/scientific/test_named_torsion_updates.py"
+      ],
+      "implementation_status": "Common ownership/target/error policy with JAX native inverse/forward execution and sequential additive DOF updates. Both CPU frontends pass mixed ligand/noncanonical, D/beta peptide, DNA/RNA target, bond-length, input-identity and error checks. Coordinate dtype and device are retained. Eager initialization is outside differentiation; bound native kinematics separately supports first reverse derivatives, jit and vmap."
+    },
+    {
+      "domain": "score_term_lifecycle",
+      "torch": "supported_cuda_snapshot_test_followup_pending",
+      "jax": "source_cpu_validated_artifact_cuda_pending",
+      "repro_fixture": [
+        "tests/scientific/test_score_lifecycle.py"
+      ],
+      "implementation_status": "Shared term registry, body-count grouping, removal and channel order. Retained zero-weight native channels, aligned weights_tensor and rendered snapshots pass both CPU frontends; 50 broader affected JAX CPU checks pass. CUDA unchanged-scorer control attributes a failed bitexact float32 gradient repeat to existing rounding; core owns justified test follow-up, failure remains recorded."
+    },
+    {
+      "domain": "extended_sequence_construction",
+      "torch": "supported",
+      "jax": "source_cpu_validated_artifact_cuda_pending",
+      "repro_fixture": [
+        "tests/scientific/test_sequence_construction.py"
+      ],
+      "implementation_status": "Common exact sequence grammar, variants/termini, explicit named ports, ideal chain geometry and torsion targets; thin JAX native execution. Six CPU cases cover ragged proteins, D/DNA, RNA, custom HYP/variant, custom HYP/ligand full25E/G, and generated SMILES/context reuse/disulfides. All six actual Torch CPU cases pass across focused runs. Both share documented unmatched-label handling; no inferred missing bond."
+    },
+    {
+      "domain": "logical_chain_metadata",
+      "torch": "supported",
+      "jax": "source_cpu_validated_artifact_cuda_pending",
+      "repro_fixture": [
+        "tests/scientific/test_pose_chains.py",
+        "tests/scientific/test_pose_concatenation.py",
+        "tests/scientific/test_fragment_input.py"
+      ],
+      "implementation_status": "Logical IDs retained separately from author labels through sequence/canonical input, slicing, concatenation and fragment reconstruction. Two actual CPU frontend identity cases pass.18affectedJAX molecular checks pass, including source-coordinate AD; initial tracer.device failure retained and fixed by placing topology on concrete palette device."
     }
   ],
-  "validation": "PR629 is OPEN DRAFT at 32bafe247a. That source passed six matching artifact builds, 26 affected clean-installed checks without Torch, 22 JAX CUDA and 5 actual Torch CUDA checks. Earlier b1ffb6d35e passed the broader 45 molecular +394 shared installed checks, 60 CUDA checks and five full-value/gradient CPU/second-GPU comparisons. The common native binary is unchanged. Private Cartesian-objective and Dunbrack-precision improvements require their own final artifact/device/performance gates. Complete mature functionality and matched cold/warm runtime/peak-memory acceptance remain incomplete.",
+  "validation": "PR629 remains OPEN DRAFT at 869291e10d: matching six-artifact clean Torch-free CPU and actual CUDA gates cover published layout/constraint helpers; previous native and broader scientific gates remain attributable to their exact sources. Private Armijo storage/default, query/mutation, shared score lifecycle and named-torsion adapters have focused source CPU evidence and require combined final artifact/device gates. Published 40b082/575efd have exact CPU/CUDA gates and matched mature Cartesian/kinematic CPU trajectories. Latest a708 full Cartesian mature CPU warm ratios .349-.453, cold 2.325-3.393; CUDA warm 1.419-1.769, cold 3.050-4.172 with retained D-reference float32 sum discrepancy and device-memory gap. Complete supported functionality and full runtime/peak-memory parity remain incomplete.",
   "score_terms": {
     "nonbonded": {
       "torch": "implemented",
@@ -482,7 +520,7 @@
   },
   "acceptance_gaps": {
     "mature_functionality": [
-      "Query and mutation adapters use shared policy and pass both-framework mixed-chemistry CPU identity/gradient checks. Extended-sequence and complete score lifecycle/public API compatibility remain under implementation. Public file/layout/constraint helpers pass exact installed CPU and actual CUDA gates; new query/mutation gates are pending.",
+      "Query, mutation, score lifecycle, named-torsion and sequence adapters consume shared policy. Exact69 clean Torch-free installation passes20 affected checks; actualCUDA24pass plus1 failed exact float32 snapshot energy repeat is under independent unchanged-scorer/F64 diagnosis. New sequence/logicalchain source CPU checks pass; final artifacts/CUDA remain pending. Shared block selection/repetition and notebook visualization are still under implementation.",
       "Complete task/design compatibility. Unchanged constrained atom identities pass installed CPU/CUDA checks; changed ports or constraint atom indices require a mature correctness audit before classification as parity gaps.",
       "Public Cartesian/kinematic minimizers and FastRelax callbacks now default to shared per-pose Armijo and mature settings; explicit strong-Wolfe is retained. Source CPU molecular/default/legacy checks pass; exact installed and CUDA gates for this default change are pending. Torch-specific optimizer objects remain framework-specific.",
       "Exhaustive custom database/public score-option compatibility beyond the documented fixtures."

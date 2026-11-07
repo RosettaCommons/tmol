@@ -98,6 +98,10 @@ __all__ = [
 ]
 
 
+_SEQUENCE_INPUT = {"extended_pose_stack_from_sequences"}
+__all__ += sorted(_SEQUENCE_INPUT)
+
+
 _STRUCTURE_INPUT = {
     "atom_array_from_pose_stack",
     "build_context_from_atom_array",
@@ -146,7 +150,13 @@ def __getattr__(name):
         value = getattr(import_module(_FRAGMENT_API[name]), name)
         globals()[name] = value
         return value
-    if name in _ATOMWORKS_INPUT | _ATOM37_INPUT | _STRUCTURE_INPUT | _STRUCTURE_FILES:
+    if name in (
+        _ATOMWORKS_INPUT
+        | _ATOM37_INPUT
+        | _STRUCTURE_INPUT
+        | _STRUCTURE_FILES
+        | _SEQUENCE_INPUT
+    ):
         from importlib import import_module
 
         value = getattr(import_module(".io", __name__), name)

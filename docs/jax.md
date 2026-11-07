@@ -456,6 +456,21 @@ custom parameter score function and an explicit seed for reproducibility. Other
 blocks and poses stay frozen. One-letter mutation retains its mature amino-acid
 contract; use exact residue identities for other supported types.
 
+`extended_pose_stack_from_sequences(seqs, device=..., param_db=...,
+return_context=True)` consumes the common sequence grammar and ideal geometry:
+uppercase protein, lowercase DNA, exact `X[NAME]` variants, `X(SMILES)` ligands,
+and `:` chain breaks. Use the returned context's parameter database for scoring.
+Context reuse retains prepared ligand identities; `termini=False` preserves
+uncapped types. `PoseStackBuilder.from_block_type_names(palette, names,
+chain_lengths)` creates zero coordinates with the same named-connection parser.
+A `--port-label` bond requires paired labels; unmatched labels have the mature
+parser's ignored-label behavior. Invalid ports and multiply used labels raise.
+
+`pose.chain_id` holds logical chain indices separately from author chain labels.
+Sequence/canonical input, splitting, concatenation and fragment reconstruction
+carry those indices. Poses constructed without explicit logical IDs infer them
+eagerly from the common physical polymer-connection policy.
+
 `set_named_torsions(pose, poses, blocks, names, values, degrees=True)` uses
 shared selection/validation and native inverse/forward kinematics. It preserves
 coordinate dtype and parameter context and returns a new pose. Scalar or batched

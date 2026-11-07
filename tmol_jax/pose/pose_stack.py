@@ -28,7 +28,28 @@ class PoseStack:
     near_blocks: Optional[jax.Array] = None  # int32[P,B,K,2], common sparse graph
     bondsep: Optional[jax.Array] = None  # int8[P,B,K,C,C]
 
+    _chain_id: Optional[jax.Array] = attr.field(default=None, alias="chain_id")
+
     # Properties
+
+    @property
+    def chain_id(self):
+        """Logical chain indices, distinct from author chain labels.
+
+        Builders preserve explicit logical chains. Directly constructed poses
+        without them use the shared physical polymer-connection policy eagerly.
+        """
+        if self._chain_id is not None:
+            return self._chain_id
+        from tmol_core.io.chain_deduction import chain_indices, connection_masks
+
+        pbt = self.packed_block_types
+        chains = chain_indices(
+            np.asarray(self.block_type_ind),
+            np.asarray(self.inter_residue_connections),
+            connection_masks(pbt.active_block_types, pbt.max_n_conn),
+        )
+        return jax.device_put(chains.astype(np.int32), pbt.n_atoms.device)
 
     @property
     def inter_block_bondsep(self):
@@ -202,6 +223,7 @@ class PoseStack:
             near_blocks=None if self.near_blocks is None else _take(self.near_blocks),
             bondsep=None if self.bondsep is None else _take(self.bondsep),
             block_type_ind=_take(self.block_type_ind),
+            chain_id=None if self._chain_id is None else _take(self._chain_id),
             pdb_info=None if self.pdb_info is None else self.pdb_info.take(indices),
             split_block_mapping=(
                 None

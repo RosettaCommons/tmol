@@ -111,6 +111,54 @@ class PoseStackBuilder:
         return from_poses(pose_stacks, device)
 
     @classmethod
+    def from_block_type_names(cls, packed_block_types, sequences, chain_lengths):
+        """Construct zero coordinates from exact type names and common bond labels."""
+        from tmol_core.pose.sequences import (
+            chain_ids_from_lengths,
+            find_connections_in_sequences,
+            resolve_connection_pairs,
+        )
+
+        pbt = packed_block_types
+        trimmed, named_connections = find_connections_in_sequences(sequences)
+        by_name = {rt.name: i for i, rt in enumerate(pbt.active_block_types)}
+        unknown = {name for row in trimmed for name in row if name not in by_name}
+        if unknown:
+            raise ValueError(f"unknown residue types in palette: {sorted(unknown)}")
+        counts = list(map(len, trimmed))
+        if not counts or not max(counts):
+            raise ValueError("pose batch contains no residues")
+        kinds = np.full((len(counts), max(counts)), -1, np.int32)
+        for pose, row in enumerate(trimmed):
+            kinds[pose, : len(row)] = [by_name[name] for name in row]
+        chains = chain_ids_from_lengths(counts, kinds.shape[1], chain_lengths)
+        connections = _connections(pbt, kinds, chains, [()] * len(counts))
+        pairs = resolve_connection_pairs(
+            pbt.active_block_types, sequences, kinds, named_connections
+        )
+        for pose, edges in enumerate(pairs):
+            for left, left_conn, right, right_conn in edges:
+                _connect(connections, pose, left, right, left_conn, right_conn)
+        atom_counts = np.asarray(pbt.n_atoms)
+        rows = [row[:count] for row, count in zip(kinds, counts)]
+        with jax.default_device(pbt.n_atoms.device):
+            return cls.from_block_types_and_coords(
+                pbt,
+                rows,
+                [
+                    np.zeros((int(atom_counts[row].sum()), 3), np.float32)
+                    for row in rows
+                ],
+                [
+                    [chr(ord("A") + int(c)) for c in row[:n]]
+                    for row, n in zip(chains, counts)
+                ],
+                [np.arange(1, n + 1) for n in counts],
+                _connection_table=connections,
+                _logical_chain_ids=chains,
+            ).to(pbt.n_atoms.device)
+
+    @classmethod
     def from_block_types_and_coords(
         cls,
         pbt,
@@ -123,6 +171,7 @@ class PoseStackBuilder:
         *,
         connections_per_pose=None,
         _connection_table=None,
+        _logical_chain_ids=None,
     ):
         """Pack aligned arrays; negative block types denote padding.
 
@@ -222,4 +271,9 @@ class PoseStackBuilder:
             bondsep=jnp.asarray(distances.bondsep),
             block_type_ind=jnp.asarray(block_types),
             pdb_info=metadata,
+            chain_id=(
+                None
+                if _logical_chain_ids is None
+                else jnp.asarray(_logical_chain_ids, dtype=jnp.int32)
+            ),
         )

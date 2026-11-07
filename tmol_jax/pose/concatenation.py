@@ -152,6 +152,7 @@ def from_poses(pose_stacks, device=None):
                 [p.block_coord_offset for p in poses], (layout.max_n_blocks,)
             ),
             block_type_ind=_stack(types, (layout.max_n_blocks,), -1),
+            chain_id=_stack([p.chain_id for p in poses], (layout.max_n_blocks,), -1),
             inter_residue_connections=_stack(
                 [p.inter_residue_connections for p in poses],
                 (layout.max_n_blocks, pbt.max_n_conn, 2),
