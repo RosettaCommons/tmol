@@ -1,6 +1,6 @@
 """Reusable compiled execution with fresh topology and parameter operands."""
 
-from functools import partial
+from functools import partial, wraps
 
 import jax
 import jax.numpy as jnp
@@ -41,7 +41,26 @@ class RenderedScore:
         )
 
 
-def render_execution(cache, configuration, evaluate, states, shape):
+def _jit_native(function):
+    # These graphs dispatch fixed native physics kernels. GPU autotuning adds
+    # large compilation-only allocations without choosing their algorithms.
+    compiled = jax.jit(function, compiler_options={"xla_gpu_autotune_level": 0})
+
+    @wraps(function)
+    def execute(*args, **kwargs):
+        # Compiler options belong to the outermost jit. An enclosing user
+        # transformation owns compilation and receives the ordinary array graph.
+        if any(
+            isinstance(value, jax.core.Tracer)
+            for value in jax.tree_util.tree_leaves((args, kwargs))
+        ):
+            return function(*args, **kwargs)
+        return compiled(*args, **kwargs)
+
+    return execute
+
+
+def render_execution(cache, configuration, evaluate, states, shape, *, native_only):
     # Numeric arrays are runtime operands. Reach constants and constraint
     # callbacks are static, so changing either obtains a distinct executable.
     leaves, tree = jax.tree_util.tree_flatten(states)
@@ -98,12 +117,13 @@ def render_execution(cache, configuration, evaluate, states, shape):
             )
             return energies, gradient
 
+        compile_execution = _jit_native if native_only else jax.jit
         executor = (
             execute,
-            jax.jit(execute),
-            jax.jit(value_and_grad),
-            jax.jit(compact_value),
-            jax.jit(compact_value_and_grad),
+            compile_execution(execute),
+            compile_execution(value_and_grad),
+            compile_execution(compact_value),
+            compile_execution(compact_value_and_grad),
         )
         if cache is not None:
             # Bound retained executable configurations, including callback sets.
