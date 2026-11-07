@@ -778,7 +778,8 @@ def test_geometric_gap_drops_bond_inferred_from_consecutive_numbering(
     assert not bool(across.any())
 
 
-def test_neutral_terminal_ccd_h_direct_and_batched_prepared_source_gradients():
+@pytest.mark.parametrize("hydrogen_name", ["H1", "H"])
+def test_neutral_terminal_direct_and_batched_prepared_source_gradients(hydrogen_name):
     """The source H identity and variant survive direct and cached batch binding."""
     from tmol import atom_array_from_file
 
@@ -787,9 +788,9 @@ def test_neutral_terminal_ccd_h_direct_and_batched_prepared_source_gradients():
     )
     atoms = atoms[atoms.res_id == 132]
     hydrogen = int(np.flatnonzero(atoms.atom_name == "H1")[0])
-    atoms.atom_name[hydrogen] = "H"
+    atoms.atom_name[hydrogen] = hydrogen_name
     topology, coordinates = _atomized_atom37(atoms, torch.device("cpu"), n_poses=2)
-    _, context = pose_stack_from_atom_array(
+    ordinary, context = pose_stack_from_atom_array(
         atoms, torch.device("cpu"), no_optH=True, return_context=True
     )
     builder = prepare_atom37_pose_builder(topology, context)
@@ -801,6 +802,19 @@ def test_neutral_terminal_ccd_h_direct_and_batched_prepared_source_gradients():
             )
         else:
             pose = builder(source)
+        residue = pose.block_type(0, 0)
+        assert residue.name == ordinary.block_type(0, 0).name
+        bonds = np.asarray(residue.bond_indices).reshape(-1, 2)
+        nitrogen = residue.atom_to_idx["N"]
+        hydrogens = (
+            pose.packed_block_types.atom_is_hydrogen[int(pose.block_type_ind[0, 0])]
+            .cpu()
+            .numpy()
+        )
+        assert np.count_nonzero((bonds[:, 0] == nitrogen) & hydrogens[bonds[:, 1]]) == 2
+        torch.testing.assert_close(
+            pose.coords[0], ordinary.coords[0], rtol=0, atol=1e-5
+        )
         slot = pose.block_type(0, 0).atom_to_idx["H1"]
         torch.testing.assert_close(pose.coords[:, slot], source[:, hydrogen, 1])
         gradient = torch.autograd.grad(pose.coords[:, slot].sum(), source)[0]
