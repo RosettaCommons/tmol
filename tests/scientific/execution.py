@@ -204,6 +204,21 @@ class Execution:
         if self.framework == "torch":
             self._render_torch()
 
+    def use_parameter_database(self, database):
+        """Replace scoring parameters while retaining the same pose and palette."""
+        from importlib import import_module
+
+        frontend = import_module("tmol" if self.framework == "torch" else "tmol_jax")
+        previous = self.score_function
+        self.score_function = frontend.ScoreFunction(
+            database, *((self.device,) if self.framework == "torch" else ())
+        )
+        for term in previous.all_score_types():
+            self.score_function.set_weight(term, previous.get_weight(term))
+        self.parameter_database = database
+        if self.framework == "torch":
+            self._render_torch()
+
     def numpy(self, value):
         if self.framework == "torch":
             return value.detach().cpu().numpy()

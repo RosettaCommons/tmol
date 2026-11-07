@@ -54,7 +54,7 @@ def test_lk_ball_free_energy_scaling_leaves_uncoupled_bridge_unchanged(backend):
         ),
     )
     scaled = attrs.evolve(database, scoring=attrs.evolve(database.scoring, ljlk=lk))
-    backend.molecule(case, terms=TERMS, parameter_database=scaled)
+    backend.use_parameter_database(scaled)
     new_values, new_gradients = backend.channel_values_and_gradients(coords)
     np.testing.assert_allclose(new_values[:3], 2 * values[:3], rtol=2e-6, atol=2e-6)
     np.testing.assert_allclose(
@@ -62,6 +62,10 @@ def test_lk_ball_free_energy_scaling_leaves_uncoupled_bridge_unchanged(backend):
     )
     np.testing.assert_array_equal(new_values[3], values[3])
     np.testing.assert_array_equal(new_gradients[3], gradients[3])
+    backend.use_parameter_database(database)
+    restored = backend.channel_values_and_gradients(coords)
+    for actual, expected in zip(restored, (values, gradients)):
+        np.testing.assert_allclose(actual, expected, rtol=2e-6, atol=2e-6)
 
 
 def test_nonpolar_metal_cluster_has_no_water_terms(backend):

@@ -38,10 +38,14 @@ def test_noncanonical_hbond_gradient_and_custom_donor_weights(backend, name):
             ),
         ),
     )
-    backend.molecule(case, terms=("hbond",), parameter_database=changed)
+    backend.use_parameter_database(changed)
     scaled_values, scaled_gradients = backend.value_and_grad(coordinates)
     np.testing.assert_allclose(scaled_values, 2 * values, rtol=2e-5, atol=2e-5)
     np.testing.assert_allclose(scaled_gradients, 2 * gradients, rtol=2e-5, atol=2e-5)
+    backend.use_parameter_database(database)
+    restored = backend.value_and_grad(coordinates)
+    for actual, expected in zip(restored, (values, gradients)):
+        np.testing.assert_allclose(actual, expected, rtol=2e-5, atol=2e-5)
 
 
 def test_hbond_custom_family_index_above_byte_range(backend):

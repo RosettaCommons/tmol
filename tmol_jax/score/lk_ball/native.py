@@ -107,8 +107,17 @@ def prepare_lk_ball(pose, database):
     if precise:
         register("tmol_lk_ball_precise")
         register("tmol_lk_ball_weighted_precise")
+    device = pose.coords.device
+    chemical_arrays = prepared_palette(
+        pbt,
+        database,
+        "lk_ball",
+        lambda: jax.device_put((arrays[6:25], arrays[27:]), device=device),
+        device=device,
+    )
+    topology = jax.device_put((*arrays[:6], near, separation), device=device)
     return (
-        jax.device_put(tuple(arrays), device=pose.coords.device),
+        (*topology[:6], *chemical_arrays[0], *topology[6:], *chemical_arrays[1]),
         float(globals_.max_dis),
         precise,
     )
