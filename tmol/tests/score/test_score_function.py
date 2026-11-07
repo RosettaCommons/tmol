@@ -789,6 +789,7 @@ def test_direct_term_removal_refreshes_layout_and_preserves_rendered_snapshot(
     coords = pose.coords.detach().clone().requires_grad_(True)
     energy = scorer(coords)
     gradient = torch.autograd.grad(energy.sum(), coords)[0]
+    captured_weights = scorer.weights.detach().clone()
     original_term = sfxn.all_terms()[0]
     assert sfxn.weights_tensor().shape == (3,)
     sfxn.remove_term_for_score_type(ScoreType.fa_ljrep)
@@ -799,7 +800,16 @@ def test_direct_term_removal_refreshes_layout_and_preserves_rendered_snapshot(
     again = scorer(coords)
     again_grad = torch.autograd.grad(again.sum(), coords)[0]
     torch.testing.assert_close(again, energy, rtol=0, atol=0)
-    torch.testing.assert_close(again_grad, gradient, rtol=0, atol=0)
+    assert torch.equal(scorer.weights, captured_weights)
+    # Atomic CUDA accumulation can round repeated calls differently even without
+    # mutation. Keep the energy/weights exact and bound gradient roundoff at two
+    # float32 epsilons of the force scale; CPU retains its exact-repeat contract.
+    atol = (
+        2 * torch.finfo(gradient.dtype).eps * float(gradient.abs().max())
+        if coords.is_cuda
+        else 0
+    )
+    torch.testing.assert_close(again_grad, gradient, rtol=0, atol=atol)
 
 
 def test_packed_block_setup_is_reused_and_cross_score_function_safe(
