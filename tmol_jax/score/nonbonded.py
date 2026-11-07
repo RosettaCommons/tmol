@@ -128,7 +128,8 @@ def prepare_nonbonded(pose, database, *, soft_repulsive=False):
     poses, blocks = indices.shape
     near, separation = _pose_connections(pose)
     _validate_native_connections(pbt)
-    parameters = jax.device_put(
+    device = pose.coords.device
+    topology = jax.device_put(
         (
             offsets,
             first,
@@ -137,21 +138,35 @@ def prepare_nonbonded(pose, database, *, soft_repulsive=False):
             indices,
             near,
             separation,
-            pbt.n_atoms,
-            pbt.atom_types,
-            pbt.n_conn,
-            pbt.conn_atoms,
-            lj_paths,
-            generic,
-            lj,
-            lj_global,
-            elec.charges,
-            elec.inter,
-            elec.intra,
-            elec.global_parameters,
         ),
-        device=pose.coords.device,
+        device=device,
     )
+    chemical = prepared_palette(
+        pbt,
+        database,
+        "nonbonded",
+        lambda: jax.device_put(
+            (
+                pbt.n_atoms,
+                pbt.atom_types,
+                pbt.n_conn,
+                pbt.conn_atoms,
+                lj_paths,
+                generic,
+                lj,
+                lj_global,
+                elec.charges,
+                elec.inter,
+                elec.intra,
+                elec.global_parameters,
+            ),
+            device=device,
+        ),
+        device=device,
+        settings=(soft_repulsive,),
+        sources=(elec,),
+    )
+    parameters = (*topology, *chemical)
     precise_gradient = pose.coords.device.platform == "gpu"
     for target in ("tmol_nonbonded", "tmol_nonbonded_weighted"):
         register(target)

@@ -1,8 +1,11 @@
 """Changing parameter owners and charge annotations preserves rendered physics."""
 
 import attrs
+import jax
 import numpy as np
+import pytest
 
+from tests.jax.test_compact_minimization import device_name
 from tests.scientific.execution import Execution
 from tests.scientific.molecules import DOMAIN_CASES
 from tmol_core.scoring.elec import partial_charge_table, partial_charges_for_block
@@ -10,14 +13,22 @@ from tmol_jax.score.score_function import ScoreFunction
 from tmol_jax.score.score_types import ScoreType
 
 
-def test_charge_scaling_owner_changes_and_mutable_overrides():
-    b = Execution("jax-cpu").molecule(DOMAIN_CASES["mixed_batch"], terms=("fa_elec",))
+@pytest.mark.parametrize("fused", (False, True))
+def test_charge_scaling_owner_changes_and_mutable_overrides(fused):
+    b = Execution(device_name()).molecule(
+        DOMAIN_CASES["mixed_batch"], terms=("fa_elec",)
+    )
     db, pose = b.parameter_database, b.pose
 
     def render(database):
         score = ScoreFunction(database)
         score.set_weight(ScoreType.fa_elec, 1)
-        return score.jitted_value_and_grad(pose)
+        if not fused:
+            return score.jitted_value_and_grad(pose)
+        score.set_weight(ScoreType.fa_ljrep, 1)
+        rendered = score.render_whole_pose_scoring_module(pose, sum_terms=False)
+        index = list(score.all_score_types()).index(ScoreType.fa_elec)
+        return jax.jit(jax.value_and_grad(lambda x: rendered(x)[index].sum()))
 
     original = render(db)
     expected = tuple(np.asarray(x) for x in original(pose.coords))

@@ -43,11 +43,14 @@ class EnergyTerm(ABC):
         raise NotImplementedError
 
 
-def prepared_palette(pbt, database, name, prepare, *, settings=(), device=None):
+def prepared_palette(
+    pbt, database, name, prepare, *, settings=(), device=None, sources=()
+):
     """Bounded palette preparation keyed by live sources and execution device."""
     key = AnnotationKey.from_sources(
         database,
         *pbt.active_block_types,
+        *sources,
         settings=(pbt.max_n_atoms, pbt.max_n_conn, device, *settings),
     )
     # Device copies must not evict the common host records used to prepare them.
