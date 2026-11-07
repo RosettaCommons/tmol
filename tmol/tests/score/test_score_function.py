@@ -773,6 +773,35 @@ def test_weight_tensor_refresh_preserves_score_type_order(
     assert sfxn._weight_indices_tensor is indices
 
 
+def test_direct_term_removal_refreshes_layout_and_preserves_rendered_snapshot(
+    ubq_pdb, default_database, torch_device
+):
+    pose = pose_stack_from_file(
+        ubq_pdb,
+        torch_device,
+        residue_end=4,
+        no_optH=True,
+        missing_density_distance_threshold=0.0,
+    )
+    sfxn = ScoreFunction(default_database, torch_device)
+    sfxn.set_weight(ScoreType.fa_ljatr, 1.0)
+    scorer = sfxn.render_whole_pose_scoring_module(pose)
+    coords = pose.coords.detach().clone().requires_grad_(True)
+    energy = scorer(coords)
+    gradient = torch.autograd.grad(energy.sum(), coords)[0]
+    original_term = sfxn.all_terms()[0]
+    assert sfxn.weights_tensor().shape == (3,)
+    sfxn.remove_term_for_score_type(ScoreType.fa_ljrep)
+    assert sfxn.all_terms() == []
+    assert sfxn.weights_tensor().numel() == 0
+    sfxn.set_weight(ScoreType.fa_ljatr, 2.0)
+    assert sfxn.all_terms()[0] is not original_term
+    again = scorer(coords)
+    again_grad = torch.autograd.grad(again.sum(), coords)[0]
+    torch.testing.assert_close(again, energy, rtol=0, atol=0)
+    torch.testing.assert_close(again_grad, gradient, rtol=0, atol=0)
+
+
 def test_packed_block_setup_is_reused_and_cross_score_function_safe(
     ubq_pdb, default_database, torch_device, monkeypatch
 ):

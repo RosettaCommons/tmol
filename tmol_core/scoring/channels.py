@@ -57,3 +57,24 @@ TERM_CHANNELS = MappingProxyType(
         "metal": ("metal_coordination",),
     }
 )
+
+
+# Mature term arity used by packing and public score-function queries. A custom
+# term supplies its own arity through the lifecycle adapter.
+TERM_N_BODIES = MappingProxyType(
+    {
+        "ljlk": 2,
+        "elec": 2,
+        "hbond": 2,
+        "cartbonded": 2,
+        "constraint": 1,
+        "disulfide": 2,
+        "backbone_torsion": 2,
+        "dunbrack": 1,
+        "lk_ball": 2,
+        "ref": 1,
+        "genbonded": 2,
+        "na_torsion": 2,
+        "metal": 2,
+    }
+)
