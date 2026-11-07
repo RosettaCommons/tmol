@@ -341,6 +341,7 @@ def test_fused_ljlk_elec_preserves_term_lanes_weights_and_gradients(
     assert torch.count_nonzero(fused.weights.grad[:4]) != 0
 
 
+@pytest.mark.parametrize("family", ["nonbonded", "cartbonded", "lkball"])
 @pytest.mark.parametrize("weighted", [False, True])
 @pytest.mark.parametrize("batched", [False, True])
 def test_cuda_fused_pose_accumulation_stability(
@@ -350,20 +351,39 @@ def test_cuda_fused_pose_accumulation_stability(
     torch_device,
     weighted,
     batched,
+    family,
 ):
     if torch_device.type != "cuda":
         pytest.skip("CUDA block-pair accumulation regression")
     pose = stack_of_distinct_poses if batched else distinct_pose_stacks[-1]
     sfxn = ScoreFunction(default_database, torch_device)
-    for term, weight in (
-        (ScoreType.fa_ljatr, 1.0),
-        (ScoreType.fa_ljrep, 0.55),
-        (ScoreType.fa_lk, 1.0),
-        (ScoreType.fa_elec, 1.0),
-    ):
+    terms = {
+        "nonbonded": (
+            (ScoreType.fa_ljatr, 1.0),
+            (ScoreType.fa_ljrep, 0.55),
+            (ScoreType.fa_lk, 1.0),
+            (ScoreType.fa_elec, 1.0),
+        ),
+        "cartbonded": tuple(
+            (getattr(ScoreType, name), 1.0)
+            for name in (
+                "cart_lengths",
+                "cart_angles",
+                "cart_torsions",
+                "cart_impropers",
+                "cart_hxltorsions",
+            )
+        ),
+        "lkball": tuple(
+            (getattr(ScoreType, name), 1.0)
+            for name in ("lk_ball_iso", "lk_ball", "lk_bridge", "lk_bridge_uncpl")
+        ),
+    }
+    for term, weight in terms[family]:
         sfxn.set_weight(term, weight)
     scorer = sfxn.render_whole_pose_scoring_module(pose)
-    assert scorer._execution_modules[0].classname == "LJLK+Elec"
+    if family == "nonbonded":
+        assert scorer._execution_modules[0].classname == "LJLK+Elec"
     # Exercise both independent term lanes and the compact weighted lane.
     scorer._force_weighted_fusion_for_cuda_graph = weighted
     with torch.no_grad():
@@ -380,6 +400,23 @@ def test_cuda_fused_pose_accumulation_stability(
     torch.testing.assert_close(
         repeated,
         repeated[0].expand_as(repeated),
+        rtol=torch.finfo(torch.float32).eps,
+        atol=0,
+    )
+
+    # The same stability is required for derivatives used by line searches.
+    # Exercise native independent lanes and the compact weighted derivative.
+    coords = pose.coords.detach().requires_grad_(True)
+    gradients = torch.stack(
+        [
+            torch.autograd.grad(scorer(coords, sum_terms=weighted).sum(), coords)[0]
+            for _ in range(20)
+        ]
+    )
+    assert torch.isfinite(gradients).all() and torch.count_nonzero(gradients)
+    torch.testing.assert_close(
+        gradients,
+        gradients[0].expand_as(gradients),
         rtol=torch.finfo(torch.float32).eps,
         atol=0,
     )

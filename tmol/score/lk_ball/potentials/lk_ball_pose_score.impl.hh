@@ -117,6 +117,10 @@ class LKBallPoseScoreDispatch {
       bool output_block_pair_energies)
       -> std::tuple<TPack<Real, 4, Dev>, TPack<Int, 3, Dev>> {
     using tmol::score::common::accumulate;
+    using Accum = std::conditional_t<
+        Dev == Device::CUDA && std::is_same_v<Real, float>,
+        double,
+        Real>;
     using Real3 = Vec<Real, 3>;
 
     int const n_rots = rot_coord_offset.size(0);
@@ -152,13 +156,13 @@ class LKBallPoseScoreDispatch {
       scratch_rot_neighbors = scratch_rot_neighbors_t.view;
     }
 
-    TPack<Real, 4, Dev> output_t;
+    TPack<Accum, 4, Dev> output_t;
     if (output_block_pair_energies) {
-      output_t = TPack<Real, 4, Dev>::zeros(
+      output_t = TPack<Accum, 4, Dev>::zeros(
           {n_lk_ball_score_types, n_poses, max_n_blocks, max_n_blocks});
     } else {
       output_t =
-          TPack<Real, 4, Dev>::zeros({n_lk_ball_score_types, n_poses, 1, 1});
+          TPack<Accum, 4, Dev>::zeros({n_lk_ball_score_types, n_poses, 1, 1});
     }
     auto output = output_t.view;
 
@@ -171,7 +175,7 @@ class LKBallPoseScoreDispatch {
     // State the kernel body reads, named explicitly rather than captured
     // implicitly by [=]. The lambda below closes over this one object, and
     // the Metal launch binds the same fields positionally; see lk_ball_ctx.hh.
-    LKBallCtx<Real, Int, Dev> ctx;
+    LKBallCtx<Real, Int, Dev, 4, Real, Accum> ctx;
     ctx.rot_coords = rot_coords;
     ctx.water_coords = water_coords;
     ctx.rot_coord_offset = rot_coord_offset;
@@ -285,7 +289,7 @@ class LKBallPoseScoreDispatch {
     }
 #endif
 
-    return {output_t, scratch_rot_neighbors_t};
+    return {output_t.template cast<Real>(), scratch_rot_neighbors_t};
   }
 
   static auto backward(
@@ -351,6 +355,10 @@ class LKBallPoseScoreDispatch {
       -> std::tuple<TPack<Vec<Real, 3>, 1, Dev>, TPack<Vec<Real, 3>, 2, Dev>> {
     // std::cout << "d lkball start" << std::endl;
     using tmol::score::common::accumulate;
+    using Accum = std::conditional_t<
+        Dev == Device::CUDA && std::is_same_v<Real, float>,
+        double,
+        Real>;
     using Real3 = Vec<Real, 3>;
 
     int const n_rots = rot_coord_offset.size(0);
@@ -368,14 +376,14 @@ class LKBallPoseScoreDispatch {
     bool const use_compact_block_neighbors =
         compact_block_neighbors.size(0) != 0;
 
-    auto dV_d_pose_coords_t = TPack<Vec<Real, 3>, 1, Dev>::zeros({n_atoms});
+    auto dV_d_pose_coords_t = TPack<Vec<Accum, 3>, 1, Dev>::zeros({n_atoms});
     auto dV_d_pose_coords = dV_d_pose_coords_t.view;
 
     auto dV_d_water_coords_t =
-        TPack<Vec<Real, 3>, 2, Dev>::zeros({n_atoms, lk_max_n_water});
+        TPack<Vec<Accum, 3>, 2, Dev>::zeros({n_atoms, lk_max_n_water});
     auto dV_d_water_coords = dV_d_water_coords_t.view;
 
-    LKBallCtx<Real, Int, Dev, 4> ctx;
+    LKBallCtx<Real, Int, Dev, 4, Accum> ctx;
     ctx.rot_coords = rot_coords;
     ctx.water_coords = water_coords;
     ctx.rot_coord_offset = rot_coord_offset;
@@ -417,13 +425,17 @@ class LKBallPoseScoreDispatch {
           ctx,
           int64_t(n_poses) * int64_t(n_block_pairs),
           true);
-      return {dV_d_pose_coords_t, dV_d_water_coords_t};
+      return {
+          dV_d_pose_coords_t.template cast<Vec<Real, 3>>(),
+          dV_d_water_coords_t.template cast<Vec<Real, 3>>()};
     }
 
     lk_ball_pose_native<true, DeviceDispatch, Dev, Real, Int>(
         mgr, ctx, compact_block_neighbors, n_poses, allow_split_pairs);
 
-    return {dV_d_pose_coords_t, dV_d_water_coords_t};
+    return {
+        dV_d_pose_coords_t.template cast<Vec<Real, 3>>(),
+        dV_d_water_coords_t.template cast<Vec<Real, 3>>()};
   }
 };
 
@@ -498,6 +510,10 @@ class LKBallRotamerScoreDispatch {
       TPack<Int, 2, Dev> shared_dispatch_indices)
       -> std::tuple<TPack<Real, 2, Dev>, TPack<Int, 2, Dev>> {
     using tmol::score::common::accumulate;
+    using Accum = std::conditional_t<
+        Dev == Device::CUDA && std::is_same_v<Real, float>,
+        double,
+        Real>;
     using Real3 = Vec<Real, 3>;
 
     int const n_atoms = rot_coords.size(0);
@@ -618,12 +634,12 @@ class LKBallRotamerScoreDispatch {
     }
     auto dispatch_indices = dispatch_indices_t.view;
 
-    TPack<Real, 2, Dev> output_t;
+    TPack<Accum, 2, Dev> output_t;
     if (output_block_pair_energies) {
-      output_t = TPack<Real, 2, Dev>::zeros(
+      output_t = TPack<Accum, 2, Dev>::zeros(
           {n_lk_ball_score_types, dispatch_indices.size(1)});
     } else {
-      output_t = TPack<Real, 2, Dev>::zeros({n_lk_ball_score_types, n_poses});
+      output_t = TPack<Accum, 2, Dev>::zeros({n_lk_ball_score_types, n_poses});
     }
     auto output = output_t.view;
 
@@ -635,7 +651,7 @@ class LKBallRotamerScoreDispatch {
     // State the kernel body reads, named explicitly rather than captured
     // implicitly by [=], so the Metal entry point can be handed the same
     // fields; see lk_ball_ctx.hh.
-    LKBallCtx<Real, Int, Dev, 2> ctx;
+    LKBallCtx<Real, Int, Dev, 2, Real, Accum> ctx;
     ctx.rot_coords = rot_coords;
     ctx.water_coords = water_coords;
     ctx.rot_coord_offset = rot_coord_offset;
@@ -680,7 +696,7 @@ class LKBallRotamerScoreDispatch {
       lk_ball_rotamer_native<false, DeviceDispatch, Dev, Real, Int>(mgr, ctx);
     }
 
-    return {output_t, dispatch_indices_t};
+    return {output_t.template cast<Real>(), dispatch_indices_t};
   }
 
   static auto backward(
@@ -742,6 +758,10 @@ class LKBallRotamerScoreDispatch {
       TView<Real, 2, Dev> dTdV)
       -> std::tuple<TPack<Vec<Real, 3>, 1, Dev>, TPack<Vec<Real, 3>, 2, Dev>> {
     using tmol::score::common::accumulate;
+    using Accum = std::conditional_t<
+        Dev == Device::CUDA && std::is_same_v<Real, float>,
+        double,
+        Real>;
     using Real3 = Vec<Real, 3>;
 
     int const n_atoms = rot_coords.size(0);
@@ -810,11 +830,11 @@ class LKBallRotamerScoreDispatch {
     assert(block_type_path_distance.size(1) == max_n_block_atoms);
     assert(block_type_path_distance.size(2) == max_n_block_atoms);
 
-    auto dV_d_pose_coords_t = TPack<Vec<Real, 3>, 1, Dev>::zeros({n_atoms});
+    auto dV_d_pose_coords_t = TPack<Vec<Accum, 3>, 1, Dev>::zeros({n_atoms});
     auto dV_d_pose_coords = dV_d_pose_coords_t.view;
 
     auto dV_d_water_coords_t =
-        TPack<Vec<Real, 3>, 2, Dev>::zeros({n_atoms, lk_max_n_water});
+        TPack<Vec<Accum, 3>, 2, Dev>::zeros({n_atoms, lk_max_n_water});
     auto dV_d_water_coords = dV_d_water_coords_t.view;
 
     // Optimal launch box on v100 and a100 is nt=32, vt=1
@@ -822,7 +842,7 @@ class LKBallRotamerScoreDispatch {
     // Define nt and reduce_t
     CTA_REAL_REDUCE_T_TYPEDEF;
 
-    LKBallCtx<Real, Int, Dev, 2> ctx;
+    LKBallCtx<Real, Int, Dev, 2, Accum> ctx;
     ctx.rot_coords = rot_coords;
     ctx.water_coords = water_coords;
     ctx.rot_coord_offset = rot_coord_offset;
@@ -851,7 +871,9 @@ class LKBallRotamerScoreDispatch {
     ctx.dV_d_water_coords = dV_d_water_coords;
     lk_ball_rotamer_native<true, DeviceDispatch, Dev, Real, Int>(mgr, ctx);
 
-    return {dV_d_pose_coords_t, dV_d_water_coords_t};
+    return {
+        dV_d_pose_coords_t.template cast<Vec<Real, 3>>(),
+        dV_d_water_coords_t.template cast<Vec<Real, 3>>()};
   }
 };
 

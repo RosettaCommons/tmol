@@ -7,10 +7,16 @@
 #include <tmol/score/lk_ball/potentials/lk_ball_pose_kernels.hh>
 
 namespace tmol::jax {
-template <typename Real, bool Weighted = false, bool Sparse = false>
+template <
+    typename Real,
+    bool Weighted = false,
+    bool Sparse = false,
+    bool Precise = false>
 struct LKBallWorkspace {
   ByteWorkspace storage;
-  Real *spheres, *waters, *water_gradient, *weights, *channel_energy;
+  using AccumReal = std::conditional_t<Precise, double, Real>;
+  Real *spheres, *waters, *weights;
+  AccumReal *water_gradient, *channel_energy, *coordinate_gradient;
   int32_t *neighbors, *lockstep;
   size_t neighbor_capacity;
   LKBallWorkspace(
@@ -32,13 +38,16 @@ struct LKBallWorkspace {
     lockstep = storage.take<int32_t>(Sparse ? 0 : poses * blocks);
     auto count = Sparse ? atoms : poses * atoms;
     waters = storage.take<Real>(count * 4 * 3);
-    water_gradient = storage.take<Real>(derivative ? count * 4 * 3 : 0);
+    water_gradient = storage.take<AccumReal>(derivative ? count * 4 * 3 : 0);
+    coordinate_gradient =
+        storage.take<AccumReal>(Precise && derivative ? count * 3 : 0);
     weights = storage.take<Real>(derivative && !Sparse ? poses * 4 : 0);
-    channel_energy = storage.take<Real>(Weighted ? poses * 4 : 0);
+    channel_energy =
+        storage.take<AccumReal>(Weighted || Precise ? poses * 4 : 0);
   }
 };
 
-template <bool Weighted = false, bool Sparse = false>
+template <bool Weighted = false, bool Sparse = false, bool Precise = false>
 struct LKBallKernelT {
   static void validate(
       const std::vector<ffi::AnyBuffer>& a,
@@ -123,7 +132,7 @@ struct LKBallKernelT {
          atoms = a[0].dimensions()[Sparse ? 0 : 1];
     auto blocks = a[4].dimensions()[1];
     return a[0].element_type() == ffi::DataType::F32
-               ? LKBallWorkspace<float, Weighted, Sparse>(
+               ? LKBallWorkspace<float, Weighted, Sparse, Precise>(
                      poses, blocks, atoms, derivative)
                      .storage.size_bytes()
                : LKBallWorkspace<double, Weighted, Sparse>(
@@ -139,6 +148,9 @@ struct LKBallKernelT {
       ffi::AnyBuffer workspace,
       double reach) {
     using I = int32_t;
+    constexpr bool precise = Precise && std::is_same_v<Real, float>;
+    static_assert(!Precise || !Sparse);
+    using AccumReal = std::conditional_t<precise, double, Real>;
     using namespace score::lk_ball::potentials;
     static_assert(sizeof(LKBallTypeParams<Real>) == 9 * sizeof(Real));
     static_assert(sizeof(LKBallGlobalParams<Real>) == 5 * sizeof(Real));
@@ -150,7 +162,7 @@ struct LKBallKernelT {
          atoms = a[0].dimensions()[Sparse ? 0 : 1];
     auto blocks = a[4].dimensions()[1], rots = a[1].dimensions()[0],
          count = Sparse ? atoms : poses * atoms;
-    LKBallWorkspace<Real, Weighted, Sparse> work(
+    LKBallWorkspace<Real, Weighted, Sparse, precise> work(
         poses, blocks, atoms, gradient != nullptr, workspace.untyped_data());
     auto xyz =
         contiguous_view<Vec<Real, 3>, 1, D>(a[0].untyped_data(), {count});
@@ -233,7 +245,7 @@ struct LKBallKernelT {
     water.n_rots_total = rots;
     water_gen_forward<Ops, D, Real, I>(context, water);
 
-    LKBallCtx<Real, I, D, Sparse ? 2 : 4> score{};
+    LKBallCtx<Real, I, D, Sparse ? 2 : 4, AccumReal, AccumReal> score{};
     score.rot_coords = xyz;
     score.water_coords = waters;
     score.rot_coord_offset = water.rot_coord_offset;
@@ -265,8 +277,8 @@ struct LKBallKernelT {
       if (!gradient)
         lk_ball_rotamer_native<false, Ops, D, Real, I>(context, score);
     } else {
-      score.output = contiguous_view<Real, 4, D>(
-          Weighted ? work.channel_energy : energy.untyped_data(),
+      score.output = contiguous_view<AccumReal, 4, D>(
+          Weighted || precise ? work.channel_energy : energy.untyped_data(),
           {4, poses, 1, 1});
       score.n_block_pairs = score::common::checked_triangular_size(
           blocks, true, "LK-ball block pairs");
@@ -283,15 +295,23 @@ struct LKBallKernelT {
           context, poses, [=] TMOL_DEVICE_FUNC(int p) {
             Real value = 0;
             for (int c = 0; c < 4; ++c)
-              value += user_weights[c] * channels[c][p][0][0];
+              value += user_weights[c] * Real(channels[c][p][0][0]);
             total[p] = value;
+          });
+    }
+    if constexpr (precise && !Weighted) {
+      auto* out = static_cast<Real*>(energy.untyped_data());
+      auto* accumulated = work.channel_energy;
+      Ops<D>::template forall<launch_t>(
+          context, 4 * poses, [=] TMOL_DEVICE_FUNC(int i) {
+            out[i] = Real(accumulated[i]);
           });
     }
     if (!gradient) return;
     score.dTdV = contiguous_view<Real, 4, D>(
         Sparse ? a[37].untyped_data() : work.weights,
         {4, Sparse ? a[36].dimensions()[1] : poses, 1, 1});
-    score.dV_d_water_coords = contiguous_view<Vec<Real, 3>, 2, D>(
+    score.dV_d_water_coords = contiguous_view<Vec<AccumReal, 3>, 2, D>(
         work.water_gradient, {count, lk_max_n_water});
     auto weights = work.weights;
     auto water_gradient = work.water_gradient;
@@ -307,8 +327,18 @@ struct LKBallKernelT {
           context, count * lk_max_n_water * 3, [=] TMOL_DEVICE_FUNC(int i) {
             water_gradient[i] = 0;
           });
-      score.dV_d_pose_coords = contiguous_view<Vec<Real, 3>, 1, D>(
-          static_cast<Real*>(gradient->untyped_data()) + channel * count * 3,
+      auto* coordinate_gradient = work.coordinate_gradient;
+      if constexpr (precise) {
+        Ops<D>::template forall<launch_t>(
+            context, count * 3, [=] TMOL_DEVICE_FUNC(int i) {
+              coordinate_gradient[i] = 0;
+            });
+      }
+      score.dV_d_pose_coords = contiguous_view<Vec<AccumReal, 3>, 1, D>(
+          precise ? static_cast<void*>(coordinate_gradient)
+                  : static_cast<void*>(
+                        static_cast<Real*>(gradient->untyped_data())
+                        + channel * count * 3),
           {count});
       if constexpr (Sparse)
         lk_ball_rotamer_native<true, Ops, D, Real, I>(context, score);
@@ -317,6 +347,14 @@ struct LKBallKernelT {
             context, score, neighbors, poses);
       water_gen_backward<Ops, D, Real, I>(
           context, water, score.dV_d_water_coords, score.dV_d_pose_coords);
+      if constexpr (precise) {
+        auto* out =
+            static_cast<Real*>(gradient->untyped_data()) + channel * count * 3;
+        Ops<D>::template forall<launch_t>(
+            context, count * 3, [=] TMOL_DEVICE_FUNC(int i) {
+              out[i] = Real(coordinate_gradient[i]);
+            });
+      }
     }
   }
 };
@@ -358,4 +396,6 @@ struct RotamerLKBallStage {
 };
 using LKBallKernel = LKBallKernelT<false>;
 using LKBallWeightedKernel = LKBallKernelT<true>;
+using LKBallPreciseKernel = LKBallKernelT<false, false, true>;
+using LKBallWeightedPreciseKernel = LKBallKernelT<true, false, true>;
 }  // namespace tmol::jax

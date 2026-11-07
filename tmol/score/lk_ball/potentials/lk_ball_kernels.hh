@@ -245,16 +245,16 @@ TMOL_HOST_DEVICE_FUNC int interres_count_pair_separation(
                                                                              \
       if (tid == 0) {                                                        \
         if (!ctx.output_block_pair_energies) {                               \
-          accumulate<Dev, Real>::add(                                        \
+          accumulate<Dev, typename Ctx::Energy>::add(                                        \
               ctx.output[w_lk_ball_iso][score_dat.pair_data.pose_ind][0][0], \
               cta_total_lk_ball_iso);                                        \
-          accumulate<Dev, Real>::add(                                        \
+          accumulate<Dev, typename Ctx::Energy>::add(                                        \
               ctx.output[w_lk_ball][score_dat.pair_data.pose_ind][0][0],     \
               cta_total_lk_ball);                                            \
-          accumulate<Dev, Real>::add(                                        \
+          accumulate<Dev, typename Ctx::Energy>::add(                                        \
               ctx.output[w_lk_bridge][score_dat.pair_data.pose_ind][0][0],   \
               cta_total_lk_bridge);                                          \
-          accumulate<Dev, Real>::add(                                        \
+          accumulate<Dev, typename Ctx::Energy>::add(                                        \
               ctx.output[w_lk_bridge_uncpl][score_dat.pair_data.pose_ind][0] \
                         [0],                                                 \
               cta_total_lk_bridge_uncpl);                                    \
@@ -306,16 +306,16 @@ TMOL_HOST_DEVICE_FUNC int interres_count_pair_separation(
                                                                            \
       if (tid == 0) {                                                      \
         if (!ctx.output_block_pair_energies) {                             \
-          accumulate<Dev, Real>::add(                                      \
+          accumulate<Dev, typename Ctx::Energy>::add(                                      \
               ctx.output[w_lk_ball_iso][score_dat.pair_data.pose_ind],     \
               cta_total_lk_ball_iso);                                      \
-          accumulate<Dev, Real>::add(                                      \
+          accumulate<Dev, typename Ctx::Energy>::add(                                      \
               ctx.output[w_lk_ball][score_dat.pair_data.pose_ind],         \
               cta_total_lk_ball);                                          \
-          accumulate<Dev, Real>::add(                                      \
+          accumulate<Dev, typename Ctx::Energy>::add(                                      \
               ctx.output[w_lk_bridge][score_dat.pair_data.pose_ind],       \
               cta_total_lk_bridge);                                        \
-          accumulate<Dev, Real>::add(                                      \
+          accumulate<Dev, typename Ctx::Energy>::add(                                      \
               ctx.output[w_lk_bridge_uncpl][score_dat.pair_data.pose_ind], \
               cta_total_lk_bridge_uncpl);                                  \
         } else {                                                           \
@@ -720,7 +720,8 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
             lk_max_n_water,
             Real,
             Dev,
-            (!Rotamer && Dev == tmol::Device::CUDA)>(
+            (!Rotamer && Dev == tmol::Device::CUDA),
+            typename Ctx::Gradient>(
             pol_ind,
             occ_ind,
             pol_tile_ind,

@@ -1,6 +1,6 @@
 // Typed XLA buffers for canonical whole-pose Cartesian bonded physics.
 #pragma once
-#include "genbonded_ffi.hh"
+#include "workspace_ffi.hh"
 #include <tmol/score/cartbonded/potentials/cartbonded_pose_kernels.hh>
 
 namespace tmol::jax {
@@ -70,20 +70,20 @@ struct CartBondedKernel {
       throw std::invalid_argument("Cartesian bonded atom count exceeds int32");
   }
 
-  template <template <Device> class Ops, Device D, typename Real>
-  static void execute(
-      const std::vector<ffi::AnyBuffer>& a,
-      ffi::AnyBuffer energy,
-      const ffi::AnyBuffer* gradient) {
+  template <
+      template <Device> class Ops,
+      Device D,
+      typename Real,
+      typename AccumReal = Real>
+  static void launch(
+      const std::vector<ffi::AnyBuffer>& a, void* energy, void* gradient) {
     using I = int32_t;
     auto poses = a[0].dimensions()[0], atoms = a[0].dimensions()[1];
     auto xyz = contiguous_view<Vec<Real, 3>, 1, D>(
         a[0].untyped_data(), {poses * atoms});
-    auto e =
-        contiguous_view<Real, 4, D>(energy.untyped_data(), {5, poses, 1, 1});
-    auto g = contiguous_view<Vec<Real, 3>, 2, D>(
-        gradient ? gradient->untyped_data() : nullptr,
-        {5, gradient ? poses * atoms : 0});
+    auto e = contiguous_view<AccumReal, 4, D>(energy, {5, poses, 1, 1});
+    auto g = contiguous_view<Vec<AccumReal, 3>, 2, D>(
+        gradient, {5, gradient ? poses * atoms : 0});
     ContextManager context;
     std::apply(
         [&](auto... tables) {
@@ -105,6 +105,68 @@ struct CartBondedKernel {
                   g);
         },
         cartbonded_tables<D, Real>(a));
+  }
+  template <template <Device> class Ops, Device D, typename Real>
+  static void execute(
+      const std::vector<ffi::AnyBuffer>& a,
+      ffi::AnyBuffer energy,
+      const ffi::AnyBuffer* gradient) {
+    launch<Ops, D, Real>(
+        a,
+        energy.untyped_data(),
+        gradient ? gradient->untyped_data() : nullptr);
+  }
+};
+
+struct CartBondedPreciseKernel : CartBondedKernel {
+  static size_t values(size_t poses, size_t atoms, bool derivative) {
+    auto energy = score::common::checked_dispatch_product(
+        poses, 5, "Cartesian energy values");
+    auto gradients = derivative ? score::common::checked_dispatch_product(
+                                      energy,
+                                      score::common::checked_dispatch_product(
+                                          atoms, 3, "Cartesian atoms"),
+                                      "Cartesian gradient values")
+                                : 0;
+    if (energy > INT32_MAX - gradients)
+      throw std::length_error("Cartesian accumulator dispatch exceeds int32");
+    return energy + gradients;
+  }
+  static size_t workspace_bytes(
+      const std::vector<ffi::AnyBuffer>& a, bool derivative) {
+    return a[0].element_type() == ffi::DataType::F32
+               ? values(a[0].dimensions()[0], a[0].dimensions()[1], derivative)
+                     * sizeof(double)
+               : 0;
+  }
+  template <template <Device> class Ops, Device D, typename Real>
+  static void execute(
+      const std::vector<ffi::AnyBuffer>& a,
+      ffi::AnyBuffer energy,
+      const ffi::AnyBuffer* gradient,
+      ffi::AnyBuffer workspace) {
+    if constexpr (!std::is_same_v<Real, float>) {
+      CartBondedKernel::execute<Ops, D, Real>(a, energy, gradient);
+    } else {
+      auto poses = a[0].dimensions()[0], atoms = a[0].dimensions()[1];
+      auto nenergy = 5 * poses;
+      auto total = values(poses, atoms, gradient != nullptr);
+      auto* wide = static_cast<double*>(workspace.untyped_data());
+      launch<Ops, D, Real, double>(
+          a, wide, gradient ? wide + nenergy : nullptr);
+      auto* e = static_cast<Real*>(energy.untyped_data());
+      auto* g =
+          gradient ? static_cast<Real*>(gradient->untyped_data()) : nullptr;
+      ContextManager context;
+      LAUNCH_BOX_32;
+      Ops<D>::template forall<launch_t>(
+          context, total, [=] TMOL_DEVICE_FUNC(int i) {
+            if (i < nenergy)
+              e[i] = Real(wide[i]);
+            else
+              g[i - nenergy] = Real(wide[i]);
+          });
+    }
   }
 };
 }  // namespace tmol::jax

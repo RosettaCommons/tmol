@@ -10,7 +10,82 @@ struct PairData {
     int n_atoms;
   } r1, r2;
 };
+template <typename T, size_t N>
+auto cpu_view(T* data, int64_t const (&shape)[N]) {
+  int64_t strides[N];
+  int64_t stride = 1;
+  for (int i = N - 1; i >= 0; --i) {
+    strides[i] = stride;
+    stride *= shape[i];
+  }
+  return tmol::TView<T, N, tmol::Device::CPU>(data, shape, strides);
+}
+
+void check_wide_pair_derivatives() {
+  using namespace tmol::score::ljlk::potentials;
+  using tmol::portable::Vec;
+  ljlk_elec_detail::ScoringData<float> data{};
+  LJLKTypeParams<float> params{};
+  float charge1 = 0.4f, charge2 = -0.7f;
+  data.r1.ljlk_params = data.r2.ljlk_params = &params;
+  data.r1.charges = &charge1;
+  data.r2.charges = &charge2;
+  data.r2.rot_coord_offset = 1;
+  data.elec_global_params = {80, 6, 0.4f, 1.5f, 5.5f, 0, 0, 0, 0, 0, 0};
+  float weights[4] = {0, 0, 0, 0.7f};
+  Vec<double, 3> accumulated[8]{};
+  long double reference[8][3]{};
+  for (int i = 0; i < 129; ++i) {
+    Vec<float, 3> delta{
+        (i % 2 ? -1.f : 1.f) * (2.0f + i * 0.003f), 0.3f, -0.2f};
+    float dist2 =
+        delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2];
+    Vec<float, 3> pair[8]{};
+    auto energy = ljlk_elec_detail::
+        score_atom_pair<true, false, true, float, tmol::Device::CPU>(
+            0,
+            0,
+            0,
+            0,
+            data,
+            delta,
+            dist2,
+            5,
+            5,
+            cpu_view(pair, {4, 2}),
+            cpu_view(weights, {4}),
+            1);
+    auto wide_energy = ljlk_elec_detail::
+        score_atom_pair<true, false, true, float, tmol::Device::CPU>(
+            0,
+            0,
+            0,
+            0,
+            data,
+            delta,
+            dist2,
+            5,
+            5,
+            cpu_view(accumulated, {4, 2}),
+            cpu_view(weights, {4}),
+            1);
+    for (int term = 0; term < 4; ++term) {
+      assert(energy[term] == wide_energy[term]);
+      for (int axis = 0; axis < 3; ++axis) {
+        assert(pair[term * 2][axis] == -pair[term * 2 + 1][axis]);
+        reference[term * 2][axis] += pair[term * 2][axis];
+        reference[term * 2 + 1][axis] += pair[term * 2 + 1][axis];
+      }
+    }
+  }
+  assert(reference[6][1] != 0);
+  for (int index = 0; index < 8; ++index)
+    for (int axis = 0; axis < 3; ++axis)
+      assert(accumulated[index][axis] == double(reference[index][axis]));
+}
+
 int main() {
+  check_wide_pair_derivatives();
   using namespace tmol::score::common;
   // Partitioning lanes must visit every actual atom pair exactly once, also
   // across partial tiles and the intra-residue diagonal.
@@ -132,3 +207,32 @@ auto b64 = &ljlk_elec_native_forward<
     tmol::Device::CPU,
     double,
     int>;
+
+// Bindings may widen derivative accumulation without changing float physics.
+auto wide32 = &ljlk_elec_native_forward<
+    true,
+    false,
+    false,
+    SerialOps,
+    tmol::Device::CPU,
+    float,
+    int,
+    double>;
+auto wide_weighted32 = &ljlk_elec_native_forward<
+    true,
+    true,
+    false,
+    SerialOps,
+    tmol::Device::CPU,
+    float,
+    int,
+    double>;
+auto wide_rotamer32 = &ljlk_elec_native_forward<
+    true,
+    true,
+    true,
+    SerialOps,
+    tmol::Device::CPU,
+    float,
+    int,
+    double>;

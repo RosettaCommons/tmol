@@ -58,6 +58,8 @@ def prepare_rotamer_bonded(pose, rotamers, database, *, cartesian=False, term=No
         options = {} if cartesian else {"include_empty": True}
         term = cls(database) if term is None else term
         parameters = term.setup_for_pose_stack(pose, **options)
+        if cartesian:
+            parameters, _ = parameters
         owners, indices = connected_candidates(pose, rotamers)
     parameters = (
         rotamers.coord_offset_for_rot,

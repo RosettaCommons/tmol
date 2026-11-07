@@ -137,17 +137,28 @@ def prepare_nonbonded(pose, database, *, soft_repulsive=False):
         ),
         device=pose.coords.device,
     )
+    precise_gradient = pose.coords.device.platform == "gpu"
     for target in ("tmol_nonbonded", "tmol_nonbonded_weighted"):
         register(target)
-    return parameters, float(max(lj_global[0, 0], elec.global_parameters[0, 4]))
+        if precise_gradient:
+            register(target + "_precise")
+    return (
+        parameters,
+        float(max(lj_global[0, 0], elec.global_parameters[0, 4])),
+        precise_gradient,
+    )
 
 
 def nonbonded_energy(coords, state, weights=None):
-    parameters, reach = state
+    parameters, reach, precise_gradient = state
     target = "tmol_nonbonded" if weights is None else "tmol_nonbonded_weighted"
     if weights is not None:
         parameters = (*parameters, jnp.asarray(weights, dtype=coords.dtype))
-    sizes = workspace_sizes(target, parameters[1].shape, coords.dtype.itemsize * 8)
+    dimensions = parameters[1].shape
+    if precise_gradient and coords.dtype == jnp.float32:
+        target += "_precise"
+        dimensions = (*dimensions, coords.shape[1])
+    sizes = workspace_sizes(target, dimensions, coords.dtype.itemsize * 8)
     return coordinate_energy(
         target,
         coords,

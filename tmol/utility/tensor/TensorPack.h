@@ -33,6 +33,16 @@ struct TPack {
             D == Device::MPS ? tmol::native::kMPS : tmol::native::kCUDA)));
   }
 
+  // A typed execution-boundary cast; same-type buffers are returned unchanged.
+  template <typename U>
+  TPack<U, N, D, P> cast() const {
+    if constexpr (std::is_same_v<T, U>) {
+      return *this;
+    } else {
+      return TPack<U, N, D, P>(tensor.to(enable_tensor_view<U>::scalar_type()));
+    }
+  }
+
   int64_t dim() { return view.dim(); }
   int64_t size(int64_t d) { return view.size(d); }
   int64_t stride(int64_t d) { return view.stride(d); }

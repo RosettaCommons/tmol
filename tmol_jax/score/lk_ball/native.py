@@ -103,17 +103,25 @@ def prepare_lk_ball(pose, database):
         native_lk_ball_global_parameters(globals_),
     )
     register("tmol_lk_ball")
-    return jax.device_put(tuple(arrays), device=pose.coords.device), float(
-        globals_.max_dis
+    precise = pose.coords.device.platform == "gpu"
+    if precise:
+        register("tmol_lk_ball_precise")
+        register("tmol_lk_ball_weighted_precise")
+    return (
+        jax.device_put(tuple(arrays), device=pose.coords.device),
+        float(globals_.max_dis),
+        precise,
     )
 
 
 def lk_ball_energy(coords, state, weights=None):
-    parameters, reach = state
+    parameters, reach, precise = state
     target = "tmol_lk_ball" if weights is None else "tmol_lk_ball_weighted"
     if weights is not None:
         register(target)
         parameters += (jnp.asarray(weights, dtype=coords.dtype),)
+    if precise and coords.dtype == jnp.float32:
+        target += "_precise"
     return coordinate_energy(
         target,
         coords,

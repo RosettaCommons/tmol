@@ -13,12 +13,20 @@ namespace tmol {
 namespace score {
 namespace lk_ball {
 namespace potentials {
-template <typename Real, typename Int, tmol::Device D, int OutRank = 4>
+template <
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    int OutRank = 4,
+    typename GradReal = Real,
+    typename EnergyReal = Real>
 using LKBallCtx = LKBallCtxT<
     tmol::score::common::TViewBinder<D>::template View,
     Real,
     Int,
-    OutRank>;
+    OutRank,
+    GradReal,
+    EnergyReal>;
 
 using tmol::portable::Vec;
 
@@ -123,9 +131,11 @@ template <
     tmol::Device Dev,
     typename Real,
     typename Int,
-    typename Launch>
+    typename Launch,
+    typename GradReal = Real,
+    typename EnergyReal = Real>
 struct LKBallPoseEvaluator {
-  LKBallCtx<Real, Int, Dev> ctx;
+  LKBallCtx<Real, Int, Dev, 4, GradReal, EnergyReal> ctx;
   using Shared = LKBallSharedMem<
       Real,
       lk_tile_size,
@@ -175,9 +185,19 @@ template <
     tmol::Device Dev,
     typename Real,
     typename Int,
-    typename Launch>
-LKBallPoseEvaluator<Backward, DeviceDispatch, Dev, Real, Int, Launch>
-lk_ball_pose_evaluator(LKBallCtx<Real, Int, Dev> ctx) {
+    typename Launch,
+    typename GradReal = Real,
+    typename EnergyReal = Real>
+LKBallPoseEvaluator<
+    Backward,
+    DeviceDispatch,
+    Dev,
+    Real,
+    Int,
+    Launch,
+    GradReal,
+    EnergyReal>
+lk_ball_pose_evaluator(LKBallCtx<Real, Int, Dev, 4, GradReal, EnergyReal> ctx) {
   return {ctx};
 }
 
@@ -186,10 +206,12 @@ template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device Dev,
     typename Real,
-    typename Int>
+    typename Int,
+    typename GradReal = Real,
+    typename EnergyReal = Real>
 void lk_ball_pose_native(
     ContextManager& mgr,
-    LKBallCtx<Real, Int, Dev> ctx,
+    LKBallCtx<Real, Int, Dev, 4, GradReal, EnergyReal> ctx,
     TView<Int, 1, Dev> compact_neighbors,
     int n_poses,
     bool allow_split_pairs = true) {
@@ -253,9 +275,11 @@ template <
     template <tmol::Device> class Ops,
     tmol::Device D,
     typename Real,
-    typename Int>
+    typename Int,
+    typename GradReal = Real,
+    typename EnergyReal = Real>
 void lk_ball_rotamer_native(
-    ContextManager& mgr, LKBallCtx<Real, Int, D, 2> ctx) {
+    ContextManager& mgr, LKBallCtx<Real, Int, D, 2, GradReal, EnergyReal> ctx) {
   LAUNCH_BOX_32;
   auto evaluate = [ctx] TMOL_DEVICE_FUNC(int cta) {
     using Shared = LKBallSharedMem<

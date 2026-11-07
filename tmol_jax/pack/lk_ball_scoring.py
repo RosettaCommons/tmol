@@ -10,7 +10,7 @@ from .scoring import sparse_nonbonded_values, validate_rotamer_context
 def prepare_rotamer_lk_ball(pose, rotamers, database):
     validate_rotamer_context(pose, rotamers)
     with jax.default_device(pose.device):
-        parameters, reach = prepare_lk_ball(pose, database)
+        parameters, reach, _ = prepare_lk_ball(pose, database)
     parameters = (
         rotamers.coord_offset_for_rot,
         rotamers.pose_for_rot,
