@@ -53,7 +53,7 @@
         "tests/scientific/test_complete_preset.py",
         "tests/scientific/test_ligand_preparation.py"
       ],
-      "implementation_status": "Complete preset and nonzero genbonded on prepared ligands. Shared SMILES, MOL2 and automatic structure preparation retain caller database context, atom identity and charges. Generated L/D ligands, aspirin and supplied MOL2 have coordinate-gradient and minimization checks; input/scoring paths have CPU/CUDA and installed validation. Generated trajectories and complete preparation runtime/memory parity remain open."
+      "implementation_status": "Complete preset and nonzero genbonded on prepared ligands. Shared SMILES, MOL2 and automatic structure preparation retain caller database context, atom identity and charges. Generated L/D ligands, aspirin and supplied MOL2 have coordinate-gradient and minimization checks; input/scoring paths have CPU/CUDA and installed validation. Seeded numerical parameter preparation runs on CPU independently of the scoring device; prepared pose execution supports CPU/CUDA. Generated trajectories and complete preparation runtime/memory parity remain open."
     },
     {
       "domain": "protein_ligand_mixed",

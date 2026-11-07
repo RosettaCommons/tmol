@@ -21,9 +21,12 @@ the caller's subtype and must be used for subsequent pose construction and scori
 Optional ligand preparation dependencies are available as `tmol-jax[ligand]`
 (or `tmol-core[ligand]` when installing the component packages separately).
 CIF preparation and molecular file input use the common framework-free readers.
-Preparation runs eagerly on the host, with compiled numerical refinement; it is
-not a `jit`/`vmap` frontend. Generated conformers need not follow Torch's optimizer
-trajectory, and matched cold/warm preparation and peak-memory parity are pending.
+Preparation runs eagerly on the host; its compiled JAX numerical refinement
+uses the CPU backend so seeded chemical parameters are independent of the
+scoring device. Prepared poses execute scoring and minimization on CPU or CUDA.
+Preparation is not a `jit`/`vmap` frontend. Generated conformers need not follow
+Torch's optimizer trajectory, and matched cold/warm preparation and peak-memory
+parity are pending.
 
 ## Install
 
