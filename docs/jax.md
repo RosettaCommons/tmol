@@ -8,7 +8,7 @@ D residues, variants, nucleic acids, metals and mixed systems retain their input
 identities and parameter context. Existing `tmol` imports remain available.
 
 This is experimental: complete public API/design compatibility, optimizer
-defaults and end-to-end runtime/memory parity remain unfinished.
+compatibility and end-to-end runtime/memory parity remain unfinished.
 Native molecular scoring and selected packing paths have CPU/CUDA and Torch-free
 package validation; final Metal validation is tracked separately. See the [capability matrix](capability-matrix.json) for
 implemented behavior and evidence rather than assuming full TMol parity.
