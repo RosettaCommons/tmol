@@ -32,6 +32,7 @@ def test_opth_builds_cartesian_product_for_multiple_proton_chis():
         expanded_samples=torch.tensor(
             [[[10.0, 11.0, 0.0], [20.0, 21.0, 22.0]]],
             dtype=torch.float32,
+            requires_grad=True,
         ),
         chi_defining_atom=torch.tensor([[4, 5]], dtype=torch.int32),
     )
@@ -70,6 +71,16 @@ def test_opth_builds_cartesian_product_for_multiple_proton_chis():
         chi_defining_atom,
         torch.tensor([[4, 5]] * 6, dtype=torch.int32),
     )
+
+    # Each angle participates in the Cartesian product independently of its
+    # numerical value; padded table cells must have zero derivative.
+    table = opth_cache.expanded_samples
+    multiplicity = torch.tensor([[[3.0, 3.0, 0.0], [2.0, 2.0, 2.0]]])
+    gradient = torch.autograd.grad(chi_values.sin().sum(), table, create_graph=True)[0]
+    torch.testing.assert_close(gradient, table.cos() * multiplicity)
+    direction = torch.tensor([[[0.2, -0.3, 0.7], [0.4, -0.5, 0.6]]])
+    hvp = torch.autograd.grad((gradient * direction).sum(), table)[0]
+    torch.testing.assert_close(hvp, -table.sin() * multiplicity * direction)
 
 
 def test_optH_rotamer_sampler_flipNHQ(ubq_pdb, torch_device):
@@ -217,3 +228,58 @@ def test_optH_rotamer_sampler_no_flipNHQ(ubq_pdb, torch_device):
         else:
             n_rots = int(rotamer_set.n_rots_for_block[pose_i, block_i].item())
             assert cache.n_proton_samples == 0 or n_rots == cache.n_proton_samples + 1
+
+
+def test_histidine_flip_coordinate_derivatives_are_not_duplicated(ubq_pdb):
+    import attrs
+
+    pose = pose_stack_from_file(
+        ubq_pdb,
+        torch.device("cpu"),
+        residue_start=67,
+        residue_end=68,
+        no_optH=True,
+        missing_density_distance_threshold=0.0,
+    )
+    assert (
+        pose.packed_block_types.active_block_types[
+            int(pose.block_type_ind64[0, 0])
+        ].name3
+        == "HIS"
+    )
+    sampler = OptHSampler()
+    task = PackerTask(pose, PackerPalette())
+    task.restrict_to_repacking()
+    task.add_conformer_sampler(sampler)
+    task = SetPackerTask.from_packer_task(task)
+    x = pose.coords.detach().clone().requires_grad_()
+    direction = torch.tensor(
+        numpy.random.default_rng(19).normal(size=x.shape),
+        dtype=x.dtype,
+    )
+    direction /= direction.norm()
+
+    def objective(coords):
+        _, _, values = sampler.create_samples_for_poses(
+            attrs.evolve(pose, coords=coords), task
+        )
+        chi = values["chi_for_rotamers"].double()
+        weights = torch.arange(1, chi.numel() + 1, dtype=torch.float64).reshape_as(chi)
+        return (weights * (chi.sin() + 0.2 * chi.cos())).sum()
+
+    value = objective(x)
+    gradient = torch.autograd.grad(value, x, create_graph=True)[0]
+    assert gradient.abs().sum() > 0.1
+    directional = (gradient * direction).sum()
+    hvp = torch.autograd.grad(directional, x)[0]
+    for step in (0.01, 0.003):
+        plus = (x.detach() + step * direction).requires_grad_()
+        minus = (x.detach() - step * direction).requires_grad_()
+        vp, vm = objective(plus), objective(minus)
+        finite_difference = (vp - vm) / (2 * step)
+        torch.testing.assert_close(
+            directional.double(), finite_difference, atol=3e-4, rtol=2e-3
+        )
+        gp = torch.autograd.grad(vp, plus)[0]
+        gm = torch.autograd.grad(vm, minus)[0]
+        torch.testing.assert_close(hvp, (gp - gm) / (2 * step), atol=8e-4, rtol=3e-3)

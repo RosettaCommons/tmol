@@ -28,7 +28,7 @@
 
 #include <tmol/score/hbond/potentials/hbond.hh>
 #include <tmol/score/hbond/potentials/hbond_ctx_tensor.hh>
-#include <tmol/score/hbond/potentials/hbond_kernels.hh>
+#include <tmol/score/hbond/potentials/native_hbond_pose.hh>
 #include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
 #include <tmol/backends/metal/score/hbond/potentials/hbond_mps_kernels_source.h>
@@ -256,7 +256,7 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
             first_rot_block_type,
             scratch_rot_spheres,
             scratch_rot_neighbors,
-            Real(5.5));
+            Real(hbond_neighbor_reach()));
   }
 
   // Metal accumulates whole-pose totals into per-block-pair cells and reduces
@@ -347,37 +347,7 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
   // reduction scratch the workgroup primitives need. See workgroup_lane.hh.
   WorkgroupLane<Dev> lane;
 
-  using PairMode = common::TilePairMode;
-#ifdef __NVCC__
-  auto eval_energies_impl = ([=] TMOL_DEVICE_FUNC(
-                                 int cta,
-                                 auto derivative_tag,
-                                 auto pair_mode_tag) {
-    constexpr auto Mode = decltype(pair_mode_tag)::value;
-    typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    hbond_pose_eval_energies<DeviceDispatch, Dev, Real, Int, launch_t, Mode>(
-        ctx, shared, cta, derivative_tag);
-  });
-#else
-  auto eval_energies = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    hbond_pose_eval_energies<
-        DeviceDispatch,
-        Dev,
-        Real,
-        Int,
-        launch_t,
-        PairMode::InterAndIntra>(ctx, shared, cta, accumulate_derivs);
-  });
-#endif
-
-#ifdef __NVCC__
   auto launch_energies = [&](auto eval_energies) {
-#endif
     if (Dev == tmol::Device::MPS) {
       // Metal cannot launch a device lambda -- there is nowhere for a closure
       // to live, and entry points are compiled by a separate toolchain -- so
@@ -427,53 +397,14 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
       DeviceDispatch<Dev>::template foreach_pose_workgroup<launch_t>(
           mgr, n_poses, max_n_upper_triangle_inds, eval_energies);
     }
-
-#ifdef __NVCC__
   };
-  // Split derivative evaluation only when the stack is large enough to
-  // amortize the second pass. Both passes preserve the original candidate IDs.
-  bool const split_pairs =
-      allow_split_pairs && !output_block_pair_energies
-      && use_shared_compact_block_neighbors && max_n_blocks > 1
-      && int64_t(n_poses) * max_n_blocks >= 4096
-      && shared_compact_block_neighbors.size(0) - 1 >= (1 << 15);
-  // Keep the combined latency path for small stacks. Specializing only the
-  // HBond score kernel can slow subsequent terms in this workload range.
-  if (accumulate_derivs || n_rots < 512) {
-    if (accumulate_derivs && split_pairs) {
-      auto eval_inter = ([=] TMOL_DEVICE_FUNC(int cta) {
-        eval_energies_impl(
-            cta,
-            std::true_type{},
-            std::integral_constant<PairMode, PairMode::Inter>{});
-      });
-      launch_energies(eval_inter);
-      auto eval_intra = ([=] TMOL_DEVICE_FUNC(int cta) {
-        eval_energies_impl(
-            cta,
-            std::true_type{},
-            std::integral_constant<PairMode, PairMode::Intra>{});
-      });
-      launch_energies(eval_intra);
-    } else {
-      auto eval = ([=] TMOL_DEVICE_FUNC(int cta) {
-        eval_energies_impl(
-            cta,
-            accumulate_derivs,
-            std::integral_constant<PairMode, PairMode::InterAndIntra>{});
-      });
-      launch_energies(eval);
-    }
-  } else {
-    auto eval = ([=] TMOL_DEVICE_FUNC(int cta) {
-      eval_energies_impl(
-          cta,
-          std::false_type{},
-          std::integral_constant<PairMode, PairMode::InterAndIntra>{});
-    });
-    launch_energies(eval);
-  }
-#endif
+  launch_hbond_pose<DeviceDispatch, Dev, Real, Int>(
+      ctx,
+      n_poses,
+      n_rots,
+      shared_compact_block_neighbors.size(0) - 1,
+      allow_split_pairs,
+      launch_energies);
 
   // DeviceDispatch<Dev>::synchronize_device();
   return {output_t, dV_dcoords_t, scratch_rot_neighbors_t};
@@ -954,7 +885,7 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
               rot_offset_for_block,
               scratch_rot_spheres,
               lockstep_group_for_block,
-              Real(5.5));
+              Real(hbond_neighbor_reach()));
   }
 
   auto dispatch_indices = dispatch_indices_t.view;
@@ -973,11 +904,6 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
       dispatch_indices[1][i],
       dispatch_indices[2][i]);
   }*/
-
-  // Optimal launch box on v100 and a100 is nt=32, vt=1
-  LAUNCH_BOX_32;
-  // Define nt and reduce_t
-  CTA_REAL_REDUCE_T_TYPEDEF;
 
   // State the kernel body reads, named explicitly rather than captured
   // implicitly by [=]. The rotamer family's output is [term, rot_pair] and its
@@ -1012,34 +938,13 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
   ctx.output = output;
   ctx.dV_dcoords = dV_dcoords;
   ctx.max_n_blocks = max_n_blocks;
+  ctx.max_n_upper_triangle_inds = 0;
+  ctx.use_shared_compact_block_neighbors = false;
   ctx.output_block_pair_energies = output_block_pair_energies;
   ctx.accumulate_derivs = accumulate_derivs;
   // Read only by the backward kernel; the Metal launcher binds every view, so
   // it must not be left default-constructed.
   ctx.dTdV = output;
-
-  auto eval_energies = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    if (accumulate_derivs) {
-      hbond_rotamer_eval_energies<
-          DeviceDispatch,
-          Dev,
-          Real,
-          Int,
-          launch_t,
-          true>(ctx, shared, cta);
-    } else {
-      hbond_rotamer_eval_energies<
-          DeviceDispatch,
-          Dev,
-          Real,
-          Int,
-          launch_t,
-          false>(ctx, shared, cta);
-    }
-  });
 
   // Evaluate the prepared rotamer-pair dispatch list.
 
@@ -1060,12 +965,9 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
         ctx,
         dispatch_indices.size(1),
         true);
-  } else if (compute_derivs) {
-    DeviceDispatch<Dev>::template foreach_workgroup<launch_t>(
-        mgr, dispatch_indices.size(1), eval_energies);
   } else {
-    DeviceDispatch<Dev>::template foreach_independent_workgroup<launch_t>(
-        mgr, dispatch_indices.size(1), eval_energies);
+    launch_hbond_rotamer<false, DeviceDispatch, Dev, Real, Int>(
+        mgr, ctx, compute_derivs);
   }
 
   // DeviceDispatch<Dev>::synchronize_device();
@@ -1175,11 +1077,6 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
   auto dV_dcoords_t = TPack<Vec<Real, 3>, 1, Dev>::zeros({n_atoms});  // TODO
   auto dV_dcoords = dV_dcoords_t.view;
 
-  // Optimal launch box on v100 and a100 is nt=32, vt=1
-  LAUNCH_BOX_32;
-  // Define nt and reduce_t
-  CTA_REAL_REDUCE_T_TYPEDEF;
-
   // State the kernel bodies read, named explicitly rather than captured
   // implicitly by [=]; see the forward pass. The last context parameter is
   // the derivative rank: a backward pass accumulates into a rank-1 tensor
@@ -1221,134 +1118,7 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
   ctx.use_shared_compact_block_neighbors = false;
   ctx.output_block_pair_energies = true;
   ctx.accumulate_derivs = true;
-  // Empty on CPU and CUDA; on Metal it carries the thread index and the
-  // reduction scratch the workgroup primitives need. See workgroup_lane.hh.
-  WorkgroupLane<Dev> lane;
-
-  auto eval_derivs = ([=] TMOL_DEVICE_FUNC(int cta) {
-    int const max_important_bond_separation = 4;
-
-    int const pose_ind = dispatch_indices[0][cta];
-
-    int const rot_ind1 = dispatch_indices[1][cta];
-    int const rot_ind2 = dispatch_indices[2][cta];
-
-    int const block_ind1 = block_ind_for_rot[rot_ind1];
-    int const block_ind2 = block_ind_for_rot[rot_ind2];
-
-    int const block_type1 = block_type_ind_for_rot[rot_ind1];
-    int const block_type2 = block_type_ind_for_rot[rot_ind2];
-
-    int const n_atoms1 = block_type_n_atoms[block_type1];
-    int const n_atoms2 = block_type_n_atoms[block_type2];
-
-    auto hbond_atom_energy =
-        ([=] TMOL_DEVICE_FUNC(
-             int don_ind,
-             int acc_ind,
-             int don_tile_ind,
-             int acc_tile_ind,
-             int don_start,
-             int acc_start,
-             TMOL_THREAD HBondSingleResData<Real> const& don_dat,
-             TMOL_THREAD HBondSingleResData<Real> const& acc_dat,
-             TMOL_THREAD HBondRotPairData<Real> const& respair_dat,
-             int cp_separation) {
-          if (cp_separation < 5) {
-            return Real(0.0);
-          }
-          Real val = hbond_atom_derivs<TILE_SIZE, Dev, Real, Int>(
-              don_ind,
-              acc_ind,
-              don_tile_ind,
-              acc_tile_ind,
-              don_start,
-              acc_start,
-              don_dat,
-              acc_dat,
-              respair_dat,
-              cp_separation,
-              dTdV[0][cta],
-              derived_coords,
-              derived_atom_inds,
-              pair_params,
-              pair_polynomials,
-              dV_dcoords);
-          return Real(0.0);
-        });
-
-    auto score_inter_hbond_atom_pair = ([=] SCORE_INTER_HBOND_ATOM_PAIR);
-
-    auto score_intra_hbond_atom_pair = ([=] SCORE_INTRA_HBOND_ATOM_PAIR);
-
-    typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-
-    auto load_tile_invariant_interres_data =
-        ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
-
-    auto load_interres1_tile_data_to_shared =
-        ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
-
-    auto load_interres2_tile_data_to_shared =
-        ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
-
-    auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
-
-    auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
-
-    auto store_calculated_energies =
-        ([=] TMOL_DEVICE_FUNC(
-             TMOL_THREAD HBondScoringData<Real>& score_dat,
-             TMOL_SHARED_REF(shared_mem_union) shared) { ; });
-
-    auto load_tile_invariant_intrares_data =
-        ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
-
-    auto load_intrares1_tile_data_to_shared =
-        ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
-
-    auto load_intrares2_tile_data_to_shared =
-        ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
-
-    auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
-
-    auto eval_intrares_atom_pair_scores = ([=] EVAL_INTRARES_ATOM_PAIR_SCORES);
-
-    tmol::score::common::tile_evaluate_rot_pair<
-        DeviceDispatch,
-        Dev,
-        HBondScoringData<Real>,
-        HBondScoringData<Real>,
-        Real,
-        TILE_SIZE>(
-        shared,
-        pose_ind,
-        rot_ind1,
-        rot_ind2,
-        block_ind1,
-        block_ind2,
-        block_type1,
-        block_type2,
-        n_atoms1,
-        n_atoms2,
-        load_tile_invariant_interres_data,
-        load_interres1_tile_data_to_shared,
-        load_interres2_tile_data_to_shared,
-        load_interres_data_from_shared,
-        eval_interres_atom_pair_scores,
-        store_calculated_energies,
-        load_tile_invariant_intrares_data,
-        load_intrares1_tile_data_to_shared,
-        load_intrares2_tile_data_to_shared,
-        load_intrares_data_from_shared,
-        eval_intrares_atom_pair_scores,
-        store_calculated_energies);
-  });
-
-  DeviceDispatch<Dev>::template foreach_workgroup<launch_t>(
-      mgr, dispatch_indices.size(1), eval_derivs);
+  launch_hbond_rotamer<true, DeviceDispatch, Dev, Real, Int>(mgr, ctx);
 
   return dV_dcoords_t;
 }

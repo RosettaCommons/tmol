@@ -2,6 +2,7 @@
 
 #include <tmol/utility/portable/math.hh>
 #include <algorithm>  // std::min
+#include <cstdint>
 
 namespace tmol {
 namespace pack {
@@ -27,27 +28,30 @@ __device__
   return uniform_random < prob_pass;
 }
 
-template <tmol::Device D>
+template <
+    typename IndexRow,
+    typename IndexView,
+    typename WideView,
+    typename EnergyView,
+    typename PairEnergies>
 inline
 #ifdef __CUDACC__
     __device__
 #endif
     float total_energy_for_assignment(
-        TensorAccessor<int, 1, D> n_rotamers_for_res,  // max-n-res
-        TensorAccessor<int, 1, D> oneb_offsets,        // max-n-res
+        IndexRow n_rotamers_for_res,  // max-n-res
+        IndexRow oneb_offsets,        // max-n-res
         int32_t const chunk_size,
         int const pose,
         int const max_n_res,
-        TView<int64_t, 1, D> neighbor_row_offsets,
-        TView<int32_t, 1, D> neighbor_blocks,
-        TView<int64_t, 1, D> neighbor_chunk_offset_offsets,
-        TView<int64_t, 1, D> chunk_offsets,  // n-interacting-chunk-pairs
-        TView<float, 1, D> energy1b,         // n-rotamers-total
-        TView<float, 1, D> energy2b,         // n-interacting-rotamer-pairs
-        TensorAccessor<int, 1, D>
-            rotamer_assignment,  // local rotamer indices; max-n-res
-        TensorAccessor<float, 2, D>
-            current_pair_energies  // max-n-res x max-n-res
+        WideView neighbor_row_offsets,
+        IndexView neighbor_blocks,
+        WideView neighbor_chunk_offset_offsets,
+        WideView chunk_offsets,             // n-interacting-chunk-pairs
+        EnergyView energy1b,                // n-rotamers-total
+        EnergyView energy2b,                // n-interacting-rotamer-pairs
+        IndexRow rotamer_assignment,        // local rotamer indices; max-n-res
+        PairEnergies current_pair_energies  // max-n-res x max-n-res
     ) {
 #ifndef __CUDACC__
   using std::min;
@@ -62,7 +66,7 @@ inline
   for (int i = 0; i < n_res; ++i) {
     int const irot_local = rotamer_assignment[i];
 
-    if (irot_local == -1) {
+    if (irot_local == -1 || n_rotamers_for_res[i] == 0) {
       // unassigned rotamer or residue off the end for the Pose
       for (int j = 0; j < n_res; ++j) {
         current_pair_energies[i][j] = 0;
@@ -120,26 +124,30 @@ inline
   return totalE;
 }
 
-template <tmol::Device D>
+template <
+    bool InitializedAssignments = false,
+    typename IndexRow,
+    typename IndexView,
+    typename WideView,
+    typename EnergyView>
 inline
 #ifdef __CUDACC__
     __device__
 #endif
     float total_energy_for_assignment(
-        TensorAccessor<int, 1, D> n_rotamers_for_res,  // max-n-res
-        TensorAccessor<int, 1, D> oneb_offsets,        // max-n-res
+        IndexRow n_rotamers_for_res,  // max-n-res
+        IndexRow oneb_offsets,        // max-n-res
         int32_t const chunk_size,
         int const pose,
         int const max_n_res,
-        TView<int64_t, 1, D> neighbor_row_offsets,
-        TView<int32_t, 1, D> neighbor_blocks,
-        TView<int64_t, 1, D> neighbor_chunk_offset_offsets,
-        TView<int64_t, 1, D> chunk_offsets,  // n-interacting-chunk-pairs
-        TView<float, 1, D> energy1b,         // n-rotamers-total
-        TView<float, 1, D> energy2b,         // n-interacting-rotamer-pairs
-        TensorAccessor<int, 1, D>
-            rotamer_assignment  // local rotamer indices; max-n-res
-    ) {
+        WideView neighbor_row_offsets,
+        IndexView neighbor_blocks,
+        WideView neighbor_chunk_offset_offsets,
+        WideView chunk_offsets,       // n-interacting-chunk-pairs
+        EnergyView energy1b,          // n-rotamers-total
+        EnergyView energy2b,          // n-interacting-rotamer-pairs
+        IndexRow rotamer_assignment,  // local rotamer indices; max-n-res
+        int actual_n_res = -1) {
   // Read the energies from energ1b and energy2b for the given
   // rotamer_assignment (represented as the local indices for
   // each rotamer on each block)
@@ -147,7 +155,8 @@ inline
 #ifndef __CUDACC__
   using std::min;
 #endif
-  int const n_res = n_rotamers_for_res.size(0);
+  int const n_res =
+      actual_n_res < 0 ? n_rotamers_for_res.size(0) : actual_n_res;
 
   float totalE = 0;
   for (int i = 0; i < n_res; ++i) {
@@ -156,6 +165,9 @@ inline
     if (irot_local == -1) {
       // unassigned rotamer or residue off the end for the Pose
       continue;
+    }
+    if constexpr (!InitializedAssignments) {
+      if (n_rotamers_for_res[i] == 0) continue;
     }
     int const irot_global = irot_local + oneb_offsets[i];
     int const irot_chunk = irot_local / chunk_size;

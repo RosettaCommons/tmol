@@ -1,4 +1,5 @@
 #include <tmol/utility/tensor/native_library.hh>
+#include <tmol/utility/tensor/autograd_operator.hh>
 
 #include <tmol/utility/tensor/TensorCast.h>
 #include <tmol/utility/tensor/context_manager.hh>
@@ -573,78 +574,8 @@ class CartBondedRotamerScoreOp
   }
 };
 
-template <template <tmol::Device> class DispatchMethod>
-std::vector<Tensor> cartbonded_pose_scores_op(
-    // common params
-    Tensor rot_coords,
-    Tensor rot_coord_offset,
-    Tensor pose_ind_for_atom,
-    Tensor first_rot_for_block,
-    Tensor first_rot_block_type,
-    Tensor block_ind_for_rot,
-    Tensor pose_ind_for_rot,
-    Tensor block_type_ind_for_rot,
-    Tensor n_rots_for_pose,
-    Tensor rot_offset_for_pose,
-    Tensor n_rots_for_block,
-    Tensor rot_offset_for_block,
-    int64_t max_n_rots_per_pose,
-
-    Tensor pose_stack_inter_block_connections,
-    Tensor atom_paths_from_conn,
-    Tensor atom_unique_ids,
-    Tensor atom_wildcard_ids,
-    Tensor atom_is_rosetta,
-    Tensor block_type_is_fragment,
-    Tensor atom_cross_ids,
-    Tensor connection_hash_keys,
-    Tensor connection_spans,
-    Tensor connection_paths,
-    Tensor hash_keys,
-
-    Tensor hash_values,
-    Tensor cart_subgraphs,
-    Tensor cart_subgraph_offsets,
-    Tensor cart_subgraph_type_counts,
-    Tensor cart_subgraph_type_offsets,
-    Tensor cart_subgraph_param_indices,
-
-    bool output_block_pair_energies) {
-  return CartBondedPoseScoreOp<DispatchMethod>::apply(
-      // common params
-      rot_coords,
-      rot_coord_offset,
-      pose_ind_for_atom,
-      first_rot_for_block,
-      first_rot_block_type,
-      block_ind_for_rot,
-      pose_ind_for_rot,
-      block_type_ind_for_rot,
-      n_rots_for_pose,
-      rot_offset_for_pose,
-      n_rots_for_block,
-      rot_offset_for_block,
-      max_n_rots_per_pose,
-
-      pose_stack_inter_block_connections,
-      atom_paths_from_conn,
-      atom_unique_ids,
-      atom_wildcard_ids,
-      atom_is_rosetta,
-      block_type_is_fragment,
-      atom_cross_ids,
-      connection_hash_keys,
-      connection_spans,
-      connection_paths,
-      hash_keys,
-      hash_values,
-      cart_subgraphs,
-      cart_subgraph_offsets,
-      cart_subgraph_type_counts,
-      cart_subgraph_type_offsets,
-      cart_subgraph_param_indices,
-      output_block_pair_energies);
-}
+using cartbonded_pose_scores_op_binding =
+    native::AutogradOperator<CartBondedPoseScoreOp<common::DeviceOperations>>;
 
 template <
     template <tmol::Device> class DispatchMethod,
@@ -727,7 +658,7 @@ std::vector<Tensor> cartbonded_rotamer_scores_op(
 TMOL_LIBRARY(tmol_cartbonded, m) {
   m.def(
       "cartbonded_pose_scores",
-      TMOL_FN(&cartbonded_pose_scores_op<DeviceOperations>));
+      TMOL_FN(&cartbonded_pose_scores_op_binding::call));
   m.def(
       "cartbonded_rotamer_scores",
       TMOL_FN(&cartbonded_rotamer_scores_op<DeviceOperations>));

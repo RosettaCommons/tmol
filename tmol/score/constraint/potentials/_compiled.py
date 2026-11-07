@@ -12,3 +12,5 @@ _ops = _load_ops(
 )
 
 _get_torsion_angle = _ops.get_torsion_angle
+
+_expand_constraint_candidates = _ops.expand_constraint_candidates

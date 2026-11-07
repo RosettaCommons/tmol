@@ -1,14 +1,12 @@
-# Backends
+# Native execution backends
 
-Device-specific entry points live here, one directory per backend, mirroring the
-module path they belong to (`tmol/backends/cpu/score/ljlk/ljlk_pose_score.cpu.cpp`
-is the CPU instantiation of `tmol/score/ljlk/potentials`).
+`cpu/`, `cuda/` and `metal/` contain device instantiations, launch glue and
+Metal shaders, mirroring their module paths. Shared physics, parameters and
+portable types remain under `tmol/score`, `tmol/numeric` and `tmol/utility`.
 
-- `cpu/`, `cuda/`: explicit instantiations of the shared `*.impl.hh` code and the
-  `DeviceOperations` implementation for that device.
-- `metal/`: Metal shader entry points, host launch glue, and device operations.
-  Shared kernels, context structs, and portable view types stay with their modules.
-- Physics, parameters and Python bindings stay beside their module; a backend
-  directory holds only instantiation and launch glue, never a second copy of an
-  energy.
-- New backends (such as JAX) add their own sibling directory.
+`jax/` contains CPU/CUDA execution policies and XLA FFI adapters for the
+optional `tmol-jax-native` wheel. Both frontends call the common native traversal,
+physics and analytic derivative kernels. Framework bindings own registration,
+stream selection and buffers. The Torch-free Python frontend lives in
+`tmol_jax/`; `scripts/build_jax_native.py` stages the shared headers and thin
+bindings using metadata from `packages/jax-native`.

@@ -24,6 +24,7 @@ classifiers = [
 version = "0.2.0"
 
 dependencies = [
+    "tmol-core==0.2.0",
     # Core ML framework.
     # Stable native C ABI; no PyTorch minor-specific wheels.
     "torch>=2.11",

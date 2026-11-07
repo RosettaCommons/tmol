@@ -63,8 +63,9 @@ template <typename Real, int TILE_SIZE, int MAX_N_CONN>
 struct ElecBlockPairSharedData {
   Real coords1[TILE_SIZE * 3];  // 768 bytes for coords
   Real coords2[TILE_SIZE * 3];
-  unsigned char conn_ats1[MAX_N_CONN];  // 12 bytes
-  unsigned char conn_ats2[MAX_N_CONN];
+  int conn_ats1[MAX_N_CONN];  // Full residue atom indices, including atoms
+                              // above 255.
+  int conn_ats2[MAX_N_CONN];
   unsigned char path_dist1[MAX_N_CONN * TILE_SIZE];  // 384 bytes
   unsigned char path_dist2[MAX_N_CONN * TILE_SIZE];
   unsigned char conn_seps[MAX_N_CONN * MAX_N_CONN];  // 144 bytes
@@ -147,7 +148,7 @@ void TMOL_DEVICE_FUNC elec_load_block_into_shared(
     int n_atoms_to_load,
     int start_atom,
     bool count_pair_striking_dist,
-    TMOL_SHARED_PTR(unsigned char) conn_ats,
+    TMOL_SHARED_PTR(int) conn_ats,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required by
     // the Metal backend. See workgroup_lane.hh.
     WorkgroupLane<D> lane = {}) {

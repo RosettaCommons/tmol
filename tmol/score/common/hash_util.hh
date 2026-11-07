@@ -1,15 +1,15 @@
 #pragma once
 
+#include <tmol/utility/portable/matrix.hh>
 #include <tmol/utility/tensor/TensorAccessor.h>
-#include <tmol/utility/tensor/TensorPack.h>
-#include <tmol/utility/tensor/TensorStruct.h>
-#include <tmol/utility/tensor/TensorUtil.h>
 
 #include <tmol/score/common/diamond_macros.hh>
 
 namespace tmol {
 namespace score {
 namespace common {
+
+using tmol::portable::Vec;
 
 // This hash function must match the hash function found in hash_util.py in this
 // same directory

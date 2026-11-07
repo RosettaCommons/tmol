@@ -21,3 +21,115 @@ template struct GeneratePoseLeafAtoms<
 }  // namespace details
 }  // namespace io
 }  // namespace tmol
+
+#include <tmol/io/details/compiled/canonical_candidates.impl.hh>
+namespace tmol::io::details::compiled {
+template struct CanonicalCandidates<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    int32_t>;
+template struct CanonicalCandidates<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    int64_t>;
+}  // namespace tmol::io::details::compiled
+
+#include <tmol/io/details/compiled/canonical_topology.impl.hh>
+namespace tmol::io::details::compiled {
+template struct CanonicalTopology<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    int32_t>;
+template struct CanonicalTopology<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    int64_t>;
+}  // namespace tmol::io::details::compiled
+
+#include <tmol/io/details/compiled/canonical_policies.impl.hh>
+namespace tmol::io::details::compiled {
+template struct CanonicalPolicies<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    int32_t>;
+template struct CanonicalCycles<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    float,
+    int32_t>;
+template struct CanonicalCycles<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    double,
+    int32_t>;
+template struct CanonicalPolicies<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    int64_t>;
+template struct CanonicalCycles<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    float,
+    int64_t>;
+template struct CanonicalCycles<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    double,
+    int64_t>;
+}  // namespace tmol::io::details::compiled
+
+#include <tmol/io/details/compiled/hydrogen_completion.impl.hh>
+namespace tmol::io::details::compiled {
+template struct HydrogenCompletion<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    float,
+    int32_t>;
+template struct HydrogenInput<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    float,
+    int32_t>;
+template struct HydrogenCompletion<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    double,
+    int32_t>;
+template struct HydrogenInput<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    double,
+    int32_t>;
+template struct HydrogenCompletion<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    float,
+    int64_t>;
+template struct HydrogenInput<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    float,
+    int64_t>;
+template struct HydrogenCompletion<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    double,
+    int64_t>;
+template struct HydrogenInput<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    double,
+    int64_t>;
+}  // namespace tmol::io::details::compiled
+
+#include <tmol/io/details/compiled/protonation.impl.hh>
+namespace tmol::io::details::compiled {
+template struct Protonation<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    int32_t>;
+template struct Protonation<
+    score::common::DeviceOperations,
+    Device::CUDA,
+    int64_t>;
+}  // namespace tmol::io::details::compiled

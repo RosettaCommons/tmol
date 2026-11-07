@@ -100,3 +100,13 @@ when ``sum_terms=False``. The complete score-type-to-term map is documented in
 
 See :doc:`datatypes` for tensor conventions and :doc:`api/score_terms` for
 individual score terms.
+
+Shared chemistry and packaging
+------------------------------
+
+The shared core owns chemistry independently of either execution frontend.
+
+.. toctree::
+   :maxdepth: 1
+
+   shared_core

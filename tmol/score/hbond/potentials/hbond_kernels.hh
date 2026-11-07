@@ -36,14 +36,14 @@
 #include <tmol/utility/portable/device.hh>
 #include <tmol/utility/portable/metal_view.hh>
 
-// The maximum number of inter-residue chemical bonds
-#define MAX_N_CONN 12
-#define TILE_SIZE 32
-
 namespace tmol {
 namespace score {
 namespace hbond {
 namespace potentials {
+
+// Scoped capacities: including this kernel must not rewrite other terms'
+// template arguments or leak its private callback macros into a frontend.
+enum : int { MAX_N_CONN = 12, TILE_SIZE = 32 };
 
 using tmol::portable::Vec;
 using tmol::score::common::accumulate;
@@ -782,29 +782,20 @@ template <
     typename Real,
     typename Int,
     typename launch_t,
-    bool AccumulateDerivs,
     typename Ctx,
-    typename Shared>
-TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_energies(
+    typename Shared,
+    typename AtomEnergy,
+    typename Store>
+TMOL_HOST_DEVICE_FUNC void hbond_rotamer_evaluate(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
+    AtomEnergy hbond_atom_energy,
+    Store store_calculated_energies,
     WorkgroupLane<Dev> lane = {}) {
   CTA_LAUNCH_T_PARAMS;
   typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
       shared_mem_union;
-  // Compile-time, not `ctx.accumulate_derivs`. The two branches of
-  // HBOND_ATOM_ENERGY are both valid code, so a plain `if` on a constant is
-  // enough for the optimizer to drop the unused one -- and dropping the
-  // derivative branch is worth real occupancy: it takes this entry's
-  // maxTotalThreadsPerThreadgroup from 384 to 448. Packing never wants
-  // derivatives, so the launcher picks the energies-only instantiation for
-  // every call it makes; the other exists so a gradient-carrying rotamer call
-  // is still correct rather than silently wrong.
-  bool const accumulate_derivs = AccumulateDerivs;
-
-  auto hbond_atom_energy = ([=] HBOND_ATOM_ENERGY);
-
   auto score_inter_hbond_atom_pair = ([=] SCORE_INTER_HBOND_ATOM_PAIR);
 
   auto score_intra_hbond_atom_pair = ([=] SCORE_INTRA_HBOND_ATOM_PAIR);
@@ -841,8 +832,6 @@ TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_energies(
   auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
 
   auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
-
-  auto store_calculated_energies = ([=] STORE_ROTAMER_CALCULATED_ENERGIES);
 
   auto load_tile_invariant_intrares_data =
       ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
@@ -889,7 +878,115 @@ TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_energies(
       lane);
 }
 
+template <
+    template <tmol::Device> class DeviceDispatch,
+    tmol::Device Dev,
+    typename Real,
+    typename Int,
+    typename launch_t,
+    bool AccumulateDerivs,
+    typename Ctx,
+    typename Shared>
+TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_energies(
+    TMOL_THREAD Ctx const& ctx,
+    TMOL_SHARED_REF(Shared) shared,
+    int cta,
+    WorkgroupLane<Dev> lane = {}) {
+  CTA_LAUNCH_T_PARAMS;
+  using shared_mem_union =
+      HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>;
+  // Compile-time, not `ctx.accumulate_derivs`. The two branches of
+  // HBOND_ATOM_ENERGY are both valid code, so a plain `if` on a constant is
+  // enough for the optimizer to drop the unused one -- and dropping the
+  // derivative branch is worth real occupancy: it takes this entry's
+  // maxTotalThreadsPerThreadgroup from 384 to 448. Packing never wants
+  // derivatives, so the launcher picks the energies-only instantiation for
+  // every call it makes; the other exists so a gradient-carrying rotamer call
+  // is still correct rather than silently wrong.
+  bool const accumulate_derivs = AccumulateDerivs;
+
+  auto hbond_atom_energy = ([=] HBOND_ATOM_ENERGY);
+
+  auto store_calculated_energies = ([=] STORE_ROTAMER_CALCULATED_ENERGIES);
+  hbond_rotamer_evaluate<DeviceDispatch, Dev, Real, Int, launch_t>(
+      ctx, shared, cta, hbond_atom_energy, store_calculated_energies, lane);
+}
+
+template <
+    template <tmol::Device> class DeviceDispatch,
+    tmol::Device Dev,
+    typename Real,
+    typename Int,
+    typename launch_t,
+    typename Ctx,
+    typename Shared>
+TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_derivs(
+    TMOL_THREAD Ctx const& ctx,
+    TMOL_SHARED_REF(Shared) shared,
+    int cta,
+    WorkgroupLane<Dev> lane = {}) {
+  CTA_LAUNCH_T_PARAMS;
+  using shared_mem_union =
+      HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>;
+  auto hbond_atom_energy =
+      ([=] TMOL_DEVICE_FUNC(
+           int don_ind,
+           int acc_ind,
+           int don_tile_ind,
+           int acc_tile_ind,
+           int don_start,
+           int acc_start,
+           TMOL_THREAD HBondSingleResData<Real> const& don_dat,
+           TMOL_THREAD HBondSingleResData<Real> const& acc_dat,
+           TMOL_THREAD HBondRotPairData<Real> const& respair_dat,
+           int cp_separation) {
+        if (cp_separation < 5) {
+          return Real(0.0);
+        }
+        hbond_atom_derivs<TILE_SIZE, Dev, Real, Int>(
+            don_ind,
+            acc_ind,
+            don_tile_ind,
+            acc_tile_ind,
+            don_start,
+            acc_start,
+            don_dat,
+            acc_dat,
+            respair_dat,
+            cp_separation,
+            ctx.dTdV[0][cta],
+            ctx.derived_coords,
+            ctx.derived_atom_inds,
+            ctx.pair_params,
+            ctx.pair_polynomials,
+            ctx.dV_dcoords);
+        return Real(0.0);
+      });
+
+  auto store_calculated_energies = [=] TMOL_DEVICE_FUNC(
+                                       TMOL_THREAD HBondScoringData<Real>&,
+                                       TMOL_SHARED_REF(shared_mem_union)) {};
+  hbond_rotamer_evaluate<DeviceDispatch, Dev, Real, Int, launch_t>(
+      ctx, shared, cta, hbond_atom_energy, store_calculated_energies, lane);
+}
+
 }  // namespace potentials
 }  // namespace hbond
 }  // namespace score
 }  // namespace tmol
+
+#undef HBOND_ATOM_ENERGY
+#undef SCORE_INTER_HBOND_ATOM_PAIR
+#undef SCORE_INTRA_HBOND_ATOM_PAIR
+#undef LOAD_TILE_INVARIANT_INTERRES_DATA
+#undef LOAD_INTERRES1_TILE_DATA_TO_SHARED
+#undef LOAD_INTERRES2_TILE_DATA_TO_SHARED
+#undef LOAD_INTERRES_DATA_FROM_SHARED
+#undef EVAL_INTERRES_ATOM_PAIR_SCORES
+#undef STORE_POSE_CALCULATED_ENERGIES
+#undef STORE_ROTAMER_CALCULATED_ENERGIES
+#undef LOAD_TILE_INVARIANT_INTRARES_DATA
+#undef LOAD_INTRARES1_TILE_DATA_TO_SHARED
+#undef LOAD_INTRARES2_TILE_DATA_TO_SHARED
+#undef LOAD_INTRARES_DATA_FROM_SHARED
+#undef EVAL_INTRARES_ATOM_PAIR_SCORES

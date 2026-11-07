@@ -1005,14 +1005,14 @@ def test_a_retinal_conformer_keeps_its_trans_double_bonds(monkeypatch):
     """4XXJ LYR: the generated conformer keeps the four declared trans double bonds."""
     from rdkit import Chem
 
-    import tmol.ligand._conformer_generation as conformers
+    import tmol_core.ligand._conformer_generation as conformers
     from tmol.io import build_context_from_atom_array
 
     generated = []
     generate = conformers._generate_conformer_impl
 
-    def recording(smiles, minimize_steps, seed):
-        molecule = generate(smiles, minimize_steps, seed)
+    def recording(smiles, minimize_steps, seed, execution):
+        molecule = generate(smiles, minimize_steps, seed, execution=execution)
         generated.append((smiles, np.array([atom.coords for atom in molecule.atoms])))
         return molecule
 

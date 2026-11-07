@@ -355,3 +355,26 @@ def test_split_constraint_set(default_database, ubq_pdb, torch_device):
         torch.testing.assert_close(
             split_energy_value, individual_constraint_energies[i]
         )
+
+
+def test_constraint_assembly_preserves_parameter_gradients(torch_device):
+    params = torch.tensor([[1.0, 2.0]], device=torch_device, requires_grad=True)
+    atoms = torch.tensor([[[0, 0], [1, 0]]], dtype=torch.int32, device=torch_device)
+    cs = ConstraintSet.create_empty(torch_device, 3).add_constraints(
+        ConstraintEnergyTerm.harmonic, atoms, params
+    )
+    # Concatenating split sets must preserve both the rows and their dependence
+    # on the original parameter tensor, including a pose with no constraints.
+    empty = ConstraintSet.create_empty(torch_device, 1)
+    joined = ConstraintSet.concatenate([cs.split(2), empty, cs.split(0)])
+    xyz = torch.tensor(
+        [[[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]]], device=torch_device
+    ).repeat(2, 1, 1)
+    energy = ConstraintEnergyTerm.harmonic(xyz, joined.constraint_params).sum()
+    (derivative,) = torch.autograd.grad(energy, params, create_graph=True)
+    torch.testing.assert_close(energy, torch.tensor(2.0, device=torch_device))
+    torch.testing.assert_close(
+        derivative, torch.tensor([[-2.0, -2.0]], device=torch_device)
+    )
+    (second,) = torch.autograd.grad(derivative[0, 0], params)
+    torch.testing.assert_close(second, torch.tensor([[1.0, 2.0]], device=torch_device))

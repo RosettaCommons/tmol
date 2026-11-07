@@ -16,13 +16,18 @@ from pathlib import Path
 from urllib.parse import quote
 
 from packaging.requirements import Requirement
-from packaging.utils import parse_wheel_filename
+from packaging.utils import parse_sdist_filename, parse_wheel_filename
+
+from package_requirements import requires_core
 
 
 def validate_wheel(source: Path) -> None:
     """Check package identity, stable ABI requirements, and RECORD hashes."""
     name, version, _, tags = parse_wheel_filename(source.name)
-    if name not in {"tmol", "tmol-ops-cu12", "tmol-ops-cu13"} or version.local:
+    if (
+        name not in {"tmol", "tmol-core", "tmol-ops-cu12", "tmol-ops-cu13"}
+        or version.local
+    ):
         raise ValueError(f"unexpected native package wheel: {source.name}")
     prefix = f"{name.replace('-', '_')}-{version}.dist-info/"
     with zipfile.ZipFile(source) as archive:
@@ -37,9 +42,16 @@ def validate_wheel(source: Path) -> None:
         ):
             raise ValueError("wheel filename and metadata disagree")
         requirements = [Requirement(r) for r in metadata.get_all("Requires-Dist", [])]
-        if [str(r.specifier) for r in requirements if r.name == "torch"] != [">=2.11"]:
+        if name == "tmol-core":
+            if any(r.name in {"torch", "tmol", "jax", "jaxlib"} for r in requirements):
+                raise ValueError("core must have no framework dependency")
+            if any(path.startswith(("tmol/", "tmol_jax/")) for path in names):
+                raise ValueError("core must not overwrite a frontend namespace")
+        elif [str(r.specifier) for r in requirements if r.name == "torch"] != [
+            ">=2.11"
+        ]:
             raise ValueError("wheel must target the stable PyTorch ABI (torch>=2.11)")
-        if name != "tmol":
+        if name.startswith("tmol-ops-"):
             if [str(r.specifier) for r in requirements if r.name == "tmol"] != [
                 f"=={version}"
             ]:
@@ -90,7 +102,14 @@ def write_index(files: list[Path], target: Path, base_url: str) -> None:
     )
 
 
-def prepare(wheels: Path, sdist: Path, destination: Path) -> None:
+def prepare(
+    wheels: Path,
+    sdist: Path,
+    destination: Path,
+    *,
+    core_wheel: Path | None = None,
+    core_sdist: Path | None = None,
+) -> None:
     """Prepare public distributions and versioned indexes from validated assets."""
     paths = sorted(wheels.glob("*.whl"))
     versions = {parse_wheel_filename(p.name)[1].public for p in paths}
@@ -99,9 +118,26 @@ def prepare(wheels: Path, sdist: Path, destination: Path) -> None:
     version = versions.pop()
     if sdist.name != f"tmol-{version}.tar.gz":
         raise ValueError("source and wheel versions disagree")
+    if core_wheel is None and any(requires_core(path) for path in paths):
+        raise ValueError("frontend requires matching core artifacts")
+    if (core_wheel is None) != (core_sdist is None):
+        raise ValueError("core wheel and sdist must be supplied together")
+    if core_wheel is not None:
+        name, core_version, _, _ = parse_wheel_filename(core_wheel.name)
+        source_name, source_version = parse_sdist_filename(core_sdist.name)
+        if (
+            name != source_name
+            or name != "tmol-core"
+            or str(core_version) != version
+            or source_version != core_version
+        ):
+            raise ValueError("core and frontend versions disagree")
+        paths.append(core_wheel)
     pypi = destination / "pypi"
     pypi.mkdir(parents=True, exist_ok=True)
     shutil.copy2(sdist, pypi / sdist.name)
+    if core_sdist is not None:
+        shutil.copy2(core_sdist, pypi / core_sdist.name)
     variants: dict[str, list[Path]] = {}
     for path in paths:
         validate_wheel(path)
@@ -121,5 +157,13 @@ if __name__ == "__main__":
     parser.add_argument("--wheels", type=Path, required=True)
     parser.add_argument("--sdist", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--core-wheel", type=Path)
+    parser.add_argument("--core-sdist", type=Path)
     args = parser.parse_args()
-    prepare(args.wheels, args.sdist, args.output)
+    prepare(
+        args.wheels,
+        args.sdist,
+        args.output,
+        core_wheel=args.core_wheel,
+        core_sdist=args.core_sdist,
+    )

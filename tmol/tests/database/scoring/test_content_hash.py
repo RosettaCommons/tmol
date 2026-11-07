@@ -16,3 +16,13 @@ def test_tensor_values_shape_and_dtype_contribute():
     assert _content_hash(original) != _content_hash(original.reshape(4, 3))
     assert _content_hash(original) != _content_hash(original.double())
     assert _content_hash(torch.empty((0, 3))) != _content_hash(torch.empty((0, 4)))
+
+
+def test_host_and_tensor_parameter_identity_agree():
+    from tmol_core.database.content_hash import _content_hash as host_hash
+
+    original = torch.arange(24, dtype=torch.float64).reshape(4, 6)[:, ::2]
+    assert _content_hash(("table", original)) == host_hash(("table", original.numpy()))
+    changed = original.numpy().copy()
+    changed[2, 1] += 1
+    assert _content_hash(("table", original)) != host_hash(("table", changed))

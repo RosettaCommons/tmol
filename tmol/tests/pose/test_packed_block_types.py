@@ -131,3 +131,27 @@ def test_residue_types_beyond_the_kernel_connection_capacity_are_refused(
             fresh_default_restype_set.residue_types,
             torch_device,
         )
+
+
+def test_cpu_copy_keeps_torsions_and_cached_annotations(
+    default_database, fresh_default_restype_set, torch_device
+):
+    import attr
+
+    original = PackedBlockTypes.from_restype_list(
+        default_database.chemical,
+        fresh_default_restype_set,
+        fresh_default_restype_set.residue_types,
+        torch_device,
+    )
+    original.custom_annotation = torch.ones(2, device=torch_device)
+    copied = original.cpu()
+    assert copied.device == torch.device("cpu")
+    for field in attr.fields(type(original)):
+        expected = getattr(original, field.name)
+        actual = getattr(copied, field.name)
+        if isinstance(expected, torch.Tensor):
+            assert actual.device == torch.device("cpu")
+            torch.testing.assert_close(actual, expected.cpu())
+    assert copied.custom_annotation.device == torch.device("cpu")
+    assert copied.active_block_types is original.active_block_types

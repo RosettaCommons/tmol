@@ -212,7 +212,8 @@ class BackboneTorsionRotamerScoreDispatch {
       TView<Real, 4, Dev> omega_tables,
       TView<RamaTableParams<Real>, 1, Dev> omega_table_params,
       bool output_block_pair_energies,
-      bool topology_only = false)
+      bool topology_only = false,
+      TView<Int, 2, Dev> lockstep_group_for_block = {})
       -> std::tuple<
           TPack<Real, 2, Dev>,
           TPack<Vec<Real, 3>, 2, Dev>,
@@ -275,8 +276,9 @@ class BackboneTorsionRotamerScoreDispatch {
       TView<Real, 4, Dev> omega_tables,
       TView<RamaTableParams<Real>, 1, Dev> omega_table_params,
       TView<Int, 2, Dev> dispatch_indices,  // from forward pass
-      TView<Real, 2, Dev> dTdV              // nterms x n-dispatch-inds
-      ) -> TPack<Vec<Real, 3>, 2, Dev>;
+      TView<Real, 2, Dev> dTdV,             // nterms x n-dispatch-inds
+      TView<Int, 2, Dev> lockstep_group_for_block = {})
+      -> TPack<Vec<Real, 3>, 2, Dev>;
 };
 
 }  // namespace potentials

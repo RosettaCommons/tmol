@@ -1,5 +1,6 @@
 import torch
 import attr
+from tmol_core.pack.conformer_policy import fallback_mask
 
 from typing import ClassVar, Tuple
 
@@ -117,17 +118,16 @@ class FallbackSampler(ConformerSampler):
             task.cons_bt_pose, task.cons_bt_block
         ].any(dim=-1)
 
-        n_rots_for_gbt = torch.logical_and(
+        n_rots_for_gbt = fallback_mask(
             is_gbt_orig_block_type[
                 task.cons_bt_pose, task.cons_bt_block, task.cons_bt_which_block_type
             ],
-            torch.logical_or(
-                gbt_block_allows_none | all_samplers_disabled,
-                ~other_sampler_builds_for_gbt
-                & task.per_block_conformer_sampler_allowed[
-                    task.cons_bt_pose, task.cons_bt_block, self_ind_in_packer_task
-                ],
-            ),
+            gbt_block_allows_none,
+            all_samplers_disabled,
+            other_sampler_builds_for_gbt,
+            task.per_block_conformer_sampler_allowed[
+                task.cons_bt_pose, task.cons_bt_block, self_ind_in_packer_task
+            ],
         ).to(torch.int32)
 
         gbt_for_rotamer = n_rots_for_gbt.nonzero(as_tuple=True)[0].to(torch.int32)

@@ -230,3 +230,21 @@ def test_get_torsion_names_rejects_absent_block(torch_device):
     pose_stack = _create_pose_stack_from_sequences(["AAA", "AA"], device=torch_device)
     with pytest.raises(ValueError, match="not a real block"):
         get_torsion_names(pose_stack, 1, 2)
+
+
+def test_chain_translation_preserves_coordinate_derivatives_and_padding(torch_device):
+    import attr
+    from tmol.io._pose_stack_from_sequence import _separate_pose_stack_chains
+
+    pose = extended_pose_stack_from_sequences(
+        ["AC:ac:X(CCO)", "A"], device=torch_device
+    )
+    original = pose.coords.clone()
+    coords = pose.coords.detach().clone().requires_grad_(True)
+    result = _separate_pose_stack_chains(attr.evolve(pose, coords=coords))
+    cotangent = torch.arange(coords.numel(), device=torch_device).reshape(coords.shape)
+    gradient = torch.autograd.grad((result.coords * cotangent).sum(), coords)[0]
+    torch.testing.assert_close(gradient, cotangent.to(coords.dtype), rtol=0, atol=0)
+    assert torch.equal(coords, original)
+    # The second pose has one short chain; its padded atom buffer is untouched.
+    assert torch.equal(result.coords[1], original[1])

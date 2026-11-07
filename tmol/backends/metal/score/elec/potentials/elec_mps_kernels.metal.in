@@ -34,7 +34,7 @@ typedef ElecCtxT<tmol::portable::MetalView, float, int32_t, 4> PoseCtx;
 // Rotamer scoring: output is [term, block_pair].
 typedef ElecCtxT<tmol::portable::MetalView, float, int32_t, 2> RotCtx;
 
-typedef ElecSharedMem<float, TILE_SIZE, MAX_N_CONN, launch_t> ElecShared;
+typedef ElecSharedMem<float, elec_tile_size, elec_max_n_conn, launch_t> ElecShared;
 
 // One float per simdgroup in the threadgroup. nt is 32 and the simdgroup
 // width on Apple silicon is also 32, so this is a single slot -- but sizing

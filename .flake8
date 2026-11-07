@@ -1,6 +1,6 @@
 [flake8]
 # Keep vendored third-party code close to upstream.
-exclude=tmol/extern,.conda
+exclude=tmol/extern,tmol_jax/extern,tmol_core/extern,.conda
 
 # Black-compatible config from
 # https://github.com/ambv/black/blob/master/.flake8

@@ -1,5 +1,9 @@
 import torch
 import attr
+from tmol_core.pack.chi import (  # noqa: F401
+    chi_moving_roots as _chi_moving_roots,
+    sidechain_roots_for_chis as _sc_roots_for_chis,
+)
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -19,33 +23,6 @@ ConformerSample = tuple[
     Tensor[torch.int32][:],
     dict[str, Any],
 ]
-
-
-def _chi_moving_roots(rt: RefinedResidueType, chi_name: str) -> tuple[str, ...]:
-    """The atoms a chi turns: everything bonded to its third atom but its second.
-
-    Sidechain roots mark where a sampler stops copying degrees of freedom from
-    the input structure and starts rebuilding them from ideal internal
-    coordinates. The third atom of a torsion carries the degree of freedom but
-    does not itself move, so it must not be a root.
-    """
-    uaids = rt.torsion_to_uaids.get(chi_name)
-    if uaids is None:
-        return ()
-    held, turned = uaids[1][0], uaids[2][0]
-    if held < 0 or turned < 0:
-        return ()
-    moved = {int(j) for i, j in rt.bond_indices if int(i) == turned and int(j) != held}
-    return tuple(rt.atoms[at].name for at in sorted(moved))
-
-
-def _sc_roots_for_chis(rt: RefinedResidueType, chi_names) -> tuple[str, ...]:
-    """Sidechain roots for a sampler that turns the named chis."""
-    roots = {}
-    for chi_name in chi_names:
-        for at in _chi_moving_roots(rt, chi_name):
-            roots[at] = None
-    return tuple(roots)
 
 
 @attr.s(auto_attribs=True)

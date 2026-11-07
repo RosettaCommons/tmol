@@ -80,20 +80,29 @@ class HBondEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
     def pose_score_hbond(self, *args):
         from tmol.score.hbond.potentials._compiled import _hbond_pose_scores
 
-        common_args = args[:-4]
-        pose_stack, hbond_params, block_pair_scoring, shared_block_neighbors = args[-4:]
+        common_args = args[:-5]
+        (
+            pose_stack,
+            hbond_params,
+            base_indices,
+            block_pair_scoring,
+            shared_block_neighbors,
+        ) = args[-5:]
         return _hbond_pose_scores(
             *self._hbond_score_args(
-                common_args, pose_stack, hbond_params, block_pair_scoring
+                common_args, pose_stack, hbond_params, block_pair_scoring, base_indices
             ),
             shared_block_neighbors,
             getattr(pose_stack, "_hbond_allow_split_pairs", False),
         )
 
     def _hbond_score_args(
-        self, common_args, pose_stack, hbond_params, block_pair_scoring
+        self, common_args, pose_stack, hbond_params, block_pair_scoring, base_indices
     ):
-        from tmol.score.hbond.potentials._compiled import _gen_hbond_bases
+        from tmol.score.hbond.potentials._compiled import (
+            _gen_hbond_bases,
+            _gather_hbond_bases,
+        )
 
         coords_dtype = common_args[0].dtype
         pair_param_table, pair_poly_table, global_param_table = self._param_tables(
@@ -102,28 +111,15 @@ class HBondEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
 
         # Pairwise kernels route gradients through derived_atom_inds directly.
         with torch.no_grad():
-            derived_coords, derived_atom_inds = _gen_hbond_bases(
-                common_args[0],
-                common_args[1],
-                common_args[3],
-                common_args[4],
-                common_args[5],
-                common_args[6],
-                common_args[7],
-                pose_stack.inter_residue_connections,
-                pose_stack.packed_block_types.n_atoms,
-                pose_stack.packed_block_types.n_conn,
-                pose_stack.packed_block_types.conn_atom,
-                pose_stack.packed_block_types.n_all_bonds,
-                pose_stack.packed_block_types.all_bonds,
-                pose_stack.packed_block_types.atom_all_bond_ranges,
-                hbond_params.tile_n_donH,
-                hbond_params.tile_n_acc,
-                hbond_params.tile_donH_inds,
-                hbond_params.tile_acc_inds,
-                hbond_params.tile_acceptor_hybridization,
-                hbond_params.is_hydrogen,
-            )
+            if base_indices is None:
+                # Metal retains the complete canonical prepass until its
+                # topology/gather execution path is independently validated.
+                derived_coords, derived_atom_inds = _gen_hbond_bases(
+                    *self._base_arguments(common_args, pose_stack, hbond_params)
+                )
+            else:
+                derived_atom_inds = base_indices
+                derived_coords = _gather_hbond_bases(common_args[0], base_indices)
 
         score_args = (
             *common_args,
@@ -160,12 +156,16 @@ class HBondEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
             _hbond_rotamer_scores_shared,
         )
 
-        common_args = args[:-4]
-        pose_stack, hbond_params, block_pair_scoring, shared_dispatch_indices = args[
-            -4:
-        ]
+        common_args = args[:-5]
+        (
+            pose_stack,
+            hbond_params,
+            base_indices,
+            block_pair_scoring,
+            shared_dispatch_indices,
+        ) = args[-5:]
         score_args = self._hbond_score_args(
-            common_args, pose_stack, hbond_params, block_pair_scoring
+            common_args, pose_stack, hbond_params, block_pair_scoring, base_indices
         )
         score_op = (
             _hbond_rotamer_scores_shared
@@ -185,8 +185,8 @@ class HBondEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
         )
 
         *score_args, topology_only = args
-        common_args = score_args[:-3]
-        pose_stack, hbond_params, block_pair_scoring = score_args[-3:]
+        common_args = score_args[:-4]
+        pose_stack, hbond_params, base_indices, block_pair_scoring = score_args[-4:]
         first_rot_block_type = common_args[4]
         n_rots_for_block = common_args[10]
         rot_offset_for_block = common_args[11]
@@ -206,7 +206,7 @@ class HBondEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
         prepared_score_args = None
         if not topology_only:
             prepared_score_args = self._hbond_score_args(
-                common_args, pose_stack, hbond_params, block_pair_scoring
+                common_args, pose_stack, hbond_params, block_pair_scoring, base_indices
             )
         for candidate_begin in range(
             0, n_candidates, _PACK_HBOND_ROTAMER_CANDIDATE_WINDOW
@@ -265,4 +265,77 @@ class HBondEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
         annotation = HBondDependentTerm.setup_packed_block_types(
             self, pose_stack.packed_block_types
         )
-        return [pose_stack, annotation]
+        return [
+            pose_stack,
+            annotation,
+            self._prepare_base_indices(pose_stack, annotation),
+        ]
+
+    def get_rotamer_score_term_attributes(self, pose_stack, rotamer_set):
+        self.setup_packed_block_types(pose_stack.packed_block_types)
+        annotation = HBondDependentTerm.setup_packed_block_types(
+            self, pose_stack.packed_block_types
+        )
+        return [
+            pose_stack,
+            annotation,
+            self._prepare_base_indices(pose_stack, annotation, rotamer_set),
+        ]
+
+    @staticmethod
+    def _base_arguments(common_args, pose_stack, hbond_params):
+        return (
+            common_args[0],
+            common_args[1],
+            common_args[3],
+            common_args[4],
+            common_args[5],
+            common_args[6],
+            common_args[7],
+            pose_stack.inter_residue_connections,
+            pose_stack.packed_block_types.n_atoms,
+            pose_stack.packed_block_types.n_conn,
+            pose_stack.packed_block_types.conn_atom,
+            pose_stack.packed_block_types.n_all_bonds,
+            pose_stack.packed_block_types.all_bonds,
+            pose_stack.packed_block_types.atom_all_bond_ranges,
+            hbond_params.tile_n_donH,
+            hbond_params.tile_n_acc,
+            hbond_params.tile_donH_inds,
+            hbond_params.tile_acc_inds,
+            hbond_params.tile_acceptor_hybridization,
+            hbond_params.is_hydrogen,
+        )
+
+    def _prepare_base_indices(self, pose_stack, hbond_params, rotamer_set=None):
+        if pose_stack.device.type == "mps":
+            return None
+        from tmol.score.hbond.potentials._compiled import _gen_hbond_base_indices
+
+        if rotamer_set is None:
+            common_args = (
+                pose_stack.coords.reshape(-1, 3),
+                pose_stack.rot_coord_offset,
+                None,
+                pose_stack.first_rot_for_block,
+                pose_stack.block_type_ind,
+                pose_stack.block_ind_for_rot,
+                pose_stack.pose_ind_for_rot,
+                pose_stack.block_type_ind_for_rot,
+            )
+        else:
+            common_args = (
+                rotamer_set.coords.reshape(-1, 3),
+                rotamer_set.coord_offset_for_rot.to(torch.int32),
+                None,
+                rotamer_set.rot_offset_for_block.to(torch.int32),
+                rotamer_set.first_rot_block_type.to(torch.int32),
+                rotamer_set.block_ind_for_rot.to(torch.int32),
+                rotamer_set.pose_for_rot.to(torch.int32),
+                rotamer_set.block_type_ind_for_rot.to(torch.int32),
+            )
+        with torch.no_grad():
+            _, indices = _gen_hbond_base_indices(
+                *self._base_arguments(common_args, pose_stack, hbond_params)
+            )
+        return indices

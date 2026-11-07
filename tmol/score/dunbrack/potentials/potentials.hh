@@ -8,7 +8,7 @@
 #include <tmol/score/common/tuple_operators.hh>
 
 #include <tmol/utility/tensor/TensorAccessor.h>
-#include <tmol/numeric/bspline_compiled/bspline.hh>
+#include <tmol/numeric/bspline_compiled/bspline_kernel.hh>
 
 namespace tmol {
 namespace score {
@@ -21,7 +21,21 @@ using namespace tmol::score::common;
 
 using tmol::portable::Vec;
 
-#define CoordQuad tmol::portable::Mat<Real, 4, 3>
+template <typename Real>
+using CoordQuad = tmol::portable::Mat<Real, 4, 3>;
+
+// Own dimensions locally so bindings may use either checked int32 or int64
+// table metadata without widening whole buffers or changing global precision.
+template <typename Real, int N, tmol::Device D, typename SizeInt>
+TMOL_HOST_DEVICE_FUNC TView<Real, N, D> spline_table_view(
+    Real* data, Vec<SizeInt, N> const& shape, Vec<SizeInt, N> const& stride) {
+  int64_t sizes[N], strides[N];
+  for (int i = 0; i < N; ++i) {
+    sizes[i] = shape[i];
+    strides[i] = stride[i];
+  }
+  return TView<Real, N, D>(data, sizes, strides);
+}
 
 constexpr float operator"" _2rad(long double deg) {
   return float(M_PI * deg / 180.);
@@ -245,12 +259,17 @@ def classify_rotamer_for_res(
 
 // Interpolate the mean and standard deviations on the backbone
 // dihedral angles.
-template <size_t NbbP1, typename Real, typename Int, tmol::Device D>
+template <
+    size_t NbbP1,
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    typename SizeInt = int64_t>
 def block_interpolate_rotameric_tables(
     TView<Real, NbbP1, D> rotameric_mean_tables,
     TView<Real, NbbP1, D> rotameric_sdev_tables,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotmean_table_sizes,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotmean_table_strides,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotmean_table_sizes,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotmean_table_strides,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_start,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_step,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_periodicity,
@@ -290,21 +309,21 @@ def block_interpolate_rotameric_tables(
   tmol::portable::Vec<Real, NbbP1 - 1> dmean_dbb, dsdev_dbb;
 
   // Perform the interpolation
-  TensorAccessor<Real, NbbP1 - 1, D> mean_slice(
+  auto mean_slice = spline_table_view<Real, NbbP1 - 1, D>(
       rotameric_mean_tables.data() + tableind * rotameric_mean_tables.stride(0),
-      rotmean_table_sizes[tableind].data(),
-      rotmean_table_strides[tableind].data());
+      rotmean_table_sizes[tableind],
+      rotmean_table_strides[tableind]);
   tie(mean, dmean_dbb) =
-      tmol::numeric::bspline::ndspline<NbbP1 - 1, 3, D, Real, Int>::interpolate(
-          mean_slice, bbdihe);
+      tmol::numeric::bspline::ndspline_kernel<NbbP1 - 1, 3, D, Real, Int>::
+          interpolate(mean_slice, bbdihe);
 
-  TensorAccessor<Real, NbbP1 - 1, D> sdev_slice(
+  auto sdev_slice = spline_table_view<Real, NbbP1 - 1, D>(
       rotameric_sdev_tables.data() + tableind * rotameric_sdev_tables.stride(0),
-      rotmean_table_sizes[tableind].data(),
-      rotmean_table_strides[tableind].data());
+      rotmean_table_sizes[tableind],
+      rotmean_table_strides[tableind]);
   tie(sdev, dsdev_dbb) =
-      tmol::numeric::bspline::ndspline<NbbP1 - 1, 3, D, Real, Int>::interpolate(
-          sdev_slice, bbdihe);
+      tmol::numeric::bspline::ndspline_kernel<NbbP1 - 1, 3, D, Real, Int>::
+          interpolate(sdev_slice, bbdihe);
 
   for (int ii = 0; ii < NbbP1 - 1; ++ii) {
     dmean_dbb[ii] /= bbstep[ii];
@@ -315,12 +334,17 @@ def block_interpolate_rotameric_tables(
 
 // Interpolate the mean and standard deviations on the backbone
 // dihedral angles.
-template <size_t NbbP1, typename Real, typename Int, tmol::Device D>
+template <
+    size_t NbbP1,
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    typename SizeInt = int64_t>
 def interpolate_rotameric_tables(
     TView<Real, NbbP1, D> rotameric_mean_tables,
     TView<Real, NbbP1, D> rotameric_sdev_tables,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotmean_table_sizes,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotmean_table_strides,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotmean_table_sizes,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotmean_table_strides,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_start,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_step,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_periodicity,
@@ -366,21 +390,21 @@ def interpolate_rotameric_tables(
   tmol::portable::Vec<Real, NbbP1 - 1> dmean_dbb, dsdev_dbb;
 
   // Perform the interpolation
-  TensorAccessor<Real, NbbP1 - 1, D> mean_slice(
+  auto mean_slice = spline_table_view<Real, NbbP1 - 1, D>(
       rotameric_mean_tables.data() + tableind * rotameric_mean_tables.stride(0),
-      rotmean_table_sizes[tableind].data(),
-      rotmean_table_strides[tableind].data());
+      rotmean_table_sizes[tableind],
+      rotmean_table_strides[tableind]);
   tie(mean, dmean_dbb) =
-      tmol::numeric::bspline::ndspline<NbbP1 - 1, 3, D, Real, Int>::interpolate(
-          mean_slice, bbdihe);
+      tmol::numeric::bspline::ndspline_kernel<NbbP1 - 1, 3, D, Real, Int>::
+          interpolate(mean_slice, bbdihe);
 
-  TensorAccessor<Real, NbbP1 - 1, D> sdev_slice(
+  auto sdev_slice = spline_table_view<Real, NbbP1 - 1, D>(
       rotameric_sdev_tables.data() + tableind * rotameric_sdev_tables.stride(0),
-      rotmean_table_sizes[tableind].data(),
-      rotmean_table_strides[tableind].data());
+      rotmean_table_sizes[tableind],
+      rotmean_table_strides[tableind]);
   tie(sdev, dsdev_dbb) =
-      tmol::numeric::bspline::ndspline<NbbP1 - 1, 3, D, Real, Int>::interpolate(
-          sdev_slice, bbdihe);
+      tmol::numeric::bspline::ndspline_kernel<NbbP1 - 1, 3, D, Real, Int>::
+          interpolate(sdev_slice, bbdihe);
 
   for (int ii = 0; ii < NbbP1 - 1; ++ii) {
     dmean_dbb[ii] /= bbstep[ii];
@@ -389,12 +413,17 @@ def interpolate_rotameric_tables(
   return {mean, dmean_dbb, sdev, dsdev_dbb};
 }
 
-template <size_t NbbP1, typename Real, typename Int, tmol::Device D>
+template <
+    size_t NbbP1,
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    typename SizeInt = int64_t>
 def block_chi_deviation_penalty(
     TView<Real, NbbP1, D> rotameric_mean_tables,
     TView<Real, NbbP1, D> rotameric_sdev_tables,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotmean_table_sizes,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotmean_table_strides,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotmean_table_sizes,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotmean_table_strides,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> const& rotameric_bb_start,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> const& rotameric_bb_step,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> const& rotameric_bb_periodicity,
@@ -459,12 +488,17 @@ def block_chi_deviation_penalty(
   return {deviation_penalty, dpen_dchi, ddev_dbb};
 }
 
-template <size_t NbbP1, typename Real, typename Int, tmol::Device D>
+template <
+    size_t NbbP1,
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    typename SizeInt = int64_t>
 def chi_deviation_penalty(
     TView<Real, NbbP1, D> rotameric_mean_tables,
     TView<Real, NbbP1, D> rotameric_sdev_tables,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotmean_table_sizes,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotmean_table_strides,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotmean_table_sizes,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotmean_table_strides,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> const& rotameric_bb_start,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> const& rotameric_bb_step,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> const& rotameric_bb_periodicity,
@@ -530,13 +564,18 @@ def chi_deviation_penalty(
   return {deviation_penalty, dpen_dchi, ddev_dbb};
 }
 
-template <size_t NbbP1, typename Real, typename Int, tmol::Device D>
+template <
+    size_t NbbP1,
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    typename SizeInt = int64_t>
 def block_deviation_penalty_for_chi(
     // From DB
     TView<Real, NbbP1, D> rotameric_mean_tables,
     TView<Real, NbbP1, D> rotameric_sdev_tables,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotmean_table_sizes,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotmean_table_strides,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotmean_table_sizes,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotmean_table_strides,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> const& rotameric_bb_start,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> const& rotameric_bb_step,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> const& rotameric_bb_periodicity,
@@ -549,8 +588,8 @@ def block_deviation_penalty_for_chi(
     int chi_ind,
     Int rotameric_rottable_assignment,
     // Out
-    TensorAccessor<CoordQuad, 1, D> drotchi_devpen_dtor_xyz,
-    TensorAccessor<CoordQuad, 1, D> ddihe_dxyz,
+    TensorAccessor<CoordQuad<Real>, 1, D> drotchi_devpen_dtor_xyz,
+    TensorAccessor<CoordQuad<Real>, 1, D> ddihe_dxyz,
     bool compute_derivs = true) -> Real {
   Real devpen, dpen_dchi;
   tmol::portable::Vec<Real, 2> dpen_dbb;
@@ -569,7 +608,7 @@ def block_deviation_penalty_for_chi(
       block_nchi,
 
       dihedrals,
-      chi_ind,
+      Int(chi_ind),
       rotameric_rottable_assignment);
 
   if (compute_derivs) {
@@ -588,12 +627,17 @@ def block_deviation_penalty_for_chi(
   return devpen;
 }
 
-template <size_t NbbP1, typename Real, typename Int, tmol::Device D>
+template <
+    size_t NbbP1,
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    typename SizeInt = int64_t>
 def deviation_penalty_for_chi(
     TView<Real, NbbP1, D> rotameric_mean_tables,
     TView<Real, NbbP1, D> rotameric_sdev_tables,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotmean_table_sizes,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotmean_table_strides,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotmean_table_sizes,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotmean_table_strides,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> const& rotameric_bb_start,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> const& rotameric_bb_step,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> const& rotameric_bb_periodicity,
@@ -604,8 +648,8 @@ def deviation_penalty_for_chi(
     TensorAccessor<Int, 1, D> rotameric_rottable_assignment,
     TensorAccessor<Int, 2, D> rotameric_chi_desc,
     TensorAccessor<Int, 1, D> nchi_for_res,
-    TensorAccessor<CoordQuad, 2, D> drotchi_devpen_dtor_xyz,
-    TensorAccessor<CoordQuad, 1, D> ddihe_dxyz,
+    TensorAccessor<CoordQuad<Real>, 2, D> drotchi_devpen_dtor_xyz,
+    TensorAccessor<CoordQuad<Real>, 1, D> ddihe_dxyz,
     int i) -> Real {
   int ires = rotameric_chi_desc[i][0];
   int ichi_ind = rotameric_chi_desc[i][1];
@@ -648,11 +692,16 @@ def deviation_penalty_for_chi(
   return devpen;
 }
 
-template <size_t NbbP1, typename Real, typename Int, tmol::Device D>
+template <
+    size_t NbbP1,
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    typename SizeInt = int64_t>
 def block_rotameric_chi_probability(
     TView<Real, NbbP1, D> rotameric_neglnprob_tables,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotprob_table_sizes,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotprob_table_strides,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotprob_table_sizes,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotprob_table_strides,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_start,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_step,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_periodicity,
@@ -680,26 +729,31 @@ def block_rotameric_chi_probability(
   }
   Real V;
   tmol::portable::Vec<Real, NbbP1 - 1> dVdbb;
-  TensorAccessor<Real, NbbP1 - 1, D> rotprob_slice(
+  auto rotprob_slice = spline_table_view<Real, NbbP1 - 1, D>(
       rotameric_neglnprob_tables.data()
           + res_rottable * rotameric_neglnprob_tables.stride(0),
-      rotprob_table_sizes[res_rottable].data(),
-      rotprob_table_strides[res_rottable].data());
+      rotprob_table_sizes[res_rottable],
+      rotprob_table_strides[res_rottable]);
 
   tie(V, dVdbb) =
-      tmol::numeric::bspline::ndspline<NbbP1 - 1, 3, D, Real, Int>::interpolate(
-          rotprob_slice, bbdihe);
+      tmol::numeric::bspline::ndspline_kernel<NbbP1 - 1, 3, D, Real, Int>::
+          interpolate(rotprob_slice, bbdihe);
   for (int ii = 0; ii < NbbP1 - 1; ++ii) {
     dVdbb[ii] /= bbstep[ii];
   }
   return {V, dVdbb};
 }
 
-template <size_t NbbP1, typename Real, typename Int, tmol::Device D>
+template <
+    size_t NbbP1,
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    typename SizeInt = int64_t>
 def rotameric_chi_probability(
     TView<Real, NbbP1, D> rotameric_neglnprob_tables,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotprob_table_sizes,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotprob_table_strides,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotprob_table_sizes,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotprob_table_strides,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_start,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_step,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_periodicity,
@@ -734,26 +788,31 @@ def rotameric_chi_probability(
   }
   Real V;
   tmol::portable::Vec<Real, NbbP1 - 1> dVdbb;
-  TensorAccessor<Real, NbbP1 - 1, D> rotprob_slice(
+  auto rotprob_slice = spline_table_view<Real, NbbP1 - 1, D>(
       rotameric_neglnprob_tables.data()
           + res_rottable * rotameric_neglnprob_tables.stride(0),
-      rotprob_table_sizes[res_rottable].data(),
-      rotprob_table_strides[res_rottable].data());
+      rotprob_table_sizes[res_rottable],
+      rotprob_table_strides[res_rottable]);
 
   tie(V, dVdbb) =
-      tmol::numeric::bspline::ndspline<NbbP1 - 1, 3, D, Real, Int>::interpolate(
-          rotprob_slice, bbdihe);
+      tmol::numeric::bspline::ndspline_kernel<NbbP1 - 1, 3, D, Real, Int>::
+          interpolate(rotprob_slice, bbdihe);
   for (int ii = 0; ii < NbbP1 - 1; ++ii) {
     dVdbb[ii] /= bbstep[ii];
   }
   return {V, dVdbb};
 }
 
-template <size_t NbbP1, typename Real, typename Int, tmol::Device D>
+template <
+    size_t NbbP1,
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    typename SizeInt = int64_t>
 def rotameric_chi_probability_for_block(
     TView<Real, NbbP1, D> rotameric_neglnprob_tables,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotprob_table_sizes,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotprob_table_strides,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotprob_table_sizes,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotprob_table_strides,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_start,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_step,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_periodicity,
@@ -761,8 +820,8 @@ def rotameric_chi_probability_for_block(
     Int block_rotamer_table_set,
     TensorAccessor<Real, 1, D> dihedrals,
     Int rotameric_rottable_assignment,
-    TensorAccessor<CoordQuad, 1, D> dneglnprob_rot_dbb_xyz,
-    TensorAccessor<CoordQuad, 1, D> ddihe_dxyz,
+    TensorAccessor<CoordQuad<Real>, 1, D> dneglnprob_rot_dbb_xyz,
+    TensorAccessor<CoordQuad<Real>, 1, D> ddihe_dxyz,
     bool compute_derivs = true) -> Real {
   Real neglnprobE = 0.0;
   tmol::portable::Vec<Real, NbbP1 - 1> dneglnprob_ddihe;
@@ -792,11 +851,16 @@ def rotameric_chi_probability_for_block(
   return neglnprobE;
 }
 
-template <size_t NbbP1, typename Real, typename Int, tmol::Device D>
+template <
+    size_t NbbP1,
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    typename SizeInt = int64_t>
 def rotameric_chi_probability_for_res(
     TView<Real, NbbP1, D> rotameric_neglnprob_tables,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotprob_table_sizes,
-    TView<Vec<int64_t, (int)NbbP1 - 1>, 1, D> rotprob_table_strides,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotprob_table_sizes,
+    TView<Vec<SizeInt, (int)NbbP1 - 1>, 1, D> rotprob_table_strides,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_start,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_step,
     TView<Vec<Real, (int)NbbP1 - 1>, 1, D> rotameric_bb_periodicity,
@@ -806,8 +870,8 @@ def rotameric_chi_probability_for_res(
     TensorAccessor<Int, 1, D> rottable_set_for_res,
     TensorAccessor<Int, 1, D> rotameric_rottable_assignment,
     TensorAccessor<Int, 1, D> rotres2resid,
-    TensorAccessor<CoordQuad, 2, D> dneglnprob_rot_dbb_xyz,
-    TensorAccessor<CoordQuad, 1, D> ddihe_dxyz,
+    TensorAccessor<CoordQuad<Real>, 2, D> dneglnprob_rot_dbb_xyz,
+    TensorAccessor<CoordQuad<Real>, 1, D> ddihe_dxyz,
     int i) -> Real {
   Real neglnprobE;
   tmol::portable::Vec<Real, NbbP1 - 1> dneglnprob_ddihe;
@@ -840,11 +904,16 @@ def rotameric_chi_probability_for_res(
   return neglnprobE;
 }
 
-template <size_t NbbP2, typename Real, typename Int, tmol::Device D>
+template <
+    size_t NbbP2,
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    typename SizeInt = int64_t>
 def block_semirotameric_energy(
     TView<Real, NbbP2, D> semirotameric_tables,
-    TView<Vec<int64_t, (int)NbbP2 - 1>, 1, D> semirot_table_sizes,
-    TView<Vec<int64_t, (int)NbbP2 - 1>, 1, D> semirot_table_strides,
+    TView<Vec<SizeInt, (int)NbbP2 - 1>, 1, D> semirot_table_sizes,
+    TView<Vec<SizeInt, (int)NbbP2 - 1>, 1, D> semirot_table_strides,
     TView<Vec<Real, (int)NbbP2 - 1>, 1, D> semirot_start,
     TView<Vec<Real, (int)NbbP2 - 1>, 1, D> semirot_step,
     TView<Vec<Real, (int)NbbP2 - 1>, 1, D> semirot_periodicity,
@@ -855,8 +924,8 @@ def block_semirotameric_energy(
 
     TensorAccessor<Real, 1, D> dihedrals,
     Int semirotameric_rottable_assignment,
-    TensorAccessor<CoordQuad, 1, D> dneglnprob_nonrot_dtor_xyz,
-    TensorAccessor<CoordQuad, 1, D> ddihe_dxyz,
+    TensorAccessor<CoordQuad<Real>, 1, D> dneglnprob_nonrot_dtor_xyz,
+    TensorAccessor<CoordQuad<Real>, 1, D> ddihe_dxyz,
     bool compute_derivs = true) -> Real {
   tmol::portable::Vec<Real, NbbP2 - 1> dihe;
   tmol::portable::Vec<Real, NbbP2 - 1> temp_dihe_deg;
@@ -893,14 +962,14 @@ def block_semirotameric_energy(
 
   Real neglnprob;
   tmol::portable::Vec<Real, NbbP2 - 1> dnlp_ddihe;
-  TensorAccessor<Real, NbbP2 - 1, D> semirot_slice(
+  auto semirot_slice = spline_table_view<Real, NbbP2 - 1, D>(
       semirotameric_tables.data() + table_ind * semirotameric_tables.stride(0),
-      semirot_table_sizes[table_ind].data(),
-      semirot_table_strides[table_ind].data());
+      semirot_table_sizes[table_ind],
+      semirot_table_strides[table_ind]);
 
   tie(neglnprob, dnlp_ddihe) =
-      tmol::numeric::bspline::ndspline<NbbP2 - 1, 3, D, Real, Int>::interpolate(
-          semirot_slice, dihe);
+      tmol::numeric::bspline::ndspline_kernel<NbbP2 - 1, 3, D, Real, Int>::
+          interpolate(semirot_slice, dihe);
   for (int ii = 0; ii < NbbP2 - 1; ++ii) {
     dnlp_ddihe[ii] /= dihe_step[ii];
   }
@@ -918,11 +987,16 @@ def block_semirotameric_energy(
   return neglnprob;
 }
 
-template <size_t NbbP2, typename Real, typename Int, tmol::Device D>
+template <
+    size_t NbbP2,
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    typename SizeInt = int64_t>
 def semirotameric_energy(
     TView<Real, NbbP2, D> semirotameric_tables,
-    TView<Vec<int64_t, (int)NbbP2 - 1>, 1, D> semirot_table_sizes,
-    TView<Vec<int64_t, (int)NbbP2 - 1>, 1, D> semirot_table_strides,
+    TView<Vec<SizeInt, (int)NbbP2 - 1>, 1, D> semirot_table_sizes,
+    TView<Vec<SizeInt, (int)NbbP2 - 1>, 1, D> semirot_table_strides,
     TView<Vec<Real, (int)NbbP2 - 1>, 1, D> semirot_start,
     TView<Vec<Real, (int)NbbP2 - 1>, 1, D> semirot_step,
     TView<Vec<Real, (int)NbbP2 - 1>, 1, D> semirot_periodicity,
@@ -931,8 +1005,8 @@ def semirotameric_energy(
     TensorAccessor<Int, 1, D> semirotameric_rottable_assignment,
     TensorAccessor<Int, 2, D> semirotameric_chi_desc,
     int i,
-    TensorAccessor<CoordQuad, 2, D> dneglnprob_nonrot_dtor_xyz,
-    TensorAccessor<CoordQuad, 1, D> ddihe_dxyz) -> Real {
+    TensorAccessor<CoordQuad<Real>, 2, D> dneglnprob_nonrot_dtor_xyz,
+    TensorAccessor<CoordQuad<Real>, 1, D> ddihe_dxyz) -> Real {
   tmol::portable::Vec<Real, NbbP2 - 1> dihe;
   tmol::portable::Vec<Real, NbbP2 - 1> temp_dihe_deg;
   tmol::portable::Vec<Real, NbbP2 - 1> temp_orig_dihe_deg;
@@ -972,14 +1046,14 @@ def semirotameric_energy(
 
   Real neglnprob;
   tmol::portable::Vec<Real, NbbP2 - 1> dnlp_ddihe;
-  TensorAccessor<Real, NbbP2 - 1, D> semirot_slice(
+  auto semirot_slice = spline_table_view<Real, NbbP2 - 1, D>(
       semirotameric_tables.data() + table_ind * semirotameric_tables.stride(0),
-      semirot_table_sizes[table_ind].data(),
-      semirot_table_strides[table_ind].data());
+      semirot_table_sizes[table_ind],
+      semirot_table_strides[table_ind]);
 
   tie(neglnprob, dnlp_ddihe) =
-      tmol::numeric::bspline::ndspline<NbbP2 - 1, 3, D, Real, Int>::interpolate(
-          semirot_slice, dihe);
+      tmol::numeric::bspline::ndspline_kernel<NbbP2 - 1, 3, D, Real, Int>::
+          interpolate(semirot_slice, dihe);
   for (int ii = 0; ii < NbbP2 - 1; ++ii) {
     dnlp_ddihe[ii] /= dihe_step[ii];
   }

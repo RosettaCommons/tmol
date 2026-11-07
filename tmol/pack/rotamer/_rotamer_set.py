@@ -1,53 +1,21 @@
 import attr
-import numpy
 import torch
 from tmol.types._attrs import ValidateAttrs
 from tmol.types._torch import Tensor
 
 
-@attr.s(auto_attribs=True, slots=True, frozen=True)
-class CorrelatedBlockGroup:
-    """Blocks whose rotamer k was emitted as the same joint conformer."""
-
-    pose: int
-    blocks: tuple[int, ...]
-
-    @property
-    def anchor(self):
-        return self.blocks[0]
+from tmol_core.pack.correlation import (  # noqa: F401
+    CorrelatedBlockGroup,
+    correlation_indices,
+)
 
 
 def _correlation_indices(n_rots_for_block, groups):
-    out = numpy.full(tuple(n_rots_for_block.shape), -1, dtype=numpy.int32)
-    if groups:
-        counts = n_rots_for_block.cpu().numpy()
-        claimed = set()
-        for gi, group in enumerate(groups):
-            sampled = list(group.blocks)
-            if (
-                not 0 <= group.pose < counts.shape[0]
-                or any(not 0 <= block < counts.shape[1] for block in sampled)
-                or len(set(sampled)) != len(sampled)
-            ):
-                raise ValueError("Invalid correlated block indices")
-            members = {(group.pose, block) for block in sampled}
-            if claimed & members:
-                raise ValueError(
-                    "A rotamer block belongs to multiple correlated groups"
-                )
-            claimed.update(members)
-            if len(sampled) < 2:
-                continue
-            if counts[group.pose, sampled[0]] < 1 or not numpy.all(
-                counts[group.pose, sampled] == counts[group.pose, sampled[0]]
-            ):
-                raise ValueError(
-                    f"group at anchor {group.anchor} in pose {group.pose} has members with differing rotamer counts; they cannot be in lockstep"
-                )
-            if counts[group.pose, sampled[0]] == 1:
-                continue
-            out[group.pose, sampled] = gi
-    return torch.tensor(out, device=n_rots_for_block.device)
+    counts = n_rots_for_block.cpu().numpy() if groups else None
+    return torch.tensor(
+        correlation_indices(n_rots_for_block.shape, groups, counts),
+        device=n_rots_for_block.device,
+    )
 
 
 @attr.s(auto_attribs=True, slots=True, frozen=True)
@@ -110,36 +78,12 @@ class RotamerSet(ValidateAttrs):
         return self.block_ind_for_rot.shape[0]
 
     def to_atom_array(self, pbt):
-        import biotite.structure as struc
-        from tmol.chemical._restypes import _get_element_from_atom_name
+        from tmol_core.pack.rotamer_set import atom_array_from_rotamers
 
-        n_rots = self.n_rotamers_total
-        coords = self.coords.cpu().numpy()
-
-        atoms = []
-        model_ids = []
-
-        for i in range(n_rots):
-            i_offset = int(self.coord_offset_for_rot[i])
-            block_type_ind = int(self.block_type_ind_for_rot[i])
-            n_atoms = int(pbt.n_atoms[block_type_ind])
-            bt = pbt.active_block_types[block_type_ind]
-            res_id = int(self.block_ind_for_rot[i]) + 1
-
-            for j in range(n_atoms):
-                atom_name = bt.atoms[j].name
-                atoms.append(
-                    struc.Atom(
-                        coords[i_offset + j],
-                        chain_id="A",
-                        res_id=res_id,
-                        res_name=bt.name3,
-                        atom_name=atom_name,
-                        element=_get_element_from_atom_name(atom_name),
-                    )
-                )
-                model_ids.append(i)
-
-        atom_array = struc.array(atoms)
-        atom_array.set_annotation("model", numpy.array(model_ids, dtype=numpy.int32))
-        return atom_array
+        return atom_array_from_rotamers(
+            pbt.active_block_types,
+            self.coords.cpu().numpy(),
+            self.block_type_ind_for_rot.cpu().numpy(),
+            self.block_ind_for_rot.cpu().numpy(),
+            self.coord_offset_for_rot.cpu().numpy(),
+        )

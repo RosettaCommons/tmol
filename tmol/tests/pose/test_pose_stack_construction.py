@@ -244,16 +244,18 @@ def test_find_connection_pairs_for_residue_subset_w_errors2(
     assert not succeeded
 
 
-def test_blocks_without_connections_are_all_the_cap_apart(torch_device):
-    counts = torch.zeros((2, 3), dtype=torch.int32, device=torch_device)
+@pytest.mark.parametrize("shape", [(2, 3, 3), (0, 3, 2), (2, 0, 2), (2, 3, 0)])
+def test_blocks_without_connections_are_all_the_cap_apart(torch_device, shape):
+    p, b, c = shape
+    counts = torch.zeros((p, b), dtype=torch.int32, device=torch_device)
     intra = torch.full(
-        (2, 3, 3, 3), MAX_SIG_BOND_SEPARATION, dtype=torch.int32, device=torch_device
+        (p, b, c, c), MAX_SIG_BOND_SEPARATION, dtype=torch.int32, device=torch_device
     )
-    connections = torch.full((2, 3, 3, 2), -1, dtype=torch.int64, device=torch_device)
+    connections = torch.full((p, b, c, 2), -1, dtype=torch.int64, device=torch_device)
 
     result = InterBlockBondsep.from_bonded_graph(counts, intra, connections)
 
-    assert result.shape == (2, 3, 3, 3, 3)
+    assert result.shape == (p, b, b, c, c)
     assert torch.all(result.to_dense() == MAX_SIG_BOND_SEPARATION)
 
 
@@ -454,3 +456,13 @@ def test_from_block_type_names_smoke(
     padding = torch.ones_like(ibb, dtype=torch.bool)
     padding[..., :max_n_conn, :max_n_conn] = False
     assert bool((ibb[padding] == MAX_SIG_BOND_SEPARATION).all())
+
+
+def test_sequence_nonpolymer_splits_real_polymer_ports(
+    fresh_default_packed_block_types,
+):
+    pose = PoseStackBuilder.from_block_type_names(
+        fresh_default_packed_block_types, [["ALA", "VRT", "ALA"]], [[3]]
+    )
+    assert torch.all(pose.inter_residue_connections == -1)
+    assert torch.all(pose.chain_id == 0)

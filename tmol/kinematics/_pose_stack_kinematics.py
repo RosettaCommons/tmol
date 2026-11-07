@@ -9,34 +9,39 @@ tmol.pose itself carries no kinematics dependency.
 from __future__ import annotations
 
 import attr
-import numpy as np
 import torch
 
 from tmol.kinematics.compiled._compiled_ops import _inverse_kin
-from tmol.kinematics._datatypes import BondDOFTypes, NodeType
+from tmol.kinematics._datatypes import BondDOFTypes
 from tmol.kinematics._fold_forest import FoldForest
 from tmol.kinematics._script_modules import PoseStackKinematicsModule
 from tmol.pose._pose_stack import PoseStack
-from tmol.pose._util import _measure_torsions, _resolve_uaid, _torsion_requests
+from tmol.pose._util import _measure_torsions, _torsion_requests
 from tmol.pose import residue_label
+from tmol_core.kinematics.torsion_updates import (
+    controlling_node,
+    is_bonded_node,
+    require_bonded_node,
+    torsion_deltas,
+    torsion_targets,
+)
 
 
 def _controlling_kfo_node(pose_stack, kmd, kfo_for_atom, pose, block, tor_ind):
-    """Kinforest node whose phi_c controls a named torsion, or -1 if unresolvable.
-
-    The torsion tracks that phi_c with slope +1: phi_c turns about
-    parent→child, so the reversed axis and the reversed end of the dihedral
-    cancel.
-    """
     pbt = pose_stack.packed_block_types
-    gssps = pbt.gen_seg_scan_path_segs
-    bt_ind = int(pose_stack.block_type_ind64[pose, block])
-    in_conn = int(kmd.block_in_and_first_out[pose, block, 0])
-    uaid = gssps.uaid_for_torsion_by_inconn[bt_ind, in_conn, tor_ind]
-    flat_atom = _resolve_uaid(pose_stack, pose, block, uaid)
-    if flat_atom == -1:
-        return -1
-    return int(kfo_for_atom[flat_atom])
+    return controlling_node(
+        pose_stack.block_type_ind64,
+        kmd.block_in_and_first_out,
+        pbt.gen_seg_scan_path_segs.uaid_for_torsion_by_inconn,
+        pose_stack.block_coord_offset64,
+        pose_stack.inter_residue_connections64,
+        pbt.atom_downstream_of_conn,
+        pose_stack.max_n_pose_atoms,
+        kfo_for_atom,
+        pose,
+        block,
+        tor_ind,
+    )
 
 
 def torsion_labels(pose_stack, kin_module, pose):
@@ -53,7 +58,7 @@ def torsion_labels(pose_stack, kin_module, pose):
         node = _controlling_kfo_node(
             pose_stack, kmd, kfo_for_atom, pose, block, tor_ind
         )
-        if node == -1 or kmd.forest.doftype[node] != NodeType.bond:
+        if not is_bonded_node(node, kmd.forest.doftype):
             continue
         labels.append(f"{residue_label(pose_stack, pose, block)} {name}")
         nodes.append(node)
@@ -95,11 +100,7 @@ def _apply_torsion_deltas(pose_stack, requests, deltas, fold_forest=None):
         node = _controlling_kfo_node(
             pose_stack, kmd, kfo_for_atom, pose, block, tor_ind
         )
-        if node == -1 or kmd.forest.doftype[node] != NodeType.bond:
-            raise ValueError(
-                f"torsion {name!r} on block {block} of pose {pose} is not a bonded "
-                "degree of freedom under this fold forest"
-            )
+        require_bonded_node(node, kmd.forest.doftype, (pose, block, tor_ind, name))
         dofs[node, BondDOFTypes.phi_c] += delta
 
     kin_coords = kin_module(dofs)
@@ -125,21 +126,7 @@ def set_named_torsions(
     it; ``reasonable_fold_forest`` roots each chain at its first residue.
     """
     requests = _torsion_requests(pose_stack, poses, blocks, names)
-    targets = np.atleast_1d(np.asarray(values, dtype=np.float64))
-    if len(targets) == 1 and len(requests) > 1:
-        targets = np.repeat(targets, len(requests))
-    if len(targets) != len(requests):
-        raise ValueError("values must be a scalar or match the number of torsions")
-    if degrees:
-        targets = np.radians(targets)
-
+    targets = torsion_targets(requests, values, degrees)
     current = _measure_torsions(pose_stack, requests, degrees=False)
-    if np.isnan(current).any():
-        bad = requests[int(np.argmax(np.isnan(current)))]
-        raise ValueError(
-            f"torsion {bad[3]!r} on block {bad[1]} of pose {bad[0]} is undefined; "
-            "it reaches a residue that is not present"
-        )
-    return _apply_torsion_deltas(
-        pose_stack, requests, targets - current, fold_forest=fold_forest
-    )
+    deltas = torsion_deltas(requests, targets, current)
+    return _apply_torsion_deltas(pose_stack, requests, deltas, fold_forest=fold_forest)

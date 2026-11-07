@@ -359,3 +359,72 @@ def test_late_independent_sampler_cannot_extend_correlated_members(
         _correlated_groups_for_samples(task, [correlated, extra])
     groups = _correlated_groups_for_samples(task, [correlated])
     assert [(g.pose, g.blocks) for g in groups] == [(0, (0, 1))]
+
+
+def test_noncontiguous_joint_energy_and_source_identity(torch_device):
+    """Four legal states retain every contribution and each member's identity."""
+    from tmol.pack.rotamer._conjugated_groups import (
+        _collapse_group_rotamers,
+        _collapse_group_energies,
+    )
+    from tmol_core.pack.correlation import (
+        CorrelatedBlockGroup,
+        expand_group_assignments,
+    )
+    import attr
+
+    def ints(value):
+        return torch.tensor(value, dtype=torch.int32, device=torch_device)
+
+    rots = SimpleNamespace(
+        coords=torch.zeros((6, 3), device=torch_device),
+        block_ind_for_rot=ints([0, 0, 1, 1, 2, 2]),
+        n_rots_for_block=ints([[2, 2, 2]]),
+        rot_offset_for_block=ints([[0, 2, 4]]),
+        rot_offset_for_pose=ints([0]),
+        n_rots_for_pose=ints([6]),
+        pose_for_rot=ints([0] * 6),
+        block_type_ind_for_rot=ints([10, 11, 20, 21, 30, 31]),
+    )
+    collapse, group, conformer = _collapse_group_rotamers(
+        None, rots, [CorrelatedBlockGroup(0, (0, 2))]
+    )
+    rows, values = [], []
+    # Distinct one-body, two independent external terms, and duplicate internal
+    # contributions. Illegal cross-state internal edges must never win.
+    for state in range(2):
+        for rot, value in ((state, 1 + state), (4 + state, 3 + 2 * state)):
+            rows.append((0, rot, rot))
+            values.append(value)
+        for value in (5 + state, 7 + state):
+            rows.append((0, state, 4 + state))
+            values.append(value)
+        rows.append((0, state, 5 - state))
+        values.append(-100000)
+        for external in range(2):
+            rows.extend(((0, state, 2 + external), (0, 2 + external, 4 + state)))
+            values.extend((11 + state + external, 13 + 2 * state + external))
+    energies = torch.sparse_coo_tensor(
+        ints(rows).T.to(torch.int64),
+        torch.tensor(values, dtype=torch.float64, device=torch_device),
+        (1, 6, 6),
+    )
+    compact = _collapse_group_energies(energies, collapse, group, conformer).to_dense()[
+        0
+    ]
+    host = attr.evolve(
+        collapse,
+        rot_offset_for_block=collapse.rot_offset_for_block.cpu().numpy(),
+        n_rots_for_block=collapse.n_rots_for_block.cpu().numpy(),
+    )
+    for state in range(2):
+        for external in range(2):
+            selected = [state, 2 + external, 4]
+            energy = sum(compact[a, b].item() for a in selected for b in selected)
+            assert energy == 40 + 8 * state + 2 * external
+            sources = expand_group_assignments(np.array([selected]), host)
+            np.testing.assert_array_equal(sources, [[state, 2 + external, 4 + state]])
+            torch.testing.assert_close(
+                rots.block_type_ind_for_rot[ints(sources)[0].long()],
+                ints([10 + state, 20 + external, 30 + state]),
+            )

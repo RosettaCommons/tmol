@@ -1,29 +1,20 @@
-import numpy
 import torch
 
 import attr
 
 from tmol.types._torch import Tensor
-from tmol.types._array import NDArray
 from tmol.score._energy_term import EnergyTerm
 from .._annotation_cache import AnnotationKey, _cached_annotation, _store_annotation
 from ._params import BackboneTorsionParamResolver
+from tmol_core.scoring.backbone_torsion import (  # noqa: F401
+    BackboneTorsionBlockTypeParams,
+    invert_flags,
+)
 from tmol.database import ParameterDatabase
 
 from tmol.chemical import RefinedResidueType
-from tmol.chemical._restypes import uaid_t
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
-
-
-@attr.s(frozen=True, slots=True, auto_attribs=True)
-class BackboneTorsionBlockTypeParams:
-    rama_table_inds: NDArray[numpy.int32][2]  # non-prepro/prepro
-    omega_table_inds: NDArray[numpy.int32][2]  # non-prepro/prepro
-    lower_conn_ind: NDArray[numpy.int32][1]
-    upper_conn_ind: NDArray[numpy.int32][1]
-    is_pro: NDArray[numpy.int32][1]
-    backbone_torsion_atoms: NDArray[uaid_t][12, 3]
 
 
 @attr.s(frozen=True, slots=True, auto_attribs=True)
@@ -42,14 +33,9 @@ def _invert_flag(found, block_type_name):
     A mirror negates both backbone torsions together, so a row inverting only
     one describes a potential this term cannot express.
     """
-    phi = found["invert_phi"].values.astype(bool)
-    psi = found["invert_psi"].values.astype(bool)
-    if (phi != psi).any():
-        raise ValueError(
-            f"{block_type_name}: a rama/omega lookup row inverts only one of "
-            "phi and psi; the mirrored tables invert both together"
-        )
-    return phi
+    return invert_flags(
+        found["invert_phi"].values, found["invert_psi"].values, block_type_name
+    )
 
 
 class BackboneTorsionEnergyTerm(EnergyTerm):
@@ -111,12 +97,6 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
         return 2
 
     def setup_block_type(self, block_type: RefinedResidueType):
-        def uaids_to_np(tor_uaids):
-            uaids = numpy.full((4,), -1, dtype=uaid_t)
-            for i in range(4):
-                uaids[i] = numpy.array(tor_uaids[i], dtype=uaid_t)
-            return uaids
-
         super(BackboneTorsionEnergyTerm, self).setup_block_type(block_type)
         cached = _cached_annotation(
             block_type, "_backbone_torsion_annotation", self._block_annotation_key
@@ -124,69 +104,8 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
         if cached is not None:
             return cached
 
-        # every residue with backbone torsions to score names the tables it
-        #    reads, canonical ones included, so no reference means no scoring.
-        #    A terminus still has a peptide bond to its neighbour and so needs
-        #    an omega table even with no phi or psi; the kernel skips omega
-        #    entirely when the table index is negative
-        rname = block_type.rama_reference
-        lookups = numpy.array([[rname, "_"], [rname, "PRO"]], dtype=object)
-
-        def table_inds(lookup, n_tables):
-            if rname is None:
-                return numpy.full(len(lookups), -1, dtype=numpy.int64)
-            rows = lookup.index.get_indexer(lookups)
-            inds = numpy.full(len(rows), -1, dtype=numpy.int64)
-            hit = rows != -1
-            if not hit.any():
-                return inds
-            found = lookup.iloc[rows[hit], :]
-            inds[hit] = found["table_id"].values
-
-            # a d-aa reads its l counterpart at negated phi/psi; the resolver
-            #    stores that mirrored table at i + n_tables
-            mirrored = _invert_flag(found, block_type.name) ^ bool(
-                block_type.reference_mirrored
-            )
-            inds[hit] = numpy.where(mirrored, inds[hit] + n_tables, inds[hit])
-            return inds
-
-        rama_table_inds = table_inds(
-            self.param_resolver.rama_lookup, self.param_resolver.n_rama_tables
-        )
-        omega_table_inds = table_inds(
-            self.param_resolver.omega_lookup, self.param_resolver.n_omega_tables
-        )
-
-        backbone_torsion_atoms = numpy.full((3, 4), -1, dtype=uaid_t)
-        if rama_table_inds[0] != -1 or rama_table_inds[1] != -1:
-            for i, tor in enumerate(["phi", "psi", "omega"]):
-                if tor in block_type.torsion_to_uaids:
-                    backbone_torsion_atoms[i] = uaids_to_np(
-                        block_type.torsion_to_uaids[tor]
-                    )
-        backbone_torsion_atoms = backbone_torsion_atoms.reshape(-1)
-
-        lower_conn_id = numpy.full((1,), -1, dtype=numpy.int32)
-        if "down" in block_type.connection_to_cidx:
-            lower_conn_id[0] = block_type.connection_to_cidx["down"]
-        upper_conn_id = numpy.full((1,), -1, dtype=numpy.int32)
-        if "up" in block_type.connection_to_cidx:
-            upper_conn_id[0] = block_type.connection_to_cidx["up"]
-        is_pro = numpy.full((1,), 0, dtype=numpy.int32)
-
-        # is_pro selects the *previous* residue's prepro table, so it follows
-        #    the tables the residue reads rather than what it is called
-        if block_type.rama_reference == "PRO":
-            is_pro[0] = 1
-
-        bt_bbtors_params = BackboneTorsionBlockTypeParams(
-            rama_table_inds=rama_table_inds,
-            omega_table_inds=omega_table_inds,
-            lower_conn_ind=lower_conn_id,
-            upper_conn_ind=upper_conn_id,
-            is_pro=is_pro,
-            backbone_torsion_atoms=backbone_torsion_atoms,
+        bt_bbtors_params = self.param_resolver.host_preparation.prepare_block(
+            block_type
         )
         setattr(block_type, "backbone_torsion_params", bt_bbtors_params)
         return _store_annotation(
@@ -208,38 +127,15 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
         )
         if cached is not None:
             return cached
-        n_types = packed_block_types.n_types
         block_params = [
             self.setup_block_type(bt) for bt in packed_block_types.active_block_types
         ]
-
-        bt_rama_table = numpy.full((n_types, 2), -1, dtype=numpy.int32)
-        bt_omega_table = numpy.full((n_types, 2), -1, dtype=numpy.int32)
-        bt_lower_conn_ind = numpy.full((n_types,), -1, dtype=numpy.int32)
-        bt_upper_conn_ind = numpy.full((n_types,), -1, dtype=numpy.int32)
-        bt_is_pro = numpy.full((n_types,), -1, dtype=numpy.int32)
-        bt_backbone_torsion_atoms = numpy.full((n_types, 12, 3), -1, dtype=numpy.int32)
-
-        for i, i_bbtors_params in enumerate(block_params):
-            bt_rama_table[i] = i_bbtors_params.rama_table_inds
-            bt_omega_table[i] = i_bbtors_params.omega_table_inds
-            bt_lower_conn_ind[i] = i_bbtors_params.lower_conn_ind[0]
-            bt_upper_conn_ind[i] = i_bbtors_params.upper_conn_ind[0]
-            bt_is_pro[i] = i_bbtors_params.is_pro[0]
-            bt_backbone_torsion_atoms[i] = i_bbtors_params.backbone_torsion_atoms.view(
-                numpy.int32
-            ).reshape(12, 3)
-
-        def _t(t):
-            return torch.tensor(t, device=packed_block_types.device)
-
+        host = self.param_resolver.host_preparation.prepare_packed(block_params)
         backbone_torsion_params = BackboneTorsionPackedBlockTypesParams(
-            bt_rama_table=_t(bt_rama_table),
-            bt_omega_table=_t(bt_omega_table),
-            bt_lower_conn_ind=_t(bt_lower_conn_ind),
-            bt_upper_conn_ind=_t(bt_upper_conn_ind),
-            bt_is_pro=_t(bt_is_pro),
-            bt_backbone_torsion_atoms=_t(bt_backbone_torsion_atoms),
+            **{
+                name: torch.tensor(value, device=packed_block_types.device)
+                for name, value in host.items()
+            }
         )
         setattr(packed_block_types, "backbone_torsion_params", backbone_torsion_params)
         return _store_annotation(

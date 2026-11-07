@@ -5,6 +5,13 @@
 
 BEGIN_MGPU_NAMESPACE
 
+// The launch policy is also used to size caller-owned partition workspace.
+using default_load_balance_launch_t = launch_box_t<
+  arch_20_cta<128, 11, 9>,
+  arch_35_cta<128,  7, 5>,
+  arch_52_cta<128, 11, 9>
+>;
+
 template<typename launch_arg_t = empty_t, typename func_t, 
   typename segments_it, typename pointers_t, typename... args_t>
 void transform_lbs(func_t f, int count, segments_it segments, 
@@ -12,11 +19,7 @@ void transform_lbs(func_t f, int count, segments_it segments,
   args_t... args) {
 
   typedef typename conditional_typedef_t<launch_arg_t, 
-    launch_box_t<
-      arch_20_cta<128, 11, 9>,
-      arch_35_cta<128,  7, 5>,
-      arch_52_cta<128, 11, 9>
-    >
+    default_load_balance_launch_t
   >::type_t launch_t;
 
   typedef typename std::iterator_traits<segments_it>::value_type int_t;

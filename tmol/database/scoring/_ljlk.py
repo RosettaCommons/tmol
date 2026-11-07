@@ -1,46 +1,6 @@
-from tmol.database._yaml import _load_yaml
+"""Compatibility alias for the shared LJ/LK database schema."""
 
-import attr
-import cattr
+import sys
+from tmol_core.database import ljlk as _shared
 
-from typing import Tuple, List
-
-from tmol.utility._units import Angle
-
-
-@attr.s(auto_attribs=True, slots=True, frozen=True)
-class LJLKGlobalParameters:
-    max_dis: float
-    lj_hbond_OH_donor_dis: float
-    lj_hbond_dis: float
-    lj_hbond_hdis: float
-    lj_dlin_sigma_factor: float
-    lj_dlin_sigma_factor_soft: float
-    lk_min_dis2sigma: float
-    lkb_water_dist: float
-    lkb_water_angle_sp2: Angle
-    lkb_water_angle_sp3: Angle
-    lkb_water_angle_ring: Angle
-    lkb_water_tors_sp2: List[Angle]
-    lkb_water_tors_sp3: List[Angle]
-    lkb_water_tors_ring: List[Angle]
-
-
-@attr.s(auto_attribs=True, slots=True, frozen=True)
-class LJLKAtomTypeParameters:
-    name: str
-    lj_radius: float
-    lj_wdepth: float
-    lk_dgfree: float
-    lk_lambda: float
-    lk_volume: float
-
-
-@attr.s(auto_attribs=True, slots=True, frozen=True)
-class LJLKDatabase:
-    global_parameters: LJLKGlobalParameters
-    atom_type_parameters: Tuple[LJLKAtomTypeParameters, ...]
-
-    @classmethod
-    def from_file(cls, path):
-        return cattr.structure(_load_yaml(path), cls)
+sys.modules[__name__] = _shared

@@ -74,6 +74,7 @@ class CartesianSfxnNetwork(torch.nn.Module):
             self.full_coords.shape[1],
             rounding_mode="floor",
         )
+        self.n_segments = pose_stack.n_poses
         self.segment_ids = pose_for_atom.repeat_interleave(self.full_coords.shape[-1])
 
     def _reusable_for(
@@ -308,6 +309,7 @@ class KinForestSfxnNetwork(torch.nn.Module):
         n_atoms_per_pose = pose_stack.coords.shape[1]
         pose_for_node = torch.div(self.id, n_atoms_per_pose, rounding_mode="floor")
         pose_for_dof = pose_for_node.unsqueeze(1).expand(raw_dofs.shape).reshape(-1)
+        self.n_segments = pose_stack.n_poses
         self.segment_ids = pose_for_dof[self._dof_flat_idx].to(torch.int64)
         assert bool((self.segment_ids >= 0).all()), "root node dofs cannot be minimized"
 

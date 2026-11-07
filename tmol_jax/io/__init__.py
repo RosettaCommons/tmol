@@ -1,0 +1,120 @@
+"""Molecular structure loading and writing."""
+
+from .pdb_parsing import parse_pdb, pose_stack_from_pdb
+from .canonical_ordering import (
+    CanonicalOrdering,
+    default_canonical_ordering,
+    default_packed_block_types,
+    canonical_form_from_pdb,
+)
+from .pose_stack_construction import pose_stack_from_canonical_form
+from .write_pose_stack_pdb import atom_records_from_pose_stack, write_pose_stack_pdb
+from .pose_stack_from_biotite import pose_stack_from_biotite
+from .residue_blocks import (
+    PoseBuildContext,
+    ResidueBlock,
+    pose_stack_from_residue_blocks,
+)
+
+__all__ = [
+    "parse_pdb",
+    "pose_stack_from_pdb",
+    "pose_stack_from_biotite",
+    "pose_stack_from_residue_blocks",
+    "PoseBuildContext",
+    "ResidueBlock",
+    "CanonicalOrdering",
+    "default_canonical_ordering",
+    "default_packed_block_types",
+    "canonical_form_from_pdb",
+    "pose_stack_from_canonical_form",
+    "atom_records_from_pose_stack",
+    "write_pose_stack_pdb",
+]
+
+
+_SEQUENCE_INPUT = {"extended_pose_stack_from_sequences"}
+__all__ += sorted(_SEQUENCE_INPUT)
+
+
+_STRUCTURE_INPUT = {
+    "atom_array_from_pose_stack",
+    "build_context_from_atom_array",
+    "pose_stack_from_atom_array",
+    "pose_stack_from_file",
+}
+__all__ += sorted(_STRUCTURE_INPUT)
+
+_STRUCTURE_FILES = {
+    "atom_array_from_file",
+    "file_from_atom_array",
+    "file_from_pose_stack",
+}
+__all__ += sorted(_STRUCTURE_FILES)
+
+
+_ATOM37_INPUT = {
+    "atom37_slot_map_for_ordering",
+    "prepare_atom37_pose_builder",
+    "prepare_atom37_tensor_builder",
+    "pose_stack_from_atom37",
+    "pose_stack_from_atom37_and_topology",
+    "PreparedAtom37PoseBuilder",
+}
+__all__ += sorted(_ATOM37_INPUT)
+
+
+_ATOMWORKS_INPUT = {
+    "prepare_canonical_aa_atom37_builder",
+    "pose_stack_from_canonical_aa_atom37",
+    "atomworks_from_pose_stack",
+}
+__all__ += sorted(_ATOMWORKS_INPUT)
+
+
+_VISUALIZATION = {"view", "switchable_view", "overlay_view", "selection_gallery"}
+__all__ += sorted(_VISUALIZATION)
+
+
+def __getattr__(name):
+    if name in _VISUALIZATION:
+        from importlib import import_module
+
+        value = getattr(import_module("tmol_jax.io.visualize"), name)
+        globals()[name] = value
+        return value
+    if name in _SEQUENCE_INPUT:
+        from .sequence import extended_pose_stack_from_sequences
+
+        globals()[name] = extended_pose_stack_from_sequences
+        return extended_pose_stack_from_sequences
+    if name in _STRUCTURE_FILES:
+        from importlib import import_module
+
+        value = getattr(import_module(".structure_files", __name__), name)
+        globals()[name] = value
+        return value
+    if name in _ATOMWORKS_INPUT:
+        from importlib import import_module
+
+        value = getattr(import_module(".atomworks", __name__), name)
+        globals()[name] = value
+        return value
+    if name in _ATOM37_INPUT:
+        from importlib import import_module
+
+        value = getattr(import_module(".atom37", __name__), name)
+        globals()[name] = value
+        return value
+    if name in _STRUCTURE_INPUT:
+        from importlib import import_module
+
+        module = (
+            ".structure_export"
+            if name == "atom_array_from_pose_stack"
+            else ".structure"
+        )
+        value = getattr(import_module(module, __name__), name)
+        globals()[name] = value
+        return value
+    raise AttributeError(name)

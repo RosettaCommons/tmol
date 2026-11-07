@@ -353,6 +353,7 @@ endfunction()
 
 set(_C_SOURCES
   tmol/native.cpp
+  tmol/ligand/compiled/refinement.cpu.cpp
   # optimization
   tmol/optimization/armijo_compiled.ops.cpp
   tmol/backends/cpu/optimization/armijo_compiled.cpu.cpp
@@ -366,6 +367,9 @@ set(_C_SOURCES
   # pack/compiled
   tmol/pack/compiled/compiled.ops.cpp
   tmol/backends/cpu/pack/compiled/compiled.cpu.cpp
+  # pack/rotamer shared reconstruction
+  tmol/pack/rotamer/conformer.ops.cpp
+  tmol/backends/cpu/pack/rotamer/conformer.cpu.cpp
   # pack/rotamer/dunbrack
   tmol/pack/rotamer/dunbrack/compiled.ops.cpp
   tmol/backends/cpu/pack/rotamer/dunbrack/compiled.cpu.cpp
@@ -405,8 +409,9 @@ set(_C_SOURCES
   # score/metal
   tmol/score/metal/potentials/compiled.ops.cpp
   tmol/backends/cpu/score/metal/potentials/metal_coordination_pose_score.cpu.cpp
-  # score/na_torsion (CUDA implementation registered separately below)
+  # score/na_torsion
   tmol/score/na_torsion/potentials/compiled.ops.cpp
+  tmol/backends/cpu/score/na_torsion/potentials/na_torsion_pose_score.cpu.cpp
 )
 
 if(TMOL_HAS_CUDA)
@@ -418,6 +423,7 @@ if(TMOL_HAS_CUDA)
     tmol/backends/cuda/kinematics/compiled/compiled.cuda.cu
     tmol/backends/cuda/pack/compiled/compiled.cuda.cu
     tmol/backends/cuda/pack/rotamer/dunbrack/compiled.cuda.cu
+    tmol/backends/cuda/pack/rotamer/conformer.cuda.cu
     tmol/backends/cuda/score/backbone_torsion/potentials/backbone_torsion_pose_score.cuda.cu
     tmol/backends/cuda/score/cartbonded/potentials/cartbonded_pose_score.cuda.cu
     tmol/backends/cuda/score/genbonded/potentials/genbonded_pose_score.cuda.cu

@@ -4,12 +4,9 @@ import pytest
 import torch
 
 from tmol.pack.compiled._compiled import (
-    _accumulate_interaction_graph_entries,
     _build_interaction_graph,
-    _finalize_interaction_graph_chunk_topology,
     _finalize_interaction_graph_topology,
     _initialize_interaction_graph_topology,
-    _note_interaction_graph_chunk_topology,
     _note_interaction_graph_topology,
     _pack_anneal,
 )
@@ -131,87 +128,20 @@ def test_interaction_graph_empty_pose_offsets(
 
 
 def staged_graph(metadata, term_entries, chunk_size):
+    from tmol.pack.compiled import _compiled as execution
+    from tmol_core.pack.streaming import build_streaming_interaction_graph
+
     device = metadata[0].device
     empty_indices = torch.empty((3, 0), dtype=torch.int32, device=device)
     empty_values = torch.empty(0, dtype=torch.float32, device=device)
-    base = list(
-        _build_interaction_graph(
-            False,
-            chunk_size,
-            1,
-            *metadata,
-            empty_indices,
-            empty_values,
-            -1,  # the table is coalesced: every key distinct
-            False,
-        )
+
+    def entries(*, topology_only):
+        for term, (indices, values) in enumerate(term_entries):
+            yield term, indices, empty_values if topology_only else values
+
+    return build_streaming_interaction_graph(
+        entries, (1, *metadata), chunk_size, empty_indices, empty_values, execution
     )
-    topology = list(
-        _initialize_interaction_graph_topology(metadata[2], base[4], empty_values)
-    )
-    for indices, values in term_entries:
-        (topology[0],) = _note_interaction_graph_topology(
-            metadata[6],
-            topology[1],
-            topology[0],
-            indices,
-            values,
-        )
-    chunk_topology = list(
-        _finalize_interaction_graph_topology(
-            chunk_size,
-            base[4],
-            topology[0],
-            empty_values,
-        )
-    )
-    for indices, values in term_entries:
-        (chunk_topology[4],) = _note_interaction_graph_chunk_topology(
-            chunk_size,
-            metadata[2],
-            metadata[3],
-            metadata[6],
-            topology[1],
-            base[4],
-            chunk_topology[0],
-            chunk_topology[1],
-            chunk_topology[3],
-            chunk_topology[4],
-            indices,
-            values,
-        )
-    base[11:14] = chunk_topology[:3]
-    base[14:16] = _finalize_interaction_graph_chunk_topology(
-        chunk_size,
-        base[4],
-        chunk_topology[0],
-        chunk_topology[1],
-        chunk_topology[2],
-        chunk_topology[3],
-        chunk_topology[4],
-        empty_values,
-    )
-    for indices, values in term_entries:
-        base[9], base[10], base[15] = _accumulate_interaction_graph_entries(
-            chunk_size,
-            metadata[2],
-            metadata[3],
-            metadata[6],
-            topology[1],
-            base[7],
-            base[4],
-            base[5],
-            base[11],
-            base[12],
-            base[13],
-            base[14],
-            base[9],
-            base[10],
-            base[15],
-            indices,
-            values,
-        )
-    return tuple(base)
 
 
 @pytest.mark.parametrize(
@@ -525,3 +455,62 @@ def test_cuda_annealer_sparse_transposes_have_exact_minimum(
         )
         expected.append(energy)
     assert torch.equal(scores, scores.new_tensor(expected)[:, None].expand_as(scores))
+
+
+@pytest.mark.parametrize("energies", [[5.0, 5.0], [5.0, 6.0], [4.0, 5.0]])
+def test_bump_threshold_retains_available_conformers(torch_device, energies):
+    # Bump rejection requires BOTH a strictly unfavorable candidate and a
+    # strictly favorable alternative. Equality must not delete the residue.
+    metadata = graph_metadata([[2]], torch_device)
+    indices = torch.tensor(
+        [[0, 0], [0, 1], [0, 1]], dtype=torch.int32, device=torch_device
+    )
+    graph = _build_interaction_graph(
+        True,
+        32,
+        1,
+        *metadata,
+        indices,
+        torch.tensor(energies, dtype=torch.float32, device=torch_device),
+        -1,
+        False,
+    )
+    assert graph[8].tolist() == [0, 1]
+    assert graph[4].tolist() == [[2]]
+    torch.testing.assert_close(graph[10], torch.tensor(energies, device=torch_device))
+
+
+@pytest.mark.parametrize("fixed", [False, True])
+def test_bump_bounds_preserve_holes_and_fixed_sources(torch_device, fixed):
+    metadata = graph_metadata([[3, 2, 0], [0, 0, 0]], torch_device)
+    rows = [(0, i, i) for i in range(5)]
+    rows += [(0, a, b) for a in range(3) for b in (3, 4)]
+    rows.append((0, 0, 3))  # duplicate contributes to the same pair
+    values = [1, 8, 9 if fixed else 2, 3, 4, 1, 5, 4, 1, 0, 3, 1]
+    graph = _build_interaction_graph(
+        True,
+        2,
+        1,
+        *metadata,
+        torch.tensor(rows, dtype=torch.int32, device=torch_device).T.contiguous(),
+        torch.tensor(values, dtype=torch.float64, device=torch_device),
+        11,
+        False,
+    )
+    if fixed:
+        assert graph[8].tolist() == [3, 4]
+        assert graph[7][0, 0].item() == 0
+        torch.testing.assert_close(
+            graph[9], torch.tensor([1, 0], dtype=torch.float64, device=torch_device)
+        )
+        torch.testing.assert_close(
+            graph[10], torch.tensor([5, 9], dtype=torch.float64, device=torch_device)
+        )
+    else:
+        assert graph[8].tolist() == [0, 2, 3, 4]
+        torch.testing.assert_close(
+            graph[10],
+            torch.tensor([1, 2, 3, 4], dtype=torch.float64, device=torch_device),
+        )
+        assert sorted(graph[15].tolist()) == [0, 0, 2, 2, 3, 3, 5, 5]
+    assert graph[3][1].item() == len(graph[8])

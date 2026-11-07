@@ -7,12 +7,23 @@ import threading
 from typing import Callable, Dict, Sequence, TypeVar
 import warnings
 
+from tmol_core.pack.streaming import (
+    PACK_ROTAMER_BLOCK_PAIR_WINDOW as _PACK_ROTAMER_BLOCK_PAIR_WINDOW,
+    PACK_FUSED_ROTAMER_SCORE_WINDOW as _PACK_FUSED_ROTAMER_SCORE_WINDOW,
+    packing_windows,
+)
+
 import torch
 
 from tmol.types._torch import Tensor
 
 from tmol.database import ParameterDatabase
-from tmol.database._yaml import _safe_load
+from tmol_core.scoring.score_function import (  # noqa: F401
+    SFXN_FORMAT_VERSION,
+    load_score_function_record,
+    ScoreTermLifecycle,
+    sorted_score_terms,
+)
 from tmol.score._score_types import ScoreType
 from tmol.score.common._scoring_module import (
     ZeroTermPoseScoringModule,
@@ -37,12 +48,6 @@ from tmol.pose._pose_stack import PoseStack
 
 logger = logging.getLogger(__name__)
 
-# Current .sfxn (score function weights YAML) format version.  Bump the major
-# version on breaking schema changes; bump the minor version on
-# backward-compatible additions.  The version string is written into every
-# .sfxn file and checked on load.
-SFXN_FORMAT_VERSION: str = "1.0"
-
 # Exact CUDA tensor equality synchronizes with the host. Only pay that cost
 # when one duplicate sparse index layout would retain at least 16 MiB. CPU
 # equality has no synchronization penalty, so all matching layouts are tested.
@@ -64,8 +69,8 @@ _CUDA_WEIGHTED_FUSED_MIN_SINGLE_POSE_ATOMS = 15_000
 _CUDA_WEIGHTED_FUSED_MIN_BATCH_ATOMS_PER_POSE = 2_000
 _CUDA_WEIGHTED_FUSED_MIN_GRAD_COORD_ELEMENTS = 64 * 1024
 # Bound dispatch scratch while amortizing CUDA launches across block pairs.
-_PACK_ROTAMER_BLOCK_PAIR_WINDOW = 32 * 1024
-_PACK_FUSED_ROTAMER_SCORE_WINDOW = 4 * 1024 * 1024
+
+
 _CPU_SCORE_TERM_EXECUTORS: dict[int, ThreadPoolExecutor] = {}
 _CPU_SCORE_TERM_EXECUTOR_LOCK = threading.Lock()
 _ScoreCallResult = TypeVar("_ScoreCallResult")
@@ -339,10 +344,10 @@ def _try_coalesce_cpu_rotamer_layouts(
 
 def _weighted_score_sum(weights: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
     """Reduce score lanes without materializing a lane-sized product."""
-    return torch.matmul(weights, scores)
+    return torch.matmul(weights.to(dtype=scores.dtype, device=scores.device), scores)
 
 
-class ScoreFunction:
+class ScoreFunction(ScoreTermLifecycle):
     """Weighted collection of energy terms rendered for a pose topology.
 
     Args:
@@ -355,31 +360,13 @@ class ScoreFunction:
         device = resolve_device(device)
         self._weights = torch.zeros((ScoreType.n_score_types.value,), device=device)
 
-        self._all_terms = []
-        self._all_terms_unordered = []
-        self._all_terms_out_of_date = False
-
-        self._all_score_types = []
-
-        self._one_body_terms = []
-        self._one_body_terms_unordered = []
-        self._one_body_terms_out_of_date = False
-
-        self._two_body_terms = []
-        self._two_body_terms_unordered = []
-        self._two_body_terms_out_of_date = False
-
-        self._multi_body_terms = []
-        self._multi_body_terms_unordered = []
-        self._multi_body_terms_out_of_date = False
+        super().__init__(ScoreType.n_score_types.value)
 
         self._weights_tensor_out_of_date = True
         self._weights_tensor = None
         self._weight_indices_tensor = None
-        self._term_for_st = [None] * ScoreType.n_score_types.value
         self._param_db = param_db
         self._device = device
-        self._terms_version = 0
         self._options_version = 0
         self._prepared_packed_block_types = None
         self._prepared_versions = None
@@ -400,18 +387,7 @@ class ScoreFunction:
             st: Score type to update.
             weight: New scalar weight.
         """
-        # Do not construct an energy term merely to assign it a zero weight.
-        # FastRelax updates its (usually disabled) constraint weight at every
-        # schedule step; constructing that term adds a device-to-host sync to
-        # every subsequent score evaluation even though it contributes zero.
-        if weight == 0 and not self.score_type_covered_by_contained_term(st):
-            self._weights[st.value] = weight
-            self._weights_tensor_out_of_date = True
-            return
-        if not self.score_type_covered_by_contained_term(st):
-            self.retrieve_term_for_score_type(st)
-        if weight == 0 and self.term_for_st_has_no_other_non_zero_weights(st):
-            self.remove_term_for_score_type(st)
+        self.update_term_membership(st, weight)
         self._weights[st.value] = weight
         self._weights_tensor_out_of_date = True
 
@@ -419,120 +395,14 @@ class ScoreFunction:
         """Return the scalar weight for ``st`` on the score-function device."""
         return self._weights[st.value]
 
-    def score_type_covered_by_contained_term(self, st: ScoreType) -> bool:
-        """Return whether a constructed energy term implements ``st``."""
-        # `_all_terms` is a lazily refreshed sorted cache; consulting it while
-        # weights are being populated can miss a term already present in the
-        # unordered source lists and construct duplicate term objects.
-        return self._term_for_st[st.value] is not None
-
-    def retrieve_term_for_score_type(self, st: ScoreType):
-        term = ScoreTermFactory.create_term_for_score_type(
+    def _create_term_for_score_type(self, st):
+        return ScoreTermFactory.create_term_for_score_type(
             st, self._param_db, self._device
         )
-        # sanity check: if the ScoreTermFactory returns the wrong term,
-        # we want to know
-        assert st in term.score_types()
-        for tst in term.score_types():
-            self._term_for_st[tst.value] = term
-        self._all_terms_unordered.append(term)
-        self._all_terms_out_of_date = True
+
+    def _term_membership_changed(self):
         self._weight_indices_tensor = None
-        self._terms_version += 1
-        if term.n_bodies() == 1:
-            self._one_body_terms_unordered.append(term)
-            self._one_body_terms_out_of_date = True
-        elif term.n_bodies() == 2:
-            self._two_body_terms_unordered.append(term)
-            self._two_body_terms_out_of_date = True
-        else:
-            self._multi_body_terms_unordered.append(term)
-            self._multi_body_terms_out_of_date = True
-
-    def term_for_st_has_no_other_non_zero_weights(self, st: ScoreType):
-        term = self._term_for_st[st.value]
-        for st2 in term.score_types():
-            if st2 == st:
-                continue
-            if self._weights[st2.value] != 0:
-                return False
-        return True
-
-    def remove_term_for_score_type(self, st: ScoreType):
-        """Remove the term containing ``st`` once all its weights are zero."""
-        term = self._term_for_st[st.value]
-        if term is None:
-            return
-
-        self._all_terms_unordered.remove(term)
-        self._all_terms_out_of_date = True
-        self._weight_indices_tensor = None
-        if term.n_bodies() == 1:
-            self._one_body_terms_unordered.remove(term)
-            self._one_body_terms_out_of_date = True
-        elif term.n_bodies() == 2:
-            self._two_body_terms_unordered.remove(term)
-            self._two_body_terms_out_of_date = True
-        else:
-            self._multi_body_terms_unordered.remove(term)
-            self._multi_body_terms_out_of_date = True
-
-        for covered_st in term.score_types():
-            self._term_for_st[covered_st.value] = None
-        self._terms_version += 1
-
-    def all_terms(self):
-        """Grant read access to the list of terms.
-
-        Do not modify this list directly
-        """
-        if self._all_terms_out_of_date:
-            self._all_terms, self._all_score_types = self.get_sorted_terms(
-                self._all_terms_unordered
-            )
-            self._all_terms_out_of_date = False
-
-        return self._all_terms
-
-    def all_score_types(self) -> list[ScoreType]:
-        """Return score types in the same order as :meth:`all_terms`."""
-        if self._all_terms_out_of_date:
-            self._all_terms, self._all_score_types = self.get_sorted_terms(
-                self._all_terms_unordered
-            )
-            self._all_terms_out_of_date = False
-
-        return self._all_score_types
-
-    def one_body_terms(self):
-        """Return the active one-body energy terms in score-type order."""
-        if self._one_body_terms_out_of_date:
-            self._one_body_terms, _ = self.get_sorted_terms(
-                self._one_body_terms_unordered
-            )
-            self._one_body_terms_out_of_date = False
-
-        return self._one_body_terms
-
-    def two_body_terms(self):
-        """Return the active two-body energy terms in score-type order."""
-        if self._two_body_terms_out_of_date:
-            self._two_body_terms, _ = self.get_sorted_terms(
-                self._two_body_terms_unordered
-            )
-            self._two_body_terms_out_of_date = False
-
-        return self._two_body_terms
-
-    def multi_body_terms(self):
-        """Return the active multi-body energy terms in score-type order."""
-        if self._multi_body_terms_out_of_date:
-            self._multi_body_terms, _ = self.get_sorted_terms(
-                self._multi_body_terms_unordered
-            )
-            self._multi_body_terms_out_of_date = False
-
-        return self._multi_body_terms
+        self._weights_tensor_out_of_date = True
 
     def render_whole_pose_scoring_module(
         self, pose_stack: PoseStack, cuda_graph: bool | str = False
@@ -809,35 +679,7 @@ class ScoreFunction:
         Returns:
             Configured ScoreFunction with all weights from the file applied.
         """
-        with open(path) as f:
-            data = _safe_load(f)
-
-        # --- .sfxn format version check ---
-        file_version = data.get("version")
-        if file_version is None:
-            raise ValueError(
-                f"{path}: no 'version' field found in .sfxn file. "
-                f"Current format version is {SFXN_FORMAT_VERSION}. "
-                f"Regenerate the file with the current version."
-            )
-        else:
-            file_version = str(file_version)
-            file_major = file_version.split(".")[0]
-            current_major = SFXN_FORMAT_VERSION.split(".")[0]
-            if file_major != current_major:
-                raise ValueError(
-                    f"{path}: .sfxn format version {file_version} is incompatible "
-                    f"with the current format version {SFXN_FORMAT_VERSION}. "
-                    f"Regenerate the file with the current writer."
-                )
-            if file_version != SFXN_FORMAT_VERSION:
-                logger.info(
-                    "%s: .sfxn format version %s differs from current %s "
-                    "(backward-compatible minor version change)",
-                    path,
-                    file_version,
-                    SFXN_FORMAT_VERSION,
-                )
+        data = load_score_function_record(path, logger=logger)
 
         sfxn = cls(param_db, device)
         for name, weight in data["weights"].items():
@@ -848,28 +690,9 @@ class ScoreFunction:
 
     @staticmethod
     def get_sorted_terms(term_list):
-        sorted_term_list = []
-        sorted_score_type_list = []
-        term_covered = [False] * ScoreType.n_score_types.value
-        terms_by_st = [None] * ScoreType.n_score_types.value
-        for term in term_list:
-            for term_st in term.score_types():
-                terms_by_st[term_st.value] = term
-
-        for st_ind in range(ScoreType.n_score_types.value):
-            if terms_by_st[st_ind] is not None:
-                already_covered = False
-                term = terms_by_st[st_ind]
-                for term_st in term.score_types():
-                    if term_covered[term_st.value]:
-                        already_covered = True
-                        break
-                if not already_covered:
-                    sorted_term_list.append(term)
-                    for term_st in term.score_types():
-                        term_covered[term_st.value] = True
-                        sorted_score_type_list.append(term_st)
-        return sorted_term_list, sorted_score_type_list
+        return sorted_score_terms(
+            term_list, ScoreType.n_score_types.value, lambda term: term.score_types()
+        )
 
 
 def _ljlk_elec_native_arguments(ljlk, elec, coords, flat_coords=None):
@@ -2077,7 +1900,9 @@ class _FusedLJLKAndElecRotamerModule(torch.nn.Module):
         native_args = self._native_arguments(coords)
         n_poses, max_n_blocks = native_args[3].shape
         n_candidates = n_poses * max_n_blocks * (max_n_blocks + 1) // 2
-        for begin in range(0, n_candidates, _PACK_ROTAMER_BLOCK_PAIR_WINDOW):
+        for begin, count in packing_windows(
+            n_candidates, _PACK_ROTAMER_BLOCK_PAIR_WINDOW
+        ):
             yield _ljlk_elec_rotamer_dispatch(
                 native_args[0],
                 native_args[1],
@@ -2089,7 +1914,7 @@ class _FusedLJLKAndElecRotamerModule(torch.nn.Module):
                 native_args[16],
                 native_args[-1],
                 begin,
-                min(_PACK_ROTAMER_BLOCK_PAIR_WINDOW, n_candidates - begin),
+                count,
             )
 
     def iter_packing_entries(self, coords, score_weights, *, topology_only):
@@ -2103,12 +1928,10 @@ class _FusedLJLKAndElecRotamerModule(torch.nn.Module):
         native_args = self._native_arguments(coords)
         empty_values = score_weights.new_empty(0)
         for dispatch_indices in self.iter_packing_dispatches(coords):
-            for begin in range(
-                0, dispatch_indices.shape[1], _PACK_FUSED_ROTAMER_SCORE_WINDOW
+            for begin, count in packing_windows(
+                dispatch_indices.shape[1], _PACK_FUSED_ROTAMER_SCORE_WINDOW
             ):
-                indices = dispatch_indices[
-                    :, begin : begin + _PACK_FUSED_ROTAMER_SCORE_WINDOW
-                ]
+                indices = dispatch_indices[:, begin : begin + count]
                 if topology_only:
                     yield indices, empty_values
                     del indices
@@ -2405,11 +2228,8 @@ class RotamerScoringModule:
                 for dispatch in dispatches:
                     dispatch_windows = (
                         (
-                            dispatch[
-                                :, begin : begin + _PACK_FUSED_ROTAMER_SCORE_WINDOW
-                            ]
-                            for begin in range(
-                                0,
+                            dispatch[:, begin : begin + count]
+                            for begin, count in packing_windows(
                                 dispatch.shape[1],
                                 _PACK_FUSED_ROTAMER_SCORE_WINDOW,
                             )

@@ -2,7 +2,6 @@ import torch
 
 
 from ._fold_forest import FoldForest
-from ._check_fold_forest import _validate_fold_forest
 
 from tmol.pose._pose_stack import PoseStack
 
@@ -47,9 +46,6 @@ class PoseStackKinematicsModule(torch.nn.Module):
         # Setup: initial annotations of block types and packed block types
         # with the per-block-scan-path segments.
         _annotate_packed_block_type_with_gen_scan_path_segs(pbt)
-
-        n_blocks = torch.sum(ps.block_type_ind != -1, dim=1).cpu().numpy()
-        _validate_fold_forest(n_blocks, ff.edges)
 
         ff_edges_cpu = torch.from_numpy(ff.edges).to(torch.int32)
         kmd = _construct_kin_module_data_for_pose(ps, ff_edges_cpu)

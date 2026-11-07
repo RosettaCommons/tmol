@@ -1,44 +1,6 @@
-import attr
-import cattr
-from tmol.database._yaml import _load_yaml, _existing_paths
+"""Compatibility import for :mod:`tmol_core.database.elec`."""
 
-from typing import Tuple
+import sys
+from importlib import import_module
 
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class GlobalParams:
-    elec_min_dis: float
-    elec_max_dis: float
-    elec_sigmoidal_die_D: float
-    elec_sigmoidal_die_D0: float
-    elec_sigmoidal_die_S: float
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class CountPairReps:
-    res: str
-    atm_inner: str
-    atm_outer: str
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class PartialCharges:
-    res: str
-    atom: str
-    charge: float
-
-
-@attr.s(auto_attribs=True, slots=True, frozen=True)
-class ElecDatabase:
-    global_parameters: GlobalParams
-    atom_cp_reps_parameters: Tuple[CountPairReps, ...]
-    atom_charge_parameters: Tuple[PartialCharges, ...]
-
-    @classmethod
-    def from_file(cls, path, generated=()):
-        raw = _load_yaml(path)
-        for extra in _existing_paths(generated):
-            more = _load_yaml(extra)
-            for section in ("atom_charge_parameters", "atom_cp_reps_parameters"):
-                raw[section].extend(more.get(section, []))
-        return cattr.structure(raw, cls)
+sys.modules[__name__] = import_module("tmol_core.database.elec")

@@ -3,18 +3,18 @@ import torch
 import attr
 import logging
 
-from collections import defaultdict
 from typing import Optional, Tuple
 from tmol.types._torch import Tensor
 from tmol.types._array import NDArray
 from tmol.types._functional import _validate_args
 from tmol.database.chemical import (
-    N_VARIANT_INDICES,
     NEUTRAL_TERMINUS_VAR_BASE,
-    _site_connections,
-    _special_case_variant_index,
 )
 from tmol.io._canonical_ordering import CanonicalOrdering
+from tmol.pose._connections import (  # noqa: F401
+    _wire_canonical_connections,
+    _assert_connections_are_well_formed,
+)
 from tmol.pose._inter_block_bondsep import InterBlockBondsep
 from tmol.pose._packed_block_types import (
     PackedBlockTypes,
@@ -22,23 +22,21 @@ from tmol.pose._packed_block_types import (
 )
 from tmol.pose._pose_stack_builder import PoseStackBuilder
 
+from tmol_core.io import canonical as _canonical
+from tmol_core.io import missing_atoms as _missing
+from tmol_core.io.missing_atoms import (  # noqa: F401
+    LIGAND_HYDROGEN_MODES,
+    BONDED_H_TOLERANCE as _BONDED_H_TOLERANCE,
+    validate_ligand_hydrogens as _validate_ligand_hydrogens,
+)
+from tmol_core.io import connections as _connections
+from tmol_core.io.canonical import (  # noqa: F401
+    _map_term_to_int,
+    _term_and_spcase_var_candidate_lists,
+    _assign_var_inds_for_bt,
+)
+
 logger = logging.getLogger(__name__)
-
-# Treatment of a generated ligand's input hydrogens: keep names and coordinates,
-# keep names only, or keep neither.
-LIGAND_HYDROGEN_MODES = ("input", "names", "rebuild")
-
-# An input hydrogen is on its parent when within this distance of its ideal
-# bond length (A).
-_BONDED_H_TOLERANCE = 0.4
-
-
-def _validate_ligand_hydrogens(mode: str):
-    """Raise unless mode is one of LIGAND_HYDROGEN_MODES."""
-    if mode not in LIGAND_HYDROGEN_MODES:
-        raise ValueError(
-            f"ligand_hydrogens must be one of {LIGAND_HYDROGEN_MODES}, not {mode!r}"
-        )
 
 
 @_validate_args
@@ -71,7 +69,6 @@ def _assign_block_types(
     device = pbt.device
     n_poses = chain_id.shape[0]
     max_n_res = chain_id.shape[1]
-    max_n_conn = pbt.max_n_conn
 
     res_types64 = res_types.to(torch.int64)
     res_type_variants64 = res_type_variants.to(torch.int64)
@@ -122,18 +119,19 @@ def _assign_block_types(
         res_not_connected & is_polymeric[..., None],
         is_real_res,
     )
-    # a neutral amino terminus where the residue is one; its charge elsewhere
-    neutral = res_type_variants64 >= NEUTRAL_TERMINUS_VAR_BASE
-    if bool(neutral.any()):
-        can_ann = pbt.canonical_ordering_annotation
-        fits = can_ann.var_combo_is_real_candidate[
-            res_types64.clamp(min=0), termini_variants, res_type_variants64.clamp(min=0)
-        ].any(-1)
-        res_type_variants64 = torch.where(
-            neutral & ~fits,
-            res_type_variants64 - NEUTRAL_TERMINUS_VAR_BASE,
-            res_type_variants64,
-        )
+    from tmol.io.details.compiled._compiled import _canonical_variants
+
+    variant_inputs = [
+        res_types64,
+        res_type_variants64,
+        termini_variants,
+        pbt.canonical_ordering_annotation.var_combo_is_real_candidate,
+    ]
+    if device.type == "mps":
+        variant_inputs = [x.cpu() for x in variant_inputs]
+    res_type_variants64 = _canonical_variants(
+        variant_inputs, NEUTRAL_TERMINUS_VAR_BASE
+    ).to(device)
     block_type_ind64 = _select_best_block_type_candidate(
         canonical_ordering,
         pbt,
@@ -151,127 +149,16 @@ def _assign_block_types(
         canonical_ordering, pbt, block_type_ind64, metal_connections
     )
 
-    # UGH: stealing/duplicating a lot of code from pose_stack_builder below
-    # SHOULD THIS JUST GO IN POSE_STACK_BUILDER AND REPLACE ITS EXISTING CODE???
-    # SHOULD POSE_STACK_BUILDER BE DEPRECATED??
-    inter_residue_connections64 = torch.full(
-        (n_poses, max_n_res, max_n_conn, 2), -1, dtype=torch.int64, device=device
-    )
-
-    # is a residue both polymeric and connected to the previous residue?
-    res_is_polymeric_and_conn_to_prev = torch.logical_and(
+    inter_residue_connections64 = _wire_canonical_connections(
+        pbt,
+        block_type_ind64,
         is_polymeric,
-        torch.logical_and(
-            torch.logical_not(is_actual_first_chain_res),
-            torch.logical_not(res_not_connected[:, :, 0]),
-        ),
-    )
-    res_is_polymeric_and_conn_to_next = torch.logical_and(
-        is_polymeric,
-        torch.logical_and(
-            torch.logical_not(is_actual_last_chain_res),
-            torch.logical_not(res_not_connected[:, :, 1]),
-        ),
-    )
-
-    # If a block cannot be resolved make sure it is completely
-    # removed from the connection table!
-    resolved = block_type_ind64 >= 0
-    pad = torch.zeros((n_poses, 1), dtype=torch.bool, device=device)
-    prev_resolved = torch.cat((pad, resolved[:, :-1]), dim=1)
-    next_resolved = torch.cat((resolved[:, 1:], pad), dim=1)
-    res_is_polymeric_and_conn_to_prev &= resolved & prev_resolved
-    res_is_polymeric_and_conn_to_next &= resolved & next_resolved
-
-    connected_up_conn_inds = pbt.up_conn_inds[
-        block_type_ind64[res_is_polymeric_and_conn_to_next]
-    ].to(torch.int64)
-    connected_down_conn_inds = pbt.down_conn_inds[
-        block_type_ind64[res_is_polymeric_and_conn_to_prev]
-    ].to(torch.int64)
-
-    (
-        nz_res_is_poly_and_conn_to_prev_pose_ind,
-        nz_res_is_poly_and_conn_to_prev_res_ind,
-    ) = torch.nonzero(res_is_polymeric_and_conn_to_prev, as_tuple=True)
-    (
-        nz_res_is_poly_and_conn_to_next_pose_ind,
-        nz_res_is_poly_and_conn_to_next_res_ind,
-    ) = torch.nonzero(res_is_polymeric_and_conn_to_next, as_tuple=True)
-
-    # mark each connection with the residue and connection on its other side
-    def join(pose1, res1, conn1, pose2, res2, conn2):
-        inter_residue_connections64[pose1, res1, conn1] = torch.stack((res2, conn2), -1)
-        inter_residue_connections64[pose2, res2, conn2] = torch.stack((res1, conn1), -1)
-
-    join(
-        nz_res_is_poly_and_conn_to_next_pose_ind,
-        nz_res_is_poly_and_conn_to_next_res_ind,
-        connected_up_conn_inds,
-        nz_res_is_poly_and_conn_to_prev_pose_ind,
-        nz_res_is_poly_and_conn_to_prev_res_ind,
-        connected_down_conn_inds,
-    )
-
-    # if we have any disulfides, then we need to also mark those
-    # connections in the inter_residue_connections64 map
-    if found_disulfides64.shape[0] != 0:
-        cyd1_block_type64 = block_type_ind64[
-            found_disulfides64[:, 0], found_disulfides64[:, 1]
-        ]
-        cyd2_block_type64 = block_type_ind64[
-            found_disulfides64[:, 0], found_disulfides64[:, 2]
-        ]
-
-        # n- and c-term CYD residues will have different dslf connection inds
-        # than mid-cyd residues; therefore we don't just hard code "2" here
-        cyd1_dslf_conn64 = pbt.canonical_dslf_conn_ind[cyd1_block_type64].to(
-            torch.int64
-        )
-        cyd2_dslf_conn64 = pbt.canonical_dslf_conn_ind[cyd2_block_type64].to(
-            torch.int64
-        )
-        join(
-            found_disulfides64[:, 0],
-            found_disulfides64[:, 1],
-            cyd1_dslf_conn64,
-            found_disulfides64[:, 0],
-            found_disulfides64[:, 2],
-            cyd2_dslf_conn64,
-        )
-
-    # a cyclic chain's closing bond joins two residues the sequential logic
-    # above deliberately skipped, so write it from the explicit pair list
-    if cyclic_closures64 is not None and cyclic_closures64.shape[0] != 0:
-        cyc_pose = cyclic_closures64[:, 0]
-        cyc_up_res = cyclic_closures64[:, 1]
-        cyc_down_res = cyclic_closures64[:, 2]
-        cyc_up_conn64 = pbt.up_conn_inds[block_type_ind64[cyc_pose, cyc_up_res]].to(
-            torch.int64
-        )
-        cyc_down_conn64 = pbt.down_conn_inds[
-            block_type_ind64[cyc_pose, cyc_down_res]
-        ].to(torch.int64)
-        join(
-            cyc_pose, cyc_up_res, cyc_up_conn64, cyc_pose, cyc_down_res, cyc_down_conn64
-        )
-
-    # a conjugation joins two residues through connections neither of them
-    #    declares by position, so both ends come from the bond itself
-    if conjugation_conns:
-        pose_inds, res1, conn1, res2, conn2 = torch.tensor(
-            conjugation_conns, dtype=torch.int64, device=device
-        ).unbind(1)
-        inter_residue_connections64[pose_inds, res1, conn1] = torch.stack(
-            (res2, conn2), -1
-        )
-        inter_residue_connections64[pose_inds, res2, conn2] = torch.stack(
-            (res1, conn1), -1
-        )
-
-    # now that we have the inter-residue connections established,
-    _assert_connections_are_well_formed(
-        pbt, block_type_ind64, inter_residue_connections64
+        is_actual_first_chain_res,
+        is_actual_last_chain_res,
+        res_not_connected,
+        found_disulfides64,
+        cyclic_closures64,
+        conjugation_conns,
     )
 
     inter_block_bondsep = PoseStackBuilder._inter_block_bondsep_from_connections(
@@ -279,38 +166,6 @@ def _assign_block_types(
     )
 
     return (block_type_ind64, inter_residue_connections64, inter_block_bondsep)
-
-
-def _assert_connections_are_well_formed(
-    pbt, block_type_ind64, inter_residue_connections64
-):
-    """Validate endpoint bounds and reciprocal ports without device scalar reads."""
-    connections = inter_residue_connections64
-    poses, blocks, ports = torch.nonzero(connections[..., 0] >= 0, as_tuple=True)
-    partners, partner_ports = connections[poses, blocks, ports].unbind(-1)
-    safe_partners = partners.clamp(0, connections.shape[1] - 1)
-    safe_ports = partner_ports.clamp(0, connections.shape[2] - 1)
-    reverse = connections[poses, safe_partners, safe_ports]
-    bad = (
-        (partners != safe_partners)
-        | (partner_ports != safe_ports)
-        | (block_type_ind64[poses, blocks] < 0)
-        | (block_type_ind64[poses, safe_partners] < 0)
-        | (reverse[:, 0] != blocks)
-        | (reverse[:, 1] != ports)
-        # A residue bonded to itself satisfies reciprocity trivially, so nothing
-        # above sees it. Sequential wiring pairs the k-th "connects to next"
-        # residue with the k-th "connects to prev" one, and a caller-supplied
-        # res_not_connected that breaks the two lists at different places makes
-        # those the same residue.
-        | (partners == blocks)
-    )
-    if bad.any():
-        rows = torch.stack((poses, blocks, ports, partners, partner_ports), dim=1)
-        raise RuntimeError(
-            "malformed inter-residue connections (pose, block, port, partner, "
-            f"partner port): {rows[bad][:20].tolist()}"
-        )
 
 
 @_validate_args
@@ -323,204 +178,52 @@ def _determine_chain_ending_status(
     cyclic_closures64: Optional[Tensor[torch.int64][:, 3]] = None,
     explicit_polymer_connections: Optional[Tensor[torch.bool][:, :, 2]] = None,
 ):
-    n_poses = chain_id.shape[0]
-    device = pbt.device
-    can_ann = pbt.canonical_ordering_annotation
+    """Infer chain boundaries and termini from prepared ports and explicit topology."""
+    from tmol.io.details.compiled._compiled import _canonical_chain_endings
 
-    # logic for deciding what chemical bonds are present between the polymeric
-    # residues and which residues should be represented as termini:
-    # - The first and last residues in a chain are not connected to the
-    #   previous / next residues
-    # - If res_not_connected[p, i, 0] is true, then this residue will not
-    #   be connected to i-1;
-    # - If res_not_connected[p, i, 1] is true, then this residue will not
-    #   be connected to i+1
-    # - Thus: for residue i and i+1 to be connected, all the following must hold:
-    #   - i cannot be the last residue in a chain
-    #   - (equivalently, i+1 cannot be the first residue in a chain)
-    #   - res_not_connected[p, i, 1] must be false
-    #   - res_not_connected[p, i+1, 0] must be false
-    # - If a residue is the first residue in a chain and res_not_connected[p, i, 0]
-    #   is true, then it will not be treated as an n-terminal residue, rather,
-    #   it will be treated as a "mid" residue (unless it is also a c-term residue)
-    #   and, in the case of amino acids, will have a regular H atom bonded to N
-    #   instead of the 1H, 2H, and 3H atoms. Its connection to the "previous" residue
-    #   will be incomplete (-1) instead of to a particular residue.
-    # - If a residue is the last residue in a chain and res_not_connected[p, i, 1]
-    #   is true, then it will not be treated as a c-terminal residue.
-    #
-    # NOTE: Often non-polymeric residues are marked as belonging to the chains of
-    # polymeric residues, usually to designate them as part of the same symmetry
-    # unit, e.g. the "chain A waters" vs the "chain B waters". This complicates
-    # chain-end dection, as the last chain A residue might be a water residue, but
-    # the last polymeric chain A residue might be 30 residues back. So we look at
-    # whether the restype for a position is a polymic residue type and we will
-    # mark residue i as being the C-term residue if i+1 is non-polymeric (and real).
-    # We also have to mark the non-polymeric residue as being "mid" residue termini
-    # types (1) because it will be understood as neither an up- nor down-terminus
-    # type.
-
-    is_chain_first_res = torch.logical_and(
-        is_real_res,
-        torch.cat(
-            (
-                torch.ones((n_poses, 1), dtype=torch.bool, device=device),
-                chain_id[:, 1:] != chain_id[:, :-1],  # is i different from i-1?
-            ),
-            dim=1,
-        ),
-    )
-    is_chain_last_res = torch.logical_and(
-        is_real_res,
-        torch.cat(
-            (
-                chain_id[:, :-1] != chain_id[:, 1:],  # is i different from i+1?
-                torch.ones((n_poses, 1), dtype=torch.bool, device=device),
-            ),
-            dim=1,
-        ),
-    )
-    is_polymeric = torch.zeros_like(is_chain_first_res)
-    is_polymeric[is_real_res] = can_ann.co_equiv_class_is_polymeric[
-        res_types64[is_real_res]
-    ]
-
-    # another way a residue might be declared as a chain-ending residue is if
-    # the next residue is not polymeric yet is declared to be part of the same chain
-    next_res_on_same_chain_not_polymeric = torch.logical_and(
-        torch.cat(
-            (
-                torch.logical_not(is_polymeric[:, 1:]),
-                torch.zeros((n_poses, 1), dtype=torch.bool, device=device),
-            ),
-            dim=1,
-        ),
-        torch.cat(
-            (
-                chain_id[:, :-1] == chain_id[:, 1:],  # is i different from i+1?
-                torch.zeros((n_poses, 1), dtype=torch.bool, device=device),
-            ),
-            dim=1,
-        ),
-    )
-    prev_res_on_same_chain_not_polymeric = torch.logical_and(
-        torch.cat(
-            (
-                torch.zeros((n_poses, 1), dtype=torch.bool, device=device),
-                torch.logical_not(is_polymeric[:, :-1]),
-            ),
-            dim=1,
-        ),
-        torch.cat(
-            (
-                torch.zeros((n_poses, 1), dtype=torch.bool, device=device),
-                chain_id[:, :-1] == chain_id[:, 1:],  # is i different from i+1?
-            ),
-            dim=1,
-        ),
-    )
-
-    is_actual_first_chain_res = torch.logical_or(
-        is_chain_first_res, prev_res_on_same_chain_not_polymeric
-    )
-    is_actual_last_chain_res = torch.logical_or(
-        is_chain_last_res, next_res_on_same_chain_not_polymeric
-    )
-
-    available_ports = can_ann.co_polymer_connection_atoms[res_types64] >= 0
-    breaks = ~available_ports[:, :-1, 1] | ~available_ports[:, 1:, 0]
-    if explicit_polymer_connections is not None:
-        breaks |= (
-            explicit_polymer_connections[:, :-1, 1]
-            | explicit_polymer_connections[:, 1:, 0]
+    annotation = pbt.canonical_ordering_annotation
+    if cyclic_closures64 is None:
+        cyclic_closures64 = torch.empty((0, 3), dtype=torch.int64, device=pbt.device)
+    if res_not_connected is None:
+        res_not_connected = torch.zeros(
+            (*chain_id.shape, 2), dtype=torch.bool, device=pbt.device
         )
-    is_actual_last_chain_res[:, :-1] |= breaks
-    is_actual_first_chain_res[:, 1:] |= breaks
-
-    is_down_term_res = torch.logical_and(
-        is_actual_first_chain_res,
-        torch.logical_not(res_not_connected[:, :, 0]),
-    )
-    is_up_term_res = torch.logical_and(
-        is_actual_last_chain_res,
-        torch.logical_not(res_not_connected[:, :, 1]),
-    )
-    is_down_term_res |= is_polymeric & ~available_ports[:, :, 0]
-    is_up_term_res |= is_polymeric & ~available_ports[:, :, 1]
-    if explicit_polymer_connections is not None:
-        is_down_term_res &= ~explicit_polymer_connections[:, :, 0]
-        is_up_term_res &= ~explicit_polymer_connections[:, :, 1]
-
-    # A residue whose backbone continues around a cycle is not a terminus, even
-    # though it does sit at the end of the residue-index range for its chain.
-    # The chain-boundary flags keep their meaning: they still bar the pair from
-    # the sequential connection logic below, which pairs residue i with i+1.
-    if cyclic_closures64 is not None and cyclic_closures64.shape[0] != 0:
-        is_up_term_res[cyclic_closures64[:, 0], cyclic_closures64[:, 1]] = False
-        is_down_term_res[cyclic_closures64[:, 0], cyclic_closures64[:, 2]] = False
-    is_down_and_not_up_term_res = torch.logical_and(
-        is_down_term_res, torch.logical_not(is_up_term_res)
-    )
-    is_up_and_not_down_term_res = torch.logical_and(
-        is_up_term_res, torch.logical_not(is_down_term_res)
-    )
-    is_both_down_and_up_term_res = torch.logical_and(is_down_term_res, is_up_term_res)
-
-    # note which polymeric residues should be given their chain-ending
-    # (aka termini) patches
-    termini_variants = torch.ones_like(chain_id, dtype=torch.int64)
-    termini_variants[is_down_and_not_up_term_res] = 0
-    termini_variants[is_up_and_not_down_term_res] = 2
-    termini_variants[is_both_down_and_up_term_res] = 3
-
-    # now, any non-polymeric residue type is marked as neither an up nor a down terminus,
-    # overriding any instances where such a residue is marked as an up or down terminus
-    # by the logic above, as that logic does not examine whether a particular residue
-    # is polymeric
-    termini_variants[torch.logical_not(is_polymeric)] = 1
-
-    return (
-        termini_variants,
-        is_actual_first_chain_res,
-        is_actual_last_chain_res,
-        is_polymeric,
-    )
+    if explicit_polymer_connections is None:
+        explicit_polymer_connections = torch.zeros_like(res_not_connected)
+    inputs = [
+        chain_id,
+        res_types64,
+        res_not_connected,
+        is_real_res,
+        annotation.co_equiv_class_is_polymeric,
+        annotation.co_polymer_connection_atoms,
+        cyclic_closures64,
+        explicit_polymer_connections,
+    ]
+    if pbt.device.type == "mps":
+        inputs = [x.cpu() for x in inputs]
+    return tuple(x.to(pbt.device) for x in _canonical_chain_endings(inputs))
 
 
 def _termini_the_atoms_state(pbt, present, restypes, variants, termini, broken, real):
-    """Termini at a gap when that explains more of the supplied atoms.
+    """Infer terminal patches at gaps without trading away any supplied atom."""
+    from tmol.io.details.compiled._compiled import _canonical_atom_termini
 
-    PDBbind v2020 1ERR A:74 (PrepWizard) caps its chain break with H1 and H2,
-    which no mid-chain ALA holds; a heavy-atom input still fits mid-chain.
-    A generic H already incompatible with an inferred amino terminus must not
-    hide a supplied OXT on its other end (2JDM's first pocket residue).
-    """
-    can_ann = pbt.canonical_ordering_annotation
-    down = (termini == 0) | (termini == 3) | broken[..., 0]
-    up = (termini == 2) | (termini == 3) | broken[..., 1]
-    alt = torch.where(down & up, 3, torch.where(down, 0, torch.where(up, 2, 1)))
-    restypes, variants = restypes.clamp(min=0), variants.clamp(min=0)
-
-    def unmatched(t):
-        cands = can_ann.var_combo_candidate_bt_index[restypes, t, variants]
-        real_cand = can_ann.var_combo_is_real_candidate[restypes, t, variants]
-        absent = can_ann.bt_canonical_atom_is_absent[cands.clamp(min=0)]
-        missing = present[:, :, None] & absent
-        count = missing.sum(-1).masked_fill(~real_cand, present.shape[-1] + 1)
-        fewest = count.min(-1).values
-        best = real_cand & (count == fewest[..., None])
-        return missing, best[..., None], fewest
-
-    before, best_before, count_before = unmatched(termini)
-    after, best_after, count_after = unmatched(alt)
-    # Every best alternative must retain every atom any best original could keep.
-    # A smaller count alone could trade away a heavy atom for more hydrogen names.
-    allowed_missing = (before | ~best_before).all(-2)
-    could_lose = (after & best_after).any(-2) & ~allowed_missing
-    switch = (
-        real & (alt != termini) & (count_after < count_before) & ~could_lose.any(-1)
-    )
-    return torch.where(switch, alt, termini)
+    annotation = pbt.canonical_ordering_annotation
+    inputs = [
+        present,
+        restypes,
+        variants,
+        termini,
+        broken,
+        real,
+        annotation.var_combo_candidate_bt_index,
+        annotation.var_combo_is_real_candidate,
+        annotation.bt_canonical_atom_is_absent,
+    ]
+    if present.device.type == "mps":
+        inputs = [x.cpu() for x in inputs]
+    return _canonical_atom_termini(inputs).to(present.device)
 
 
 @_validate_args
@@ -534,87 +237,38 @@ def _select_best_block_type_candidate(  # noqa: C901
     termini_variants: Tensor[torch.int64][:, :],
     res_type_variants64: Tensor[torch.int64][:, :],
 ):
-    # what is the problem we are trying to solve?
-    # we have a number of "io_equiv_class"es that we want to map
-    # to particular block types
-    # where the user/the chain connectivity
-    # can specify things such as:
-    # "is it down-term?", "is it up-term?", "is it neither?,"
-    # "is it disulfide-bonded?", "is it a particular kind of HIS?"
-    # and the user has given us a list of atoms that are
-    # present or absent. These atoms will help us decide
-    # which block type the user is requesting, e.g.,
-    # phospho-serine by providing a P atom.
-    # The algorithm for deciding which block type
-    # from a set of candidates will be:
-    # from the set of bts with the "appropriate" termini,
-    # and given the list of provided atoms for a given residue,
-    # find the bt whose atom list has all of the provided atoms
-    # and is missing the fewest atoms that were not provided
-    # e.g. if atoms A, B and C were provided and
-    # BT #1 has atoms A and B
-    # BT #2 has atoms A B C and D, and
-    # BT #3 has atoms A B C D and E, and
-    # then the best match is not BT #1 because it does not have
-    # provided atom C,
-    # and BT #2 is preferred to BT #3 because BT #3 is missing
-    # more atoms.
-    # so if we have array
-    # p  [1, 1, 1, 0, 0] representing provided atoms A, B, and C, and
-    # b1 [1, 1, 0, 0, 0] for BT #1, and
-    # b2 [1, 1, 1, 1, 0] for BT #2, and
-    # b3 [1, 1, 1, 1, 1] for BT #3,
-    # then
-    # sum((p - b1) == 1) = sum(p & ~b1) ==> 1
-    # sum((p - b2) == 1) = sum(p & ~b2) ==> 0
-    # sum((p - b3) == 1) = sum(p & ~b3) ==> 0
-    # so we would eliminate b1
-    # and then
-    # sum((b1 - p) == 1) = sum(b1 & ~p) ==> 0  but note this option will have been eliminated
-    # sum((b2 - p) == 1) = sum(b2 & ~p) ==> 1
-    # sum((b3 - p) == 1) = sum(b3 & ~p) ==> 2
-    # so if we take the minimum among the non-eliminated set of b2 and b3
-    # that would tell us to assign b2 to this residue.
-
-    # However, sometimes residues are given to us without the atoms that define
-    # the termini, and we are expected to build those atoms. We may not be able
-    # to tell the difference between termini-type X and termini-type Y in terms
-    # of how many atoms are missing, or rather, it might be some exotic termini
-    # type has fewer missing atoms than the generic run-of-the-mill termini
-    # type. So the user is allowed to (must) specify which termini patches
-    # are the default ones. We then want to select the default-termini-patched
-    # block type regardless of how many or few of the termini-placed atoms
-    # are missing, so long as we don't have any provided atom that tells us to
-    # choose something else.
-    # Therefore, we have to ignore the atoms added by termini patches when
-    # counting how many atoms in the provided set are missing from the bt's set
-    # so e.g. if
-    # bt1 has atoms [A B C Q R] after its term patch added atoms Q and R, and
-    # bt2 has atoms [A B C S ] after its term patch added atom S, and
-    # the present set has atoms [A B C], and
-    # bt1 has been declared the "default"
-    # then both bt1 and bt2 would have the same score of 0 and
-    # the tie would go to bt1.
-    # logically, this would happen with
-    # sum(p & ~b1) as before for looking to make sure all atoms in p are contained in b1
-    # but the second part would become
-    # sum(b1_sans_termini_additions & ~p) counting only non-termini-patch-added atoms
-    # of b1 that are absent from p against b1.
-    #
-    # how is that going to be encoded???
-    # bt2 since it is not the default atom can be given a small penalty so that
-    # it is worse than bt1 if they both have the same number of non-termini atoms
-    # present but will not be worse than if some non-termini atom is missing
-    # from bt1 but not from bt2.
-    # We can do that by setting the score as
-    # 2 * n-non-termini-atoms-missing + is-non-default-term
+    """Select by missing/extraneous atoms and terminal preference in the common kernel."""
+    from tmol.io.details.compiled._compiled import _select_canonical_candidates
 
     device = pbt.device
-    n_poses = atom_is_present.shape[0]
-    max_n_res = atom_is_present.shape[1]
+    n_poses, max_n_res = is_real_res.shape
     can_ann = pbt.canonical_ordering_annotation
-    max_n_candidates = can_ann.max_n_candidates_for_var_combo
+    inputs = [
+        atom_is_present,
+        is_real_res,
+        res_types64,
+        termini_variants,
+        res_type_variants64,
+        can_ann.var_combo_candidate_bt_index,
+        can_ann.var_combo_is_real_candidate,
+        can_ann.bt_canonical_atom_is_absent,
+        can_ann.bt_non_term_patch_added_canonical_atom_is_present,
+        can_ann.bt_is_non_default_terminus,
+    ]
+    # Metal pose construction uses the same native CPU metadata kernel.
+    if device.type == "mps":
+        inputs = [x.cpu() for x in inputs]
+    selected, best_candidate_score, _ = _select_canonical_candidates(inputs)
+    selected, best_candidate_score = selected.to(device), best_candidate_score.to(
+        device
+    )
+    warning_threshold, failure_threshold = _canonical.candidate_score_thresholds(
+        canonical_ordering.max_n_canonical_atoms
+    )
+    if not torch.any(best_candidate_score >= warning_threshold):
+        return selected
 
+    max_n_candidates = can_ann.max_n_candidates_for_var_combo
     block_type_candidates = torch.full(
         (n_poses, max_n_res, max_n_candidates),
         -1,
@@ -650,10 +304,6 @@ def _select_best_block_type_candidate(  # noqa: C901
         atom_is_present[is_real_candidate], real_candidate_atom_is_absent
     )
 
-    real_candidate_n_extraneous_atoms_provided = torch.count_nonzero(
-        real_candidate_provided_atoms_absent, dim=1
-    )
-
     atom_is_absent = torch.logical_not(atom_is_present)
     real_candidate_non_term_patch_atom_is_present = (
         can_ann.bt_non_term_patch_added_canonical_atom_is_present[
@@ -664,44 +314,6 @@ def _select_best_block_type_candidate(  # noqa: C901
     real_candidate_canonical_atom_was_not_provided = torch.logical_and(
         atom_is_absent[is_real_candidate], real_candidate_non_term_patch_atom_is_present
     )
-    real_candidate_is_non_default_term = can_ann.bt_is_non_default_terminus[
-        real_candidate_block_type
-    ].to(torch.int64)
-
-    real_candidate_n_canonical_atoms_not_provided = torch.sum(
-        real_candidate_canonical_atom_was_not_provided, dim=1
-    )
-    warning_threshold = 2 * (canonical_ordering.max_n_canonical_atoms + 1)
-    real_candidate_misalignment_score = (
-        2 * real_candidate_n_canonical_atoms_not_provided
-        + warning_threshold * real_candidate_n_extraneous_atoms_provided
-        + real_candidate_is_non_default_term
-    )
-    candidate_misalignment_score2 = torch.full(
-        (
-            n_poses,
-            max_n_res,
-            max_n_candidates,
-        ),
-        1 << 30,  # big number
-        dtype=torch.int64,
-        device=device,
-    )
-    candidate_misalignment_score2[is_real_candidate] = real_candidate_misalignment_score
-
-    best_candidate_ind2 = torch.argmin(candidate_misalignment_score2, dim=2)
-
-    # ok, we need to do some quality checks. If the best fit variant's score is
-    # 2 * (canonical_ordering.max_n_canonical_atoms + 1) or worse, then we have
-    # a problem. It's hard to know what to do at this point!
-    best_candidate_score = torch.zeros(
-        (n_poses, max_n_res), dtype=torch.int64, device=device
-    )
-    best_candidate_score[is_real_res] = candidate_misalignment_score2[
-        nz_is_real_res[:, 0],
-        nz_is_real_res[:, 1],
-        best_candidate_ind2[is_real_res],
-    ]
     if torch.any(best_candidate_score >= warning_threshold):
         nz_is_real_candidate = torch.nonzero(is_real_candidate)
         err_msg = []
@@ -772,19 +384,11 @@ def _select_best_block_type_candidate(  # noqa: C901
             ]
         )
 
-        failure_threshold = 2 * warning_threshold
         if torch.any(best_candidate_score >= failure_threshold):
             raise RuntimeError(err_msg + "Best candidate exceeds failure threshold")
         logger.warning(err_msg)
 
-    block_type_ind64_2 = torch.full_like(res_types64, -1)
-    block_type_ind64_2[is_real_res] = block_type_candidates[
-        nz_is_real_res[:, 0],
-        nz_is_real_res[:, 1],
-        best_candidate_ind2[is_real_res],
-    ]
-
-    return block_type_ind64_2
+    return selected
 
 
 @_validate_args
@@ -899,35 +503,28 @@ def _annotate_pbt_w_hydrogen_parents(pbt: PackedBlockTypes):
     """Per block type and atom, a hydrogen's bonded heavy atom and its ideal distance."""
     if hasattr(pbt, "hydrogen_parent"):
         return
-    is_h = pbt.atom_is_hydrogen.cpu().numpy().astype(bool)
-    parent = numpy.full((pbt.n_types, pbt.max_n_atoms), -1, dtype=numpy.int64)
-    length = numpy.zeros((pbt.n_types, pbt.max_n_atoms), dtype=numpy.float32)
-    for i, bt in enumerate(pbt.active_block_types):
-        for a0, a1 in bt.bond_indices:
-            h, heavy = int(a1), int(a0)
-            if is_h[i, h] and not is_h[i, heavy]:
-                parent[i, h] = heavy
-                length[i, h] = bt.icoors[bt.icoors_index[bt.atoms[h].name]].d
-    setattr(pbt, "hydrogen_parent", torch.tensor(parent, device=pbt.device))
-    setattr(pbt, "hydrogen_parent_distance", torch.tensor(length, device=pbt.device))
+    parent, length = _missing.prepare_hydrogen_parents(
+        pbt.active_block_types, pbt.atom_is_hydrogen.cpu().numpy(), pbt.max_n_atoms
+    )
+    pbt.hydrogen_parent = torch.tensor(parent, device=pbt.device)
+    pbt.hydrogen_parent_distance = torch.tensor(length, device=pbt.device)
 
 
 def _hydrogens_on_their_parents(pbt, block_types64, block_coords, missing_atoms):
-    """[pose, block, atom] mask of present hydrogens at bond length from their parent."""
+    """Present named hydrogens within the common parent-distance tolerance."""
+    from tmol.io.details.compiled._compiled import _ops
+
     _annotate_pbt_w_hydrogen_parents(pbt)
-    parent = pbt.hydrogen_parent[block_types64]
-    clamped = parent.clamp_min(0)
-    parent_xyz = torch.gather(
-        block_coords, 2, clamped.unsqueeze(-1).expand(-1, -1, -1, 3)
-    )
-    distance = torch.linalg.vector_norm(block_coords - parent_xyz, dim=-1)
-    ideal = pbt.hydrogen_parent_distance[block_types64]
-    return (
-        (parent >= 0)
-        & ~missing_atoms
-        & ~torch.gather(missing_atoms, 2, clamped)
-        & ((distance - ideal).abs() < _BONDED_H_TOLERANCE)
-    )
+    inputs = [
+        block_types64,
+        block_coords,
+        missing_atoms,
+        pbt.hydrogen_parent,
+        pbt.hydrogen_parent_distance.to(block_coords.dtype),
+    ]
+    if block_coords.device.type == "mps":
+        inputs = [x.cpu() for x in inputs]
+    return _ops.hydrogen_input(inputs, _BONDED_H_TOLERANCE).to(block_coords.device)
 
 
 @attr.s(auto_attribs=True, frozen=True)
@@ -955,587 +552,102 @@ class CanonicalOrderingAnnotation:
     bt_canonical_atom_ind_map: Tensor[torch.int64][:, :]
 
 
-def _map_term_to_int(is_down_term, is_up_term):
-    if is_down_term and is_up_term:
-        return 3
-    if is_down_term:
-        return 0
-    if is_up_term:
-        return 2
-    return 1
+def _get_co_equiv_class_is_polymeric(*args):
+    host = _canonical._get_co_equiv_class_is_polymeric(*args)
+    return torch.as_tensor(host)
 
 
-def _term_and_spcase_var_candidate_lists(max_n_term, max_n_spcase):
-    return [[[] for _ in range(max_n_spcase)] for _ in range(max_n_term)]
+def _collect_var_combo_candidates(*args):
+    host = _canonical._collect_var_combo_candidates(*args)
+    return tuple(torch.as_tensor(value) for value in host)
 
 
-def _assign_var_inds_for_bt(co, bt):
-    bt_vars = bt.name.split(":")
-    # Caps are intrinsically terminal: their base type has only one polymer
-    # connection and needs no terminal patch. Connection topology also agrees
-    # with the terminal status of ordinary patched polymer types.
-    is_polymer = bt.properties.polymer.is_polymer
-    bt_is_down_term = is_polymer and bt.down_connection_ind < 0
-    bt_is_up_term = is_polymer and bt.up_connection_ind < 0
-    bt_is_non_default_term = False
-    for var_name in bt_vars[1:]:
-        if var_name in co.down_termini_patches:
-            bt_is_down_term = True
-            if var_name != co.restypes_default_termini_mapping[bt.io_equiv_class][0]:
-                bt_is_non_default_term = True
-        if var_name in co.up_termini_patches:
-            bt_is_up_term = True
-            if var_name != co.restypes_default_termini_mapping[bt.io_equiv_class][1]:
-                bt_is_non_default_term = True
-    term_ind = _map_term_to_int(bt_is_down_term, bt_is_up_term)
-    spcase_var_ind = _special_case_variant_index(bt)
-    return term_ind, spcase_var_ind, bt_is_non_default_term
+def _note_atoms_present_and_absent_from_variants(*args):
+    host = _canonical._note_atoms_present_and_absent_from_variants(*args)
+    return tuple(torch.as_tensor(value) for value in host)
 
 
-def _get_co_equiv_class_is_polymeric(co, n_co_io_equiv_classes, bts_for_equiv_class):
-    # We will consider the entire IO equivalence class to be
-    # polymeric if a single block type within that equivalence class
-    # is polymeric.
-    co_equiv_class_is_polymeric = torch.zeros(
-        (n_co_io_equiv_classes,), dtype=torch.bool, device=torch.device("cpu")
-    )
-    for i, io_equiv_class in enumerate(co.restype_io_equiv_classes):
-        for bt in bts_for_equiv_class[io_equiv_class]:
-            if bt.properties.polymer.is_polymer:
-                co_equiv_class_is_polymeric[i] = True
-    return co_equiv_class_is_polymeric
-
-
-def _collect_var_combo_candidates(
-    co,
-    max_n_termini_types,
-    max_n_special_case_aa_variant_types,
-    max_n_candidates_for_var_combo,
-    pbt_io_equiv_class_candidates,
-):
-    n_co_io_equiv_classes = co.n_restype_io_equiv_classes
-    var_combo_candidate_bt_index = torch.full(
-        (
-            n_co_io_equiv_classes,
-            max_n_termini_types,
-            max_n_special_case_aa_variant_types,
-            max_n_candidates_for_var_combo,
-        ),
-        -1,
-        dtype=torch.int64,
-        device=torch.device("cpu"),
-    )
-    var_combo_is_real_candidate = torch.zeros(
-        (
-            n_co_io_equiv_classes,
-            max_n_termini_types,
-            max_n_special_case_aa_variant_types,
-            max_n_candidates_for_var_combo,
-        ),
-        dtype=torch.bool,
-        device=torch.device("cpu"),
-    )
-
-    for i, bt_name3 in enumerate(co.restype_io_equiv_classes):
-        if bt_name3 not in pbt_io_equiv_class_candidates:
-            continue
-        for j in range(max_n_termini_types):
-            for k in range(max_n_special_case_aa_variant_types):
-                for candidate, (bt, bt_ind) in enumerate(
-                    pbt_io_equiv_class_candidates[bt_name3][j][k]
-                ):
-                    var_combo_candidate_bt_index[i, j, k, candidate] = bt_ind
-                    var_combo_is_real_candidate[i, j, k, candidate] = True
-    return var_combo_candidate_bt_index, var_combo_is_real_candidate
-
-
-def _note_atoms_present_and_absent_from_variants(co, pbt: PackedBlockTypes):
-    # For bt i and canonical atom j, is canonical atom j absent from bt i?
-    # needed so we can compute p & ~b[i]
-    bt_canonical_atom_is_absent = torch.ones(
-        (
-            pbt.n_types,
-            co.max_n_canonical_atoms,
-        ),
-        dtype=torch.bool,
-        device=torch.device("cpu"),
-    )
-    # For bt i and  canonical atom j, is canonical atom j present in bt i
-    # and not put there by a termini variant?
-    bt_non_term_patch_added_canonical_atom_is_present = torch.zeros(
-        (
-            pbt.n_types,
-            co.max_n_canonical_atoms,
-        ),
-        dtype=torch.bool,
-        device=torch.device("cpu"),
-    )
-    for i, bt in enumerate(pbt.active_block_types):
-        bt_at_names = set([at.name for at in bt.atoms])
-        # first mark all atoms that are present as not absent
-        # including the termini atoms
-        for at_name in bt_at_names:
-            can_ind = co.restypes_atom_index_mapping[bt.name3][at_name]
-            bt_canonical_atom_is_absent[i, can_ind] = False
-
-        # now we will go and strike out all the atoms that were not
-        # added by termini patches so we can mark them as present
-        for variant in bt.name.split(":")[1:]:
-            bt_at_names.difference_update(
-                co.termini_patch_added_atoms.get((bt.base_name, variant), ())
-            )
-
-        for at_name in bt_at_names:
-            can_ind = co.restypes_atom_index_mapping[bt.io_equiv_class][at_name]
-            bt_non_term_patch_added_canonical_atom_is_present[i, can_ind] = True
-            bt_canonical_atom_is_absent[i, can_ind] = False
-
-    return (
-        bt_canonical_atom_is_absent,
-        bt_non_term_patch_added_canonical_atom_is_present,
-    )
-
-
-def _create_bt_to_canonical_atom_mapping(co, pbt: PackedBlockTypes):
-    bt_ind_to_canonical_ind = torch.tensor(
-        [
-            co.restype_io_equiv_classes.index(bt.io_equiv_class)
-            for bt in pbt.active_block_types
-        ],
-        dtype=torch.int64,
-    )
-    bt_canonical_atom_ind = numpy.full(
-        (pbt.n_types, pbt.max_n_atoms), -1, dtype=numpy.int64
-    )
-    for i, bt in enumerate(pbt.active_block_types):
-        assert bt.io_equiv_class in co.restypes_ordered_atom_names
-        i_canonical_ordering = co.restypes_ordered_atom_names[bt.io_equiv_class]
-        for j, at in enumerate(bt.atoms):
-            # probably this would be faster if we used a pandas indexer
-            # but this is done only once, so, for now, use the slow form
-            bt_canonical_atom_ind[i, j] = i_canonical_ordering.index(at.name.strip())
-    bt_canonical_atom_ind = torch.tensor(bt_canonical_atom_ind, dtype=torch.int64)
-    return bt_ind_to_canonical_ind, bt_canonical_atom_ind
+def _create_bt_to_canonical_atom_mapping(*args):
+    host = _canonical._create_bt_to_canonical_atom_mapping(*args)
+    return tuple(torch.as_tensor(value) for value in host)
 
 
 @_validate_args
 def _annotate_packed_block_types_w_canonical_res_order(
     canonical_ordering, pbt: PackedBlockTypes
 ):
-    co = canonical_ordering
-
-    if hasattr(pbt, "canonical_ordering_annotation"):
+    if getattr(pbt, "_canonical_ordering_source", None) is canonical_ordering:
         return
-
-    max_n_termini_types = 4  # 0=down-term, 1=mid, 2=up-term, 3=down+up
-    # layout in tmol.database.chemical: sidechain states, then metal geometries
-    max_n_special_case_aa_variant_types = N_VARIANT_INDICES
-
-    pbt_io_equiv_class_name_set = set(
-        [bt.io_equiv_class for bt in pbt.active_block_types]
-    )
-
-    pbt_io_equiv_class_candidates = {
-        io_equiv_class: _term_and_spcase_var_candidate_lists(
-            max_n_termini_types, max_n_special_case_aa_variant_types
-        )
-        for io_equiv_class in pbt_io_equiv_class_name_set
-    }
-    bt_is_non_default_terminus = torch.zeros((pbt.n_types,), dtype=torch.bool)
-
-    # the number of base types in this PBT, which may represent a subset
-    # of the base types in the ChemicalDatabase from which the CO was
-    # derived
-    n_co_io_equiv_classes = co.n_restype_io_equiv_classes
-
     _annotate_packed_block_types_w_conjugations(pbt)
-    for i, bt in enumerate(pbt.active_block_types):
-        # a conjugated form is chosen from the bonds the input declares, never
-        #    by which atoms are present: it differs from its base by a hydrogen
-        #    that a structure need not model, so it would always look the
-        #    better match
-        # A user-defined ligand fragment already names its final chemistry.
-        # Its cut-bond connections are restored by apply_fragment_connections;
-        # there is no unconjugated fragment type to select first.
-        if pbt.conjugation_atoms_for_bt[i] and not bt.is_ligand_fragment:
-            continue
-        term_ind, spcase_var_ind, bt_is_non_default_term = _assign_var_inds_for_bt(
-            co, bt
-        )
-        pbt_io_equiv_class_candidates[bt.io_equiv_class][term_ind][
-            spcase_var_ind
-        ].append((bt, i))
-        bt_is_non_default_terminus[i] = bt_is_non_default_term
-
-    max_n_candidates_for_var_combo = max(
-        len(pbt_io_equiv_class_candidates[bt][i][j])
-        for bt in pbt_io_equiv_class_candidates
-        for i in range(max_n_termini_types)
-        for j in range(max_n_special_case_aa_variant_types)
-        if len(pbt_io_equiv_class_candidates[bt][i][j]) > 0
+    host = _canonical.prepare_canonical_selection(
+        canonical_ordering, pbt.active_block_types, pbt.max_n_atoms
     )
-
-    bts_for_equiv_class = defaultdict(list)
-    for bt in pbt.active_block_types:
-        bts_for_equiv_class[bt.io_equiv_class].append(bt)
-
-    # We will consider the entire IO equivalence class to be
-    # polymeric if a single block type within that equivalence class
-    # is polymeric.
-    co_equiv_class_is_polymeric = _get_co_equiv_class_is_polymeric(
-        co, n_co_io_equiv_classes, bts_for_equiv_class
+    pbt.canonical_ordering_annotation = CanonicalOrderingAnnotation(
+        **{
+            field.name: (
+                torch.as_tensor(value, device=pbt.device)
+                if isinstance(value, numpy.ndarray)
+                else value
+            )
+            for field in attr.fields(type(host))
+            for value in (getattr(host, field.name),)
+        }
     )
+    pbt._canonical_ordering_source = canonical_ordering
 
-    var_combo_candidate_bt_index, var_combo_is_real_candidate = (
-        _collect_var_combo_candidates(
-            co,
-            max_n_termini_types,
-            max_n_special_case_aa_variant_types,
-            max_n_candidates_for_var_combo,
-            pbt_io_equiv_class_candidates,
-        )
+
+def _apply_connection_plan(pbt, block_type_ind64, plan):
+    block_type_ind64.copy_(
+        torch.tensor(plan.block_type_rows, dtype=torch.int64, device=pbt.device)
     )
-
-    bt_canonical_atom_is_absent, bt_non_term_patch_added_canonical_atom_is_present = (
-        _note_atoms_present_and_absent_from_variants(co, pbt)
-    )
-
-    bt_ind_to_canonical_ind, bt_canonical_atom_ind = (
-        _create_bt_to_canonical_atom_mapping(co, pbt)
-    )
-
-    def _d(x):
-        return x.to(pbt.device)
-
-    ann = CanonicalOrderingAnnotation(
-        max_n_candidates_for_var_combo=max_n_candidates_for_var_combo,
-        co_equiv_class_is_polymeric=_d(co_equiv_class_is_polymeric),
-        co_polymer_connection_atoms=torch.tensor(
-            list(
-                zip(
-                    co.polymer_conn_inds.down_atom_for_co_restype,
-                    co.polymer_conn_inds.up_atom_for_co_restype,
-                )
-            ),
-            dtype=torch.int64,
-            device=pbt.device,
-        ),
-        var_combo_is_real_candidate=_d(var_combo_is_real_candidate),
-        var_combo_candidate_bt_index=_d(var_combo_candidate_bt_index),
-        bt_canonical_atom_is_absent=_d(bt_canonical_atom_is_absent),
-        bt_non_term_patch_added_canonical_atom_is_present=_d(
-            bt_non_term_patch_added_canonical_atom_is_present
-        ),
-        bt_is_non_default_terminus=_d(bt_is_non_default_terminus),
-        bt_ind_to_canonical_io_equiv_class_ind=_d(bt_ind_to_canonical_ind),
-        bt_canonical_atom_ind_map=_d(bt_canonical_atom_ind),
-    )
-    setattr(pbt, "canonical_ordering_annotation", ann)
+    for message in plan.warnings:
+        logger.warning(message)
+    return plan.connections
 
 
 @_validate_args
-def _apply_conjugated_variants(  # noqa: C901
+def _apply_conjugated_variants(
     canonical_ordering, pbt, block_type_ind64, covalent_bonds64
 ):
-    """Swap in the conjugated form of each residue an input bond attaches to.
-
-    Returns the connections the bonds ask for, as
-    ``(pose, res1, conn1, res2, conn2)``; the block types are edited in place.
-    Which form a residue takes depends on the sites *that instance* is attached
-    at, so two copies of one sugar in a glycan can differ.
-    """
-    from tmol.ligand._conjugate_model import _is_polymer_link
-
     if covalent_bonds64 is None or covalent_bonds64.shape[0] == 0:
         return []
     _annotate_packed_block_types_w_conjugations(pbt)
-
-    names_for_class = canonical_ordering.restypes_ordered_atom_names
-    bonds = covalent_bonds64.cpu().tolist()
-    block_types = block_type_ind64.cpu().tolist()
-
-    def atom_name(bt_ind, canonical_atom):
-        equiv = pbt.active_block_types[bt_ind].io_equiv_class
-        return names_for_class[equiv][canonical_atom]
-
-    def is_polymer_pair(pose_ind, res1, atom1, res2, atom2):
-        endpoints = []
-        for res, atom in ((res1, atom1), (res2, atom2)):
-            bt = pbt.active_block_types[block_types[pose_ind][res]]
-            name = atom_name(block_types[pose_ind][res], atom)
-            endpoints.append(
-                {
-                    connection.name
-                    for connection in bt.connections
-                    if connection.atom == name
-                }
-            )
-        return any(
-            _is_polymer_link(first, second)
-            for first in endpoints[0]
-            for second in endpoints[1]
-        )
-
-    # the sites each residue is attached at, from the bonds themselves
-    sites, contexts = {}, {}
-    for pose_ind, res1, atom1, res2, atom2 in bonds:
-        if (
-            block_types[pose_ind][res1] < 0
-            or block_types[pose_ind][res2] < 0
-            or is_polymer_pair(pose_ind, res1, atom1, res2, atom2)
-        ):
-            continue
-        for res, atom, partner, partner_atom in (
-            (res1, atom1, res2, atom2),
-            (res2, atom2, res1, atom1),
-        ):
-            bt_ind = block_types[pose_ind][res]
-            partner_ind = block_types[pose_ind][partner]
-            if bt_ind < 0 or partner_ind < 0:
-                continue
-            sites.setdefault((pose_ind, res), set()).add(atom_name(bt_ind, atom))
-            contexts.setdefault((pose_ind, res), []).append(
-                (
-                    atom_name(bt_ind, atom),
-                    pbt.active_block_types[partner_ind].io_equiv_class,
-                    atom_name(partner_ind, partner_atom),
-                )
-            )
-
-    for (pose_ind, res), atoms in sites.items():
-        bt_ind = block_types[pose_ind][res]
-        bt = pbt.active_block_types[bt_ind]
-        # Explicitly constructed types, including ligand fragments, may
-        # already declare the requested site. Keep the caller's bond between
-        # these block instances; equal component names do not make it a cut
-        # bond handled elsewhere. Fragment expansion removes exact cut bonds.
-        atoms = atoms - {
-            connection.atom
-            for connection in bt.connections
-            if connection.name not in ("up", "down")
-        }
-        if not atoms:
-            continue
-        base = bt.name
-        key = (base, tuple(sorted((False, atom) for atom in atoms)))
-        conjugated = pbt.conjugated_bt_for_base_and_atoms.get(key)
-        if conjugated is None:
-            raise ValueError(
-                f"no residue type for {base} attached at {sorted(atoms)}; the "
-                "component was prepared without a connection at every site the "
-                "input bonds it through"
-            )
-        block_types[pose_ind][res] = conjugated
-
-    for (pose_ind, res), context in contexts.items():
-        name = pbt.active_block_types[block_types[pose_ind][res]].name
-        choices = pbt.contextual_conjugates.get(name)
-        if choices is not None:
-            target = choices.get(tuple(sorted(context)))
-            if target is None:
-                raise ValueError(
-                    f"No prepared attachment context for {name}: {context}"
-                )
-            block_types[pose_ind][res] = target
-
-    connections, occupied = [], {}
-
-    def endpoint_label(pose_ind, endpoint):
-        res, conn = endpoint
-        bt = pbt.active_block_types[block_types[pose_ind][res]]
-        site = bt.connections[conn]
-        return f"residue {res} {bt.name}.{site.atom} ({site.name})"
-
-    for pose_ind, res1, atom1, res2, atom2 in bonds:
-        candidates = []
-        for res, atom in ((res1, atom1), (res2, atom2)):
-            bt = pbt.active_block_types[block_types[pose_ind][res]]
-            name = names_for_class[bt.io_equiv_class][atom]
-            choices = [
-                i
-                for i, connection in enumerate(bt.connections)
-                if connection.atom == name
-            ]
-            if not choices:
-                raise ValueError(
-                    f"{bt.name} has no connection at {name} for a declared bond"
-                )
-            candidates.append((res, choices))
-        polymer_pair = next(
-            (
-                (first, second)
-                for first in candidates[0][1]
-                for second in candidates[1][1]
-                if {
-                    pbt.active_block_types[block_types[pose_ind][res1]]
-                    .connections[first]
-                    .name,
-                    pbt.active_block_types[block_types[pose_ind][res2]]
-                    .connections[second]
-                    .name,
-                }
-                == {"up", "down"}
-            ),
-            None,
-        )
-        selected = (
-            polymer_pair
-            if polymer_pair is not None
-            else tuple(
-                next(
-                    (
-                        choice
-                        for choice in choices
-                        if pbt.active_block_types[block_types[pose_ind][res]]
-                        .connections[choice]
-                        .name.startswith("conj_")
-                    ),
-                    choices[0],
-                )
-                for res, choices in candidates
-            )
-        )
-        resolved = [(candidates[side][0], selected[side]) for side in (0, 1)]
-        for endpoint, partner in (resolved, resolved[::-1]):
-            previous = occupied.setdefault((pose_ind, *endpoint), partner)
-            if previous != partner:
-                raise ValueError(
-                    f"pose {pose_ind}: {endpoint_label(pose_ind, endpoint)} has "
-                    f"multiple declared partners: {endpoint_label(pose_ind, previous)} "
-                    f"and {endpoint_label(pose_ind, partner)}. Each connection accepts "
-                    "one partner; resolve the input bond graph."
-                )
-        connections.append((pose_ind, *resolved[0], *resolved[1]))
-    block_type_ind64.copy_(
-        torch.tensor(block_types, dtype=torch.int64, device=pbt.device)
+    return _apply_connection_plan(
+        pbt,
+        block_type_ind64,
+        _connections.prepare_covalent_connections(
+            canonical_ordering,
+            pbt.active_block_types,
+            pbt._conjugation_metadata,
+            block_type_ind64.cpu().tolist(),
+            covalent_bonds64.cpu().tolist(),
+        ),
     )
-    return connections
 
 
 def _apply_metal_connections(
     canonical_ordering, pbt, block_type_ind64, metal_connections
 ):
-    """Swap in each donor's coordinating form and join it to its metal's site.
-
-    Returns the connections as ``(pose, metal, site conn, donor, donor conn)``;
-    the block types are edited in place.
-    """
     if not metal_connections:
         return []
     _annotate_packed_block_types_w_conjugations(pbt)
-    names_for_class = canonical_ordering.restypes_ordered_atom_names
-    block_types = block_type_ind64.cpu().tolist()
-
-    def atom_name(pose, res, atom):
-        bt = pbt.active_block_types[block_types[pose][res]]
-        return names_for_class[bt.io_equiv_class][atom]
-
-    rows = [
-        (int(pose), int(metal), int(site), int(res), int(atom))
-        for pose, metal, site, res, atom in metal_connections
-        if block_types[pose][metal] >= 0 and block_types[pose][res] >= 0
-    ]
-    donated = defaultdict(list)
-    for pose, _, _, res, atom in rows:
-        donated[(pose, res)].append(atom_name(pose, res, atom))
-    uncoordinated = set()
-    for (pose, res), atoms in donated.items():
-        bt_ind = block_types[pose][res]
-        attached = (*pbt.conjugation_atoms_for_bt[bt_ind], *((True, a) for a in atoms))
-        key = (pbt.conjugation_base_for_bt[bt_ind], tuple(sorted(attached)))
-        coordinating = pbt.conjugated_bt_for_base_and_atoms.get(key)
-        if coordinating is None:
-            # 6YV5 A:45: the given protonation state wins; a neutral TYR's OH has no
-            #    donor form (TYR_DEP has), so its metal bond is dropped
-            logger.warning(
-                "pose %d: %s %d cannot coordinate a metal at %s in its given "
-                "protonation state; left uncoordinated",
-                pose,
-                pbt.active_block_types[bt_ind].name,
-                res,
-                sorted(atoms),
-            )
-            uncoordinated.add((pose, res))
-            continue
-        block_types[pose][res] = coordinating
-    rows = [row for row in rows if (row[0], row[3]) not in uncoordinated]
-
-    connections, filled = [], set()
-    for pose, metal, site, res, atom in rows:
-        metal_bt = pbt.active_block_types[block_types[pose][metal]]
-        donor_bt = pbt.active_block_types[block_types[pose][res]]
-        sites = _site_connections(metal_bt)
-        name = atom_name(pose, res, atom)
-        if site >= len(sites):
-            logger.warning(
-                "%s has %d sites; %s %s left uncoordinated",
-                metal_bt.name,
-                len(sites),
-                donor_bt.name,
-                name,
-            )
-            continue
-        # an atom bridging several metals has a connection for each
-        donor_conn = next(
-            i
-            for i, c in enumerate(donor_bt.connections)
-            if c.atom == name and not c.kinematic and (pose, res, i) not in filled
-        )
-        filled.add((pose, res, donor_conn))
-        metal_conn = metal_bt.connection_to_cidx[sites[site]]
-        connections.append((pose, metal, metal_conn, res, donor_conn))
-
-    block_type_ind64.copy_(
-        torch.tensor(block_types, dtype=torch.int64, device=pbt.device)
+    return _apply_connection_plan(
+        pbt,
+        block_type_ind64,
+        _connections.prepare_metal_connections(
+            canonical_ordering,
+            pbt.active_block_types,
+            pbt._conjugation_metadata,
+            block_type_ind64.cpu().tolist(),
+            metal_connections,
+        ),
     )
-    return connections
 
 
 def _annotate_packed_block_types_w_conjugations(pbt: PackedBlockTypes):
-    """Annotate per block type its attachments (connections but up, down, disulfide and
-    metal sites) as (is_metal, atom), its name without them, and the reverse lookup."""
-    if hasattr(pbt, "conjugation_atoms_for_bt"):
+    if hasattr(pbt, "_conjugation_metadata"):
         return
     _annotate_packed_block_types_w_dslf_conn_inds(pbt)
-    dslf = pbt.canonical_dslf_conn_ind.cpu().numpy()
-
-    atoms_for_bt, base_for_bt = [], []
-    by_base_and_atoms = {}
-    contextual = {}
-    for i, bt in enumerate(pbt.active_block_types):
-        structural = {bt.down_connection_ind, bt.up_connection_ind, int(dslf[i])}
-        structural |= {
-            bt.connection_to_cidx[name]
-            for site in bt.metal_sites
-            for name in site.site_connections
-        }
-        conjugations = [
-            conn for ind, conn in enumerate(bt.connections) if ind not in structural
-        ]
-        # a multiset: an atom bridging two metals carries two connections;
-        #   a donor's metal connections are named metal<k>_<atom>
-        atoms = tuple(
-            sorted((conn.name.startswith("metal"), conn.atom) for conn in conjugations)
-        )
-        atoms_for_bt.append(atoms)
-        # the variant tags to drop are the connections' own names
-        tags = {conn.name for conn in conjugations}
-        combined = {"nterm"} if "conj_N" in tags else set()
-        base = ":".join(
-            part for part in bt.name.split(":") if part not in tags | combined
-        )
-        base_for_bt.append(base)
-        if bt.conjugation_context:
-            from tmol.ligand._conjugate_context import CONTEXT_PREFIX
-
-            source = ":".join(
-                p for p in bt.name.split(":") if not p.startswith(CONTEXT_PREFIX)
-            )
-            contextual.setdefault(source, {})[bt.conjugation_context] = i
-            continue
-        by_base_and_atoms[(base, atoms)] = i
-
-    setattr(pbt, "conjugation_atoms_for_bt", atoms_for_bt)
-    setattr(pbt, "conjugation_base_for_bt", base_for_bt)
-    setattr(pbt, "conjugated_bt_for_base_and_atoms", by_base_and_atoms)
-    setattr(pbt, "contextual_conjugates", contextual)
+    pbt._conjugation_metadata = _canonical.prepare_conjugations(pbt.active_block_types)
+    for name, value in vars(pbt._conjugation_metadata).items():
+        setattr(pbt, name, value)

@@ -1,5 +1,5 @@
 from tmol.score.terms._term_creator import TermCreator, _score_term_creator
-from tmol.score._score_types import ScoreType
+from tmol.score._score_types import _score_types_for_term
 from tmol.database import ParameterDatabase
 import torch
 
@@ -8,11 +8,7 @@ import torch
 class DunbrackTermCreator(TermCreator):
     """Create the Dunbrack rotamer energy term."""
 
-    _score_types = [
-        ScoreType.dunbrack_rot,
-        ScoreType.dunbrack_rotdev,
-        ScoreType.dunbrack_semirot,
-    ]
+    _score_types = _score_types_for_term("dunbrack")
 
     @classmethod
     def create_term(cls, param_db: ParameterDatabase, device: torch.device):
