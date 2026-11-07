@@ -13,7 +13,8 @@ import numpy as np
 from .score_types import ScoreType
 from ._execution import render_execution
 
-from tmol_core.scoring.channels import TERM_CHANNELS
+from tmol_core.scoring.channels import TERM_CHANNELS, TERM_N_BODIES
+from tmol_core.scoring.score_function import ScoreTermLifecycle
 
 _TERM_TYPES = {
     module: (name, TERM_CHANNELS[module])
@@ -46,7 +47,27 @@ _FUSED_PAIR_TYPES = (
 )
 
 
-class ScoreFunction:
+_NATIVE_CHANNEL_ORDER = [
+    ScoreType[name] for names in TERM_CHANNELS.values() for name in names
+]
+_CHANNEL_BODIES = {
+    ScoreType[name]: TERM_N_BODIES[group]
+    for group, names in TERM_CHANNELS.items()
+    for name in names
+}
+
+
+def _provided_channels(term):
+    return sorted(term.score_types_provided(), key=_NATIVE_CHANNEL_ORDER.index)
+
+
+def _term_bodies(term):
+    if hasattr(term, "n_bodies"):
+        return term.n_bodies()
+    return _CHANNEL_BODIES[term.score_types_provided()[0]]
+
+
+class ScoreFunction(ScoreTermLifecycle):
     """Mutable score configuration; render once for repeated coordinate scoring.
 
     Rendering snapshots weights and term options. Changing this configuration
@@ -61,8 +82,9 @@ class ScoreFunction:
             raise TypeError("score weight storage requires float32 or float64")
         self._param_db = param_db
         self._weights = {}
-        self._terms = []
-        self._term_for_st = {}
+        super().__init__(
+            len(ScoreType), score_types=_provided_channels, n_bodies=_term_bodies
+        )
         self._options = {}
         self._executors = {}
 
@@ -89,7 +111,7 @@ class ScoreFunction:
 
     @property
     def terms(self):
-        return list(self._terms)
+        return list(self.all_terms())
 
     @property
     def weights(self):
@@ -125,31 +147,38 @@ class ScoreFunction:
             raise ValueError("score weights must be finite")
         if score_type not in _TERM_FOR_TYPE:
             raise NotImplementedError(f"JAX scoring does not support {score_type.name}")
-        if score_type not in self._term_for_st and weight != 0:
-            module, name = _TERM_FOR_TYPE[score_type]
-            term_cls = getattr(
-                importlib.import_module(
-                    f"tmol_jax.score.{module}.{module}_energy_term"
-                ),
-                name,
-            )
-            term = term_cls(self._param_db)
-            self._terms.append(term)
-            for provided in term.score_types_provided():
-                self._term_for_st[provided] = term
+        self.update_term_membership(score_type, weight)
         self._weights[score_type] = weight
+
+    def _create_term_for_score_type(self, score_type):
+        module, name = _TERM_FOR_TYPE[score_type]
+        term_cls = getattr(
+            importlib.import_module(f"tmol_jax.score.{module}.{module}_energy_term"),
+            name,
+        )
+        return term_cls(self._param_db)
+
+    def _term_membership_changed(self):
+        self._executors.clear()
+
+    def weights_tensor(self):
+        """Weights in the same retained-term/native-lane order as rendered scores."""
+        return jnp.asarray(
+            [self.get_weight(st) for st in self.all_score_types()],
+            dtype=self.weight_dtype,
+        )
 
     def get_weight(self, score_type):
         return self._weights.get(score_type, 0.0)
 
     def active_score_types(self):
-        return sorted(st for st, weight in self._weights.items() if weight != 0)
+        return sorted(st for st in self.all_score_types() if self.get_weight(st) != 0)
 
     def _setup(self, pose_stack, constraint_set=None, omit=()):
         if not np.isfinite(np.asarray(pose_stack.coords)).all():
             raise ValueError("pose coordinates must be finite before scoring setup")
         states = []
-        for term in self._terms:
+        for term in self.all_terms():
             if term in omit or not any(
                 self.get_weight(st) for st in term.score_types_provided()
             ):
@@ -179,11 +208,12 @@ class ScoreFunction:
     ):
         """Return an unjitted coords -> scores callable with frozen configuration.
 
-        Scores have shape [poses], or [active score types, poses] when
-        sum_terms=False. Active types are ordered by ScoreType. Disabling
+        Scores have shape [poses], or [retained term channels, poses] when
+        sum_terms=False, aligned with all_score_types(). Zero-weight subchannels
+        remain present while another channel retains their term. Disabling
         apply_weights exposes those same channels without their weights.
         """
-        channels = tuple(self.active_score_types())
+        channels = tuple(self.all_score_types())
         weights = dict(self._weights)
         # Standalone LJ/LK and electrostatics retain independent parameter
         # prerequisites. When both are active, use their shared native traversal.
@@ -211,7 +241,7 @@ class ScoreFunction:
                 )
         entries = tuple(
             (copy.copy(term), state)
-            for term, state in zip(self._terms, states)
+            for term, state in zip(self.all_terms(), states)
             if term not in fused_terms
             and any(weights.get(st, 0) for st in term.score_types_provided())
         )
@@ -280,7 +310,7 @@ class ScoreFunction:
                 )
             values = jnp.stack(
                 [
-                    energies[st] * (weights[st] if apply_weights else 1)
+                    energies[st] * (weights.get(st, 0) if apply_weights else 1)
                     for st in selected
                 ]
             )

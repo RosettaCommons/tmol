@@ -77,7 +77,7 @@ class RotamerScorer:
         validate_rotamer_context(pose, rotamers)
         self.rotamers = rotamers
         self.packed_block_types = pose.packed_block_types
-        self.score_types = tuple(score_function.active_score_types())
+        self.score_types = tuple(score_function.all_score_types())
         self.sum_terms = sum_terms
         self.apply_weights = apply_weights
         self.shape = rotamers.coords.shape

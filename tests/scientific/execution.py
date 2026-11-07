@@ -188,7 +188,7 @@ class Execution:
             from tmol_jax import beta2016_score_function
 
             self.score_function = beta2016_score_function(self.parameter_database)
-            channels = self.score_function.active_score_types()
+            channels = self.score_function.all_score_types()
         return tuple(st.name for st in channels), np.array(
             [float(self.score_function.get_weight(st)) for st in channels]
         )
@@ -204,11 +204,7 @@ class Execution:
         return np.asarray(value)
 
     def channel_names(self):
-        types = (
-            self.score_function.all_score_types()
-            if self.framework == "torch"
-            else self.score_function.active_score_types()
-        )
+        types = self.score_function.all_score_types()
         return tuple(term.name for term in types)
 
     def scores(self, coords, *, sum_terms=True, apply_weights=True):

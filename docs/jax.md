@@ -83,7 +83,11 @@ explicit double-precision weights; clones retain that choice.
 Rendered scorers snapshot weights, term options and topology. Reuse them for
 coordinate changes; render again after changing weights, parameters, types,
 connectivity or batch layout. `sum_terms=False` returns weighted channels in
-`ScoreType` order; additionally set `apply_weights=False` for unweighted values.
+`all_score_types()` order, including zero-weight channels of retained terms;
+additionally set `apply_weights=False` for unweighted values.
+`all_terms()`, body-count groups and `weights_tensor()` use the common lifecycle.
+Setting a term's final nonzero weight to zero removes it; direct removal updates
+coverage immediately while existing rendered scorers retain their snapshots.
 `set_options({"ref_weights": weights})` replaces reference weights; explicit D
 entries take precedence over the corresponding L residue.
 `set_options({"soft_rep": True})` selects the shared soft-repulsive LJ parameters
@@ -290,8 +294,8 @@ first order depend on the callback.
 `score_function.render_rotamer_scoring_module(pose, rotamer_set)` composes every
 enabled term, including reference energies and constraints. Calling it eagerly
 returns `(values, indices)` with uncoalesced scalar entries and `[3, entries]`
-pose/rotamer identities. `sum_terms=False` returns active named channels in
-`ScoreType` order; `apply_weights=False` exposes their unweighted values. Weights
+pose/rotamer identities. `sum_terms=False` returns retained named channels in
+`all_score_types()` order; `apply_weights=False` exposes their unweighted values. Weights
 and options are snapshotted at render time, as for whole-pose scoring.
 
 For coordinate gradients or compiled repeated evaluation, first call
@@ -425,8 +429,9 @@ parameter prerequisites.
 
 Before comparing frontends, verify residue/atom identities and use identical
 coordinates, parameters and weight precision: loaders can idealize missing atoms
-and hydrogens differently. Match exposed score channels by name; Torch groups
-channels by term while JAX orders them by `ScoreType`. Canonical residue and atom metadata come from the common chemical database.
+and hydrogens differently. Both frontends group score channels by retained term
+using the common lifecycle, with native channel order within each term. Canonical
+residue and atom metadata come from the common chemical database.
 Unknown input atom names reject instead of being dropped. PDB loading selects
 the first model/alternate location; represent
 chain breaks explicitly. Float32 reductions and torsion formulas differ between
