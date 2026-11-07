@@ -10,3 +10,4 @@ for suite in core jax scientific; do
 done
 cp -R tmol/tests/data "${destination}/tmol/tests/data"
 cp -R tmol/database/default/scoring "${destination}/tmol/database/default/scoring"
+cp -R tmol/database/score_functions "${destination}/tmol/database/score_functions"
