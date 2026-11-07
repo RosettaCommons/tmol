@@ -1,6 +1,6 @@
 """JAX buffer execution for the common three-pass interaction-graph driver."""
 
-from functools import partial
+from functools import partial, lru_cache
 
 import jax
 import jax.numpy as jnp
@@ -287,6 +287,14 @@ def _explicit_intermediate_bytes(program):
     return total
 
 
+@lru_cache(maxsize=128)
+def _compiled_buffer_bound(evaluate, coordinate_shape, arrays, candidates, x64):
+    # Keys retain only compiled-call identity and shapes, never device chemistry
+    # buffers. A new layout, dtype or callback gets a fresh conservative trace.
+    program = jax.make_jaxpr(evaluate)(coordinate_shape, arrays, candidates)
+    return program.out_avals[0].shape[-1], _explicit_intermediate_bytes(program)
+
+
 def complete_table_bound(scorer, coords):
     """Conservatively bound the existing fused evaluator without running physics."""
     counts = np.asarray(scorer.rotamers.n_rots_for_pose, dtype=np.int64)
@@ -311,8 +319,9 @@ def complete_table_bound(scorer, coords):
         lambda a: jax.ShapeDtypeStruct(a.shape, a.dtype), scorer._arrays
     )
     coordinate_shape = jax.ShapeDtypeStruct(coords.shape, coords.dtype)
-    program = jax.make_jaxpr(scorer._evaluate)(coordinate_shape, arrays, candidates)
-    temporary = _explicit_intermediate_bytes(program)
+    score_count, temporary = _compiled_buffer_bound(
+        scorer._evaluate, coordinate_shape, arrays, candidates, jax.config.x64_enabled
+    )
     if temporary is None:
         return None
     # Sphere outputs, each reach's count/prefix/layout temporaries, and all
@@ -320,7 +329,6 @@ def complete_table_bound(scorer, coords):
     # allowance overcounts its int32 counts/offsets and wide prefix temporaries.
     temporary += 8 * coords.dtype.itemsize * (int(counts.sum()) + poses * blocks)
     temporary += len(reaches) * (64 * (block_pairs + 1) + 12 * pair_bound)
-    score_count = program.out_avals[0].shape[-1]
     return block_pairs, score_count, temporary
 
 
