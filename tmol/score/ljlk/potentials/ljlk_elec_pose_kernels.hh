@@ -115,7 +115,8 @@ template <
     bool weighted,
     bool compute_scores,
     typename Real,
-    tmol::Device D>
+    tmol::Device D,
+    typename GradReal = Real>
 TMOL_DEVICE_FUNC tmol::portable::array<Real, compute_scores ? 4 : 0>
 score_atom_pair(
     int atom1,
@@ -127,7 +128,7 @@ score_atom_pair(
     Real dist2,
     int ljlk_separation,
     int elec_separation,
-    TView<tmol::portable::Vec<Real, 3>, 2, D> dV_dcoords,
+    TView<tmol::portable::Vec<GradReal, 3>, 2, D> dV_dcoords,
     TView<Real, 1, D> score_weights,
     Real derivative_scale) {
   if (ljlk_separation < 4 && elec_separation < 4) {
@@ -220,10 +221,10 @@ score_atom_pair(
 #pragma unroll
       for (int axis = 0; axis < 3; ++axis) {
         if (dxyz1[axis] == 0) continue;
-        accumulate<D, Real>::add(
+        accumulate<D, GradReal>::add(
             dV_dcoords[0][data.r1.rot_coord_offset + start1 + atom1][axis],
             dxyz1[axis]);
-        accumulate<D, Real>::add(
+        accumulate<D, GradReal>::add(
             dV_dcoords[0][data.r2.rot_coord_offset + start2 + atom2][axis],
             -dxyz1[axis]);
       }
@@ -234,11 +235,11 @@ score_atom_pair(
 #pragma unroll
         for (int axis = 0; axis < 3; ++axis) {
           if (dxyz1[axis] == 0) continue;
-          accumulate<D, Real>::add(
+          accumulate<D, GradReal>::add(
               dV_dcoords[score_type][data.r1.rot_coord_offset + start1 + atom1]
                         [axis],
               dxyz1[axis]);
-          accumulate<D, Real>::add(
+          accumulate<D, GradReal>::add(
               dV_dcoords[score_type][data.r2.rot_coord_offset + start2 + atom2]
                         [axis],
               -dxyz1[axis]);
@@ -311,7 +312,8 @@ template <
     template <tmol::Device> class DeviceOperations,
     tmol::Device D,
     typename Real,
-    typename Int>
+    typename Int,
+    typename GradReal = Real>
 auto ljlk_elec_native_forward(
     ContextManager& mgr,
     TView<tmol::portable::Vec<Real, 3>, 1, D> rot_coords,
@@ -341,10 +343,12 @@ auto ljlk_elec_native_forward(
     TView<Real, 1, D> output_gradients,
     Int n_valid_rots,
     TView<Real, 4, D> output,
-    TView<tmol::portable::Vec<Real, 3>, 2, D> dV_dcoords,
+    TView<tmol::portable::Vec<GradReal, 3>, 2, D> dV_dcoords,
     double* pose_accum) -> void {
   using namespace ljlk_elec_detail;
   using Real3 = tmol::portable::Vec<Real, 3>;
+  // Pair physics stays in Real; callers may widen only the atomic sum.
+  static_assert(sizeof(GradReal) >= sizeof(Real));
   static_assert(!require_gradient || !rotamer_pairs || weighted);
   // Rotamer backward only needs coordinate derivatives; its score table is
   // discarded by autograd.

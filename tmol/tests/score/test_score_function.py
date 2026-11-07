@@ -384,6 +384,23 @@ def test_cuda_fused_pose_accumulation_stability(
         atol=0,
     )
 
+    # The same stability is required for derivatives used by line searches.
+    # Exercise native independent lanes and the compact weighted derivative.
+    coords = pose.coords.detach().requires_grad_(True)
+    gradients = torch.stack(
+        [
+            torch.autograd.grad(scorer(coords, sum_terms=weighted).sum(), coords)[0]
+            for _ in range(20)
+        ]
+    )
+    assert torch.isfinite(gradients).all() and torch.count_nonzero(gradients)
+    torch.testing.assert_close(
+        gradients,
+        gradients[0].expand_as(gradients),
+        rtol=torch.finfo(torch.float32).eps,
+        atol=0,
+    )
+
 
 def test_fused_ljlk_elec_weighted_gradient_finite_difference(
     ubq_pdb, default_database, torch_device
