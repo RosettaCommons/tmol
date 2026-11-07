@@ -606,5 +606,11 @@
       "tests/scientific/test_public_mutation.py"
     ],
     "implementation_status": "Common selection/query/mutation policy; mixed noncanonical/D/ligand identity, author insertion codes, frozen input/other blocks/poses and all-channel finite gradients tested on both CPU frameworks."
+  },
+  "canonical_palette_retention": {
+    "torch": "supported",
+    "jax": "implemented_cpu_scientific_checks",
+    "repro_fixture": "tests/scientific/test_canonical_palette_choices.py",
+    "implementation_status": "Canonical input preserves supplied residue choices rather than narrowing to types used in coordinates. L/D histidine keeps both neutral tautomers and four OptH samples; unused custom ligand and GLY design identities remain available with full preset finite values/gradients. Existing canonical molecular topology/score checks retained; complete workflow runtime/memory and mature parity remain separate gates."
   }
 }

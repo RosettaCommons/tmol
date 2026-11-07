@@ -497,7 +497,9 @@ return_context=True)` consumes the common sequence grammar and ideal geometry:
 uppercase protein, lowercase DNA, exact `X[NAME]` variants, `X(SMILES)` ligands,
 and `:` chain breaks. Use the returned context's parameter database for scoring.
 Context reuse retains prepared ligand identities; `termini=False` preserves
-uncapped types. `PoseStackBuilder.from_block_type_names(palette, names,
+uncapped types. Canonical construction retains the supplied residue palette,
+including unused tautomers and legal design identities; compacting coordinate
+padding does not remove chemistry choices. `PoseStackBuilder.from_block_type_names(palette, names,
 chain_lengths)` creates zero coordinates with the same named-connection parser.
 A `--port-label` bond requires paired labels; unmatched labels have the mature
 parser's ignored-label behavior. Invalid ports and multiply used labels raise.
