@@ -9,7 +9,7 @@ work=$(mktemp -d)
 trap 'rm -rf "${work}"' EXIT
 python -m venv "${work}/env"
 "${work}/env/bin/python" -m pip install --upgrade pip
-"${work}/env/bin/python" -m pip install pytest "${JAX_SPEC:-jax>=0.11.2}"
+"${work}/env/bin/python" -m pip install pytest 'ipython>=8.0' "${JAX_SPEC:-jax>=0.11.2}"
 core_wheels=("${JAX_DIST}"/tmol_core-*.whl)
 "${work}/env/bin/python" -m pip install "${core_wheels[0]}[ligand]" "${JAX_DIST}"/tmol_jax-*.whl
 "${work}/env/bin/python" -m pip install build 'setuptools>=77' wheel
@@ -26,6 +26,7 @@ version=$("${work}/env/bin/python" -I -c \
   'from importlib.metadata import version; print(version("tmol-jax"))')
 (
   cd "${work}/source"
+  export JAX_ENABLE_X64=true
   TMOL_TEST_BACKENDS=jax-cpu JAX_PLATFORMS=cpu "${work}/env/bin/python" -I -m pytest -ra tests
   JAX_PLATFORMS=cpu "${work}/env/bin/python" -I \
     "${GITHUB_WORKSPACE}/scripts/smoke_installed_jax.py" \
