@@ -332,7 +332,11 @@ class ScoreFunction(ScoreTermLifecycle):
             score,
             prepared,
             shape,
-            native_only=cache is not None and ScoreType.constraint not in channels,
+            native_only=(
+                cache is not None
+                and ScoreType.constraint not in channels
+                and pose_stack.coords.device.platform == "gpu"
+            ),
         )
 
     def jitted(self, pose_stack):

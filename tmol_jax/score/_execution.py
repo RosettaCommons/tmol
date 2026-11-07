@@ -69,7 +69,7 @@ def render_execution(cache, configuration, evaluate, states, shape, *, native_on
     )
     arrays = tuple(leaves[i] for i in positions)
     template = tuple(None if i in positions else leaf for i, leaf in enumerate(leaves))
-    key = (configuration, tree, template)
+    key = (configuration, tree, template, native_only)
     executor = cache.get(key) if cache is not None else None
     if executor is None:
 
