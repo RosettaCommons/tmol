@@ -227,4 +227,7 @@ class BlockPairScorer:
             (self.sparse._arrays, self.candidates, self.blocks, block_pair_indices),
             self.shape,
             native_only=False,
+            # The native CPU calls already compile independently. Combining the
+            # dense pair adjoint into one CPU executable increases warm latency.
+            compile_gradient=self.blocks.device.platform != "cpu",
         )
