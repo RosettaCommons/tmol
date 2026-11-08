@@ -1,5 +1,7 @@
 """Runtime packing for the shared whole-pose LJ/LK/electrostatic kernels."""
 
+from typing import NamedTuple
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -17,6 +19,39 @@ from tmol_jax.score._native import (
     pose_arguments,
     register,
     workspace_sizes,
+)
+
+
+class NonbondedState(NamedTuple):
+    parameters: tuple
+    reach: float
+    precise_gradient: bool
+
+
+class IndependentNonbondedState(NamedTuple):
+    target: str
+    channels: int
+    parameters: tuple
+    reach: float
+    precise_gradient: bool
+
+
+# Arrays are dynamic operands; native target, layout and cutoff are static.
+# Named tuples retain existing positional state access and unpacking.
+jax.tree_util.register_pytree_node(
+    NonbondedState,
+    lambda state: ((state.parameters,), (state.reach, state.precise_gradient)),
+    lambda metadata, children: NonbondedState(children[0], *metadata),
+)
+jax.tree_util.register_pytree_node(
+    IndependentNonbondedState,
+    lambda state: (
+        (state.parameters,),
+        (state.target, state.channels, state.reach, state.precise_gradient),
+    ),
+    lambda metadata, children: IndependentNonbondedState(
+        *metadata[:2], children[0], *metadata[2:]
+    ),
 )
 
 
@@ -191,7 +226,7 @@ def prepare_nonbonded(pose, database, *, soft_repulsive=False):
         register(target)
         if precise_gradient:
             register(target + "_precise")
-    return parameters, max(lj_reach, elec_reach), precise_gradient
+    return NonbondedState(parameters, max(lj_reach, elec_reach), precise_gradient)
 
 
 def nonbonded_energy(coords, state, weights=None):
@@ -231,7 +266,9 @@ def prepare_independent_nonbonded(
     precise_gradient = not electrostatic and pose.coords.device.platform == "gpu"
     if precise_gradient:
         register(target + "_precise")
-    return target, channels, (*topology, *chemical), reach, precise_gradient
+    return IndependentNonbondedState(
+        target, channels, (*topology, *chemical), reach, precise_gradient
+    )
 
 
 def independent_nonbonded_energy(coords, state):
