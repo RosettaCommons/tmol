@@ -47,6 +47,9 @@ TMOL_JAX_ENERGY(
 
 TMOL_JAX_ENERGY(
     tmol_backbone_torsion, tmol::jax::run<tmol::jax::BackboneTorsionKernel>, );
+TMOL_JAX_ENERGY(
+    tmol_backbone_torsion_precise,
+    tmol::jax::run<tmol::jax::BackboneTorsionPreciseKernel>, );
 
 TMOL_JAX_ENERGY(
     tmol_metal_coordination,
@@ -181,6 +184,11 @@ TMOL_JAX_STAGE(
 TMOL_JAX_STAGE(
     tmol_rotamer_backbone,
     (tmol::jax::run_graph_stage<tmol::jax::RotamerBackboneStage, double>),
+    .Attr<double>("reach"));
+TMOL_JAX_STAGE(
+    tmol_rotamer_backbone_precise,
+    (tmol::jax::
+         run_graph_stage<tmol::jax::RotamerBackbonePreciseStage, double>),
     .Attr<double>("reach"));
 
 TMOL_JAX_ENERGY(

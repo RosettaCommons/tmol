@@ -411,6 +411,38 @@ extern "C" uint64_t tmol_backbone_torsion_workspace_bytes(
   });
 }
 
+extern "C" uint64_t tmol_backbone_torsion_precise_workspace_bytes(
+    int64_t poses, int64_t atoms, int bits, int derivative) {
+  if (poses > INT32_MAX / 2) return UINT64_MAX;
+  return workspace_bytes(bits, {poses, atoms}, [&](auto real) -> uint64_t {
+    auto values = derivative && sizeof(real) == sizeof(float)
+                      ? tmol::jax::backbone_gradient_values(atoms)
+                      : 0;
+    return tmol::jax::BackboneWorkspace<decltype(real)>(poses, values)
+        .storage.size_bytes();
+  });
+}
+
+extern "C" uint64_t tmol_rotamer_backbone_precise_workspace_bytes(
+    int64_t atoms, int bits, int derivative) {
+  return workspace_bytes(bits, {atoms}, [&](auto real) -> uint64_t {
+    auto values = derivative && sizeof(real) == sizeof(float)
+                      ? tmol::jax::backbone_gradient_values(atoms, true)
+                      : 0;
+    return tmol::jax::BackboneWorkspace<decltype(real)>(0, values)
+        .storage.size_bytes();
+  });
+}
+
+extern "C" uint64_t tmol_rotamer_elec_precise_workspace_bytes(
+    int64_t atoms, int bits, int derivative) {
+  return workspace_bytes(bits, {atoms}, [&](auto real) -> uint64_t {
+    return derivative && sizeof(real) == sizeof(float)
+               ? tmol::jax::rotamer_elec_gradient_bytes(atoms)
+               : 0;
+  });
+}
+
 extern "C" uint64_t tmol_nonbonded_workspace_bytes(
     int64_t poses, int64_t blocks, int bits, int) {
   return workspace_bytes(bits, {poses, blocks}, [&](auto real) -> uint64_t {

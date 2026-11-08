@@ -61,7 +61,10 @@ def prepare_rotamer_backbone(pose, rotamers, database, *, term=None):
         rotamers.block_type_ind_for_rot,
         rotamers.group_for_block,
     )
-    return ("tmol_rotamer_backbone", 2, parameters, 0.0), indices
+    target = "tmol_rotamer_backbone"
+    if pose.device.platform == "gpu":
+        target += "_precise"
+    return (target, 2, parameters, 0.0), indices
 
 
 sparse_backbone_scores = sparse_bonded_scores

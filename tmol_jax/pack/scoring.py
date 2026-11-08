@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_jax.score._native import register
+from tmol_jax.score._native import register, workspace_sizes
 from tmol_jax.score.nonbonded import prepare_independent_nonbonded
 from .dispatch import rotamer_spheres, block_spheres, candidate_pair_groups
 
@@ -26,6 +26,11 @@ def _evaluate(
     backward=False,
     workspace=None,
 ):
+    if target in ("tmol_rotamer_backbone_precise", "tmol_rotamer_elec_precise"):
+        if coords.dtype == jnp.float32:
+            workspace = workspace_sizes(target, (coords.shape[0],), 32)
+        else:
+            target = target.removesuffix("_precise")
     register(target)
     operands = (coords, *parameters, indices)
     if backward:
@@ -145,8 +150,11 @@ def prepare_rotamer_nonbonded(
         rotamers.first_rot_block_type,
         rotamers.rot_offset_for_block,
     )
+    target = target.replace("tmol_", "tmol_rotamer_", 1)
+    if electrostatic and pose.device.platform == "gpu":
+        target += "_precise"
     return (
-        target.replace("tmol_", "tmol_rotamer_", 1),
+        target,
         channels,
         (*common, *parameters[5:]),
         reach,

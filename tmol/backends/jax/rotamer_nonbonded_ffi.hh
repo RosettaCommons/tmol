@@ -1,14 +1,24 @@
 // Sparse values and coordinate VJPs from the canonical nonbonded kernels.
 #pragma once
 #include "graph_topology_ffi.hh"
+#include "energy_accumulator_ffi.hh"
+#include <tmol/score/common/counting.hh>
 #include <tmol/score/ljlk/potentials/ljlk_pose_kernels.hh>
 #include <tmol/score/elec/potentials/elec_pose_kernels.hh>
 
 namespace tmol::jax {
-template <bool Electrostatic>
+inline size_t rotamer_elec_gradient_bytes(size_t atoms) {
+  ByteWorkspace storage;
+  storage.take<double>(score::common::checked_dispatch_product(
+      atoms, 3, "sparse electrostatic gradient values"));
+  return storage.size_bytes();
+}
+
+template <bool Electrostatic, bool PreciseGradient = false>
 struct RotamerNonbondedStage {
+  static_assert(!PreciseGradient || Electrostatic);
   static constexpr int channels = Electrostatic ? 1 : 3;
-  static int fill(int64_t, size_t) { return 0; }
+  static int fill(int64_t, size_t output) { return output == 0 ? 0 : -1; }
   static void validate(
       const std::vector<ffi::AnyBuffer>& a,
       const std::vector<ffi::AnyBuffer>& out,
@@ -17,7 +27,8 @@ struct RotamerNonbondedStage {
       int64_t,
       double reach) {
     if ((operation != 0 && operation != 1) || a.size() != 18 + operation
-        || out.size() != 1 || !std::isfinite(reach) || reach <= 0)
+        || out.size() != 1 + int(PreciseGradient) || !std::isfinite(reach)
+        || reach <= 0)
       throw std::invalid_argument("invalid sparse nonbonded operands");
     auto real = a[0].element_type(), integer = ffi::DataType::S32;
     if (real != ffi::DataType::F32 && real != ffi::DataType::F64)
@@ -57,17 +68,30 @@ struct RotamerNonbondedStage {
       require_shape(out[0], real, {atoms, 3});
     } else
       require_shape(out[0], real, {channels, entries});
+    if constexpr (PreciseGradient) {
+      auto bytes = operation && real == ffi::DataType::F32
+                       ? rotamer_elec_gradient_bytes(atoms)
+                       : 0;
+      require_shape(out[1], ffi::DataType::U8, {static_cast<int64_t>(bytes)});
+      if (reinterpret_cast<uintptr_t>(out[1].untyped_data()) % alignof(double))
+        throw std::invalid_argument(
+            "electrostatic gradient workspace alignment mismatch");
+    }
   }
-  template <template <Device> class Ops, Device D, typename Real>
+  template <bool Backward, template <Device> class Ops, Device D, typename Real>
   static void launch(
       const std::vector<ffi::AnyBuffer>& a,
       const std::vector<ffi::AnyBuffer>& out,
-      int64_t operation,
       double reach) {
     using namespace score;
+    using Accumulator = EnergyAccumulator<Ops, D, Real>;
+    using GradReal = std::conditional_t<
+        PreciseGradient && Backward,
+        typename Accumulator::Value,
+        Real>;
     using Ctx = std::conditional_t<
         Electrostatic,
-        elec::potentials::ElecCtx<Real, int32_t, D, 2>,
+        elec::potentials::ElecCtx<Real, int32_t, D, 2, GradReal>,
         ljlk::potentials::LJLKCtx<Real, int32_t, D, 2>>;
     Ctx c;
 #define IN(T, R, I) buffer_view<T, R, D>(a[I])
@@ -99,16 +123,26 @@ struct RotamerNonbondedStage {
       c.global_params = IN(ljlk::potentials::LJGlobalParams<Real>, 1, 16);
     }
     ContextManager context;
-    if (operation) {
+    if constexpr (Backward) {
       c.dTdV = IN(Real, 2, 18);
-      c.dV_dcoords = contiguous_view<Vec<Real, 3>, 2, D>(
-          out[0].untyped_data(), {1, a[0].dimensions()[0]});
+      std::optional<Accumulator> derivative;
+      if constexpr (PreciseGradient)
+        derivative.emplace(
+            context, out[0], static_cast<double*>(out[1].untyped_data()));
+      auto* gradient_data =
+          derivative
+              ? derivative->template view<2>({a[0].dimensions()[0], 3}).data()
+              : out[0].untyped_data();
+      c.dV_dcoords = contiguous_view<Vec<GradReal, 3>, 2, D>(
+          gradient_data, {1, a[0].dimensions()[0]});
       if constexpr (Electrostatic)
-        elec::potentials::elec_rotamer_backward_native<Ops, D, Real, int32_t>(
-            context, c);
+        elec::potentials::
+            elec_rotamer_backward_native<Ops, D, Real, int32_t, GradReal>(
+                context, c);
       else
         ljlk::potentials::ljlk_backward_native<true, Ops, D, Real, int32_t>(
             context, c, a[5].dimensions()[0]);
+      if (derivative) derivative->finish(context);
     } else {
       c.output = buffer_view<Real, 2, D>(out[0]);
       c.output_block_pair_energies = true;
@@ -129,10 +163,17 @@ struct RotamerNonbondedStage {
       int64_t,
       int64_t,
       double reach) {
-    if (a[0].element_type() == ffi::DataType::F32)
-      launch<Ops, D, float>(a, out, operation, reach);
-    else
-      launch<Ops, D, double>(a, out, operation, reach);
+    if (a[0].element_type() == ffi::DataType::F32) {
+      if (operation)
+        launch<true, Ops, D, float>(a, out, reach);
+      else
+        launch<false, Ops, D, float>(a, out, reach);
+    } else {
+      if (operation)
+        launch<true, Ops, D, double>(a, out, reach);
+      else
+        launch<false, Ops, D, double>(a, out, reach);
+    }
   }
 };
 }  // namespace tmol::jax

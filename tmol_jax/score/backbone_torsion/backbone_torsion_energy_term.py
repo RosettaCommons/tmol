@@ -3,6 +3,7 @@
 from typing import NamedTuple
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 
 from tmol_core.scoring.backbone_torsion import (
@@ -23,6 +24,14 @@ from tmol_jax.score.score_types import ScoreType
 
 class BackboneTorsionTermState(NamedTuple):
     parameters: tuple
+    precise_gradient: bool = False
+
+
+jax.tree_util.register_pytree_node(
+    BackboneTorsionTermState,
+    lambda state: ((state.parameters,), state.precise_gradient),
+    lambda precise, children: BackboneTorsionTermState(children[0], precise),
+)
 
 
 class BackboneTorsionEnergyTerm(EnergyTerm):
@@ -90,18 +99,25 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
         )
         return BackboneTorsionTermState(
             jax.device_put(tuple(pose_arguments(pose_stack)), device=device)
-            + chemical_arrays
+            + chemical_arrays,
+            device.platform == "gpu",
         )
 
     @classmethod
     def evaluate(cls, term_state, coords):
+        target = "tmol_backbone_torsion"
+        dimensions = (coords.shape[0],)
+        if term_state.precise_gradient and coords.dtype == jnp.float32:
+            target += "_precise"
+            dimensions += (coords.shape[0] * coords.shape[1],)
+            register(target)
         values = coordinate_energy(
-            "tmol_backbone_torsion",
+            target,
             coords,
             term_state.parameters,
             channels=2,
             workspace_bytes=workspace_sizes(
-                "tmol_backbone_torsion", (coords.shape[0],), coords.dtype.itemsize * 8
+                target, dimensions, coords.dtype.itemsize * 8
             ),
         )
         return dict(zip(cls.score_types_provided(), values))

@@ -44,6 +44,12 @@ TMOL_JAX_STAGE(
     .Attr<double>("reach"));
 
 TMOL_JAX_STAGE(
+    tmol_rotamer_elec_precise,
+    (tmol::jax::
+         run_graph_stage<tmol::jax::RotamerNonbondedStage<true, true>, double>),
+    .Attr<double>("reach"));
+
+TMOL_JAX_STAGE(
     tmol_rotamer_ljlk,
     (tmol::jax::
          run_graph_stage<tmol::jax::RotamerNonbondedStage<false>, double>),

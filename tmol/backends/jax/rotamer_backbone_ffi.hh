@@ -66,8 +66,9 @@ struct BackboneRotamerTopologyStage {
   }
 };
 
-struct RotamerBackboneStage {
-  static int fill(int64_t, size_t) { return 0; }
+template <bool PreciseGradient = false>
+struct RotamerBackboneStageT {
+  static int fill(int64_t, size_t output) { return output == 0 ? 0 : -1; }
   static void validate(
       const std::vector<ffi::AnyBuffer>& a,
       const std::vector<ffi::AnyBuffer>& out,
@@ -75,7 +76,8 @@ struct RotamerBackboneStage {
       int64_t,
       int64_t,
       double) {
-    if ((op != 0 && op != 1) || a.size() != 20 + op || out.size() != 1)
+    if ((op != 0 && op != 1) || a.size() != 20 + op
+        || out.size() != 1 + int(PreciseGradient))
       throw std::invalid_argument("invalid sparse backbone operands");
     auto real = a[0].element_type(), i = ffi::DataType::S32;
     if (real != ffi::DataType::F32 && real != ffi::DataType::F64)
@@ -97,6 +99,16 @@ struct RotamerBackboneStage {
       require_shape(out[0], real, {a[0].dimensions()[0], 3});
     } else
       require_shape(out[0], real, {2, entries});
+    if constexpr (PreciseGradient) {
+      auto values = op && real == ffi::DataType::F32
+                        ? backbone_gradient_values(a[0].dimensions()[0], true)
+                        : 0;
+      auto bytes = BackboneWorkspace<float>(0, values).storage.size_bytes();
+      require_shape(out[1], ffi::DataType::U8, {static_cast<int64_t>(bytes)});
+      if (reinterpret_cast<uintptr_t>(out[1].untyped_data()) % alignof(double))
+        throw std::invalid_argument(
+            "backbone gradient workspace alignment mismatch");
+    }
   }
   template <bool Backward, template <Device> class Ops, Device D, typename Real>
   static void launch(
@@ -106,10 +118,21 @@ struct RotamerBackboneStage {
     auto e = contiguous_view<Real, 2, D>(
         Backward ? nullptr : out[0].untyped_data(),
         {2, Backward ? 0 : a[19].dimensions()[1]});
-    int64_t sizes[] = {2, Backward ? a[0].dimensions()[0] : 0},
-            strides[] = {0, 1};
-    TView<Vec<Real, 3>, 2, D> g(
-        Backward ? static_cast<Vec<Real, 3>*>(out[0].untyped_data()) : nullptr,
+    auto atoms = a[0].dimensions()[0];
+    using Accumulator = EnergyAccumulator<Ops, D, Real>;
+    using GradReal =
+        std::conditional_t<PreciseGradient, typename Accumulator::Value, Real>;
+    std::optional<Accumulator> derivative;
+    if constexpr (PreciseGradient && Backward) {
+      derivative.emplace(
+          manager, out[0], static_cast<double*>(out[1].untyped_data()));
+    }
+    auto* gradient_data = derivative
+                              ? derivative->template view<2>({atoms, 3}).data()
+                              : out[0].untyped_data();
+    int64_t sizes[] = {2, Backward ? atoms : 0}, strides[] = {0, 1};
+    TView<Vec<GradReal, 3>, 2, D> g(
+        Backward ? static_cast<Vec<GradReal, 3>*>(gradient_data) : nullptr,
         sizes,
         strides);
     auto weights = contiguous_view<Real, 2, D>(
@@ -117,26 +140,32 @@ struct RotamerBackboneStage {
         {2, Backward ? a[19].dimensions()[1] : 0});
     std::apply(
         [&](auto... tables) {
-          score::backbone_torsion::potentials::
-              backbone_rotamer_score_native<Backward, Ops, D, Real, int32_t>(
-                  manager,
-                  buffer_view<Vec<Real, 3>, 1, D>(a[0]),
-                  buffer_view<int32_t, 1, D>(a[1]),
-                  buffer_view<int32_t, 2, D>(a[2]),
-                  buffer_view<int32_t, 2, D>(a[3]),
-                  buffer_view<int32_t, 1, D>(a[16]),
-                  buffer_view<int32_t, 1, D>(a[17]),
-                  buffer_view<Vec<int32_t, 2>, 3, D>(a[4]),
-                  tables...,
-                  buffer_view<int32_t, 2, D>(a[19]),
-                  e,
-                  g,
-                  weights,
-                  true,
-                  Backward,
-                  buffer_view<int32_t, 2, D>(a[18]));
+          score::backbone_torsion::potentials::backbone_rotamer_score_native<
+              Backward,
+              Ops,
+              D,
+              Real,
+              int32_t,
+              GradReal>(
+              manager,
+              buffer_view<Vec<Real, 3>, 1, D>(a[0]),
+              buffer_view<int32_t, 1, D>(a[1]),
+              buffer_view<int32_t, 2, D>(a[2]),
+              buffer_view<int32_t, 2, D>(a[3]),
+              buffer_view<int32_t, 1, D>(a[16]),
+              buffer_view<int32_t, 1, D>(a[17]),
+              buffer_view<Vec<int32_t, 2>, 3, D>(a[4]),
+              tables...,
+              buffer_view<int32_t, 2, D>(a[19]),
+              e,
+              g,
+              weights,
+              true,
+              Backward,
+              buffer_view<int32_t, 2, D>(a[18]));
         },
         backbone_tables<true, D, Real>(a));
+    if (derivative) derivative->finish(manager);
   }
   template <template <Device> class Ops, Device D>
   static void execute(
@@ -159,4 +188,6 @@ struct RotamerBackboneStage {
     }
   }
 };
+using RotamerBackboneStage = RotamerBackboneStageT<false>;
+using RotamerBackbonePreciseStage = RotamerBackboneStageT<true>;
 }  // namespace tmol::jax
