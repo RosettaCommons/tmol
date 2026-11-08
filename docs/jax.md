@@ -60,6 +60,10 @@ platform, including CPU arrays in a GPU process. Native adapters recompute
 spatial neighbors from current coordinates. The former `tmol-jax-cuda` prototype
 is superseded by `tmol-jax-native`.
 
+CUDA LJ/LK and electrostatic execution use the mature Torch compilation policy
+in a separate translation unit. Bonded, torsion and kinematic execution retain
+standard CUDA math. Native build manifests record every compile and link command.
+
 ## Score and minimize
 
 ```python

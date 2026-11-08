@@ -89,6 +89,7 @@ def stage_native(root, stage, source_revision=None):
         backend / "genbonded_cpu.cpp",
         root / "tmol/ligand/compiled/refinement.cpu.cpp",
         backend / "genbonded_cuda.cu",
+        backend / "nonbonded_cuda.cu",
         *backend.glob("*_ffi.hh"),
     ):
         shutil.copyfile(path, stage / path.name)

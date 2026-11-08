@@ -33,6 +33,11 @@
           .Attr<int64_t>("width") ATTRS, \
       TMOL_JAX_TRAITS)
 
+#ifndef TMOL_JAX_EXCLUDE_NONBONDED
+#include "nonbonded_handlers_ffi.hh"
+#endif
+
+#ifndef TMOL_JAX_ONLY_NONBONDED
 TMOL_JAX_ENERGY(tmol_genbonded, tmol::jax::run<tmol::jax::GenBondedKernel>, );
 
 TMOL_JAX_ENERGY(tmol_cartbonded, tmol::jax::run<tmol::jax::CartBondedKernel>, );
@@ -55,41 +60,11 @@ TMOL_JAX_ENERGY(
 TMOL_JAX_ENERGY(tmol_dunbrack, tmol::jax::run<tmol::jax::DunbrackKernel>, );
 
 TMOL_JAX_ENERGY(
-    tmol_nonbonded,
-    (tmol::jax::run<tmol::jax::NonbondedKernel<false>, double>),
-    .Attr<double>("reach"));
-
-TMOL_JAX_ENERGY(
-    tmol_nonbonded_weighted,
-    (tmol::jax::run<tmol::jax::NonbondedKernel<true>, double>),
-    .Attr<double>("reach"));
-
-TMOL_JAX_ENERGY(
-    tmol_nonbonded_precise,
-    (tmol::jax::run<tmol::jax::NonbondedKernel<false, true>, double>),
-    .Attr<double>("reach"));
-
-TMOL_JAX_ENERGY(
-    tmol_nonbonded_weighted_precise,
-    (tmol::jax::run<tmol::jax::NonbondedKernel<true, true>, double>),
-    .Attr<double>("reach"));
-
-TMOL_JAX_ENERGY(
     tmol_constraint_torsion,
     tmol::jax::run<tmol::jax::ConstraintTorsionKernel>, );
 
 TMOL_JAX_ENERGY(
     tmol_precise_torsion, tmol::jax::run<tmol::jax::PreciseTorsionKernel>, );
-
-TMOL_JAX_ENERGY(
-    tmol_ljlk,
-    (tmol::jax::run<tmol::jax::IndependentNonbondedKernel<false>, double>),
-    .Attr<double>("reach"));
-
-TMOL_JAX_ENERGY(
-    tmol_elec,
-    (tmol::jax::run<tmol::jax::IndependentNonbondedKernel<true>, double>),
-    .Attr<double>("reach"));
 
 TMOL_JAX_ENERGY(
     tmol_inverse_kinematics,
@@ -147,18 +122,6 @@ TMOL_JAX_STAGE(
 TMOL_JAX_STAGE(
     tmol_rotamer_dispatch,
     (tmol::jax::run_graph_stage<tmol::jax::RotamerDispatchStage, double>),
-    .Attr<double>("reach"));
-
-TMOL_JAX_STAGE(
-    tmol_rotamer_elec,
-    (tmol::jax::
-         run_graph_stage<tmol::jax::RotamerNonbondedStage<true>, double>),
-    .Attr<double>("reach"));
-
-TMOL_JAX_STAGE(
-    tmol_rotamer_ljlk,
-    (tmol::jax::
-         run_graph_stage<tmol::jax::RotamerNonbondedStage<false>, double>),
     .Attr<double>("reach"));
 
 TMOL_JAX_ENERGY(
@@ -317,6 +280,8 @@ TMOL_JAX_STAGE(
     tmol_armijo,
     (tmol::jax::run_graph_stage<tmol::jax::ArmijoStage, double, double>),
     .Attr<double>("first").Attr<double>("second"));
+
+#endif
 
 #undef TMOL_JAX_STAGE
 #undef TMOL_JAX_ENERGY
