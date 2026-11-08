@@ -1,4 +1,4 @@
-"""Even-degree periodic splines obey the centered cardinal basis."""
+"""Periodic splines obey the cardinal basis for every supported degree."""
 
 from fractions import Fraction
 from math import comb, factorial
@@ -36,9 +36,9 @@ def _periodic_basis(degree, x, size):
     )
 
 
-@pytest.mark.parametrize("degree", (2, 4))
+@pytest.mark.parametrize("degree", (2, 3, 4, 5))
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
-def test_even_splines_match_cardinal_values_and_derivatives(degree, dtype):
+def test_splines_match_cardinal_values_and_derivatives(degree, dtype):
     with jax.enable_x64():
         coefficients = np.random.default_rng(614).normal(size=(7, 8)).astype(dtype)
         points = (
