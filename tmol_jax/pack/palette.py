@@ -9,6 +9,21 @@ from tmol_core.cache import AnnotationKey, PreparationCache
 from tmol_core.pack.palette import prepare_packer_palette
 
 
+@jax.jit
+def _gather_choices(indices, counts, choices, original):
+    real, safe = indices >= 0, jnp.maximum(indices, 0)
+    return (
+        jnp.where(real, counts[safe], 0),
+        jnp.where(real[..., None], choices[safe], -1),
+        real[..., None] & original[safe],
+    )
+
+
+@jax.jit
+def _gather_repacking(indices, mask):
+    return (indices >= 0)[..., None] & mask[jnp.maximum(indices, 0)]
+
+
 class PackerPalette:
     """Inspect chemically compatible choices from the shared TMol palette.
 
@@ -65,14 +80,11 @@ class PackerPalette:
     def block_types_from_original(self, pbt, orig):
         data, indices, device = self._data(pbt, orig)
         with jax.default_device(device):
-            real, safe = indices >= 0, jnp.maximum(indices, 0)
-            return (
-                jnp.where(real, data.n_allowed[safe], 0),
-                jnp.where(real[..., None], data.allowed_types[safe], -1),
-                real[..., None] & data.is_original[safe],
+            return _gather_choices(
+                indices, data.n_allowed, data.allowed_types, data.is_original
             )
 
     def create_restrict_to_repacking_mask(self, pbt, orig):
         data, indices, device = self._data(pbt, orig)
         with jax.default_device(device):
-            return (indices >= 0)[..., None] & data.repack_mask[jnp.maximum(indices, 0)]
+            return _gather_repacking(indices, data.repack_mask)
