@@ -13,10 +13,17 @@ from .test_atom37_input import atom37_fixture
 def tensor_fixture(backend, name, default_layout=False):
     b, builder, _, ordinary, context = atom37_fixture(backend, name, count=1)
     template = builder.template if b.framework == "jax" else builder.canonical_template
+    return tensor_input(b, template, context, default_layout)
 
+
+def tensor_input(b, template, context, default_layout=False):
     def host(key):
         value = (
-            template.get(key) if isinstance(template, dict) else getattr(template, key)
+            template.get(
+                key, template.get("res_gap") if key == "res_not_connected" else None
+            )
+            if isinstance(template, dict)
+            else getattr(template, key)
         )
         return None if value is None else b.numpy(value)
 
@@ -200,3 +207,160 @@ def test_tensor_atom37_ligand_returns_custom_identity_metadata(backend):
     )
     assert returned is context
     np.testing.assert_array_equal(b.numpy(again.coords), b.numpy(pose.coords))
+
+
+def real_tensor_fixture(b, source=("pdb", "1ubq.pdb"), with_reference=False):
+    import biotite.structure as struc
+    import biotite.structure.io as structure_io
+    from .molecules import DATA
+
+    atoms = structure_io.load_structure(DATA.joinpath(*source), model=1)
+    assert isinstance(atoms, struc.AtomArray)
+    io = import_module("tmol_jax.io" if b.framework == "jax" else "tmol.io")
+    context = io.build_context_from_atom_array(atoms, b.device)
+    options = dict(missing_density_distance_threshold=0.0)
+    reference = None
+    if b.framework == "jax":
+        from tmol_jax.io.pose_stack_from_biotite import canonical_form_from_biotite
+
+        canonical = canonical_form_from_biotite(
+            atoms,
+            canonical_ordering=context.canonical_ordering,
+            prepare_input=True,
+            **options,
+        )
+        if with_reference:
+            reference = io.pose_stack_from_atom_array(
+                atoms, b.device, context=context, no_optH=True, **options
+            )
+    else:
+        canonical = io.canonical_form_from_biotite(
+            atoms, b.device, co=context.canonical_ordering, **options
+        )
+        if with_reference:
+            from tmol.io._pose_stack_from_biotite import (
+                _pose_stack_from_canonical_form_and_context,
+            )
+
+            reference = _pose_stack_from_canonical_form_and_context(
+                canonical, context, no_optH=True, atom37_coords=None
+            )
+    return (*tensor_input(b, canonical, context), reference)
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        pytest.param(("pdb", "1ubq.pdb"), id="canonical_protein"),
+        pytest.param(
+            ("covalent_fixtures", "lys_biotin_1bdo.cif"), id="conjugated_lysine"
+        ),
+        pytest.param(("covalent_fixtures", "nglycan_tree_1ax2.cif"), id="glycan_tree"),
+    ),
+)
+def test_tensor_atom37_matches_real_atom_array(backend, source):
+    b, io, source, topology, context, reference = real_tensor_fixture(
+        backend, source, with_reference=True
+    )
+    x, bind = bind_tensor(b, io, source, topology, context)
+    pose = bind(x)
+    assert pose.n_poses == reference.n_poses
+    for key in ("block_type_ind", "inter_residue_connections"):
+        np.testing.assert_array_equal(
+            b.numpy(getattr(pose, key)), b.numpy(getattr(reference, key))
+        )
+    assert [bt.name for bt in pose.packed_block_types.active_block_types] == [
+        bt.name for bt in reference.packed_block_types.active_block_types
+    ]
+    real = b.numpy(pose.real_atoms)
+    rebuilt = np.zeros_like(real)
+    offsets = b.numpy(pose.block_coord_offset)
+    for p, types in enumerate(b.numpy(pose.block_type_ind)):
+        for r, t in enumerate(types):
+            if t < 0:
+                continue
+            bt = pose.packed_block_types.active_block_types[t]
+            excluded = context.canonical_ordering.termini_only_atoms_by_class.get(
+                bt.io_equiv_class, ()
+            )
+            for a, atom in enumerate(bt.atoms):
+                if atom.name in excluded:
+                    rebuilt[p, offsets[p, r] + a] = True
+    shared_rebuilt = rebuilt & b.numpy(reference.real_atoms)
+    assert shared_rebuilt.sum() <= 8, "more atoms went unrouted than expected"
+    # Only class-specific terminus additions may use the wider geometric bound.
+    for mask, tolerance in ((real & ~rebuilt, 1e-3), (shared_rebuilt, 0.1)):
+        if b.framework == "torch":
+            index = b.module.as_tensor(mask, device=b.device)
+            b.module.testing.assert_close(
+                pose.coords[index], reference.coords[index], rtol=0, atol=tolerance
+            )
+        else:
+            assert pose.coords.dtype == reference.coords.dtype
+            assert pose.coords.device == reference.coords.device
+            np.testing.assert_allclose(
+                b.numpy(pose.coords)[mask],
+                b.numpy(reference.coords)[mask],
+                rtol=0,
+                atol=tolerance,
+            )
+    if b.framework == "jax":
+        gradient = b.module.grad(lambda y: bind(y).coords[real].sum())(x)
+    else:
+        pose.coords[b.module.as_tensor(real, device=b.device)].sum().backward()
+        gradient = x.grad
+    assert np.count_nonzero(b.numpy(gradient)) > 0
+
+
+def test_tensor_atom37_leaves_terminus_atoms_unmapped(backend):
+    b, io, source, topology, context, _ = real_tensor_fixture(backend)
+    co, slot_map = context.canonical_ordering, topology["slot_map"]
+    by_class = co.termini_only_atoms_by_class
+    assert by_class, "expected the database to define terminus-added atoms"
+    checked = 0
+    for row, name in enumerate(co.restype_io_equiv_classes):
+        # H1/H2/H3 can be ordinary atoms of other classes: do not pool names.
+        for slot, atom in enumerate(co.restypes_ordered_atom_names[name]):
+            if atom in by_class.get(name, ()):
+                assert slot_map[row, slot] == -1
+                checked += 1
+    assert checked > 0, "expected at least one terminus atom in the layout"
+
+
+@pytest.mark.parametrize("invalid", ("oversize", "unroutable"))
+def test_tensor_atom37_rejects_invalid_routing(backend, invalid):
+    b, io, source, topology, context, _ = real_tensor_fixture(backend)
+    co = context.canonical_ordering
+    if invalid == "oversize":
+        source = np.zeros((*source.shape[:2], source.shape[-2] + 1, 3), np.float32)
+        message = "slot map covers"
+    else:
+        row = co.restype_io_equiv_classes.index("ALA")
+        topology["slot_map"] = topology["slot_map"].copy()
+        topology["slot_map"][row] = -1
+        source = np.zeros((1, 1, source.shape[-2], 3), np.float32)
+        topology.update(
+            res_types=np.full((1, 1), row, np.int32),
+            chain_id=np.zeros((1, 1), np.int32),
+        )
+        message = "routes no atom of residue type"
+    topology = {key: topology[key] for key in ("res_types", "chain_id", "slot_map")}
+    with pytest.raises(ValueError, match=message):
+        x, bind = bind_tensor(b, io, source, topology, context)
+        bind(x)
+    if invalid == "unroutable" and b.framework == "torch":
+        from tmol.io._pose_stack_from_atom37 import _canonical_form_from_atom37
+
+        # Retain the legacy private-wrapper rejection as well as the public API.
+        args = {
+            key: b.module.as_tensor(value, device=b.device)
+            for key, value in topology.items()
+        }
+        with pytest.raises(ValueError, match=message):
+            _canonical_form_from_atom37(
+                b.module.as_tensor(source, device=b.device),
+                args["res_types"],
+                args["chain_id"],
+                co,
+                slot_map=args["slot_map"],
+            )
