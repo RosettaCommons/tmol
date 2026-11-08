@@ -37,6 +37,7 @@ def evaluate(b, scorer, *, summed=False):
         ("ligand_charges", ()),
         ("mixed_charges", ()),
         ("mixed_fused_charges", ()),
+        ("sparse", ()),
         ("quadratic", ()),
         ("constraint_callbacks", ()),
     ),
@@ -44,6 +45,11 @@ def evaluate(b, scorer, *, summed=False):
 def test_retained_zero_channels_removal_and_old_snapshot_are_consistent(
     backend, weighted, channels, monkeypatch
 ):
+    if weighted == "sparse":
+        if backend.framework != "jax":
+            pytest.skip("JAX sparse prepared-program capability")
+        _check_sparse_snapshot(backend)
+        return
     if weighted.endswith("_charges"):
         _check_charge_snapshots(backend, weighted)
         return
@@ -466,3 +472,33 @@ def _check_charge_cache_ownership():
         pose.packed_block_types.elec_partial_charge, expected_charges
     )
     np.testing.assert_array_equal(zero(pose.coords), 0.0)
+
+
+def _check_sparse_snapshot(b):
+    import jax
+    import jax.numpy as jnp
+    from tmol_jax import ScoreType
+    from .rotamer_execution import RotamerExecution
+    from .test_complete_preset import CASES
+
+    b.molecule(CASES["mixed_batch"], terms=("fa_elec", "ref"))
+    e = RotamerExecution(b, family="elec")
+    old = b.score_function.render_rotamer_scoring_module(b.pose, e.rotamers)
+    fixed = old.prepare(e.rotamers.coords)
+    values, indices = fixed(e.rotamers.coords)
+    b.score_function.set_weight(ScoreType.fa_elec, 0)
+    b.score_function.set_option("ref_weights", {"HYP": 7.0, "GLY": 2.0})
+    new = b.score_function.render_rotamer_scoring_module(b.pose, e.rotamers)
+    np.testing.assert_array_equal(fixed(e.rotamers.coords)[0], values)
+    np.testing.assert_array_equal(old(e.rotamers.coords)[1], indices)
+    assert not np.isclose(new(e.rotamers.coords)[0].sum(), values.sum())
+    with pytest.raises(ValueError, match="outside JAX transformations"):
+        jax.jit(old)(e.rotamers.coords)
+    bv, bg = jax.jit(jax.vmap(jax.value_and_grad(lambda x: fixed(x)[0].sum())))(
+        jnp.stack((e.rotamers.coords, e.rotamers.coords))
+    )
+    np.testing.assert_array_equal(bv[0], bv[1])
+    np.testing.assert_array_equal(bg[0], bg[1])
+    b.score_function.set_weight(ScoreType.ref, 0)
+    empty = b.score_function.render_rotamer_scoring_module(b.pose, e.rotamers)
+    assert empty(e.rotamers.coords)[0].shape == (0,)
