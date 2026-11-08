@@ -128,13 +128,14 @@
     },
     {
       "domain": "constraints",
-      "torch": "supported",
-      "jax": "partial",
+      "torch": "whole_pose_and_one_two_block_sparse",
+      "jax": "whole_pose_and_one_two_block_sparse",
       "repro_fixture": [
         "tests/scientific/test_constraints.py",
-        "tests/jax/test_general_constraints.py"
+        "tests/jax/test_general_constraints.py",
+        "tests/scientific/test_constraints.py::attach_multi_block_constraint"
       ],
-      "implementation_status": "Whole-pose callbacks support up to four atoms spanning multiple blocks; sparse two-block constraints preserve physical atom order and parameter derivatives. Sparse candidates preserve joint-state correspondence and reject constraints on more than two distinct blocks. Whole-pose three/four-block callback energy and gradient identities have CPU/CUDA checks. The common segment-count correction preserves trailing poses without movable atoms during masked minimization; JAX jit/vmap and installed contracts pass. Higher coordinate derivatives depend on native geometry and callback."
+      "implementation_status": "Whole-pose callbacks support up to four atoms spanning multiple blocks; sparse two-block constraints preserve physical atom order and parameter derivatives. Sparse candidates preserve joint-state correspondence and reject constraints on more than two distinct blocks. Whole-pose three/four-block callback energy and gradient identities have CPU/CUDA checks. The common segment-count correction preserves trailing poses without movable atoms during masked minimization; JAX jit/vmap and installed contracts pass. Higher coordinate derivatives depend on native geometry and callback. Sparse constraints across three/four physical blocks are unsupported in both: actual mature and current Torch expansion omit their nonzero contributions; JAX rejects explicitly. Whole-pose callbacks across those blocks remain supported."
     },
     {
       "domain": "heterogeneous_batches",
@@ -575,7 +576,8 @@
     ],
     "unsupported_by_both": [
       "Float64 discrete packing/FastRelax is not supported by the tested native sampling paths: JAX rejects it explicitly and mature Torch fails its native dtype contract. Float64 scoring and Cartesian minimization are distinct supported capabilities.",
-      "Changed-identity constraint atom remapping and changed connection-port design require capabilities absent from the tested mature imposition path as well."
+      "Changed-identity constraint atom remapping and changed connection-port design require capabilities absent from the tested mature imposition path as well.",
+      "Sparse packing constraints spanning three/four physical blocks: the mature and current Torch expansion omit their nonzero contributions when multiple conformers are present. JAX rejects explicitly; whole-pose multi-block callbacks are a separate supported capability."
     ],
     "jax_extensions": [
       "Mixed float64 internal DOFs with float32 stored coordinates: mapping, AD and minimization are implemented in both frontends, with shared CPU/CUDA ligand/D-peptide checks. Torch promotes the objective to the parameter precision without lowering higher-precision losses. This is additional capability beyond the tested mature baseline, separate from mature-functionality parity.",
