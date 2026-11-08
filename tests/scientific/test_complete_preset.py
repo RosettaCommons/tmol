@@ -79,3 +79,45 @@ def test_complete_preset_molecular_derivatives(backend, name):
         assert np.all(np.abs(values[channels.index("hbond")]) > 1)
     if name == "disulfide_mixed":
         assert np.all(np.abs(values[channels.index("disulfide")]) > 1e-3)
+
+    if backend.framework == "jax" and name == "ligand":
+        _check_declared_weights()
+    if backend.framework == "jax" and name == "connected_noncanonical":
+        _check_ineligible_channels(backend)
+
+
+def _check_declared_weights():
+    import yaml
+    from tmol_jax import ScoreType, beta2016_score_function
+    from tmol_jax.database import default_directory
+
+    expected = yaml.safe_load(
+        (default_directory() / "score_functions/beta2016.sfxn").read_text()
+    )["weights"]
+    score = beta2016_score_function()
+    # The mature default stores float32 weights even for float64 coordinates.
+    assert score.weight_dtype == np.dtype(np.float32)
+    assert {st.name: weight for st, weight in score.weights.items()} == {
+        name: float(np.float32(weight)) for name, weight in expected.items()
+    }
+    assert ScoreType.na_torsion in score.active_score_types()
+    assert ScoreType.metal_coordination in score.active_score_types()
+
+
+def _check_ineligible_channels(backend):
+    import jax
+    from tmol_jax import ScoreFunction, ScoreType
+
+    sf = ScoreFunction(backend.parameter_database)
+    for st in (
+        ScoreType.na_torsion,
+        ScoreType.na_torsion_well,
+        ScoreType.metal_coordination,
+    ):
+        sf.set_weight(st, 1)
+    score = sf.render_whole_pose_scoring_module(backend.pose, sum_terms=False)
+    assert score(backend.pose.coords).shape == (3, 1)
+    np.testing.assert_array_equal(jax.jit(score)(backend.pose.coords), 0)
+    np.testing.assert_array_equal(
+        jax.jit(jax.grad(lambda x: score(x).sum()))(backend.pose.coords), 0
+    )
