@@ -5,29 +5,43 @@ from importlib import import_module
 import numpy as np
 import pytest
 
-from .molecules import BACKBONE_CASES
+from .molecules import BACKBONE_CASES, CASES
 
 
-def evaluate(b, scorer):
+def evaluate(b, scorer, *, summed=False):
     if b.framework == "jax":
         import jax
 
-        value = scorer(b.pose.coords)
-        grad = jax.grad(lambda x: scorer(x).sum())(b.pose.coords)
+        if summed:
+            value, grad = jax.jit(jax.value_and_grad(lambda x: scorer(x).sum()))(
+                b.pose.coords
+            )
+        else:
+            value = scorer(b.pose.coords)
+            grad = jax.grad(lambda x: scorer(x).sum())(b.pose.coords)
     else:
         x = b.pose.coords.detach().clone().requires_grad_(True)
         value = scorer(x)
+        if summed:
+            value = value.sum()
         grad = b.module.autograd.grad(value.sum(), x)[0]
     return b.numpy(value), b.numpy(grad)
 
 
 @pytest.mark.parametrize(
     "weighted,channels",
-    (("fa_ljatr", ("fa_ljatr", "fa_ljrep", "fa_lk")), ("omega", ("rama", "omega"))),
+    (
+        ("fa_ljatr", ("fa_ljatr", "fa_ljrep", "fa_lk")),
+        ("omega", ("rama", "omega")),
+        ("gen_torsions", ("gen_torsions",)),
+    ),
 )
 def test_retained_zero_channels_removal_and_old_snapshot_are_consistent(
     backend, weighted, channels
 ):
+    if weighted == "gen_torsions":
+        _check_generic_database_snapshot(backend)
+        return
     b = backend.molecule(BACKBONE_CASES["mixed"], terms=(weighted,))
     sf = b.score_function
     st = import_module("tmol_jax" if b.framework == "jax" else "tmol").ScoreType
@@ -87,3 +101,37 @@ def test_public_term_order_retains_native_channel_groups(backend):
         "omega",
         "gen_torsions",
     )
+
+
+def _check_generic_database_snapshot(b):
+    import attrs
+
+    b.molecule(CASES["ligand"])
+    old = b.score_function.render_whole_pose_scoring_module(b.pose)
+    db = b.parameter_database
+    gen = db.scoring.genbonded
+    changed = attrs.evolve(
+        gen,
+        torsions=tuple(
+            attrs.evolve(
+                p,
+                **{
+                    name: 2 * getattr(p, name)
+                    for name in ("k1", "k2", "k3", "k4", "offset")
+                },
+            )
+            for p in gen.torsions
+        ),
+        impropers=tuple(attrs.evolve(p, k=2 * p.k) for p in gen.impropers),
+    )
+    value, gradient = evaluate(b, old, summed=True)
+    value = value.sum()
+    assert value > 0 and np.linalg.norm(gradient) > 0
+    b.use_parameter_database(
+        attrs.evolve(db, scoring=attrs.evolve(db.scoring, genbonded=changed))
+    )
+    new = b.score_function.render_whole_pose_scoring_module(b.pose)
+    new_value, new_gradient = evaluate(b, new, summed=True)
+    np.testing.assert_allclose(new_value.sum(), 2 * value, rtol=2e-6, atol=2e-6)
+    np.testing.assert_allclose(new_gradient, 2 * gradient, rtol=2e-6, atol=2e-6)
+    np.testing.assert_array_equal(b.numpy(old(b.pose.coords)).sum(), value)

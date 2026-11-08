@@ -3,7 +3,9 @@
 import numpy as np
 import pytest
 
-from .molecules import CASES
+from .test_score_contract import check_coordinate_transforms
+
+from .molecules import BACKBONE_CASES, CASES
 
 
 @pytest.mark.parametrize("name", CASES)
@@ -34,3 +36,12 @@ def test_generic_bonded_molecular_derivative(backend, name):
         rtol=2e-5,
         atol=2e-4,
     )
+
+    if name == "mixed_batch":
+        check_coordinate_transforms(
+            backend,
+            CASES[name],
+            ("gen_torsions",),
+            empty_term="gen_torsions",
+            empty_case=BACKBONE_CASES["mixed"],
+        )

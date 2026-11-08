@@ -3,7 +3,9 @@
 import numpy as np
 import pytest
 
-from .molecules import DOMAIN_CASES, MolecularCase
+from .test_score_contract import check_coordinate_transforms
+
+from .molecules import BACKBONE_CASES, DOMAIN_CASES, MolecularCase
 
 CARTESIAN_CASES = {
     **DOMAIN_CASES,
@@ -38,6 +40,15 @@ def test_cartesian_bonded_channels_and_coordinate_derivatives(backend, name):
     analytic = (gradients * direction).sum(axis=(2, 3))
     np.testing.assert_allclose(analytic, numeric, rtol=3e-3, atol=3e-3)
     np.testing.assert_allclose(gradients.sum(axis=2), 0, atol=1e-3)
+
+    if name == "mixed_batch":
+        check_coordinate_transforms(
+            backend,
+            CARTESIAN_CASES[name],
+            TERMS,
+            empty_term="cart_lengths",
+            empty_case=BACKBONE_CASES["mixed"],
+        )
 
 
 @pytest.mark.parametrize("name", ("ligand", "connected_noncanonical"))

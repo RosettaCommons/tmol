@@ -3,6 +3,8 @@
 import numpy as np
 import pytest
 
+from .test_score_contract import check_coordinate_transforms
+
 from .molecules import BACKBONE_CASES, DOMAIN_CASES
 
 
@@ -25,6 +27,11 @@ def test_connected_backbone_channels_and_coordinate_derivatives(backend, name):
         (gradients * direction).sum(axis=(2, 3)), numeric, rtol=3e-3, atol=3e-3
     )
     np.testing.assert_allclose(gradients.sum(axis=2), 0, atol=2e-4)
+
+    if name == "mixed":
+        check_coordinate_transforms(
+            backend, BACKBONE_CASES[name], ("rama", "omega"), empty_term="rama"
+        )
 
 
 def test_absent_backbone_reference_does_not_invent_peptide_energy(backend):

@@ -4,6 +4,8 @@ import attrs
 import numpy as np
 import pytest
 
+from .test_score_contract import check_coordinate_transforms
+
 from .dunbrack_molecules import DUNBRACK_CASES
 from .molecules import CASES
 
@@ -29,6 +31,9 @@ def test_dunbrack_channels_and_coordinate_derivatives(backend, name):
         (gradients * direction).sum(axis=(2, 3)), numeric, rtol=3e-3, atol=3e-3
     )
     np.testing.assert_allclose(gradients.sum(axis=2), 0, atol=2e-4)
+
+    if name == "mixed_batch":
+        check_coordinate_transforms(backend, DUNBRACK_CASES[name], TERMS)
 
 
 @pytest.mark.parametrize("name", ["ligand", "noncanonical", "connected_noncanonical"])

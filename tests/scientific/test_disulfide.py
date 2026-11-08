@@ -6,6 +6,8 @@ import attrs
 import numpy as np
 import pytest
 
+from .test_score_contract import check_coordinate_transforms
+
 from .disulfide_molecules import DISULFIDE_CASES
 from .execution import Execution
 
@@ -31,6 +33,11 @@ def test_disulfide_coordinate_derivatives_and_translation(backend, name):
         # Published-equation golden for this committed 6DMZ derivative;
         # independently established in Torch's test_chirality.py.
         np.testing.assert_allclose(value, -0.048889146701669, atol=3e-5, rtol=3e-5)
+
+    if name == "mixed_batch":
+        check_coordinate_transforms(
+            backend, DISULFIDE_CASES[name], ("disulfide",), empty_term="disulfide"
+        )
 
 
 @pytest.mark.parametrize("pair", ["ll", "ld"])

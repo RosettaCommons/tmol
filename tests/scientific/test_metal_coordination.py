@@ -4,6 +4,8 @@ import attrs
 import numpy as np
 import pytest
 
+from .test_score_contract import check_coordinate_transforms
+
 from .execution import Execution
 from .metal_molecules import METAL_CASES, MetalCase
 
@@ -25,6 +27,14 @@ def test_metal_coordination_values_and_coordinate_derivatives(backend, name):
         (gradient * direction).sum(axis=(1, 2)), numeric, rtol=3e-3, atol=3e-3
     )
     np.testing.assert_allclose(gradient.sum(axis=1), 0, atol=2e-3)
+
+    if name == "mixed_batch":
+        check_coordinate_transforms(
+            backend,
+            METAL_CASES[name],
+            ("metal_coordination",),
+            empty_term="metal_coordination",
+        )
 
 
 def scaled_metal_database(db):
