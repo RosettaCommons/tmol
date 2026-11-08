@@ -16,6 +16,12 @@ class EnergyAccumulator {
         values_(precise ? static_cast<void*>(scratch) : output.untyped_data()) {
     if (output.size_bytes() / sizeof(Real) > INT32_MAX)
       throw std::invalid_argument("native energy dispatch exceeds int32");
+    initialize(context, output, scratch);
+  }
+
+  // CUDA extended device lambdas require an addressable enclosing function.
+  static void initialize(
+      ContextManager& context, ffi::AnyBuffer output, double* scratch) {
     if constexpr (precise) {
       LAUNCH_BOX_32;
       auto count = output.size_bytes() / sizeof(Real);
