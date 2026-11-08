@@ -13,6 +13,10 @@ Native molecular scoring and selected packing paths have CPU/CUDA and Torch-free
 package validation; final Metal validation is tracked separately. See the [capability matrix](capability-matrix.json) for
 implemented behavior and evidence rather than assuming full TMol parity.
 
+The standalone periodic spline utilities retain a separate JAX implementation.
+Molecular table preparation and scoring use shared native splines; complete
+source consolidation remains unfinished.
+
 `tmol_jax.ligand` exposes the common ligand preparation and parameter-file APIs.
 SMILES generation uses the shared distance-geometry bounds, chirality/planarity
 objectives and restart policy with JAX differentiation and optimization. MOL2

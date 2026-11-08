@@ -582,6 +582,9 @@
     "jax_extensions": [
       "Mixed float64 internal DOFs with float32 stored coordinates: mapping, AD and minimization are implemented in both frontends, with shared CPU/CUDA ligand/D-peptide checks. Torch promotes the objective to the parameter precision without lowering higher-precision losses. This is additional capability beyond the tested mature baseline, separate from mature-functionality parity.",
       "FallbackSampler batch support queries are available in JAX; the mature Torch method raises NotImplementedError. Fallback conformer sampling itself is implemented in both. The shared test asserts that boundary explicitly."
+    ],
+    "source_consolidation": [
+      "Standalone tmol_jax.numeric spline utilities still duplicate native numerical algorithms. Molecular parameter preparation and scoring already use shared native splines. Removing this remaining duplication must preserve public degree/rank/dtype, device and differentiation contracts; overall source reduction is not established."
     ]
   },
   "score_file_options": {

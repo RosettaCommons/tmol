@@ -1,8 +1,8 @@
 """Thevenaz/Blu/Unser B-spline interpolation in pure JAX.
 
-A line-for-line port of ``tmol/numeric/bspline_compiled/bspline.hh`` used by
-upstream tmol's Ramachandran and Dunbrack potentials (:func:`bspline_coefficients`,
-:func:`bspline_interpolate`). The causal /
+This standalone utility retains a separate implementation of
+``tmol/numeric/bspline_compiled/bspline.hh``. Molecular parameter preparation
+and scoring use the shared native splines instead. The causal /
 anti-causal IIR filters that produce spline coefficients are expressed as
 :func:`jax.lax.scan` recurrences and vectorised with :func:`jax.vmap`. Periodic
 boundary conditions; degree 2..5 in 2/3/4 spatial dimensions.
@@ -35,20 +35,13 @@ def _get_poles(degree: int) -> Tuple[float, ...]:
         return (np.sqrt(8.0) - 3.0,)
     if degree == 3:
         return (np.sqrt(3.0) - 2.0,)
-    if degree == 4:
-        return (
-            np.sqrt(664.0 - np.sqrt(438976.0)) + np.sqrt(304.0) - 19.0,
-            np.sqrt(664.0 + np.sqrt(438976.0)) - np.sqrt(304.0) - 19.0,
-        )
-    if degree == 5:
-        return (
-            np.sqrt(135.0 / 2.0 - np.sqrt(17745.0 / 4.0))
-            + np.sqrt(105.0 / 4.0)
-            - 13.0 / 2.0,
-            np.sqrt(135.0 / 2.0 + np.sqrt(17745.0 / 4.0))
-            - np.sqrt(105.0 / 4.0)
-            - 13.0 / 2.0,
-        )
+    if degree in (4, 5):
+        # The symmetric grid polynomials reduce under y = z + 1/z to
+        # y^2 + 76y + 228 (quartic) or y^2 + 26y + 64 (quintic).
+        # Recover both small roots by division, avoiding cancellation.
+        large = -(38.0 + 8 * np.sqrt(19.0)) if degree == 4 else -(13 + np.sqrt(105))
+        product = 228.0 if degree == 4 else 64.0
+        return tuple(2 / (y - np.sqrt(y * y - 4)) for y in (product / large, large))
     raise ValueError(f"B-spline degree must be in 2..5 (got {degree}).")
 
 
@@ -211,7 +204,7 @@ def _weights_1d(frac: jax.Array, degree: int) -> jax.Array:
         t = (1.0 / 6.0) * f * f
         t0 = f * (t - 11.0 / 24.0)
         t1 = 19.0 / 96.0 + f * f * (0.25 - t)
-        w0 = (1.0 / 24.0) * (0.5 - f) ** 3
+        w0 = (1.0 / 24.0) * (0.5 - f) ** 4
         w1 = t1 + t0
         w3 = t1 - t0
         w4 = w0 + t0 + 0.5 * f
@@ -249,7 +242,10 @@ def _interpolate_single(coeffs: jax.Array, X: jax.Array, degree: int) -> jax.Arr
 
     ndim = coeffs.ndim
     # Integer base index in each dim and fractional offset.
-    idx0 = jnp.floor(X).astype(jnp.int32)  # [ndim]
+    # Even-degree support is centered on the nearest grid point; its local
+    # coordinate lies in [-0.5, 0.5), unlike odd-degree support in [0, 1).
+    center = X if degree % 2 else X + 0.5
+    idx0 = jnp.floor(center).astype(jnp.int32)  # [ndim]
     frac = X - idx0.astype(X.dtype)
     idx_base = idx0 - (degree // 2)  # support starts here
 

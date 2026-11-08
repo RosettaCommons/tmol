@@ -1,8 +1,8 @@
-"""Pure-JAX port of the ``tmol.numeric`` B-spline interpolation.
+"""Standalone differentiable periodic B-spline utilities.
 
 :mod:`tmol_jax.numeric.bspline` implements Thevenaz/Blu/Unser B-spline
-interpolation on regular periodic grids, as used by the backbone-torsion and
-Dunbrack terms. It is jit-safe and differentiable via :func:`jax.grad`.
+interpolation on regular periodic grids. Molecular backbone-torsion and
+Dunbrack terms use shared native splines. These utilities support JIT and AD.
 """
 
 from tmol_jax.numeric.bspline import (
