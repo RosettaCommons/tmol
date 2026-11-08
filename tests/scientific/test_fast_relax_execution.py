@@ -6,6 +6,42 @@ import pytest
 from .test_complete_preset import CASES
 
 
+def test_relax_minimizers_preserve_fixed_molecular_coordinates(backend):
+    from importlib import import_module
+
+    b = backend
+    b.molecule(CASES["connected_noncanonical"], terms=())
+    b.use_beta2016()
+    api = import_module("tmol_jax" if b.framework == "jax" else "tmol")
+    pose, original = b.pose, b.coords().copy()
+    mask = np.zeros(original.shape[:2], dtype=bool)
+    mask = (
+        b.module.device_put(mask, b.device)
+        if b.framework == "jax"
+        else b.module.as_tensor(mask, device=b.device)
+    )
+    cartesian = api.CartesianMoveMap(mask)
+    kinematic = api.MoveMap.from_pose_stack(pose)
+    for constructor, move_map in (
+        (api.CartesianRelaxMinimizer, cartesian),
+        (api.KinematicRelaxMinimizer, kinematic),
+    ):
+        result = constructor(move_map, cuda_graph=False)(pose, b.score_function)
+        np.testing.assert_array_equal(b.numpy(result.coords), original)
+        assert result.coords.dtype == pose.coords.dtype
+        assert result.coords.device == pose.coords.device
+        assert result.packed_block_types is pose.packed_block_types
+    np.testing.assert_array_equal(b.coords(), original)
+    with pytest.raises(TypeError, match="needs a CartesianMoveMap"):
+        api.CartesianRelaxMinimizer(kinematic)
+    with pytest.raises(TypeError, match="needs a MoveMap"):
+        api.KinematicRelaxMinimizer(cartesian)
+    if b.framework == "jax":
+        for constructor in (api.CartesianRelaxMinimizer, api.KinematicRelaxMinimizer):
+            with pytest.raises(NotImplementedError, match="graph capture"):
+                constructor(cuda_graph=True)
+
+
 @pytest.mark.parametrize(
     "name", ("ligand", "connected_noncanonical", "d_peptide", "mixed_batch")
 )
