@@ -1,6 +1,6 @@
 // Typed XLA storage and dispatch for canonical hydrogen-bond physics.
 #pragma once
-#include "workspace_ffi.hh"
+#include "energy_accumulator_ffi.hh"
 #include <tmol/score/common/sphere_overlap_preparation.hh>
 #include <tmol/score/hbond/potentials/native_hbond_pose.hh>
 #include <tmol/score/hbond/potentials/native_hbond_bases.hh>
@@ -10,6 +10,7 @@ template <typename Real, bool Sparse = false>
 struct HBondWorkspace {
   ByteWorkspace storage;
   Real *spheres = nullptr, *derived_coords;
+  double* energy = nullptr;
   int32_t* neighbors = nullptr;
   size_t neighbor_capacity = 0;
   HBondWorkspace(
@@ -25,6 +26,8 @@ struct HBondWorkspace {
       neighbors = storage.take<int32_t>(neighbor_capacity);
     }
     derived_coords = storage.take<Real>((Sparse ? atoms : poses * atoms) * 9);
+    if constexpr (!Sparse && std::is_same_v<Real, float>)
+      energy = storage.take<double>(poses);
   }
 };
 
@@ -199,7 +202,19 @@ struct HBondKernelT {
     bases.derived_atom_inds = indices;
     gather_hbond_bases<Ops, D, Real>(context, bases);
 
-    HBondCtx<Real, I, D, Sparse ? 2 : 4, Sparse ? 2 : 3, Weighted ? 1 : 2>
+    using Accumulator = EnergyAccumulator<Ops, D, Real>;
+    using EnergyReal =
+        std::conditional_t<Sparse, Real, typename Accumulator::Value>;
+    std::optional<Accumulator> total;
+    if constexpr (!Sparse) total.emplace(context, energy, work.energy);
+    HBondCtx<
+        Real,
+        I,
+        D,
+        Sparse ? 2 : 4,
+        Sparse ? 2 : 3,
+        Weighted ? 1 : 2,
+        EnergyReal>
         score{};
     score.rot_coords = xyz;
     score.rot_coord_offset = bases.rot_coord_offset;
@@ -233,9 +248,9 @@ struct HBondKernelT {
           {1, gradient ? 0 : a[29].dimensions()[1]});
       if (gradient) score.dTdV = buffer_view<Real, 2, D>(a[30]);
     } else {
-      score.output =
+      score.output = total->template view<4>({1, poses, 1, 1});
+      score.dTdV =
           contiguous_view<Real, 4, D>(energy.untyped_data(), {1, poses, 1, 1});
-      score.dTdV = score.output;
     }
     if (gradient) {
       if constexpr (Weighted)
@@ -263,6 +278,7 @@ struct HBondKernelT {
       };
       launch_hbond_pose<Ops, D, Real, I>(
           score, poses, rots, work.neighbor_capacity, true, launch);
+      total->finish(context);
     }
   }
 };

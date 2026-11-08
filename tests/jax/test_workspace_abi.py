@@ -11,6 +11,7 @@ from tmol_jax.score._native import libraries
     "target,dimensions",
     (
         ("dunbrack", (3, 7)),
+        ("dunbrack_energy", (3, 7, 2)),
         ("nonbonded", (2, 3)),
         ("nonbonded_weighted", (2, 3)),
         ("nonbonded_precise", (2, 3, 17)),
@@ -79,5 +80,21 @@ def test_cartesian_accumulator_workspace_precision_and_overflow():
     assert derivative > energy > 0
     assert workspace_sizes(target, (2, 17), 64) == (0, 0)
     for dimensions in ((-1, 17), (1 << 62, 17), (1 << 20, 1 << 20)):
+        with pytest.raises(ValueError, match="workspace layout"):
+            workspace_sizes(target, dimensions, 32)
+
+
+def test_pose_energy_accumulation_workspace_is_bounded_and_precision_specific():
+    from tmol_jax.score._native import workspace_sizes
+
+    target = "tmol_backbone_torsion"
+    assert workspace_sizes(target, (2,), 32) == (32, 32)
+    assert workspace_sizes(target, (2,), 64) == (0, 0)
+    assert workspace_sizes(target, (0,), 32) == (0, 0)
+    for target, dimensions in (
+        ("tmol_backbone_torsion", (-1,)),
+        ("tmol_backbone_torsion", (1 << 30,)),
+        ("tmol_dunbrack_energy", (1, 7, 1 << 30)),
+    ):
         with pytest.raises(ValueError, match="workspace layout"):
             workspace_sizes(target, dimensions, 32)

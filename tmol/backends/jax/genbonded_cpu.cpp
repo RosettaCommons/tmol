@@ -245,7 +245,7 @@ ffi::Error run_graph_stage(
 // Host setup reuses the execution policy above for topology-only kernels.
 #include "host_pose_ffi.hh"
 
-extern "C" int tmol_jax_native_abi_version() { return 4; }
+extern "C" int tmol_jax_native_abi_version() { return 5; }
 
 namespace tmol::jax {
 template <typename Real, size_t Rank>
@@ -330,6 +330,25 @@ extern "C" uint64_t tmol_dunbrack_workspace_bytes(
     return tmol::jax::DunbrackWorkspace<decltype(real)>(
                rots, dihedrals, derivative)
         .storage.size_bytes();
+  });
+}
+
+extern "C" uint64_t tmol_dunbrack_energy_workspace_bytes(
+    int64_t rots, int64_t dihedrals, int64_t poses, int bits, int derivative) {
+  if (poses > INT32_MAX / 3) return UINT64_MAX;
+  return workspace_bytes(
+      bits, {rots, dihedrals, poses}, [&](auto real) -> uint64_t {
+        return tmol::jax::DunbrackWorkspace<decltype(real)>(
+                   rots, dihedrals, derivative, nullptr, poses)
+            .storage.size_bytes();
+      });
+}
+
+extern "C" uint64_t tmol_backbone_torsion_workspace_bytes(
+    int64_t poses, int bits, int) {
+  if (poses > INT32_MAX / 2) return UINT64_MAX;
+  return workspace_bytes(bits, {poses}, [&](auto real) -> uint64_t {
+    return sizeof(real) == sizeof(float) ? 2 * poses * sizeof(double) : 0;
   });
 }
 

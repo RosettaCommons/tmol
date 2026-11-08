@@ -1,6 +1,6 @@
 // Typed XLA views for the shared whole-pose Dunbrack kernels.
 #pragma once
-#include "workspace_ffi.hh"
+#include "energy_accumulator_ffi.hh"
 #include "graph_topology_ffi.hh"
 #include <tuple>
 #include <tmol/score/dunbrack/potentials/dunbrack_pose_kernels.hh>
@@ -13,13 +13,18 @@ struct DunbrackWorkspace {
   ByteWorkspace storage;
   Vec<I, 4>* atoms;
   Real* values;
+  double* energy = nullptr;
   Derivative* dihedral_derivatives;
   Derivative* term_derivatives;
   I* rotameric_assignment;
   I* semirotameric_assignment;
 
   DunbrackWorkspace(
-      size_t rots, size_t dihedrals, bool derivatives, void* data = nullptr)
+      size_t rots,
+      size_t dihedrals,
+      bool derivatives,
+      void* data = nullptr,
+      size_t poses = 0)
       : storage(data) {
     atoms = storage.take<Vec<I, 4>>(rots * dihedrals);
     values = storage.take<Real>(rots * dihedrals);
@@ -29,6 +34,8 @@ struct DunbrackWorkspace {
     term_derivatives = storage.take<Derivative>(derivative_rots * 3);
     rotameric_assignment = storage.take<I>(rots);
     semirotameric_assignment = storage.take<I>(rots);
+    if constexpr (std::is_same_v<Real, float>)
+      energy = storage.take<double>(3 * poses);
   }
 };
 
@@ -93,7 +100,12 @@ struct DunbrackKernel {
       const std::vector<ffi::AnyBuffer>& a, bool derivative) {
     auto rots = a[1].dimensions()[0], dihedrals = a[25].dimensions()[1];
     return a[0].element_type() == ffi::DataType::F32
-               ? DunbrackWorkspace<float>(rots, dihedrals, derivative)
+               ? DunbrackWorkspace<float>(
+                     rots,
+                     dihedrals,
+                     derivative,
+                     nullptr,
+                     a[0].dimensions().size() == 3 ? a[0].dimensions()[0] : 0)
                      .storage.size_bytes()
                : DunbrackWorkspace<double>(rots, dihedrals, derivative)
                      .storage.size_bytes();
@@ -159,18 +171,19 @@ struct DunbrackKernel {
     auto rots = a[1].dimensions()[0], dihedrals = a[25].dimensions()[1];
     auto derivative_rots = gradient ? rots : 0;
     DunbrackWorkspace<Real> work(
-        rots, dihedrals, gradient != nullptr, workspace.untyped_data());
+        rots, dihedrals, gradient != nullptr, workspace.untyped_data(), poses);
     ContextManager context;
+    EnergyAccumulator<Ops, D, Real> total(context, energy, work.energy);
+    using EnergyReal = typename decltype(total)::Value;
     std::apply(
         [&](auto... operands) {
           score::dunbrack::potentials::
-              dunbrack_pose_forward<Ops, D, Real, I, I>(
+              dunbrack_pose_forward<Ops, D, Real, I, I, 4, EnergyReal>(
                   context,
                   operands...,
                   false,
                   gradient != nullptr,
-                  contiguous_view<Real, 4, D>(
-                      energy.untyped_data(), {3, poses, 1, 1}),
+                  total.template view<4>({3, poses, 1, 1}),
                   contiguous_view<Vec<Real, 3>, 2, D>(
                       gradient ? gradient->untyped_data() : nullptr,
                       {3, gradient ? poses * atoms : 0}),
@@ -186,6 +199,7 @@ struct DunbrackKernel {
                       work.semirotameric_assignment, {rots}));
         },
         arguments<D, Real>(a));
+    total.finish(context);
   }
 };
 struct RotamerDunbrackStage {

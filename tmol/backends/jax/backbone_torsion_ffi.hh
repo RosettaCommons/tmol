@@ -1,6 +1,6 @@
 // Runtime buffer contract for the common whole-pose backbone kernels.
 #pragma once
-#include "genbonded_ffi.hh"
+#include "energy_accumulator_ffi.hh"
 #include <tmol/score/backbone_torsion/potentials/backbone_torsion_pose_kernels.hh>
 
 namespace tmol::jax {
@@ -46,6 +46,12 @@ auto backbone_tables(const std::vector<ffi::AnyBuffer>& a) {
 }
 
 struct BackboneTorsionKernel {
+  static constexpr bool zero_workspace = false;
+  static size_t workspace_bytes(const std::vector<ffi::AnyBuffer>& a, bool) {
+    return a[0].element_type() == ffi::DataType::F32
+               ? 2 * a[0].dimensions()[0] * sizeof(double)
+               : 0;
+  }
   static void validate(
       const std::vector<ffi::AnyBuffer>& a,
       ffi::AnyBuffer energy,
@@ -75,21 +81,24 @@ struct BackboneTorsionKernel {
   static void execute(
       const std::vector<ffi::AnyBuffer>& a,
       ffi::AnyBuffer energy,
-      const ffi::AnyBuffer* gradient) {
+      const ffi::AnyBuffer* gradient,
+      ffi::AnyBuffer workspace) {
     using I = int32_t;
     auto poses = a[0].dimensions()[0], atoms = a[0].dimensions()[1];
     auto xyz = contiguous_view<Vec<Real, 3>, 1, D>(
         a[0].untyped_data(), {poses * atoms});
-    auto e =
-        contiguous_view<Real, 4, D>(energy.untyped_data(), {2, poses, 1, 1});
+    ContextManager context;
+    EnergyAccumulator<Ops, D, Real> total(
+        context, energy, static_cast<double*>(workspace.untyped_data()));
+    using EnergyReal = typename decltype(total)::Value;
+    auto e = total.template view<4>({2, poses, 1, 1});
     auto g = contiguous_view<Vec<Real, 3>, 2, D>(
         gradient ? gradient->untyped_data() : nullptr,
         {2, gradient ? poses * atoms : 0});
-    ContextManager context;
     std::apply(
         [&](auto... tables) {
           score::backbone_torsion::potentials::
-              backbone_torsion_pose_forward<Ops, D, Real, I>(
+              backbone_torsion_pose_forward<Ops, D, Real, I, EnergyReal>(
                   context,
                   xyz,
                   buffer_view<I, 1, D>(a[1]),
@@ -103,6 +112,7 @@ struct BackboneTorsionKernel {
                   g);
         },
         backbone_tables<false, D, Real>(a));
+    total.finish(context);
   }
 };
 }  // namespace tmol::jax

@@ -23,7 +23,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<int64_t>("max_rotamers"),
     {xla::ffi::Traits::kCmdBufferCompatible});
 
-extern "C" int tmol_jax_native_abi_version() { return 4; }
+extern "C" int tmol_jax_native_abi_version() { return 5; }
 
 extern "C" int tmol_cuda_memory_info(
     int device, uint64_t* free_bytes, uint64_t* total_bytes) {

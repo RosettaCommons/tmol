@@ -15,6 +15,7 @@ from tmol_jax.score._native import (
     fit_bspline_coefficients,
     pose_arguments,
     register,
+    workspace_sizes,
 )
 from tmol_jax.score.energy_term import EnergyTerm, prepared_palette
 from tmol_jax.score.score_types import ScoreType
@@ -95,6 +96,12 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
     @classmethod
     def evaluate(cls, term_state, coords):
         values = coordinate_energy(
-            "tmol_backbone_torsion", coords, term_state.parameters, channels=2
+            "tmol_backbone_torsion",
+            coords,
+            term_state.parameters,
+            channels=2,
+            workspace_bytes=workspace_sizes(
+                "tmol_backbone_torsion", (coords.shape[0],), coords.dtype.itemsize * 8
+            ),
         )
         return dict(zip(cls.score_types_provided(), values))

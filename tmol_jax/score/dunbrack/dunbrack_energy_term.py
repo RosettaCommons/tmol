@@ -124,14 +124,14 @@ class DunbrackEnergyTerm(EnergyTerm):
     def evaluate(cls, term_state, coords):
         parameters = term_state.parameters
         if parameters:
-            dimensions = (parameters[0].size, parameters[24].shape[1])
+            dimensions = (parameters[0].size, parameters[24].shape[1], coords.shape[0])
             values = coordinate_energy(
                 "tmol_dunbrack",
                 coords,
                 parameters,
                 channels=3,
                 workspace_bytes=workspace_sizes(
-                    "tmol_dunbrack", dimensions, coords.dtype.itemsize * 8
+                    "tmol_dunbrack_energy", dimensions, coords.dtype.itemsize * 8
                 ),
             )
         else:
