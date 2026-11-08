@@ -56,6 +56,15 @@ TMOL_HOST_DEVICE_FUNC void emit_dunbrack_energy(
   }
 }
 
+// Evaluate each derivative (including its score weight) in Real, then widen
+// only its accumulation. CUDA float callers cast the completed sum once.
+template <Device D, typename GradReal, typename Real>
+TMOL_HOST_DEVICE_FUNC void emit_dunbrack_derivative(
+    Vec<GradReal, 3>& target, Vec<Real, 3> value) {
+  for (int axis = 0; axis < 3; ++axis)
+    common::accumulate<D, GradReal>::add(target[axis], GradReal(value[axis]));
+}
+
 template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
@@ -63,7 +72,8 @@ template <
     typename Int,
     typename SizeInt = int64_t,
     size_t OutRank = 4,
-    typename EnergyReal = Real>
+    typename EnergyReal = Real,
+    typename GradReal = Real>
 void dunbrack_pose_forward(
     ContextManager& mgr,
     TView<Vec<Real, 3>, 1, D> rot_coords,
@@ -105,7 +115,7 @@ void dunbrack_pose_forward(
     bool output_block_pair_energies,
     bool compute_derivs,
     TView<EnergyReal, OutRank, D> V,
-    TView<Vec<Real, 3>, 2, D> dV_dx,
+    TView<Vec<GradReal, 3>, 2, D> dV_dx,
     TView<Vec<Int, 4>, 2, D> dihedral_atom_inds,
     TView<Real, 2, D> dihedral_values,
     TView<tmol::portable::Mat<Real, 4, 3>, 2, D> dihedral_deriv,
@@ -311,10 +321,10 @@ void dunbrack_pose_forward(
         Vec<Int, DIH_N_ATOMS> psi_ats = dihedral_atom_inds[rotamer_index][1];
         for (int j = 0; j < DIH_N_ATOMS; ++j) {
           if (phi_ats[j] != -1)
-            accumulate<D, Vec<Real, 3>>::add(
+            emit_dunbrack_derivative<D>(
                 dV_dx[0][phi_ats[j]], dterm_dtor_xyz[rotamer_index][0].row(j));
           if (psi_ats[j] != -1)
-            accumulate<D, Vec<Real, 3>>::add(
+            emit_dunbrack_derivative<D>(
                 dV_dx[0][psi_ats[j]], dterm_dtor_xyz[rotamer_index][1].row(j));
         }
       }
@@ -365,13 +375,13 @@ void dunbrack_pose_forward(
             dihedral_atom_inds[rotamer_index][2 + ii];
         for (int j = 0; j < DIH_N_ATOMS; ++j) {
           if (tor0_ats[j] != -1)
-            accumulate<D, Vec<Real, 3>>::add(
+            emit_dunbrack_derivative<D>(
                 dV_dx[1][tor0_ats[j]], dterm_dtor_xyz[rotamer_index][0].row(j));
           if (tor1_ats[j] != -1)
-            accumulate<D, Vec<Real, 3>>::add(
+            emit_dunbrack_derivative<D>(
                 dV_dx[1][tor1_ats[j]], dterm_dtor_xyz[rotamer_index][1].row(j));
           if (tor2_ats[j] != -1)
-            accumulate<D, Vec<Real, 3>>::add(
+            emit_dunbrack_derivative<D>(
                 dV_dx[1][tor2_ats[j]], dterm_dtor_xyz[rotamer_index][2].row(j));
         }
       }
@@ -427,13 +437,13 @@ void dunbrack_pose_forward(
             dihedral_atom_inds[rotamer_index][last];
         for (int j = 0; j < DIH_N_ATOMS; ++j) {
           if (tor0_ats[j] != -1)
-            accumulate<D, Vec<Real, 3>>::add(
+            emit_dunbrack_derivative<D>(
                 dV_dx[2][tor0_ats[j]], dterm_dtor_xyz[rotamer_index][0].row(j));
           if (tor1_ats[j] != -1)
-            accumulate<D, Vec<Real, 3>>::add(
+            emit_dunbrack_derivative<D>(
                 dV_dx[2][tor1_ats[j]], dterm_dtor_xyz[rotamer_index][1].row(j));
           if (tor2_ats[j] != -1)
-            accumulate<D, Vec<Real, 3>>::add(
+            emit_dunbrack_derivative<D>(
                 dV_dx[2][tor2_ats[j]], dterm_dtor_xyz[rotamer_index][2].row(j));
         }
       }
@@ -485,7 +495,8 @@ template <
     typename Real,
     typename Int,
     typename SizeInt = int64_t,
-    size_t OutRank = 4>
+    size_t OutRank = 4,
+    typename GradReal = Real>
 void dunbrack_pose_backward(
     ContextManager& mgr,
     TView<Vec<Real, 3>, 1, D> rot_coords,
@@ -525,7 +536,7 @@ void dunbrack_pose_backward(
     TView<Int, 1, D> block_semirotameric_tableset_offset,
     TView<Int, 1, D> block_is_mirrored,
     TView<Real, OutRank, D> dTdV,
-    TView<Vec<Real, 3>, 2, D> dV_dx,
+    TView<Vec<GradReal, 3>, 2, D> dV_dx,
     TView<Vec<Int, 4>, 2, D> dihedral_atom_inds,
     TView<Real, 2, D> dihedral_values,
     TView<tmol::portable::Mat<Real, 4, 3>, 2, D> dihedral_deriv,
@@ -700,11 +711,11 @@ void dunbrack_pose_backward(
           dTdV, 0, pose_index, block_index, rotamer_index);
       for (int j = 0; j < DIH_N_ATOMS; ++j) {
         if (phi_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
+          emit_dunbrack_derivative<D>(
               dV_dx[0][phi_ats[j]],
               dterm_dtor_xyz[rotamer_index][0].row(j) * block_weight_0);
         if (psi_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
+          emit_dunbrack_derivative<D>(
               dV_dx[0][psi_ats[j]],
               dterm_dtor_xyz[rotamer_index][1].row(j) * block_weight_0);
       }
@@ -741,15 +752,15 @@ void dunbrack_pose_backward(
           dihedral_atom_inds[rotamer_index][2 + ii];
       for (int j = 0; j < DIH_N_ATOMS; ++j) {
         if (tor0_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
+          emit_dunbrack_derivative<D>(
               dV_dx[1][tor0_ats[j]],
               dterm_dtor_xyz[rotamer_index][0].row(j) * block_weight_1);
         if (tor1_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
+          emit_dunbrack_derivative<D>(
               dV_dx[1][tor1_ats[j]],
               dterm_dtor_xyz[rotamer_index][1].row(j) * block_weight_1);
         if (tor2_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
+          emit_dunbrack_derivative<D>(
               dV_dx[1][tor2_ats[j]],
               dterm_dtor_xyz[rotamer_index][2].row(j) * block_weight_1);
       }
@@ -783,15 +794,15 @@ void dunbrack_pose_backward(
       Vec<Int, DIH_N_ATOMS> tor2_ats = dihedral_atom_inds[rotamer_index][last];
       for (int j = 0; j < DIH_N_ATOMS; ++j) {
         if (tor0_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
+          emit_dunbrack_derivative<D>(
               dV_dx[2][tor0_ats[j]],
               dterm_dtor_xyz[rotamer_index][0].row(j) * block_weight_2);
         if (tor1_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
+          emit_dunbrack_derivative<D>(
               dV_dx[2][tor1_ats[j]],
               dterm_dtor_xyz[rotamer_index][1].row(j) * block_weight_2);
         if (tor2_ats[j] != -1)
-          accumulate<D, Vec<Real, 3>>::add(
+          emit_dunbrack_derivative<D>(
               dV_dx[2][tor2_ats[j]],
               dterm_dtor_xyz[rotamer_index][2].row(j) * block_weight_2);
       }
