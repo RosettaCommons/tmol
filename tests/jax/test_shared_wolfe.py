@@ -42,8 +42,11 @@ def test_fixed_history_matches_dense_inverse_hessian_after_wrap(dtype):
             transform = identity - curvature * np.outer(s, y)
             inverse = transform @ inverse @ transform.T + curvature * np.outer(s, s)
         expected = -inverse @ np.asarray(gradient)
-        for _ in range(2):
-            actual = execution.two_loop(gradient, steps, differences, rho, scale)
+        # Reusing history must preserve the molecular device even when a
+        # different default device is active for host scalar construction.
+        for default_device in (gradient.device, jax.devices("cpu")[0]):
+            with jax.default_device(default_device):
+                actual = execution.two_loop(gradient, steps, differences, rho, scale)
             assert actual.device == gradient.device and actual.dtype == gradient.dtype
             np.testing.assert_allclose(
                 actual, expected, rtol=3e-6, atol=3e-7 if dtype == np.float32 else 2e-14

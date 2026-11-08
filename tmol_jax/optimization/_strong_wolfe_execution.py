@@ -31,6 +31,9 @@ class _LoopExecution(JaxStrongWolfeExecution):
 
 @jax.jit
 def _direction(gradient, steps, differences, rho, scale, count):
+    # Cast inside the compiled call; its array operands determine placement.
+    scale = jnp.asarray(scale, gradient.dtype)
+    count = jnp.asarray(count, jnp.int32)
     return two_loop_direction(
         gradient, steps, differences, rho, scale, count, _LoopExecution()
     )
@@ -38,6 +41,9 @@ def _direction(gradient, steps, differences, rho, scale, count):
 
 @jax.jit
 def _append_history(steps, differences, rho, step, difference, inverse, count):
+    inverse = jnp.asarray(inverse, rho.dtype)
+    count = jnp.asarray(count, jnp.int32)
+
     def append(values):
         old_steps, old_differences, old_rho = values
         return (
@@ -75,8 +81,8 @@ class JaxLBFGSExecution(JaxStrongWolfeExecution):
                 self.rho,
                 steps[-1],
                 differences[-1],
-                jnp.asarray(rho[-1], gradient.dtype, device=gradient.device),
-                jnp.asarray(self.count, jnp.int32, device=gradient.device),
+                rho[-1],
+                self.count,
             )
             self.count = len(steps)
             self.last_step = steps[-1]
@@ -85,6 +91,6 @@ class JaxLBFGSExecution(JaxStrongWolfeExecution):
             self.steps,
             self.differences,
             self.rho,
-            jnp.asarray(scale, gradient.dtype, device=gradient.device),
-            jnp.asarray(self.count, jnp.int32, device=gradient.device),
+            scale,
+            self.count,
         )
