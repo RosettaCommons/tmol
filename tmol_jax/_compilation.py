@@ -5,9 +5,13 @@ from functools import wraps
 import jax
 
 
-def jit_without_autotuning(function):
+def jit_without_autotuning(function, *, static_argnames=()):
     """Compile without GPU autotuning; enclosing transforms own compilation."""
-    compiled = jax.jit(function, compiler_options={"xla_gpu_autotune_level": 0})
+    compiled = jax.jit(
+        function,
+        static_argnames=static_argnames,
+        compiler_options={"xla_gpu_autotune_level": 0},
+    )
 
     @wraps(function)
     def execute(*args, **kwargs):

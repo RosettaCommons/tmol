@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import jax.scipy.linalg
 
 from tmol_core.optimization.lbfgs import compact_lbfgs_direction
+from tmol_jax._compilation import jit_without_autotuning
 
 
 class _Execution:
@@ -35,7 +36,7 @@ class _Execution:
         return jax.scipy.linalg.solve_triangular(matrix, value, lower=not upper)
 
 
-@partial(jax.jit, static_argnames=("history_start",))
+@partial(jit_without_autotuning, static_argnames=("history_start",))
 def compact_direction(gradient, differences, steps, history_start=0):
     """Retain mature H0=I, float64 solves and circular history ordering."""
     unbatched = gradient.ndim == 1
