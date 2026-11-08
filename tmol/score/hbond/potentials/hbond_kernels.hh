@@ -502,11 +502,13 @@ TMOL_HOST_DEVICE_FUNC void hbond_pose_eval_energies(
       shared_mem_union;
   bool const accumulate_derivs = static_cast<bool>(derivative_tag);
 
-  auto hbond_atom_energy = ([=] HBOND_ATOM_ENERGY);
+  auto hbond_atom_energy = ([TMOL_CAPTURE_CTX] HBOND_ATOM_ENERGY);
 
-  auto score_inter_hbond_atom_pair = ([=] SCORE_INTER_HBOND_ATOM_PAIR);
+  auto score_inter_hbond_atom_pair =
+      ([TMOL_CAPTURE_CTX] SCORE_INTER_HBOND_ATOM_PAIR);
 
-  auto score_intra_hbond_atom_pair = ([=] SCORE_INTRA_HBOND_ATOM_PAIR);
+  auto score_intra_hbond_atom_pair =
+      ([TMOL_CAPTURE_CTX] SCORE_INTRA_HBOND_ATOM_PAIR);
 
   int const max_important_bond_separation = 4;
 
@@ -548,32 +550,37 @@ TMOL_HOST_DEVICE_FUNC void hbond_pose_eval_energies(
   int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
 
   auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
+      ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTERRES_DATA);
 
   auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
 
   auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
 
-  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
+  auto load_interres_data_from_shared =
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES_DATA_FROM_SHARED);
 
-  auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
+  auto eval_interres_atom_pair_scores =
+      ([TMOL_CAPTURE_CTX] EVAL_INTERRES_ATOM_PAIR_SCORES);
 
-  auto store_calculated_energies = ([=] STORE_POSE_CALCULATED_ENERGIES);
+  auto store_calculated_energies =
+      ([TMOL_CAPTURE_CTX] STORE_POSE_CALCULATED_ENERGIES);
 
   auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
+      ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTRARES_DATA);
 
   auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
 
   auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
 
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
+  auto load_intrares_data_from_shared =
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES_DATA_FROM_SHARED);
 
-  auto eval_intrares_atom_pair_scores = ([=] EVAL_INTRARES_ATOM_PAIR_SCORES);
+  auto eval_intrares_atom_pair_scores =
+      ([TMOL_CAPTURE_CTX] EVAL_INTRARES_ATOM_PAIR_SCORES);
 
   tmol::score::common::tile_evaluate_rot_pair<
       DeviceDispatch,
@@ -664,7 +671,7 @@ TMOL_HOST_DEVICE_FUNC void hbond_pose_eval_derivs(
   int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
 
   auto hbond_atom_energy =
-      ([=] TMOL_DEVICE_FUNC(
+      ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
            int don_ind,
            int acc_ind,
            int don_tile_ind,
@@ -702,41 +709,47 @@ TMOL_HOST_DEVICE_FUNC void hbond_pose_eval_derivs(
         return Real(0.0);
       });
 
-  auto score_inter_hbond_atom_pair = ([=] SCORE_INTER_HBOND_ATOM_PAIR);
+  auto score_inter_hbond_atom_pair =
+      ([TMOL_CAPTURE_CTX] SCORE_INTER_HBOND_ATOM_PAIR);
 
-  auto score_intra_hbond_atom_pair = ([=] SCORE_INTRA_HBOND_ATOM_PAIR);
+  auto score_intra_hbond_atom_pair =
+      ([TMOL_CAPTURE_CTX] SCORE_INTRA_HBOND_ATOM_PAIR);
 
   auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
+      ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTERRES_DATA);
 
   auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
 
   auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
 
-  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
+  auto load_interres_data_from_shared =
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES_DATA_FROM_SHARED);
 
-  auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
+  auto eval_interres_atom_pair_scores =
+      ([TMOL_CAPTURE_CTX] EVAL_INTERRES_ATOM_PAIR_SCORES);
 
   // Derivatives accumulate as they are computed; there is nothing to store.
   auto store_calculated_energies =
-      ([=] TMOL_DEVICE_FUNC(
+      ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
            TMOL_THREAD HBondScoringData<Real>& score_dat,
            TMOL_SHARED_REF(shared_mem_union) shared) { ; });
 
   auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
+      ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTRARES_DATA);
 
   auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
 
   auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
 
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
+  auto load_intrares_data_from_shared =
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES_DATA_FROM_SHARED);
 
-  auto eval_intrares_atom_pair_scores = ([=] EVAL_INTRARES_ATOM_PAIR_SCORES);
+  auto eval_intrares_atom_pair_scores =
+      ([TMOL_CAPTURE_CTX] EVAL_INTRARES_ATOM_PAIR_SCORES);
 
   tmol::score::common::tile_evaluate_rot_pair<
       DeviceDispatch,
@@ -797,9 +810,11 @@ TMOL_HOST_DEVICE_FUNC void hbond_rotamer_evaluate(
   CTA_LAUNCH_T_PARAMS;
   typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
       shared_mem_union;
-  auto score_inter_hbond_atom_pair = ([=] SCORE_INTER_HBOND_ATOM_PAIR);
+  auto score_inter_hbond_atom_pair =
+      ([TMOL_CAPTURE_CTX] SCORE_INTER_HBOND_ATOM_PAIR);
 
-  auto score_intra_hbond_atom_pair = ([=] SCORE_INTRA_HBOND_ATOM_PAIR);
+  auto score_intra_hbond_atom_pair =
+      ([TMOL_CAPTURE_CTX] SCORE_INTRA_HBOND_ATOM_PAIR);
 
   int const max_important_bond_separation = 4;
 
@@ -822,30 +837,34 @@ TMOL_HOST_DEVICE_FUNC void hbond_rotamer_evaluate(
   int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
 
   auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
+      ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTERRES_DATA);
 
   auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
 
   auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
 
-  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
+  auto load_interres_data_from_shared =
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES_DATA_FROM_SHARED);
 
-  auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
+  auto eval_interres_atom_pair_scores =
+      ([TMOL_CAPTURE_CTX] EVAL_INTERRES_ATOM_PAIR_SCORES);
 
   auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
+      ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTRARES_DATA);
 
   auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
 
   auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
 
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
+  auto load_intrares_data_from_shared =
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES_DATA_FROM_SHARED);
 
-  auto eval_intrares_atom_pair_scores = ([=] EVAL_INTRARES_ATOM_PAIR_SCORES);
+  auto eval_intrares_atom_pair_scores =
+      ([TMOL_CAPTURE_CTX] EVAL_INTRARES_ATOM_PAIR_SCORES);
 
   tmol::score::common::tile_evaluate_rot_pair<
       DeviceDispatch,
@@ -906,9 +925,10 @@ TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_energies(
   // is still correct rather than silently wrong.
   bool const accumulate_derivs = AccumulateDerivs;
 
-  auto hbond_atom_energy = ([=] HBOND_ATOM_ENERGY);
+  auto hbond_atom_energy = ([TMOL_CAPTURE_CTX] HBOND_ATOM_ENERGY);
 
-  auto store_calculated_energies = ([=] STORE_ROTAMER_CALCULATED_ENERGIES);
+  auto store_calculated_energies =
+      ([TMOL_CAPTURE_CTX] STORE_ROTAMER_CALCULATED_ENERGIES);
   hbond_rotamer_evaluate<DeviceDispatch, Dev, Real, Int, launch_t>(
       ctx, shared, cta, hbond_atom_energy, store_calculated_energies, lane);
 }
@@ -930,7 +950,7 @@ TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_derivs(
   using shared_mem_union =
       HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>;
   auto hbond_atom_energy =
-      ([=] TMOL_DEVICE_FUNC(
+      ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
            int don_ind,
            int acc_ind,
            int don_tile_ind,
@@ -964,7 +984,7 @@ TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_derivs(
         return Real(0.0);
       });
 
-  auto store_calculated_energies = [=] TMOL_DEVICE_FUNC(
+  auto store_calculated_energies = [TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
                                        TMOL_THREAD HBondScoringData<Real>&,
                                        TMOL_SHARED_REF(shared_mem_union)) {};
   hbond_rotamer_evaluate<DeviceDispatch, Dev, Real, Int, launch_t>(

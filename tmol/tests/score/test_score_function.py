@@ -1,6 +1,8 @@
 import torch
 import numpy
 import os
+import subprocess
+import sys
 import threading
 import attr
 import pytest
@@ -514,7 +516,7 @@ def test_cpu_fused_shard_planner_preserves_fallbacks(
         torch_device, param_db=default_database
     ).render_whole_pose_scoring_module(pose)
     assert fused._execution_modules[0].classname == "LJLK+Elec"
-    assert fused._cpu_fused_shards == 2
+    assert fused._cpu_pair_shards == 2
     assert fused._can_use_weighted_fused_default(pose.coords.detach())
     assert fused._can_use_weighted_fused_default(
         pose.coords.detach().requires_grad_(True)
@@ -524,7 +526,7 @@ def test_cpu_fused_shard_planner_preserves_fallbacks(
     wide = beta2016_score_function(
         torch_device, param_db=default_database
     ).render_whole_pose_scoring_module(pose)
-    assert wide._cpu_fused_shards == 8
+    assert wide._cpu_pair_shards == 8
     assert not wide._can_use_weighted_fused_default(pose.coords.detach())
     assert wide._can_use_weighted_fused_default(
         pose.coords.detach().requires_grad_(True)
@@ -550,7 +552,7 @@ def test_cpu_fused_shard_planner_preserves_fallbacks(
         torch_device, param_db=default_database
     ).render_whole_pose_scoring_module(pose)
     assert two_threads._execution_modules[0].classname == "LJLK+Elec"
-    assert two_threads._cpu_fused_shards == 2
+    assert two_threads._cpu_pair_shards == 2
 
     monkeypatch.setattr(torch, "get_num_threads", lambda: 4)
     pose_batch = PoseStackBuilder.from_poses([pose, pose], torch_device)
@@ -558,6 +560,98 @@ def test_cpu_fused_shard_planner_preserves_fallbacks(
         torch_device, param_db=default_database
     ).render_whole_pose_scoring_module(pose_batch)
     assert all(term.classname != "LJLK+Elec" for term in batched._execution_modules)
+
+
+def test_cpu_sharding_covers_every_pair_list_term(
+    ubq_pdb, default_database, torch_device, monkeypatch
+):
+    if torch_device.type != "cpu":
+        pytest.skip("CPU execution-planner check")
+    pose = pose_stack_from_file(
+        ubq_pdb,
+        torch_device,
+        no_optH=True,
+        missing_density_distance_threshold=0.0,
+    )
+    monkeypatch.setattr(torch, "get_num_threads", lambda: 8)
+    scorer = beta2016_score_function(
+        torch_device, param_db=default_database
+    ).render_whole_pose_scoring_module(pose)
+    sharded = {
+        scorer._execution_modules[index].classname
+        for index in scorer._cpu_sharded_term_indices
+    }
+    unsharded = score_function_module._UNSHARDED_PAIR_TERMS
+    assert {"LJLK+Elec", "HBond", "LKBall"} - unsharded <= sharded
+    assert not sharded & unsharded
+
+    sharded_coords = pose.coords.detach().clone().requires_grad_(True)
+    separate_coords = pose.coords.detach().clone().requires_grad_(True)
+    sharded_score = scorer(sharded_coords)
+    separate_score = (
+        _separate_unweighted_scores(scorer, separate_coords) * scorer.weights
+    ).sum(dim=0)
+    (sharded_grad,) = torch.autograd.grad(sharded_score.sum(), sharded_coords)
+    (separate_grad,) = torch.autograd.grad(separate_score.sum(), separate_coords)
+    torch.testing.assert_close(sharded_score, separate_score, atol=2e-3, rtol=3e-5)
+    torch.testing.assert_close(sharded_grad, separate_grad, atol=5e-5, rtol=5e-5)
+
+
+def test_cpu_score_workers_share_the_thread_budget():
+    if "parallel backend: OpenMP" not in torch.__config__.parallel_info():
+        pytest.skip("torch is not using an OpenMP runtime")
+    assert score_function_module._openmp_runtime() is not None
+    budget = torch.get_num_threads()
+    try:
+        torch.set_num_threads(4)
+        executor = score_function_module._cpu_score_term_executor(2)
+        worker_threads = set(executor.map(lambda _: torch.get_num_threads(), range(8)))
+        # macOS workers keep the whole budget; elsewhere each gets its share.
+        expected = 2 if score_function_module._CAP_CPU_SCORE_WORKER_THREADS else 4
+        assert worker_threads == {expected}
+        assert torch.get_num_threads() == 4
+    finally:
+        torch.set_num_threads(budget)
+
+
+_BOUND_WORKER_AFFINITY_SCRIPT = """
+import os
+cpus = os.sched_getaffinity(0)
+import torch
+import tmol.score._score_function as sf
+assert os.sched_getaffinity(0) < cpus, "OpenMP binding did not pin the main thread"
+torch.set_num_threads(4)
+x = torch.randn(1_000_000)
+
+
+def run_openmp_region(_):
+    (x * 2).sum()
+    return torch.get_num_threads(), os.sched_getaffinity(0)
+
+
+for share_threads in (True, False):
+    executor = sf._cpu_score_term_executor(2, share_threads=share_threads)
+    workers = list(executor.map(run_openmp_region, range(8)))
+    assert all(worker == (1, cpus) for worker in workers), (share_threads, workers)
+"""
+
+
+def test_cpu_score_workers_escape_openmp_binding():
+    if not hasattr(os, "sched_setaffinity"):
+        pytest.skip("thread affinity is not settable on this platform")
+    if "parallel backend: OpenMP" not in torch.__config__.parallel_info():
+        pytest.skip("torch is not using an OpenMP runtime")
+    if len(os.sched_getaffinity(0)) < 2:
+        pytest.skip("binding is only observable with two or more CPUs")
+    env = dict(os.environ, OMP_PROC_BIND="close", OMP_PLACES="cores")
+    env.pop("OMP_NUM_THREADS", None)
+    result = subprocess.run(
+        [sys.executable, "-c", _BOUND_WORKER_AFFINITY_SCRIPT],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_weighted_fused_score_adaptive_dispatch():

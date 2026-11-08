@@ -19,7 +19,10 @@ from tmol.score._score_function import ScoreFunction
 
 from tmol.pack._packer_task import PackerTask, SetPackerTask
 from tmol.pack._datatypes import PackerEnergyTables
-from tmol.pack._simulated_annealing import _run_simulated_annealing
+from tmol.pack._simulated_annealing import (
+    DEFAULT_ANNEAL_TRAJECTORIES,
+    _run_simulated_annealing,
+)
 from tmol.pack._impose_rotamers import (
     _impose_top_rotamer_assignments,
     _chosen_rotamer_for_block,
@@ -36,6 +39,7 @@ def pack_rotamers(
     verbose: bool = False,
     seed: int | None = None,
     anneal_device: torch.device | str | None = None,
+    n_anneal_trajectories: int = DEFAULT_ANNEAL_TRAJECTORIES,
 ) -> PoseStack:
     """Optimize side-chain conformers for a pose stack.
 
@@ -56,6 +60,9 @@ def pack_rotamers(
             searches both faster and far better than the host one. Left
             unset, host poses anneal on Metal when it is available, unless
             ``TMOL_MPS_OFFLOAD=0``.
+        n_anneal_trajectories: High-temperature annealing trajectories per
+            pose; at least 4. The single-trajectory CPU annealer, used below
+            8 threads, ignores it.
 
     Returns:
         A new pose stack containing the lowest-ranked assignment per pose.
@@ -68,7 +75,12 @@ def pack_rotamers(
                 with torch.cuda.device(pose_stack.device):
                     torch.cuda.manual_seed(seed)
             return pack_rotamers(
-                pose_stack, sfxn, task, verbose=verbose, anneal_device=anneal_device
+                pose_stack,
+                sfxn,
+                task,
+                verbose=verbose,
+                anneal_device=anneal_device,
+                n_anneal_trajectories=n_anneal_trajectories,
             )
 
     max_poses_per_chunk = _max_poses_per_packing_chunk(pose_stack)
@@ -86,6 +98,7 @@ def pack_rotamers(
                 chunk_task,
                 verbose=verbose,
                 anneal_device=anneal_device,
+                n_anneal_trajectories=n_anneal_trajectories,
             )
             packed_chunks.append(packed_chunk)
         combined_pose_stack = PoseStackBuilder.from_poses(
@@ -122,7 +135,7 @@ def pack_rotamers(
     end_time4 = time.perf_counter()
 
     _, rotamer_assignments = _anneal_on(
-        packer_energy_tables, anneal_device, pose_stack.device
+        packer_energy_tables, anneal_device, pose_stack.device, n_anneal_trajectories
     )
     if verbose:
         _synchronize_device(pose_stack.device)
@@ -180,6 +193,10 @@ def _max_poses_per_packing_chunk(pose_stack: PoseStack) -> int:
     free_bytes = None
     if configured is None and pose_stack.device.type == "cuda":
         free_bytes, _ = torch.cuda.mem_get_info(pose_stack.device)
+        # Cached but unused Torch allocations are available to packing too.
+        free_bytes += torch.cuda.memory_reserved(
+            pose_stack.device
+        ) - torch.cuda.memory_allocated(pose_stack.device)
     return packing_pose_chunk_size(pose_stack.max_n_blocks, free_bytes, configured)
 
 
@@ -265,7 +282,7 @@ def _slice_packer_task(task: PackerTask, first_pose: int, last_pose: int) -> Pac
     return chunk_task
 
 
-def _anneal_on(energy_tables, anneal_device, pose_device):
+def _anneal_on(energy_tables, anneal_device, pose_device, n_trajectories):
     """Anneal the interaction graph, optionally on a device of its own.
 
     The graph is already built when this runs, and annealing only reads it and
@@ -280,11 +297,11 @@ def _anneal_on(energy_tables, anneal_device, pose_device):
         if mps_offload_enabled():
             anneal_device = "mps"
     if anneal_device is None:
-        return _run_simulated_annealing(energy_tables)
+        return _run_simulated_annealing(energy_tables, n_trajectories)
 
     anneal_device = torch.device(anneal_device)
     if anneal_device == pose_device:
-        return _run_simulated_annealing(energy_tables)
+        return _run_simulated_annealing(energy_tables, n_trajectories)
 
     # Not TensorGroup.to: the table group carries plain ints beside its
     # tensors, which that method rejects.
@@ -296,7 +313,7 @@ def _anneal_on(energy_tables, anneal_device, pose_device):
             if torch.is_tensor(value)
         },
     )
-    scores, assignments = _run_simulated_annealing(moved)
+    scores, assignments = _run_simulated_annealing(moved, n_trajectories)
     return scores.to(pose_device), assignments.to(pose_device)
 
 

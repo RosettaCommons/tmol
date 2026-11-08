@@ -158,3 +158,27 @@ def test_circular_history_matches_chronological_history(
         torch.testing.assert_close(
             actual_grad, expected_grad, atol=tolerance, rtol=tolerance
         )
+
+
+@pytest.mark.parametrize("layout", ["single", "batched", "broadcast"])
+def test_double_scratch_matches_fresh_promotion(layout, torch_device):
+    from tmol.optimization._lbfgs_armijo import _lbfgs_two_loop_impl
+
+    torch.manual_seed(29)
+    batch = 1 if layout == "single" else 3
+    history_batch = 1 if layout == "broadcast" else batch
+    capacity = 8
+    steps = torch.randn(capacity, history_batch, 37, device=torch_device)
+    directions = 2 * steps + 0.1 * torch.randn_like(steps)
+    grad = torch.randn(batch, 37, device=torch_device)
+    scratch = tuple(
+        torch.full(steps.shape, float("nan"), dtype=torch.float64, device=torch_device)
+        for _ in range(2)
+    )
+    # Growing and wrapped histories reuse the same buffers.
+    for count, start in ((3, 0), (5, 0), (8, 2)):
+        expected = _lbfgs_two_loop_impl(grad, directions[:count], steps[:count], start)
+        actual = _lbfgs_two_loop_impl(
+            grad, directions[:count], steps[:count], start, scratch
+        )
+        assert torch.equal(actual, expected)

@@ -16,12 +16,15 @@ def compact_lbfgs_direction(
     single_segment=False,
     use_bmm=False,
     rotate_history=False,
+    promoted_history=None,
 ):
     """Compact solve with histories kept in their physical circular slots.
 
     Set ``rotate_history=True`` when the executor accepts a dynamic offset.
     This always rotates the small products, avoiding host truth conversion of
     ``history_start``. The default retains the mature zero-offset fast path.
+    ``promoted_history`` optionally supplies caller-owned float64 (dirs, stps)
+    buffers already refreshed for this call; the mathematical solve is shared.
     """
     unbatched = grad.ndim == 1
     if unbatched:
@@ -32,10 +35,14 @@ def compact_lbfgs_direction(
     out_dtype = grad.dtype
     # Triangular solves are:
     #  a) imprecise on CUDA at float32
-    #  b) small matrices (M x M) where M is history length (typically 128)
+    #  b) small matrices (M x M) where M is history length (at most the configured capacity)
     # promote to float64
-    S = execution.float64(stps)
-    Y = execution.float64(dirs)
+    if promoted_history is None:
+        Y, S = execution.float64(dirs), execution.float64(stps)
+    else:
+        Y, S = promoted_history
+        if unbatched:
+            Y, S = Y[:, None, :], S[:, None, :]
     q = -execution.float64(grad)
     # Explicit batched products avoid einsum's repeated layout planning. Keep
     # the single-segment, broadcast, and differentiable paths: their reduction

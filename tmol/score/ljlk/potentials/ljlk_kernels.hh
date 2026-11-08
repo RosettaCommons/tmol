@@ -641,7 +641,7 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
   if constexpr (Mode == LJLKMode::Backward)
     weighted_derivatives = ctx.dV_dcoords[0];
   auto atom_pair_ljlk_fn =
-      ([=] TMOL_DEVICE_FUNC(
+      ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
            int atom_tile_ind1,
            int atom_tile_ind2,
            int start_atom1,
@@ -693,31 +693,32 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
       });
 
   auto score_inter_ljlk_atom_pair =
-      ([=] SCORE_INTER_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
+      ([TMOL_CAPTURE_CTX] SCORE_INTER_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
   auto score_intra_ljlk_atom_pair =
-      ([=] SCORE_INTRA_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
+      ([TMOL_CAPTURE_CTX] SCORE_INTRA_LJ_ATOM_PAIR(atom_pair_ljlk_fn));
 
   auto load_block_coords_and_params_into_shared =
-      ([=] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
 
-  auto load_block_into_shared = ([=] LOAD_BLOCK_INTO_SHARED);
+  auto load_block_into_shared = ([TMOL_CAPTURE_CTX] LOAD_BLOCK_INTO_SHARED);
 
   auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
+      ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTERRES_DATA);
 
   auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
 
   auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
 
-  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
+  auto load_interres_data_from_shared =
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES_DATA_FROM_SHARED);
 
   auto eval_interres_atom_pair_scores =
-      ([=] EVAL_INTERRES_ATOM_PAIR_SCORES_FUSED);
+      ([TMOL_CAPTURE_CTX] EVAL_INTERRES_ATOM_PAIR_SCORES_FUSED);
 
   auto store_calculated_energies =
-      ([=] TMOL_DEVICE_FUNC(
+      ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
            TMOL_THREAD LJLKScoringData<Real>& score_dat,
            TMOL_SHARED_REF(shared_mem_union) storage) {
         // Keep captures visible to NVCC outside constexpr branches.
@@ -727,28 +728,29 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
         (void)lane;
         if constexpr (Mode != LJLKMode::Backward) {
           if constexpr (Rotamer) {
-            auto store = ([=] STORE_ROTAMER_CALCULATED_ENERGIES);
+            auto store = ([TMOL_CAPTURE_CTX] STORE_ROTAMER_CALCULATED_ENERGIES);
             store(score_dat, storage);
           } else {
-            auto store = ([=] STORE_POSE_CALCULATED_ENERGIES);
+            auto store = ([TMOL_CAPTURE_CTX] STORE_POSE_CALCULATED_ENERGIES);
             store(score_dat, storage);
           }
         }
       });
 
   auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
+      ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTRARES_DATA);
 
   auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
 
   auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
 
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
+  auto load_intrares_data_from_shared =
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES_DATA_FROM_SHARED);
 
   auto eval_intrares_atom_pair_scores =
-      ([=] EVAL_INTRARES_ATOM_PAIR_SCORES_FUSED);
+      ([TMOL_CAPTURE_CTX] EVAL_INTRARES_ATOM_PAIR_SCORES_FUSED);
 
   tmol::score::common::tile_evaluate_rot_pair<
       DeviceDispatch,

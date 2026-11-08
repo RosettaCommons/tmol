@@ -1,5 +1,6 @@
 #pragma once
-#include <tmol/utility/tensor/TensorAccessor.h>
+#include <tmol/pack/compiled/annealer_workspace.hh>
+#include <tmol/pack/compiled/annealer_policy.hh>
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -7,12 +8,13 @@
 #include <stdexcept>
 
 namespace tmol::pack::compiled {
-// These are the established CUDA annealing schedule, not tunable frontend
-// defaults.
+// PR626 CUDA schedule; trajectory counts are selected by the caller.
 struct CudaAnnealerPolicy {
-  static constexpr int high_trajectories = 500, low_expansions = 10;
-  static constexpr int low_trajectories = 1250, final_trajectories = 312;
-  static constexpr int high_iterations = 10, low_iterations = 10;
+  static constexpr int high_trajectories =
+                           AnnealerTrajectoryCounts::default_high,
+                       low_expansions = 10;
+  static constexpr int low_trajectories = 320, final_trajectories = 80;
+  static constexpr int high_iterations = 5, low_iterations = 5;
   static constexpr float high_initial = 30.f, low_initial = .3f;
   static constexpr float high_later = .2f, low_later = .1f;
 };
@@ -30,7 +32,8 @@ inline int64_t cuda_annealer_sort_bytes(int64_t count) {
   return (passes ? 8 * count : 0) + 64 * ctas + 32 * passes + 256;
 }
 
-struct CudaAnnealerWorkspace {
+struct CudaAnnealerWorkspace : AnnealerWorkspace<Device::CUDA> {
+  AnnealerTrajectoryCounts counts;
   static constexpr Device D = Device::CUDA;
   TView<float, 2, D> scores_hitemp, scores_lotemp;
   TView<int32_t, 3, D> current_rotamer_assignments_hitemp,
@@ -44,26 +47,8 @@ struct CudaAnnealerWorkspace {
       segment_heads_fullquench;
   TView<int32_t, 3, D> quench_lite_order, fullquench_order;
   TView<int64_t, 1, D> reverse_offsets;
-  unsigned char* data;
   void* sort_data = nullptr;
-  int64_t bytes = 0, zero_bytes = 0, sort_bytes = 0;
-
-  template <class T, size_t N>
-  TView<T, N, D> take(std::array<int64_t, N> shape, int alignment = 16) {
-    bytes = (bytes + alignment - 1) / alignment * alignment;
-    int64_t stride[N], count = 1;
-    for (int i = N - 1; i >= 0; --i) {
-      if (shape[i] < 0 || (shape[i] && count > INT64_MAX / shape[i]))
-        throw std::overflow_error("CUDA annealer workspace shape overflow");
-      stride[i] = count;
-      count *= shape[i];
-    }
-    if (count > (INT64_MAX - bytes) / int64_t(sizeof(T)))
-      throw std::overflow_error("CUDA annealer workspace byte overflow");
-    T* ptr = data ? reinterpret_cast<T*>(data + bytes) : nullptr;
-    bytes += count * sizeof(T);
-    return TView<T, N, D>(ptr, shape.data(), stride);
-  }
+  int64_t zero_bytes = 0, sort_bytes = 0;
 
   CudaAnnealerWorkspace(
       int64_t poses,
@@ -71,17 +56,18 @@ struct CudaAnnealerWorkspace {
       int64_t rotamers,
       int64_t edges,
       void* storage = nullptr,
-      int64_t storage_bytes = -1)
-      : data(static_cast<unsigned char*>(storage)) {
+      int64_t storage_bytes = -1,
+      int high = AnnealerTrajectoryCounts::default_high)
+      : AnnealerWorkspace(storage), counts(high) {
     if (poses < 0 || residues < 0 || rotamers < 0 || edges < 0
-        || poses > INT32_MAX / (32 * CudaAnnealerPolicy::low_trajectories)
+        || poses > INT32_MAX / (int64_t(32) * counts.low)
         || residues > INT32_MAX || rotamers > INT32_MAX / 2
         || (residues && poses > INT32_MAX / residues))
       throw std::invalid_argument(
           "CUDA annealer dimensions exceed dispatch capacity");
-    constexpr int h = CudaAnnealerPolicy::high_trajectories;
-    constexpr int l = CudaAnnealerPolicy::low_trajectories;
-    constexpr int q = CudaAnnealerPolicy::final_trajectories;
+    int const h = counts.high;
+    int const l = counts.low;
+    int const q = counts.final;
     scores_hitemp = take<float, 2>({poses, h});
     current_rotamer_assignments_hitemp = take<int32_t, 3>({poses, h, residues});
     best_rotamer_assignments_hitemp = take<int32_t, 3>({poses, h, residues});
@@ -107,11 +93,7 @@ struct CudaAnnealerWorkspace {
     reverse_offsets = take<int64_t, 1>({edges});
     sort_bytes = cuda_annealer_sort_bytes(poses * l);
     sort_data = take<unsigned char, 1>({sort_bytes}, 256).data();
-    if (storage_bytes >= 0 && storage_bytes < bytes)
-      throw std::invalid_argument("CUDA annealer workspace is too small");
-    if (data && reinterpret_cast<uintptr_t>(data) % 16)
-      throw std::invalid_argument(
-          "CUDA annealer workspace must be 16-byte aligned");
+    validate(storage_bytes);
   }
 };
 }  // namespace tmol::pack::compiled

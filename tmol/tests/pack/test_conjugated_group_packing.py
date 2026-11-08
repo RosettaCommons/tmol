@@ -272,7 +272,6 @@ def test_default_relax_samples_general_chemistry(
 ):
     """Default FastRelax samples attached groups and nucleic acids coherently."""
     import tmol.pack._pack_rotamers as packing
-    from tmol import CartesianMoveMap, FoldForest
     from tmol import run_cart_min
     from tmol import fast_relax
 
@@ -315,12 +314,9 @@ def test_default_relax_samples_general_chemistry(
     relaxed = fast_relax(
         pose,
         score,
-        PackerPalette(),
-        CartesianMoveMap(),
-        FoldForest.reasonable_fold_forest(pose),
+        minimizer=minimize,
         num_repeats=1,
         schedule=[1.0],
-        min_fn=minimize,
     )
     assert len(sampled) == 1
     assert torch.equal(

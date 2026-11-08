@@ -2,17 +2,58 @@
 
 import time
 import warnings
+from math import pi
+from typing import Protocol, TypeVar
 from collections.abc import Sequence
+
+PoseT = TypeVar("PoseT")
+ScoreT = TypeVar("ScoreT", contravariant=True)
+
+
+class RelaxMinimizer(Protocol[PoseT, ScoreT]):
+    """Framework-neutral callable contract for a FastRelax minimization stage."""
+
+    def __call__(
+        self,
+        pose_stack: PoseT,
+        sfxn: ScoreT,
+        *,
+        verbose: bool,
+        rtol: float | None = None,
+    ) -> PoseT:
+        """Minimize and return poses, accepting an optional stage tolerance."""
+
 
 RelaxScheduleEntry = float | int | dict[str, float]
 
 # Jack Maguire's tuned MonomerRelax2019 schedule. Fractions scale the score
-# function's initial fa_rep and constraint weights at each pack-minimize stage.
+# function's initial fa_rep and constraint weights at each pack-minimize stage;
+# min_rtol is the stage's minimizer relative tolerance.
 DEFAULT_RELAX_SCHEDULE = [
-    {"fa_rep_pack_frac": 0.040, "fa_rep_min_frac": 0.051, "cst_frac": 1.0},
-    {"fa_rep_pack_frac": 0.265, "fa_rep_min_frac": 0.280, "cst_frac": 0.5},
-    {"fa_rep_pack_frac": 0.559, "fa_rep_min_frac": 0.581, "cst_frac": 0.0},
-    {"fa_rep_pack_frac": 1.000, "fa_rep_min_frac": 1.000, "cst_frac": 0.0},
+    {
+        "fa_rep_pack_frac": 0.040,
+        "fa_rep_min_frac": 0.051,
+        "cst_frac": 1.0,
+        "min_rtol": 0.01,
+    },
+    {
+        "fa_rep_pack_frac": 0.265,
+        "fa_rep_min_frac": 0.280,
+        "cst_frac": 0.5,
+        "min_rtol": 0.01,
+    },
+    {
+        "fa_rep_pack_frac": 0.559,
+        "fa_rep_min_frac": 0.581,
+        "cst_frac": 0.0,
+        "min_rtol": 0.01,
+    },
+    {
+        "fa_rep_pack_frac": 1.000,
+        "fa_rep_min_frac": 1.000,
+        "cst_frac": 0.0,
+        "min_rtol": 5e-4,
+    },
 ]
 
 
@@ -20,17 +61,19 @@ def _normalize_schedule(
     schedule: Sequence[RelaxScheduleEntry],
     constrain: bool = False,
     ramp_constraints: bool = False,
-) -> list[tuple[float, float, float]]:
+) -> list[tuple[float, float, float, float | None]]:
     """Normalize user schedule entries into pack, minimize, and constraint weights.
 
     Args:
         schedule: Numbers, used for both fa_rep stages, or dictionaries with
-            ``fa_rep_pack_frac``, ``fa_rep_min_frac``, and optional ``cst_frac``.
+            ``fa_rep_pack_frac``, ``fa_rep_min_frac``, and optional
+            ``cst_frac`` and ``min_rtol``.
         constrain: Whether the score function has an active constraint term.
         ramp_constraints: Whether to ramp its weight to zero.
 
     Returns:
-        ``(pack_fraction, minimize_fraction, constraint_fraction)`` per step.
+        ``(pack_fraction, minimize_fraction, constraint_fraction, min_rtol)``
+        per step.
 
     Raises:
         ValueError: If an entry is neither a float/int nor a dict with the
@@ -56,7 +99,7 @@ def _normalize_schedule(
     for i, entry in enumerate(schedule):
         if isinstance(entry, (int, float)):
             constraint = constraint_fraction(i)
-            normalized.append((float(entry), float(entry), constraint))
+            normalized.append((float(entry), float(entry), constraint, None))
         elif isinstance(entry, dict):
             pack_frac = float(entry["fa_rep_pack_frac"])
             min_frac = float(entry["fa_rep_min_frac"])
@@ -65,35 +108,41 @@ def _normalize_schedule(
                 if "cst_frac" not in entry
                 else float(entry["cst_frac"])
             )
-            normalized.append((pack_frac, min_frac, constraint))
+            min_rtol = entry.get("min_rtol")
+            min_rtol = None if min_rtol is None else float(min_rtol)
+            normalized.append((pack_frac, min_frac, constraint, min_rtol))
         else:
             raise ValueError(
                 f"Schedule entry must be a number or a dict with keys"
-                f" 'fa_rep_pack_frac', 'fa_rep_min_frac', and optionally 'cst_frac', got {type(entry)}"
+                f" 'fa_rep_pack_frac', 'fa_rep_min_frac', and optionally 'cst_frac'"
+                f" and 'min_rtol', got {type(entry)}"
             )
     return normalized
+
+
+KINEMATIC_RELAX_LBFGS_OPTIONS = {
+    "rtol": 0.01,
+    "atol": None,
+    "patience": 1,
+    "gradtol": 180.0 / pi,
+}
 
 
 def fast_relax(
     pose_stack,
     sfxn,
-    packer_pallete,
-    move_map,
-    fold_forest,
     *,
     execution,
+    packer_palette=None,
     task_operations=None,
     num_repeats=2,
     ramp_constraints=None,
     schedule=None,
-    min_fn=None,
-    cuda_graph=None,
+    minimizer=None,
     release_between_stages=True,
     verbose=False,
 ):
     """Run the shared schedule, releasing stage state and accepting per pose."""
-    if min_fn is not None and cuda_graph is True:
-        raise ValueError("cuda_graph cannot be combined with a custom min_fn")
     if schedule is None:
         schedule = DEFAULT_RELAX_SCHEDULE
 
@@ -130,24 +179,25 @@ def fast_relax(
     del wpsm
     best_ps = execution.clone(pose_stack)
 
-    if min_fn is None:
-        min_fn = execution.default_minimizer(pose_stack, cuda_graph)
+    if minimizer is None:
+        minimizer = execution.default_minimizer()
+    if packer_palette is None:
+        packer_palette = execution.default_palette()
 
     ps = pose_stack
     for _ in range(num_repeats):
-        for pack_frac, min_frac, cst_frac in steps:
+        for pack_frac, min_frac, cst_frac, min_rtol in steps:
             ps = relax_pack_min_step(
                 execution=execution,
                 pose_stack=ps,
                 sfxn=sfxn,
-                fold_forest=fold_forest,
-                move_map=move_map,
-                packer_pallete=packer_pallete,
+                packer_palette=packer_palette,
                 fa_rep_pack_weight=pack_frac * fa_rep_start,
                 fa_rep_min_weight=min_frac * fa_rep_start,
                 cst_weight=cst_frac * constraint_weight_start,
                 task_operations=task_operations,
-                min_fn=min_fn,
+                minimizer=minimizer,
+                min_rtol=min_rtol,
                 verbose=verbose,
                 release_between_stages=release_between_stages,
             )
@@ -165,16 +215,15 @@ def fast_relax(
 def relax_pack_min_step(
     pose_stack,
     sfxn,
-    fold_forest,
-    move_map,
-    packer_pallete,
+    packer_palette,
     fa_rep_pack_weight,
     fa_rep_min_weight,
     cst_weight,
     task_operations,
-    min_fn,
+    minimizer,
     verbose,
     release_between_stages=True,
+    min_rtol=None,
     *,
     execution,
 ):
@@ -182,7 +231,7 @@ def relax_pack_min_step(
     if verbose:
         execution.synchronize(pose_stack)
     start_time = time.perf_counter()
-    task = execution.task(pose_stack, packer_pallete)
+    task = execution.task(pose_stack, packer_palette)
     for op in task_operations:
         op(task)
 
@@ -205,19 +254,19 @@ def relax_pack_min_step(
     if verbose:
         execution.synchronize(pose_stack)
     end_time2 = time.perf_counter()
-    minimized_pose_stack = min_fn(
+    stage_kwargs = {} if min_rtol is None else {"rtol": min_rtol}
+    minimized_pose_stack = minimizer(
         packed_pose_stack,
         sfxn,
-        fold_forest=fold_forest,
-        move_map=move_map,
         verbose=verbose,
+        **stage_kwargs,
     )
     # Releasing costs a network construction and, with cuda_graph, a capture at
     # every stage; retaining costs the scorer and L-BFGS history through the
     # next packing phase. Large systems are bound by the second -- it is why
     # this release exists -- and small ones by the first.
     if release_between_stages:
-        release_retained_state = getattr(min_fn, "release_retained_state", None)
+        release_retained_state = getattr(minimizer, "release_retained_state", None)
         if release_retained_state is not None:
             release_retained_state()
     if verbose:

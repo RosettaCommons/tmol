@@ -556,10 +556,9 @@ void run_cuda_annealer(
   int const n_poses = ig.n_poses_cpu(), max_n_res = ig.max_n_res_cpu(),
             max_n_rotamers = ig.max_n_rotamers_per_pose_cpu();
   if (scores_fullquench.size(0) != n_poses
-      || scores_fullquench.size(1) != CudaAnnealerPolicy::final_trajectories
+      || scores_fullquench.size(1) != workspace.counts.final
       || rotamer_assignments_final.size(0) != n_poses
-      || rotamer_assignments_final.size(1)
-             != CudaAnnealerPolicy::final_trajectories
+      || rotamer_assignments_final.size(1) != workspace.counts.final
       || rotamer_assignments_final.size(2) != max_n_res)
     throw std::invalid_argument("CUDA annealer output axes differ");
   if (!n_poses) return;
@@ -575,19 +574,18 @@ void run_cuda_annealer(
   check(cudaMemsetAsync(
       scores_fullquench.data(),
       0,
-      int64_t(n_poses) * CudaAnnealerPolicy::final_trajectories * sizeof(float),
+      int64_t(n_poses) * workspace.counts.final * sizeof(float),
       context.stream()));
   if (max_n_res)
     check(cudaMemsetAsync(
         rotamer_assignments_final.data(),
         0,
-        int64_t(n_poses) * CudaAnnealerPolicy::final_trajectories * max_n_res
-            * sizeof(int32_t),
+        int64_t(n_poses) * workspace.counts.final * max_n_res * sizeof(int32_t),
         context.stream()));
-  constexpr int n_hitemp_simA_traj = CudaAnnealerPolicy::high_trajectories;
+  int const n_hitemp_simA_traj = workspace.counts.high;
   constexpr int n_lotemp_expansions = CudaAnnealerPolicy::low_expansions;
-  constexpr int n_lotemp_simA_traj = CudaAnnealerPolicy::low_trajectories;
-  constexpr int n_fullquench_traj = CudaAnnealerPolicy::final_trajectories;
+  int const n_lotemp_simA_traj = workspace.counts.low;
+  int const n_fullquench_traj = workspace.counts.final;
   constexpr int n_outer_iterations_hitemp = CudaAnnealerPolicy::high_iterations;
   constexpr int n_outer_iterations_lotemp = CudaAnnealerPolicy::low_iterations;
   constexpr float high_temp_initial = CudaAnnealerPolicy::high_initial,
@@ -597,8 +595,8 @@ void run_cuda_annealer(
   int const n_hitemp_simA_threads = 32 * n_poses * n_hitemp_simA_traj;
   int const n_lotemp_simA_threads = 32 * n_poses * n_lotemp_simA_traj;
   int const n_fullquench_threads = 32 * n_poses * n_fullquench_traj;
-  int const n_inner_iterations_hitemp = int(max_n_rotamers * 1.5);
-  int const n_inner_iterations_lotemp = int(max_n_rotamers * .5);
+  int const n_inner_iterations_hitemp = int(max_n_rotamers * .4);
+  int const n_inner_iterations_lotemp = int(max_n_rotamers * .15);
   AnnealerSortArena sort_context(
       context, workspace.sort_data, workspace.sort_bytes);
   auto scores_hitemp = workspace.scores_hitemp;
@@ -681,7 +679,7 @@ void run_cuda_annealer(
     // Full SA run with geometric cooling
     // Match the CPU annealer's per-pose work: a large neighbor in a jagged
     // batch must not inflate this pose's trajectory length.
-    int const pose_inner_iterations = n_rotamers + n_rotamers / 2;
+    int const pose_inner_iterations = int(n_rotamers * .4);
     warp_wide_sim_annealing<
         ChunkSize,
         false,
@@ -770,7 +768,7 @@ void run_cuda_annealer(
     }
 
     // Low-temperature cooling trajectory
-    int const pose_inner_iterations = n_rotamers / 2;
+    int const pose_inner_iterations = int(n_rotamers * .15);
     warp_wide_sim_annealing<
         ChunkSize,
         false,

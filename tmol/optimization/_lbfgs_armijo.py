@@ -59,7 +59,14 @@ class _TorchCompactLBFGS:
         return matrix
 
 
-def _lbfgs_two_loop_impl(grad, dirs, stps, history_start=0):
+def _lbfgs_two_loop_impl(grad, dirs, stps, history_start=0, double_scratch=None):
+    promoted_history = None
+    if double_scratch is not None and stps.dtype != torch.float64:
+        m = stps.shape[0]
+        promoted_history = (
+            double_scratch[0][:m].view_as(dirs).copy_(dirs),
+            double_scratch[1][:m].view_as(stps).copy_(stps),
+        )
     unbatched = grad.dim() == 1
     poses = 1 if unbatched else grad.shape[0]
     return compact_lbfgs_direction(
@@ -68,6 +75,7 @@ def _lbfgs_two_loop_impl(grad, dirs, stps, history_start=0):
         stps,
         history_start,
         execution=_TorchCompactLBFGS,
+        promoted_history=promoted_history,
         single_segment=poses == 1 and grad.dtype == torch.float32,
         use_bmm=(
             not unbatched
@@ -151,10 +159,10 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
             iterations (default: 5)
         rtol (float): if set, an iteration whose relative energy change is at
             most rtol also counts as small (default: None)
-        gradtol (float): if set, a segment also converges once
-            max_i |df/dx_i| <= gradtol, in the units of the minimized degrees
-            of freedom (default: None)
-        history_size (int): update history size (default: 128).
+        gradtol (float): if set, energy convergence also requires
+            max_i |df/dx_i| <= gradtol. A failed line search below this
+            threshold converges immediately (default: None).
+        history_size (int): update history size (default: 200).
         segment_ids (Tensor): the segment (e.g. pose) each parameter element
             belongs to; each segment is minimized independently (default: one)
         n_segments (int): explicit pose count, retaining empty/frozen segments.
@@ -272,6 +280,7 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
 
         self._last_loss_vec = None
         self._sum_scratch = None
+        self._double_history_scratch = None
         if segment_ids is None:
             # the whole parameter as one segment: the same code path as a stack
             segment_ids = torch.zeros(
@@ -362,6 +371,23 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
                 device=values.device,
             )
         return self._pad(values, out=self._sum_scratch).sum(-1)
+
+    def _double_history(self, hist):
+        """Reused float64 (dirs, stps) buffers shaped like the history matrices."""
+        if hist.dtype == torch.float64:
+            return None
+        scratch = getattr(self, "_double_history_scratch", None)
+        if (
+            scratch is None
+            or scratch[0].shape != hist.shape
+            or scratch[0].device != hist.device
+        ):
+            scratch = tuple(
+                torch.empty(hist.shape, dtype=torch.float64, device=hist.device)
+                for _ in range(2)
+            )
+            self._double_history_scratch = scratch
+        return scratch
 
     def _seg_amax(self, values):
         """Maximum of a parameter-shaped vector within each segment."""
@@ -543,7 +569,11 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
             return ctx.d.copy_(
                 self._unpad(
                     _lbfgs_two_loop_impl(
-                        grad_pad, old_dirs_view, old_stps_view, ctx.history_start
+                        grad_pad,
+                        old_dirs_view,
+                        old_stps_view,
+                        ctx.history_start,
+                        self._double_history(ctx.old_dirs_mat),
                     )
                 )
             )
