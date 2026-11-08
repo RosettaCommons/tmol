@@ -329,6 +329,12 @@ class PoseWaterGen : public tmol::native::autograd::Function<PoseWaterGen> {
 using pose_watergen_op_binding = native::AutogradOperator<PoseWaterGen>;
 ;
 
+// Opaque to autograd: these chemical/topological inputs have no derivative.
+// Their tensors are saved with the score inputs for the joint coordinate VJP.
+struct WaterGenMetadata {
+  tensor_list tensors;
+};
+
 class LKBallPoseScoreOp
     : public tmol::native::autograd::Function<LKBallPoseScoreOp> {
  public:
@@ -368,7 +374,8 @@ class LKBallPoseScoreOp
       Tensor water_coords,
       bool output_block_pair_energies,
       Tensor shared_compact_block_neighbors,
-      bool allow_split_backward) {
+      bool allow_split_backward,
+      WaterGenMetadata water_metadata) {
     tmol::native::Tensor score;
     tmol::native::Tensor block_neighbors;
 
@@ -430,39 +437,44 @@ class LKBallPoseScoreOp
     auto max_n_rots_per_pose_tp =
         TPack<Int, 1, tmol::Device::CPU>::full(1, max_n_rots_per_pose);
 
-    ctx->save_for_backward(
-        {// common params
-         rot_coords,
-         rot_coord_offset,
-         pose_ind_for_atom,
-         first_rot_for_block,
-         first_rot_block_type,
-         block_ind_for_rot,
-         pose_ind_for_rot,
-         block_type_ind_for_rot,
-         n_rots_for_pose,
-         rot_offset_for_pose,
-         n_rots_for_block,
-         rot_offset_for_block,
-         max_n_rots_per_pose_tp.tensor,
-         pose_stack_inter_residue_connections,
+    tensor_list saved = {
+        // common params
+        rot_coords,
+        rot_coord_offset,
+        pose_ind_for_atom,
+        first_rot_for_block,
+        first_rot_block_type,
+        block_ind_for_rot,
+        pose_ind_for_rot,
+        block_type_ind_for_rot,
+        n_rots_for_pose,
+        rot_offset_for_pose,
+        n_rots_for_block,
+        rot_offset_for_block,
+        max_n_rots_per_pose_tp.tensor,
+        pose_stack_inter_residue_connections,
 
-         pose_stack_near_blocks,
-         pose_stack_inter_block_bondsep,
-         block_type_n_atoms,
-         block_type_n_interblock_bonds,
-         block_type_atoms_forming_chemical_bonds,
+        pose_stack_near_blocks,
+        pose_stack_inter_block_bondsep,
+        block_type_n_atoms,
+        block_type_n_interblock_bonds,
+        block_type_atoms_forming_chemical_bonds,
 
-         block_type_tile_n_polar_atoms,
-         block_type_tile_n_occluder_atoms,
-         block_type_tile_pol_occ_inds,
-         block_type_tile_lk_ball_params,
-         block_type_path_distance,
+        block_type_tile_n_polar_atoms,
+        block_type_tile_n_occluder_atoms,
+        block_type_tile_pol_occ_inds,
+        block_type_tile_lk_ball_params,
+        block_type_path_distance,
 
-         global_params,
-         water_coords,
-         block_neighbors,
-         shared_compact_block_neighbors});
+        global_params,
+        water_coords,
+        block_neighbors,
+        shared_compact_block_neighbors};
+    saved.insert(
+        saved.end(),
+        water_metadata.tensors.begin(),
+        water_metadata.tensors.end());
+    ctx->save_for_backward(std::move(saved));
 
     ctx->saved_data["block_pair_scoring"] = output_block_pair_energies;
     ctx->saved_data["allow_split_backward"] = allow_split_backward;
@@ -477,7 +489,7 @@ class LKBallPoseScoreOp
   }
 
   static tensor_list backward(AutogradContext* ctx, tensor_list grad_outputs) {
-    tensor_list gradients(30);
+    tensor_list gradients(31);
     if (!grad_outputs[0].defined()) {
       return gradients;
     }
@@ -540,6 +552,26 @@ class LKBallPoseScoreOp
           using Real = scalar_t;
           constexpr tmol::Device Dev = device_t;
 
+          using Dispatch =
+              LKBallPoseScoreDispatch<common::DeviceOperations, Dev, Real, Int>;
+          typename Dispatch::WaterContext water_context;
+          typename Dispatch::WaterContext const* water = nullptr;
+          if (saved.size() != 28) {
+            TORCH_CHECK(saved.size() == 62, "Invalid LK-ball water metadata");
+            TORCH_CHECK(
+                (Dev == tmol::Device::CUDA && std::is_same_v<Real, float>),
+                "Joint LK-ball water derivatives require CUDA float32");
+            // Map the existing water-generation argument order to its common
+            // typed context. The last tensor is the generated water positions.
+            constexpr int order[] = {0,  1,  6,  5,  7,  3,  4,  12, 11, 13,
+                                     14, 15, 16, 17, 18, 19, 28, 20, 21, 22,
+                                     23, 24, 25, 26, 27, 29, 30, 31, 32, 33};
+            int field = 0;
+            water_context.visit_views(
+                [&](auto& view) { view = TCAST(saved[28 + order[field++]]); });
+            water_context.n_rots_total = water_context.rot_coord_offset.size(0);
+            water = &water_context;
+          }
           auto result = LKBallPoseScoreDispatch<
               common::DeviceOperations,
               Dev,
@@ -580,7 +612,8 @@ class LKBallPoseScoreOp
                   TCAST(compact_block_neighbors),
                   TCAST(dTdV),
                   block_pair_scoring,
-                  ctx->saved_data["allow_split_backward"].toBool());
+                  ctx->saved_data["allow_split_backward"].toBool(),
+                  water);
 
           dV_d_pose_coords = std::get<0>(result).tensor;
           dV_d_water_coords = std::get<1>(result).tensor;
@@ -901,7 +934,8 @@ std::vector<Tensor> lkball_pose_score(
       water_coords,
       output_block_pair_energies,
       shared_compact_block_neighbors,
-      allow_split_backward);
+      allow_split_backward,
+      WaterGenMetadata{});
 }
 
 std::vector<Tensor> lkball_rotamer_score(
@@ -1054,6 +1088,58 @@ std::vector<Tensor> lkball_rotamer_score_shared(
       shared_dispatch_indices);
 }
 
+// Metadata lists keep the joint binding small; all fields are validated when
+// converted to the existing native typed views. Legacy operators stay intact.
+tensor_list lkball_pose_score_water(
+    Tensor coords,
+    Tensor waters,
+    tensor_list score,
+    tensor_list water,
+    int64_t max_rots,
+    double max_dis,
+    bool block_pairs,
+    bool split_pairs) {
+  TORCH_CHECK(
+      coords.is_cuda() && coords.scalar_type() == tmol::native::kFloat32,
+      "Joint LK-ball water derivatives require CUDA float32");
+  TORCH_CHECK(
+      score.size() == 24 && water.size() == 33,
+      "Invalid LK-ball score/water metadata");
+  water.push_back(waters);
+  return LKBallPoseScoreOp::apply(
+      coords,
+      score[0],
+      score[1],
+      score[2],
+      score[3],
+      score[4],
+      score[5],
+      score[6],
+      score[7],
+      score[8],
+      score[9],
+      score[10],
+      max_rots,
+      score[11],
+      score[12],
+      score[13],
+      score[14],
+      score[15],
+      score[16],
+      score[17],
+      score[18],
+      score[19],
+      score[20],
+      score[21],
+      score[22],
+      max_dis,
+      waters,
+      block_pairs,
+      score[23],
+      split_pairs,
+      WaterGenMetadata{std::move(water)});
+}
+
 TMOL_LIBRARY(tmol_lk_ball, m) {
   // Keep the existing inferred argument names when adding the optional hint.
   m.def(
@@ -1064,6 +1150,7 @@ TMOL_LIBRARY(tmol_lk_ball, m) {
       "Tensor _23, Tensor _24, float _25, Tensor _26, bool _27, Tensor _28, "
       "bool allow_split_backward=False) -> Tensor[] _0",
       TMOL_FN(&lkball_pose_score));
+  m.def("lk_ball_pose_score_water", TMOL_FN(&lkball_pose_score_water));
   m.def("lk_ball_rotamer_score", TMOL_FN(&lkball_rotamer_score));
   m.def("lk_ball_rotamer_score_shared", TMOL_FN(&lkball_rotamer_score_shared));
   m.def("gen_pose_waters", TMOL_FN(&pose_watergen_op_binding::call));

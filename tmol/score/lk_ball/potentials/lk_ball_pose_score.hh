@@ -15,6 +15,8 @@
 #include <tmol/score/common/tuple.hh>
 
 #include <tmol/score/lk_ball/potentials/params.hh>
+#include <tmol/score/lk_ball/potentials/gen_pose_waters_ctx.hh>
+#include <tmol/score/common/tview_binder.hh>
 
 namespace tmol {
 namespace score {
@@ -29,6 +31,8 @@ template <
     typename Real,
     typename Int>
 struct LKBallPoseScoreDispatch {
+  using WaterContext =
+      WaterGenCtxT<common::TViewBinder<Dev>::template View, Real, Int>;
   static auto forward(
       ContextManager& mgr,
       TView<Vec<Real, 3>, 1, Dev> rot_coords,
@@ -149,7 +153,8 @@ struct LKBallPoseScoreDispatch {
       TView<Int, 1, Dev> compact_block_neighbors,
       TView<Real, 4, Dev> dTdV,
       bool block_pair_scoring,
-      bool allow_split_pairs = false)
+      bool allow_split_pairs = false,
+      WaterContext const* water_context = nullptr)
       -> std::tuple<TPack<Vec<Real, 3>, 1, Dev>, TPack<Vec<Real, 3>, 2, Dev>>;
 };
 

@@ -29,6 +29,7 @@
 #include <tmol/score/lk_ball/potentials/lk_ball_ctx.hh>
 #include <tmol/score/common/tview_binder.hh>
 #include <tmol/score/lk_ball/potentials/lk_ball_pose_kernels.hh>
+#include <tmol/score/lk_ball/potentials/native_lk_ball_score_water.hh>
 #include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
 #include <tmol/backends/metal/score/lk_ball/potentials/lk_ball_mps_kernels_source.h>
@@ -56,6 +57,8 @@ template <
     typename Int>
 class LKBallPoseScoreDispatch {
  public:
+  using WaterContext =
+      WaterGenCtxT<common::TViewBinder<Dev>::template View, Real, Int>;
   static auto forward(
       ContextManager& mgr,
       TView<Vec<Real, 3>, 1, Dev> rot_coords,
@@ -351,7 +354,8 @@ class LKBallPoseScoreDispatch {
       TView<Int, 1, Dev> compact_block_neighbors,
       TView<Real, 4, Dev> dTdV,
       bool block_pair_scoring,
-      bool allow_split_pairs)
+      bool allow_split_pairs,
+      WaterContext const* water_context)
       -> std::tuple<TPack<Vec<Real, 3>, 1, Dev>, TPack<Vec<Real, 3>, 2, Dev>> {
     // std::cout << "d lkball start" << std::endl;
     using tmol::score::common::accumulate;
@@ -430,6 +434,18 @@ class LKBallPoseScoreDispatch {
           dV_d_water_coords_t.template cast<Vec<Real, 3>>()};
     }
 
+    if constexpr (Dev == Device::CUDA && std::is_same_v<Real, float>) {
+      if (water_context) {
+        lk_ball_score_water_backward<false, DeviceDispatch, Dev, Real, Int>(
+            mgr,
+            ctx,
+            *water_context,
+            compact_block_neighbors,
+            n_poses,
+            allow_split_pairs);
+        return {dV_d_pose_coords_t.template cast<Vec<Real, 3>>(), {}};
+      }
+    }
     lk_ball_pose_native<true, DeviceDispatch, Dev, Real, Int>(
         mgr, ctx, compact_block_neighbors, n_poses, allow_split_pairs);
 
