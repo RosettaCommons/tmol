@@ -15,15 +15,6 @@ from tmol.kinematics import set_named_torsions
 from tmol.pose import get_named_torsions
 
 
-def block_names(pose_stack, pose):
-    pbt = pose_stack.packed_block_types
-    return [
-        pbt.active_block_types[int(bt_ind)].name
-        for bt_ind in pose_stack.block_type_ind64[pose]
-        if int(bt_ind) != -1
-    ]
-
-
 def real_coords(pose_stack, pose):
     n_blocks = int((pose_stack.block_type_ind64[pose] != -1).sum())
     last = n_blocks - 1
