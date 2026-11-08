@@ -11,7 +11,12 @@ from .molecules import DOMAIN_CASES
 
 @pytest.mark.parametrize("name", DOMAIN_CASES)
 def test_molecular_movement_defaults_and_explicit_overrides(backend, name):
-    backend.molecule(DOMAIN_CASES[name], terms=("fa_ljrep",))
+    terms = (
+        MOLECULAR_KINEMATIC_TERMS
+        if backend.framework == "jax" and name == "mixed_batch"
+        else ("fa_ljrep",)
+    )
+    backend.molecule(DOMAIN_CASES[name], terms=terms)
     execution = MolecularKinematicExecution(backend, backend.coords())
     move_map = execution.move_map()
     assert not execution.movement_mask(move_map).any()
@@ -32,6 +37,43 @@ def test_molecular_movement_defaults_and_explicit_overrides(backend, name):
     assert not newly_moving[:, 1:3].any()
     if name not in ("metal_cluster",):
         assert newly_moving.any()
+
+    if backend.framework == "jax" and name == "mixed_batch":
+        import jax
+        from tmol_jax import MoveMap, PoseStackKinematics, run_kin_min
+
+        with jax.enable_x64(True), jax.default_device(backend.device):
+            for dtype in (np.float32, np.float64):
+                pose = backend.pose.replace(coords=backend.pose.coords.astype(dtype))
+                move_map = MoveMap.from_pose_stack(pose)
+                module = PoseStackKinematics(pose)
+                mapping = module.bind()
+                unchanged, result = run_kin_min(
+                    pose, backend.score_function, move_map, return_result=True
+                )
+                np.testing.assert_array_equal(unchanged.coords, pose.coords)
+                assert result["n_iter"] == 0 and np.asarray(result["converged"]).all()
+                move_map.move_all_named_torsions = True
+                mask = np.asarray(module.resolve_move_map(move_map)).reshape(-1)
+                minimized, result = run_kin_min(
+                    pose,
+                    backend.score_function,
+                    move_map,
+                    max_iter=3,
+                    return_result=True,
+                )
+                assert minimized.coords.dtype == dtype
+                assert result["fun"] < result["initial_fun"]
+                np.testing.assert_array_equal(
+                    np.asarray(result["x"])[~mask],
+                    np.asarray(mapping.initial_dofs).reshape(-1)[~mask],
+                )
+                np.testing.assert_array_equal(np.asarray(result["grad"])[~mask], 0)
+                move_map.move_all_named_torsions = False
+                assert mask.any() and not module.resolve_move_map(move_map).any()
+                wrong = MoveMap(1, 1, 0, 1)
+                with pytest.raises(ValueError, match="dimensions"):
+                    module.resolve_move_map(wrong)
 
 
 @pytest.mark.parametrize("name", ("ligand", "connected_noncanonical", "d_peptide"))

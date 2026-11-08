@@ -261,3 +261,61 @@ def test_cubic_line_search_quadratic(backend):
     assert len(calls) == 2
     assert float(value) < 1e-12
     np.testing.assert_allclose(backend.numpy(gradient), 0, atol=1e-6)
+
+
+def test_compact_execution_uses_fresh_coordinate_masks_and_parameter_snapshots(backend):
+    if backend.framework != "jax":
+        pytest.skip("JAX prepared compact objective cache contract")
+    import jax
+    import jax.numpy as jnp
+    from tmol_core.scoring.elec import partial_charge_table, partial_charges_for_block
+    from .molecules import DOMAIN_CASES
+
+    b = backend.molecule(DOMAIN_CASES["mixed_batch"], terms=("fa_elec",))
+    score, pose = b.score_function, b.pose
+    types = pose.packed_block_types.active_block_types
+    previous = [getattr(bt, "elec_partial_charges", None) for bt in types]
+    table = partial_charge_table(b.parameter_database.scoring.elec)
+    with jax.default_device(b.device), jax.enable_x64():
+        x = pose.coords.astype(jnp.float64)
+        active = jax.device_put(np.array([0], np.int32), b.device)
+        original = score.render_whole_pose_scoring_module(pose)
+        selected = jax.device_put(
+            np.arange(0, x.shape[1] * 3, 3, dtype=np.int32), b.device
+        )
+        value, derivative = original.compact_objective(x, selected, active)
+        expected = derivative(x.reshape(-1)[selected])
+        assert np.linalg.norm(expected[0]) > 1e-3 and np.linalg.norm(expected[1]) > 1e-3
+        try:
+            for bt, override in zip(types, previous):
+                charges = partial_charges_for_block(bt, table, overrides=override)
+                bt.elec_partial_charges = {
+                    atom.name: float(2 * q) for atom, q in zip(bt.atoms, charges)
+                }
+            changed = score.render_whole_pose_scoring_module(pose)
+            _, updated = changed.compact_objective(x, selected, active)
+            for actual, before in zip(updated(x.reshape(-1)[selected]), expected):
+                np.testing.assert_allclose(actual, 4 * before, rtol=2e-10, atol=2e-10)
+            for actual, before in zip(derivative(x.reshape(-1)[selected]), expected):
+                np.testing.assert_allclose(actual, before, rtol=2e-10, atol=2e-10)
+            # Same cardinality, different components and a fresh non-rigid reference.
+            selected = selected + 1
+            reference = x * 1.01
+            function, gradient = changed.compact_objective(reference, selected, active)
+            compact = reference.reshape(-1)[selected]
+            direction = jax.device_put(
+                np.random.default_rng(127).normal(size=compact.shape), b.device
+            )
+            h = 1e-5
+            numeric = (
+                function(compact + h * direction).sum()
+                - function(compact - h * direction).sum()
+            ) / (2 * h)
+            analytic = (gradient(compact)[1] * direction).sum()
+            np.testing.assert_allclose(numeric, analytic, rtol=2e-6, atol=2e-6)
+        finally:
+            for bt, override in zip(types, previous):
+                if override is None:
+                    del bt.elec_partial_charges
+                else:
+                    bt.elec_partial_charges = override

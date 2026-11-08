@@ -82,48 +82,49 @@ def test_segmented_armijo_acceptance_inactive_and_failed_objectives(backend, dty
             import jax.numpy as jnp
             from tmol_jax.optimization._armijo_native import classify, start
 
-            # Check a single native transition independently of policy iteration.
-            for integer in (np.int32, np.int64):
-                alpha = jnp.asarray([[1, 0.1, 4], [0.5, 0.25, 2]], dtype=dtype)
-                searching = jnp.ones(3, bool)
+            with jax.default_device(backend.device):
+                # Check a single native transition independently of policy iteration.
+                for integer in (np.int32, np.int64):
+                    alpha = jnp.asarray([[1, 0.1, 4], [0.5, 0.25, 2]], dtype=dtype)
+                    searching = jnp.ones(3, bool)
 
-                def run(row):
-                    selected = start(searching, row)
-                    return classify(
-                        searching,
-                        selected,
-                        0.5 * (2 - 2 * selected) ** 2,
-                        jnp.full(3, 2, dtype=dtype),
-                        jnp.full(3, -4, dtype=dtype),
-                        0.8,
-                        0.1,
-                        status_dtype=integer,
+                    def run(row):
+                        selected = start(searching, row)
+                        return classify(
+                            searching,
+                            selected,
+                            0.5 * (2 - 2 * selected) ** 2,
+                            jnp.full(3, 2, dtype=dtype),
+                            jnp.full(3, -4, dtype=dtype),
+                            0.8,
+                            0.1,
+                            status_dtype=integer,
+                        )
+
+                    accepted, values, status, active = jax.jit(jax.vmap(run))(alpha)
+                    assert accepted.dtype == values.dtype == dtype
+                    assert status.dtype == integer
+                    np.testing.assert_allclose(
+                        accepted, [[1, 0.1, 0], [0.5, 0.25, 0]], rtol=0, atol=1e-7
+                    )
+                    np.testing.assert_array_equal(status, [[0, 1, 2], [0, 1, 2]])
+                    np.testing.assert_array_equal(active, [[False, True, True]] * 2)
+                    np.testing.assert_allclose(
+                        values, [[0, 1.62, 2], [0.5, 1.125, 2]], rtol=0, atol=2e-7
                     )
 
-                accepted, values, status, active = jax.jit(jax.vmap(run))(alpha)
-                assert accepted.dtype == values.dtype == dtype
-                assert status.dtype == integer
-                np.testing.assert_allclose(
-                    accepted, [[1, 0.1, 0], [0.5, 0.25, 0]], rtol=0, atol=1e-7
-                )
-                np.testing.assert_array_equal(status, [[0, 1, 2], [0, 1, 2]])
-                np.testing.assert_array_equal(active, [[False, True, True]] * 2)
-                np.testing.assert_allclose(
-                    values, [[0, 1.62, 2], [0.5, 1.125, 2]], rtol=0, atol=2e-7
-                )
-
-            if dtype == np.float32:
-                with jax.enable_x64(False):
-                    alpha = start(
-                        jnp.asarray([True, False]),
-                        jnp.asarray([1.0, 7.0], dtype=jnp.float32),
-                    )
-                    np.testing.assert_array_equal(alpha, [1, 0])
-                    assert not jax.config.x64_enabled
-                with pytest.raises(RuntimeError, match="shape|extent|Armijo"):
-                    start(
-                        jnp.asarray([True]), jnp.ones(2, jnp.float32)
-                    ).block_until_ready()
+                if dtype == np.float32:
+                    with jax.enable_x64(False):
+                        alpha = start(
+                            jnp.asarray([True, False]),
+                            jnp.asarray([1.0, 7.0], dtype=jnp.float32),
+                        )
+                        np.testing.assert_array_equal(alpha, [1, 0])
+                        assert not jax.config.x64_enabled
+                    with pytest.raises(RuntimeError, match="shape|extent|Armijo"):
+                        start(
+                            jnp.asarray([True]), jnp.ones(2, jnp.float32)
+                        ).block_until_ready()
 
 
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
@@ -259,6 +260,41 @@ def test_full_segmented_optimization_matches_independent_objectives(
         assert result["state"]["history_count"] == 3
         assert result["state"]["history_start"] != 0 or result["state"]["n_iter"] > 4
 
+    if backend.framework == "jax" and not dense and value_only:
+        import jax
+        from tmol_jax.optimization import armijo_minimize
+
+        device = backend.device
+        with jax.default_device(device):
+            x = jax.device_put(
+                np.array([[2.0, -1.0, 3.0], [-3.0, 1.0, 2.0]], np.float32), device
+            )
+            ids = jax.device_put(np.array([[0] * 3, [1] * 3], np.int32), device)
+            observed = []
+
+            def objective(value):
+                return ((value - 0.2) ** 2).sum(1)
+
+            compiled = jax.jit(objective)
+
+            def value_only(value):
+                observed.append(value.shape)
+                return compiled(value)
+
+            result = armijo_minimize(
+                objective,
+                x,
+                segment_ids=ids,
+                value_only=value_only,
+                value_only_line_search=True,
+                max_iter=3,
+                history_size=2,
+                fixed_iterations=True,
+            )
+            assert observed and all(shape == x.shape for shape in observed)
+            assert np.isfinite(result["x"]).all()
+            assert objective(result["x"]).sum() < objective(x).sum()
+
 
 @pytest.mark.parametrize(
     "name",
@@ -346,3 +382,48 @@ def test_public_molecular_armijo_minimizers(backend, kind, name):
     assert np.isfinite(after).all()
     assert np.linalg.norm(after - before) > 1e-4
     assert b.scores(after).sum() < b.scores(before).sum() - 1e-3
+
+    if b.framework == "jax" and name == "mixed_batch" and kind == "kinematic":
+        import jax
+        import jax.numpy as jnp
+        from tmol_jax import MoveMap, PoseStackKinematics
+
+        with jax.default_device(b.device), jax.enable_x64():
+            pose = b.pose.replace(coords=b.pose.coords.astype(jnp.float64))
+            kinematics = PoseStackKinematics(pose)
+            movement = MoveMap.from_pose_stack(pose)
+            movement.move_all_named_torsions = True
+            selected = jax.device_put(
+                np.flatnonzero(
+                    np.asarray(kinematics.resolve_move_map(movement))
+                ).astype(np.int32),
+                b.device,
+            )
+            active = jax.device_put(np.arange(pose.n_poses, dtype=np.int32), b.device)
+            scorer = b.score_function.render_whole_pose_scoring_module(pose)
+            original = kinematics.bind(pose.coords)
+            _, before = scorer.compact_objective(
+                original.initial_dofs, selected, active, original
+            )
+            saved = before(original.initial_dofs.reshape(-1)[selected])
+            changed = kinematics.bind(pose.coords * 1.01)
+            value, derivative = scorer.compact_objective(
+                changed.initial_dofs, selected, active, changed
+            )
+            compact = changed.initial_dofs.reshape(-1)[selected]
+            actual = derivative(compact)
+            expected = scorer(changed(changed.initial_dofs))
+            np.testing.assert_allclose(actual[0], expected, rtol=2e-10, atol=2e-10)
+            assert np.linalg.norm(actual[1]) > 1e-3
+            direction = jax.device_put(
+                np.random.default_rng(362).normal(size=compact.shape), b.device
+            )
+            h = 1e-5
+            numeric = value(compact + h * direction) - value(compact - h * direction)
+            numeric = numeric.sum() / (2 * h)
+            analytic = (actual[1] * direction).sum()
+            np.testing.assert_allclose(numeric, analytic, rtol=2e-5, atol=2e-5)
+            for current, expected in zip(
+                before(original.initial_dofs.reshape(-1)[selected]), saved
+            ):
+                np.testing.assert_allclose(current, expected, rtol=2e-10, atol=2e-10)

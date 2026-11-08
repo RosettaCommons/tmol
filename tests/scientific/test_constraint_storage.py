@@ -53,7 +53,7 @@ def test_constraint_replication_clone_and_transport_preserve_parameter_history(b
             )
             return cls.concatenate([constraints.split(2), constraints.split(0)])
 
-        parameters = jnp.array([[2.0, 3.0]])
+        parameters = adapter.array(np.array([[2.0, 3.0]], np.float32))
 
         def objective(p):
             return jnp.sum(build(p).constraint_params ** 2)
