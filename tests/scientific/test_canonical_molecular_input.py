@@ -1,10 +1,14 @@
 """Canonical input retains chemistry, atom identity, topology and physical scores."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from .molecules import DOMAIN_CASES, BACKBONE_CASES, MolecularCase
 from .metal_molecules import METAL_CASES
+
+CANONICAL_PROTEIN_PDB = Path(__file__).parents[2] / "tmol/tests/data/pdb/1ubq.pdb"
 
 CASES = {
     key: DOMAIN_CASES[key]
@@ -27,6 +31,36 @@ CASES.update(
         for name in ("CYS_DEP", "DCYS_DEP", "TYR_DEP", "DTYR_DEP", "HIS_POS")
     }
 )
+
+
+def canonical_protein_input(backend):
+    from tmol_jax.io import (
+        canonical_form_from_pdb,
+        default_packed_block_types,
+        pose_stack_from_canonical_form,
+    )
+
+    canonical = canonical_form_from_pdb(CANONICAL_PROTEIN_PDB)
+    template = {
+        key: value[:, :3].copy() if isinstance(value, np.ndarray) else value
+        for key, value in canonical.items()
+    }
+    pbt = backend.module.tree.map(
+        lambda value: backend.module.device_put(value, backend.device),
+        default_packed_block_types(),
+    )
+
+    def new_input():
+        return {
+            key: value.copy() if isinstance(value, np.ndarray) else value
+            for key, value in template.items()
+        }
+
+    def build(canonical, **options):
+        with backend.module.default_device(backend.device):
+            return pose_stack_from_canonical_form(canonical, pbt, **options)
+
+    return new_input, build
 
 
 def canonical_input(case, database):
@@ -173,6 +207,46 @@ def test_canonical_input_retains_molecular_state(backend, case):
     assert np.any(channels != 0)
     if case in ("ligand", "connected_noncanonical", "mixed_batch"):
         assert np.max(np.abs(channels[b.channel_names().index("gen_torsions")])) > 1e-3
+
+    if backend.framework != "jax" or case != "mixed_batch":
+        return
+    new_input, build = canonical_protein_input(backend)
+    canonical = new_input()
+    canonical["chain_id"] = None
+    canonical["res_num"] = None
+    pose = build(
+        canonical,
+        chain_id=[[0, 0, 1]],
+        res_num=[[10, 11, 20]],
+    )
+    assert np.asarray(pose.pdb_info.res_num)[0].tolist() == [10, 11, 20]
+    assert 2 not in np.asarray(pose.inter_residue_connections)[0, 1, :, 0]
+    assert 1 not in np.asarray(pose.inter_residue_connections)[0, 2, :, 0]
+
+    canonical = new_input()
+    expected = build(canonical)
+    for option, value in (
+        ("find_additional_metal_coordination", True),
+        ("protonation_variants", np.zeros((1, 3), np.int32)),
+    ):
+        actual = build(dict(canonical, **{option: value}))
+        np.testing.assert_array_equal(actual.coords, expected.coords)
+        np.testing.assert_array_equal(actual.block_type_ind, expected.block_type_ind)
+        np.testing.assert_array_equal(
+            actual.inter_residue_connections, expected.inter_residue_connections
+        )
+    canonical = new_input()
+    canonical["res_types"][0, 1] = canonical["res_types"][0, 0]
+    with pytest.raises(ValueError, match="residue names and res_types disagree"):
+        build(canonical)
+    for indices in (
+        np.array([[0, 0, 1.5, 1, 1]]),
+        np.array([[0, 0, 2**32, 1, 1]], np.uint64),
+    ):
+        canonical = new_input()
+        canonical["covalent_bonds"] = indices
+        with pytest.raises(ValueError, match="integer indices within the int32 range"):
+            build(canonical)
 
 
 def rebuild_canonical(

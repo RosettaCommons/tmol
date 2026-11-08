@@ -43,3 +43,14 @@ def test_public_structure_files_keep_custom_ligand_atoms_and_physics(
     gen = channels.index("gen_torsions")
     assert np.linalg.norm(values[gen]) > 1e-3
     assert np.linalg.norm(gradients[gen]) > 1e-3
+
+    if backend.framework != "jax" or format != "pdb":
+        return
+    from tmol_jax.io import canonical_form_from_pdb
+    from .test_canonical_molecular_input import CANONICAL_PROTEIN_PDB
+
+    lines = CANONICAL_PROTEIN_PDB.read_text().splitlines()
+    first = next(i for i, line in enumerate(lines) if line.startswith("ATOM"))
+    lines[first] = lines[first][:12] + " ZZ " + lines[first][16:]
+    with pytest.raises(ValueError, match="atom ZZ"):
+        canonical_form_from_pdb("\n".join(lines))

@@ -6,6 +6,10 @@ import pytest
 from .molecules import DOMAIN_CASES
 
 
+def _variant_names(pose):
+    return [pose.block_type(0, index).name for index in range(pose.max_n_blocks)]
+
+
 def topology_context(b, case):
     from tmol_core.chemical.restypes import refined_from_raw
     from tmol_core.io.canonical import prepare_canonical_selection
@@ -102,6 +106,75 @@ def test_chain_breaks_cycles_and_explicit_ports(backend, case):
     termini, first, last, _ = run("chain", values)
     assert last[0, 0] and first[0, 1]
     np.testing.assert_array_equal(termini[0], [0, 3, 1, 3])
+
+    if backend.framework != "jax":
+        return
+    if case == "mixed_batch":
+        from .test_canonical_molecular_input import canonical_protein_input
+
+        # These public JAX defaults intentionally terminate a break/interior gap.
+        # Torch canonical compaction has a different adjacency policy.
+        new_input, build = canonical_protein_input(backend)
+        canonical = new_input()
+        canonical["res_not_connected"] = np.zeros((1, 3, 2), dtype=bool)
+        canonical["res_not_connected"][0, 0, 1] = True
+        pose = build(canonical)
+        names = _variant_names(pose)
+        assert "nterm" in names[0] and "cterm" in names[0]
+        assert "nterm" in names[1] and "cterm" not in names[1]
+        assert np.all(np.asarray(pose.inter_residue_connections)[0, 0] == -1)
+        assert 0 not in np.asarray(pose.inter_residue_connections)[0, 1, :, 0]
+        assert np.isfinite(np.asarray(pose.coords)).all()
+        canonical = new_input()
+        canonical["res_name"][0, 1] = ""
+        canonical["res_types"][0, 1] = -1
+        canonical["chain_id"][0, 1] = -1
+        canonical["coords"][0, 1] = np.nan
+        canonical["atom_is_present"][0, 1] = False
+        pose = build(canonical)
+        assert pose.max_n_blocks == 2
+        assert all("nterm" in name and "cterm" in name for name in _variant_names(pose))
+        assert np.all(np.asarray(pose.inter_residue_connections) == -1)
+        assert np.isfinite(np.asarray(pose.coords)).all()
+        return
+    names = ("DA", "DT") if case == "modified_dna" else ("DALA", "DPHE")
+    import biotite.structure as struc
+    from tmol_jax.io.canonical_ordering import default_canonical_ordering
+    from tmol_jax.io.pose_stack_from_biotite import canonical_form_from_biotite
+
+    from tmol_jax.chemical.patched_chemdb import default_patched_chemdb
+
+    raw = {r.name: r for r in default_patched_chemdb().residues}
+    classes = tuple(raw[name].io_equiv_class for name in names)
+    co = default_canonical_ordering()
+    kinds = [co.restype_io_equiv_classes.index(c) for c in classes]
+    ports = co.polymer_conn_inds
+    atoms = struc.AtomArray(4)
+    atoms.chain_id[:] = "A"
+    atoms.res_id[:] = [1, 1, 2, 2]
+    atoms.res_name[:] = np.repeat(classes, 2)
+    for r, cls in enumerate(kinds):
+        names = co.restypes_ordered_atom_names[classes[r]]
+        atoms.atom_name[2 * r : 2 * r + 2] = [
+            names[ports.down_atom_for_co_restype[cls]],
+            names[ports.up_atom_for_co_restype[cls]],
+        ]
+    atoms.coord[:] = [[30, 0, 0], [0, 0, 0], [1.6, 0, 0], [40, 0, 0]]
+    close = canonical_form_from_biotite(atoms)
+    assert not close["res_gap"].any()
+    distant = atoms.copy()
+    distant.coord[2, 0] = 8
+    broken = canonical_form_from_biotite(distant)
+    np.testing.assert_array_equal(broken["res_gap"], [[[False, True], [True, False]]])
+    assert not canonical_form_from_biotite(
+        distant, missing_density_distance_threshold=0
+    )["res_gap"].any()
+    ensemble = canonical_form_from_biotite(struc.stack([distant, atoms]))
+    assert not ensemble["res_gap"].any()
+    distant.coord[2] = np.nan
+    assert not canonical_form_from_biotite(distant)["res_gap"].any()
+    atoms.bonds = struc.BondList(4, np.array([[0, 1, struc.BondType.SINGLE]]))
+    assert canonical_form_from_biotite(atoms)["covalent_bonds"].shape == (0, 5)
 
 
 @pytest.mark.parametrize("case", ("d_peptide", "modified_dna"))
