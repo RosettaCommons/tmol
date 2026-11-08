@@ -11,12 +11,18 @@ namespace tmol {
 namespace score {
 namespace elec {
 namespace potentials {
-template <typename Real, typename Int, tmol::Device D, int OutRank = 4>
+template <
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    int OutRank = 4,
+    typename GradReal = Real>
 using ElecCtx = ElecCtxT<
     tmol::score::common::TViewBinder<D>::template View,
     Real,
     Int,
-    OutRank>;
+    OutRank,
+    GradReal>;
 using tmol::portable::Vec;
 template <
     int Mode,
@@ -25,9 +31,10 @@ template <
     typename Real,
     typename Int,
     typename Launch,
-    bool Rotamer = false>
+    bool Rotamer = false,
+    typename GradReal = Real>
 struct ElecPoseEvaluator {
-  ElecCtx<Real, Int, D, Rotamer ? 2 : 4> ctx;
+  ElecCtx<Real, Int, D, Rotamer ? 2 : 4, GradReal> ctx;
   TMOL_DEVICE_FUNC void operator()(
       int cta, int shard = 0, int partitions = 1) const {
     SHARED_MEMORY ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, Launch>
@@ -143,11 +150,12 @@ template <
     template <tmol::Device> class Ops,
     tmol::Device D,
     typename Real,
-    typename Int>
+    typename Int,
+    typename GradReal = Real>
 void elec_rotamer_backward_native(
-    ContextManager& mgr, ElecCtx<Real, Int, D, 2> ctx) {
+    ContextManager& mgr, ElecCtx<Real, Int, D, 2, GradReal> ctx) {
   LAUNCH_BOX_32;
-  ElecPoseEvaluator<2, Ops, D, Real, Int, launch_t, true> deriv{ctx};
+  ElecPoseEvaluator<2, Ops, D, Real, Int, launch_t, true, GradReal> deriv{ctx};
   Ops<D>::template foreach_workgroup<launch_t>(
       mgr, ctx.dispatch_indices.size(1), deriv);
 }

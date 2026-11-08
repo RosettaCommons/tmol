@@ -531,7 +531,11 @@ TMOL_DEVICE_FUNC Real elec_atom_energy(
   return result;
 }
 
-template <typename Real, tmol::Device D, typename DvDcoordsView>
+template <
+    typename Real,
+    tmol::Device D,
+    typename DvDcoordsView,
+    typename GradReal = Real>
 TMOL_DEVICE_FUNC void elec_atom_derivs(
     int atom_tile_ind1,
     int atom_tile_ind2,
@@ -562,14 +566,15 @@ TMOL_DEVICE_FUNC void elec_atom_derivs(
   // all threads accumulate derivatives for atom 1 to global memory
   // Remove "0.5 *" as the energy is no longer split between the i,j and j,i
   // pair
+  // Preserve pair and weight arithmetic; widen only the accumulated sum.
   Vec<Real, 3> elec_dxyz_at1 = dTdV * dV_ddist * ddist_dat1;
   for (int j = 0; j < 3; ++j) {
     if (elec_dxyz_at1[j] != 0) {
-      accumulate_grad<D, Real>::add(
+      accumulate_grad<D, GradReal>::add(
           dV_dcoords[0]
                     [score_dat.r1.rot_coord_offset + atom_tile_ind1
                      + start_atom1][j],
-          elec_dxyz_at1[j]);
+          GradReal(elec_dxyz_at1[j]));
     }
   }
 
@@ -577,11 +582,11 @@ TMOL_DEVICE_FUNC void elec_atom_derivs(
   Vec<Real, 3> elec_dxyz_at2 = -elec_dxyz_at1;
   for (int j = 0; j < 3; ++j) {
     if (elec_dxyz_at2[j] != 0) {
-      accumulate_grad<D, Real>::add(
+      accumulate_grad<D, GradReal>::add(
           dV_dcoords[0]
                     [score_dat.r2.rot_coord_offset + atom_tile_ind2
                      + start_atom2][j],
-          elec_dxyz_at2[j]);
+          GradReal(elec_dxyz_at2[j]));
     }
   }
 }
