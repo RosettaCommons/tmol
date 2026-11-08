@@ -16,6 +16,13 @@ _DEVICE_TABLES = WeakIdentityLRU(capacity=4)
 def prepare_dunbrack_parameters(database, *, table_indices=None):
     """Fit common tables for source library IDs, or the full sampling library."""
     library = database.scoring.dunbrack
+    return _prepare_dunbrack_snapshot(
+        library, library, _content_hash(library), table_indices=table_indices
+    )
+
+
+def _prepare_dunbrack_snapshot(owner, library, content_id, *, table_indices=None):
+    """Fit a captured library under its verified content key and weak source owner."""
     if table_indices is not None:
         table_indices = tuple(sorted(set(table_indices)))
 
@@ -47,8 +54,8 @@ def prepare_dunbrack_parameters(database, *, table_indices=None):
         )
 
     return _TABLES.get_or_create(
-        library,
-        (_content_hash(library), table_indices),
+        owner,
+        (content_id, table_indices),
         prepare,
     )
 

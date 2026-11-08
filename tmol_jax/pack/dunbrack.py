@@ -22,7 +22,10 @@ from tmol_core.pack.sampling_request import (
 )
 from tmol_core.pack.kinematics import annotate_residue_rotamer_kinematics
 from tmol_jax.kinematics._host import NativePosePlanner
-from tmol_jax.score.dunbrack.parameters import prepare_dunbrack_parameters
+from tmol_jax.score.dunbrack.parameters import (
+    prepare_dunbrack_parameters,
+    _prepare_dunbrack_snapshot,
+)
 from ._sampler import SamplerSupport
 
 
@@ -84,7 +87,8 @@ class DunbrackChiSampler(SamplerSupport):
         self, *, expanded_limit=DEFAULT_CHI_SAMPLE_LIMIT, limit=DEFAULT_CHI_SAMPLE_LIMIT
     ):
         self._tables = None
-        self._pending_database = None
+        self._pending_library = None
+        self._pending_tables = None
         self._snapshot_hash = None
         self._parameter_database = None
         self._native_storage = None
@@ -103,10 +107,7 @@ class DunbrackChiSampler(SamplerSupport):
         library = copy.deepcopy(parameter_database.scoring.dunbrack)
         sampler.metadata = DunbrackSamplingMetadata.from_database(library)
         sampler._snapshot_hash = _content_hash(library)
-        sampler._pending_database = attr.evolve(
-            parameter_database,
-            scoring=attr.evolve(parameter_database.scoring, dunbrack=library),
-        )
+        sampler._pending_library = library
         sampler._parameter_database = parameter_database
         return sampler
 
@@ -114,20 +115,17 @@ class DunbrackChiSampler(SamplerSupport):
     def tables(self):
         """Materialize the sampler's owned, read-only fitted parameter snapshot."""
         if self._tables is None:
-            database = self._parameter_database
-            if _content_hash(database.scoring.dunbrack) == self._snapshot_hash:
-                # Reuse the ordinary fitted-library cache. The original source
-                # still matches our snapshot, so release its copy before fitting.
-                self._pending_database = None
-            elif self._pending_database is not None:
-                database = self._pending_database
-            else:
-                raise RuntimeError(
-                    "sampler preparation failed before the database changed; "
-                    "create a new sampler"
+            # The owned copy and its creation-time hash describe one snapshot.
+            # A live source mutation cannot change it or the fitted cache key.
+            if self._pending_library is not None:
+                self._pending_tables = _prepare_dunbrack_snapshot(
+                    self._parameter_database.scoring.dunbrack,
+                    self._pending_library,
+                    self._snapshot_hash,
                 )
-            self._tables = self._snapshot_tables(prepare_dunbrack_parameters(database))
-            self._pending_database = None
+                self._pending_library = None
+            self._tables = self._snapshot_tables(self._pending_tables)
+            self._pending_tables = None
         return self._tables
 
     @classmethod
