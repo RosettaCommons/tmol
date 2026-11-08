@@ -79,6 +79,15 @@ jobs:
           path: jax-wheel
           run-id: ${{ inputs.candidate-run-id || github.run_id }}
           github-token: ${{ github.token }}
+      # CUDA native wheels also contain the CPU library. The default-PyPI CPU
+      # check executes the CPU library from the same run's cu12 artifact.
+      - uses: actions/download-artifact@v4
+        if: inputs.test-jax
+        with:
+          name: jax-native-${{ inputs.local-tag == 'cpu' && 'cu12' || inputs.local-tag }}-${{ inputs.arch }}
+          path: jax-native
+          run-id: ${{ inputs.candidate-run-id || github.run_id }}
+          github-token: ${{ github.token }}
       - run: python -m pip install packaging
       - name: Inspect Linux native dependencies
         if: runner.os == 'Linux'
@@ -102,6 +111,7 @@ jobs:
           fi
           if [ "${{ inputs.test-jax }}" = true ]; then
             args+=(--jax-wheel jax-wheel/tmol_jax-*.whl)
+            args+=(--jax-native-wheel jax-native/tmol_jax_native-*.whl)
           fi
           python scripts/test_package_install.py --wheel wheels/*.whl \
             --torch-version '${{ inputs.torch-package-version }}' \
