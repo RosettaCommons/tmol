@@ -155,6 +155,216 @@ def test_atom37_molecular_identity_batch_and_source_gradient(backend, name):
         if name == "ligand":
             assert abs(terms[b.channel_names().index("gen_torsions")]).max() > 1e-3
 
+    if b.framework != "jax" or name not in (
+        "ligand",
+        "hydroxyproline",
+        "zinc",
+        "d_peptide",
+    ):
+        return
+    jax, jnp = b.module, b.module.numpy
+    # Keep the original single-pose transform/prepared-score cases distinct
+    # from the two-pose physical-atom contract above, sharing their setup.
+    b, builder, source, ordinary, context = atom37_fixture(backend, name, count=1)
+    x, bind = bind_atom37(b, builder, source)
+    if name in ("ligand", "hydroxyproline", "zinc"):
+        # This derivative includes fitted metal virtuals; Torch intentionally
+        # checks physical atoms above because its inferred site fit detaches.
+        ordinary = bind(x)
+        shifts = jax.device_put(np.array([[0, 0, 0], [1, 2, 3]], np.float32), b.device)
+        coords = jax.jit(jax.vmap(lambda shift: bind(x + shift).coords))(shifts)
+        real = np.asarray(ordinary.atom_is_real)
+        np.testing.assert_allclose(
+            np.asarray(coords[1] - coords[0])[real],
+            np.broadcast_to([1, 2, 3], (real.sum(), 3)),
+            rtol=2e-5,
+            atol=2e-5,
+        )
+        assert coords.device == b.device
+        derivative = jax.jit(jax.grad(lambda shift: bind(x + shift).coords.sum()))(
+            shifts[0]
+        )
+        np.testing.assert_allclose(derivative, real.sum(), rtol=2e-5, atol=2e-5)
+    else:
+        from tmol_core.io.atom37 import Atom37MappingError
+
+        with pytest.raises(Atom37MappingError, match="wholly finite"):
+            builder.prepare(x.at[0, 0, 1, 0].set(jnp.nan))
+        with pytest.raises(Atom37MappingError, match="wholly finite"):
+            builder.prepare(x.at[0, 0, 1, 0].set(jnp.inf))
+        bind = builder.prepare(x)
+        with pytest.raises(ValueError, match="batch size"):
+            bind(jnp.concatenate((x, x)))
+        # Unrouted extra tokens do not change the molecule or acquire derivatives.
+        padded = jnp.pad(x, ((0, 0), (0, 2), (0, 0), (0, 0)), constant_values=jnp.nan)
+        np.testing.assert_array_equal(bind(padded).coords, bind(x).coords)
+        padded_gradient = jax.grad(lambda y: jnp.sin(bind(y).coords).sum())(padded)
+        np.testing.assert_array_equal(padded_gradient[:, -2:], 0)
+        bad = jax.jit(lambda y: bind(y).coords)(x.at[0, 0, 1, 0].set(jnp.nan))
+        assert np.isnan(np.asarray(bad)).all()
+        from tmol_jax import atom_array_from_pose_stack
+
+        atoms = atom_array_from_pose_stack(ordinary)
+        hydrogen = int(np.flatnonzero(atoms.element == "H")[-1])
+        missing = x.at[0, hydrogen, 1].set(jnp.nan)
+        rebuilt = jax.jit(lambda y: bind(y).coords)(missing)
+        assert np.isfinite(np.asarray(rebuilt)).all()
+        gradient = jax.jit(jax.grad(lambda y: jnp.sin(bind(y).coords).sum()))(missing)
+        assert np.isfinite(np.asarray(gradient)).all()
+        np.testing.assert_array_equal(gradient[0, hydrogen], 0)
+        assert np.linalg.norm(np.asarray(gradient)) > 1
+        # Removing a nonleaf mainchain atom changes the prepared chemistry contract.
+        carbon = int(np.flatnonzero(atoms.atom_name == "CA")[0])
+        with pytest.raises(Atom37MappingError, match="mainchain"):
+            builder.prepare(x.at[0, carbon, 1].set(jnp.nan))
+        invalid = jax.jit(lambda y: bind(y).coords)(x.at[0, carbon, 1].set(jnp.nan))
+        assert np.isnan(np.asarray(invalid)).all()
+    b.pose, b.parameter_database = bind(x), context.parameter_database
+    b.use_beta2016()
+    with jax.enable_x64():
+        if name in ("ligand", "d_peptide", "hydroxyproline"):
+            scorer = b.score_function.render_whole_pose_scoring_module(b.pose)
+            objective = jax.jit(
+                lambda y: scorer(bind(y).coords.astype(jnp.float64)).sum()
+            )
+            gradient = jax.jit(jax.grad(objective))(x)
+            direction = np.where(
+                np.isfinite(source),
+                np.random.default_rng(413).normal(size=source.shape),
+                0,
+            ).astype(np.float32)
+            direction /= np.linalg.norm(direction)
+            direction = jax.device_put(direction, b.device)
+            h = 3e-3
+            numerical = (
+                objective(x + h * direction) - objective(x - h * direction)
+            ) / (2 * h)
+            analytic = jnp.sum(gradient * direction)
+            np.testing.assert_allclose(numerical, analytic, rtol=2e-3, atol=2e-3)
+        if name in ("ligand", "hydroxyproline", "zinc"):
+            scorer = b.score_function.render_whole_pose_scoring_module(b.pose)
+            mapped = scorer.value_and_grad(coordinate_map=bind)
+            reference = jax.jit(
+                jax.value_and_grad(
+                    lambda y: scorer(bind(y).coords.astype(np.float64)).sum()
+                )
+            )
+            # The score precision follows the stored pose, as in ordinary coordinate AD.
+            direct = jax.jit(jax.value_and_grad(lambda y: scorer(bind(y).coords).sum()))
+            energy, gradient = mapped(x)
+            expected, expected_gradient = direct(x)
+            np.testing.assert_allclose(energy.sum(), expected, rtol=2e-5, atol=2e-5)
+            np.testing.assert_allclose(
+                gradient, expected_gradient, rtol=2e-5, atol=2e-5
+            )
+            assert np.isfinite(gradient).all() and np.linalg.norm(gradient) > 1e-3
+            precise_energy, precise_gradient = reference(x)
+            precise = scorer.value_and_grad(
+                coordinate_map=bind, coordinate_dtype=np.float64
+            )(x)
+            assert precise[0].dtype == np.float64 and precise[1].dtype == x.dtype
+            np.testing.assert_allclose(
+                precise[0].sum(), precise_energy, rtol=2e-10, atol=2e-10
+            )
+            np.testing.assert_allclose(
+                precise[1], precise_gradient, rtol=2e-5, atol=2e-5
+            )
+            with (
+                jax.enable_x64(False),
+                pytest.raises(ValueError, match="x64 enabled"),
+            ):
+                scorer.value_and_grad(coordinate_map=bind, coordinate_dtype=np.float64)(
+                    x
+                )
+            direction = (
+                np.random.default_rng(183).normal(size=source.shape).astype(np.float32)
+            )
+            direction = jax.device_put(
+                np.where(np.isfinite(source), direction, 0), b.device
+            )
+            shifted = x + 0.03 * direction
+            # Check two step sizes at a displaced geometry: the unmodified zinc fixture
+            # crosses a score discontinuity inside the original +/-0.001 interval.
+            # Its original values/gradients are still compared with direct AD above.
+            shifted_gradient = mapped(shifted)[1]
+            for step in (1e-3, 2e-4):
+                numerical = (
+                    mapped(shifted + step * direction)[0].sum()
+                    - mapped(shifted - step * direction)[0].sum()
+                ) / (2 * step)
+                np.testing.assert_allclose(
+                    numerical,
+                    (shifted_gradient * direction).sum(),
+                    rtol=4e-3,
+                    atol=4e-3,
+                )
+            fresh_bind = builder.prepare(shifted)
+            fresh_pose = fresh_bind(shifted)
+            # A changed stored weight must not reuse an earlier scorer's parameter data.
+            from tmol_jax import ScoreType
+
+            b.score_function.set_weight(ScoreType.cart_lengths, 0.7)
+            fresh_scorer = b.score_function.render_whole_pose_scoring_module(fresh_pose)
+            fresh = fresh_scorer.value_and_grad(coordinate_map=fresh_bind)
+            values, gradients = jax.jit(jax.vmap(fresh))(jax.numpy.stack([x, shifted]))
+            for row, coords in enumerate((x, shifted)):
+                expected, expected_gradient = jax.value_and_grad(
+                    lambda y: fresh_scorer(fresh_bind(y).coords).sum()
+                )(coords)
+                np.testing.assert_allclose(
+                    values[row].sum(), expected, rtol=2e-5, atol=2e-5
+                )
+                np.testing.assert_allclose(
+                    gradients[row], expected_gradient, rtol=2e-5, atol=2e-5
+                )
+            # Reusing the original bound function still returns its original snapshot.
+            restored = mapped(x)
+            np.testing.assert_allclose(restored[0], energy, rtol=2e-5, atol=2e-5)
+            np.testing.assert_allclose(restored[1], gradient, rtol=2e-5, atol=2e-5)
+        if name == "ligand":
+            import attrs
+            from tmol_jax import ScoreFunction, ScoreType
+
+            pose = bind(x)
+            database = context.parameter_database
+            executions = []
+            for factor in (1, 2):
+                changed = attrs.evolve(
+                    database,
+                    scoring=attrs.evolve(
+                        database.scoring,
+                        elec=attrs.evolve(
+                            database.scoring.elec,
+                            atom_charge_parameters=tuple(
+                                attrs.evolve(record, charge=record.charge * factor)
+                                for record in database.scoring.elec.atom_charge_parameters
+                            ),
+                        ),
+                    ),
+                )
+                score = ScoreFunction(changed)
+                score.set_weight(ScoreType.fa_elec, 1.0)
+                executions.append(
+                    score.render_whole_pose_scoring_module(pose).value_and_grad(
+                        coordinate_map=bind, coordinate_dtype=np.float64
+                    )
+                )
+            original, doubled = [execute(x) for execute in executions]
+            assert (
+                np.linalg.norm(original[0]) > 1e-3
+                and np.linalg.norm(original[1]) > 1e-3
+            )
+            # Coulomb energies and forces are bilinear in the two atom charges.
+            np.testing.assert_allclose(
+                doubled[0], original[0] * 4, rtol=2e-10, atol=2e-10
+            )
+            np.testing.assert_allclose(
+                doubled[1], original[1] * 4, rtol=2e-5, atol=2e-5
+            )
+            restored = executions[0](x)
+            np.testing.assert_allclose(restored[0], original[0], rtol=2e-10, atol=2e-10)
+            np.testing.assert_allclose(restored[1], original[1], rtol=2e-5, atol=2e-5)
+
 
 def atom37_opth_fixture(backend, start, stop):
     from pathlib import Path
@@ -264,6 +474,34 @@ def test_atom37_opth_preserves_observed_atoms_and_frozen_leaf_derivatives(
         and np.isfinite(values).all()
         and np.isfinite(gradients).all()
     )
+
+    if b.framework != "jax" or (start, stop) != (0, 2):
+        return
+    jax = b.module
+    with jax.enable_x64():
+        score = b.score_function.render_whole_pose_scoring_module(b.pose)
+        mapped = score.value_and_grad(coordinate_map=bound, coordinate_dtype=np.float64)
+        objective = jax.jit(lambda y: score(bound(y).coords.astype(np.float64)).sum())
+        expected, gradient = jax.value_and_grad(objective)(x)
+        actual = mapped(x)
+        np.testing.assert_allclose(actual[0].sum(), expected, rtol=2e-10, atol=2e-10)
+        np.testing.assert_allclose(actual[1], gradient, rtol=2e-5, atol=2e-5)
+        assert np.isfinite(actual[1]).all() and np.linalg.norm(actual[1]) > 1e-3
+        direction = np.where(
+            np.isfinite(source),
+            np.random.default_rng(619).normal(size=source.shape),
+            0,
+        ).astype(np.float32)
+        direction /= np.linalg.norm(direction)
+        direction = jax.device_put(direction, b.device)
+        for step in (1e-3, 3e-3):
+            numerical = (
+                mapped(x + step * direction)[0].sum()
+                - mapped(x - step * direction)[0].sum()
+            ) / (2 * step)
+            np.testing.assert_allclose(
+                numerical, (actual[1] * direction).sum(), rtol=4e-3, atol=4e-3
+            )
 
 
 @pytest.mark.parametrize("name", ("ligand", "hydroxyproline", "d_peptide", "zinc"))
