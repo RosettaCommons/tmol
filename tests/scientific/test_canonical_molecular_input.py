@@ -33,6 +33,17 @@ CASES.update(
 )
 
 
+def peptide_pdb(n=3):
+    return (
+        "\n".join(
+            line
+            for line in CANONICAL_PROTEIN_PDB.read_text().splitlines()
+            if line.startswith("ATOM") and 1 <= int(line[22:26]) <= n
+        )
+        + "\nEND\n"
+    )
+
+
 def canonical_protein_input(backend):
     from tmol_jax.io import (
         canonical_form_from_pdb,
