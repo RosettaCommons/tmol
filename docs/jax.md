@@ -515,8 +515,8 @@ terms use their common host records and formulas.
 
 ## Validation and numerical limits
 
-Run `pytest tests/jax` for JAX transformations and runtime contracts, and
-`TMOL_TEST_BACKENDS=jax-cpu pytest tests/scientific` for shared scientific cases.
+Run `TMOL_TEST_BACKENDS=jax-cpu pytest tests/scientific` for shared scientific
+cases, including applicable JAX transformations and runtime contracts.
 The same cases accept `torch-cpu`, `torch-cuda`, `torch-mps` and `jax-cuda`; missing
 devices are explicitly skipped. Sparse float64 scientific checks require CPU or
 CUDA; they do not validate Metal execution. Core chemistry tests live in `tests/core`.
