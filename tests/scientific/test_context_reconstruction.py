@@ -185,6 +185,180 @@ def test_context_heavy_atom_coordinates_and_derivatives(backend, case, dtype):
             atol=3e-3 if dtype == np.float32 else 2e-6,
         )
 
+    if backend.framework != "jax":
+        return
+    import dataclasses
+    from tmol_jax.io import ResidueBlock, pose_stack_from_residue_blocks
+    from tmol_core.io.missing_atoms import prepare_leaf_atom_metadata
+
+    jax = backend.module
+    # The explicit residue-block loader is a JAX API; its additional molecular
+    # rows reuse this behavior's original float32/float64 parameterization.
+    case_names = {
+        "ligand": ("ligand", "d_peptide", "mixed_batch"),
+        "connected_noncanonical": ("connected_noncanonical",),
+        "modified_dna": ("modified_dna",),
+    }.get(case, ())
+    for case_name in case_names:
+        case = DOMAIN_CASES[case_name]
+        terms = {
+            "ligand": "gen_torsions",
+            "connected_noncanonical": "cart_lengths",
+            "d_peptide": "fa_elec",
+            "modified_dna": "na_torsion",
+            "mixed_batch": "gen_torsions",
+        }
+        b = backend.molecule(case, terms=(terms[case_name],))
+        with jax.enable_x64(dtype == np.float64), jax.default_device(b.device):
+            complete = [
+                [ResidueBlock(*record) for record in row]
+                for row in case.blocks(b.parameter_database, dtype)
+            ]
+            expected, context = pose_stack_from_residue_blocks(
+                complete,
+                parameter_database=b.parameter_database,
+                connections=case.connections(),
+                return_context=True,
+            )
+            pbt = context.packed_block_types
+            info = prepare_leaf_atom_metadata(
+                pbt.active_block_types,
+                np.asarray(pbt.atom_is_hydrogen),
+                pbt.max_n_atoms,
+            )
+            incomplete, observed, targets = (
+                [],
+                np.asarray(expected.atom_is_real).copy(),
+                [],
+            )
+            for p, row in enumerate(complete):
+                prepared = []
+                for r, block in enumerate(row):
+                    t = int(expected.block_type_ind[p, r])
+                    n = len(block.atom_names)
+                    eligible = np.flatnonzero(
+                        info.is_leaf_atom[t, :n]
+                        & np.asarray(pbt.atom_is_hydrogen[t, :n])
+                        & np.all(info.icoors.anc_uaids[t, :n, :, 0] >= 0, axis=1)
+                    )
+                    keep = np.ones(n, bool)
+                    if eligible.size:
+                        atom = int(eligible[0])
+                        keep[atom] = False
+                        offset = int(expected.block_coord_offset[p, r])
+                        observed[p, offset + atom] = False
+                        targets.append(
+                            (
+                                p,
+                                offset + atom,
+                                offset + info.icoors.anc_uaids[t, atom, 0, 0],
+                                info.icoors.geom[t, atom, 2],
+                            )
+                        )
+                    prepared.append(
+                        ResidueBlock(
+                            block.residue_type,
+                            np.asarray(block.atom_names)[keep][::-1],
+                            block.coords[keep][::-1],
+                        )
+                    )
+                incomplete.append(prepared)
+            assert targets, f"{case_name} must exercise missing molecular hydrogens"
+            with pytest.raises(ValueError, match="atoms must match"):
+                pose_stack_from_residue_blocks(
+                    incomplete, context=context, connections=case.connections()
+                )
+            actual, returned = pose_stack_from_residue_blocks(
+                incomplete,
+                context=context,
+                connections=case.connections(),
+                return_context=True,
+                build_missing_leaf_atoms=True,
+            )
+            assert returned is context and actual.packed_block_types is pbt
+            assert actual.coords.dtype == dtype
+            np.testing.assert_array_equal(
+                actual.coords[observed], expected.coords[observed]
+            )
+            np.testing.assert_array_equal(
+                actual.block_type_ind, expected.block_type_ind
+            )
+            np.testing.assert_array_equal(
+                actual.inter_residue_connections, expected.inter_residue_connections
+            )
+            for p, atom, parent, distance in targets:
+                np.testing.assert_allclose(
+                    np.linalg.norm(
+                        np.asarray(actual.coords[p, atom] - actual.coords[p, parent])
+                    ),
+                    distance,
+                    rtol=2e-6 if dtype == np.float32 else 2e-12,
+                    atol=2e-6 if dtype == np.float32 else 2e-12,
+                )
+            b.pose = actual.to(b.device)
+            energy, gradient = b.value_and_grad(b.coords())
+            assert np.isfinite(energy).all() and np.isfinite(gradient).all()
+            assert np.any(energy != 0) and np.linalg.norm(gradient) > 0
+            # Opting into leaf reconstruction must not hide a missing core atom.
+            first = incomplete[0][0]
+            nonleaf = np.flatnonzero(
+                ~info.is_leaf_atom[0, : len(complete[0][0].atom_names)]
+            )[0]
+            atom = complete[0][0].atom_names[nonleaf]
+            keep = np.asarray(first.atom_names) != atom
+            invalid = [
+                [
+                    dataclasses.replace(
+                        first,
+                        atom_names=np.asarray(first.atom_names)[keep],
+                        coords=first.coords[keep],
+                    ),
+                    *incomplete[0][1:],
+                ],
+                *incomplete[1:],
+            ]
+            with pytest.raises(ValueError, match="missing non-leaf"):
+                pose_stack_from_residue_blocks(
+                    invalid,
+                    context=context,
+                    connections=case.connections(),
+                    build_missing_leaf_atoms=True,
+                )
+            # The separate opt-in uses common context placement before leaf frames.
+            recovered = pose_stack_from_residue_blocks(
+                invalid,
+                context=context,
+                connections=case.connections(),
+                build_missing_context=True,
+            )
+            assert np.isfinite(np.asarray(recovered.coords)).all()
+            for p, row in enumerate(invalid):
+                for r, block in enumerate(row):
+                    residue = recovered.block_type(p, r)
+                    offset = int(recovered.block_coord_offset[p, r])
+                    indices = [
+                        offset + residue.atom_to_idx[name] for name in block.atom_names
+                    ]
+                    np.testing.assert_array_equal(
+                        recovered.coords[p, indices], block.coords
+                    )
+            b.pose = recovered.to(b.device)
+            energy, gradient = b.value_and_grad(b.coords())
+            assert np.isfinite(energy).all() and np.isfinite(gradient).all()
+            assert np.any(energy != 0) and np.linalg.norm(gradient) > 0
+            if case_name == "ligand":
+                empty = [
+                    [
+                        ResidueBlock(
+                            complete[0][0].residue_type, (), np.empty((0, 3), dtype)
+                        )
+                    ]
+                ]
+                with pytest.raises(ValueError, match="could not be reconstructed"):
+                    pose_stack_from_residue_blocks(
+                        empty, context=context, build_missing_context=True
+                    )
+
 
 def _check_public_context_input(b, case, missing, expected):
     pbt = b.pose.packed_block_types
