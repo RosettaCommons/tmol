@@ -7,6 +7,11 @@ import numpy as np
 from .armijo import armijo_minimize
 
 
+@jax.jit
+def _finite_fields(*values):
+    return jnp.stack([jnp.isfinite(value).all() for value in values])
+
+
 def minimize_pose_variables(
     energy,
     initial,
@@ -70,12 +75,14 @@ def minimize_pose_variables(
         )
         if minimize is not armijo_minimize:
             result = dict(result)
+            checked = []
             for name in ("initial_fun", "fun"):
                 value = jnp.asarray(result[name])
                 if value.shape:
                     raise ValueError(f"optimizer {name} must be a scalar")
-                if not bool(jnp.isfinite(value)):
-                    raise FloatingPointError(f"optimizer {name} must be finite")
+                if value.device != initial.device:
+                    value = jax.device_put(value, initial.device)
+                checked.append(value)
             for name in ("x", "grad"):
                 value = result[name]
                 if not isinstance(value, jax.Array):
@@ -88,7 +95,14 @@ def minimize_pose_variables(
                     raise ValueError(
                         f"optimizer {name} must remain on the input device"
                     )
-                if not bool(jnp.isfinite(value).all()):
+                checked.append(value)
+            # Transfer only the four validation flags together. Coordinate and
+            # gradient arrays stay on their original device and retain dtype.
+            for name, finite in zip(
+                ("initial_fun", "fun", "x", "grad"),
+                np.asarray(_finite_fields(*checked)),
+            ):
+                if not finite:
                     raise FloatingPointError(f"optimizer {name} must be finite")
         result["x"] = expand(result["x"])
         result["grad"] = (

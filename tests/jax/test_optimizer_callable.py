@@ -1,5 +1,6 @@
 """Invalid third-party optimizer results cannot alter molecular array contracts."""
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -35,3 +36,34 @@ def test_invalid_optimizer_result_rejects_without_mutating_pose(invalid):
     with pytest.raises((ValueError, FloatingPointError), match="optimizer"):
         run_cart_min(backend.pose, backend.score_function, optimizer=optimizer)
     np.testing.assert_array_equal(backend.coords(), initial)
+
+
+def test_host_energy_diagnostics_preserve_molecular_execution_device():
+    backend = Execution(device_name()).molecule(
+        CASES["ligand"], terms=("fa_ljatr", "fa_ljrep")
+    )
+    initial = backend.coords().copy()
+
+    def optimizer(*args, **kwargs):
+        return gradient_step(*args, lr=1e-8, **kwargs)
+
+    def host_energies(*args, **kwargs):
+        result = optimizer(*args, **kwargs)
+        for name in ("initial_fun", "fun"):
+            result[name] = jax.device_put(
+                np.asarray(result[name]), jax.devices("cpu")[0]
+            )
+        return result
+
+    expected = run_cart_min(backend.pose, backend.score_function, optimizer=optimizer)
+    actual, result = run_cart_min(
+        backend.pose,
+        backend.score_function,
+        optimizer=host_energies,
+        return_result=True,
+    )
+    np.testing.assert_array_equal(actual.coords, expected.coords)
+    np.testing.assert_array_equal(backend.coords(), initial)
+    assert actual.coords.device == backend.device
+    assert result["grad"].device == backend.device
+    assert np.linalg.norm(np.asarray(result["grad"])) > 1e-3
