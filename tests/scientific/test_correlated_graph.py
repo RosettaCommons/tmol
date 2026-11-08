@@ -3,11 +3,12 @@
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from tmol_core.pack.correlation import CorrelatedBlockGroup, correlation_indices
 
 
-def joint_fixture(backend):
+def joint_fixture(backend, include_incompatible=True):
     counts = np.array([[2, 2, 2, 0], [0, 0, 0, 0]], np.int32)
     fields = dict(
         n_rots_for_block=counts,
@@ -41,8 +42,9 @@ def joint_fixture(backend):
         for value in (5 + state, 7 + state):
             rows.append((0, state, 4 + state))
             values.append(value)
-        rows.append((0, state, 5 - state))
-        values.append(-100000)  # Impossible joint states must never win.
+        if include_incompatible:
+            rows.append((0, state, 5 - state))
+            values.append(-100000)  # Impossible joint states must never win.
         for external in range(2):
             rows.extend(((0, state, 2 + external), (0, 2 + external, 4 + state)))
             values.extend((11 + state + external, 13 + 2 * state + external))
@@ -125,12 +127,14 @@ def graph_arrays(backend, rots, indices, values):
     return dict(zip(names, map(backend.numpy, graph[9:]))), host
 
 
+@pytest.mark.parametrize("include_incompatible", (True, False))
 def test_joint_graph_excludes_incompatible_states_and_preserves_all_contributions(
     backend,
+    include_incompatible,
 ):
     from tmol_core.pack.correlation import expand_group_assignments
 
-    rots, indices, values = joint_fixture(backend)
+    rots, indices, values = joint_fixture(backend, include_incompatible)
     graph, collapse = graph_arrays(backend, rots, indices, values)
     np.testing.assert_array_equal(collapse.compact_n_rots_for_pose, [5, 0])
     np.testing.assert_array_equal(
