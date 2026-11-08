@@ -87,6 +87,24 @@ def test_molecular_input_preserves_metadata(backend, name, no_optH):
     assert pose.pdb_info.atom_occupancy[0, 0] == 0.25
     assert duplicate.pdb_info.atom_occupancy[1, 0] == 0.25
 
+    import attrs
+    from .test_pose_layout import heterogeneous_protein_pose
+
+    heterogeneous_pose = heterogeneous_protein_pose(backend)
+    for field in ("chain_id", "res_num", "res_name", "atom_record_type"):
+        pose = heterogeneous_pose.replace(
+            pdb_info=attrs.evolve(heterogeneous_pose.pdb_info, **{field: None})
+        )
+        assert getattr(pose[-1].pdb_info, field) is None
+        blank = attrs.evolve(
+            pose.pdb_info,
+            chain_id=None,
+            res_num=None,
+            res_name=None,
+            atom_record_type=None,
+        )
+        assert pose.replace(pdb_info=blank)[-1].n_poses == 1
+
 
 @pytest.mark.parametrize(
     "filename",

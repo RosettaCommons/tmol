@@ -1,8 +1,9 @@
 """Packed and residue-major layouts preserve molecular identity and gradients."""
 
 import numpy as np
+import pytest
 
-from .molecules import BACKBONE_CASES
+from .molecules import BACKBONE_CASES, DOMAIN_CASES
 
 
 def test_pose_layout_preserves_atoms_padding_and_coordinate_derivatives(backend):
@@ -50,6 +51,38 @@ def test_pose_layout_preserves_atoms_padding_and_coordinate_derivatives(backend)
     np.testing.assert_array_equal(expanded[mask], xyz[real])
     np.testing.assert_array_equal(b.numpy(gradient), 2 * xyz * real[..., None])
 
+    # The original sparse/dense bitwise score contract is a CPU contract.
+    if backend.framework == "jax" and backend.device.platform == "cpu":
+        jax = backend.module
+        for name in ("connected_noncanonical", "mixed_batch", "metal_cluster"):
+            backend = backend.molecule(
+                DOMAIN_CASES[name], terms=("fa_ljatr", "fa_ljrep", "fa_lk", "fa_elec")
+            )
+            pose = backend.pose
+            assert pose._inter_block_bondsep is None
+            assert not hasattr(pose, "_dense_connections")
+            scorer = backend.score_function.render_whole_pose_scoring_module(pose)
+            evaluate = jax.jit(jax.value_and_grad(lambda x: scorer(x).sum()))
+            value, gradient = evaluate(pose.coords)
+            assert value.device == gradient.device == pose.device
+            assert not hasattr(pose, "_dense_connections")
+            dense = pose.inter_block_bondsep
+            assert pose.inter_block_bondsep is dense
+            explicit = pose.replace(inter_block_bondsep=dense)
+            other = backend.score_function.render_whole_pose_scoring_module(explicit)
+            expected, derivatives = jax.jit(
+                jax.value_and_grad(lambda x: other(x).sum())
+            )(pose.coords)
+            assert expected.device == derivatives.device == pose.device
+            np.testing.assert_array_equal(value, expected)
+            np.testing.assert_array_equal(gradient, derivatives)
+            # Dense replacements override any retained sparse graph, including under jit.
+            changed = explicit.replace(inter_block_bondsep=dense + 1)
+            np.testing.assert_array_equal(changed.inter_block_bondsep, dense + 1)
+            np.testing.assert_array_equal(
+                jax.jit(lambda p: p.inter_block_bondsep)(changed), dense + 1
+            )
+
 
 def test_pose_split_and_clone_preserve_custom_context_and_connections(backend):
     b = backend.molecule(BACKBONE_CASES["mixed"], terms=())
@@ -69,3 +102,80 @@ def test_pose_split_and_clone_preserve_custom_context_and_connections(backend):
                 b.numpy(getattr(result, name)),
                 b.numpy(getattr(pose, name))[index : index + 1],
             )
+
+    if backend.framework != "jax":
+        return
+    jax = backend.module
+    pose = backend.molecule(DOMAIN_CASES["mixed_batch"], terms=("ref",)).pose
+    expected = np.asarray(pose.inter_block_bondsep)
+    selected = pose[[1, 0, 1]]
+    assert selected._inter_block_bondsep is None
+    assert not hasattr(selected, "_dense_connections")
+    np.testing.assert_array_equal(selected.inter_block_bondsep, expected[[1, 0, 1]])
+    moved = selected.to(jax.devices("cpu")[0])
+    assert not hasattr(moved, "_dense_connections")
+    result = jax.jit(lambda p: p.inter_block_bondsep)(moved)
+    np.testing.assert_array_equal(result, expected[[1, 0, 1]])
+    # Tracing must not cache a tracer on the source pose.
+    assert not hasattr(moved, "_dense_connections")
+    np.testing.assert_array_equal(moved.inter_block_bondsep, result)
+    empty = pose[:0]
+    assert empty.inter_block_bondsep.shape[0] == 0
+    from tmol_jax.io.write_pose_stack_pdb import atom_records_from_pose_stack
+
+    heterogeneous_pose = heterogeneous_protein_pose(backend)
+    for index, expected in (
+        (1, [1]),
+        (-1, [1]),
+        (np.int64(-2), [0]),
+        (slice(None, None, -1), [1, 0]),
+        ([1, 0, 1], [1, 0, 1]),
+        (np.array([False, True]), [1]),
+        (slice(0, 0), []),
+    ):
+        pose = heterogeneous_pose
+        sliced = pose[index]
+        assert sliced.n_poses == len(expected)
+        for i, source in enumerate(expected):
+
+            def identity_records(stack, pose_index):
+                return [
+                    {
+                        key: value
+                        for key, value in record.items()
+                        if key not in ("model", "modeli")
+                    }
+                    for record in atom_records_from_pose_stack(
+                        stack, pose_index=pose_index
+                    )
+                ]
+
+            assert identity_records(sliced, i) == identity_records(pose, source)
+            np.testing.assert_array_equal(sliced.coords[i], pose.coords[source])
+        assert pose.replace(pdb_info=None)[index].pdb_info is None
+    for index in (-3, 2):
+        with pytest.raises(IndexError):
+            heterogeneous_pose[index]
+
+
+def heterogeneous_protein_pose(backend):
+    from tmol_jax.io import (
+        canonical_form_from_pdb,
+        default_packed_block_types,
+        pose_stack_from_canonical_form,
+    )
+    from .test_canonical_molecular_input import CANONICAL_PROTEIN_PDB
+
+    canonical = canonical_form_from_pdb(CANONICAL_PROTEIN_PDB)
+    canonical = {
+        key: np.concatenate([value[:, :1], value[:, 1:2]], axis=0)
+        for key, value in canonical.items()
+    }
+    canonical["chain_labels"][:] = [["A"], ["B"]]
+    canonical["res_num"][:] = [[11], [22]]
+    with backend.module.default_device(backend.device):
+        pbt = backend.module.tree.map(
+            lambda value: backend.module.device_put(value, backend.device),
+            default_packed_block_types(),
+        )
+        return pose_stack_from_canonical_form(canonical, pbt)
