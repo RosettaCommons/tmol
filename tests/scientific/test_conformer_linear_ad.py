@@ -223,6 +223,7 @@ def _operation(backend, operation, case, array):
 @pytest.mark.parametrize(
     "case_name",
     (
+        "transport",
         "rows",
         "chi",
         "reset",
@@ -239,7 +240,7 @@ def test_native_conformer_linear_value_gradient_and_curvature(
 ):
     b = backend
     precision = (
-        b.module.enable_x64(dtype == np.float64)
+        b.module.enable_x64(dtype == np.float64 or case_name == "transport")
         if b.framework == "jax"
         else nullcontext()
     )
@@ -252,6 +253,10 @@ def test_native_conformer_linear_value_gradient_and_curvature(
                 if b.framework == "jax"
                 else b.module.as_tensor(value, device=b.device)
             )
+
+        if case_name == "transport":
+            _check_transport(b, dtype, array)
+            return
 
         case = _case(case_name, dtype)
         operation = case_name.split("-")[0]
@@ -325,3 +330,61 @@ def _check_repaired_mainchain_mask(b, source, target, array, apply):
     expected_source = np.zeros_like(repaired)
     expected_source[2] = 4 * repaired[2]
     np.testing.assert_array_equal(b.numpy(changed), expected_source)
+
+
+def _check_transport(b, dtype, array):
+    def check(operation, inputs, metadata, expected, root_shift=0):
+        case = SimpleNamespace(metadata=metadata, root_shift=root_shift)
+        apply = _operation(b, operation, case, array)
+        snapshots = tuple(b.numpy(x).copy() for x in inputs)
+        actual = apply(*inputs)
+        np.testing.assert_array_equal(b.numpy(actual), expected)
+        assert b.numpy(actual).dtype == dtype and actual.device == b.device
+        if b.framework == "jax":
+            batched = b.module.jit(
+                b.module.vmap(apply, in_axes=(0,) + (None,) * (len(inputs) - 1))
+            )(b.module.numpy.stack((inputs[0], inputs[0])), *inputs[1:])
+            np.testing.assert_array_equal(
+                b.numpy(batched), np.stack((expected, expected))
+            )
+        for value, saved in zip(inputs, snapshots):
+            np.testing.assert_array_equal(b.numpy(value), saved)
+        return actual
+
+    # Keep the exact retained-atom reordering and subsequent chi assignment.
+    source = np.arange(36, dtype=dtype).reshape(4, 9)
+    source[2, 4] = np.nan
+    initial = array(np.full((4, 9), -2, dtype))
+    expected = np.vstack(([-2] * 9, source[2], source[3], source[1])).astype(dtype)
+    expected[1, 4] = -2
+    copied = check(
+        "mainchain",
+        (initial, array(source)),
+        ([0], [0], [0], [0], [0], [[0, 1, 2]], [[[[2, 0, 1]]]], [[0, 1, 2]]),
+        expected,
+    )
+    chi = array([[0.123456789, -1.2]])
+    expected[3, 3] = b.numpy(chi)[0, 0] - dtype(0.2)
+    check(
+        "chi",
+        (copied, chi, array([[0.0, 0.0, 0.2]])),
+        ([0], [0], [0], [[2, -1]], [[0, 1, 2]]),
+        expected,
+    )
+    np.testing.assert_array_equal(b.numpy(copied)[3], source[1])
+    for width, shift in ((3, 0), (9, 1)):
+        # Whole-row transport preserves NaNs, empty segments and repeated rows.
+        values = array(np.full((6, width), -3, dtype))
+        rows = np.arange(7 * width, dtype=dtype).reshape(7, width)
+        rows[2 + shift, 1] = np.nan
+        expected = np.full((6, width), -3, dtype)
+        expected[shift : shift + 2] = rows[2 + shift : 4 + shift]
+        expected[3 + shift] = rows[2 + shift]
+        check(
+            "rows",
+            (values, array(rows)),
+            ([0, 2, 2], [0, 0, 3], [0, 0, 2, 3]),
+            expected,
+            shift,
+        )
+        check("rows", (values, array(rows)), ([], [], [0]), b.numpy(values), shift)

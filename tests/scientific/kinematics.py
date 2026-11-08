@@ -179,11 +179,12 @@ class MolecularKinematicExecution(KinematicExecution):
         if backend.framework == "jax":
             from tmol_jax import run_kin_min
 
-            result = run_kin_min(
+            result, self.minimization_diagnostics = run_kin_min(
                 backend.pose,
                 backend.score_function,
                 move_map,
                 max_iter=iterations,
+                return_result=True,
                 **options,
             )
         else:

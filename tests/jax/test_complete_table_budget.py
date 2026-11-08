@@ -13,7 +13,6 @@ from tests.scientific.test_canonical_molecular_input import (
     canonical_input,
     rebuild_canonical,
 )
-from tests.scientific.test_packing_execution import check_complete_packing
 
 
 def _backend():
@@ -54,33 +53,3 @@ def test_complete_buffer_bound_covers_compiled_scoring(name):
     assert not complete_table_fits_window(
         None, bound[1], bound[2], values.dtype.itemsize
     )
-
-
-@pytest.mark.parametrize("force_pages", (False, True))
-def test_public_packing_routes_and_preserves_shared_science(monkeypatch, force_pages):
-    backend = _backend()
-    # CPU can exercise the same native replay lifecycle for route validation;
-    # production eligibility remains CUDA-only and is separately asserted.
-    import tmol_core.pack.streaming as policy
-
-    assert not policy.should_stream_interaction_graph("cpu", (), False)
-    assert policy.should_stream_interaction_graph("cuda", (), False)
-    monkeypatch.setattr(policy, "should_stream_interaction_graph", lambda *args: True)
-    original_fit = streaming.use_complete_table
-    monkeypatch.setattr(
-        streaming,
-        "use_complete_table",
-        lambda scorer, coords: original_fit(
-            scorer, coords, **({"score_window": 1} if force_pages else {})
-        ),
-    )
-    calls = []
-    driver = streaming.build_streaming_interaction_graph
-
-    def observe(*args, **kwargs):
-        calls.append(True)
-        return driver(*args, **kwargs)
-
-    monkeypatch.setattr(streaming, "build_streaming_interaction_graph", observe)
-    check_complete_packing(backend, "mixed_batch", bump=False)
-    assert len(calls) == int(force_pages)

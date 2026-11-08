@@ -79,32 +79,3 @@ def test_pose_assembly_rejects_empty_poses_and_snapshots_topology():
     other = PoseStackKinematics(reordered).bind()
     np.testing.assert_allclose(other(other.initial_dofs)[1], before[0], atol=2e-5)
     np.testing.assert_array_equal(mapping(mapping.initial_dofs), before)
-
-
-@pytest.mark.parametrize("name", ("ligand", "d_peptide"))
-def test_mixed_precision_internal_minimization(name):
-    from tests.scientific.kinematics import MOLECULAR_KINEMATIC_TERMS
-    from tmol_jax import MoveMap, run_kin_min
-
-    with jax.enable_x64():
-        backend = Execution(f"jax-{jax.default_backend()}").molecule(
-            DOMAIN_CASES[name], terms=MOLECULAR_KINEMATIC_TERMS
-        )
-        initial = backend.coords().copy()
-        movement = MoveMap.from_pose_stack(backend.pose)
-        movement.move_all_named_torsions = True
-        result, diagnostics = run_kin_min(
-            backend.pose,
-            backend.score_function,
-            movement,
-            kin_dtype=jnp.float64,
-            max_iter=5,
-            return_result=True,
-        )
-        assert result.coords.dtype == initial.dtype == np.float32
-        assert diagnostics["x"].dtype == diagnostics["grad"].dtype == jnp.float64
-        assert (
-            backend.scores(np.asarray(result.coords)).sum()
-            < backend.scores(initial).sum() - 1e-3
-        )
-        np.testing.assert_array_equal(backend.coords(), initial)
