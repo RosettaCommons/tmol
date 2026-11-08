@@ -9,18 +9,19 @@ from .test_conformer_coordinates import coordinate_dihedral
 
 
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
-def test_measured_chi_correction_derivatives(backend, dtype):
+@pytest.mark.parametrize("wrap", (False, True))
+def test_measured_chi_correction_derivatives(backend, dtype, wrap):
     b = backend
     precision = (
-        b.module.enable_x64(dtype == np.float64)
+        b.module.enable_x64(dtype == np.float64 or wrap)
         if b.framework == "jax"
         else nullcontext()
     )
     with precision:
-        _check_correction(b, dtype)
+        _check_correction(b, dtype, wrap)
 
 
-def _check_correction(b, dtype):
+def _check_correction(b, dtype, wrap):
     def array(value, integer=False):
         value = np.asarray(value, dtype=np.int32 if integer else dtype)
         return (
@@ -29,24 +30,30 @@ def _check_correction(b, dtype):
             else b.module.as_tensor(value, device=b.device)
         )
 
-    xyz = np.array(
-        [
-            [8, 9, 7],
-            [1.2, 0.1, -0.2],
-            [0.1, -0.3, 0.2],
-            [0.3, 1.1, -0.1],
-            [0.8, 1.3, 1.2],
-        ],
-        dtype,
-    )
-    chi = np.array([[0.4, 0.9], [0.7, 0.8]], dtype)
-    dofs = np.linspace(0.1, 0.9, 63, dtype=dtype).reshape(7, 9)
-    four = np.full((1, 4, 4), -1, np.int32)
-    four[0, 3] = np.arange(4)
-    metadata = tuple(
-        array(x, True)
-        for x in ([0], [1], [0, 0], [[3, -1], [3, 2]], four, [[3, 0, 2, 1]])
-    )
+    if wrap:
+        xyz = np.array([[0, 1, 0], [0, 0, 0], [1, 0, 0], [1, 0, 1]], dtype)
+        chi = np.array([[4.8, 0.8, 0.2]], dtype)
+        dofs = np.full((5, 9), -2, dtype)
+        four = np.full((1, 4, 4), -1, np.int32)
+        four[0, 2] = [0, 1, 2, 3]
+        metadata = ([0], [0], [0], [[2, -1, 3]], four, [[0, 1, 2, 3]])
+    else:
+        xyz = np.array(
+            [
+                [8, 9, 7],
+                [1.2, 0.1, -0.2],
+                [0.1, -0.3, 0.2],
+                [0.3, 1.1, -0.1],
+                [0.8, 1.3, 1.2],
+            ],
+            dtype,
+        )
+        chi = np.array([[0.4, 0.9], [0.7, 0.8]], dtype)
+        dofs = np.linspace(0.1, 0.9, 63, dtype=dtype).reshape(7, 9)
+        four = np.full((1, 4, 4), -1, np.int32)
+        four[0, 3] = np.arange(4)
+        metadata = ([0], [1], [0, 0], [[3, -1], [3, 2]], four, [[3, 0, 2, 1]])
+    metadata = tuple(array(x, True) for x in metadata)
     weights = np.linspace(0.2, 0.8, 63, dtype=dtype).reshape(7, 9)
 
     # Two entries write the same torsion; absent and undefined torsions do not.
@@ -81,6 +88,26 @@ def _check_correction(b, dtype):
     w = array(weights)
     inputs = (dofs, chi, xyz)
     values = tuple(map(array, inputs))
+    if wrap:
+        # Positive pi/2 geometry crosses the wrap boundary; skipped and undefined
+        # torsions leave every other initialized component untouched.
+        expected = dofs.copy()
+        delta = float(chi[0, 0]) - float(dtype(np.pi / 2))
+        expected[3, 3] += dtype((delta + np.pi) % (2 * np.pi) - np.pi)
+        snapshots = tuple(value.copy() for value in inputs)
+        actual = apply(*values)
+        np.testing.assert_array_equal(b.numpy(actual), expected)
+        assert b.numpy(actual).dtype == dtype and actual.device == b.device
+        if b.framework == "jax":
+            batched = b.module.jit(
+                b.module.vmap(apply, in_axes=(0,) + (None,) * (len(values) - 1))
+            )(b.module.numpy.stack((values[0], values[0])), *values[1:])
+            np.testing.assert_array_equal(
+                b.numpy(batched), np.stack((expected, expected))
+            )
+        for value, original in zip(values, snapshots):
+            np.testing.assert_array_equal(b.numpy(value), original)
+        return
     direction = tuple(np.sin(x) for x in inputs)
     if b.framework == "jax":
         jax = b.module
