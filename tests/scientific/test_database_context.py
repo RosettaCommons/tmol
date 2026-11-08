@@ -55,22 +55,23 @@ def test_context_is_immutable_and_subtypes_have_private_defaults(
 
     storage = importlib.import_module("tmol_jax.database")
     directory = storage.default_directory()
-    monkeypatch.delenv("TMOL_JAX_DATABASE", raising=False)
-    # The source checkout uses exported scoring tables; installed packages use
-    # the identical packaged directory through the unmodified default accessor.
-    monkeypatch.setattr(database, "default_directory", lambda: directory)
+    with monkeypatch.context() as defaults:
+        defaults.delenv("TMOL_JAX_DATABASE", raising=False)
+        # The source checkout uses exported scoring tables; installed packages use
+        # the identical packaged directory through the unmodified default accessor.
+        defaults.setattr(storage, "default_directory", lambda: directory)
 
-    class IsolatedDatabase(storage.ParameterDatabase):
-        _default = None
+        class IsolatedDatabase(storage.ParameterDatabase):
+            _default = None
 
-    context = IsolatedDatabase.get_default()
-    assert context.chemical is default_patched_chemical_database()
-    assert IsolatedDatabase.get_default() is context
-    explicit = IsolatedDatabase.from_file(str(directory))
-    assert explicit.chemical is not context.chemical
-    assert [r.name for r in explicit.chemical.residues] == [
-        r.name for r in context.chemical.residues
-    ]
+        context = IsolatedDatabase.get_default()
+        assert context.chemical is default_patched_chemical_database()
+        assert IsolatedDatabase.get_default() is context
+        explicit = IsolatedDatabase.from_file(str(directory))
+        assert explicit.chemical is not context.chemical
+        assert [r.name for r in explicit.chemical.residues] == [
+            r.name for r in context.chemical.residues
+        ]
     original = storage.default_directory()
     shutil.copytree(original / "chemical", tmp_path / "chemical")
     (tmp_path / "scoring").symlink_to(original / "scoring", target_is_directory=True)
