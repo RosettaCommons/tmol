@@ -34,6 +34,9 @@ def evaluate(b, scorer, *, summed=False):
         ("fa_ljatr", ("fa_ljatr", "fa_ljrep", "fa_lk")),
         ("omega", ("rama", "omega")),
         ("gen_torsions", ("gen_torsions",)),
+        ("ligand_charges", ()),
+        ("mixed_charges", ()),
+        ("mixed_fused_charges", ()),
         ("quadratic", ()),
         ("constraint_callbacks", ()),
     ),
@@ -41,6 +44,9 @@ def evaluate(b, scorer, *, summed=False):
 def test_retained_zero_channels_removal_and_old_snapshot_are_consistent(
     backend, weighted, channels, monkeypatch
 ):
+    if weighted.endswith("_charges"):
+        _check_charge_snapshots(backend, weighted)
+        return
     if weighted in ("quadratic", "constraint_callbacks"):
         if backend.framework != "jax":
             pytest.skip("JAX rendered-program capability")
@@ -277,3 +283,186 @@ def _check_constraint_snapshots(backend):
         batched = jax.jit(jax.vmap(fn))(jnp.stack([pose.coords, pose.coords]))
         np.testing.assert_allclose(batched[0], [energy, energy])
         np.testing.assert_allclose(batched[1], [gradient, gradient])
+
+
+def _check_charge_snapshots(b, case):
+    import attrs
+    from tmol_core.scoring.elec import partial_charge_table, partial_charges_for_block
+    from .molecules import DOMAIN_CASES
+
+    ligand, fused = case == "ligand_charges", case == "mixed_fused_charges"
+    b.molecule(
+        CASES["ligand"] if ligand else DOMAIN_CASES["mixed_batch"], terms=("fa_elec",)
+    )
+    db, pose = b.parameter_database, b.pose
+    frontend = import_module("tmol_jax" if b.framework == "jax" else "tmol")
+    ScoreType = frontend.ScoreType
+
+    def render(database, term=ScoreType.fa_elec):
+        sf = (
+            frontend.ScoreFunction(database)
+            if b.framework == "jax"
+            else frontend.ScoreFunction(database, b.device)
+        )
+        sf.set_weight(term, 1)
+        if fused:
+            sf.set_weight(ScoreType.fa_ljrep, 1)
+        if b.framework == "jax" and not ligand and not fused:
+            return sf.jitted_value_and_grad(pose)
+        if b.framework == "jax":
+            rendered = sf.render_whole_pose_scoring_module(pose, sum_terms=not fused)
+        else:
+            b.score_function = sf
+            b._render_torch()
+            rendered = b.scorer
+        index = list(sf.all_score_types()).index(term)
+
+        def objective(x):
+            values = (
+                rendered(x)
+                if b.framework == "jax"
+                else rendered(x, sum_terms=not fused)
+            )
+            return (values[index] if fused else values).sum()
+
+        if b.framework == "jax":
+            evaluate = b.module.value_and_grad(objective)
+            return evaluate if ligand else b.module.jit(evaluate)
+
+        def evaluate(x):
+            x = x.detach().clone().requires_grad_(True)
+            value = objective(x)
+            return value.detach(), b.module.autograd.grad(value, x)[0].detach()
+
+        return evaluate
+
+    original = render(db)
+    if not ligand:
+        expected = tuple(b.numpy(x) for x in original(pose.coords))
+        assert all(np.linalg.norm(x) > 1e-3 for x in expected)
+    factor, tolerance = (2, 3e-6) if ligand else (1.5, 3e-5)
+    changed = attrs.evolve(
+        db,
+        scoring=attrs.evolve(
+            db.scoring,
+            elec=attrs.evolve(
+                db.scoring.elec,
+                atom_charge_parameters=tuple(
+                    attrs.evolve(row, charge=factor * row.charge)
+                    for row in db.scoring.elec.atom_charge_parameters
+                ),
+            ),
+        ),
+    )
+    altered = render(changed)
+    if ligand:
+        expected = tuple(b.numpy(x) for x in original(pose.coords))
+        assert abs(expected[0]) > 1e-3 and np.linalg.norm(expected[1]) > 1e-3
+
+    def check(function, scale):
+        for actual, reference in zip(function(pose.coords), expected):
+            np.testing.assert_allclose(
+                b.numpy(actual), scale * reference, rtol=tolerance, atol=tolerance
+            )
+
+    check(altered, factor**2)
+    if ligand:
+        # Keep the original value-only retained-scorer check at its tighter bound.
+        np.testing.assert_allclose(
+            b.numpy(original(pose.coords)[0]), expected[0], rtol=3e-6, atol=3e-6
+        )
+        missing_type = pose.block_type(0, 0).atoms[0].atom_type
+        incomplete = attrs.evolve(
+            db,
+            scoring=attrs.evolve(
+                db.scoring,
+                ljlk=attrs.evolve(
+                    db.scoring.ljlk,
+                    atom_type_parameters=tuple(
+                        p
+                        for p in db.scoring.ljlk.atom_type_parameters
+                        if p.name != missing_type
+                    ),
+                ),
+            ),
+        )
+        with pytest.raises(ValueError, match="missing or non-finite LJLK parameters"):
+            render(incomplete, ScoreType.fa_ljrep)
+        return
+    check(render(db), 1)
+    if b.framework != "jax":
+        return
+    # Mutable frontend block annotations are a JAX preparation capability.
+    table = partial_charge_table(db.scoring.elec)
+    types = pose.packed_block_types.active_block_types
+    previous = [getattr(bt, "elec_partial_charges", None) for bt in types]
+    try:
+        for bt, override in zip(types, previous):
+            charges = partial_charges_for_block(bt, table, overrides=override)
+            bt.elec_partial_charges = {
+                atom.name: float(2 * charge) for atom, charge in zip(bt.atoms, charges)
+            }
+        doubled = render(db)
+        check(doubled, 4)
+        for bt in types:
+            for atom in bt.elec_partial_charges:
+                bt.elec_partial_charges[atom] *= 2
+        check(render(db), 16)
+        check(original, 1)
+        check(altered, 2.25)
+        check(doubled, 4)
+    finally:
+        for bt, override in zip(types, previous):
+            if override is None:
+                del bt.elec_partial_charges
+            else:
+                bt.elec_partial_charges = override
+    check(render(db), 1)
+    if b.framework == "jax" and not fused:
+        _check_charge_cache_ownership()
+
+
+def _check_charge_cache_ownership():
+    import attrs
+    import jax
+    from tmol_jax import (
+        beta2016_score_function,
+        pose_stack_from_pdb,
+        ScoreFunction,
+        ScoreType,
+    )
+    from .test_canonical_molecular_input import peptide_pdb
+
+    pose = pose_stack_from_pdb(peptide_pdb(3))
+    db = beta2016_score_function().param_db
+    zero_elec = attrs.evolve(
+        db.scoring.elec,
+        atom_charge_parameters=tuple(
+            attrs.evolve(p, charge=0.0) for p in db.scoring.elec.atom_charge_parameters
+        ),
+    )
+    zero_db = attrs.evolve(db, scoring=attrs.evolve(db.scoring, elec=zero_elec))
+
+    def render(database):
+        sf = ScoreFunction(database)
+        sf.set_weight(ScoreType.fa_elec, 1.0)
+        return jax.jit(sf.render_whole_pose_scoring_module(pose))
+
+    standard = render(db)
+    charges = pose.packed_block_types.elec_partial_charge
+    expected_charges = np.asarray(charges).copy()
+    expected = np.asarray(standard(pose.coords))
+    assert np.any(expected != 0)
+    zero = render(zero_db)
+    np.testing.assert_array_equal(pose.packed_block_types.elec_partial_charge, 0.0)
+    np.testing.assert_array_equal(charges, expected_charges)
+    np.testing.assert_array_equal(zero(pose.coords), 0.0)
+    # Native float32 tile sums use unordered atomic adds (three ULPs observed
+    # over 600 repeated evaluations). Check cache data exactly above; allow
+    # only reduction roundoff in scores, well below the zero-charge change.
+    np.testing.assert_allclose(standard(pose.coords), expected, rtol=1e-6, atol=0)
+    np.testing.assert_allclose(render(db)(pose.coords), expected, rtol=1e-6, atol=0)
+    np.testing.assert_array_equal(
+        pose.packed_block_types.elec_partial_charge, expected_charges
+    )
+    np.testing.assert_array_equal(zero(pose.coords), 0.0)
