@@ -93,10 +93,11 @@ in both current frontends and mature Torch. Fixed-coordinate checks reproduce
 variation in hydrogen-bond and Dunbrack reductions. Float64 repeat checks pass,
 but do not establish the float32 contract or complete workflow parity.
 
-Standalone LJ/LK scoring also has an unresolved float32 CUDA gradient-repeat
-failure in the rendered-score lifecycle tests. Its accumulation path differs
-from combined nonbonded scoring; passing combined-preset checks does not clear
-that separate gate.
+Standalone LJ/LK float32 CUDA gradients now use the shared native wider
+accumulator, then convert once to the coordinate dtype. The original lifecycle
+repeat test and independent per-term molecular gradients pass with this path;
+fixed-coordinate controls retain the original failed implementation's evidence.
+These checks do not establish complete workflow or peak-memory parity.
 
 Score weights default to float32 storage, matching mature Torch defaults even
 when coordinates use float64. `ScoreFunction(db, weight_dtype=np.float64)` selects
