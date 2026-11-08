@@ -345,6 +345,9 @@ atom order, including A/B/A/B torsions across two blocks. Their JAX callbacks
 support coordinate and parameter derivatives, JVPs and `jit`/`vmap`; parameter
 Hessians remain available with native torsions. Coordinate derivatives beyond
 first order depend on the callback.
+Sparse constraints spanning three or four blocks are unsupported in both
+frontends: mature and current Torch omit those contributions during conformer
+expansion, while JAX rejects them. Whole-pose multi-block callbacks are supported.
 `score_function.render_rotamer_scoring_module(pose, rotamer_set)` composes every
 enabled term, including reference energies and constraints. Calling it eagerly
 returns `(values, indices)` with uncoalesced scalar entries and `[3, entries]`
