@@ -88,6 +88,11 @@ The beta2016 preset retains all 25 declared channels and uses shared native
 physics for coordinate-dependent terms. Required missing parameters raise
 during preparation. See the capability matrix for tested domains and open gaps.
 
+Branched N-glycan packing retains a float32 CUDA repeat-energy validation gap
+in both current frontends and mature Torch. Fixed-coordinate checks reproduce
+variation in hydrogen-bond and Dunbrack reductions. Float64 repeat checks pass,
+but do not establish the float32 contract or complete workflow parity.
+
 Score weights default to float32 storage, matching mature Torch defaults even
 when coordinates use float64. `ScoreFunction(db, weight_dtype=np.float64)` selects
 explicit double-precision weights; clones retain that choice.
