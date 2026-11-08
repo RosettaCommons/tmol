@@ -292,14 +292,12 @@ def test_native_conformer_linear_value_gradient_and_curvature(
         if "-" not in case_name:
             check = np.testing.assert_array_equal
         elif b.framework == "torch":
-            check = lambda actual, expected: b.module.testing.assert_close(
-                array(actual), array(expected)
-            )
+            def check(actual, expected):
+                b.module.testing.assert_close(array(actual), array(expected))
         else:
             rtol, atol = (1.3e-6, 1e-5) if dtype == np.float32 else (1e-12, 1e-12)
-            check = lambda actual, expected: np.testing.assert_allclose(
-                actual, expected, rtol=rtol, atol=atol
-            )
+            def check(actual, expected):
+                np.testing.assert_allclose(actual, expected, rtol=rtol, atol=atol)
         check(b.numpy(value), wanted)
         for actual, expected in zip(gradient, expected):
             check(b.numpy(actual), expected)
