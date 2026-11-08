@@ -56,7 +56,9 @@ def test_weighted_channels_and_coordinate_derivative(backend, peptide):
     np.testing.assert_allclose(analytic, finite_difference, rtol=3e-3, atol=3e-3)
 
 
-def check_coordinate_transforms(b, case, terms, *, empty_term=None, empty_case=None):
+def check_coordinate_transforms(
+    b, case, terms, *, empty_term=None, empty_case=None, prepared_check=None
+):
     # Portable term checks already run above; retain JAX transform/FFI capabilities.
     if b.framework != "jax":
         return
@@ -65,6 +67,8 @@ def check_coordinate_transforms(b, case, terms, *, empty_term=None, empty_case=N
             b.molecule(case, terms=terms)
             x = b.pose.coords.astype(dtype)
             score = b.score_function.render_whole_pose_scoring_module(b.pose)
+            if prepared_check is not None:
+                prepared_check(b, x)
             direction = b.module.device_put(
                 np.random.default_rng(183).normal(size=x.shape).astype(dtype), b.device
             )

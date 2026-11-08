@@ -8,7 +8,7 @@ from .molecules import DOMAIN_CASES, MolecularCase
 from .test_canonical_molecular_input import canonical_input, rebuild_canonical
 
 
-@pytest.mark.parametrize("backend", ("torch-cuda",))
+@pytest.mark.parametrize("backend", ("torch-cuda",), indirect=True)
 @pytest.mark.parametrize(
     "case",
     [

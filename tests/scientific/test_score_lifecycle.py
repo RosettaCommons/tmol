@@ -367,10 +367,7 @@ def _check_charge_snapshots(b, case):
         assert abs(expected[0]) > 1e-3 and np.linalg.norm(expected[1]) > 1e-3
 
     def check(function, scale):
-        for actual, reference in zip(function(pose.coords), expected):
-            np.testing.assert_allclose(
-                b.numpy(actual), scale * reference, rtol=tolerance, atol=tolerance
-            )
+        _check_charge_scaling(b, function(pose.coords), expected, scale, tolerance)
 
     check(altered, factor**2)
     if ligand:
@@ -428,6 +425,13 @@ def _check_charge_snapshots(b, case):
     if b.framework == "jax" and not fused:
         with b.module.default_device(b.device):
             _check_charge_cache_ownership()
+
+
+def _check_charge_scaling(b, values, expected, scale, tolerance):
+    for actual, reference in zip(values, expected):
+        np.testing.assert_allclose(
+            b.numpy(actual), scale * reference, rtol=tolerance, atol=tolerance
+        )
 
 
 def _check_charge_cache_ownership():
