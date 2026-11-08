@@ -184,8 +184,8 @@ def _weights_1d(frac: jax.Array, degree: int) -> jax.Array:
     """Per-dimension spline weights for the (DEGREE+1) support cells.
 
     ``frac`` is the fractional offset (shape ``[...]``); the returned
-    array has shape ``[..., DEGREE+1]``. Directly mirrors the
-    ``_get_weights`` function in ``bspline.hh``.
+    array has shape ``[..., DEGREE+1]``. Cubic weights match the shared
+    molecular spline kernel.
     """
 
     f = jnp.asarray(frac)
@@ -211,20 +211,17 @@ def _weights_1d(frac: jax.Array, degree: int) -> jax.Array:
         w2 = 1.0 - w0 - w1 - w3 - w4
         return jnp.stack([w0, w1, w2, w3, w4], axis=-1)
     if degree == 5:
-        f2 = f * f
-        w5 = (1.0 / 120.0) * f2 * f * f2
-        w4d = (f2 - f) ** 2
-        w_ = f - 0.5
-        t = f2 * (f2 - 3.0)
-        w0 = (1.0 / 24.0) * (0.2 + f2 + w4d) - w5
-        t0 = (1.0 / 24.0) * (f2 * (f2 - 5.0) + 46.0 / 5.0)
-        t1 = (-1.0 / 12.0) * w_ * (t + 4.0)
-        w2 = t0 + t1
-        w3 = t0 - t1
-        t0 = (1.0 / 16.0) * (9.0 / 5.0 - t)
-        t1 = (1.0 / 24.0) * w_ * (w4d - f2 - 5.0)
-        w1 = t0 + t1
-        w4 = t0 - t1
+        # The three pairs reflect about the support midpoint. Evaluate the
+        # cardinal polynomials in Horner form without truncated-power cancellation.
+        def outer(x):
+            return (26 + x * (-50 + x * (20 + x * (20 + x * (-20 + 5 * x))))) / 120
+
+        def inner(x):
+            return (66 + x * x * (-60 + x * x * (30 - 10 * x))) / 120
+
+        w0, w5 = (1 - f) ** 5 / 120, f**5 / 120
+        w1, w4 = outer(f), outer(1 - f)
+        w2, w3 = inner(f), inner(1 - f)
         return jnp.stack([w0, w1, w2, w3, w4, w5], axis=-1)
     raise ValueError(f"Unsupported B-spline degree {degree}.")
 
