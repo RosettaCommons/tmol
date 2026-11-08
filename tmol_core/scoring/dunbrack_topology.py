@@ -41,27 +41,38 @@ def _empty_dunbrack_attrs() -> "DunbrackBlockAttrs":
     )
 
 
-def prepare_dunbrack_block(block_type, table_indices, aux):
-    # Dunbrack rotamer libraries cover alpha amino acids only. For ligands
-    # and other non-AA block types, install a sentinel with
-    # rotamer_table_set=-1 so the C++ kernel short-circuits the block.
+def dunbrack_scoring_table_indices(block_type, table_indices):
+    """Resolve scoring libraries from chemistry, without fitting tables.
+
+    Only alpha amino acids with their own declared lookup are scored. A borrowed
+    ``dunbrack_reference`` controls sampling, not scoring. Preserve original
+    library indices; variants use their base name and D forms their own lookup.
+    """
     polymer = block_type.properties.polymer
     if (
         not polymer.is_polymer
         or polymer.polymer_type != "amino_acid"
         or polymer.backbone_type != "alpha_aa"
     ):
-        return _empty_dunbrack_attrs()
-
-    rotamer_table_set, rotameric_index, semirotameric_index = (
+        return (-1, -1, -1)
+    all_index, rotameric_index, semirotameric_index = (
         table.get(block_type.base_name, -1) for table in table_indices
     )
-    semirotameric = semirotameric_index != -1
+    return (
+        (all_index, rotameric_index, semirotameric_index)
+        if all_index >= 0
+        else (-1, -1, -1)
+    )
 
-    # An amino acid the library does not cover scores no dunbrack term;
-    # a borrowed dunbrack_reference is for sampling only.
+
+def prepare_dunbrack_block(block_type, table_indices, aux):
+    rotamer_table_set, rotameric_index, semirotameric_index = (
+        dunbrack_scoring_table_indices(block_type, table_indices)
+    )
     if rotamer_table_set < 0:
         return _empty_dunbrack_attrs()
+    polymer = block_type.properties.polymer
+    semirotameric = semirotameric_index != -1
 
     semirotameric_tableset_offset = (
         aux["semirotameric_tableset_offsets"][semirotameric_index]
