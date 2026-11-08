@@ -156,9 +156,7 @@ class LKBallEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
             and int((pose_stack.block_type_ind >= 0).sum()) >= 512
         )
 
-    def _gen_waters(self, common_args, pose_stack, hbond_params):
-        from tmol.score.lk_ball.potentials._compiled import _gen_pose_waters
-
+    def _water_generation_args(self, common_args, pose_stack, hbond_params):
         args = [
             *common_args,
             pose_stack.inter_residue_connections,
@@ -185,7 +183,14 @@ class LKBallEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
         if common_args[0].dtype == torch.float64:
             _convert_float64(args)
 
-        return _gen_pose_waters(*args)
+        return args
+
+    def _gen_waters(self, common_args, pose_stack, hbond_params):
+        from tmol.score.lk_ball.potentials._compiled import _gen_pose_waters
+
+        return _gen_pose_waters(
+            *self._water_generation_args(common_args, pose_stack, hbond_params)
+        )
 
     def pose_score_lk_ball(self, *args):
         from tmol.score.lk_ball.potentials._compiled import _lk_ball_pose_score
@@ -199,11 +204,20 @@ class LKBallEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
             shared_block_neighbors,
         ) = args[-5:]
 
-        water_coords = self._gen_waters(
+        water_args = self._water_generation_args(
             (*common_args[:12], pose_stack._lk_ball_no_lockstep, *common_args[12:]),
             pose_stack,
             hbond_params,
         )
+        joint = common_args[0].is_cuda and common_args[0].dtype == torch.float32
+        from tmol.score.lk_ball.potentials._compiled import _gen_pose_waters
+
+        if joint:
+            # The joint native VJP owns the complete water chain rule.
+            with torch.no_grad():
+                water_coords = _gen_pose_waters(*water_args)
+        else:
+            water_coords = _gen_pose_waters(*water_args)
 
         args = [
             *common_args,
@@ -229,6 +243,21 @@ class LKBallEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
         if common_args[0].dtype == torch.float64:
             _convert_float64(args)
 
+        if joint:
+            from tmol.score.lk_ball.potentials._compiled import (
+                _lk_ball_pose_score_water,
+            )
+
+            return _lk_ball_pose_score_water(
+                args[0],
+                water_coords,
+                args[1:12] + args[13:25] + [args[28]],
+                water_args[:13] + water_args[14:],
+                args[12],
+                args[25],
+                args[27],
+                args[29],
+            )
         return _lk_ball_pose_score(*args)
 
     def rotamer_score_lk_ball(self, *args):

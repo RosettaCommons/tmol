@@ -19,3 +19,5 @@ _gen_pose_waters = _ops.gen_pose_waters
 _lk_ball_pose_score = _ops.lk_ball_pose_score
 _lk_ball_rotamer_score = _ops.lk_ball_rotamer_score
 _lk_ball_rotamer_score_shared = _ops.lk_ball_rotamer_score_shared
+
+_lk_ball_pose_score_water = _ops.lk_ball_pose_score_water
