@@ -150,10 +150,10 @@ def build_interaction_graph(
     eager and energy-table construction currently has no AD rule.
     """
     if scorer is not None:
-        if values is not None or indices is not None:
+        if any(value is not None for value in (values, indices)):
             raise ValueError("supply either sparse entries or a scorer")
         values, indices = scorer(rotamers.coords)
-    elif values is None or indices is None:
+    elif any(value is None for value in (values, indices)):
         raise ValueError("supply both values and indices, or a scorer")
     if any(isinstance(a, jax.core.Tracer) for a in (values, indices)):
         raise TypeError("dynamic interaction graphs must be built outside jit/vmap/AD")
