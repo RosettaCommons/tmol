@@ -53,7 +53,7 @@ jobs:
         if: inputs.candidate-run-id == '' && steps.core.outputs.required == 'true'
         run: |
           python scripts/build_core.py --outdir core-dist
-          python scripts/check_core_artifacts.py core-dist/tmol_core-*.whl core-dist/tmol_core-*.tar.gz
+          python scripts/check_pure_artifacts.py core-dist/tmol_core-*.whl core-dist/tmol_core-*.tar.gz
       - uses: actions/download-artifact@v4
         if: inputs.candidate-run-id != '' && steps.core.outputs.required == 'true'
         with:

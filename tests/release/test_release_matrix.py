@@ -43,7 +43,7 @@ def test_release_matrix_is_complete_and_unique():
 
 
 def test_matrix_cli_emits_workflow_json():
-    script = Path(__file__).with_name("release_matrix.py")
+    script = Path(__file__).resolve().parents[2] / "scripts/release_matrix.py"
     for name, expected_count in {
         "gpu": len(gpu_wheel_rows()),
         "linux-cpu": len(cpu_wheel_rows()),
@@ -94,7 +94,9 @@ def test_manifest_validator_accepts_only_the_complete_matrix(
 
     command = [
         sys.executable,
-        str(Path(__file__).with_name("validate_release_manifest.py")),
+        str(
+            Path(__file__).resolve().parents[2] / "scripts/validate_release_manifest.py"
+        ),
         str(tmp_path),
     ]
     valid = subprocess.run(command, text=True, capture_output=True)

@@ -5,7 +5,7 @@ import tomllib
 
 from build_jax_native import stage_native
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_native_license_files_and_metadata(tmp_path):

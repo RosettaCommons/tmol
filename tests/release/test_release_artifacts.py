@@ -15,7 +15,7 @@ import pytest
 from release_artifacts import validate_wheel, write_index
 from staging_index import serve
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def wheel(

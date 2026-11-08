@@ -24,4 +24,4 @@ TMOL_TEST_BACKENDS="${TMOL_TEST_BACKENDS:-torch-cuda}" COVERAGE_FILE="${GITHUB_W
   -n "${GPU_PYTEST_WORKERS}" --dist=worksteal \
   --cov="${GITHUB_WORKSPACE}/tmol" \
   --cov-report="xml:${GITHUB_WORKSPACE}/coverage.cuda.xml" \
-  --junitxml="${GITHUB_WORKSPACE}/testing.cuda.junit.xml" -k "cuda"
+  --junitxml="${GITHUB_WORKSPACE}/testing.cuda.junit.xml" -k "cuda" --ignore=tests/release

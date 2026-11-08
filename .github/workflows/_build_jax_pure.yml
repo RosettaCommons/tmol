@@ -32,9 +32,9 @@ jobs:
             typing_inspect build
           PYTHONPATH="$PWD" .jax-export/bin/python scripts/build_jax.py \
             --outdir jax-dist
-          .jax-export/bin/python scripts/check_core_artifacts.py \
+          .jax-export/bin/python scripts/check_pure_artifacts.py \
             jax-dist/tmol_core-*.whl jax-dist/tmol_core-*.tar.gz
-          .jax-export/bin/python scripts/check_jax_artifacts.py \
+          .jax-export/bin/python scripts/check_pure_artifacts.py \
             jax-dist/tmol_jax-*.whl jax-dist/tmol_jax-*.tar.gz
       - name: Rebuild standalone sdist without Torch
         run: |
@@ -52,7 +52,7 @@ jobs:
           from tmol_core.chemical.patching import PatchedChemicalDatabase
           assert PatchedChemicalDatabase.from_chem_db(ChemicalDatabase.get_default()).residues
           PY
-          .jax-export/bin/python scripts/check_jax_artifacts.py \
+          .jax-export/bin/python scripts/check_pure_artifacts.py \
             jax-rebuilt/tmol_jax-*.whl jax-dist/tmol_jax-*.tar.gz
       - uses: actions/upload-artifact@v4
         with:

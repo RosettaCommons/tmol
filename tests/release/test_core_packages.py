@@ -10,7 +10,7 @@ import pytest
 
 from package_requirements import requires_core
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_frontends_require_matching_core_and_own_separate_namespaces():
