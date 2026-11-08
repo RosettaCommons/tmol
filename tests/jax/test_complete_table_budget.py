@@ -2,7 +2,6 @@
 
 import os
 
-import jax
 import pytest
 
 from tmol_core.pack.streaming import complete_table_fits_window
@@ -10,6 +9,10 @@ from tmol_jax.pack import streaming
 from tests.scientific.execution import Execution
 from tests.scientific.rotamer_execution import RotamerExecution
 from tests.scientific.test_complete_preset import CASES
+from tests.scientific.test_canonical_molecular_input import (
+    canonical_input,
+    rebuild_canonical,
+)
 from tests.scientific.test_packing_execution import check_complete_packing
 
 
@@ -25,6 +28,10 @@ def _backend():
 def test_complete_buffer_bound_covers_compiled_scoring(name):
     backend = _backend()
     backend.molecule(CASES[name], terms=())
+    # Public canonical input retains the complete chemistry palette, including
+    # parameter tables for residues absent from this particular pose.
+    co, canonical = canonical_input(CASES[name], backend.parameter_database)
+    rebuild_canonical(backend, co, canonical)
     rotamers = RotamerExecution(backend, family="genbonded", sampled=True).rotamers
     backend.use_beta2016()
     scorer = backend.score_function.render_rotamer_scoring_module(
@@ -34,10 +41,11 @@ def test_complete_buffer_bound_covers_compiled_scoring(name):
     assert bound is not None
     values, indices = scorer(rotamers.coords)
     assert values.size <= bound[1]
-    # Independently use the compiled program's actual storage accounting. Native
-    # scratch is an explicit FFI result; compiler aliases reduce this total.
+    # Independently measure the production call with device tables as operands.
+    # An extra enclosing jit embeds those tables as constants instead, changing
+    # the storage contract. Native scratch is an explicit FFI result.
     evaluate = scorer.prepare(rotamers.coords)
-    executable = jax.jit(evaluate).lower(rotamers.coords).compile()
+    executable = evaluate.func.lower(rotamers.coords, **evaluate.keywords).compile()
     memory = executable.memory_analysis()
     assert memory.output_size_in_bytes + memory.temp_size_in_bytes <= bound[2]
     assert values.nbytes + indices.nbytes <= bound[2]

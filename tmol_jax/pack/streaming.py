@@ -254,7 +254,8 @@ def streaming_interaction_graph(
 def _explicit_intermediate_bytes(program):
     """Overcount explicit JAX buffers, including nested native FFI workspaces.
 
-    All equation results are counted even when they alias inputs or are dead.
+    Equation results are counted even when they may alias inputs or are dead.
+    stop_gradient is an identity at execution and needs no additional buffer.
     Input chemistry/coordinate arrays are already resident and are excluded.
     Unknown control-flow multiplicity cannot establish a complete-table bound.
     """
@@ -266,6 +267,8 @@ def _explicit_intermediate_bytes(program):
         if hasattr(value.aval, "shape") and hasattr(value.aval, "dtype")
     )
     for equation in program.eqns:
+        if equation.primitive.name == "stop_gradient":
+            continue
         if equation.primitive.name in ("while", "scan", "pure_callback", "io_callback"):
             return None
         for value in equation.outvars:
