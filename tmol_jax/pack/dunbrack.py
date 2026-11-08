@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from tmol_core.cache import AnnotationKey, PreparationCache
+from tmol_core.database.content_hash import _content_hash
 from tmol_core.pack.dunbrack import (
     DunbrackSamplingMetadata,
     pack_dunbrack_sampler_metadata,
@@ -44,32 +45,76 @@ class DunbrackChiSampler(SamplerSupport):
     ):
         # A sampler owns a parameter snapshot. Native host/device buffers may
         # be reused without observing mutable arrays supplied by its caller.
-        self.tables = copy.deepcopy(tables)
+        self._initialize(expanded_limit=expanded_limit, limit=limit)
+        self._tables = self._snapshot_tables(tables)
+        self.metadata = DunbrackSamplingMetadata(
+            self._tables.all_table_indices,
+            self._tables.scoring_db_aux["nchi_for_table_set"],
+            self._tables.sampling_db["n_rotamers_for_tableset"],
+        )
+
+    @staticmethod
+    def _snapshot_tables(tables):
+        tables = copy.deepcopy(tables)
         for mapping in (
-            self.tables.scoring_db,
-            self.tables.scoring_db_aux,
-            self.tables.sampling_db,
+            tables.scoring_db,
+            tables.scoring_db_aux,
+            tables.sampling_db,
         ):
             for value in mapping.values():
                 if isinstance(value, np.ndarray):
                     value.setflags(write=False)
+        return tables
+
+    def _initialize(
+        self, *, expanded_limit=DEFAULT_CHI_SAMPLE_LIMIT, limit=DEFAULT_CHI_SAMPLE_LIMIT
+    ):
+        self._tables = None
+        self._pending_database = None
+        self._snapshot_hash = None
         self._parameter_database = None
         self._native_storage = None
         self._metadata_cache = PreparationCache()
         self.expanded_limit, self.limit = chi_sample_budget(expanded_limit, limit)
-        self.metadata = DunbrackSamplingMetadata(
-            self.tables.all_table_indices,
-            self.tables.scoring_db_aux["nchi_for_table_set"],
-            self.tables.sampling_db["n_rotamers_for_tableset"],
-        )
 
     @classmethod
     def from_database(cls, parameter_database, **limits):
-        """Snapshot canonical fitted tables from this immutable parameter library."""
-        tables = prepare_dunbrack_parameters(parameter_database)
-        sampler = cls(tables, **limits)
+        """Snapshot the library now; fit coefficients when sampling needs them."""
+        if cls is not DunbrackChiSampler:
+            sampler = cls(prepare_dunbrack_parameters(parameter_database), **limits)
+            sampler._parameter_database = parameter_database
+            return sampler
+        sampler = cls.__new__(cls)
+        sampler._initialize(**limits)
+        library = copy.deepcopy(parameter_database.scoring.dunbrack)
+        sampler.metadata = DunbrackSamplingMetadata.from_database(library)
+        sampler._snapshot_hash = _content_hash(library)
+        sampler._pending_database = attr.evolve(
+            parameter_database,
+            scoring=attr.evolve(parameter_database.scoring, dunbrack=library),
+        )
         sampler._parameter_database = parameter_database
         return sampler
+
+    @property
+    def tables(self):
+        """Materialize the sampler's owned, read-only fitted parameter snapshot."""
+        if self._tables is None:
+            database = self._parameter_database
+            if _content_hash(database.scoring.dunbrack) == self._snapshot_hash:
+                # Reuse the ordinary fitted-library cache. The original source
+                # still matches our snapshot, so release its copy before fitting.
+                self._pending_database = None
+            elif self._pending_database is not None:
+                database = self._pending_database
+            else:
+                raise RuntimeError(
+                    "sampler preparation failed before the database changed; "
+                    "create a new sampler"
+                )
+            self._tables = self._snapshot_tables(prepare_dunbrack_parameters(database))
+            self._pending_database = None
+        return self._tables
 
     @classmethod
     def sampler_name(cls):

@@ -163,12 +163,13 @@ def test_reused_assembly_consumes_new_chi_payloads():
     assert checked > 1
 
 
-def test_sampler_parameter_snapshot_and_chemistry_context():
+@pytest.mark.parametrize("platform", ("cpu", "cuda"))
+def test_sampler_parameter_snapshot_and_chemistry_context(platform):
     import copy
     import attrs
     from tmol_jax.pack import PackerTask, SetPackerTask, DunbrackChiSampler
 
-    b = Execution("jax-cpu")
+    b = Execution("jax-" + platform)
     b.molecule(DUNBRACK_CASES["l_peptide"], terms=("ref",))
     prepared = DunbrackChiSampler.from_database(b.parameter_database)
     tables = copy.deepcopy(prepared.tables)
@@ -198,6 +199,41 @@ def test_sampler_parameter_snapshot_and_chemistry_context():
     assert np.max(np.abs(changed[3] - first[3])) > 1e-5
 
     db = b.parameter_database
+    library = db.scoring.dunbrack
+    name = next(
+        row.dun_table_name for row in library.dun_lookup if row.residue_name == "LEU"
+    )
+    records = []
+    for record in library.rotameric_libraries:
+        if record.table_name == name:
+            source_means = record.rotameric_data.rotamer_means.copy()
+            record = attrs.evolve(
+                record,
+                rotameric_data=attrs.evolve(
+                    record.rotameric_data, rotamer_means=source_means
+                ),
+            )
+        records.append(record)
+    custom = attrs.evolve(
+        db,
+        scoring=attrs.evolve(
+            db.scoring,
+            dunbrack=attrs.evolve(library, rotameric_libraries=tuple(records)),
+        ),
+    )
+    expected = sample(DunbrackChiSampler.from_database(custom))
+    delayed = DunbrackChiSampler.from_database(custom)
+    # Mutate the caller's source before this sampler first reads fitted tables.
+    # Delayed preparation must retain the same eager snapshot contract.
+    source_means += 10
+    retained = sample(delayed)
+    changed = sample(DunbrackChiSampler.from_database(custom))
+    for before, after in zip(expected, retained):
+        np.testing.assert_array_equal(before, after)
+    for before, after in zip(expected[:3], changed[:3]):
+        np.testing.assert_array_equal(before, after)
+    assert np.max(np.abs(changed[3] - expected[3])) > 1e-5
+
     mismatched = DunbrackChiSampler.from_database(
         attrs.evolve(db, chemical=attrs.evolve(db.chemical))
     )
