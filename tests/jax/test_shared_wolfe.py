@@ -154,3 +154,33 @@ def test_step_reductions_preserve_dtype_device_and_array_transformations(
         [expected, expected * 2],
     )
     np.testing.assert_array_equal(jax.grad(norm)(values), derivative)
+
+
+@pytest.mark.parametrize("dtype", (np.float32, np.float64))
+def test_host_control_quadratic_retains_dtype_and_frozen_coordinate(dtype):
+    # Coupled positive-definite quadratic: freezing y=5 shifts the minimizing
+    # x to 2 - (5 + 3)/2 = -2. This checks the constrained physical optimum.
+    start = jnp.asarray([0, 5, 9], dtype=dtype)
+
+    def objective(x):
+        a, b, c = x - jnp.asarray([2, -3, 4], dtype=dtype)
+        return a * a + a * b + b * b + 3 * c * c
+
+    result = lbfgs_minimize(
+        objective,
+        start,
+        grad_mask=jnp.asarray([1, 0, 1], dtype=dtype),
+        max_iter=30,
+        gtol=1e-6 if dtype == np.float32 else 1e-10,
+        ftol=0,
+    )
+    assert result["x"].dtype == start.dtype
+    assert result["x"].device == start.device
+    assert result["x"][1] == start[1]
+    np.testing.assert_allclose(
+        result["x"],
+        [-2, 5, 4],
+        rtol=0,
+        atol=3e-6 if dtype == np.float32 else 2e-10,
+    )
+    np.testing.assert_allclose(result["fun"], 48, rtol=0, atol=2e-6)

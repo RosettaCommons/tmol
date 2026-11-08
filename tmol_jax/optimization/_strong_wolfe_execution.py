@@ -2,6 +2,7 @@
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from tmol_core.optimization.lbfgs import two_loop_direction
 from tmol_jax._compilation import jit_without_autotuning
@@ -63,8 +64,23 @@ def _append_history(steps, differences, rho, step, difference, inverse, count):
     )
 
 
+def _host_reduction(reduce):
+    def apply(*args):
+        # The host policy branches on these values. Transfer once, retaining the
+        # reduction dtype for its subsequent scalar arithmetic (NumPy >= 2.1,
+        # required by the supported JAX versions).
+        return np.asarray(reduce(*args))[()]
+
+    return staticmethod(apply)
+
+
 class JaxLBFGSExecution(JaxStrongWolfeExecution):
     """Fixed device storage mirroring histories accepted by the common policy."""
+
+    dot = _host_reduction(JaxStrongWolfeExecution.dot)
+    abs_max = _host_reduction(JaxStrongWolfeExecution.abs_max)
+    abs_sum = _host_reduction(JaxStrongWolfeExecution.abs_sum)
+    sqrt = staticmethod(np.sqrt)
 
     def __init__(self, x, capacity):
         self.steps = jnp.zeros((capacity, x.size), x.dtype, device=x.device)
