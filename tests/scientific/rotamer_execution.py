@@ -12,10 +12,12 @@ class RotamerExecution:
         sampled=False,
         family=None,
         include_current=True,
+        task=None,
     ):
         if backend.requested_device == "mps":
             raise NotImplementedError(
-                "the sparse float64 science adapter requires CPU/CUDA; Metal needs a separate float32 validation"
+                "the sparse float64 science adapter requires CPU/CUDA; "
+                "Metal needs a separate float32 validation"
             )
         self.backend = backend
         self.family = family or ("elec" if electrostatic else "ljlk")
@@ -35,8 +37,9 @@ class RotamerExecution:
                 IncludeCurrentSampler,
                 build_rotamers,
             )
-        task = PackerTask(backend.pose, PackerPalette())
-        task.restrict_to_repacking()
+        if task is None:
+            task = PackerTask(backend.pose, PackerPalette())
+            task.restrict_to_repacking()
         if sampled:
             if self.family == "na_torsion":
                 from .test_na_sampling import na_sampling_task
