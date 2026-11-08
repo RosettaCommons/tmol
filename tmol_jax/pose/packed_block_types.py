@@ -97,6 +97,19 @@ class PackedBlockTypes:
         return self.n_atoms.device
 
     @property
+    def _scoring_sources(self):
+        """Weak cache identity for an immutable, ordered residue collection."""
+        types = self.active_block_types
+        if not isinstance(types, tuple):
+            return tuple(types)
+        context = getattr(self, "_scoring_context", None)
+        if context is None or context.value is not types:
+            context = self._scoring_context = _ResidueContext(types)
+        # Replacing the tuple expires its old weak identity. Residue annotation
+        # overrides still use the parameter snapshots supplied by each term.
+        return (context,)
+
+    @property
     def restype_set(self):
         if self._restype_context is None:
             from tmol_jax.chemical.restypes import ResidueTypeSet

@@ -35,7 +35,9 @@ class CartBondedEnergyTerm(EnergyTerm):
             ),
         )
         types = pbt.active_block_types
-        host = self._prepared("packed", lambda: prep.prepare_packed(types), *types)
+        host = self._prepared(
+            "packed", lambda: prep.prepare_packed(types), *pbt._scoring_sources
+        )
         register("tmol_cartbonded")
         precise = pose_stack.coords.device.platform == "gpu"
         if precise:

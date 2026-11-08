@@ -50,7 +50,7 @@ def prepared_palette(
     """Bounded palette preparation keyed by live sources and execution device."""
     key = AnnotationKey.from_sources(
         database,
-        *pbt.active_block_types,
+        *pbt._scoring_sources,
         *sources,
         settings=(pbt.max_n_atoms, pbt.max_n_conn, device, *settings),
     )

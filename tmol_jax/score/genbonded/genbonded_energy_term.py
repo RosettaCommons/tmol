@@ -25,7 +25,9 @@ class GenBondedEnergyTerm(EnergyTerm):
         )
         types = pbt.active_block_types
         blocks = self._prepared(
-            "blocks", lambda: [prep.prepare_block(bt) for bt in types], *types
+            "blocks",
+            lambda: [prep.prepare_block(bt) for bt in types],
+            *pbt._scoring_sources,
         )
         # Decide interaction ownership from the common parameters, not names.
         if not include_empty and all(
@@ -36,7 +38,11 @@ class GenBondedEnergyTerm(EnergyTerm):
             return ()
         register("tmol_genbonded")
         packed = list(
-            self._prepared("packed", lambda: prep.prepare_packed(types, blocks), *types)
+            self._prepared(
+                "packed",
+                lambda: prep.prepare_packed(types, blocks),
+                *pbt._scoring_sources,
+            )
         )
         ports = pbt.max_n_conn
         # JAX execution pads connection axes to two, native preparation to one.

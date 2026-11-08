@@ -47,7 +47,7 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
             lambda: prep.prepare_packed(
                 [prep.prepare_block(bt) for bt in pbt.active_block_types]
             ),
-            *pbt.active_block_types,
+            *pbt._scoring_sources,
         )
         rt, ot = self._prepared(
             "tables",

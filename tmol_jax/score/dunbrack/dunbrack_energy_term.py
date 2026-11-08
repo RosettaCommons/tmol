@@ -44,7 +44,7 @@ class DunbrackEnergyTerm(EnergyTerm):
         parameters = self._prepared(
             "device_parameters",
             lambda: self._packed_parameters(pbt, pose_stack.coords.dtype),
-            *pbt.active_block_types,
+            *pbt._scoring_sources,
             settings=(
                 pbt.max_n_atoms,
                 pbt.max_n_conn,
