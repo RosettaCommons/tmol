@@ -39,6 +39,9 @@ def test_disulfide_coordinate_derivatives_and_translation(backend, name):
             backend, DISULFIDE_CASES[name], ("disulfide",), empty_term="disulfide"
         )
 
+        if backend.framework == "jax":
+            _check_protein_disulfide_reference()
+
 
 @pytest.mark.parametrize("pair", ["ll", "ld"])
 def test_disulfide_mirror_and_permutation_invariants(backend, pair):
@@ -99,3 +102,22 @@ def test_disulfide_custom_weights_scale_energy_and_gradients(backend):
     np.testing.assert_allclose(new_value, 2 * value, atol=3e-5, rtol=3e-5)
     np.testing.assert_allclose(new_gradient, 2 * gradient, atol=3e-5, rtol=3e-5)
     np.testing.assert_array_equal(backend.scores(backend.coords()), value)
+
+
+def _check_protein_disulfide_reference():
+    from pathlib import Path
+    from tmol_jax import pose_stack_from_pdb, beta2016_score_function
+
+    """Unweighted disulfide energy of 3PLC's four bonds, from TMol's Torch scorer."""
+    from tmol_jax.score import ScoreType
+
+    pose = pose_stack_from_pdb(
+        Path(__file__).parents[2] / "tmol/tests/data/pdb/3plc.pdb"
+    )
+    score_function = beta2016_score_function()
+    score = score_function.render_whole_pose_scoring_module(
+        pose, sum_terms=False, apply_weights=False
+    )
+    channel = score_function.active_score_types().index(ScoreType.disulfide)
+    energy = np.asarray(score(pose.coords))[channel, 0]
+    np.testing.assert_allclose(energy, -3.25716, atol=2e-3)
