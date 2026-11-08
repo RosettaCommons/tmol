@@ -23,8 +23,9 @@ int main() {
   assert(storage);
   CudaAnnealerWorkspace w(3, 7, 53, 12, storage, shape.bytes);
   assert(w.bytes == shape.bytes && w.zero_bytes < w.bytes);
-  assert(w.current_rotamer_assignments_lotemp.size(1) == 1250);
-  assert(w.current_rotamer_assignments_fullquench.size(1) == 312);
+  assert(w.current_rotamer_assignments_hitemp.size(1) == 128);
+  assert(w.current_rotamer_assignments_lotemp.size(1) == 320);
+  assert(w.current_rotamer_assignments_fullquench.size(1) == 80);
   assert(w.quench_lite_order.data() == w.fullquench_order.data());
   assert(w.quench_lite_order.size(2) == 8);
   assert(w.fullquench_order.size(2) == 53);
@@ -44,7 +45,7 @@ int main() {
   record(spans, w.segment_heads_fullquench);
   // Shared quench storage is intentionally aliased across disjoint phases.
   auto q =
-      std::max(int64_t(3) * 1250 * 8, int64_t(3) * 312 * 53) * sizeof(int32_t);
+      std::max(int64_t(3) * 320 * 8, int64_t(3) * 80 * 53) * sizeof(int32_t);
   spans.push_back(
       {reinterpret_cast<uintptr_t>(w.quench_lite_order.data()),
        reinterpret_cast<uintptr_t>(w.quench_lite_order.data()) + q});
