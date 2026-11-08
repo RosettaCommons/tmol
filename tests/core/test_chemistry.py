@@ -91,17 +91,16 @@ def test_shared_records_and_patching(frontend, raw_database):
 
     import attrs
     from tmol_jax.database.chemical import ChemicalDatabase
-    from tmol_jax.chemical.patched_chemdb import PatchedChemicalDatabase
     from tmol_jax.pose.packed_block_types import PackedBlockTypes
 
     raw = ChemicalDatabase.get_default()
-    original = PatchedChemicalDatabase.from_chem_db(raw)
+    original = patching.PatchedChemicalDatabase.from_chem_db(raw)
     alanine = next(residue for residue in raw.residues if residue.name == "ALA")
     custom = attrs.evolve(
         alanine, name="UXA", base_name="UXA", name3="UXA", io_equiv_class="UXA"
     )
     extended = original.with_added_residues((custom,))
-    assert isinstance(extended, PatchedChemicalDatabase)
+    assert isinstance(extended, patching.PatchedChemicalDatabase)
     assert not any(r.name == "UXA" for r in original.residues)
     palette = PackedBlockTypes.default(extended)
     names = {r.name for r in palette.active_block_types}

@@ -104,7 +104,6 @@ def test_explicit_charge_overrides_are_complete_finite_and_take_precedence():
 
     from types import SimpleNamespace
 
-    from tmol_core.scoring.elec import partial_charges_for_block
 
     block = SimpleNamespace(name="LIG:nterm:conj_x:other", atoms=("N", "H", "V"))
     table = {

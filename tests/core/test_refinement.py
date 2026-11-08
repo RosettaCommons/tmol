@@ -56,8 +56,6 @@ def test_reordered_atoms_preserve_bond_chemistry(refined_types):
         return
 
     import attrs
-    import numpy as np
-    from tmol_core.chemical.restypes import refined_from_raw
     from tmol_jax.chemical.restypes import _refined_from_raw
     from tmol_jax.database import ParameterDatabase
 
