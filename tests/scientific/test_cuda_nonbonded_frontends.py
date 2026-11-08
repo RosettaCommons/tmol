@@ -8,6 +8,7 @@ from .molecules import DOMAIN_CASES, MolecularCase
 from .test_canonical_molecular_input import canonical_input, rebuild_canonical
 
 
+@pytest.mark.parametrize("backend", ("torch-cuda",))
 @pytest.mark.parametrize(
     "case",
     [
@@ -16,10 +17,10 @@ from .test_canonical_molecular_input import canonical_input, rebuild_canonical
     ],
     ids=("canonical", "mixed_noncanonical_ligand"),
 )
-def test_cuda_nonbonded_frontends_preserve_channel_gradients(case):
+def test_cuda_nonbonded_frontends_preserve_channel_gradients(backend, case):
     # Individual frontend/device domains have their own shared tests. This
     # additional comparison requires both runtimes on an actual CUDA host.
-    executions = [Execution(name) for name in ("torch-cuda", "jax-cuda")]
+    executions = [backend, Execution("jax-cuda")]
     results = []
     for backend in executions:
         backend.molecule(case, terms=("fa_ljatr", "fa_ljrep", "fa_lk", "fa_elec"))
