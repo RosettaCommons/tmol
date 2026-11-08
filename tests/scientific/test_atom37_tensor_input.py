@@ -137,6 +137,27 @@ def test_tensor_atom37_retains_source_and_full_energy_gradient(backend, name):
         analytic = np.sum(b.numpy(gradient) * direction)
         np.testing.assert_allclose(analytic, finite_difference, rtol=3e-3, atol=3e-3)
 
+    if b.framework == "jax" and name in ("ligand", "hydroxyproline"):
+        jax = b.module
+        shifts = jax.device_put(np.array([[0, 0, 0], [2, 3, -1]], np.float32), b.device)
+        coords = jax.jit(jax.vmap(lambda shift: bind(x + shift).coords))(shifts)
+        np.testing.assert_allclose(
+            coords[1] - coords[0],
+            np.broadcast_to(np.asarray(shifts[1]), coords[0].shape),
+            atol=2e-5,
+            rtol=2e-5,
+        )
+        invalid = x.at[0, 0, 0, 0].set(np.inf)
+        assert np.isnan(np.asarray(jax.jit(lambda y: bind(y).coords)(invalid))).all()
+        with pytest.raises(ValueError, match="shape"):
+            bind(x[:, :-1])
+        # No routing for a named ligand is a hard error, not ideal-coordinate input.
+        if name == "ligand":
+            with pytest.raises(ValueError, match="routes no atom"):
+                io.prepare_atom37_tensor_builder(
+                    topology["res_types"], topology["chain_id"], context
+                )
+
 
 def test_tensor_atom37_gap_suppresses_bond_without_inventing_termini(backend):
     b, io, source, topology, context = tensor_fixture(backend, "canonical", True)
