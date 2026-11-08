@@ -149,3 +149,20 @@ def test_native_refinement_denormal_scope_restores_on_exception():
             assert execution.native.denormal_mode() == (3 if previous >= 0 else -1)
             raise RuntimeError("intentional scope exit")
     assert execution.native.denormal_mode() == previous
+
+
+@pytest.mark.parametrize("executor", [torch_execution, native_conformer_execution])
+def test_planar_stage_preserves_input_and_rigid_translation(executor):
+    if executor is native_conformer_execution:
+        executor = executor()
+    storage = np.array([[0.0, 9.0, 0.0, 8.0], [4.0, 7.0, 3.0, 6.0]])
+    initial = storage[:, ::2]
+    original = storage.copy()
+    with executor.flush_denormals():
+        result = executor.planar_refine(initial, [(0, 1, 2.5)], 20)
+    assert result.dtype == np.float64
+    assert result.shape == initial.shape
+    np.testing.assert_array_equal(storage, original)
+    assert not np.shares_memory(result, initial)
+    np.testing.assert_allclose(np.linalg.norm(result[0] - result[1]), 2.5, atol=1e-12)
+    np.testing.assert_allclose(result.mean(0), initial.mean(0), atol=1e-12)
