@@ -49,7 +49,7 @@ def test_cpu_scoring_with_cuda_annealing(backend):
 
 
 def check_complete_packing(
-    backend, name, *, bump=False, soft_rep=False, anneal_device=None
+    backend, name, *, bump=False, soft_rep=False, anneal_device=None, seed=17
 ):
     backend.molecule(CASES[name], terms=("ref",))
     task, _, concrete = (
@@ -74,7 +74,7 @@ def check_complete_packing(
     energy_before = backend.scores(before)
     options = {} if anneal_device is None else {"anneal_device": anneal_device}
     packed = pack_rotamers(
-        backend.pose, backend.score_function, task, seed=17, **options
+        backend.pose, backend.score_function, task, seed=seed, **options
     )
     assert packed.coords.device == backend.pose.coords.device
     np.testing.assert_array_equal(backend.coords(), before)

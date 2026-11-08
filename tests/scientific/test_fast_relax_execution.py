@@ -10,6 +10,10 @@ from .test_complete_preset import CASES
     "name", ("ligand", "connected_noncanonical", "d_peptide", "mixed_batch")
 )
 def test_fast_relax_molecular_stages_and_per_pose_acceptance(backend, name):
+    check_fast_relax_molecular_stages(backend, name)
+
+
+def check_fast_relax_molecular_stages(backend, name, *, seed=73):
     backend.molecule(CASES[name], terms=())
     backend.use_beta2016()
     b, pose, score = backend, backend.pose, backend.score_function
@@ -37,9 +41,9 @@ def test_fast_relax_molecular_stages_and_per_pose_acceptance(backend, name):
             self.releases += 1
 
     minimizer = Minimizer()
-    options = {"seed": 73} if b.framework == "jax" else {}
+    options = {"seed": seed} if b.framework == "jax" else {}
     if b.framework == "torch":
-        b.module.manual_seed(73)
+        b.module.manual_seed(seed)
     result = fast_relax(
         pose,
         score,
