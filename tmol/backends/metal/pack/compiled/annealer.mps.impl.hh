@@ -15,6 +15,7 @@
 // not need one.
 
 #include <tmol/pack/compiled/annealer.hh>
+#include <tmol/pack/compiled/annealer_policy.hh>
 #include <tmol/pack/compiled/annealer_ctx.hh>
 #include <tmol/score/common/tview_binder.hh>
 #include <tmol/pack/compiled/annealer_kernels.hh>
@@ -52,8 +53,6 @@ using AnnealerCtx =
 // packer cannot afford.
 struct MpsAnnealSchedule {
   int lotemp_expansions = 10;
-  float round1_cut = 0.25f;
-  float round2_cut = 0.25f;
   int outer_hitemp = 5;
   int outer_lotemp = 5;
   float inner_mult_hitemp = 0.4f;
@@ -181,10 +180,10 @@ inline std::tuple<tmol::native::Tensor, tmol::native::Tensor> anneal_mps(
   int const max_n_rotamers = int(max_n_rotamers_per_pose);
 
   MpsAnnealSchedule const sched;
-  int const n_hitemp = int(n_hitemp_traj);
-  int const n_lotemp =
-      int(n_hitemp * sched.round1_cut) * sched.lotemp_expansions;
-  int const n_quench = int(n_lotemp * sched.round2_cut);
+  AnnealerTrajectoryCounts const counts{static_cast<int>(n_hitemp_traj)};
+  int const n_hitemp = counts.high;
+  int const n_lotemp = counts.low;
+  int const n_quench = counts.final;
   int const n_traj_max = std::max(std::max(n_hitemp, n_lotemp), n_quench);
 
   int const inner_hitemp = int(max_n_rotamers * sched.inner_mult_hitemp);
@@ -276,8 +275,7 @@ inline std::tuple<tmol::native::Tensor, tmol::native::Tensor> anneal_mps(
 
   // Round 2: the best quarter each seed `lotemp_expansions` trajectories at
   // low temperature.
-  rank_and_seed(
-      n_hitemp, int(n_hitemp * sched.round1_cut), sched.lotemp_expansions);
+  rank_and_seed(n_hitemp, n_hitemp / 4, sched.lotemp_expansions);
   ctx.phase = kAnnealPhaseLotemp;
   ctx.n_traj = n_lotemp;
   ctx.n_outer_iterations = sched.outer_lotemp;
