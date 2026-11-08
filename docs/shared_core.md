@@ -90,6 +90,10 @@ coordination, author identities and unresolved atoms. Protonation and terminal
 policy use explicit chemical contexts and preserve custom residue identities.
 The default patched chemistry is shared; loading an explicit path creates fresh
 chemistry. Host caches do not own frontend device-stream synchronization.
+`PreparationCache(max_entries=8)` retains one value per namespace under weak
+source identity. Owners may choose a positive integer capacity for their working
+set; inserting a new namespace at capacity evicts the oldest inserted namespace.
+Hits and replacements preserve that order, and `clear()` discards all entries.
 
 `tmol_core.io.canonical_atom_array.prepare_canonical_atom_array` resolves prepared
 Biotite inputs into one canonical host plan: normalization, atom identities,

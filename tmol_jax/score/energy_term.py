@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 
 from tmol_core.cache import AnnotationKey, PreparationCache
+from tmol_core.scoring.channels import TERM_CHANNELS
 
 
 class EnergyTerm(ABC):
@@ -43,17 +44,25 @@ class EnergyTerm(ABC):
         raise NotImplementedError
 
 
-def prepared_palette(pbt, database, name, prepare, *, settings=(), device=None):
+def prepared_palette(
+    pbt, database, name, prepare, *, settings=(), device=None, sources=()
+):
     """Bounded palette preparation keyed by live sources and execution device."""
     key = AnnotationKey.from_sources(
         database,
         *pbt.active_block_types,
+        *sources,
         settings=(pbt.max_n_atoms, pbt.max_n_conn, device, *settings),
     )
     # Device copies must not evict the common host records used to prepare them.
     attribute = "_scoring_preparations" if device is None else "_scoring_device_arrays"
     cache = getattr(pbt, attribute, None)
     if cache is None:
-        cache = PreparationCache()
+        # Whole-pose and sparse preparation share the finite score-family set.
+        cache = (
+            PreparationCache()
+            if device is None
+            else PreparationCache(max_entries=len(TERM_CHANNELS))
+        )
         setattr(pbt, attribute, cache)
     return cache.get_or_create(name, key, prepare)
