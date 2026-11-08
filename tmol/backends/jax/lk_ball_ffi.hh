@@ -3,8 +3,7 @@
 #include "workspace_ffi.hh"
 #include "graph_topology_ffi.hh"
 #include <tmol/score/common/sphere_overlap_preparation.hh>
-#include <tmol/score/lk_ball/potentials/gen_pose_waters_native.hh>
-#include <tmol/score/lk_ball/potentials/lk_ball_pose_kernels.hh>
+#include <tmol/score/lk_ball/potentials/native_lk_ball_score_water.hh>
 
 namespace tmol::jax {
 template <
@@ -340,13 +339,8 @@ struct LKBallKernelT {
                         static_cast<Real*>(gradient->untyped_data())
                         + channel * count * 3),
           {count});
-      if constexpr (Sparse)
-        lk_ball_rotamer_native<true, Ops, D, Real, I>(context, score);
-      else
-        lk_ball_pose_native<true, Ops, D, Real, I>(
-            context, score, neighbors, poses);
-      water_gen_backward<Ops, D, Real, I>(
-          context, water, score.dV_d_water_coords, score.dV_d_pose_coords);
+      lk_ball_score_water_backward<Sparse, Ops, D, Real, I>(
+          context, score, water, neighbors, poses);
       if constexpr (precise) {
         auto* out =
             static_cast<Real*>(gradient->untyped_data()) + channel * count * 3;
