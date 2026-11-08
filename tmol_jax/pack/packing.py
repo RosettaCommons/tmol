@@ -4,6 +4,11 @@ import jax
 import numpy as np
 import time
 
+from tmol_core.pack.annealing import (
+    DEFAULT_ANNEAL_TRAJECTORIES,
+    validate_anneal_trajectories,
+)
+
 from .rotamers import build_rotamers
 from .interaction_graph import build_interaction_graph
 from .annealing import anneal_cpu, anneal_cuda, cuda_phase_seeds
@@ -18,6 +23,7 @@ def pack_rotamers(
     seed=None,
     chunk_size=None,
     anneal_device=None,
+    n_anneal_trajectories=DEFAULT_ANNEAL_TRAJECTORIES,
     verbose=False,
 ):
     """Select conformers using the complete sparse score and native search.
@@ -33,6 +39,8 @@ def pack_rotamers(
     the same local stream; no global RNG state is changed.
     ``anneal_device`` may select a CPU/CUDA device independently of scoring.
     Only prepared graph arrays move; the returned pose stays on its input device.
+    ``n_anneal_trajectories`` controls the high-temperature funnel count
+    (default 128, minimum 4) on CUDA and CPUs with at least eight threads.
     ``verbose`` reports synchronized total packing time.
     """
     if seed is None:
@@ -41,7 +49,15 @@ def pack_rotamers(
     if verbose:
         pose_stack.coords.block_until_ready()
         started = time.perf_counter()
-    result = _pack_rotamers(pose_stack, sfxn, task, seed, chunk_size, anneal_device)
+    result = _pack_rotamers(
+        pose_stack,
+        sfxn,
+        task,
+        seed,
+        chunk_size,
+        anneal_device,
+        n_anneal_trajectories=n_anneal_trajectories,
+    )
     if verbose:
         result.coords.block_until_ready()
         print(f"Packed {result.n_poses} poses in {time.perf_counter() - started:.3f}s")
@@ -55,8 +71,16 @@ def _seed_value(seed):
 
 
 def _pack_rotamers(
-    pose_stack, sfxn, task, seed, chunk_size, anneal_device, seed_state=None
+    pose_stack,
+    sfxn,
+    task,
+    seed,
+    chunk_size,
+    anneal_device,
+    seed_state=None,
+    n_anneal_trajectories=DEFAULT_ANNEAL_TRAJECTORIES,
 ):
+    n_anneal_trajectories = validate_anneal_trajectories(n_anneal_trajectories)
     if isinstance(pose_stack.coords, jax.core.Tracer):
         raise TypeError("discrete packing requires eager coordinates and choices")
     if pose_stack.coords.dtype != np.float32:
@@ -99,6 +123,7 @@ def _pack_rotamers(
                     chunk_size=chunk_size,
                     anneal_device=device,
                     seed_state=seed_state,
+                    n_anneal_trajectories=n_anneal_trajectories,
                 )
             )
         return PoseStackBuilder.from_poses(chunks, pose_stack.device)
@@ -156,7 +181,12 @@ def _pack_rotamers(
     if device.platform == "cpu":
         words = seed_state.randint(0, 1 << 32, 2, dtype=np.uint64)
         native_seed = (int(words[0]) << 32) | int(words[1])
-        _, assignments = anneal_cpu(*arguments, chunk_size=chunk_size, seed=native_seed)
+        _, assignments = anneal_cpu(
+            *arguments,
+            chunk_size=chunk_size,
+            seed=native_seed,
+            n_trajectories=n_anneal_trajectories,
+        )
     else:
         seeds = cuda_phase_seeds(seed, seed_state[0])
         seed_state[0] += 1
@@ -165,6 +195,7 @@ def _pack_rotamers(
             chunk_size=chunk_size,
             phase_seeds=jax.device_put(seeds, device),
             max_rotamers=int(np.asarray(r["rotamer_pose_counts"]).max(initial=0)),
+            n_trajectories=n_anneal_trajectories,
         )
     if device != pose.device:
         assignments = jax.device_put(assignments, pose.device)

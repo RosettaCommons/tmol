@@ -239,13 +239,53 @@ ffi::Error run_graph_stage(
     return ffi::Error::InvalidArgument(error.what());
   }
 }
+// Runtime pool size is queried once before compiling shape-dependent search.
+ffi::Error cpu_thread_count(
+    ffi::ThreadPool pool, ffi::Result<ffi::AnyBuffer> out) {
+  require_shape(*out, ffi::DataType::S32, {});
+  *static_cast<int32_t*>(out->untyped_data()) =
+      std::max<int>(1, pool.num_threads());
+  return ffi::Error::Success();
+}
+
+ffi::Error run_annealer(
+    ffi::ThreadPool pool,
+    ffi::RemainingArgs args,
+    ffi::RemainingRets rets,
+    int64_t chunk_size,
+    int64_t seed,
+    int64_t n_trajectories,
+    int64_t threads) {
+  if (threads < 1 || threads > std::max<int64_t>(1, pool.num_threads()))
+    return ffi::Error::InvalidArgument(
+        "annealing thread budget exceeds XLA pool");
+  auto* previous = active_pool;
+  active_pool = &pool;
+  auto parallel_for = [threads](
+                          int64_t begin, int64_t end, int64_t grain, auto fn) {
+    if (end <= begin) return;
+    int chunks = static_cast<int>(
+        std::min<int64_t>(threads, (end - begin + grain - 1) / grain));
+    int64_t size = (end - begin + chunks - 1) / chunks;
+    ContextManager context;
+    CpuOps<Device::CPU>::foreach_pose_workgroup<void>(
+        context, chunks, 1, [&](int part) {
+          int64_t first = begin + part * size;
+          if (first < end) fn(first, std::min(end, first + size));
+        });
+  };
+  auto result = anneal_cpu(
+      args, rets, chunk_size, seed, n_trajectories, threads, parallel_for);
+  active_pool = previous;
+  return result;
+}
 }  // namespace
 }  // namespace tmol::jax
 
 // Host setup reuses the execution policy above for topology-only kernels.
 #include "host_pose_ffi.hh"
 
-extern "C" int tmol_jax_native_abi_version() { return 5; }
+extern "C" int tmol_jax_native_abi_version() { return 6; }
 
 namespace tmol::jax {
 template <typename Real, size_t Rank>
@@ -534,14 +574,35 @@ extern "C" uint64_t tmol_lk_ball_weighted_workspace_bytes(
       });
 }
 
+extern "C" uint64_t tmol_cpu_annealer_workspace(
+    int64_t poses, int64_t residues, int64_t high) {
+  try {
+    if (high < 4 || high > INT32_MAX) return UINT64_MAX;
+    return tmol::pack::compiled::CpuFunnelWorkspace(poses, residues, high)
+        .bytes;
+  } catch (...) {
+    return UINT64_MAX;
+  }
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    tmol_cpu_thread_count,
+    tmol::jax::cpu_thread_count,
+    xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
+        .Ret<xla::ffi::AnyBuffer>());
+
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     tmol_anneal_cpu,
-    tmol::jax::anneal_cpu,
+    tmol::jax::run_annealer,
     xla::ffi::Ffi::Bind()
+        .Ctx<xla::ffi::ThreadPool>()
         .RemainingArgs()
         .RemainingRets()
         .Attr<int64_t>("chunk_size")
-        .Attr<int64_t>("seed"));
+        .Attr<int64_t>("seed")
+        .Attr<int64_t>("n_trajectories")
+        .Attr<int64_t>("threads"));
 
 extern "C" uint64_t tmol_graph_prefix_workspace_bytes(
     int64_t count, int bits, int) {

@@ -10,7 +10,8 @@ inline ffi::Error anneal_cuda(
     ffi::RemainingArgs inputs,
     ffi::RemainingRets outputs,
     int64_t chunk_size,
-    int64_t max_rotamers) {
+    int64_t max_rotamers,
+    int64_t n_trajectories) {
   try {
     auto a = native_arguments(inputs);
     if (a.size() != 13 || outputs.size() != 3 || chunk_size < 1
@@ -28,7 +29,10 @@ inline ffi::Error anneal_cuda(
     }
     auto poses = a[0].dimensions()[0], residues = a[3].dimensions()[1];
     using namespace pack::compiled;
-    constexpr int trajectories = CudaAnnealerPolicy::final_trajectories;
+    if (n_trajectories < 4 || n_trajectories > INT32_MAX)
+      throw std::invalid_argument("annealer trajectory count exceeds int32");
+    AnnealerTrajectoryCounts counts(static_cast<int>(n_trajectories));
+    int trajectories = counts.final;
     require_shape(out[0], ffi::DataType::F32, {poses, trajectories});
     require_shape(out[1], ffi::DataType::S32, {poses, trajectories, residues});
     require_shape(out[2], ffi::DataType::U8, {-1});
@@ -38,7 +42,8 @@ inline ffi::Error anneal_cuda(
         max_rotamers,
         a[7].dimensions()[0],
         out[2].untyped_data(),
-        out[2].size_bytes());
+        out[2].size_bytes(),
+        counts.high);
     constexpr Device D = Device::CUDA;
     CudaInteractionGraph<D, int, float> graph{
         static_cast<int>(max_rotamers),

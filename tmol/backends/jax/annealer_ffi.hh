@@ -1,21 +1,32 @@
 // Caller-owned XLA buffers for the shared native CPU annealing schedule.
 #pragma once
 #include "annealer_common_ffi.hh"
-#include <tmol/pack/compiled/annealer_cpu.hh>
+#include <tmol/pack/compiled/annealer_cpu_funnel.hh>
 #include <tmol/score/common/tview_binder.hh>
 #include <cstring>
 
 namespace tmol::jax {
+template <typename ParallelFor>
 inline ffi::Error anneal_cpu(
     ffi::RemainingArgs inputs,
     ffi::RemainingRets outputs,
     int64_t chunk_size,
-    int64_t seed) {
+    int64_t seed,
+    int64_t n_trajectories,
+    int64_t threads,
+    ParallelFor parallel_for) {
   try {
     auto a = native_arguments(inputs);
-    if (a.size() != 12 || outputs.size() != 4 || chunk_size < 1
+    if (a.size() != 12 || outputs.size() != 5 || chunk_size < 1
         || chunk_size > INT32_MAX)
       throw std::invalid_argument("invalid CPU annealer arguments");
+    if (n_trajectories < 4 || n_trajectories > INT32_MAX || threads < 1)
+      throw std::invalid_argument(
+          "invalid CPU annealer trajectory/thread count");
+    pack::compiled::AnnealerTrajectoryCounts counts(n_trajectories, true);
+    bool funnel =
+        threads >= pack::compiled::AnnealerTrajectoryCounts::min_cpu_threads;
+    int final = funnel ? counts.final : 1;
     validate_annealer_graph(a);
     auto poses = a[0].dimensions()[0], residues = a[3].dimensions()[1],
          rotamers = a[5].dimensions()[0];
@@ -26,10 +37,11 @@ inline ffi::Error anneal_cpu(
         throw std::invalid_argument("annealer expected result buffers");
       out.push_back(**result);
     }
-    require_shape(out[0], ffi::DataType::F32, {poses, 1});
-    for (int i = 1; i <= 2; ++i)
-      require_shape(out[i], ffi::DataType::S32, {poses, 1, residues});
+    require_shape(out[0], ffi::DataType::F32, {poses, final});
+    require_shape(out[1], ffi::DataType::S32, {poses, final, residues});
+    require_shape(out[2], ffi::DataType::S32, {poses, 1, residues});
     require_shape(out[3], ffi::DataType::S32, {rotamers});
+    require_shape(out[4], ffi::DataType::U8, {-1});
     for (auto result : out)
       if (result.size_bytes())
         std::memset(result.untyped_data(), 0, result.size_bytes());
@@ -54,7 +66,18 @@ inline ffi::Error anneal_cpu(
     c.current_rotamer_assignments = buffer_view<int32_t, 3, D>(out[2]);
     c.quench_order = buffer_view<int32_t, 1, D>(out[3]);
     c.chunk_size = static_cast<int>(chunk_size);
-    pack::compiled::run_cpu_annealer(c, static_cast<uint64_t>(seed));
+    if (funnel) {
+      pack::compiled::CpuFunnelWorkspace workspace(
+          poses,
+          residues,
+          counts.high,
+          out[4].untyped_data(),
+          out[4].size_bytes());
+      pack::compiled::run_cpu_funnel(
+          c, workspace, static_cast<uint64_t>(seed), parallel_for);
+    } else {
+      pack::compiled::run_cpu_annealer(c, static_cast<uint64_t>(seed));
+    }
     return ffi::Error::Success();
   } catch (const std::exception& error) {
     return ffi::Error::InvalidArgument(error.what());

@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from tmol_jax.pack.annealing import anneal_cpu
+from tmol_jax.pack.annealing import anneal_cpu, _cpu_thread_budget
 
 
 def independent_graph(empty=False):
@@ -53,17 +53,27 @@ def independent_graph(empty=False):
 
 
 @pytest.mark.parametrize("empty", (False, True))
-def test_native_cpu_annealer_known_minimum_and_transformations(empty):
+@pytest.mark.parametrize("trajectories, survivors", ((5, 3), (128, 80)))
+def test_native_cpu_annealer_known_minimum_and_transformations(
+    empty, trajectories, survivors
+):
     arguments = independent_graph(empty)
     original = tuple(np.asarray(value).copy() for value in arguments)
+    width = survivors if _cpu_thread_budget() >= 8 else 1
+    expected_scores = np.repeat([[0], [0 if empty else 10]], width, axis=1)
     for seed in (0, 42, (1 << 64) - 1):
-        scores, assignments = anneal_cpu(*arguments, chunk_size=2, seed=seed)
-        np.testing.assert_array_equal(scores, [[0], [0 if empty else 10]])
+        scores, assignments = anneal_cpu(
+            *arguments, chunk_size=2, seed=seed, n_trajectories=trajectories
+        )
+        np.testing.assert_array_equal(scores, expected_scores)
+        assert assignments.shape == (2, width, 2)
         np.testing.assert_array_equal(assignments[0], 0)
         np.testing.assert_array_equal(assignments[1], -1 if empty else 0)
         assert scores.dtype == np.float32 and assignments.dtype == np.int32
         assert scores.device.platform == assignments.device.platform == "cpu"
-        again = anneal_cpu(*arguments, chunk_size=2, seed=seed)
+        again = anneal_cpu(
+            *arguments, chunk_size=2, seed=seed, n_trajectories=trajectories
+        )
         for expected, actual in zip((scores, assignments), again):
             np.testing.assert_array_equal(expected, actual)
     for before, after in zip(original, arguments):
@@ -71,14 +81,21 @@ def test_native_cpu_annealer_known_minimum_and_transformations(empty):
 
     def run(onebody):
         return anneal_cpu(
-            *arguments[:-2], onebody, arguments[-1], chunk_size=2, seed=42
+            *arguments[:-2],
+            onebody,
+            arguments[-1],
+            chunk_size=2,
+            seed=42,
+            n_trajectories=trajectories,
         )
 
     batched_scores, batched_assignments = jax.jit(jax.vmap(run))(
         jnp.stack((arguments[-2], arguments[-2] + 1))
     )
     np.testing.assert_array_equal(batched_scores[0], scores)
-    np.testing.assert_array_equal(batched_scores[1], [[0], [0 if empty else 12]])
+    np.testing.assert_array_equal(
+        batched_scores[1], np.repeat([[0], [0 if empty else 12]], width, axis=1)
+    )
     np.testing.assert_array_equal(batched_assignments, np.stack((assignments,) * 2))
     with jax.enable_x64(), pytest.raises(TypeError, match="float32"):
         run(arguments[-2].astype(np.float64))
@@ -88,3 +105,10 @@ def test_native_cpu_annealer_known_minimum_and_transformations(empty):
         anneal_cpu(*arguments, chunk_size=0, seed=0)
     with pytest.raises(ValueError, match="differentiated"):
         jax.grad(lambda x: run(x)[0].sum())(arguments[-2])
+
+
+def test_native_cpu_annealer_rejects_invalid_trajectory_counts():
+    arguments = independent_graph()
+    for count in (3, 2**31):
+        with pytest.raises(ValueError, match="trajector"):
+            anneal_cpu(*arguments, chunk_size=2, seed=0, n_trajectories=count)

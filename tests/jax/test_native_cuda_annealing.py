@@ -26,7 +26,8 @@ def test_host_cuda_phase_seeds_preserve_full_width_and_call_offsets():
 
 
 @pytest.mark.parametrize("empty", (False, True))
-def test_cuda_annealer_minima_seed_bits_and_transforms(empty):
+@pytest.mark.parametrize("trajectories, survivors", ((5, 2), (128, 80)))
+def test_cuda_annealer_minima_seed_bits_and_transforms(empty, trajectories, survivors):
     device = Execution("jax-cuda").device
     arguments = list(jax.device_put(independent_graph(empty), device))
     if empty:
@@ -45,13 +46,14 @@ def test_cuda_annealer_minima_seed_bits_and_transforms(empty):
                 chunk_size=2,
                 max_rotamers=0 if empty else 5,
                 phase_seeds=phase,
+                n_trajectories=trajectories,
             )
 
         scores, assignments = jax.jit(run)(arguments[-2])
         np.testing.assert_array_equal(scores[0], 0)
         np.testing.assert_array_equal(scores[1], 0 if empty else 10)
         np.testing.assert_array_equal(assignments, 0)
-        assert scores.shape == (2, 312) and assignments.shape == (2, 312, 2)
+        assert scores.shape == (2, survivors) and assignments.shape == (2, survivors, 2)
         assert scores.dtype == np.float32 and assignments.dtype == np.int32
         assert scores.device == assignments.device == device
         for a, b in zip((scores, assignments), run(arguments[-2])):

@@ -2,9 +2,17 @@
 
 from functools import lru_cache, partial
 import ctypes
+import os
 
 import jax
 import numpy as np
+
+from tmol_core.pack.annealing import (
+    DEFAULT_ANNEAL_TRAJECTORIES,
+    MIN_CPU_FUNNEL_THREADS,
+    annealer_trajectory_counts,
+    validate_anneal_trajectories,
+)
 
 
 def cuda_phase_seeds(seed, call):
@@ -25,35 +33,73 @@ def _register_cpu_annealer():
     target = "tmol_anneal_cpu"
     try:
         symbol = getattr(library, target)
+        query = library.tmol_cpu_annealer_workspace
+        threads = library.tmol_cpu_thread_count
     except AttributeError as error:
         raise RuntimeError(
             "rebuild the matching native CPU annealing adapter"
         ) from error
     jax.ffi.register_ffi_target(target, jax.ffi.pycapsule(symbol), platform="cpu")
-    return target
+    jax.ffi.register_ffi_target(
+        "tmol_cpu_thread_count", jax.ffi.pycapsule(threads), platform="cpu"
+    )
+    query.argtypes, query.restype = [ctypes.c_int64] * 3, ctypes.c_uint64
+    return target, query
 
 
-@partial(jax.jit, static_argnames=("chunk_size", "seed"))
-def _execute_cpu(arguments, *, chunk_size, seed):
+@lru_cache(maxsize=1)
+def cpu_thread_count():
+    """Read the actual XLA CPU pool; the OMP budget may further limit search."""
+    _register_cpu_annealer()
+    with jax.ensure_compile_time_eval(), jax.default_device(jax.devices("cpu")[0]):
+        value = jax.ffi.ffi_call(
+            "tmol_cpu_thread_count", jax.ShapeDtypeStruct((), np.int32)
+        )()
+        return int(np.asarray(value))
+
+
+def _cpu_thread_budget():
+    available = cpu_thread_count()
+    requested = os.environ.get("OMP_NUM_THREADS")
+    return available if requested is None else min(available, max(1, int(requested)))
+
+
+@partial(jax.jit, static_argnames=("chunk_size", "seed", "n_trajectories", "threads"))
+def _execute_cpu(arguments, *, chunk_size, seed, n_trajectories, threads):
     poses, residues = arguments[3].shape
     rotamers = arguments[5].size
+    target, query = _register_cpu_annealer()
+    funnel = threads >= MIN_CPU_FUNNEL_THREADS
+    final = annealer_trajectory_counts(n_trajectories, cpu=True)[2] if funnel else 1
+    capacity = query(poses, residues, n_trajectories) if funnel else 0
+    if capacity == (1 << 64) - 1:
+        raise ValueError("invalid native CPU annealing workspace dimensions")
     shape = jax.ShapeDtypeStruct
     return jax.ffi.ffi_call(
-        _register_cpu_annealer(),
+        target,
         (
-            shape((poses, 1), np.float32),
-            shape((poses, 1, residues), np.int32),
+            shape((poses, final), np.float32),
+            shape((poses, final, residues), np.int32),
             shape((poses, 1, residues), np.int32),
             shape((rotamers,), np.int32),
+            shape((capacity,), np.uint8),
         ),
         vmap_method="sequential",
-    )(*arguments, chunk_size=np.int64(chunk_size), seed=np.uint64(seed).view(np.int64))[
+    )(
+        *arguments,
+        chunk_size=np.int64(chunk_size),
+        seed=np.uint64(seed).view(np.int64),
+        n_trajectories=np.int64(n_trajectories),
+        threads=np.int64(threads),
+    )[
         :2
     ]
 
 
-def anneal_cpu(*arguments, chunk_size, seed):
-    """Run one mature CPU trajectory with explicit reproducible uint64 seed.
+def anneal_cpu(
+    *arguments, chunk_size, seed, n_trajectories=DEFAULT_ANNEAL_TRAJECTORIES
+):
+    """Run the mature CPU search with an explicit reproducible uint64 seed.
 
     This internal entry consumes prepared interaction-graph arrays: pose sizes,
     pose counts/offsets, residue counts/one-body offsets, residue per rotamer,
@@ -65,7 +111,9 @@ def anneal_cpu(*arguments, chunk_size, seed):
 
     Inputs are immutable; XLA owns temporary and output arrays. Native execution
     supports jit/vmap on CPU, but discrete annealing has no derivative rule.
-    This is not the CUDA schedule or a complete packing frontend.
+    A budget of at least eight native CPU threads enables the shared funnel;
+    smaller budgets retain single-trajectory search. This is not a complete
+    packing frontend.
     """
     if len(arguments) != 12:
         raise ValueError("CPU annealing requires twelve prepared graph arrays")
@@ -82,7 +130,14 @@ def anneal_cpu(*arguments, chunk_size, seed):
         raise ValueError("the native CPU annealing schedule requires CPU arrays")
     if any(a.dtype != np.float32 for a in arguments[-2:]):
         raise TypeError("native CPU annealing requires float32 energy tables")
-    return _execute_cpu(arguments, chunk_size=int(chunk_size), seed=int(seed))
+    n_trajectories = validate_anneal_trajectories(n_trajectories)
+    return _execute_cpu(
+        arguments,
+        chunk_size=int(chunk_size),
+        seed=int(seed),
+        n_trajectories=n_trajectories,
+        threads=_cpu_thread_budget(),
+    )
 
 
 @lru_cache(maxsize=1)
@@ -99,23 +154,24 @@ def _register_cuda_annealer():
     except AttributeError as error:
         raise RuntimeError("rebuild the matching CUDA annealing adapter") from error
     jax.ffi.register_ffi_target(target, jax.ffi.pycapsule(symbol), platform="CUDA")
-    query.argtypes, query.restype = [ctypes.c_int64] * 4, ctypes.c_uint64
+    query.argtypes, query.restype = [ctypes.c_int64] * 5, ctypes.c_uint64
     return target, query
 
 
-@partial(jax.jit, static_argnames=("chunk_size", "max_rotamers"))
-def _execute_cuda(arguments, phase_seeds, *, chunk_size, max_rotamers):
+@partial(jax.jit, static_argnames=("chunk_size", "max_rotamers", "n_trajectories"))
+def _execute_cuda(arguments, phase_seeds, *, chunk_size, max_rotamers, n_trajectories):
     target, query = _register_cuda_annealer()
     poses, residues = arguments[3].shape
-    capacity = query(poses, residues, max_rotamers, arguments[7].size)
+    capacity = query(poses, residues, max_rotamers, arguments[7].size, n_trajectories)
+    final = annealer_trajectory_counts(n_trajectories)[2]
     if capacity == (1 << 64) - 1:
         raise ValueError("invalid native CUDA annealing workspace dimensions")
     shape = jax.ShapeDtypeStruct
     return jax.ffi.ffi_call(
         target,
         (
-            shape((poses, 312), np.float32),
-            shape((poses, 312, residues), np.int32),
+            shape((poses, final), np.float32),
+            shape((poses, final, residues), np.int32),
             shape((capacity,), np.uint8),
         ),
         vmap_method="sequential",
@@ -124,18 +180,26 @@ def _execute_cuda(arguments, phase_seeds, *, chunk_size, max_rotamers):
         phase_seeds,
         chunk_size=np.int64(chunk_size),
         max_rotamers=np.int64(max_rotamers),
+        n_trajectories=np.int64(n_trajectories),
     )[
         :2
     ]
 
 
-def anneal_cuda(*arguments, chunk_size, phase_seeds, max_rotamers):
+def anneal_cuda(
+    *arguments,
+    chunk_size,
+    phase_seeds,
+    max_rotamers,
+    n_trajectories=DEFAULT_ANNEAL_TRAJECTORIES,
+):
     """Run the mature CUDA schedule with three explicit uint64 phase seeds.
 
     Graph arrays use the same layout as ``anneal_cpu``. ``phase_seeds`` is
     uint8[3,8], transporting all 64 seed bits with either JAX precision setting.
     ``max_rotamers`` is the maximum retained conformer count per pose, prepared
-    outside tracing. Scores and assignments contain the native 312 survivors.
+    outside tracing. Output width follows the common trajectory policy (80
+    survivors with the default 128 high-temperature trajectories).
     Inputs are immutable; execution supports jit/vmap, with no discrete AD rule.
     The CPU and CUDA schedules differ and need not return identical assignments.
     """
@@ -162,4 +226,5 @@ def anneal_cuda(*arguments, chunk_size, phase_seeds, max_rotamers):
         phase_seeds,
         chunk_size=int(chunk_size),
         max_rotamers=int(max_rotamers),
+        n_trajectories=validate_anneal_trajectories(n_trajectories),
     )

@@ -2,10 +2,21 @@
 #include "cuda_execution_ffi.hh"
 
 extern "C" uint64_t tmol_cuda_annealer_workspace(
-    int64_t poses, int64_t residues, int64_t rotamers, int64_t edges) {
+    int64_t poses,
+    int64_t residues,
+    int64_t rotamers,
+    int64_t edges,
+    int64_t n_trajectories) {
   try {
+    if (n_trajectories < 4 || n_trajectories > INT32_MAX) return UINT64_MAX;
     return tmol::pack::compiled::CudaAnnealerWorkspace(
-               poses, residues, rotamers, edges)
+               poses,
+               residues,
+               rotamers,
+               edges,
+               nullptr,
+               -1,
+               static_cast<int>(n_trajectories))
         .bytes;
   } catch (...) {
     return UINT64_MAX;
@@ -20,10 +31,11 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .RemainingArgs()
         .RemainingRets()
         .Attr<int64_t>("chunk_size")
-        .Attr<int64_t>("max_rotamers"),
+        .Attr<int64_t>("max_rotamers")
+        .Attr<int64_t>("n_trajectories"),
     {xla::ffi::Traits::kCmdBufferCompatible});
 
-extern "C" int tmol_jax_native_abi_version() { return 5; }
+extern "C" int tmol_jax_native_abi_version() { return 6; }
 
 extern "C" int tmol_cuda_memory_info(
     int device, uint64_t* free_bytes, uint64_t* total_bytes) {
