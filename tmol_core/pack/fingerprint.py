@@ -276,10 +276,19 @@ def annotate_residue_type_with_sampler_fingerprints(
                 None,
             )
             if cached is None:
-                # Atom descriptors do not depend on the selected roots. Compute
-                # them once for this call, then keep only each retained region.
+                # Keep one immutable descriptor basis per residue type, with a
+                # weak chemical-source key. Sampler roots and applicability are
+                # still queried above on every call, including mutable samplers.
                 if all_atom_fps is None:
-                    all_atom_fps = create_mainchain_fingerprint(restype, (), chem_db)[1]
+                    basis_key = AnnotationKey.from_sources(chem_db)
+                    basis = getattr(restype, "_mc_atom_fingerprint_basis", None)
+                    if basis is None or not basis_key.matches(basis[0]):
+                        basis = (
+                            basis_key,
+                            create_mainchain_fingerprint(restype, (), chem_db)[1],
+                        )
+                        restype._mc_atom_fingerprint_basis = basis
+                    all_atom_fps = basis[1]
                 _, sidechain_atoms = _mainchain_region(restype, roots)
                 mc_ats = numpy.nonzero(sidechain_atoms == 0)[0]
                 mc_at_fps = tuple(all_atom_fps[at] for at in mc_ats)
