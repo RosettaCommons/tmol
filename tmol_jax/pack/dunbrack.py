@@ -88,6 +88,7 @@ class DunbrackChiSampler(SamplerSupport):
     ):
         self._tables = None
         self._pending_library = None
+        self._pending_tables = None
         self._snapshot_hash = None
         self._parameter_database = None
         self._native_storage = None
@@ -116,13 +117,15 @@ class DunbrackChiSampler(SamplerSupport):
         if self._tables is None:
             # The owned copy and its creation-time hash describe one snapshot.
             # A live source mutation cannot change it or the fitted cache key.
-            tables = _prepare_dunbrack_snapshot(
-                self._parameter_database.scoring.dunbrack,
-                self._pending_library,
-                self._snapshot_hash,
-            )
-            self._tables = self._snapshot_tables(tables)
-            self._pending_library = None
+            if self._pending_library is not None:
+                self._pending_tables = _prepare_dunbrack_snapshot(
+                    self._parameter_database.scoring.dunbrack,
+                    self._pending_library,
+                    self._snapshot_hash,
+                )
+                self._pending_library = None
+            self._tables = self._snapshot_tables(self._pending_tables)
+            self._pending_tables = None
         return self._tables
 
     @classmethod
