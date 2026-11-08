@@ -57,6 +57,26 @@ class DunbrackSamplingMetadata:
     nchi_for_table: tuple = attr.ib(converter=tuple)
     library_sizes: tuple = attr.ib(converter=tuple)
 
+    @classmethod
+    def from_database(cls, database):
+        """Snapshot library identities and sizes without fitting coefficients.
+
+        Accept the source Dunbrack library used by ``prepare_dunbrack_tables``.
+        The same validation and shape metadata feed full table preparation.
+        """
+        from tmol_core.scoring.dunbrack import (
+            prepare_dunbrack_lookup,
+            _libraries,
+            _library_nchi,
+            _library_rotamer_counts,
+        )
+
+        lookup = prepare_dunbrack_lookup(database)
+        libraries = _libraries(database)
+        return cls(
+            lookup[0], _library_nchi(libraries), _library_rotamer_counts(libraries)
+        )
+
     def library_index(self, name):
         return int(self.library_indices.get(name, -1))
 

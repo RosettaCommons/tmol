@@ -58,6 +58,66 @@ def prepare_dunbrack_tables(database, fit_coefficients):
     return _DunbrackBuilder(fit_coefficients).prepare(database)
 
 
+def prepare_dunbrack_lookup(database):
+    """Validate residue lookups without fitting or reading library payloads.
+
+    Accept the same source library as :func:`prepare_dunbrack_tables`. Return
+    all-library, rotameric and semirotameric indices in the original library
+    order, including custom aliases and mirrored libraries.
+    """
+    return _create_table_indices(
+        [lib.table_name for lib in _libraries(database)],
+        database.dun_lookup,
+        len(database.rotameric_libraries),
+    )
+
+
+def _libraries(database):
+    return list(
+        itertools.chain(database.rotameric_libraries, database.semi_rotameric_libraries)
+    )
+
+
+def _library_nchi(libraries):
+    return numpy.asarray(
+        [lib.rotameric_data.rotamers.shape[1] for lib in libraries],
+        dtype=numpy.int32,
+    )
+
+
+def _library_rotamer_counts(libraries):
+    return numpy.asarray(
+        [lib.rotameric_data.rotamer_probabilities.shape[0] for lib in libraries],
+        dtype=numpy.int32,
+    )
+
+
+def _create_table_indices(all_table_names, dun_lookup, n_rotameric):
+    """Validate declared references once, then derive family-local indices."""
+    indices = {name: i for i, name in enumerate(all_table_names)}
+    if len(indices) != len(all_table_names):
+        raise ValueError("Dunbrack table names must be unique across families")
+    names = [row.residue_name for row in dun_lookup]
+    if len(set(names)) != len(names):
+        raise ValueError("Dunbrack residue lookup names must be unique")
+    missing = {
+        row.residue_name: row.dun_table_name
+        for row in dun_lookup
+        if row.dun_table_name not in indices
+    }
+    if missing:
+        raise ValueError(f"Dunbrack lookup references missing tables: {missing}")
+    all_tables = {row.residue_name: indices[row.dun_table_name] for row in dun_lookup}
+    return (
+        all_tables,
+        {name: i if i < n_rotameric else -1 for name, i in all_tables.items()},
+        {
+            name: i - n_rotameric if i >= n_rotameric else -1
+            for name, i in all_tables.items()
+        },
+    )
+
+
 class _DunbrackBuilder:
     def __init__(self, fit_coefficients):
         self.fit_coefficients = fit_coefficients
@@ -82,22 +142,12 @@ class _DunbrackBuilder:
         return result, sizes, strides
 
     def prepare(self, dun_database):
-        all_rotlibs = [
-            rotlib
-            for rotlib in itertools.chain(
-                dun_database.rotameric_libraries, dun_database.semi_rotameric_libraries
-            )
-        ]
-
+        all_rotlibs = _libraries(dun_database)
         (
             all_table_indices,
             rotameric_table_indices,
             semirotameric_table_indices,
-        ) = self._create_table_indices(
-            [x.table_name for x in all_rotlibs],
-            dun_database.dun_lookup,
-            len(dun_database.rotameric_libraries),
-        )
+        ) = prepare_dunbrack_lookup(dun_database)
         nchi_for_table_set = self._create_nchi_for_table_set(all_rotlibs)
 
         prob_table_nrots, prob_table_offsets = self._create_prob_table_offsets(
@@ -217,46 +267,13 @@ class _DunbrackBuilder:
         )
 
     def _create_table_indices(self, all_table_names, dun_lookup, n_rotameric):
-        """Validate declared references once, then derive family-local indices."""
-        indices = {name: i for i, name in enumerate(all_table_names)}
-        if len(indices) != len(all_table_names):
-            raise ValueError("Dunbrack table names must be unique across families")
-        names = [row.residue_name for row in dun_lookup]
-        if len(set(names)) != len(names):
-            raise ValueError("Dunbrack residue lookup names must be unique")
-        missing = {
-            row.residue_name: row.dun_table_name
-            for row in dun_lookup
-            if row.dun_table_name not in indices
-        }
-        if missing:
-            raise ValueError(f"Dunbrack lookup references missing tables: {missing}")
-        all_tables = {
-            row.residue_name: indices[row.dun_table_name] for row in dun_lookup
-        }
-        return (
-            all_tables,
-            {name: i if i < n_rotameric else -1 for name, i in all_tables.items()},
-            {
-                name: i - n_rotameric if i >= n_rotameric else -1
-                for name, i in all_tables.items()
-            },
-        )
+        return _create_table_indices(all_table_names, dun_lookup, n_rotameric)
 
     def _create_nchi_for_table_set(self, all_rotlibs):
-        return numpy.asarray(
-            [rotlib.rotameric_data.rotamers.shape[1] for rotlib in all_rotlibs],
-            dtype=numpy.int32,
-        )
+        return _library_nchi(all_rotlibs)
 
     def _create_prob_table_offsets(self, all_rotlibs):
-        prob_table_nrots = numpy.asarray(
-            [
-                rotlib.rotameric_data.rotamer_probabilities.shape[0]
-                for rotlib in all_rotlibs
-            ],
-            dtype=numpy.int32,
-        )
+        prob_table_nrots = _library_rotamer_counts(all_rotlibs)
         return prob_table_nrots, _exclusive_cumsum1d(prob_table_nrots)
 
     def _compute_rotprob_coeffs(self, all_rotlibs):

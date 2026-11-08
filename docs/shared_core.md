@@ -42,6 +42,13 @@ angles use `atan2` to retain precision near planar geometries. Historical
 float32 logarithms and `acos` torsions can differ numerically; dtype preservation
 does not imply bitwise agreement with those older calculations.
 
+`prepare_dunbrack_lookup` and `DunbrackSamplingMetadata.from_database` accept the
+same source library as table preparation, without fitting coefficients.
+`dunbrack_scoring_table_indices` shares scoring eligibility with block preparation;
+sampling retains its separate borrowed-library and explicit-chi policies.
+Adapters may defer tables only after checking the actual pose and sampled/design
+types, preserving the complete palette, original indices and chemistry context.
+
 `tmol_core.scoring.channels` defines global score indices and native output-lane
 composition. Frontend enums retain their types and serialization paths. Score
 file version parsing is shared; frontend score functions retain their constructors,
