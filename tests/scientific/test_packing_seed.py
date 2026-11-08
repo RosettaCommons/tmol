@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from .test_packing_execution import check_complete_packing
+from .test_fast_relax_execution import check_fast_relax_molecular_stages
 
 # Independent full-int64 Torch generator draws, reinterpreted as uint64.
 SEEDS = {
@@ -121,3 +122,14 @@ def test_search_seed_stream_preserves_molecular_packing(
     np.testing.assert_array_equal(
         np.asarray(observed, dtype=np.uint64), np.asarray(expected, dtype=np.uint64)
     )
+
+    if not chunked and seed in (17, -1):
+        # The two Relax stages must advance one stream, not reseed each pack.
+        # Reuse these existing rows instead of expanding the seed/chunk grid.
+        monkeypatch.setattr(front, "pack_rotamers", pack)
+        observed.clear()
+        check_fast_relax_molecular_stages(backend, "mixed_batch", seed=seed)
+        expected = (CUDA_SEEDS if cuda else SEEDS)[reference_seed]
+        np.testing.assert_array_equal(
+            np.asarray(observed, dtype=np.uint64), np.asarray(expected, dtype=np.uint64)
+        )
