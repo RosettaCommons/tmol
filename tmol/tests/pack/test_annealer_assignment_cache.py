@@ -104,12 +104,33 @@ def test_cuda_annealer_fixed_seed_is_repeatedly_exact(n_res):
 
 
 @pytest.mark.parametrize("counts", [[0, 0], [2, 3]])
-def test_cpu_annealer_empty_pose_has_no_energy(counts):
+@pytest.mark.parametrize(
+    "threads,trajectories,final", [(1, 5, 1), (8, 5, 3), (8, 128, 80)]
+)
+def test_cpu_annealer_empty_pose_has_no_energy(counts, threads, trajectories, final):
     from tmol.pack.compiled._compiled import _pack_anneal
 
     inputs = independent_minimum_tables(counts, 2, torch.device("cpu"))
-    inputs[-2].add_(3)
-    scores, assignments = _pack_anneal(*inputs)
-    assert scores[0, 0] == 0
-    assert scores[1, 0] == 3 * sum(n > 0 for n in counts)
-    assert assignments.shape == (2, 1, len(counts))
+    inputs = (*inputs[:-1], trajectories)
+    # The final argument is the trajectory count; the preceding arrays are
+    # one-body and pair energies. Shift each active residue by three.
+    inputs[-3].add_(3)
+    previous_threads = torch.get_num_threads()
+    try:
+        torch.set_num_threads(threads)
+        torch.manual_seed(73)
+        scores, assignments = _pack_anneal(*inputs)
+        rng_state = torch.get_rng_state()
+        torch.manual_seed(73)
+        again = _pack_anneal(*inputs)
+        assert torch.equal(torch.get_rng_state(), rng_state)
+    finally:
+        torch.set_num_threads(previous_threads)
+    assert scores.shape == (2, final)
+    assert assignments.shape == (2, final, len(counts))
+    assert torch.all(scores[0] == 0)
+    assert torch.all(scores[1] == 3 * sum(n > 0 for n in counts))
+    assert torch.all(assignments[0] == 0)
+    assert torch.all(assignments[1] == (-1 if not any(counts) else 0))
+    assert torch.equal(again[0], scores)
+    assert torch.equal(again[1], assignments)
