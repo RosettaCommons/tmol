@@ -55,8 +55,17 @@ def test_inactive_full_palette_scoring_has_small_storage_and_zero_transforms(nam
                         assert values.shape[0] == 3 and values.dtype == dtype
                         assert values.device == b.device
                         np.testing.assert_array_equal(values, 0)
+                        # JAX prunes unused coordinates from a constant objective.
+                        # Explicit output placement overrides a CPU default even
+                        # when no numerical operand remains on the requested GPU.
+                        placement = (
+                            {"out_shardings": coords.sharding}
+                            if default != b.device
+                            else {}
+                        )
                         evaluate = jax.jit(
-                            jax.vmap(jax.value_and_grad(lambda x: score(x).sum()))
+                            jax.vmap(jax.value_and_grad(lambda x: score(x).sum())),
+                            **placement,
                         )
                         energies, forces = evaluate(jnp.stack((coords, coords + 0.1)))
                         assert forces.shape == (2, *coords.shape)

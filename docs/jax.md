@@ -237,6 +237,9 @@ samplers)` preserves sampler-owned retained atom identities.
 Dunbrack-inactive objectives retain their zero channels without uploading unused
 scoring tables. The shared chemistry lookup checks both input and sampled design
 types; the complete palette, custom mappings and parameter context stay intact.
+For a coordinate-independent objective, JAX can prune unused inputs. Specify
+`jax.jit(..., out_shardings=coords.sharding)` to retain their device when overriding
+JAX's default device.
 
 Public chi sampling uses the same chemical requests and native CPU/CUDA sampler
 as Torch. Tasks inherit their palette's default fallback sampler. Register
