@@ -14,10 +14,12 @@ template <
     tmol::Device Dev,
     typename Real,
     typename Int,
-    typename Accum>
+    int OutRank,
+    typename Accum,
+    typename EnergyReal>
 void lk_ball_score_water_backward(
     ContextManager& mgr,
-    LKBallCtx<Real, Int, Dev, 4, Accum> score,
+    LKBallCtx<Real, Int, Dev, OutRank, Accum, EnergyReal> score,
     WaterGenCtx<Real, Int, Dev> water,
     TView<Int, 1, Dev> neighbors,
     int n_poses,
