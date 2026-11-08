@@ -409,6 +409,19 @@ extern "C" uint64_t tmol_elec_workspace_bytes(
   });
 }
 
+extern "C" uint64_t tmol_ljlk_precise_workspace_bytes(
+    int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
+  return workspace_bytes(
+      bits, {poses, blocks, atoms}, [&](auto real) -> uint64_t {
+        auto values =
+            tmol::jax::IndependentNonbondedKernel<false, true>::gradient_values(
+                poses, atoms, bits, derivative);
+        return tmol::jax::IndependentNonbondedWorkspace<decltype(real), false>(
+                   poses, blocks, nullptr, values)
+            .storage.size_bytes();
+      });
+}
+
 extern "C" uint64_t tmol_inverse_kinematics_workspace_bytes(
     int64_t nodes, int bits, int) {
   return workspace_bytes(bits, {nodes}, [&](auto real) -> uint64_t {

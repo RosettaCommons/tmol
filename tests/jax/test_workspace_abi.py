@@ -16,6 +16,7 @@ from tmol_jax.score._native import libraries
         ("nonbonded_precise", (2, 3, 17)),
         ("nonbonded_weighted_precise", (2, 3, 17)),
         ("ljlk", (2, 3)),
+        ("ljlk_precise", (2, 3, 17)),
         ("elec", (2, 3)),
         ("inverse_kinematics", (7,)),
         ("lk_ball", (2, 3, 17)),
@@ -51,11 +52,12 @@ def test_workspace_query_precision_and_invalid_extents(target, dimensions):
         assert query(*dimensions, 64, 0) >= query(*dimensions, 32, 0)
 
 
-@pytest.mark.parametrize("weighted", (False, True))
-def test_wide_nonbonded_workspace_only_changes_float_derivatives(weighted):
+@pytest.mark.parametrize(
+    "target", ("tmol_nonbonded", "tmol_nonbonded_weighted", "tmol_ljlk")
+)
+def test_wide_nonbonded_workspace_only_changes_float_derivatives(target):
     from tmol_jax.score._native import workspace_sizes
 
-    target = "tmol_nonbonded" + ("_weighted" if weighted else "")
     for bits in (32, 64):
         old = workspace_sizes(target, (2, 3), bits)
         precise = workspace_sizes(target + "_precise", (2, 3, 17), bits)

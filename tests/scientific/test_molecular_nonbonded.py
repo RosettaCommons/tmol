@@ -10,7 +10,16 @@ TERMS = ("fa_ljatr", "fa_ljrep", "fa_lk", "fa_elec")
 
 @pytest.mark.parametrize("name", DOMAIN_CASES)
 def test_molecular_nonbonded_channels(backend, name):
-    backend.molecule(DOMAIN_CASES[name], terms=TERMS)
+    check_molecular_nonbonded_channels(backend, name, TERMS)
+
+
+@pytest.mark.parametrize("name", DOMAIN_CASES)
+def test_independent_ljlk_channels(backend, name):
+    check_molecular_nonbonded_channels(backend, name, TERMS[:3])
+
+
+def check_molecular_nonbonded_channels(backend, name, terms):
+    backend.molecule(DOMAIN_CASES[name], terms=terms)
     x = backend.coords()
     value, gradient = backend.channel_values_and_gradients(x)
     assert np.isfinite(value).all() and np.isfinite(gradient).all()
@@ -21,7 +30,7 @@ def test_molecular_nonbonded_channels(backend, name):
         np.testing.assert_array_equal(gradient, 0)
         return
     assert np.all(np.abs(value) > 1e-3)
-    assert np.all(np.linalg.norm(gradient.reshape(4, -1), axis=1) > 1e-3)
+    assert np.all(np.linalg.norm(gradient.reshape(len(terms), -1), axis=1) > 1e-3)
     direction = np.random.default_rng(194).normal(size=x.shape).astype(x.dtype)
     direction /= np.linalg.norm(direction)
     # Large repulsive energies lose low bits in float32 subtraction. Keep the

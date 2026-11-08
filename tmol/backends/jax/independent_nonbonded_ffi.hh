@@ -12,9 +12,13 @@ struct IndependentNonbondedWorkspace {
   Real* spheres;
   int32_t* neighbors;
   double* accumulation;
+  double* gradient_accumulation;
   size_t neighbor_capacity;
   IndependentNonbondedWorkspace(
-      size_t poses, size_t blocks, void* data = nullptr)
+      size_t poses,
+      size_t blocks,
+      void* data = nullptr,
+      size_t gradient_values = 0)
       : storage(data) {
     auto pairs = score::common::checked_triangular_size(
         blocks, true, "independent nonbonded neighbors");
@@ -26,12 +30,22 @@ struct IndependentNonbondedWorkspace {
     spheres = storage.take<Real>(blocks == 1 ? 0 : poses * blocks * 4);
     neighbors = storage.take<int32_t>(neighbor_capacity);
     accumulation = storage.take<double>(Electrostatic ? 0 : 3 * poses);
+    gradient_accumulation = storage.take<double>(gradient_values);
   }
 };
 
-template <bool Electrostatic>
+template <bool Electrostatic, bool PreciseGradient = false>
 struct IndependentNonbondedKernel {
+  static_assert(!Electrostatic || !PreciseGradient);
   static constexpr int channels = Electrostatic ? 1 : 3;
+  static size_t gradient_values(
+      int64_t poses, int64_t atoms, int bits, bool derivative) {
+    if (!PreciseGradient || bits != 32 || !derivative) return 0;
+    auto rows = score::common::checked_dispatch_product(
+        poses, atoms, "independent nonbonded gradient atoms");
+    return score::common::checked_dispatch_product(
+        rows, channels * 3, "independent nonbonded gradient values");
+  }
   static void validate(
       const std::vector<ffi::AnyBuffer>& a,
       ffi::AnyBuffer energy,
@@ -79,11 +93,16 @@ struct IndependentNonbondedKernel {
           "independent nonbonded flattened layout exceeds int32");
   }
 
-  static size_t workspace_bytes(const std::vector<ffi::AnyBuffer>& a, bool) {
+  static size_t workspace_bytes(
+      const std::vector<ffi::AnyBuffer>& a, bool derivative) {
     auto poses = a[5].dimensions()[0], blocks = a[5].dimensions()[1];
     return a[0].element_type() == ffi::DataType::F32
                ? IndependentNonbondedWorkspace<float, Electrostatic>(
-                     poses, blocks)
+                     poses,
+                     blocks,
+                     nullptr,
+                     gradient_values(
+                         poses, a[0].dimensions()[1], 32, derivative))
                      .storage.size_bytes()
                : IndependentNonbondedWorkspace<double, Electrostatic>(
                      poses, blocks)
@@ -98,12 +117,17 @@ struct IndependentNonbondedKernel {
       ffi::AnyBuffer workspace,
       double reach) {
     using I = int32_t;
+    constexpr bool precise = PreciseGradient && std::is_same_v<Real, float>;
+    using GradReal = std::conditional_t<precise, double, Real>;
     if (!std::isfinite(reach) || reach <= 0)
       throw std::invalid_argument("neighbor reach must be finite and positive");
     auto poses = a[0].dimensions()[0], atoms = a[0].dimensions()[1];
     auto blocks = a[5].dimensions()[1], rots = poses * blocks;
     IndependentNonbondedWorkspace<Real, Electrostatic> work(
-        poses, blocks, workspace.untyped_data());
+        poses,
+        blocks,
+        workspace.untyped_data(),
+        gradient_values(poses, atoms, sizeof(Real) * 8, gradient != nullptr));
     auto xyz = contiguous_view<Vec<Real, 3>, 1, D>(
         a[0].untyped_data(), {poses * atoms});
     auto types = contiguous_view<I, 1, D>(a[5].untyped_data(), {rots});
@@ -134,7 +158,7 @@ struct IndependentNonbondedKernel {
     using Ctx = std::conditional_t<
         Electrostatic,
         score::elec::potentials::ElecCtx<Real, I, D>,
-        score::ljlk::potentials::LJLKCtx<Real, I, D>>;
+        score::ljlk::potentials::LJLKCtx<Real, I, D, 4, GradReal>>;
     Ctx ctx{};
     ctx.rot_coords = xyz;
     ctx.rot_coord_offset = buffer_view<I, 1, D>(a[1]);
@@ -149,9 +173,11 @@ struct IndependentNonbondedKernel {
     ctx.block_type_all_atoms_ligand_typed = buffer_view<I, 1, D>(a[11]);
     ctx.output = contiguous_view<Real, 4, D>(
         energy.untyped_data(), {channels, poses, 1, 1});
-    ctx.dV_dcoords = contiguous_view<Vec<Real, 3>, 2, D>(
-        gradient ? gradient->untyped_data() : nullptr,
-        {channels, gradient ? poses * atoms : 0});
+    auto* gradient_data = precise && gradient
+                              ? static_cast<void*>(work.gradient_accumulation)
+                              : (gradient ? gradient->untyped_data() : nullptr);
+    ctx.dV_dcoords = contiguous_view<Vec<GradReal, 3>, 2, D>(
+        gradient_data, {channels, gradient ? poses * atoms : 0});
     ctx.max_n_blocks = blocks;
     ctx.max_n_upper_triangle_inds =
         score::common::checked_triangular_size(blocks, true, "nonbonded pairs");
@@ -181,6 +207,21 @@ struct IndependentNonbondedKernel {
       ctx.max_dis = Real(reach);
       score::ljlk::potentials::ljlk_pose_forward_native<Ops, D, Real, I>(
           context, ctx, neighbors, poses, work.accumulation);
+    }
+    if constexpr (precise) {
+      if (gradient) {
+        // Shared pair physics remains Real; round the accumulated derivative
+        // once.
+        auto* accumulated = work.gradient_accumulation;
+        auto* result = static_cast<Real*>(gradient->untyped_data());
+        LAUNCH_BOX_128;
+        Ops<D>::template forall<launch_t>(
+            context,
+            channels * poses * atoms * 3,
+            [=] TMOL_DEVICE_FUNC(int64_t i) {
+              result[i] = Real(accumulated[i]);
+            });
+      }
     }
   }
 };

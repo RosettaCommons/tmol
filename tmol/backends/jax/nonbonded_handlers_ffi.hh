@@ -27,6 +27,12 @@ TMOL_JAX_ENERGY(
     .Attr<double>("reach"));
 
 TMOL_JAX_ENERGY(
+    tmol_ljlk_precise,
+    (tmol::jax::
+         run<tmol::jax::IndependentNonbondedKernel<false, true>, double>),
+    .Attr<double>("reach"));
+
+TMOL_JAX_ENERGY(
     tmol_elec,
     (tmol::jax::run<tmol::jax::IndependentNonbondedKernel<true>, double>),
     .Attr<double>("reach"));

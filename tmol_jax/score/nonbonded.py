@@ -240,23 +240,29 @@ def prepare_independent_nonbonded(
         *specific,
     )
     register(target)
+    precise_gradient = not electrostatic and pose.coords.device.platform == "gpu"
+    if precise_gradient:
+        register(target + "_precise")
     return (
         target,
         channels,
         jax.device_put(tuple(operands), device=pose.coords.device),
         float(reach),
+        precise_gradient,
     )
 
 
 def independent_nonbonded_energy(coords, state):
-    target, channels, parameters, reach = state
+    target, channels, parameters, reach, precise_gradient = state
+    dimensions = parameters[1].shape
+    if precise_gradient and coords.dtype == jnp.float32:
+        target += "_precise"
+        dimensions += coords.shape[1:2]
     return coordinate_energy(
         target,
         coords,
         parameters,
         channels=channels,
-        workspace_bytes=workspace_sizes(
-            target, parameters[1].shape, coords.dtype.itemsize * 8
-        ),
+        workspace_bytes=workspace_sizes(target, dimensions, coords.dtype.itemsize * 8),
         attributes={"reach": np.float64(reach)},
     )
