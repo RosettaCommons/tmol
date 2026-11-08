@@ -5,7 +5,7 @@ from enum import IntEnum
 from frozendict import frozendict
 from toolz.curried import concat, compose
 import typing
-from typing import Mapping, Optional, NewType, Tuple, Set, Union
+from typing import Dict, List, Mapping, Optional, NewType, Sequence, Tuple, Set, Union
 import attr
 import cattr
 
@@ -668,3 +668,24 @@ def cached_refined_from_raw(raw):
         # mappings/sets. Copy their storage without traversing chemistry again.
         setattr(result, name, copy.copy(getattr(prototype, name)))
     return result
+
+
+@attr.s(auto_attribs=True)
+class ResidueTypeSet:
+    """A set of residue types grouped by their ``name3`` code."""
+
+    residue_types: Sequence[RefinedResidueType]
+    restype_map: Mapping[ResName3, Sequence[RefinedResidueType]]
+    chem_db: typing.Any  # PatchedChemicalDatabase (avoid cyclic import)
+
+    @classmethod
+    def from_database(cls, chemical_db) -> "ResidueTypeSet":
+        residue_types = [cached_refined_from_raw(r) for r in chemical_db.residues]
+        restype_map: Dict[ResName3, List[RefinedResidueType]] = {}
+        for rt in residue_types:
+            restype_map.setdefault(rt.name3, []).append(rt)
+        return cls(
+            residue_types=residue_types,
+            restype_map=restype_map,
+            chem_db=chemical_db,
+        )

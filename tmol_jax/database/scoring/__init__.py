@@ -6,7 +6,7 @@ import os
 from typing import Optional
 
 import attr
-from tmol_core.database.scoring import load_scoring_parameters
+from tmol_core.database.numpy_libraries import NumPyScoringDatabase
 from tmol_jax._compat import alias_modules
 
 from tmol_core.database.metal_coordination import MetalCoordinationDatabase
@@ -29,54 +29,14 @@ alias_modules(
 
 
 @attr.s(auto_attribs=True, slots=True, frozen=True)
-class ScoringDatabase:
-    """Aggregate scoring-parameter database (one object per term)."""
-
-    ljlk: LJLKDatabase
-    elec: ElecDatabase
-    hbond: HBondDatabase
-    cartbonded: CartBondedDatabase
-    genbonded: GenBondedDatabase
-    ref: RefDatabase
-    rama: RamaDatabase
-    dunbrack: DunbrackRotamerLibrary
-    disulfide: DisulfideDatabase
-    omega_bbdep: OmegaBBDepDatabase
-    metal_coordination: MetalCoordinationDatabase
-    na_torsion: NaTorsionDatabase
-
-    @property
-    def dun(self):
-        """The common ligand-preparation name for the same rotamer library."""
-        return self.dunbrack
+class ScoringDatabase(NumPyScoringDatabase):
+    """Shared NumPy scoring parameters with the JAX package's default location."""
 
     @classmethod
     def from_file(cls, path: Optional[str] = None) -> "ScoringDatabase":
-        """Load every scoring sub-database from ``<path>/*.yaml``.
-
-        ``path`` defaults to the package's bundled
-        ``default/scoring/`` directory. Binary tables are read from
-        ``rama.npz`` / ``omega_bbdep.npz`` / ``dunbrack.npz``. Legacy
-        Torch archives must be converted at package build time.
-        """
         if path is None:
             path = os.path.join(os.path.dirname(__file__), "..", "default", "scoring")
-        path = os.path.abspath(path)
-
-        parameters = load_scoring_parameters(
-            path,
-            dun_loader=lambda root: DunbrackRotamerLibrary.from_file(
-                os.path.join(root, "dunbrack.yaml")
-            ),
-            rama_loader=lambda root: RamaDatabase.from_file(
-                os.path.join(root, "rama.yaml")
-            ),
-            omega_loader=lambda root: OmegaBBDepDatabase.from_file(
-                os.path.join(root, "omega_bbdep.yaml")
-            ),
-        )
-        parameters["dunbrack"] = parameters.pop("dun")
-        return cls(**parameters)
+        return super().from_file(path)
 
 
 __all__ = [
