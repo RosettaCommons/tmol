@@ -84,7 +84,6 @@ def test_reference_sum_retains_small_custom_weights(backend):
 def _check_reference_snapshot(backend):
     import jax
     import jax.numpy as jnp
-    from tmol_jax import ScoreFunction, ScoreType
 
     from tests.scientific.dunbrack_molecules import DUNBRACK_CASES
 

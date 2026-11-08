@@ -90,7 +90,7 @@ def _check_pair_transforms(b, pair, x):
     import jax.numpy as jnp
 
     moved = x.at[0, int(b.pose.block_coord_offset[0, 2]) :].add(
-        jnp.array([20.0, 0.0, 0.0])
+        jax.device_put(np.array([20.0, 0.0, 0.0]), b.device)
     )
     samples = jnp.stack((x, moved))
     actual = jax.jit(jax.vmap(pair))(samples)
@@ -99,10 +99,12 @@ def _check_pair_transforms(b, pair, x):
     assert actual.device == b.device
     np.testing.assert_allclose(actual.sum((-2, -1)), expected, atol=2e-8, rtol=2e-8)
     assert np.max(np.abs(np.asarray(actual[1] - actual[0]))) > 1e-3
-    weights = jnp.asarray(np.random.default_rng(718).normal(size=actual.shape[1:]))
+    weights = jax.device_put(
+        np.random.default_rng(718).normal(size=actual.shape[1:]), b.device
+    )
     objective = jax.jit(lambda x: jnp.sum(pair(x) * weights))
     gradient = jax.jit(jax.grad(objective))(x)
-    direction = jnp.asarray(np.random.default_rng(44).normal(size=x.shape))
+    direction = jax.device_put(np.random.default_rng(44).normal(size=x.shape), b.device)
     direction /= jnp.linalg.norm(direction)
     finite = (objective(x + 1e-5 * direction) - objective(x - 1e-5 * direction)) / 2e-5
     np.testing.assert_allclose(

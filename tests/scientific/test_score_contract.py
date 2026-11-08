@@ -65,8 +65,8 @@ def check_coordinate_transforms(b, case, terms, *, empty_term=None, empty_case=N
             b.molecule(case, terms=terms)
             x = b.pose.coords.astype(dtype)
             score = b.score_function.render_whole_pose_scoring_module(b.pose)
-            direction = b.module.numpy.asarray(
-                np.random.default_rng(183).normal(size=x.shape), dtype=dtype
+            direction = b.module.device_put(
+                np.random.default_rng(183).normal(size=x.shape).astype(dtype), b.device
             )
             direction /= b.module.numpy.linalg.norm(direction)
             gradient = b.module.jit(b.module.grad(lambda x: score(x).sum()))(x)

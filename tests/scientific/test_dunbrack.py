@@ -7,7 +7,7 @@ import pytest
 from .test_score_contract import check_coordinate_transforms
 
 from .dunbrack_molecules import DUNBRACK_CASES
-from .molecules import CASES, DOMAIN_CASES
+from .molecules import DOMAIN_CASES
 
 TERMS = ("dunbrack_rot", "dunbrack_rotdev", "dunbrack_semirot")
 

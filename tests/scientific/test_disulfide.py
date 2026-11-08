@@ -40,7 +40,8 @@ def test_disulfide_coordinate_derivatives_and_translation(backend, name):
         )
 
         if backend.framework == "jax":
-            _check_protein_disulfide_reference()
+            with backend.module.default_device(backend.device):
+                _check_protein_disulfide_reference()
 
 
 @pytest.mark.parametrize("pair", ["ll", "ld"])

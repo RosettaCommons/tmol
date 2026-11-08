@@ -30,7 +30,8 @@ def test_nonbinary_weights_keep_default_storage_precision(backend, monkeypatch):
             )
 
     if b.framework == "jax":
-        _check_double_weight_clone(monkeypatch)
+        with b.module.default_device(b.device):
+            _check_double_weight_clone(monkeypatch)
 
 
 def _check_double_weight_clone(monkeypatch):

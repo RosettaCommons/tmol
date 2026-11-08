@@ -51,7 +51,8 @@ def test_cartesian_bonded_channels_and_coordinate_derivatives(backend, name, tmp
         )
 
         if backend.framework == "jax":
-            _check_peptide_improper_geometry(tmp_path)
+            with backend.module.default_device(backend.device):
+                _check_peptide_improper_geometry(tmp_path)
 
 
 @pytest.mark.parametrize("name", ("ligand", "connected_noncanonical"))
@@ -98,7 +99,8 @@ def test_cartesian_spring_context_reuse_preserves_values_and_gradients(backend, 
         np.testing.assert_array_equal(backend.coords(), coords)
 
     if backend.framework == "jax" and name == "ligand":
-        _check_cartesian_owner_identity()
+        with backend.module.default_device(backend.device):
+            _check_cartesian_owner_identity()
 
 
 def _check_peptide_improper_geometry(tmp_path):

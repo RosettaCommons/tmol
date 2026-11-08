@@ -56,10 +56,11 @@ def test_retained_zero_channels_removal_and_old_snapshot_are_consistent(
     if weighted in ("quadratic", "constraint_callbacks"):
         if backend.framework != "jax":
             pytest.skip("JAX rendered-program capability")
-        if weighted == "quadratic":
-            _check_quadratic_snapshot(monkeypatch)
-        else:
-            _check_constraint_snapshots(backend)
+        with backend.module.default_device(backend.device):
+            if weighted == "quadratic":
+                _check_quadratic_snapshot(monkeypatch)
+            else:
+                _check_constraint_snapshots(backend)
         return
     if weighted == "gen_torsions":
         _check_generic_database_snapshot(backend)
@@ -425,7 +426,8 @@ def _check_charge_snapshots(b, case):
                 bt.elec_partial_charges = override
     check(render(db), 1)
     if b.framework == "jax" and not fused:
-        _check_charge_cache_ownership()
+        with b.module.default_device(b.device):
+            _check_charge_cache_ownership()
 
 
 def _check_charge_cache_ownership():
