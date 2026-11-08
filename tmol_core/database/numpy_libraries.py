@@ -17,6 +17,17 @@ from .library_records import (
     DunMappingParams,
 )
 
+from .scoring import load_scoring_parameters
+from .cartbonded import CartBondedDatabase
+from .disulfide import DisulfideDatabase
+from .elec import ElecDatabase
+from .genbonded import GenBondedDatabase
+from .hbond import HBondDatabaseRaw as HBondDatabase
+from .ljlk import LJLKDatabase
+from .ref import RefDatabase
+from .metal_coordination import MetalCoordinationDatabase
+from .na_torsion import NaTorsionDatabase
+
 
 def _load_backbone_tables(path, record_type, array_fields):
     with np.load(path, allow_pickle=False) as data:
@@ -239,3 +250,46 @@ class DunbrackRotamerLibrary:
         stem = os.path.splitext(path)[0]
         rot, semi = cls.load_libraries_from_npz(stem + ".npz")
         return cls(rows.dunbrack_lookup, rot, semi)
+
+
+@attr.s(auto_attribs=True, slots=True, frozen=True)
+class NumPyScoringDatabase:
+    """Aggregate scoring-parameter database (one object per term)."""
+
+    ljlk: LJLKDatabase
+    elec: ElecDatabase
+    hbond: HBondDatabase
+    cartbonded: CartBondedDatabase
+    genbonded: GenBondedDatabase
+    ref: RefDatabase
+    rama: RamaDatabase
+    dunbrack: DunbrackRotamerLibrary
+    disulfide: DisulfideDatabase
+    omega_bbdep: OmegaBBDepDatabase
+    metal_coordination: MetalCoordinationDatabase
+    na_torsion: NaTorsionDatabase
+
+    @property
+    def dun(self):
+        """The common ligand-preparation name for the same rotamer library."""
+        return self.dunbrack
+
+    @classmethod
+    def from_file(cls, path):
+        """Load shared scalar parameters and NumPy tables from an explicit path."""
+        path = os.path.abspath(path)
+
+        parameters = load_scoring_parameters(
+            path,
+            dun_loader=lambda root: DunbrackRotamerLibrary.from_file(
+                os.path.join(root, "dunbrack.yaml")
+            ),
+            rama_loader=lambda root: RamaDatabase.from_file(
+                os.path.join(root, "rama.yaml")
+            ),
+            omega_loader=lambda root: OmegaBBDepDatabase.from_file(
+                os.path.join(root, "omega_bbdep.yaml")
+            ),
+        )
+        parameters["dunbrack"] = parameters.pop("dun")
+        return cls(**parameters)

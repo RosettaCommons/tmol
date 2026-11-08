@@ -4,6 +4,9 @@ from collections import OrderedDict
 from typing import Dict, Tuple
 
 import numpy as np
+import biotite.structure as struc
+
+from .pdb_parsing import _records_from_biotite
 
 
 def _polymer_gaps(co, types, chains, coords, threshold):
@@ -179,3 +182,90 @@ def _canonical_form_from_records(
     if return_atom_mapping:
         return form, (res_ind_per_atom, keep_atom, canonical_atom_indices[keep_atom])
     return form
+
+
+def canonical_form_from_biotite(atoms, co, *, missing_density_distance_threshold=2.4):
+    """Map unprepared AtomArrays strictly using supplied canonical identities."""
+    from .atom_array import (
+        with_metal_coordination_typed,
+        covalent_bonds_from_biotite,
+        metal_coordination_from_biotite,
+    )
+    from .polymer_gaps import break_polymer_gaps, orient_polymer_gap_flags
+
+    atoms = with_metal_coordination_typed(atoms)
+    models = list(atoms) if isinstance(atoms, struc.AtomArrayStack) else [atoms]
+    if not models:
+        raise ValueError("structure contains no models")
+    mapped = [
+        _canonical_form_from_records(
+            _records_from_biotite(model),
+            co,
+            missing_density_distance_threshold=0,
+            return_atom_mapping=True,
+        )
+        for model in models
+    ]
+    forms = [form for form, _ in mapped]
+    combined = {
+        key: np.concatenate([form[key] for form in forms], axis=0) for key in forms[0]
+    }
+    residues, valid, slots = mapped[0][1]
+    from .atom_metadata import populate_optional_atom_metadata
+    from . import structure_context as metadata_policy
+
+    b_factors, occupancy = populate_optional_atom_metadata(
+        atoms,
+        len(models),
+        len(combined["res_types"][0]),
+        co.max_n_canonical_atoms,
+        residues[valid],
+        slots,
+        valid,
+    )
+    combined["atom_b_factor"] = b_factors
+    combined["atom_occupancy"] = occupancy
+    for key, source in (
+        ("metal_origins", metadata_policy._metal_origins(atoms)),
+        ("residue_annotations", metadata_policy._residue_annotations(atoms)),
+    ):
+        if source is not None:
+            combined[key] = np.broadcast_to(source, (len(models), *source.shape)).copy()
+    types, chains = combined["res_types"][0], combined["chain_id"][0]
+    bonds, disulfides, inferred = covalent_bonds_from_biotite(
+        models[0],
+        co,
+        residues,
+        types,
+        valid,
+        slots,
+    )
+    gaps = np.zeros((len(types), 2), bool)
+    bonds = break_polymer_gaps(
+        gaps,
+        bonds,
+        inferred,
+        combined["coords"],
+        types,
+        chains,
+        co,
+        missing_density_distance_threshold,
+    )
+    orient_polymer_gap_flags(gaps, chains, types, bonds, co)
+    combined["res_gap"] = np.broadcast_to(gaps, (len(models), *gaps.shape)).copy()
+
+    def pose_rows(rows):
+        return np.concatenate(
+            [
+                np.column_stack((np.full(len(rows), p, np.int64), rows))
+                for p in range(len(models))
+            ]
+        )
+
+    combined["covalent_bonds"] = pose_rows(bonds)
+    if disulfides is not None:
+        combined["disulfides"] = pose_rows(disulfides)
+    combined["metal_coordination"] = pose_rows(
+        metal_coordination_from_biotite(models[0], residues, valid, slots)
+    )
+    return combined
