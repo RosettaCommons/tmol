@@ -92,10 +92,6 @@ def _host_indices(value):
     return np.asarray(value, dtype=np.int32)
 
 
-def _indices(value, *, device):
-    return jax.device_put(_host_indices(value), device)
-
-
 def _validate_payloads(samples, coordinates):
     for counts, choices, payload in samples:
         fields = set(payload) - {"correlated_gbts"}
@@ -327,7 +323,7 @@ def _assembly_plan(
         types,
         device,
     )
-    integer = partial(_indices, device=device)
+    integer = _host_indices
     source_types = np.asarray(poses.block_type_ind).ravel()
     real = source_types >= 0
     coordinate_offsets = (
@@ -347,8 +343,9 @@ def _assembly_plan(
     source_offsets = np.zeros(len(source_types), np.int32)
     source_offsets[real] = source_layout.offsets
     source_residues = global_blocks[choices]
-    type_indices, target_offsets = integer(types), integer(layout.offsets)
-    ideal_indices = integer(layout.ideal_indices)
+    type_indices, target_offsets, ideal_indices = jax.device_put(
+        tuple(map(integer, (types, layout.offsets, layout.ideal_indices))), device
+    )
 
     def row_plan(selected, offsets):
         # Cardinality is already known from the shared host layout. Prepare its
@@ -385,13 +382,18 @@ def _assembly_plan(
         )
         if copy or opt is not None:
             plan = current_conformer_copy_plan(
-                integer(source_types.reshape(shape)),
-                integer(n_atoms_by_type),
-                integer(choices),
-                integer(global_blocks),
-                type_indices,
-                target_offsets,
-                integer(selected),
+                *jax.device_put(
+                    (
+                        integer(source_types.reshape(shape)),
+                        integer(n_atoms_by_type),
+                        integer(choices),
+                        integer(global_blocks),
+                        type_indices,
+                        target_offsets,
+                        integer(selected),
+                    ),
+                    device,
+                )
             )
             copy_plans.append((*plan, int(layout.n_atoms[selected].sum())))
         else:
@@ -439,31 +441,36 @@ def _assembly_plan(
 
     execute = partial(
         _execute_assembly,
-        plan=(
-            geometry,
-            source_geometry,
-            ideal_indices,
-            type_indices,
-            target_offsets,
-            selections,
-            tuple(chi_plans),
-            arrays(copy_plans),
-            arrays(coordinate_plans),
-            None if copied_rows is None else copied_rows[:-1],
+        # Transport the prepared metadata together; native execution still reads
+        # fresh coordinates and sampled values for each call.
+        plan=jax.device_put(
             (
+                geometry,
+                source_geometry,
+                ideal_indices,
+                type_indices,
+                target_offsets,
+                selections,
+                tuple(chi_plans),
+                arrays(copy_plans),
+                arrays(coordinate_plans),
+                None if copied_rows is None else copied_rows[:-1],
                 (
-                    fingerprints.source_fingerprint,
-                    fingerprints.source_atom_mapping,
-                    fingerprints.atom_mapping,
-                )
-                if has_chi
-                else ()
+                    (
+                        fingerprints.source_fingerprint,
+                        fingerprints.source_atom_mapping,
+                        fingerprints.atom_mapping,
+                    )
+                    if has_chi
+                    else ()
+                ),
+                kinematic_index if has_chi else None,
+                chi_atoms if has_chi else None,
+                ring_corrections if has_chi else None,
+                tuple(opth_metadata),
+                packed.dofs_ideal,
             ),
-            kinematic_index if has_chi else None,
-            chi_atoms if has_chi else None,
-            ring_corrections if has_chi else None,
-            tuple(opth_metadata),
-            packed.dofs_ideal,
+            device,
         ),
         total=layout.total,
         copy_input=copy_input,

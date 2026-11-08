@@ -43,7 +43,11 @@ def test_conformer_assembly_reuses_topology_but_not_coordinates(platform):
         # Fresh tasks may share static chemistry, never their coordinate result.
         fresh, _, concrete = sampling_task(backend)
         fresh = concrete(fresh)
-        _, third = build_rotamers(moved, fresh)
+        # Every prepared plan operand follows the pose, even under another
+        # default execution device; coordinates and payloads remain fresh.
+        with jax.default_device(jax.devices("cpu")[0]):
+            _, third = build_rotamers(moved, fresh)
+        assert third.coords.device == moved.device
         np.testing.assert_allclose(third.coords, second.coords, atol=2e-12, rtol=0)
         lower = moved.replace(coords=moved.coords.astype(np.float32))
         _, single = build_rotamers(lower, fresh)
