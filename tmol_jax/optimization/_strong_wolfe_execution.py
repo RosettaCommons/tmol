@@ -71,18 +71,21 @@ def _host_reduction(reduce):
         # required by the supported JAX versions).
         return np.asarray(reduce(*args))[()]
 
-    return staticmethod(apply)
+    return apply
 
 
 class JaxLBFGSExecution(JaxStrongWolfeExecution):
     """Fixed device storage mirroring histories accepted by the common policy."""
 
-    dot = _host_reduction(JaxStrongWolfeExecution.dot)
-    abs_max = _host_reduction(JaxStrongWolfeExecution.abs_max)
-    abs_sum = _host_reduction(JaxStrongWolfeExecution.abs_sum)
-    sqrt = staticmethod(np.sqrt)
-
     def __init__(self, x, capacity):
+        # Host scalar arithmetic matches CPU execution. CUDA scalar division
+        # and interpolation retain their device rounding and trial trajectory.
+        if x.device.platform == "cpu":
+            for name in ("dot", "abs_max", "abs_sum"):
+                setattr(
+                    self, name, _host_reduction(getattr(JaxStrongWolfeExecution, name))
+                )
+            self.sqrt = np.sqrt
         self.steps = jnp.zeros((capacity, x.size), x.dtype, device=x.device)
         self.differences = jnp.zeros_like(self.steps)
         self.rho = jnp.zeros((capacity,), x.dtype, device=x.device)
