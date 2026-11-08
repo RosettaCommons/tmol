@@ -112,11 +112,44 @@ def check_fast_relax_molecular_stages(backend, name, *, seed=73):
     assert float(score.get_weight(ScoreType.fa_ljrep)) == repulsive
 
 
-@pytest.mark.parametrize("grow", (False, True))
-def test_relax_acceptance_preserves_each_selected_molecular_layout(backend, grow):
-    from types import SimpleNamespace
-    from tmol_core.relax import accept_best
+def acceptance_poses(backend, source):
+    """Keep the design workflow and the original unequal-width AGA/AKA pair."""
+    from importlib import import_module
+    import attrs
     from .test_pose_imposition import imposition_fixture, impose
+
+    if source == "legacy_aga_aka":
+        api = import_module("tmol_jax" if backend.framework == "jax" else "tmol")
+        small, large = (
+            api.extended_pose_stack_from_sequences([seq, seq], device=backend.device)
+            for seq in ("AGA", "AKA")
+        )
+        width = small.coords.shape[1]
+        combined = api.PoseStackBuilder.from_poses([small, large], backend.device)
+        small, large = (
+            api.PoseStackBuilder.from_poses(
+                [combined.split(i), combined.split(i + 1)], backend.device
+            )
+            for i in (0, 2)
+        )
+        fields = dict(
+            coords=small.coords[:, :width],
+            pdb_info=attrs.evolve(
+                small.pdb_info,
+                **{
+                    name: getattr(small.pdb_info, name)[:, :width]
+                    for name in ("atom_occupancy", "atom_b_factor")
+                },
+            ),
+        )
+        small = (
+            small.replace(**fields)
+            if backend.framework == "jax"
+            else attrs.evolve(small, **fields)
+        )
+        assert small.coords.shape[1] < large.coords.shape[1]
+        assert small.packed_block_types is large.packed_block_types
+        return small, large
 
     rotamers, graph, choices, _ = imposition_fixture(backend, "design", design=True)
     original = backend.pose
@@ -145,54 +178,81 @@ def test_relax_acceptance_preserves_each_selected_molecular_layout(backend, grow
         else backend.module.as_tensor(selected, device=backend.device)
     )
     changed = impose(backend, rotamers, graph, choices)
+    return original, changed
+
+
+@pytest.mark.parametrize("source", ("design", "legacy_aga_aka"))
+@pytest.mark.parametrize("grow", (False, True))
+def test_relax_acceptance_preserves_each_selected_molecular_layout(
+    backend, source, grow
+):
+    from functools import partial
+    from types import SimpleNamespace
+    import attrs
+
+    original, changed = acceptance_poses(backend, source)
     assert original.coords.shape[1] != changed.coords.shape[1]
     best, candidate = (original, changed) if grow else (changed, original)
+    # Distinct host metadata identifies the winning source for each pose row.
+    alternatives = []
+    for pose, b_factor in ((best, 1.0), (candidate, 2.0)):
+        info = attrs.evolve(
+            pose.pdb_info,
+            atom_b_factor=np.full_like(pose.pdb_info.atom_b_factor, b_factor),
+        )
+        alternatives.append(
+            pose.replace(pdb_info=info)
+            if backend.framework == "jax"
+            else attrs.evolve(pose, pdb_info=info)
+        )
+    best, candidate = alternatives
     if backend.framework == "jax":
+        from tmol_core.relax import accept_best
         from tmol_jax.relax.fast_relax import _JaxRelaxExecution
 
-        execution = _JaxRelaxExecution(0)
+        accept = partial(accept_best, _JaxRelaxExecution(0))
 
         def array(a):
             return backend.module.device_put(np.asarray(a, np.float32), backend.device)
 
     else:
-        from tmol.relax._fast_relax import _TorchRelaxExecution
+        from tmol.relax._fast_relax import _accept_best
 
-        execution = _TorchRelaxExecution()
+        accept = _accept_best
 
         def array(a):
             return backend.module.tensor(a, device=backend.device)
+
+    def equal(actual, expected):
+        assert actual.dtype == expected.dtype and actual.device == expected.device
+        np.testing.assert_array_equal(backend.numpy(actual), backend.numpy(expected))
 
     score = SimpleNamespace(
         render_whole_pose_scoring_module=lambda pose: lambda xyz: array([1.0, 3.0])
     )
     snapshots = [backend.numpy(p.coords).copy() for p in (best, candidate)]
-    result, values = accept_best(execution, score, best, array([2.0, 2.0]), candidate)
-    np.testing.assert_array_equal(backend.numpy(values), [1, 2])
+    result, values = accept(score, best, array([2.0, 2.0]), candidate)
+    equal(values, array([1.0, 2.0]))
+    fields = ["block_type_ind", "block_coord_offset", "inter_residue_connections"]
+    if backend.framework == "torch":
+        fields += ["block_type_ind64", "block_coord_offset64"]
     actual = backend.numpy(result.coords)
     for row, expected in enumerate((candidate, best)):
-        for field in (
-            "block_type_ind",
-            "block_coord_offset",
-            "inter_residue_connections",
-        ):
-            np.testing.assert_array_equal(
-                backend.numpy(getattr(result, field))[row],
-                backend.numpy(getattr(expected, field))[row],
-            )
+        for field in fields:
+            equal(getattr(result, field)[row], getattr(expected, field)[row])
         width = expected.coords.shape[1]
-        np.testing.assert_array_equal(
-            actual[row, :width], backend.numpy(expected.coords)[row]
-        )
+        equal(result.coords[row, :width], expected.coords[row])
         np.testing.assert_array_equal(actual[row, width:], 0)
         if expected.pdb_info is not None:
             if backend.framework == "jax":
                 assert result.pdb_info.res_name[row] == expected.pdb_info.res_name[row]
-            else:
-                for field in ("atom_occupancy", "atom_b_factor"):
-                    np.testing.assert_array_equal(
-                        getattr(result.pdb_info, field)[row, :width],
-                        getattr(expected.pdb_info, field)[row],
-                    )
+            for field in ("atom_occupancy", "atom_b_factor"):
+                merged = getattr(result.pdb_info, field)
+                wanted = getattr(expected.pdb_info, field)[row]
+                assert merged.shape[1] == result.coords.shape[1]
+                np.testing.assert_array_equal(merged[row, : len(wanted)], wanted)
+                np.testing.assert_array_equal(merged[row, len(wanted) :], 0)
     for pose, snapshot in zip((best, candidate), snapshots):
+        assert pose.coords.device == backend.device
+        assert backend.numpy(pose.coords).dtype == snapshot.dtype
         np.testing.assert_array_equal(backend.numpy(pose.coords), snapshot)
