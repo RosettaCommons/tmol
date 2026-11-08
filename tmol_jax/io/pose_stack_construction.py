@@ -360,7 +360,11 @@ def pose_stack_from_canonical_form(
     )
     masks = apply_input_policy(result, masks, mode)
     result, context_replay = complete_missing_atoms(
-        result, masks, build_context=build_missing_context, return_plan=True
+        result,
+        masks,
+        build_context=build_missing_context,
+        return_plan=True,
+        packer_atoms=packer_atoms,
     )
     from ._metadata import canonical_metadata_for_pose
 

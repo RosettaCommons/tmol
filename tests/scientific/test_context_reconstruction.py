@@ -242,3 +242,94 @@ def _check_public_context_input(b, case, missing, expected):
             rtol=2e-6,
             atol=2e-6,
         )
+
+
+def _reserved_input(b, co, cf, packer_atoms):
+    if b.framework == "jax":
+        from tmol_jax.io import pose_stack_from_canonical_form
+
+        return pose_stack_from_canonical_form(
+            dict(cf, canonical_ordering=co),
+            b.pose.packed_block_types,
+            compact_padding=True,
+            build_missing_context=True,
+            return_block_has_missing_atoms=True,
+            packer_atoms=packer_atoms,
+            ligand_hydrogens="input",
+        )
+    from tmol.io._pose_stack_construction import _pose_stack_from_canonical_form
+    from tmol.io._canonical_ordering import CanonicalOrdering
+
+    def array(value):
+        return b.module.as_tensor(value, device=b.device)
+
+    return _pose_stack_from_canonical_form(
+        CanonicalOrdering.from_chemdb(b.parameter_database.chemical),
+        b.pose.packed_block_types,
+        array(cf["chain_id"]),
+        array(cf["res_types"]),
+        array(cf["coords"]),
+        None,
+        None,
+        None,
+        res_not_connected=array(cf["res_gap"]),
+        ligand_hydrogens="input",
+        return_block_has_missing_atoms=True,
+        packer_atoms=packer_atoms,
+        find_additional_cyclic_closures=False,
+    )
+
+
+@pytest.mark.parametrize("case", ("ligand", "noncanonical", "connected_noncanonical"))
+def test_input_preserves_missing_atoms_reserved_for_packing(backend, case):
+    from tmol_core.io.missing_atoms import prepare_leaf_atom_flags
+    from .test_canonical_molecular_input import canonical_input
+
+    b = backend.molecule(DOMAIN_CASES[case], terms=("ref",))
+    pbt = b.pose.packed_block_types
+    flags = prepare_leaf_atom_flags(
+        pbt.active_block_types, b.numpy(pbt.atom_is_hydrogen), pbt.max_n_atoms
+    )
+    co, cf = canonical_input(DOMAIN_CASES[case], b.parameter_database)
+    targets = []
+
+    def reserved(rt):
+        mainchain = set(rt.properties.polymer.mainchain_atoms or ())
+        return np.array([atom.name not in mainchain for atom in rt.atoms])
+
+    for p, r in np.argwhere(b.numpy(b.pose.block_type_ind) >= 0):
+        kind = int(b.numpy(b.pose.block_type_ind)[p, r])
+        rt = pbt.active_block_types[kind]
+        eligible = (
+            reserved(rt)
+            & ~flags.is_leaf_atom[kind, : rt.n_atoms]
+            & ~b.numpy(pbt.atom_is_hydrogen)[kind, : rt.n_atoms].astype(bool)
+        )
+        assert eligible.any()
+        atom = int(np.flatnonzero(eligible)[-1])
+        source_row = r + (r >= 1 and cf["res_types"].shape[1] > 1)
+        slot = co.restypes_atom_index_mapping[rt.io_equiv_class][rt.atoms[atom].name]
+        cf["coords"][p, source_row, slot] = np.nan
+        targets.append((p, r, rt.atoms[atom].name))
+    before = cf["coords"].copy()
+    pose, metadata = _reserved_input(b, co, cf, reserved)
+    missing = b.numpy(metadata["block_has_missing_atoms"])
+    assert missing[b.numpy(pose.block_type_ind) >= 0].all()
+    for p, r, name in targets:
+        rt = pose.block_type(int(p), int(r))
+        start = int(b.numpy(pose.block_coord_offset)[p, r])
+        assert np.isnan(b.numpy(pose.coords)[p, start + rt.atom_to_idx[name]]).all()
+        source_row = r + (r >= 1 and cf["res_types"].shape[1] > 1)
+        for atom in rt.atoms:
+            slot = co.restypes_atom_index_mapping[rt.io_equiv_class][atom.name]
+            observed = before[p, source_row, slot]
+            if (
+                not b.numpy(pose.packed_block_types.atom_is_hydrogen)[
+                    int(b.numpy(pose.block_type_ind)[p, r]), rt.atom_to_idx[atom.name]
+                ]
+                and np.isfinite(observed).all()
+            ):
+                np.testing.assert_array_equal(
+                    b.numpy(pose.coords)[p, start + rt.atom_to_idx[atom.name]], observed
+                )
+    np.testing.assert_array_equal(cf["coords"], before)
