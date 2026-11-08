@@ -30,12 +30,21 @@ using tmol::portable::Vec;
 template <typename Real>
 using CoordQuad = tmol::portable::Mat<Real, 4, 3>;
 
+// Preserve Real derivative/weight arithmetic; callers may widen only sums.
+template <Device Dev, typename GradReal, typename Real>
+TMOL_HOST_DEVICE_FUNC void emit_backbone_derivative(
+    Vec<GradReal, 3>& target, Vec<Real, 3> value) {
+  for (int axis = 0; axis < 3; ++axis)
+    common::accumulate<Dev, GradReal>::add(target[axis], GradReal(value[axis]));
+}
+
 template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device Dev,
     typename Real,
     typename Int,
-    typename EnergyReal = Real>
+    typename EnergyReal = Real,
+    typename GradReal = Real>
 void backbone_torsion_pose_forward(
     ContextManager& mgr,
 
@@ -63,7 +72,7 @@ void backbone_torsion_pose_forward(
     bool output_block_pair_energies,
     bool compute_derivs,
     TView<EnergyReal, 4, Dev> V,
-    TView<Vec<Real, 3>, 2, Dev> dV_dxyz) {
+    TView<Vec<GradReal, 3>, 2, Dev> dV_dxyz) {
   using tmol::score::common::accumulate;
   using Real3 = Vec<Real, 3>;
 
@@ -204,9 +213,9 @@ void backbone_torsion_pose_forward(
         accumulate<Dev, EnergyReal>::add(
             V[0][pose_ind][V_ind1][V_ind2], common::get<0>(rama));
         for (int j = 0; j < 4; ++j) {
-          accumulate<Dev, Vec<Real, 3>>::add(
+          emit_backbone_derivative<Dev>(
               dV_dxyz[0][phi_ats[j]], common::get<1>(rama).row(j));
-          accumulate<Dev, Vec<Real, 3>>::add(
+          emit_backbone_derivative<Dev>(
               dV_dxyz[0][psi_ats[j]], common::get<2>(rama).row(j));
         }
       } else {
@@ -279,11 +288,11 @@ void backbone_torsion_pose_forward(
             V[1][pose_ind][V_ind1][V_ind2], common::get<0>(omega));
         for (int j = 0; j < 4; ++j) {
           // omega : [V, dVdphi, dVdpsi, dVdomega]
-          accumulate<Dev, Vec<Real, 3>>::add(
+          emit_backbone_derivative<Dev>(
               dV_dxyz[1][phi_ats[j]], common::get<1>(omega).row(j));
-          accumulate<Dev, Vec<Real, 3>>::add(
+          emit_backbone_derivative<Dev>(
               dV_dxyz[1][psi_ats[j]], common::get<2>(omega).row(j));
-          accumulate<Dev, Vec<Real, 3>>::add(
+          emit_backbone_derivative<Dev>(
               dV_dxyz[1][omega_ats[j]], common::get<3>(omega).row(j));
         }
       } else {
@@ -309,7 +318,7 @@ void backbone_torsion_pose_forward(
             V[1][pose_ind][V_ind1][V_ind2], common::get<0>(omega));
         for (int j = 0; j < 4; ++j) {
           // omega : [V, dVdomega]
-          accumulate<Dev, Vec<Real, 3>>::add(
+          emit_backbone_derivative<Dev>(
               dV_dxyz[1][omega_ats[j]], common::get<1>(omega).row(j));
         }
       } else {
@@ -328,7 +337,8 @@ template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device Dev,
     typename Real,
-    typename Int>
+    typename Int,
+    typename GradReal = Real>
 void backbone_torsion_pose_backward(
     ContextManager& mgr,
 
@@ -355,7 +365,7 @@ void backbone_torsion_pose_backward(
     TView<RamaTableParams<Real>, 1, Dev> omega_table_params,
 
     TView<Real, 4, Dev> dTdV,
-    TView<Vec<Real, 3>, 2, Dev> dV_dxyz) {
+    TView<Vec<GradReal, 3>, 2, Dev> dV_dxyz) {
   using tmol::score::common::accumulate;
   using Real3 = Vec<Real, 3>;
 
@@ -495,10 +505,10 @@ void backbone_torsion_pose_backward(
           tmol::portable::vec_from<Real, 2>(
               rama_table_params[rama_table_ind].bbsteps));
       for (int j = 0; j < 4; ++j) {
-        accumulate<Dev, Vec<Real, 3>>::add(
+        emit_backbone_derivative<Dev>(
             dV_dxyz[0][phi_ats[j]],
             common::get<1>(rama).row(j) * rama_block_weight);
-        accumulate<Dev, Vec<Real, 3>>::add(
+        emit_backbone_derivative<Dev>(
             dV_dxyz[0][psi_ats[j]],
             common::get<2>(rama).row(j) * rama_block_weight);
       }
@@ -557,13 +567,13 @@ void backbone_torsion_pose_backward(
           32.8);
       for (int j = 0; j < 4; ++j) {
         // omega : [V, dVdphi, dVdpsi, dVdomega]
-        accumulate<Dev, Vec<Real, 3>>::add(
+        emit_backbone_derivative<Dev>(
             dV_dxyz[1][phi_ats[j]],
             common::get<1>(omega).row(j) * omega_block_weight);
-        accumulate<Dev, Vec<Real, 3>>::add(
+        emit_backbone_derivative<Dev>(
             dV_dxyz[1][psi_ats[j]],
             common::get<2>(omega).row(j) * omega_block_weight);
-        accumulate<Dev, Vec<Real, 3>>::add(
+        emit_backbone_derivative<Dev>(
             dV_dxyz[1][omega_ats[j]],
             common::get<3>(omega).row(j) * omega_block_weight);
       }
@@ -572,7 +582,7 @@ void backbone_torsion_pose_backward(
       auto omega = omega_V_dV<Dev, Real, Int>(omega_coords, 32.8);
       for (int j = 0; j < 4; ++j) {
         // omega : [V, dVdomega]
-        accumulate<Dev, Vec<Real, 3>>::add(
+        emit_backbone_derivative<Dev>(
             dV_dxyz[1][omega_ats[j]],
             common::get<1>(omega).row(j) * omega_block_weight);
       }

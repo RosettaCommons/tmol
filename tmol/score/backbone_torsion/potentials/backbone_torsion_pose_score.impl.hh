@@ -98,9 +98,14 @@ auto BackboneTorsionPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
         auto V_t = TPack<EnergyReal, 4, Dev>::zeros({2, n_poses, n_V, n_V});
         bool const accumulate_derivs =
             compute_derivs && !output_block_pair_energies;
-        auto dV_dxyz_t = accumulate_derivs
-                             ? TPack<Vec<Real, 3>, 2, Dev>::zeros({2, n_atoms})
-                             : TPack<Vec<Real, 3>, 2, Dev>::empty({2, 0});
+        using GradReal = std::conditional_t<
+            Dev == Device::CUDA && std::is_same_v<Real, float>,
+            double,
+            Real>;
+        auto dV_dxyz_t =
+            accumulate_derivs
+                ? TPack<Vec<GradReal, 3>, 2, Dev>::zeros({2, n_atoms})
+                : TPack<Vec<GradReal, 3>, 2, Dev>::empty({2, 0});
         backbone_torsion_pose_forward<DeviceDispatch, Dev, Real, Int>(
             mgr,
             rot_coords,
@@ -123,7 +128,8 @@ auto BackboneTorsionPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
             compute_derivs,
             V_t.view,
             dV_dxyz_t.view);
-        return std::make_tuple(V_t.template cast<Real>(), dV_dxyz_t);
+        return std::make_tuple(
+            V_t.template cast<Real>(), dV_dxyz_t.template cast<Vec<Real, 3>>());
       });
 }
 
@@ -184,7 +190,11 @@ auto BackboneTorsionPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
   assert(rot_offset_for_block.size(1) == max_n_blocks);
   assert(pose_stack_block_type.size(0) == n_poses);
   assert(pose_stack_block_type.size(1) == max_n_blocks);
-  auto dV_dxyz_t = TPack<Vec<Real, 3>, 2, Dev>::zeros({2, n_atoms});
+  using GradReal = std::conditional_t<
+      Dev == Device::CUDA && std::is_same_v<Real, float>,
+      double,
+      Real>;
+  auto dV_dxyz_t = TPack<Vec<GradReal, 3>, 2, Dev>::zeros({2, n_atoms});
   backbone_torsion_pose_backward<DeviceDispatch, Dev, Real, Int>(
       mgr,
       rot_coords,
@@ -205,7 +215,7 @@ auto BackboneTorsionPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
       omega_table_params,
       dTdV,
       dV_dxyz_t.view);
-  return dV_dxyz_t;
+  return dV_dxyz_t.template cast<Vec<Real, 3>>();
 }
 
 template <
@@ -353,9 +363,13 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
   }
   // Per-pair backward recomputes weighted derivatives from the saved inputs.
   bool const accumulate_derivs = !topology_only && !output_block_pair_energies;
+  using GradReal = std::conditional_t<
+      Dev == Device::CUDA && std::is_same_v<Real, float>,
+      double,
+      Real>;
   auto dV_dxyz_t = accumulate_derivs
-                       ? TPack<Vec<Real, 3>, 2, Dev>::zeros({2, n_atoms})
-                       : TPack<Vec<Real, 3>, 2, Dev>::empty({2, 0});
+                       ? TPack<Vec<GradReal, 3>, 2, Dev>::zeros({2, n_atoms})
+                       : TPack<Vec<GradReal, 3>, 2, Dev>::empty({2, 0});
 
   // Which block each dispatch index belongs to. Walking the sparse list is
   // what keeps this bounded: a dense (block x rot1 x rot2) grid would be
@@ -386,7 +400,7 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
       lockstep_group_for_block);
 
   if (topology_only) {
-    return {V_t, dV_dxyz_t, dispatch_indices_t};
+    return {V_t, dV_dxyz_t.template cast<Vec<Real, 3>>(), dispatch_indices_t};
   }
 
   backbone_rotamer_score_native<false, DeviceDispatch, Dev, Real, Int>(
@@ -416,7 +430,7 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
       accumulate_derivs,
       lockstep_group_for_block);
 
-  return {V_t, dV_dxyz_t, dispatch_indices_t};
+  return {V_t, dV_dxyz_t.template cast<Vec<Real, 3>>(), dispatch_indices_t};
 };
 
 template <
@@ -512,7 +526,11 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
   assert(rama_table_params.size(0) == n_rama_tables);
   assert(omega_table_params.size(0) == n_omega_tables);
 
-  auto dV_dxyz_t = TPack<Vec<Real, 3>, 2, Dev>::zeros({2, n_atoms});
+  using GradReal = std::conditional_t<
+      Dev == Device::CUDA && std::is_same_v<Real, float>,
+      double,
+      Real>;
+  auto dV_dxyz_t = TPack<Vec<GradReal, 3>, 2, Dev>::zeros({2, n_atoms});
 
   auto dV_dxyz = dV_dxyz_t.view;
 
@@ -543,7 +561,7 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
       true,
       lockstep_group_for_block);
 
-  return dV_dxyz_t;
+  return dV_dxyz_t.template cast<Vec<Real, 3>>();
 };
 
 }  // namespace potentials
