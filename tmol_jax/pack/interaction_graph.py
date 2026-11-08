@@ -116,6 +116,8 @@ def _graph_chunk_layout(
         chunk_size=chunk_size,
     )
     offsets, total = prefix_offsets_and_total(sizes)
+    # GPU dynamic-slice fusion can violate the in-place FFI buffer alias.
+    offsets = jax.lax.optimization_barrier(offsets)
     offsets = topology_stage(
         (sizes, offsets), operation=6, outputs=_wide(n_pairs), chunk_size=chunk_size
     )

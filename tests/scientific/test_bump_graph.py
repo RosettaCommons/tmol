@@ -450,13 +450,20 @@ def test_load_balance_rejects_unrepresentable_extents_before_allocation(graph_ba
 
 
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
-@pytest.mark.parametrize("paged", (False, True))
-def test_native_graph_energy_for_every_assignment(graph_backend, dtype, paged):
+@pytest.mark.parametrize(
+    "counts,paged",
+    (
+        ([[2, 1, 3], [1, 2, 0]], False),
+        ([[2, 1, 3], [1, 2, 0]], True),
+        ([[16, 16]], False),  # Aligned chunk offsets expose GPU slice/alias fusion.
+    ),
+)
+def test_native_graph_energy_for_every_assignment(graph_backend, dtype, counts, paged):
     jax, jnp, device = graph_backend
     from tmol_jax.pack.interaction_graph import build_interaction_graph
 
     with jax.enable_x64(dtype == np.float64), jax.default_device(device):
-        counts = np.array([[2, 1, 3], [1, 2, 0]], np.int32)
+        counts = np.asarray(counts, np.int32)
         rotamers = synthetic_rotamers(counts, jax, device)
         offsets = np.asarray(rotamers.rot_offset_for_block)
         entries = []
