@@ -69,7 +69,16 @@ def _sample_conformers(poses, task):
         else ()
     )
     _, _, choices, _, destinations = merge_conformer_samples(samples)
-    return samplers, samples, choices, destinations, groups
+    # Validate and merge every sampler first, including empty payloads. Only
+    # samplers that produced rows need coordinate reconstruction or fingerprints.
+    active = [i for i, sample in enumerate(samples) if sample[1].size]
+    return (
+        tuple(samplers[i] for i in active),
+        tuple(samples[i] for i in active),
+        choices,
+        tuple(destinations[i] for i in active),
+        groups,
+    )
 
 
 def _host_indices(value):

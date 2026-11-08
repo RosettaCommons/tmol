@@ -21,16 +21,26 @@ def packing_api(backend):
 
 @pytest.mark.parametrize("name", ("ligand", "d_peptide", "dna"))
 def test_default_task_preserves_unsampled_molecular_coordinates(backend, name):
+    from .test_molecular_sampling import sampling_task, block_mask
+
     b = backend.molecule(DOMAIN_CASES[name], terms=())
     api = packing_api(b)
     palette = api.PackerPalette()
     task = api.PackerTask(b.pose, palette)
     assert [s.sampler_name() for s in task.conformer_samplers] == ["FallbackSampler"]
+    _, inactive, _ = sampling_task(b)
+    task.add_conformer_sampler(inactive)
+    if name == "d_peptide":
+        task.disable_sampler_by_block_mask(
+            inactive, block_mask(b, np.ones(b.pose.block_type_ind.shape, bool))
+        )
+    samplers = tuple(task.conformer_samplers)
     original = b.pose
     before = b.coords().copy()
     b.use_beta2016()
     energy, gradient = b.channel_values_and_gradients(before)
     packed = api.pack_rotamers(original, b.score_function, task, seed=412)
+    assert tuple(task.conformer_samplers) == samplers
     np.testing.assert_array_equal(b.numpy(original.coords), before)
     np.testing.assert_array_equal(b.numpy(packed.coords), before)
     np.testing.assert_array_equal(
