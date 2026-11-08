@@ -286,7 +286,7 @@ def test_manual_release_rejects_wrong_event_or_candidate_id(
 
 
 def test_all_release_builds_checkout_verified_source():
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     workflow = yaml.safe_load((root / ".github/workflows/publish.yml").read_text())
     jobs = workflow["jobs"]
     assert (

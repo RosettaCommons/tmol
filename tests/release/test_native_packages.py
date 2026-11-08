@@ -6,7 +6,7 @@ from packaging.requirements import Requirement
 
 
 def test_native_package_metadata():
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     base = tomllib.loads((root / "pyproject.toml").read_text())["project"]
     for major in (12, 13):
         project = tomllib.loads(
