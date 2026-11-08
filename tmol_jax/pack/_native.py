@@ -391,11 +391,19 @@ def _sampling_array(value, dtype, wide=False):
     return value.astype(np.int64 if wide else np.int32, copy=False)
 
 
-def _sampling_put(value, device):
+def _sampling_buffer(value):
     value = np.ascontiguousarray(value)
     if value.dtype == np.int64:
         value = value.view(np.uint8).reshape(value.shape + (8,))
-    return jax.device_put(value, device)
+    return value
+
+
+def _sampling_put(values, device):
+    return jax.device_put(_sampling_buffer(values), device)
+
+
+def _sampling_put_many(values, device):
+    return jax.device_put(tuple(map(_sampling_buffer, values)), device)
 
 
 class SamplingStorage:
@@ -426,9 +434,7 @@ class SamplingStorage:
         key = (np.dtype(dtype), device)
         if key not in self._device:
             tables = self.host(dtype)
-            self._device[key] = tuple(
-                _sampling_put(a, device) for a in tables[:13] + tables[23:27]
-            )
+            self._device[key] = _sampling_put_many(tables[:13] + tables[23:27], device)
         return self._device[key]
 
 
@@ -461,7 +467,7 @@ def sample_chi_cpu(tables, coordinates, *request, max_samples_per_restype=0):
     coordinates, arguments, request = _sampling_inputs(tables, coordinates, request)
     result = invoke(12, coordinates, *arguments, *request, max_samples_per_restype)
     device = device or jax.devices("cpu")[0]
-    return tuple(jax.device_put(value, device) for value in result)
+    return jax.device_put(result, device)
 
 
 @lru_cache(maxsize=1)
@@ -528,13 +534,14 @@ def sample_chi(tables, coordinates, *request, max_samples_per_restype=0):
             raise ValueError("invalid sampling workspace extent")
         return jax.ShapeDtypeStruct((nbytes,), np.uint8)
 
-    put = partial(_sampling_put, device=device)
+    put = partial(_sampling_put_many, device=device)
     active = (
         tables.device(coordinates.dtype, device)
         if isinstance(tables, SamplingStorage)
-        else tuple(map(put, all_tables[:13] + all_tables[23:27]))
+        else put(all_tables[:13] + all_tables[23:27])
     )
-    inputs = (coordinates,) + active + tuple(map(put, prepared_request))
+    request_buffers = put((*prepared_request, counts, offsets))
+    inputs = (coordinates,) + active + request_buffers[:-2]
     shape = jax.ShapeDtypeStruct
     plan_shapes = (
         shape((2 * nblocks,), coordinates.dtype),
@@ -545,10 +552,11 @@ def sample_chi(tables, coordinates, *request, max_samples_per_restype=0):
     with jax.default_device(device):
         plan = jax.ffi.ffi_call(
             "tmol_sampling_plan", plan_shapes + (workspace(possible, 0),)
-        )(*inputs, put(counts), put(offsets), count=np.int64(possible))[:4]
+        )(*inputs, *request_buffers[-2:], count=np.int64(possible))[:4]
         host_counts = np.asarray(jax.device_get(plan[3]))
         host_offsets, total = invoke(14, host_counts, max_samples_per_restype)
         count = int(total[0])
+        (device_offsets,) = put((host_offsets,))
         identities, chi, _ = jax.ffi.ffi_call(
             "tmol_sampling_emit",
             (
@@ -556,5 +564,5 @@ def sample_chi(tables, coordinates, *request, max_samples_per_restype=0):
                 shape((count, width), coordinates.dtype),
                 workspace(count, 1),
             ),
-        )(*inputs, *plan, put(host_offsets), count=np.int64(count))
-    return plan[3], put(host_offsets), identities, chi
+        )(*inputs, *plan, device_offsets, count=np.int64(count))
+    return plan[3], device_offsets, identities, chi
