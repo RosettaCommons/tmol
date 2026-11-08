@@ -42,12 +42,15 @@ def test_internal_minimization_decreases_real_molecular_energy(backend, name):
     move_map = execution.move_map()
     move_map.move_all_named_torsions = True
     before = backend.scores(initial).sum()
-    result = execution.minimize(move_map, 5)
-    after = backend.scores(result).sum()
-    assert np.isfinite(result).all() and np.isfinite(after)
-    assert after < before - 1e-3
-    assert np.linalg.norm(result - initial) > 1e-4
-    np.testing.assert_array_equal(backend.coords(), initial)
+    for optimizer in (
+        ("armijo", "strong_wolfe") if backend.framework == "jax" else ("armijo",)
+    ):
+        result = execution.minimize(move_map, 5, optimizer=optimizer)
+        after = backend.scores(result).sum()
+        assert np.isfinite(result).all() and np.isfinite(after)
+        assert after < before - 1e-3
+        assert np.linalg.norm(result - initial) > 1e-4
+        np.testing.assert_array_equal(backend.coords(), initial)
 
 
 @pytest.mark.parametrize("name", ("ligand", "d_peptide"))

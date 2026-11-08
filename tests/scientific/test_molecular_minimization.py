@@ -35,7 +35,7 @@ def test_molecular_minimization_preserves_fixed_atoms_and_input(backend, name):
     _check_frozen_atom_minimization(backend, native_case=name == "mixed_genbonded")
 
 
-def _check_frozen_atom_minimization(backend, native_case=False):
+def _check_frozen_atom_minimization(backend, native_case=False, optimizer=None):
     initial = backend.coords().copy()
     mask = np.ones(initial.shape[:2], dtype=bool)
     if native_case:
@@ -59,6 +59,19 @@ def _check_frozen_atom_minimization(backend, native_case=False):
             )
         minimized = backend.numpy(minimized_pose.coords)
         assert float(result["fun"]) < result["initial_fun"] - 1e-3
+    elif optimizer == "strong_wolfe":
+        from tmol_jax import run_cart_min
+
+        with backend.module.default_device(backend.device):
+            pose = run_cart_min(
+                backend.pose,
+                backend.score_function,
+                mask,
+                max_iter=5,
+                optimizer=optimizer,
+            )
+        assert pose.coords.device == backend.device
+        minimized = backend.numpy(pose.coords)
     else:
         minimized = backend.minimize(mask, iterations=15 if native_case else 5)
     after = backend.scores(minimized).sum()
@@ -83,4 +96,5 @@ def _check_frozen_atom_minimization(backend, native_case=False):
 def test_complete_preset_minimization_preserves_fixed_atoms(backend, name):
     backend.molecule(DOMAIN_CASES[name], terms=())
     backend.use_beta2016()
-    _check_frozen_atom_minimization(backend)
+    for optimizer in (None, "strong_wolfe") if backend.framework == "jax" else (None,):
+        _check_frozen_atom_minimization(backend, optimizer=optimizer)

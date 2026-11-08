@@ -77,6 +77,54 @@ def test_segmented_armijo_acceptance_inactive_and_failed_objectives(backend, dty
         np.testing.assert_array_equal(backend.numpy(failed), [False] * 4 + [True])
         assert evaluations == 2
 
+        if backend.framework == "jax":
+            import jax
+            import jax.numpy as jnp
+            from tmol_jax.optimization._armijo_native import classify, start
+
+            # Check a single native transition independently of policy iteration.
+            for integer in (np.int32, np.int64):
+                alpha = jnp.asarray([[1, 0.1, 4], [0.5, 0.25, 2]], dtype=dtype)
+                searching = jnp.ones(3, bool)
+
+                def run(row):
+                    selected = start(searching, row)
+                    return classify(
+                        searching,
+                        selected,
+                        0.5 * (2 - 2 * selected) ** 2,
+                        jnp.full(3, 2, dtype=dtype),
+                        jnp.full(3, -4, dtype=dtype),
+                        0.8,
+                        0.1,
+                        status_dtype=integer,
+                    )
+
+                accepted, values, status, active = jax.jit(jax.vmap(run))(alpha)
+                assert accepted.dtype == values.dtype == dtype
+                assert status.dtype == integer
+                np.testing.assert_allclose(
+                    accepted, [[1, 0.1, 0], [0.5, 0.25, 0]], rtol=0, atol=1e-7
+                )
+                np.testing.assert_array_equal(status, [[0, 1, 2], [0, 1, 2]])
+                np.testing.assert_array_equal(active, [[False, True, True]] * 2)
+                np.testing.assert_allclose(
+                    values, [[0, 1.62, 2], [0.5, 1.125, 2]], rtol=0, atol=2e-7
+                )
+
+            if dtype == np.float32:
+                with jax.enable_x64(False):
+                    alpha = start(
+                        jnp.asarray([True, False]),
+                        jnp.asarray([1.0, 7.0], dtype=jnp.float32),
+                    )
+                    np.testing.assert_array_equal(alpha, [1, 0])
+                    assert not jax.config.x64_enabled
+                with pytest.raises(RuntimeError, match="shape|extent|Armijo"):
+                    start(
+                        jnp.asarray([True]), jnp.ones(2, jnp.float32)
+                    ).block_until_ready()
+
 
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
 def test_compact_direction_matches_dense_bfgs_with_wrapped_partial_history(
