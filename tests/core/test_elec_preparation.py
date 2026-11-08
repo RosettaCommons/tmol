@@ -102,6 +102,46 @@ def test_explicit_charge_overrides_are_complete_finite_and_take_precedence():
     with pytest.raises(ValueError, match="non-finite"):
         partial_charges_for_block(block, table, overrides={"N": np.inf, "H1": 1.0})
 
+    from types import SimpleNamespace
+
+    from tmol_core.scoring.elec import partial_charges_for_block
+
+    block = SimpleNamespace(name="LIG:nterm:conj_x:other", atoms=("N", "H", "V"))
+    table = {
+        "LIG": {
+            "N": {"": 1.0, "nterm:conj_x": 2.0, "nterm:conj_x:other": 3.0},
+            "H": {"": 4.0},
+        }
+    }
+    with pytest.raises(KeyError, match="V not found"):
+        partial_charges_for_block(
+            block, table, overrides=getattr(block, "elec_partial_charges", None)
+        )
+    table["LIG"]["V"] = {"": 0.0}
+    np.testing.assert_array_equal(
+        partial_charges_for_block(
+            block, table, overrides=getattr(block, "elec_partial_charges", None)
+        ),
+        [3, 4, 0],
+    )
+    block.elec_partial_charges = {"N": -0.5, "H": 0.5}
+    with pytest.raises(KeyError, match="V not found"):
+        partial_charges_for_block(
+            block, table, overrides=getattr(block, "elec_partial_charges", None)
+        )
+    block.elec_partial_charges["V"] = 0.0
+    np.testing.assert_array_equal(
+        partial_charges_for_block(
+            block, table, overrides=getattr(block, "elec_partial_charges", None)
+        ),
+        [-0.5, 0.5, 0],
+    )
+    block.elec_partial_charges["V"] = float("nan")
+    with pytest.raises(ValueError, match="non-finite"):
+        partial_charges_for_block(
+            block, table, overrides=getattr(block, "elec_partial_charges", None)
+        )
+
 
 def test_packed_electrostatics_preserves_physical_axes_and_parameter_owned_geometry():
     from tmol_core.scoring.elec import prepare_elec_block, pack_elec_parameters
