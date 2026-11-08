@@ -27,7 +27,9 @@ def database(request):
     ).ParameterDatabase.get_default()
 
 
-def test_context_is_immutable_and_subtypes_have_private_defaults(database):
+def test_context_is_immutable_and_subtypes_have_private_defaults(
+    database, monkeypatch, tmp_path
+):
     class CustomContext(type(database)):
         pass
 
@@ -44,6 +46,51 @@ def test_context_is_immutable_and_subtypes_have_private_defaults(database):
     )
     with pytest.raises(ValueError, match="UNKNOWN_RESIDUE"):
         custom.create_stable_subset(["UNKNOWN_RESIDUE"], [])
+
+    if not type(database).__module__.startswith("tmol_jax"):
+        return
+    import shutil
+    import yaml
+    from tmol_core.chemical.default import default_patched_chemical_database
+
+    storage = importlib.import_module("tmol_jax.database")
+    directory = storage.default_directory()
+    monkeypatch.delenv("TMOL_JAX_DATABASE", raising=False)
+    # The source checkout uses exported scoring tables; installed packages use
+    # the identical packaged directory through the unmodified default accessor.
+    monkeypatch.setattr(database, "default_directory", lambda: directory)
+
+    class IsolatedDatabase(storage.ParameterDatabase):
+        _default = None
+
+    context = IsolatedDatabase.get_default()
+    assert context.chemical is default_patched_chemical_database()
+    assert IsolatedDatabase.get_default() is context
+    explicit = IsolatedDatabase.from_file(str(directory))
+    assert explicit.chemical is not context.chemical
+    assert [r.name for r in explicit.chemical.residues] == [
+        r.name for r in context.chemical.residues
+    ]
+    original = storage.default_directory()
+    shutil.copytree(original / "chemical", tmp_path / "chemical")
+    (tmp_path / "scoring").symlink_to(original / "scoring", target_is_directory=True)
+    chemical = tmp_path / "chemical/chemical.yaml"
+    record = yaml.safe_load(chemical.read_text())
+    record["name3_aliases"].append({"name3": "XAL", "read_as": "ALA"})
+    chemical.write_text(yaml.safe_dump(record))
+    monkeypatch.setenv("TMOL_JAX_DATABASE", str(tmp_path))
+
+    class IsolatedDatabase(storage.ParameterDatabase):
+        _default = None
+
+    context = IsolatedDatabase.get_default()
+    assert context.chemical is not default_patched_chemical_database()
+    assert any(
+        a.name3 == "XAL" and a.read_as == "ALA" for a in context.chemical.name3_aliases
+    )
+    assert not any(
+        a.name3 == "XAL" for a in default_patched_chemical_database().name3_aliases
+    )
 
 
 def test_symmetric_gly_updates_coupled_geometry_and_parameter_identity(database):
@@ -85,7 +132,7 @@ def test_numpy_and_tensor_parameter_content_identity(database):
     assert _content_hash(source.rama_lookup, records) != source.uniq_id
 
 
-def test_d_residue_lookup_uses_actual_mirrored_library(database):
+def test_d_residue_lookup_uses_actual_mirrored_library(database, tmp_path):
     library = getattr(database.scoring, database._dunbrack_attribute)
     lookup = {r.residue_name: r.dun_table_name for r in library.dun_lookup}
     tables = {t.table_name: t.rotameric_data for t in library.rotameric_libraries}
@@ -104,6 +151,44 @@ def test_d_residue_lookup_uses_actual_mirrored_library(database):
     np.testing.assert_array_equal(
         np.asarray(mirrored.rotamer_means), -means[:, rows][:, :, columns]
     )
+
+    if not type(database).__module__.startswith("tmol_jax"):
+        return
+    from tmol_core.database.mirrored_dunbrack import _mirror_rotameric_data
+    from tmol_jax.database.scoring.dunbrack_libraries import DunbrackRotamerLibrary
+
+    source = library.rotameric_libraries[0]
+    original = attrs.evolve(
+        source.rotameric_data,
+        backbone_dihedral_start=source.rotameric_data.backbone_dihedral_start
+        + np.array([1.25, -2], dtype=np.float32),
+    )
+    mirrored = _mirror_rotameric_data(original)
+    assert mirrored.backbone_is_mirrored
+    np.testing.assert_array_equal(
+        mirrored.backbone_source_start, original.backbone_dihedral_start
+    )
+    arrays = {"__n_rot": 1, "__n_semi": 0, "rot0__table_name": "private_reflection"}
+    arrays.update(
+        {
+            "rot0__data__" + field.name: getattr(mirrored, field.name)
+            for field in attrs.fields(type(mirrored))
+            if getattr(mirrored, field.name) is not None
+        }
+    )
+    path = tmp_path / "custom.npz"
+    np.savez(path, **arrays)
+    (loaded,), semi = DunbrackRotamerLibrary.load_libraries_from_npz(path)
+    assert not semi and loaded.table_name == "private_reflection"
+    for field in attrs.fields(type(mirrored)):
+        np.testing.assert_array_equal(
+            getattr(loaded.rotameric_data, field.name), getattr(mirrored, field.name)
+        )
+    restored = _mirror_rotameric_data(loaded.rotameric_data)
+    for field in attrs.fields(type(original)):
+        np.testing.assert_array_equal(
+            getattr(restored, field.name), getattr(original, field.name)
+        )
 
 
 def test_bundled_backbone_parameter_identity_across_frameworks():
