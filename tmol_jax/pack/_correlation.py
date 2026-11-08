@@ -20,16 +20,12 @@ def _compatible(indices, group, conformer):
 def _remap(values, indices, keep, mapping, blocks, *, size):
     # The caller has already counted the compatible entries. When all survive,
     # their original order is the complete selection; avoid a full compaction.
-    selected = (
-        jnp.arange(size, dtype=jnp.int32)
-        if size == keep.size and size <= np.iinfo(np.int32).max
-        else jnp.nonzero(keep, size=size)[0]
-    )
-    a, b = mapping[indices[1:, selected]]
+    if size != keep.size or size > np.iinfo(np.int32).max:
+        selected = jnp.nonzero(keep, size=size)[0]
+        values, indices = values[selected], indices[:, selected]
+    a, b = mapping[indices[1:]]
     swap = blocks[a] > blocks[b]
-    return values[selected], jnp.stack(
-        (indices[0, selected], jnp.where(swap, b, a), jnp.where(swap, a, b))
-    )
+    return values, jnp.stack((indices[0], jnp.where(swap, b, a), jnp.where(swap, a, b)))
 
 
 def collapse_for_graph(rotamers, values, indices):
