@@ -45,6 +45,7 @@ def run_cart_min(
     optimizer="armijo",
     optimizer_kwargs=None,
     coord_mask=None,
+    cuda_graph=None,
 ):
     """Minimize Cartesian coordinates with the shared segmented L-BFGS/Armijo policy.
 
@@ -63,12 +64,17 @@ def run_cart_min(
     ``optimizer="strong_wolfe"``. Omitted iteration/history settings use the
     common Armijo defaults (200 iterations, 200 history entries). A callable
     ``optimizer`` uses the compact functional protocol documented in the JAX guide.
+    ``cuda_graph=True`` captures native Armijo scoring through XLA command buffers;
+    False disables capture and None preserves automatic compilation. Explicit modes
+    require a rendered TMol scorer; capture requires CUDA coordinates.
     """
     if coord_mask is not None:
         if move_mask is not None:
             raise TypeError("supply only one of move_mask and coord_mask")
         move_mask = coord_mask
-    coords, scorer = _prepare_minimization(pose_stack, score_function, constraint_set)
+    coords, scorer = _prepare_minimization(
+        pose_stack, score_function, constraint_set, cuda_graph, optimizer
+    )
     mask = _coordinate_mask(pose_stack, move_mask)
     shape = coords.shape
     x0 = coords.reshape(-1)
@@ -160,8 +166,16 @@ def _minimize_selected(
     )
 
 
-def _prepare_minimization(pose_stack, score_function, constraint_set):
+def _prepare_minimization(
+    pose_stack, score_function, constraint_set, cuda_graph=None, optimizer="armijo"
+):
+    if cuda_graph is not None and not isinstance(cuda_graph, bool):
+        raise TypeError("cuda_graph must be True, False or None")
+    if cuda_graph is not None and optimizer != "armijo":
+        raise NotImplementedError("explicit CUDA graph mode requires Armijo execution")
     coords = jnp.asarray(pose_stack.coords)
+    if cuda_graph and coords.device.platform != "gpu":
+        raise ValueError("CUDA graph capture requires a CUDA pose")
     if not jnp.issubdtype(coords.dtype, jnp.floating):
         raise TypeError("pose coordinates must be floating point")
     if not bool(jnp.isfinite(coords).all()):
@@ -181,6 +195,10 @@ def _prepare_minimization(pose_stack, score_function, constraint_set):
             "score_function must provide the TMol JAX render API"
         ) from error
 
+    if cuda_graph is not None and coords.device.platform == "gpu":
+        if not hasattr(scorer, "_with_cuda_graph"):
+            raise TypeError("explicit CUDA graph mode requires a rendered TMol scorer")
+        scorer = scorer._with_cuda_graph(cuda_graph)
     return coords, scorer
 
 
@@ -276,6 +294,7 @@ def run_kin_min(
     constraint_set=None,
     optimizer="armijo",
     optimizer_kwargs=None,
+    cuda_graph=None,
 ):
     """Minimize selected internal DOFs through shared native molecular kinematics.
 
@@ -291,10 +310,14 @@ def run_kin_min(
     history; independent poses retain independent line search and convergence.
     A callable ``optimizer`` receives the same compact variables and movement
     policy; its functional protocol is documented in the JAX guide.
+    ``cuda_graph`` selects the same explicit Armijo scoring execution as Cartesian
+    minimization; None preserves automatic compilation.
     """
     from tmol_jax.kinematics import PoseStackKinematics
 
-    coords, scorer = _prepare_minimization(pose_stack, score_function, constraint_set)
+    coords, scorer = _prepare_minimization(
+        pose_stack, score_function, constraint_set, cuda_graph, optimizer
+    )
     kinematics = PoseStackKinematics(pose_stack, fold_forest)
     mapping = kinematics.bind(coords, kin_dtype=kin_dtype)
     mask = kinematics.resolve_move_map(move_map)

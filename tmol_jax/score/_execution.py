@@ -4,7 +4,7 @@ from functools import partial
 
 import jax
 
-from tmol_jax._compilation import jit_without_autotuning
+from tmol_jax._compilation import jit_without_autotuning, with_cuda_graph
 import jax.numpy as jnp
 import numpy as np
 
@@ -25,6 +25,14 @@ class RenderedScore:
 
     def jitted(self):
         return partial(self._apply, self.executor[1])
+
+    def _with_cuda_graph(self, enabled):
+        executor = (
+            self.executor[0],
+            *(with_cuda_graph(function, enabled) for function in self.executor[1:5]),
+            self.executor[5],
+        )
+        return RenderedScore(executor, self.arrays, self.shape)
 
     def value_and_grad(self, *, coordinate_map=None, coordinate_dtype=None):
         """Return energies and source gradients, optionally through a prepared map.

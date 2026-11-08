@@ -26,18 +26,12 @@ from tmol_jax.kinematics import CartesianMoveMap, MoveMap, FoldForest
 from tmol_jax.score.score_types import ScoreType
 
 
-def _check_graph_mode(cuda_graph):
-    if cuda_graph:
-        raise NotImplementedError(
-            "Explicit CUDA graph capture is not implemented by the JAX minimizer"
-        )
-
-
 class CartesianRelaxMinimizer:
     """JAX Cartesian minimization; None frees all real atoms.
 
     Extra options are passed to ``run_cart_min``. JAX compiles its scoring
-    execution; explicit ``cuda_graph=True`` is unsupported.
+    execution. ``cuda_graph`` explicitly enables or disables CUDA command-buffer
+    scoring; None preserves automatic execution. Explicit modes require Armijo.
     """
 
     def __init__(self, move_map=None, *, cuda_graph=None, **options):
@@ -45,14 +39,19 @@ class CartesianRelaxMinimizer:
             move_map = CartesianMoveMap()
         if not isinstance(move_map, CartesianMoveMap):
             raise TypeError("CartesianRelaxMinimizer needs a CartesianMoveMap")
-        _check_graph_mode(cuda_graph)
+        self.cuda_graph = cuda_graph
         self.move_map = move_map
         self.options = options
 
     def __call__(self, pose, sfxn, *, verbose=False, rtol=None):
         # PR626 retains Cartesian LBFGS defaults, independent of stage rtol.
         return run_cart_min(
-            pose, sfxn, self.move_map.coord_mask, verbose=verbose, **self.options
+            pose,
+            sfxn,
+            self.move_map.coord_mask,
+            verbose=verbose,
+            cuda_graph=self.cuda_graph,
+            **self.options,
         )
 
 
@@ -62,7 +61,7 @@ class KinematicRelaxMinimizer:
     def __init__(self, move_map=None, fold_forest=None, *, cuda_graph=None, **options):
         if move_map is not None and not isinstance(move_map, MoveMap):
             raise TypeError("KinematicRelaxMinimizer needs a MoveMap")
-        _check_graph_mode(cuda_graph)
+        self.cuda_graph = cuda_graph
         self.move_map = move_map
         self.fold_forest = fold_forest
         self.options = options
@@ -89,6 +88,7 @@ class KinematicRelaxMinimizer:
             fold_forest=fold_forest,
             verbose=verbose,
             optimizer_kwargs=convergence,
+            cuda_graph=self.cuda_graph,
             **options,
         )
 
