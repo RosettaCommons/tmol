@@ -165,3 +165,38 @@ def test_export_preserves_coordination_and_explicit_virtual_atom_option(backend)
             if i != metal
         }
         assert donors == {(94, "HIS", "NE2"), (96, "HIS", "NE2"), (119, "HIS", "ND1")}
+
+    if backend.framework != "jax":
+        return
+    from io import StringIO
+    from .molecules import DOMAIN_CASES
+    from tmol_jax.io.write_pose_stack_pdb import (
+        atom_records_from_pose_stack,
+        write_pose_stack_pdb,
+    )
+
+    jax = backend.module
+    for case_name, metal in (("metal_mixed", "Zn"), ("metal_cluster", "Fe")):
+        backend = backend.molecule(DOMAIN_CASES[case_name], terms=("ref",))
+        with jax.enable_x64():
+            coords = np.asarray(backend.pose.coords, dtype=np.float64).copy()
+            coords[0, 0, 0] = 1.123456789123
+            backend.pose = backend.pose.replace(
+                coords=jax.device_put(coords, backend.device)
+            )
+            records = atom_records_from_pose_stack(backend.pose)
+            assert records[0]["x"] == coords[0, 0, 0]
+        metal_rows = [
+            row for row in records if row["element"].strip().lower() == metal.lower()
+        ]
+        assert metal_rows
+        stream = StringIO()
+        write_pose_stack_pdb(backend.pose, stream)
+        text = stream.getvalue()
+        lines = [
+            line for line in text.splitlines() if line.startswith(("ATOM  ", "HETATM"))
+        ]
+        assert len(lines) == len(records)
+        for line, record in zip(lines, records):
+            assert line[12:16].strip() == record["atomn"]
+            assert line[76:78].strip().lower() == record["element"].strip().lower()
