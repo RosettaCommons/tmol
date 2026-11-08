@@ -615,10 +615,12 @@ or `KinematicRelaxMinimizer(...)` owns the movement map and optional fold forest
 the default frees every real atom in Cartesian space. Custom minimizers receive
 `verbose` and optional per-stage `rtol`. Kinematic relaxation uses the shared
 per-radian convergence policy; Cartesian relaxation retains L-BFGS defaults.
-`packer_palette` is optional. Explicit CUDA graph capture is not implemented
-by JAX (`cuda_graph=True` raises); ordinary native CUDA execution is supported.
-Existing packing
-capability limits apply. The public minimizers and these callbacks default to
+`packer_palette` is optional. The public Cartesian/kinematic minimizers and relax
+minimizer objects accept `cuda_graph=True` or `False` to enable or disable XLA
+command buffers for Armijo scoring; `None` preserves automatic execution.
+Explicit capture requires CUDA coordinates and a rendered TMol scorer. Other
+optimizers use `None`. This controls scoring capture; optimizer array operations
+remain compiled. Existing packing capability limits apply. The public minimizers and these callbacks default to
 shared per-pose L-BFGS/Armijo, including mature convergence, iteration and history
 settings. Packing stages and pose chunks advance one local seed stream per device.
 Explicit `optimizer="strong_wolfe"` minimizes the summed objective with
