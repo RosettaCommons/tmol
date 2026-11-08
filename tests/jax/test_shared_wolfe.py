@@ -6,7 +6,10 @@ import numpy as np
 import pytest
 
 from tmol_jax.optimization import lbfgs_minimize, run_cart_min
-from tmol_jax.optimization._strong_wolfe_execution import JaxLBFGSExecution
+from tmol_jax.optimization._strong_wolfe_execution import (
+    JaxLBFGSExecution,
+    JaxStrongWolfeExecution,
+)
 from tests.scientific.execution import Execution
 from tests.scientific.molecules import DOMAIN_CASES
 from tests.scientific.test_molecular_minimization import _check_frozen_atom_minimization
@@ -120,3 +123,18 @@ def test_kinematic_wolfe_retains_shared_molecular_minimization_contract(
 
     monkeypatch.setattr(MolecularKinematicExecution, "minimize", minimize)
     check(Execution("jax-" + jax.devices()[0].platform), name)
+
+
+@pytest.mark.parametrize("dtype", (np.float32, np.float64))
+def test_step_norm_preserves_dtype_device_and_array_transformations(dtype):
+    # These integer magnitudes have an exactly representable sum in both dtypes.
+    values = jnp.asarray([-4, 2, -1, 8], dtype=dtype)
+    norm = JaxStrongWolfeExecution.abs_sum
+    for function in (norm, jax.jit(norm)):
+        result = function(values)
+        assert result.dtype == values.dtype and result.device == values.device
+        np.testing.assert_array_equal(result, 15)
+    np.testing.assert_array_equal(
+        jax.jit(jax.vmap(norm))(jnp.stack((values, values * 2))), [15, 30]
+    )
+    np.testing.assert_array_equal(jax.grad(norm)(values), [-1, 1, -1, 1])

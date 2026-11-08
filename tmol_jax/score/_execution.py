@@ -1,8 +1,10 @@
 """Reusable compiled execution with fresh topology and parameter operands."""
 
-from functools import partial, wraps
+from functools import partial
 
 import jax
+
+from tmol_jax._compilation import jit_without_autotuning
 import jax.numpy as jnp
 import numpy as np
 
@@ -108,25 +110,6 @@ class WholePoseScorer(RenderedScore):
         return self(coords, sum_terms=False, apply_weights=False)
 
 
-def _jit_native(function):
-    # These graphs dispatch fixed native physics kernels. GPU autotuning adds
-    # large compilation-only allocations without choosing their algorithms.
-    compiled = jax.jit(function, compiler_options={"xla_gpu_autotune_level": 0})
-
-    @wraps(function)
-    def execute(*args, **kwargs):
-        # Compiler options belong to the outermost jit. An enclosing user
-        # transformation owns compilation and receives the ordinary array graph.
-        if any(
-            isinstance(value, jax.core.Tracer)
-            for value in jax.tree_util.tree_leaves((args, kwargs))
-        ):
-            return function(*args, **kwargs)
-        return compiled(*args, **kwargs)
-
-    return execute
-
-
 def render_execution(
     cache,
     configuration,
@@ -193,7 +176,9 @@ def render_execution(
             )
             return energies, gradient
 
-        compile_execution = _jit_native if native_only else jax.jit
+        # Native physics kernels have fixed algorithms; autotuning adds only
+        # compilation work and temporary allocations for their array graph.
+        compile_execution = jit_without_autotuning if native_only else jax.jit
         executor = (
             execute,
             compile_execution(execute),
