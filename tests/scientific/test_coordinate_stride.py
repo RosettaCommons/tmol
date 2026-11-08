@@ -49,3 +49,19 @@ def test_coordinate_capacity_and_replacement_preserve_all_term_values_and_forces
         again_values, again_gradients = b.channel_values_and_gradients(coordinates)
         np.testing.assert_allclose(again_values, values, rtol=2e-10, atol=2e-10)
         np.testing.assert_allclose(again_gradients, gradients, rtol=2e-10, atol=2e-10)
+        # Independent poses cannot interact. Reuse the score function across
+        # different topology objects and check each physical system separately.
+        for index in range(pose.n_poses):
+            b.pose = pose.split(index)
+            if b.framework == "torch":
+                b._render_torch()
+            split_values, split_gradients = b.channel_values_and_gradients(b.coords())
+            np.testing.assert_allclose(
+                split_values, values[:, index : index + 1], rtol=2e-10, atol=2e-10
+            )
+            np.testing.assert_allclose(
+                split_gradients,
+                gradients[:, index : index + 1],
+                rtol=2e-10,
+                atol=2e-10,
+            )

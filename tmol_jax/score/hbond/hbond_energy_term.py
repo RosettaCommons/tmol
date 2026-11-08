@@ -11,7 +11,9 @@ class HBondEnergyTerm(EnergyTerm):
         return [ScoreType.hbond]
 
     def setup_for_pose_stack(self, pose_stack, pbt=None):
-        return prepare_hbond(pose_stack, self.param_db)
+        return self._prepared_pose(
+            pose_stack, lambda: prepare_hbond(pose_stack, self.param_db)
+        )
 
     @classmethod
     def evaluate(cls, term_state, coords):

@@ -2,6 +2,8 @@
 
 from abc import ABC, abstractmethod
 
+import jax
+
 from tmol_core.cache import AnnotationKey, PreparationCache
 from tmol_core.scoring.channels import TERM_CHANNELS
 
@@ -16,6 +18,34 @@ class EnergyTerm(ABC):
     def _prepared(self, name, prepare, *sources, settings=()):
         key = AnnotationKey.from_sources(self.param_db, *sources, settings=settings)
         return self._preparations.get_or_create(name, key, prepare)
+
+    def _prepared_pose(self, pose, prepare):
+        """Reuse coordinate-independent state for immutable molecular topology."""
+        topology = (
+            pose.block_coord_offset,
+            pose.block_type_ind,
+            pose.inter_residue_connections,
+            pose._inter_block_bondsep,
+            pose.near_blocks,
+            pose.bondsep,
+        )
+        sources = tuple(value for value in topology if value is not None)
+        # Direct construction may supply mutable host arrays. Such inputs still
+        # prepare afresh; only immutable device topology can share an annotation.
+        if any(not isinstance(value, jax.Array) for value in sources):
+            return prepare()
+        return self._prepared(
+            "pose",
+            prepare,
+            pose.packed_block_types,
+            *pose.packed_block_types._scoring_sources,
+            *sources,
+            settings=(
+                pose.coords.shape,
+                pose.coords.device,
+                tuple(value is None for value in topology),
+            ),
+        )
 
     def set_options(self, options):
         """Configure supported term-specific rendering options."""
