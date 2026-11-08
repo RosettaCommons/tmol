@@ -89,10 +89,11 @@ The beta2016 preset retains all 25 declared channels and uses shared native
 physics for coordinate-dependent terms. Required missing parameters raise
 during preparation. See the capability matrix for tested domains and open gaps.
 
-Branched N-glycan packing retains a float32 CUDA repeat-energy validation gap
-in both current frontends and mature Torch. Fixed-coordinate checks reproduce
-variation in hydrogen-bond and Dunbrack reductions. Float64 repeat checks pass,
-but do not establish the float32 contract or complete workflow parity.
+Whole-pose hydrogen-bond, Dunbrack and backbone-torsion CUDA energy reductions
+use wider accumulators before returning the caller dtype. Both current frontends
+pass the retained float32 branched N-glycan repeat-energy and gradient checks;
+the mature baseline still fails that repeat gate. Generated ligand geometry,
+historical trajectories, complete runtime and peak-memory parity remain open.
 
 Standalone LJ/LK float32 CUDA gradients now use the shared native wider
 accumulator, then convert once to the coordinate dtype. The original lifecycle
