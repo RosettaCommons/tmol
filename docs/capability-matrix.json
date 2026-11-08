@@ -201,7 +201,17 @@
         "tests/scientific/test_fast_relax_execution.py",
         "tmol/tests/relax/test_fast_relax.py"
       ],
-      "implementation_status": "Common mature schedules, packing/minimization stages, task callbacks, release hooks and per-pose best acceptance. CPU/CUDA and installed checks cover the listed molecular fixtures. Shared precise derivative accumulation resolves the earlier float32 CUDA repeat failures on five tested domains in both current frontends, including the combined source. Historical mature trajectory, complete runtime/memory and actual final Metal equivalence remain unresolved; passing these bounded fixtures does not establish full parity."
+      "implementation_status": "One common schedule, stage-tolerance and per-pose acceptance policy with frontend-owned CartesianRelaxMinimizer/KinematicRelaxMinimizer objects and movement maps. The keyword-only minimizer and packer_palette API, frozen coordinates, wrong-map rejection, custom callback rtol and release hooks have actual CPU/CUDA and Torch-free installed molecular checks. Packing uses shared native trajectory metadata and algorithms, including CPU funnel execution with at least eight configured threads. Component tests do not establish complete default-workflow trajectory, runtime or peak-memory parity; those comparisons and actual final Metal validation remain separate."
+    },
+    {
+      "domain": "explicit_cuda_graph_capture",
+      "torch": "supported_by_relax_minimizers",
+      "jax": "not_implemented",
+      "repro_fixture": [
+        "tests/scientific/test_fast_relax_execution.py",
+        "tmol/tests/relax/test_fast_relax.py"
+      ],
+      "implementation_status": "JAX minimizers reject cuda_graph=True explicitly. Ordinary native CUDA scoring and JAX JIT execution are supported; neither implies equivalent CUDA graph capture or replay behavior."
     },
     {
       "domain": "fragment_interactions",

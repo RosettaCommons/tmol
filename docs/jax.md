@@ -25,6 +25,9 @@ optimization. MOL2
 the caller's subtype and must be used for subsequent pose construction and scoring.
 Optional ligand preparation dependencies are available as `tmol-jax[ligand]`
 (or `tmol-core[ligand]` when installing the component packages separately).
+Use the [pinned development constraint](shared_core.md) for the tested Torch-free
+structure-preparation dependency. Published AtomWorks 3.0.4 imports Torch during
+preparation when it is installed; the ordinary PyPI extra does not apply this fix.
 CIF preparation and molecular file input use the common framework-free readers.
 Preparation runs eagerly on the host; its compiled JAX numerical refinement
 uses the CPU backend so seeded chemical parameters are independent of the
@@ -684,14 +687,6 @@ builder accept `return_chain_ind`, `return_atom_mapping`, and
 `return_block_has_missing_atoms`; requested metadata accompanies the pose in a
 dictionary. Atom mappings refer to left-justified canonical residue indices,
 including when the source contains padding.
-
-AtomWorks 3.0.4's published package imports Torch during structure preparation
-when Torch is installed. The [pinned development constraint](shared_core.md)
-selects the tested temporary import fix; ordinary PyPI installation does not yet
-apply it. The normal installed pinned dependency leaves Torch unloaded through
-full molecular JAX input/scoring/gradients and preserves explicit ML/RNG behavior.
-The fix improves cold runtime and memory, but matched mature-Torch cold runtime
-and peak-memory parity remain incomplete.
 
 `PoseStackBuilder.from_poses(stacks, device)` combines compatible chemical
 contexts using the common palette, metadata and fragment-identity plans. It
