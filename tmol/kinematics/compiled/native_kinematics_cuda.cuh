@@ -213,7 +213,7 @@ void forward_kinematics_cuda_native(
   mgpu::transform(k_getcoords, num_atoms, context);
 }
 
-template <class Real, class Int>
+template <class Real, class Int, class SumReal = Real>
 void kin_derivatives_cuda_native(
     mgpu::context_t& context,
     TView<KinCoord<Real>, 1, Device::CUDA> dVdx,
@@ -223,25 +223,28 @@ void kin_derivatives_cuda_native(
     TView<Int, 1, Device::CUDA> scans,
     TView<KinForestGenData<Int>, 1, Device::CPU> gens,
     TView<KinForestParams<Int>, 1, Device::CUDA> kintree,
-    TView<Eigen::Matrix<Real, 6, 1>, 1, Device::CUDA> f1f2s,
+    TView<Eigen::Matrix<SumReal, 6, 1>, 1, Device::CUDA> f1f2s,
     TView<KinDofs<Real>, 1, Device::CUDA> dsc_ddofs,
-    TView<Eigen::Matrix<Real, 6, 1>, 1, Device::CUDA> scanCarryout,
+    TView<Eigen::Matrix<SumReal, 6, 1>, 1, Device::CUDA> scanCarryout,
     TView<int, 1, Device::CUDA> scanCodes,
     TView<Int, 1, Device::CUDA> LBS,
-    TView<Eigen::Matrix<Real, 6, 1>, 1, Device::CUDA> f1f2scan) {
+    TView<Eigen::Matrix<SumReal, 6, 1>, 1, Device::CUDA> f1f2scan) {
   constexpr Device D = Device::CUDA;
   using launch_t = mgpu::launch_params_t<256, 3>;
   int const num_atoms = dVdx.size(0);
-  f1f2VecsRawBuffer<Real> init = {0, 0, 0, 0, 0, 0};  // identity
+  f1f2VecsRawBuffer<SumReal> init = {0, 0, 0, 0, 0, 0};  // identity
 
+  // Preserve coordinate arithmetic in Real, but allow wider scan and atomic
+  // sums when branches contribute to the same destination. Cast once before
+  // the existing degree-of-freedom derivative calculation.
   // calculate f1s and f2s from dVdx and HT
   nvtx_range_push("dispatch::ddof2ht");
   auto k_f1f2s = ([=] EIGEN_DEVICE_FUNC(int i) {
     Coord trans = hts[i].block(3, 0, 1, 3).transpose();
     Coord f1 =
         dVdx[i].isZero(0) ? dVdx[i] : trans.cross(trans - dVdx[i]).transpose();
-    f1f2s[i].topRows(3) = f1;
-    f1f2s[i].bottomRows(3) = dVdx[i];
+    f1f2s[i].topRows(3) = f1.template cast<SumReal>();
+    f1f2s[i].bottomRows(3) = dVdx[i].template cast<SumReal>();
   });
 
   // mgpu::standard_context_t context;
@@ -266,7 +269,7 @@ void kin_derivatives_cuda_native(
           nodes[nodestart + index] < f1f2s.size(0)
           && nodes[nodestart + index] >= 0);
       return *(
-          (f1f2VecsRawBuffer<Real>*)f1f2s[nodes[nodestart + index]].data());
+          (f1f2VecsRawBuffer<SumReal>*)f1f2s[nodes[nodestart + index]].data());
     };
 
     // mgpu does not play nicely with eigen types
@@ -277,11 +280,11 @@ void kin_derivatives_cuda_native(
         nnodes,
         &scans.data()[scanstart],
         nscans,
-        (f1f2VecsRawBuffer<Real>*)(f1f2scan.data()->data()),
-        (f1f2VecsRawBuffer<Real>*)(scanCarryout.data()->data()),
+        (f1f2VecsRawBuffer<SumReal>*)(f1f2scan.data()->data()),
+        (f1f2VecsRawBuffer<SumReal>*)(scanCarryout.data()->data()),
         &scanCodes.data()[0],
         &LBS.data()[0],
-        f1f2compose_t<D, Real, Int>(),
+        f1f2compose_t<D, SumReal, Int>(),
         init,
         context);
     nvtx_range_pop();
@@ -304,8 +307,8 @@ void kin_derivatives_cuda_native(
 
   nvtx_range_push("dispatch::f1f2_to_deriv");
   auto k_f1f2s2derivs = ([=] EIGEN_DEVICE_FUNC(int i) {
-    Vec<Real, 3> f1 = f1f2s[i].topRows(3);
-    Vec<Real, 3> f2 = f1f2s[i].bottomRows(3);
+    Vec<Real, 3> f1 = f1f2s[i].topRows(3).template cast<Real>();
+    Vec<Real, 3> f2 = f1f2s[i].bottomRows(3).template cast<Real>();
     if (kintree[i].doftype == ROOT) {
       dsc_ddofs[i] = Vec<Real, 9>::Constant(0);
     } else if (kintree[i].doftype == JUMP) {
