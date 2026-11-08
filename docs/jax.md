@@ -231,6 +231,8 @@ create a new sampler after changing the database. Reusing a sampler retains its
 native table buffers while reading fresh coordinates and task requests.
 `DunbrackChiSampler.from_database` snapshots the source immediately and fits
 tables at the first supported sampling request or explicit `sampler.tables` access.
+Requests with no chemically eligible choices return empty device arrays without
+fitting tables, including ligand-only and nucleic-acid tasks with a full palette.
 `DunbrackChiSampler.from_database(db,
 expanded_limit=1000, limit=1000).prepare_packed_block_types(pbt)` prepares shared
 library/explicit-chi metadata on the palette's device. `prepare_atom_copy_plan(pbt,

@@ -164,6 +164,55 @@ def test_reused_assembly_consumes_new_chi_payloads():
 
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
+@pytest.mark.parametrize("case", ("ligand", "dna"))
+def test_ineligible_sampling_preserves_empty_result_without_fitting(platform, case):
+    from tmol_jax.pack import PackerTask, SetPackerTask, DunbrackChiSampler
+    from tests.scientific.test_canonical_molecular_input import (
+        canonical_input,
+        rebuild_canonical,
+    )
+
+    b = Execution("jax-" + platform).molecule(DOMAIN_CASES[case], terms=())
+    co, cf = canonical_input(DOMAIN_CASES[case], b.parameter_database)
+    rebuild_canonical(b, co, cf)
+    # The public palette includes amino acids; eligibility comes from the actual
+    # task choices, not from whether any palette type has a Dunbrack library.
+    assert any(
+        rt.base_name == "LEU" for rt in b.pose.packed_block_types.active_block_types
+    )
+    sampler = DunbrackChiSampler.from_database(b.parameter_database)
+    task = PackerTask(b.pose)
+    task.restrict_to_repacking()
+    task.add_conformer_sampler(sampler)
+    concrete = SetPackerTask.from_packer_task(task)
+    assert np.asarray(concrete.is_cons_bt_allowed).any()
+    width = sampler._host_metadata(b.pose.packed_block_types).max_n_chi
+    with jax.enable_x64():
+        for dtype in (np.float32, np.float64):
+            pose = b.pose.replace(coords=b.pose.coords.astype(dtype))
+            counts, choices, atoms, chi = sampler.sample_chi_for_poses(pose, concrete)
+            assert counts.shape == concrete.cons_bt_pose.shape
+            np.testing.assert_array_equal(counts, 0)
+            assert choices.shape == (0,) and atoms.shape == chi.shape == (0, width)
+            assert counts.dtype == choices.dtype == atoms.dtype == np.int32
+            assert chi.dtype == dtype
+            assert all(x.device == b.device for x in (counts, choices, atoms, chi))
+    assert sampler._tables is None and sampler._native_storage is None
+
+    # An empty request must not permanently disable a reusable sampler.
+    b.molecule(
+        DUNBRACK_CASES["l_peptide"],
+        terms=(),
+        parameter_database=b.parameter_database,
+    )
+    task = PackerTask(b.pose)
+    task.restrict_to_repacking()
+    task.add_conformer_sampler(sampler)
+    counts, _, _, chi = sampler.sample_chi_for_poses(b.pose, task)
+    assert np.asarray(counts).sum() > 0 and np.isfinite(np.asarray(chi)).all()
+
+
+@pytest.mark.parametrize("platform", ("cpu", "cuda"))
 def test_sampler_parameter_snapshot_and_chemistry_context(platform):
     import copy
     import attrs

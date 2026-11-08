@@ -245,12 +245,12 @@ class DunbrackChiSampler(SamplerSupport):
         apply_frozen_chi(request, measured)
 
         with jax.default_device(device):
-            if not request.has_allowed:
+            if not len(request.bbt_to_gbt):
                 return (
                     jnp.zeros(request.n_gbt, dtype=jnp.int32),
                     jnp.zeros(0, dtype=jnp.int32),
-                    jnp.zeros((0, 4), dtype=jnp.int32),
-                    jnp.zeros((0, 4), dtype=pose_stack.coords.dtype),
+                    jnp.zeros((0, request.max_n_chi), dtype=jnp.int32),
+                    jnp.zeros((0, request.max_n_chi), dtype=pose_stack.coords.dtype),
                 )
             if self._native_storage is None:
                 self._native_storage = SamplingStorage(self.tables)
