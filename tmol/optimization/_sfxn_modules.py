@@ -219,6 +219,11 @@ class _KinematicScoringModule(torch.nn.Module):
         )
 
     def coords(self, masked_dofs: torch.Tensor) -> torch.Tensor:
+        if masked_dofs.numel() == 0:
+            # Copy fixed coordinates exactly while retaining an empty DOF gradient.
+            return torch.cat(
+                (self.base_coords.reshape(-1), masked_dofs.to(self.base_coords.dtype))
+            ).view_as(self.base_coords)
         # Node 0 is the kinematic root; it has no pose-stack atom.
         kin_coords = self.kin_module(self.dofs(masked_dofs))
         flat_coords = self.base_coords.view(-1, 3).index_put(
