@@ -37,12 +37,16 @@ ctx = SimpleNamespace(
 )
 p = Execution()
 assert not p._check_segment_convergence(ctx, 1)
-assert ctx.converged.tolist() == [True, False, True]
+assert ctx.converged.tolist() == [False, False, False]  # Both criteria must hold.
 assert ctx.small_steps.tolist() == [2, 1, 0]  # Rejected step must not count.
 ctx.needs_reset[:] = False
-assert p._check_segment_convergence(ctx, 2)
+ctx.flat_grad[:] = 0
+ctx.prev_loss_vec = ctx.loss_vec.copy()
+assert not p._check_segment_convergence(ctx, 2)
+assert ctx.converged.tolist() == [True, True, False]
+assert p._check_segment_convergence(ctx, 3)
 ctx.fixed_iterations = True
-assert not p._check_segment_convergence(ctx, 3)
+assert not p._check_segment_convergence(ctx, 4)
 assert not any(m.split('.')[0] in ('torch', 'jax', 'tmol') for m in sys.modules)
 """
     result = subprocess.run(
