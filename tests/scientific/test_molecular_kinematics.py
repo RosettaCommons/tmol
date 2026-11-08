@@ -157,7 +157,7 @@ def test_molecular_coordinate_mapping_and_term_gradients(backend, case_name):
 
 
 def _check_host_inverse(backend, dtype):
-    jax, jnp = backend.module, backend.module.numpy
+    jax = backend.module
 
     with jax.default_device(backend.device):
         from tests.scientific.execution import Execution
@@ -202,7 +202,7 @@ def _check_host_inverse(backend, dtype):
 
 
 def _check_host_kinematic_metadata(backend):
-    jax, jnp = backend.module, backend.module.numpy
+    jax = backend.module
 
     with jax.default_device(backend.device):
         from tmol_jax.kinematics._host import NativePosePlanner

@@ -174,7 +174,7 @@ def graph_backend(backend):
 )
 def test_native_retention_conserves_conformer_identity(graph_backend, mode):
     jax, jnp, device = graph_backend
-    from tmol_jax.pack.graph import retained_topology, retention_stage
+    from tmol_jax.pack.graph import retained_topology
 
     counts = np.asarray([[0, 0, 0, 0], [1, 3, 2, 2], [0, 0, 0, 0]], np.int32)
     if mode == "no_poses":
@@ -258,7 +258,7 @@ def test_native_retention_conserves_conformer_identity(graph_backend, mode):
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
 def test_native_retention_threshold_and_transforms(graph_backend, dtype):
     jax, jnp, device = graph_backend
-    from tmol_jax.pack.graph import retained_topology, retention_stage
+    from tmol_jax.pack.graph import retention_stage
 
     with jax.enable_x64(True), jax.default_device(device):
         pose = jax.numpy.zeros(2, np.int32)
@@ -280,7 +280,7 @@ def test_native_retention_threshold_and_transforms(graph_backend, dtype):
 @pytest.mark.parametrize("empty", (False, True))
 def test_native_graph_topology_partial_chunks_and_empty_rows(graph_backend, empty):
     jax, jnp, device = graph_backend
-    from tmol_jax.pack.graph import topology_stage, prefix_counts, load_balance
+    from tmol_jax.pack.graph import topology_stage, prefix_counts
 
     with jax.enable_x64(False), jax.default_device(device):
 
@@ -350,7 +350,7 @@ def test_native_graph_topology_partial_chunks_and_empty_rows(graph_backend, empt
 
 def test_native_graph_adjacency_spans_bitset_words(graph_backend):
     jax, jnp, device = graph_backend
-    from tmol_jax.pack.graph import topology_stage, prefix_counts, load_balance
+    from tmol_jax.pack.graph import topology_stage
 
     with jax.enable_x64(False):
         adjacency = np.zeros((1, 35, 2), np.int32)
@@ -374,7 +374,7 @@ def test_native_graph_adjacency_spans_bitset_words(graph_backend):
 @pytest.mark.parametrize("maximum", (False, True))
 def test_native_graph_prefix_retains_wide_counts_without_x64(graph_backend, maximum):
     jax, jnp, device = graph_backend
-    from tmol_jax.pack.graph import topology_stage, prefix_counts, load_balance
+    from tmol_jax.pack.graph import prefix_counts
 
     with jax.enable_x64(False), jax.default_device(device):
         for count in (0, 257, 40000):
@@ -410,7 +410,7 @@ def test_load_balance_preserves_empty_generators_and_partition_boundaries(
     graph_backend,
 ):
     jax, jnp, device = graph_backend
-    from tmol_jax.pack.graph import topology_stage, prefix_counts, load_balance
+    from tmol_jax.pack.graph import load_balance
 
     with jax.enable_x64(False), jax.default_device(device):
         for counts in (
@@ -438,7 +438,7 @@ def test_load_balance_preserves_empty_generators_and_partition_boundaries(
 
 def test_load_balance_rejects_unrepresentable_extents_before_allocation(graph_backend):
     jax, jnp, device = graph_backend
-    from tmol_jax.pack.graph import topology_stage, prefix_counts, load_balance
+    from tmol_jax.pack.graph import load_balance
 
     offsets = jnp.zeros((2, 8), np.uint8)
     with pytest.raises(OverflowError, match="int32"):
@@ -601,7 +601,6 @@ def test_graph_rejects_energy_between_alternatives_of_one_block(graph_backend):
 
 def test_bump_bounds_accumulate_duplicate_entries_without_lost_updates(graph_backend):
     jax, jnp, device = graph_backend
-    from tmol_jax.pack.interaction_graph import build_interaction_graph
     from tmol_jax.pack.bump import bump_bounds
 
     with jax.default_device(device):

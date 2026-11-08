@@ -354,7 +354,6 @@ def _check_ineligible_sampler(backend, case):
 
 
 def _check_sampler_snapshot(backend):
-    jax = backend.module
     from .dunbrack_molecules import DUNBRACK_CASES
 
     import copy

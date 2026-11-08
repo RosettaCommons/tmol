@@ -237,7 +237,6 @@ def test_molecular_imposition_keeps_selected_atoms_and_connectivity(
 
 
 def _check_joint_design_expansion(backend, bump):
-    import attrs
 
     jax, jnp = backend.module, backend.module.numpy
     from tmol_jax.pack.imposition import prepare_pose_imposition

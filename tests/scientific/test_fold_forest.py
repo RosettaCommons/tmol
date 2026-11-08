@@ -33,7 +33,7 @@ def test_molecular_fold_forest_preserves_components_and_polymer_edges(backend, n
 
 
 def _check_explicit_chain_labels(backend):
-    jax, jnp = backend.module, backend.module.numpy
+    jax = backend.module
 
     with jax.default_device(backend.device):
         from tmol_jax import FoldForest

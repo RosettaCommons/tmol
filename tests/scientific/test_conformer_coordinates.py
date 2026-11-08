@@ -303,7 +303,6 @@ def _check_assembly_reuse(backend):
 
 
 def _check_new_chi_payloads(backend):
-    jax = backend.module
     from .dunbrack_molecules import DUNBRACK_CASES
     from tmol_jax.pack.rotamers import build_rotamers
 
@@ -412,7 +411,6 @@ def _check_empty_assembly(backend):
 
 
 def _check_unsupported_payload(backend):
-    jax = backend.module
     from .molecules import DOMAIN_CASES
     from tmol_jax.pack.rotamers import build_rotamers
 
