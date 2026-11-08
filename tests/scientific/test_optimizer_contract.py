@@ -273,8 +273,8 @@ def test_cubic_line_search_quadratic(backend):
             )
             return alpha, value, gradient
 
-    assert _cubic_interp(0.0, 4.0, -4.0, 3.0, 1.0, 2.0) == pytest.approx(2.0)
-    assert _cubic_interp(3.0, 1.0, 2.0, 0.0, 4.0, -4.0) == pytest.approx(2.0)
+    assert float(_cubic_interp(0.0, 4.0, -4.0, 3.0, 1.0, 2.0)) == pytest.approx(2.0)
+    assert float(_cubic_interp(3.0, 1.0, 2.0, 0.0, 4.0, -4.0)) == pytest.approx(2.0)
     calls = []
 
     def value_and_grad(x):
@@ -291,7 +291,7 @@ def test_cubic_line_search_quadratic(backend):
         alpha0=5.0,
         c2=0.1,
     )
-    assert alpha == pytest.approx(2.0, abs=1e-6)
+    assert float(alpha) == pytest.approx(2.0, abs=1e-6)
     assert len(calls) == 2
     assert float(value) < 1e-12
     np.testing.assert_allclose(backend.numpy(gradient), 0, atol=1e-6)
