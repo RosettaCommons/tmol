@@ -49,3 +49,32 @@ def test_rendered_score_options_keep_channel_values_and_gradients(backend, name)
             b.numpy(actual_gradient), channel_gradients.sum(0), rtol=2e-10, atol=2e-10
         )
         assert np.linalg.norm(b.numpy(actual_gradient)) > 1e-3
+
+    if b.framework == "jax" and name == "mixed_batch":
+        _check_transformed_reductions(b)
+
+
+def _check_transformed_reductions(b):
+    import jax
+    import jax.numpy as jnp
+
+    b.molecule(CASES["mixed_batch"], terms=("fa_ljatr",))
+    score = b.score_function.render_whole_pose_scoring_module(
+        b.pose, sum_terms=False, apply_weights=False
+    )
+    x = b.pose.coords
+    samples = jnp.stack((x, x + 0.25))
+    raw = jax.jit(jax.vmap(score))(samples)
+    total = jax.jit(jax.vmap(lambda x: score(x, sum_terms=True)))(samples)
+    np.testing.assert_allclose(total, raw.sum(1), rtol=2e-6, atol=2e-6)
+    actual, expected = np.asarray(score(x)), np.asarray(score.unweighted_scores(x))
+    if b.device.platform == "gpu":
+        # Repeated calls to the unchanged float32 CUDA scorer also vary under
+        # atomic accumulation. Retain the score-lifecycle repeat bound; the
+        # shared per-channel float64 option/gradient checks remain at 2e-10.
+        bound = 2 * np.finfo(expected.dtype).eps * np.max(np.abs(expected))
+        np.testing.assert_allclose(actual, expected, rtol=0, atol=bound)
+    else:
+        np.testing.assert_array_equal(actual, expected)
+    weighted = jax.jit(lambda x: score(x, sum_terms=True, apply_weights=True))(x)
+    np.testing.assert_allclose(weighted, raw[0, 0], rtol=2e-6, atol=2e-6)
