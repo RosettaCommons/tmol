@@ -296,9 +296,9 @@ def test_native_conformer_linear_value_gradient_and_curvature(
                 array(actual), array(expected)
             )
         else:
-            tolerance = 1e-5 if dtype == np.float32 else 1e-12
+            rtol, atol = (1.3e-6, 1e-5) if dtype == np.float32 else (1e-12, 1e-12)
             check = lambda actual, expected: np.testing.assert_allclose(
-                actual, expected, rtol=tolerance, atol=tolerance
+                actual, expected, rtol=rtol, atol=atol
             )
         check(b.numpy(value), wanted)
         for actual, expected in zip(gradient, expected):
