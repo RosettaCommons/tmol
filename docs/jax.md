@@ -221,7 +221,10 @@ diagnostics are retained. Coordinates and gradients must keep the input JAX
 shape, dtype and device and remain finite. Frozen variables are restored by the
 existing adapter. This functional contract replaces Torch's optimizer-class
 injection; Torch `Optimizer`, `nn.Module` and `state_dict` interfaces stay
-framework-specific. It does not establish optimizer trajectory or cost parity.
+framework-specific. Default Torch/JAX minimization and FastRelax can reach
+different endpoints. Float32 CUDA Cartesian minimization of ubiquitin also
+failed repeated-endpoint checks; the cause remains unresolved. End-to-end
+runtime and peak-memory parity are not established.
 
 `CartesianMoveMap(coord_mask=mask)` carries an atom movement mask for Cartesian
 relax callbacks. `run_cart_min(..., coord_mask=mask)` accepts the mature keyword;
