@@ -29,10 +29,11 @@ def check_fast_relax_molecular_stages(backend, name, *, seed=73):
 
     class Minimizer:
         def __init__(self):
-            self.weights, self.releases = [], 0
+            self.weights, self.rtols, self.releases = [], [], 0
 
-        def __call__(self, current, sfxn, *, fold_forest, move_map, verbose):
+        def __call__(self, current, sfxn, *, verbose=False, rtol=None):
             self.weights.append(float(sfxn.get_weight(ScoreType.fa_ljrep)))
+            self.rtols.append(rtol)
             if b.framework == "jax":
                 return run_cart_min(current, sfxn, max_iter=2)
             return run_cart_min(current, sfxn, optimizer_kwargs={"max_iter": 2})
@@ -47,15 +48,17 @@ def check_fast_relax_molecular_stages(backend, name, *, seed=73):
     result = fast_relax(
         pose,
         score,
-        PackerPalette(),
-        None,
-        None,
-        schedule=[0.25, 1.0],
+        packer_palette=PackerPalette(),
+        schedule=[
+            0.25,
+            {"fa_rep_pack_frac": 1.0, "fa_rep_min_frac": 1.0, "min_rtol": 5e-4},
+        ],
         num_repeats=1,
-        min_fn=minimizer,
+        minimizer=minimizer,
         **options,
     )
     np.testing.assert_allclose(minimizer.weights, [0.25 * repulsive, repulsive])
+    assert minimizer.rtols == [None, 5e-4]
     assert minimizer.releases == 2
     np.testing.assert_array_equal(b.coords(), original)
     np.testing.assert_array_equal(

@@ -116,7 +116,12 @@ for _module, _names in (
     ),
     (
         "tmol_jax.relax",
-        ("fast_relax",),
+        (
+            "fast_relax",
+            "CartesianRelaxMinimizer",
+            "KinematicRelaxMinimizer",
+            "RelaxMinimizer",
+        ),
     ),
     (
         "tmol_jax.score.fragment_interactions",

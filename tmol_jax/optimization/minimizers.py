@@ -61,7 +61,7 @@ def run_cart_min(
     settings come from ``optimizer_kwargs`` (shared Torch names/defaults); the
     legacy ``gtol``, ``ftol`` and line-search limit apply only to explicit
     ``optimizer="strong_wolfe"``. Omitted iteration/history settings use the
-    common Armijo defaults (200 iterations, 128 history entries). A callable
+    common Armijo defaults (200 iterations, 200 history entries). A callable
     ``optimizer`` uses the compact functional protocol documented in the JAX guide.
     """
     if coord_mask is not None:

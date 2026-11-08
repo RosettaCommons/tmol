@@ -6,9 +6,14 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_core.relax import fast_relax as _shared_fast_relax, default_task_operation
+from tmol_core.relax import (
+    fast_relax as _shared_fast_relax,
+    default_task_operation,
+    KINEMATIC_RELAX_LBFGS_OPTIONS,
+)
 from tmol_jax.pack import (
     PackerTask,
+    PackerPalette,
     DunbrackChiSampler,
     FixedAAChiSampler,
     IncludeCurrentSampler,
@@ -17,40 +22,80 @@ from tmol_jax.pack import (
 from tmol_jax.pack.packing import _pack_rotamers, _new_seed_stream, _seed_value
 from tmol_jax.pack.conjugated import add_conjugated_group_sampler
 from tmol_jax.optimization import run_cart_min, run_kin_min
+from tmol_jax.kinematics import CartesianMoveMap, MoveMap, FoldForest
 from tmol_jax.score.score_types import ScoreType
 
 
-class DefaultCartesianMinimizer:
-    """Rendered JAX Cartesian L-BFGS; options are passed to run_cart_min."""
-
-    def __init__(self, **options):
-        self.options = options
-
-    def __call__(self, pose, sfxn, *, fold_forest, move_map, verbose):
-        return run_cart_min(
-            pose,
-            sfxn,
-            getattr(move_map, "coord_mask", None),
-            verbose=verbose,
-            **self.options,
+def _check_graph_mode(cuda_graph):
+    if cuda_graph:
+        raise NotImplementedError(
+            "Explicit CUDA graph capture is not implemented by the JAX minimizer"
         )
 
 
-class DefaultKinematicMinimizer:
-    """Common native kinematics and JAX coordinate-gradient minimization."""
+class CartesianRelaxMinimizer:
+    """JAX Cartesian minimization; None frees all real atoms.
 
-    def __init__(self, **options):
+    Extra options are passed to ``run_cart_min``. JAX compiles its scoring
+    execution; explicit ``cuda_graph=True`` is unsupported.
+    """
+
+    def __init__(self, move_map=None, *, cuda_graph=None, **options):
+        if move_map is None:
+            move_map = CartesianMoveMap()
+        if not isinstance(move_map, CartesianMoveMap):
+            raise TypeError("CartesianRelaxMinimizer needs a CartesianMoveMap")
+        _check_graph_mode(cuda_graph)
+        self.move_map = move_map
         self.options = options
 
-    def __call__(self, pose, sfxn, *, fold_forest, move_map, verbose):
+    def __call__(self, pose, sfxn, *, verbose=False, rtol=None):
+        # PR626 retains Cartesian LBFGS defaults, independent of stage rtol.
+        return run_cart_min(
+            pose, sfxn, self.move_map.coord_mask, verbose=verbose, **self.options
+        )
+
+
+class KinematicRelaxMinimizer:
+    """JAX torsion/jump execution of the shared kinematic relax policy."""
+
+    def __init__(self, move_map=None, fold_forest=None, *, cuda_graph=None, **options):
+        if move_map is not None and not isinstance(move_map, MoveMap):
+            raise TypeError("KinematicRelaxMinimizer needs a MoveMap")
+        _check_graph_mode(cuda_graph)
+        self.move_map = move_map
+        self.fold_forest = fold_forest
+        self.options = options
+
+    def __call__(self, pose, sfxn, *, verbose=False, rtol=None):
+        move_map = self.move_map
+        if move_map is None:
+            move_map = MoveMap.from_pose_stack(pose)
+            move_map.move_all_mc = True
+            move_map.move_all_sc = True
+            move_map.move_all_jumps = True
+        fold_forest = self.fold_forest
+        if fold_forest is None:
+            fold_forest = FoldForest.reasonable_fold_forest(pose)
+        options = dict(self.options)
+        convergence = dict(KINEMATIC_RELAX_LBFGS_OPTIONS)
+        convergence.update(options.pop("optimizer_kwargs", {}) or {})
+        if rtol is not None:
+            convergence["rtol"] = rtol
         return run_kin_min(
             pose,
             sfxn,
             move_map,
             fold_forest=fold_forest,
             verbose=verbose,
-            **self.options,
+            optimizer_kwargs=convergence,
+            **options,
         )
+
+
+# Retain existing JAX imports while exposing the shared public API names.
+DefaultCartesianMinimizer = CartesianRelaxMinimizer
+DefaultKinematicMinimizer = KinematicRelaxMinimizer
 
 
 def _select_pose(best, candidate, better):
@@ -140,8 +185,10 @@ class _JaxRelaxExecution:
         return jnp.where(better, candidate, best)
 
     @staticmethod
-    def default_minimizer(pose, cuda_graph):
-        return DefaultCartesianMinimizer()
+    def default_minimizer():
+        return CartesianRelaxMinimizer()
+
+    default_palette = staticmethod(PackerPalette)
 
     @staticmethod
     def default_task_operations(pose, sfxn):
@@ -163,16 +210,14 @@ class _JaxRelaxExecution:
 def fast_relax(
     pose_stack,
     sfxn,
-    packer_pallete,
-    move_map,
-    fold_forest,
     *,
     seed,
+    minimizer=None,
+    packer_palette=None,
     task_operations=None,
     num_repeats=2,
     ramp_constraints=None,
     schedule=None,
-    min_fn=None,
     release_between_stages=True,
     verbose=False,
 ):
@@ -184,7 +229,8 @@ def fast_relax(
     shared per-pose convergence, history and restart policy. Native sampling
     seeds follow the mature CPU/CUDA streams across stages and pose chunks;
     finite-precision results can still differ between frameworks.
-    A custom minimizer receives fold_forest, move_map and verbose keywords.
+    A custom minimizer receives verbose and optional stage rtol keywords.
+    The minimizer owns its movement map and optional fold forest.
     Existing packing capability boundaries apply to every stage.
     The score function's stage weights are updated as in the mature API.
     """
@@ -195,15 +241,13 @@ def fast_relax(
         return _shared_fast_relax(
             pose_stack,
             sfxn,
-            packer_pallete,
-            move_map,
-            fold_forest,
+            minimizer=minimizer,
+            packer_palette=packer_palette,
             execution=_JaxRelaxExecution(seed),
             task_operations=task_operations,
             num_repeats=num_repeats,
             ramp_constraints=ramp_constraints,
             schedule=schedule,
-            min_fn=min_fn,
             release_between_stages=release_between_stages,
             verbose=verbose,
         )
