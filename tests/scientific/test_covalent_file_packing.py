@@ -8,6 +8,7 @@ import pytest
 
 from .test_complete_preset import CHANNELS
 from .test_molecular_sampling import sampling_task
+from .test_canonical_molecular_input import physical_edges
 
 FILES = (
     "lys_biotin_1bdo.cif",
@@ -62,17 +63,20 @@ def test_covalent_file_complete_packing_energy_gradient_repeats(backend, filenam
     channels, _ = b.use_beta2016()
     assert len(channels) == 25 and set(channels) == CHANNELS
     before = b.coords().copy()
-    types = b.numpy(b.pose.block_type_ind).copy()
-    connections = b.numpy(b.pose.inter_residue_connections).copy()
+    positions = np.argwhere(b.numpy(b.pose.block_type_ind) >= 0)
+    sequence = [b.pose.block_type(int(p), int(r)).io_equiv_class for p, r in positions]
+    edges = physical_edges(b)
     assert np.isfinite(before).all()
-    assert np.count_nonzero(connections[..., 0] >= 0) > 2
+    assert len(edges) > 1
     packed = repack_covalent_file(b, frontend)
     np.testing.assert_array_equal(b.coords(), before)
-    np.testing.assert_array_equal(b.numpy(packed.block_type_ind), types)
-    np.testing.assert_array_equal(
-        b.numpy(packed.inter_residue_connections), connections
-    )
+    # Repacking may select histidine tautomers; retain chemical sequence and
+    # atom-named connectivity rather than imposing identical type indices.
+    assert [
+        packed.block_type(int(p), int(r)).io_equiv_class for p, r in positions
+    ] == sequence
     b.pose = packed
+    assert physical_edges(b) == edges
     b.use_beta2016()
     coordinates = b.coords().copy()
     assert np.isfinite(coordinates).all()
