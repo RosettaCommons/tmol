@@ -13,12 +13,18 @@ namespace tmol {
 namespace score {
 namespace ljlk {
 namespace potentials {
-template <typename Real, typename Int, tmol::Device D, int OutRank = 4>
+template <
+    typename Real,
+    typename Int,
+    tmol::Device D,
+    int OutRank = 4,
+    typename GradReal = Real>
 using LJLKCtx = LJLKCtxT<
     tmol::score::common::TViewBinder<D>::template View,
     Real,
     Int,
-    OutRank>;
+    OutRank,
+    GradReal>;
 
 template <
     bool Grad,
@@ -27,9 +33,10 @@ template <
     typename Real,
     typename Int,
     typename Launch,
-    bool Rotamer = false>
+    bool Rotamer = false,
+    typename GradReal = Real>
 struct LJLKPoseEvaluator {
-  LJLKCtx<Real, Int, D, Rotamer ? 2 : 4> ctx;
+  LJLKCtx<Real, Int, D, Rotamer ? 2 : 4, GradReal> ctx;
   double* cpu_pose_accum;
   TMOL_DEVICE_FUNC void operator()(
       int cta, int shard = 0, int partitions = 1) const {
@@ -51,10 +58,11 @@ template <
     template <tmol::Device> class Ops,
     tmol::Device D,
     typename Real,
-    typename Int>
+    typename Int,
+    typename GradReal = Real>
 void ljlk_pose_forward_native(
     ContextManager& mgr,
-    LJLKCtx<Real, Int, D> ctx,
+    LJLKCtx<Real, Int, D, 4, GradReal> ctx,
     TView<Int, 1, D> neighbors,
     int n_poses,
     double* cpu_pose_accum) {
@@ -62,9 +70,9 @@ void ljlk_pose_forward_native(
   LAUNCH_BOX_32_OCC_AS(launch_high, 32);
   bool const implicit_self = ctx.max_n_blocks == 1 && neighbors.size(0) == 0;
   if (implicit_self) ctx.use_shared_compact_block_neighbors = true;
-  LJLKPoseEvaluator<false, Ops, D, Real, Int, launch_t> energy{
+  LJLKPoseEvaluator<false, Ops, D, Real, Int, launch_t, false, GradReal> energy{
       ctx, cpu_pose_accum};
-  LJLKPoseEvaluator<true, Ops, D, Real, Int, launch_t> deriv{
+  LJLKPoseEvaluator<true, Ops, D, Real, Int, launch_t, false, GradReal> deriv{
       ctx, cpu_pose_accum};
   bool const gradients =
       ctx.require_gradient && !ctx.output_block_pair_energies;
@@ -138,9 +146,10 @@ template <
     tmol::Device D,
     typename Real,
     typename Int,
-    typename Launch>
+    typename Launch,
+    typename GradReal = Real>
 struct LJLKBackwardEvaluator {
-  LJLKCtx<Real, Int, D, Rotamer ? 2 : 4> ctx;
+  LJLKCtx<Real, Int, D, Rotamer ? 2 : 4, GradReal> ctx;
   TMOL_DEVICE_FUNC void operator()(int cta) const {
     SHARED_MEMORY LJLKSharedMem<Real, ljlk_tile_size, ljlk_max_n_conn, Launch>
         shared;
@@ -154,13 +163,15 @@ template <
     template <tmol::Device> class Ops,
     tmol::Device D,
     typename Real,
-    typename Int>
+    typename Int,
+    typename GradReal = Real>
 void ljlk_backward_native(
     ContextManager& mgr,
-    LJLKCtx<Real, Int, D, Rotamer ? 2 : 4> ctx,
+    LJLKCtx<Real, Int, D, Rotamer ? 2 : 4, GradReal> ctx,
     int n_poses) {
   LAUNCH_BOX_32;
-  LJLKBackwardEvaluator<Rotamer, Ops, D, Real, Int, launch_t> evaluate{ctx};
+  LJLKBackwardEvaluator<Rotamer, Ops, D, Real, Int, launch_t, GradReal>
+      evaluate{ctx};
   if constexpr (Rotamer)
     Ops<D>::template foreach_workgroup<launch_t>(
         mgr, ctx.dispatch_indices.size(1), evaluate);
@@ -175,11 +186,12 @@ template <
     template <tmol::Device> class Ops,
     tmol::Device D,
     typename Real,
-    typename Int>
+    typename Int,
+    typename GradReal = Real>
 void ljlk_rotamer_forward_native(
-    ContextManager& mgr, LJLKCtx<Real, Int, D, 2> ctx) {
+    ContextManager& mgr, LJLKCtx<Real, Int, D, 2, GradReal> ctx) {
   LAUNCH_BOX_32;
-  LJLKPoseEvaluator<false, Ops, D, Real, Int, launch_t, true> energy{
+  LJLKPoseEvaluator<false, Ops, D, Real, Int, launch_t, true, GradReal> energy{
       ctx, nullptr};
   Ops<D>::template foreach_independent_workgroup<launch_t>(
       mgr, ctx.dispatch_indices.size(1), energy);

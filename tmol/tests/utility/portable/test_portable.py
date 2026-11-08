@@ -252,6 +252,7 @@ def test_independent_nonbonded_needs_no_framework(tmp_path):
         HERE / "native_independent_nonbonded.cc", tmp_path / "nonbonded", run=True
     )
     assert proc.returncode == 0, proc.stderr
+    subprocess.run([str(tmp_path / "nonbonded")], check=True)
 
 
 @requires_cxx

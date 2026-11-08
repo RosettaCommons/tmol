@@ -32,8 +32,10 @@ template <
     template <typename, int> class View,
     typename Real,
     typename Int,
-    int OutRank>
+    int OutRank,
+    typename GradReal = Real>
 struct LJLKCtxT {
+  using GradientReal = GradReal;
   // Coordinates and the rotamer/block indexing that locates them
   View<Vec<Real, 3>, 1> rot_coords;
   View<Int, 1> rot_coord_offset;
@@ -66,7 +68,8 @@ struct LJLKCtxT {
   // Outputs
   View<Real, OutRank> output;
   View<Real, OutRank> dTdV;
-  View<Vec<Real, 3>, 2> dV_dcoords;
+  // Pair physics remains Real; bindings may widen only gradient accumulation.
+  View<Vec<GradReal, 3>, 2> dV_dcoords;
 
   // Launch-shape constants and the interaction cutoff
   int max_n_blocks = {};

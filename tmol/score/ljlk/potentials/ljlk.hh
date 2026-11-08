@@ -618,6 +618,7 @@ TMOL_DEVICE_FUNC tmol::portable::array<Real, 3> ljlk_atom_energy(
 template <
     typename Real,
     tmol::Device D,
+    typename GradReal = Real,
     typename DvDcoordsView,
     typename TypeParamsView>
 TMOL_DEVICE_FUNC void ljlk_atom_derivs(
@@ -675,11 +676,11 @@ TMOL_DEVICE_FUNC void ljlk_atom_derivs(
 #pragma unroll
   for (int j = 0; j < 3; ++j) {
     if (dxyz_at1[j] == 0) continue;
-    accumulate_grad<D, Real>::add(
+    accumulate_grad<D, GradReal>::add(
         dV_dcoords[score_dat.r1.rot_coord_offset + atom_tile_ind1 + start_atom1]
                   [j],
         dxyz_at1[j]);
-    accumulate_grad<D, Real>::add(
+    accumulate_grad<D, GradReal>::add(
         dV_dcoords[score_dat.r2.rot_coord_offset + atom_tile_ind2 + start_atom2]
                   [j],
         -dxyz_at1[j]);
@@ -689,6 +690,7 @@ TMOL_DEVICE_FUNC void ljlk_atom_derivs(
 template <
     typename Real,
     tmol::Device D,
+    typename GradReal = Real,
     typename DvDcoordsView,
     typename TypeParamsView>
 TMOL_DEVICE_FUNC tmol::portable::array<Real, 3>
@@ -748,14 +750,14 @@ ljlk_atom_energy_and_derivs_full(
 #pragma unroll
     for (int j = 0; j < 3; ++j) {
       if (dxyz_at1[j] != 0) {
-        accumulate_grad<D, Real>::add(
+        accumulate_grad<D, GradReal>::add(
             dV_dcoords[score_type]
                       [score_dat.r1.rot_coord_offset + atom_tile_ind1
                        + start_atom1][j],
             dxyz_at1[j]);
       }
       if (dxyz_at1[j] != 0) {
-        accumulate_grad<D, Real>::add(
+        accumulate_grad<D, GradReal>::add(
             dV_dcoords[score_type]
                       [score_dat.r2.rot_coord_offset + atom_tile_ind2
                        + start_atom2][j],

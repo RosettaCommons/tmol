@@ -656,7 +656,7 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
         // Each mode calls the same mature scalar physics and shares all
         // topology, tile loading, count-pair exclusions and atom traversal.
         if constexpr (Mode == LJLKMode::Backward) {
-          ljlk_atom_derivs<Real, D>(
+          ljlk_atom_derivs<Real, D, typename Ctx::GradientReal>(
               atom_tile_ind1,
               atom_tile_ind2,
               start_atom1,
@@ -670,7 +670,10 @@ TMOL_HOST_DEVICE_FUNC void ljlk_evaluate_pair(
               type_params);
           return tmol::portable::array<Real, 3>{0, 0, 0};
         } else if constexpr (Mode == LJLKMode::EnergyAndDerivatives) {
-          return ljlk_atom_energy_and_derivs_full<Real, D>(
+          return ljlk_atom_energy_and_derivs_full<
+              Real,
+              D,
+              typename Ctx::GradientReal>(
               atom_tile_ind1,
               atom_tile_ind2,
               start_atom1,
