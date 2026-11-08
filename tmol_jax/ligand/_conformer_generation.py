@@ -8,11 +8,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from tmol_core.ligand import refinement
-from tmol_core.ligand._conformer_generation import (
-    REFINE_ITERS,
-    STAGE_A_ANNEAL,
-    STAGE_A_ITERS,
-)
 from tmol_core.optimization.strong_wolfe import lbfgs_minimize
 from tmol_jax.optimization._strong_wolfe_execution import JaxStrongWolfeExecution
 
@@ -114,48 +109,62 @@ def _host_refinement(function):
     return execute
 
 
+class _ConformerExecution:
+    prepare = staticmethod(_parameters)
+    coordinates = staticmethod(lambda values, dtype: jnp.asarray(values, dtype=dtype))
+    to_numpy = staticmethod(lambda values: np.array(values, copy=True))
+
+    @staticmethod
+    def prepare_planar(pair_targets):
+        return (
+            jnp.asarray([p[0] for p in pair_targets], dtype=jnp.int32),
+            jnp.asarray([p[1] for p in pair_targets], dtype=jnp.int32),
+            jnp.asarray([p[2] for p in pair_targets], dtype=jnp.float64),
+        )
+
+    @staticmethod
+    def minimize(
+        coordinates, parameters, max_iter, *, fourth_dimension=None, planar=False
+    ):
+        if planar:
+            evaluate = partial(
+                _planar_value_and_grad,
+                first=parameters[0],
+                second=parameters[1],
+                target=parameters[2],
+                shape=coordinates.shape,
+            )
+        else:
+            evaluate = partial(
+                _refinement_value_and_grad,
+                parameters=parameters,
+                shape=coordinates.shape,
+                fourth_dimension=fourth_dimension,
+            )
+        return _minimize(evaluate, coordinates, max_iter)
+
+
+_EXECUTION = _ConformerExecution()
+
+
 @_host_refinement
 def planar_refine(coordinates, pair_targets, max_iters):
-    # Planar target construction in the mature pipeline explicitly uses doubles,
-    # even when the eventual molecular coordinates and scoring use float32.
+    # Keep target preparation and JIT execution in the mature F64 scope.
     with jax.enable_x64():
-        first = jnp.asarray([p[0] for p in pair_targets], dtype=jnp.int32)
-        second = jnp.asarray([p[1] for p in pair_targets], dtype=jnp.int32)
-        target = jnp.asarray([p[2] for p in pair_targets], dtype=jnp.float64)
-        result = _minimize(
-            lambda flat: _planar_value_and_grad(
-                flat, first, second, target, shape=coordinates.shape
-            ),
-            jnp.asarray(coordinates, dtype=jnp.float64),
-            max_iters,
+        return refinement.planar_refine(
+            coordinates, pair_targets, max_iters, execution=_EXECUTION
         )
-        return np.array(result, copy=True)
 
 
 @_host_refinement
 def chiral_anneal(coordinates, L0, U0, L, U, components, chirals, rng_seed):
-    parameters = _parameters(L0, U0, L, U, components, chirals)
-    fourth = np.random.default_rng(rng_seed).normal(0, 0.5, (len(coordinates), 1))
-    x = jnp.asarray(np.hstack([coordinates, fourth]), dtype=jnp.float32)
-    for weight in STAGE_A_ANNEAL:
-        x = _minimize(
-            lambda flat: _refinement_value_and_grad(
-                flat, parameters, shape=x.shape, fourth_dimension=weight
-            ),
-            x,
-            STAGE_A_ITERS,
-        )
-    return np.array(x[:, :3], copy=True)
+    return refinement.chiral_anneal(
+        coordinates, L0, U0, L, U, components, chirals, rng_seed, execution=_EXECUTION
+    )
 
 
 @_host_refinement
 def stress_refine(coordinates, L0, U0, L, U, components, chirals):
-    parameters = _parameters(L0, U0, L, U, components, chirals)
-    result = _minimize(
-        lambda flat: _refinement_value_and_grad(
-            flat, parameters, shape=coordinates.shape, fourth_dimension=None
-        ),
-        jnp.asarray(coordinates, dtype=jnp.float32),
-        REFINE_ITERS,
+    return refinement.stress_refine(
+        coordinates, L0, U0, L, U, components, chirals, execution=_EXECUTION
     )
-    return np.array(result, copy=True)
