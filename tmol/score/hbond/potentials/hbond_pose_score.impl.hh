@@ -346,7 +346,9 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
     ctx.output_block_pair_energies = output_block_pair_energies;
     ctx.accumulate_derivs = accumulate_derivs;
     ctx.output = output;
-    ctx.dTdV = output;
+    // Forward kernels do not read the output cotangent. Preserve its original
+    // binding for equal storage types, including the Metal context layout.
+    if constexpr (std::is_same_v<EnergyReal, Real>) ctx.dTdV = output;
     ctx.max_n_upper_triangle_inds = max_n_upper_triangle_inds;
     ctx.use_shared_compact_block_neighbors = use_shared_compact_block_neighbors;
     // Empty on CPU and CUDA; on Metal it carries the thread index and the
