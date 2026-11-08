@@ -13,7 +13,6 @@ from tests.scientific.disulfide_molecules import DISULFIDE_CASES
 from tests.scientific.metal_molecules import METAL_CASES
 from tests.scientific.dunbrack_molecules import DUNBRACK_CASES
 from tests.scientific.rotamer_execution import RotamerExecution
-from tmol_jax.pack.scoring import sparse_nonbonded_values, nonbonded_candidate_pairs
 
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
@@ -53,52 +52,11 @@ def test_sparse_values_reverse_batching_and_precision(platform, dtype, family):
         coords = jax.device_put(
             np.asarray(execute.rotamers.coords, dtype=dtype), b.device
         )
-        if family not in (
-            "dunbrack",
-            "genbonded",
-            "cartbonded",
-            "na_torsion",
-            "backbone",
-            "disulfide",
-            "metal",
-        ):
-            indices = nonbonded_candidate_pairs(
-                execute.rotamers,
-                b.pose.packed_block_types,
-                reach=execute.state[3],
-                coords=coords,
-            )
+        score = execute.prepare_score(coords)
         before = np.asarray(coords).copy()
 
         def total(x):
-            if family in ("genbonded", "cartbonded", "backbone"):
-                from tmol_jax.pack.bonded_scoring import sparse_bonded_scores
-
-                values = sparse_bonded_scores(x, execute.state)[0]
-            elif family in ("disulfide", "metal"):
-                from tmol_jax.pack.connection_scoring import sparse_connection_scores
-
-                values = sparse_connection_scores(x, execute.state)[0]
-            elif family == "na_torsion":
-                from tmol_jax.pack.na_scoring import sparse_na_torsion_scores
-
-                values = sparse_na_torsion_scores(x, execute.state)[0]
-            elif family == "dunbrack":
-                from tmol_jax.pack.dunbrack_scoring import sparse_dunbrack_scores
-
-                values = sparse_dunbrack_scores(x, execute.state)[0]
-            elif family in ("lk_ball", "hbond"):
-                from tmol_jax.pack.lk_ball_scoring import sparse_lk_ball_values
-                from tmol_jax.pack.hbond_scoring import sparse_hbond_values
-
-                evaluate = (
-                    sparse_lk_ball_values
-                    if family == "lk_ball"
-                    else sparse_hbond_values
-                )
-                values = evaluate(x, execute.state, indices)
-            else:
-                values = sparse_nonbonded_values(x, execute.state, indices)
+            values = score(x)[0]
             return jnp.sum(
                 values
                 * jnp.asarray([0.7, -0.3, 0.6, -0.2, 0.4][: values.shape[0]], dtype)[
