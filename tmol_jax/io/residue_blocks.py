@@ -5,6 +5,8 @@ from typing import Any, Sequence
 
 import numpy as np
 
+from tmol_core.io.residue_blocks import prepare_residue_block_coordinates
+
 from tmol_jax.chemical.restypes import _refined_from_raw
 from tmol_jax.pose.packed_block_types import PackedBlockTypes
 from tmol_jax.pose.pose_stack_builder import PoseStackBuilder
@@ -86,64 +88,19 @@ def pose_stack_from_residue_blocks(
         )
     pbt = context.packed_block_types
     complete_missing = build_missing_leaf_atoms or build_missing_context
-    type_indices = {rt.name: i for i, rt in enumerate(pbt.active_block_types)}
-    rows, coordinates, availability = [], [], []
+    leaves = None
     if complete_missing:
         from tmol_core.io.missing_atoms import prepare_leaf_atom_flags
 
         leaves = prepare_leaf_atom_flags(
             pbt.active_block_types, np.asarray(pbt.atom_is_hydrogen), pbt.max_n_atoms
         ).is_leaf_atom
-    for pose in blocks:
-        kinds, xyz, masks = [], [], []
-        for block in pose:
-            if block.residue_type not in type_indices:
-                raise ValueError(
-                    f"residue type absent from context: {block.residue_type}"
-                )
-            kind = type_indices[block.residue_type]
-            expected = [atom.name for atom in pbt.active_block_types[kind].atoms]
-            names = list(block.atom_names)
-            missing_names, extra_names = set(expected) - set(names), set(names) - set(
-                expected
-            )
-            if (
-                len(set(names)) != len(names)
-                or extra_names
-                or (missing_names and not complete_missing)
-            ):
-                raise ValueError(
-                    f"atoms must match {block.residue_type} exactly; "
-                    f"missing={sorted(set(expected) - set(names))}, "
-                    f"extra={sorted(set(names) - set(expected))}, "
-                    f"duplicates={len(names) != len(set(names))}"
-                )
-            coords = np.asarray(block.coords)
-            if coords.shape != (len(names), 3) or not np.isfinite(coords).all():
-                raise ValueError(
-                    "block coordinates must be finite with shape [atoms, 3]"
-                )
-            indices = {name: i for i, name in enumerate(names)}
-            if complete_missing:
-                present = np.array([name in indices for name in expected], bool)
-                nonleaf = ~present & ~leaves[kind, : len(expected)]
-                if nonleaf.any() and not build_missing_context:
-                    raise ValueError(
-                        f"missing non-leaf atoms on {block.residue_type}: "
-                        + ", ".join(np.asarray(expected)[nonleaf])
-                    )
-                packed = np.zeros((len(expected), 3), coords.dtype)
-                packed[present] = coords[
-                    [indices[name] for name in expected if name in indices]
-                ]
-                xyz.append(packed)
-                masks.append(present)
-            else:
-                xyz.append(coords[[indices[name] for name in expected]])
-            kinds.append(kind)
-        rows.append(kinds)
-        availability.append(masks)
-        coordinates.append(np.concatenate(xyz) if xyz else np.empty((0, 3), np.float32))
+    rows, coordinates, availability = prepare_residue_block_coordinates(
+        blocks,
+        pbt.active_block_types,
+        leaves=leaves,
+        build_missing_context=build_missing_context,
+    )
     pose = PoseStackBuilder.from_block_types_and_coords(
         pbt,
         rows,
