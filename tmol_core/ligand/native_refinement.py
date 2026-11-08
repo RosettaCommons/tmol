@@ -14,9 +14,6 @@ from tmol_core.optimization.strong_wolfe import lbfgs_minimize
 from . import refinement
 from ._conformer_generation import (
     CHIRAL_MARGIN,
-    REFINE_ITERS,
-    STAGE_A_ANNEAL,
-    STAGE_A_ITERS,
     W_BOUND,
     W_CHIRAL,
     W_EXACT,
@@ -149,24 +146,29 @@ class NativeConformerExecution:
         )
         return result["x"].reshape(shape)
 
+    @staticmethod
+    def prepare(L0, U0, L, U, components, chirals):
+        return prepare_native_refinement(L0, U0, L, U, components, chirals, np.float32)
+
+    prepare_planar = staticmethod(prepare_native_planar)
+    coordinates = staticmethod(np.ascontiguousarray)
+    to_numpy = staticmethod(lambda coordinates: coordinates)
+
+    def minimize(
+        self, coordinates, parameters, max_iter, *, fourth_dimension=None, planar=False
+    ):
+        # Native parameters encode the planar objective's weights and pairs.
+        return self._minimize(coordinates, parameters, max_iter, fourth_dimension)
+
     def chiral_anneal(self, X0, L0, U0, L, U, components, chirals, rng_seed):
-        parameters = prepare_native_refinement(
-            L0, U0, L, U, components, chirals, np.float32
+        return refinement.chiral_anneal(
+            X0, L0, U0, L, U, components, chirals, rng_seed, execution=self
         )
-        fourth = np.random.default_rng(rng_seed).normal(0, 0.5, (X0.shape[0], 1))
-        coordinates = np.ascontiguousarray(np.hstack((X0, fourth)), dtype=np.float32)
-        for weight in STAGE_A_ANNEAL:
-            coordinates = self._minimize(coordinates, parameters, STAGE_A_ITERS, weight)
-        return coordinates[:, :3]
 
     def stress_refine(self, X0, L0, U0, L, U, components, chirals):
-        parameters = prepare_native_refinement(
-            L0, U0, L, U, components, chirals, np.float32
+        return refinement.stress_refine(
+            X0, L0, U0, L, U, components, chirals, execution=self
         )
-        coordinates = np.ascontiguousarray(X0, dtype=np.float32)
-        return self._minimize(coordinates, parameters, REFINE_ITERS)
 
     def planar_refine(self, Y0, target_pairs, max_iters):
-        parameters = prepare_native_planar(target_pairs)
-        coordinates = np.ascontiguousarray(Y0, dtype=np.float64)
-        return self._minimize(coordinates, parameters, max_iters)
+        return refinement.planar_refine(Y0, target_pairs, max_iters, execution=self)

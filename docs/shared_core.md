@@ -203,6 +203,12 @@ and device memory. Kernel tests alone do not establish end-to-end parity. See
 [development](user_guide/development.md) and [benchmarking](user_guide/benchmarking.md).
 Core code is BSD-3-Clause; vendored PySMILES retains Apache-2.0 attribution.
 
+The Torch and optional native executors share the planar/chiral/stress stage
+recipe in `tmol_core.ligand.refinement`, including seeded fourth-coordinate
+initialization, dtype and annealing schedule. Array storage, objectives and
+minimization execution stay in their adapters. This preserves each executor's
+existing trajectory; it does not resolve differences between executors.
+
 The optional CPU ligand refinement executor uses one typed native objective and
 analytic gradient, one validated host ABI, and the common L-BFGS policy. Each
 frontend supplies its native library path; the common NumPy binding imports
