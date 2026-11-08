@@ -97,11 +97,12 @@ def pytest_collection_modifyitems(session, config, items):
             parameters = getattr(getattr(item, "callspec", None), "params", {})
             uses_cuda = any(
                 (
-                    isinstance(value, str)
+                    name in ("backend", "torch_device", "device", "platform")
+                    and isinstance(value, str)
                     and value.split(":")[0] in ("cuda", "gpu", "torch-cuda", "jax-cuda")
                 )
                 or getattr(value, "type", None) == "cuda"
-                for value in parameters.values()
+                for name, value in parameters.items()
             ) or any(
                 mark.kwargs.get("reason") == "Requires cuda."
                 for mark in item.iter_markers("skipif")
