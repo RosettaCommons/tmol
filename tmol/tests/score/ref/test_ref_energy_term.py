@@ -2,7 +2,7 @@ import torch
 
 from tmol.score import RefEnergyTerm
 
-from tmol.tests.score.common import EnergyTermTestBase
+from tmol.tests.score.common import UbiquitinEnergyTermTestBase
 
 
 def test_smoke(default_database, torch_device: torch.device):
@@ -33,37 +33,12 @@ def test_annotate_block_types(
     )  # Test to make sure the parameters remain the same instance
 
 
-class TestRefEnergyTerm(EnergyTermTestBase):
+class TestRefEnergyTerm(UbiquitinEnergyTermTestBase):
     energy_term_class = RefEnergyTerm
-
-    @classmethod
-    def test_whole_pose_scoring_10(cls, ubq_pdb, default_database, torch_device):
-        return super().test_whole_pose_scoring_10(
-            ubq_pdb, default_database, torch_device, update_baseline=False
-        )
-
-    @classmethod
-    def test_whole_pose_scoring_jagged(
-        cls,
-        ubq_pdb,
-        default_database,
-        torch_device: torch.device,
-    ):
-        return super().test_whole_pose_scoring_jagged(
-            ubq_pdb, default_database, torch_device, update_baseline=False
-        )
 
     @classmethod
     def test_whole_pose_scoring_gradcheck(cls, ubq_pdb, default_database, torch_device):
         return super().test_whole_pose_scoring_gradcheck(
-            ubq_pdb, default_database, torch_device
-        )
-
-    @classmethod
-    def test_block_scoring_matches_whole_pose_scoring(
-        cls, ubq_pdb, default_database, torch_device
-    ):
-        return super().test_block_scoring_matches_whole_pose_scoring(
             ubq_pdb, default_database, torch_device
         )
 
