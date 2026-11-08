@@ -19,9 +19,9 @@ assert_torch_cuda
 # the memory-heavy packing tests still have room.
 GPU_PYTEST_WORKERS="${GPU_PYTEST_WORKERS:-4}"
 
-TMOL_TEST_BACKENDS="${TMOL_TEST_BACKENDS:-torch-cuda}" COVERAGE_FILE="${GITHUB_WORKSPACE}/.coverage.cuda" \
+TMOL_TEST_DEVICE=cuda TMOL_TEST_BACKENDS="${TMOL_TEST_BACKENDS:-torch-cuda}" COVERAGE_FILE="${GITHUB_WORKSPACE}/.coverage.cuda" \
   pytest -p no:rerunfailures -ra --durations=25 \
   -n "${GPU_PYTEST_WORKERS}" --dist=worksteal \
   --cov="${GITHUB_WORKSPACE}/tmol" \
   --cov-report="xml:${GITHUB_WORKSPACE}/coverage.cuda.xml" \
-  --junitxml="${GITHUB_WORKSPACE}/testing.cuda.junit.xml" -k "cuda" --ignore=tests/release
+  --junitxml="${GITHUB_WORKSPACE}/testing.cuda.junit.xml" --ignore=tests/release

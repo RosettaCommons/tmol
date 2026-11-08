@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from .database import (  # noqa: F401
@@ -86,6 +88,27 @@ def _cpu_tests_stay_on_cpu(monkeypatch):
 
 
 def pytest_collection_modifyitems(session, config, items):
+    lane = os.environ.get("TMOL_TEST_DEVICE")
+    if lane is not None:
+        if lane not in ("cpu", "cuda"):
+            raise pytest.UsageError("TMOL_TEST_DEVICE must be cpu or cuda")
+        selected, deselected = [], []
+        for item in items:
+            parameters = getattr(getattr(item, "callspec", None), "params", {})
+            uses_cuda = any(
+                (
+                    isinstance(value, str)
+                    and value.split(":")[0] in ("cuda", "gpu", "torch-cuda", "jax-cuda")
+                )
+                or getattr(value, "type", None) == "cuda"
+                for value in parameters.values()
+            ) or any(
+                mark.kwargs.get("reason") == "Requires cuda."
+                for mark in item.iter_markers("skipif")
+            )
+            (selected if uses_cuda == (lane == "cuda") else deselected).append(item)
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = selected
     # Run all linting-tests *after* the functional tests
     items[:] = sorted(items, key=lambda i: i.nodeid.startswith("tmol/tests/linting"))
 

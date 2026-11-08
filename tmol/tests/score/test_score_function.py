@@ -7,6 +7,8 @@ import threading
 import attr
 import pytest
 
+from tmol.tests import requires_cuda
+
 from tmol.score import _score_function as score_function_module, _non_memoized_beta2016
 from tmol import (
     ScoreFunction,
@@ -659,6 +661,7 @@ def test_weighted_fused_score_adaptive_dispatch():
     assert score_function_module._use_weighted_fused_score(cpu)
 
 
+@requires_cuda
 def test_weighted_fused_score_cuda_adaptive_dispatch():
     if not torch.cuda.is_available():
         pytest.skip("CUDA is not available")
@@ -791,6 +794,7 @@ def test_whole_pose_gradients_respect_per_pose_upstream_weights(
     )
 
 
+@requires_cuda
 @pytest.mark.parametrize("device_index", [0, 1])
 def test_cuda_term_gradients_accept_strided_lane_weights(ubq_pdb, device_index):
     if torch.cuda.device_count() <= device_index:

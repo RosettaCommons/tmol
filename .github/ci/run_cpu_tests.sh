@@ -16,11 +16,11 @@ from importlib.util import find_spec
 assert find_spec("jax") is None, "Torch-only CI unexpectedly contains JAX"
 PY
 
-TMOL_TEST_BACKENDS="${TMOL_TEST_BACKENDS:-torch-cpu,torch-mps}" \
+TMOL_TEST_DEVICE=cpu TMOL_TEST_BACKENDS="${TMOL_TEST_BACKENDS:-torch-cpu,torch-mps}" \
 CUDA_VISIBLE_DEVICES="" COVERAGE_FILE="${GITHUB_WORKSPACE}/.coverage.cpu" \
   pytest -p no:rerunfailures -ra --durations=25 \
   -n "${CPU_PYTEST_WORKERS}" --dist=worksteal \
   --cov="${GITHUB_WORKSPACE}/tmol" \
   --cov-report="xml:${GITHUB_WORKSPACE}/coverage.cpu.xml" \
-  --junitxml="${GITHUB_WORKSPACE}/testing.cpu.junit.xml" -k "not cuda" \
+  --junitxml="${GITHUB_WORKSPACE}/testing.cpu.junit.xml" \
   --ignore=tests/release .
