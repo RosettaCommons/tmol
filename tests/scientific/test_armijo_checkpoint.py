@@ -9,7 +9,9 @@ import pytest
 from .molecules import DOMAIN_CASES
 
 
-def checkpoint_solutions(b, initial, objective, ids, mask=None):
+def checkpoint_solutions(
+    b, initial, objective, ids, mask=None, *, verify_host_roundtrip=False
+):
     settings = dict(history_size=2, fixed_iterations=True, atol=0, rtol=0, gradtol=0)
     if b.framework == "jax":
         from tmol_jax.optimization import armijo_minimize
@@ -21,6 +23,30 @@ def checkpoint_solutions(b, initial, objective, ids, mask=None):
         )
         frozen = copy.deepcopy(first["checkpoint"])
         resumed = armijo_minimize(objective, first["x"], checkpoint=frozen, max_iter=3)
+        if verify_host_roundtrip:
+            host = b.module.tree.map(
+                lambda v: np.asarray(v) if isinstance(v, b.module.Array) else v,
+                frozen,
+            )
+            copied = armijo_minimize(objective, first["x"], checkpoint=host, max_iter=3)
+            np.testing.assert_array_equal(copied["x"], resumed["x"])
+            assert copied["x"].dtype == np.float64 and copied["x"].device == b.device
+            leaves, structure = b.module.tree.flatten(copied["state"])
+            reference, expected_structure = b.module.tree.flatten(resumed["state"])
+            assert structure == expected_structure
+            for value, expected in zip(leaves, reference):
+                if isinstance(expected, b.module.Array):
+                    assert isinstance(value, b.module.Array)
+                    assert value.device == b.device and value.dtype == expected.dtype
+            # Valid shapes still reject changed execution context before scoring.
+            for altered, options, message in (
+                (first["x"] + 0.1, {}, "checkpoint x"),
+                (first["x"], {"segment_ids": np.zeros_like(ids)}, "segment_ids"),
+                (first["x"], {"grad_mask": np.arange(x.size) != 1}, "grad_mask"),
+                (first["x"], {"history_size": 1}, "history capacity"),
+            ):
+                with pytest.raises(ValueError, match=message):
+                    armijo_minimize(objective, altered, checkpoint=host, **options)
         whole = armijo_minimize(
             objective, x, segment_ids=segments, grad_mask=mask, max_iter=6, **settings
         )
@@ -75,7 +101,9 @@ def test_segmented_armijo_checkpoint_matches_uninterrupted_history(backend):
             values = (x - 0.3) ** 4 + 0.2 * (x + 1.7) ** 2
             return stack((values[0] + values[2] + values[3], values[1] + values[4]))
 
-        result, expected = checkpoint_solutions(b, initial, objective, ids)
+        result, expected = checkpoint_solutions(
+            b, initial, objective, ids, verify_host_roundtrip=True
+        )
         np.testing.assert_allclose(result, expected, rtol=2e-12, atol=2e-12)
         assert np.linalg.norm(result - initial) > 1
 
