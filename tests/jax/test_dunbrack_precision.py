@@ -12,6 +12,60 @@ from tests.scientific.execution import Execution
 from tests.scientific.test_dunbrack import TERMS
 
 
+@pytest.mark.parametrize("name", ("ligand", "dna"))
+def test_inactive_full_palette_scoring_has_small_storage_and_zero_transforms(name):
+    from tests.scientific.molecules import DOMAIN_CASES
+    from tests.scientific.rotamer_execution import RotamerExecution
+    from tests.scientific.test_canonical_molecular_input import (
+        canonical_input,
+        rebuild_canonical,
+    )
+
+    device = "cuda" if jax.devices()[0].platform == "gpu" else "cpu"
+    case = DOMAIN_CASES[name]
+    b = Execution("jax-" + device).molecule(case, terms=TERMS)
+    co, canonical = canonical_input(case, b.parameter_database)
+    rebuild_canonical(b, co, canonical)
+    palette = b.pose.packed_block_types
+    assert any(rt.base_name == "LEU" for rt in palette.active_block_types)
+    rotamers = RotamerExecution(b, family="dunbrack").rotamers
+    whole = b.score_function.render_whole_pose_scoring_module(
+        b.pose, sum_terms=False, apply_weights=False
+    )
+    sparse = b.score_function.render_rotamer_scoring_module(
+        b.pose, rotamers, sum_terms=False, apply_weights=False
+    )
+    # Small inactive molecular objectives must fit a 64 KiB operand budget even
+    # when the public palette retains the complete amino-acid library choices.
+    for operands in (whole.arrays, sparse._arrays):
+        assert sum(x.nbytes for x in jax.tree.leaves(operands)) <= 64 * 1024
+    fixed = sparse.prepare(rotamers.coords)
+    with jax.default_device(b.device), jax.enable_x64():
+        for dtype in (jnp.float32, jnp.float64):
+            for score, coords in (
+                (whole, b.pose.coords.astype(dtype)),
+                (
+                    lambda x: fixed(x)[0],
+                    rotamers.coords.astype(dtype),
+                ),
+            ):
+                for default in (b.device, jax.devices("cpu")[0]):
+                    with jax.default_device(default):
+                        values = score(coords)
+                        assert values.shape[0] == 3 and values.dtype == dtype
+                        assert values.device == b.device
+                        np.testing.assert_array_equal(values, 0)
+                        evaluate = jax.jit(
+                            jax.vmap(jax.value_and_grad(lambda x: score(x).sum()))
+                        )
+                        energies, forces = evaluate(jnp.stack((coords, coords + 0.1)))
+                        assert forces.shape == (2, *coords.shape)
+                        assert forces.dtype == dtype and forces.device == b.device
+                        np.testing.assert_array_equal(energies, 0)
+                        np.testing.assert_array_equal(forces, 0)
+    assert b.pose.packed_block_types is palette
+
+
 @pytest.mark.parametrize("name", ("d_peptide", "mixed_batch"))
 def test_rotamer_preparation_preserves_cross_dtype_values_and_gradients(name):
     backend = (

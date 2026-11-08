@@ -49,16 +49,22 @@ def test_canonical_input_preserves_tautomers_and_custom_design_palette(
     assert {active[int(i)].name for i in choices[allowed]} == {"GLY"}
 
 
-def test_zero_dunbrack_input_retains_nonzero_design_scores_and_forces(backend):
+@pytest.mark.parametrize("identity", ("LEU", "DLEU"))
+def test_zero_dunbrack_input_retains_nonzero_design_scores_and_forces(
+    backend, identity
+):
     from .test_dunbrack import TERMS
     from .test_molecular_sampling import sampling_task
     from .rotamer_execution import RotamerExecution
 
     files = DOMAIN_CASES["ligand"].parameter_files
-    palette = MolecularCase(files, (("ALA", "LEU", "DLEU", "LG1"),), ((1,) * 4,))
+    palette = MolecularCase(
+        files, (("ALA", "DALA", "LEU", "DLEU", "LG1"),), ((1,) * 5,)
+    )
     b = backend.molecule(palette, terms=TERMS)
     database = b.parameter_database
-    target = MolecularCase(files, (("ALA",) * 3,), ((3,),))
+    original = "DALA" if identity == "DLEU" else "ALA"
+    target = MolecularCase(files, ((original,) * 3,), ((3,),))
     co, canonical = canonical_input(target, database)
     rebuild_canonical(b, co, canonical)
     values, gradients = b.channel_values_and_gradients(b.coords())
@@ -70,8 +76,11 @@ def test_zero_dunbrack_input_retains_nonzero_design_scores_and_forces(backend):
     # An inactive input term must still score newly sampled design identities.
     front = __import__("tmol_jax" if b.framework == "jax" else "tmol")
     _, sampler, _ = sampling_task(b)
-    task = front.PackerTask(b.pose, front.PackerPalette())
-    task.restrict_absent_name3s({"LEU"})
+    task = front.PackerTask(b.pose, front.PackerPalette(noncanonical_design=True))
+    name3 = next(
+        rt.name3 for rt in original_palette.active_block_types if rt.name == identity
+    )
+    task.restrict_absent_name3s({name3})
     task.add_conformer_sampler(sampler)
     execution = RotamerExecution(b, family="dunbrack", task=task)
     rotamers = execution.rotamers
@@ -80,7 +89,7 @@ def test_zero_dunbrack_input_retains_nonzero_design_scores_and_forces(backend):
     selected = b.numpy(rotamers.rot_offset_for_block)[0, :3].astype(int)
     types = b.numpy(rotamers.block_type_ind_for_rot)
     assert all(
-        original_palette.active_block_types[types[i]].name == "LEU" for i in selected
+        original_palette.active_block_types[types[i]].name == identity for i in selected
     )
     coords = b.numpy(rotamers.coords).astype(np.float64)
     coords += np.random.default_rng(1802).normal(0, 0.01, coords.shape)
@@ -89,7 +98,7 @@ def test_zero_dunbrack_input_retains_nonzero_design_scores_and_forces(backend):
     values, gradient, _ = execution.value_and_grad(coords, weights)
 
     reference = type(b)(b.name).molecule(
-        MolecularCase(files, (("LEU",) * 3,), ((3,),)),
+        MolecularCase(files, ((identity,) * 3,), ((3,),)),
         terms=TERMS,
         parameter_database=database,
     )

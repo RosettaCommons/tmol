@@ -15,7 +15,9 @@ def prepare_rotamer_dunbrack(pose, rotamers, database, *, term=None):
     validate_rotamer_context(pose, rotamers)
     term = DunbrackEnergyTerm(database) if term is None else term
     with jax.default_device(pose.device):
-        parameters = term.setup_for_pose_stack(pose).parameters
+        parameters = term.setup_for_pose_stack(
+            pose, additional_block_types=(rotamers.block_type_ind_for_rot,)
+        ).parameters
     if parameters:
         parameters = (
             rotamers.coord_offset_for_rot,
@@ -53,7 +55,7 @@ def sparse_dunbrack_scores(coords, state):
     rot = jnp.arange(poses.shape[0], dtype=jnp.int32)
     indices = jnp.stack((poses, rot, rot))
     if not parameters:
-        return jnp.zeros((3, poses.shape[0]), coords.dtype), indices
+        return jnp.zeros_like(coords, shape=(3, poses.shape[0])), indices
     workspace = workspace_sizes(
         "tmol_dunbrack",
         (parameters[0].size, parameters[24].shape[1]),

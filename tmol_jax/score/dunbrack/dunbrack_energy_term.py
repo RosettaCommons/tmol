@@ -6,7 +6,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from tmol_core.scoring.dunbrack import prepare_dunbrack_lookup
 from tmol_core.scoring.dunbrack_topology import (
+    dunbrack_scoring_table_indices,
     pack_dunbrack_blocks,
     prepare_dunbrack_block,
 )
@@ -39,8 +41,21 @@ class DunbrackEnergyTerm(EnergyTerm):
             ScoreType.dunbrack_semirot,
         ]
 
-    def setup_for_pose_stack(self, pose_stack, pbt=None):
+    def setup_for_pose_stack(self, pose_stack, pbt=None, *, additional_block_types=()):
         pbt = pose_stack.packed_block_types if pbt is None else pbt
+        supported = self._prepared(
+            "scoring_types",
+            lambda: self._scoring_types(pbt),
+            *pbt._scoring_sources,
+        )
+        # Keep the complete palette and its original IDs. Only storage for a
+        # provably inactive term is omitted; design includes its actual candidates.
+        for types in (pose_stack.block_type_ind, *additional_block_types):
+            indices = np.asarray(types)
+            if np.any(supported[indices[indices >= 0]]):
+                break
+        else:
+            return DunbrackTermState(())
         parameters = self._prepared(
             "device_parameters",
             lambda: self._packed_parameters(pbt, pose_stack.coords.dtype),
@@ -60,6 +75,16 @@ class DunbrackEnergyTerm(EnergyTerm):
                 device=pose_stack.coords.device,
             )
             + parameters
+        )
+
+    def _scoring_types(self, pbt):
+        lookup = prepare_dunbrack_lookup(self.param_db.scoring.dunbrack)
+        return np.array(
+            [
+                dunbrack_scoring_table_indices(bt, lookup)[0] >= 0
+                for bt in pbt.active_block_types
+            ],
+            dtype=bool,
         )
 
     def _packed_parameters(self, pbt, coordinate_dtype):
@@ -105,5 +130,5 @@ class DunbrackEnergyTerm(EnergyTerm):
                 ),
             )
         else:
-            values = jnp.zeros((3, coords.shape[0]), coords.dtype)
+            values = jnp.zeros_like(coords, shape=(3, coords.shape[0]))
         return dict(zip(cls.score_types_provided(), values))

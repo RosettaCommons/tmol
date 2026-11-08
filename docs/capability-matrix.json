@@ -497,8 +497,12 @@
         "dunbrack_rotdev",
         "dunbrack_semirot"
       ],
-      "repro_fixture": "tests/scientific/test_dunbrack.py",
-      "coverage": "L/D, variants, mixed cases, custom widths and full coordinate gradients."
+      "repro_fixture": [
+        "tests/scientific/test_dunbrack.py",
+        "tests/scientific/test_canonical_palette_choices.py",
+        "tests/jax/test_dunbrack_precision.py"
+      ],
+      "coverage": "L/D, variants, mixed cases, custom widths and full coordinate gradients. Inactive whole/sparse objectives use common eligibility without narrowing the public palette; actual L/D design candidates still receive nonzero native scoring. Bounded storage, zero channels, dtype and transformed gradients are covered separately from complete workflow parity."
     },
     "na": {
       "torch": "implemented",
