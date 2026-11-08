@@ -29,6 +29,7 @@ def _remap(values, indices, keep, mapping, blocks, *, size):
 
 
 def collapse_for_graph(rotamers, values, indices):
+    """Collapse joint choices, ordering remapped pairs by compact block identity."""
     fields = (
         "n_rots_for_pose",
         "rot_offset_for_pose",

@@ -194,7 +194,8 @@ def build_interaction_graph(
             rotamers, values, indices
         )
 
-    indices = _canonical_indices(indices, rotamers.block_ind_for_rot)
+    if collapse is None:
+        indices = _canonical_indices(indices, rotamers.block_ind_for_rot)
 
     def total(value):
         return int(np.asarray(value).copy().view(np.int64).reshape(-1)[0])
