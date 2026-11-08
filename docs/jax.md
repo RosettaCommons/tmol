@@ -326,8 +326,8 @@ Sparse LJ/LK, electrostatic, LK-ball, hydrogen-bond, Dunbrack, Cartesian,
 generic-bonded, backbone, nucleic-acid, disulfide and metal values and coordinate VJPs use common native
 physics with `jit`/`vmap` support;
 forward-mode and higher derivatives are not implemented for these sparse entries.
-Backbone candidate scoring still rejects correlated groups because third-neighbor
-context needs additional support. Two-residue cycles preserve both directed
+Backbone candidate scoring supports declared lockstep groups, including a third
+backbone member. Independently varying third-member context remains unsupported. Two-residue cycles preserve both directed
 bonds. Disulfide, metal and constraint candidates use native joint-state filtering.
 Sparse constraints use the same native candidate expansion and preserve physical
 atom order, including A/B/A/B torsions across two blocks. Their JAX callbacks
