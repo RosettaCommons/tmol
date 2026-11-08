@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from tmol_core.cache import AnnotationKey, PreparationCache
 from tmol_core.pack.conformer_merge import (
     check_task_sample_budget,
     prepare_conformer_origins,
@@ -281,6 +282,30 @@ def _chi_copy_plan(
     )
 
 
+def _chi_geometry(pbt, packed, dtype):
+    """Retain one device/dtype view of shared immutable residue geometry."""
+    device = pbt.n_atoms.device
+    key = AnnotationKey.from_sources(
+        *pbt._scoring_sources, settings=(device, dtype, pbt.max_n_atoms)
+    )
+    if not hasattr(pbt, "_chi_geometry_cache"):
+        pbt._chi_geometry_cache = PreparationCache(max_entries=1)
+
+    def prepare():
+        return jax.device_put(
+            (
+                _host_indices(packed.kinforest_idx),
+                chi4_by_defining_atom(pbt.active_block_types, pbt.max_n_atoms),
+                ring_chi_phi_c_corrections(
+                    pbt.active_block_types, pbt.max_n_atoms
+                ).astype(dtype),
+            ),
+            device,
+        )
+
+    return pbt._chi_geometry_cache.get_or_create("geometry", key, prepare)
+
+
 def _assembly_plan(
     poses, task, samplers, copy_input, direct, opth_options, identities, groups
 ):
@@ -394,15 +419,8 @@ def _assembly_plan(
         fingerprints = prepare_atom_copy_plan(
             pbt, [s for s, chi in zip(samplers, chi_samplers) if chi]
         )
-        kinematic_index = integer(packed.kinforest_idx)
-        chi_atoms = integer(
-            chi4_by_defining_atom(pbt.active_block_types, pbt.max_n_atoms)
-        )
-        ring_corrections = jax.device_put(
-            ring_chi_phi_c_corrections(pbt.active_block_types, pbt.max_n_atoms).astype(
-                poses.coords.dtype
-            ),
-            device,
+        kinematic_index, chi_atoms, ring_corrections = _chi_geometry(
+            pbt, packed, poses.coords.dtype
         )
         sampler_indices = tuple(
             (

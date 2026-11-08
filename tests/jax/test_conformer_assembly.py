@@ -40,6 +40,18 @@ def test_conformer_assembly_reuses_topology_but_not_coordinates(platform):
         np.testing.assert_array_equal(
             jax.jit(lambda r: r.coords)(second), second.coords
         )
+        # Fresh tasks may share static chemistry, never their coordinate result.
+        fresh, _, concrete = sampling_task(backend)
+        fresh = concrete(fresh)
+        _, third = build_rotamers(moved, fresh)
+        np.testing.assert_allclose(third.coords, second.coords, atol=2e-12, rtol=0)
+        lower = moved.replace(coords=moved.coords.astype(np.float32))
+        _, single = build_rotamers(lower, fresh)
+        assert single.coords.dtype == np.float32
+        np.testing.assert_allclose(single.coords, third.coords, atol=3e-5, rtol=3e-5)
+        _, restored = build_rotamers(moved, fresh)
+        assert restored.coords.dtype == np.float64
+        np.testing.assert_allclose(restored.coords, third.coords, atol=2e-12, rtol=0)
 
 
 @pytest.mark.parametrize("platform", ("cpu", "cuda"))
