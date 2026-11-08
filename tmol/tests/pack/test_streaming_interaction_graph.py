@@ -235,6 +235,7 @@ def annealer_inputs(graph, chunk_size):
         graph[14],
         graph[10],
         graph[15],
+        128,  # high-temperature trajectories; 320 low-temperature, 80 quenched
     )
 
 
@@ -395,8 +396,8 @@ def test_cuda_annealer_reuses_order_workspace():
     torch.cuda.synchronize()
     peak_delta = torch.cuda.max_memory_allocated() - allocated_before
 
-    full_order_bytes = len(counts) * 312 * max_rotamers * 4
-    lite_order_bytes = len(counts) * 1250 * ((max_rotamers - 1) // 31 + 2) * 4
+    full_order_bytes = len(counts) * 80 * max_rotamers * 4
+    lite_order_bytes = len(counts) * 320 * ((max_rotamers - 1) // 31 + 2) * 4
     # Leave ample space for the small assignment tables and segmented sorts,
     # but not a second order table (over 10 MiB for this input).
     assert peak_delta < full_order_bytes + lite_order_bytes // 2

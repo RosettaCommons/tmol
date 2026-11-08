@@ -9,6 +9,7 @@
 #include <tmol/score/common/device_operations.hh>
 
 #include "annealer.hh"
+#include "annealer_policy.hh"
 #ifdef WITH_MPS
 #include <tmol/backends/metal/pack/compiled/annealer.mps.impl.hh>
 #endif
@@ -331,7 +332,14 @@ std::vector<Tensor> anneal(
     Tensor neighbor_chunk_offset_offsets,
     Tensor chunk_offsets,
     Tensor energy1b,
-    Tensor energy2b) {
+    Tensor energy2b,
+    int64_t n_hitemp_traj) {
+  if (n_hitemp_traj < 4 || n_hitemp_traj > INT32_MAX)
+    throw std::invalid_argument(
+        "annealer trajectory count is outside int32 capacity");
+  AnnealerTrajectoryCounts checked_counts(
+      static_cast<int>(n_hitemp_traj), true);
+  (void)checked_counts;
   nvtx_range_push("pack_anneal");
   tmol::native::Tensor scores;
   tmol::native::Tensor rotamer_assignments;
@@ -356,7 +364,8 @@ std::vector<Tensor> anneal(
         neighbor_chunk_offset_offsets,
         chunk_offsets,
         energy1b,
-        energy2b);
+        energy2b,
+        n_hitemp_traj);
     return {std::get<0>(result), std::get<1>(result)};
   }
 #endif
@@ -379,7 +388,8 @@ std::vector<Tensor> anneal(
                                       TCAST(neighbor_chunk_offset_offsets),
                                       TCAST(chunk_offsets),
                                       TCAST(energy1b),
-                                      TCAST(energy2b));
+                                      TCAST(energy2b),
+                                      int(n_hitemp_traj));
                                   scores = std::get<0>(result).tensor;
                                   rotamer_assignments =
                                       std::get<1>(result).tensor;

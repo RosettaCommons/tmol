@@ -204,6 +204,11 @@ void parallel_for(int64_t begin, int64_t end, int64_t grain, F fn) {
       [](int64_t b, int64_t e, void* ctx) { (*static_cast<F*>(ctx))(b, e); },
       &fn));
 }
+inline int get_num_threads() {
+  uint32_t n;
+  STABLE_TORCH_ERROR_CODE_CHECK(torch_get_num_threads(&n));
+  return static_cast<int>(n);
+}
 inline Tensor random_seed_tensor(IntList shape, Device device) {
   auto result =
       empty(shape, TensorOptions().dtype(ScalarType::Long).device(device));
@@ -247,6 +252,7 @@ using at::Device;
 using at::empty;
 using at::Error;
 using at::full;
+using at::get_num_threads;
 using at::IntList;
 using at::ones;
 using at::parallel_for;

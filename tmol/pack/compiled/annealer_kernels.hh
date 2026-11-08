@@ -116,7 +116,7 @@ TMOL_HOST_DEVICE_FUNC void annealer_run_trajectory(
   auto best = ctx.best_assignments[pose][traj];
 
   // ── seed the assignment ────────────────────────────────────────────────
-  auto seed_assignment = ([=] TMOL_DEVICE_FUNC(int tid) {
+  auto seed_assignment = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
     if (phase == kAnnealPhaseHitemp) {
       for (int i = tid; i < n_res; i += nt) {
         int const i_n_rots = ctx.n_rotamers_for_res[pose][i];
@@ -148,7 +148,7 @@ TMOL_HOST_DEVICE_FUNC void annealer_run_trajectory(
   // ── initial exact energy ───────────────────────────────────────────────
   Real partial = 0;
   TMOL_THREAD_PTR(Real) partial_p = &partial;
-  auto accumulate_initial = ([=] TMOL_DEVICE_FUNC(int tid) {
+  auto accumulate_initial = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
     *partial_p += ctx.partial_energy(pose, current, tid, nt);
   });
   DeviceDispatch<Dev>::template for_each_in_workgroup<nt>(
@@ -171,7 +171,7 @@ TMOL_HOST_DEVICE_FUNC void annealer_run_trajectory(
     if (quench) {
       temperature = 0.0f;
       // Quench from the best assignment seen, not wherever the walk ended.
-      auto restore_best = ([=] TMOL_DEVICE_FUNC(int tid) {
+      auto restore_best = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
         for (int i = tid; i < n_res; i += nt) {
           current[i] = best[i];
         }
@@ -205,7 +205,7 @@ TMOL_HOST_DEVICE_FUNC void annealer_run_trajectory(
 
       Real dpartial = 0;
       TMOL_THREAD_PTR(Real) dpartial_p = &dpartial;
-      auto accumulate_delta = ([=] TMOL_DEVICE_FUNC(int tid) {
+      auto accumulate_delta = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
         *dpartial_p += ctx.partial_delta_energy(
             pose, current, res, prev_rot, new_rot, tid, nt);
       });
@@ -233,7 +233,7 @@ TMOL_HOST_DEVICE_FUNC void annealer_run_trajectory(
       current_energy += delta;
       if (track_best && current_energy < best_energy) {
         best_energy = current_energy;
-        auto save_best = ([=] TMOL_DEVICE_FUNC(int tid) {
+        auto save_best = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
           for (int i = tid; i < n_res; i += nt) {
             best[i] = current[i];
           }
@@ -255,7 +255,7 @@ TMOL_HOST_DEVICE_FUNC void annealer_run_trajectory(
   auto final_assignment = track_best ? best : current;
   Real final_partial = 0;
   TMOL_THREAD_PTR(Real) final_partial_p = &final_partial;
-  auto accumulate_final = ([=] TMOL_DEVICE_FUNC(int tid) {
+  auto accumulate_final = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
     *final_partial_p += ctx.partial_energy(pose, final_assignment, tid, nt);
   });
   DeviceDispatch<Dev>::template for_each_in_workgroup<nt>(
@@ -263,7 +263,7 @@ TMOL_HOST_DEVICE_FUNC void annealer_run_trajectory(
   Real const final_energy =
       anneal_sum_bcast<DeviceDispatch, Dev, nt>(final_partial, lane);
 
-  auto write_out = ([=] TMOL_DEVICE_FUNC(int tid) {
+  auto write_out = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
     if (tid != 0) return;
     ctx.scores[pose][traj] = float(final_energy);
   });
@@ -272,7 +272,7 @@ TMOL_HOST_DEVICE_FUNC void annealer_run_trajectory(
   // The ranked assignment is what downstream consumes; make sure it is the
   // one in `best` for every phase.
   if (!track_best) {
-    auto publish = ([=] TMOL_DEVICE_FUNC(int tid) {
+    auto publish = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
       for (int i = tid; i < n_res; i += nt) {
         best[i] = current[i];
       }

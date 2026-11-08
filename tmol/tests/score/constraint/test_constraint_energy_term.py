@@ -478,3 +478,120 @@ def test_bounded_constraint_piecewise_invariants_and_inactive_zero_deviation():
     )
     assert torch.isfinite(param_grad).all()
     torch.testing.assert_close(param_grad[-1], torch.zeros(4, dtype=torch.float64))
+
+
+def test_bounded_matches_piecewise_definition():
+    lb, ub, sd, rswitch = 2.0, 3.0, 0.5, 1.5
+    dists = torch.tensor([1.0, 2.5, 3.1, 4.0], dtype=torch.float64)  # each branch
+    atoms = torch.zeros((4, 2, 3), dtype=torch.float64)
+    atoms[:, 1, 0] = dists
+    atoms.requires_grad_(True)
+    params = torch.tensor([[lb, ub, sd, rswitch]], dtype=torch.float64).expand(4, 4)
+
+    scores = ConstraintEnergyTerm.bounded(atoms, params)
+    (grad,) = torch.autograd.grad(scores.sum(), atoms)
+
+    d = dists
+    expected = torch.tensor(
+        [
+            ((lb - d[0]) / sd) ** 2,
+            0.0,
+            ((d[2] - ub) / sd) ** 2,
+            2 * rswitch * ((d[3] - ub) / sd) - rswitch**2,
+        ],
+        dtype=torch.float64,
+    )
+    expected_dd = torch.tensor(
+        [-2 * (lb - d[0]) / sd**2, 0.0, 2 * (d[2] - ub) / sd**2, 2 * rswitch / sd],
+        dtype=torch.float64,
+    )
+    torch.testing.assert_close(scores, expected)
+    torch.testing.assert_close(grad[:, 1, 0], expected_dd)
+    torch.testing.assert_close(grad[:, 0, 0], -expected_dd)
+
+
+def _jagged_stack_with_every_constraint_type(ubq_pdb, torch_device):
+    from tmol import PoseStackBuilder
+
+    poses = [
+        pose_stack_from_file(ubq_pdb, torch_device, residue_start=0, residue_end=n)
+        for n in (12, 20, 16)
+    ]
+    stack = PoseStackBuilder.from_poses(poses, torch_device)
+
+    def atom(p, b, name):
+        return [p, b, stack.block_type(p, b).atom_to_idx[name]]
+
+    def add(cs, fn, atoms, params):
+        return cs.add_constraints(
+            fn,
+            torch.tensor(atoms, dtype=torch.int32, device=torch_device),
+            torch.tensor(params, dtype=torch.float32, device=torch_device),
+        )
+
+    cs = ConstraintSet.create_empty(device=torch_device, n_poses=stack.n_poses)
+    # Uneven counts per pose; pose 2 has none.
+    for p, blocks in ((0, [2, 5]), (1, [1, 4, 8, 11, 15])):
+        for b in blocks:
+            ca, ca1 = atom(p, b, "CA"), atom(p, b + 1, "CA")
+            cs = add(cs, ConstraintEnergyTerm.harmonic, [[ca, ca1]], [[3.2, 0.3]])
+            cs = add(
+                cs,
+                ConstraintEnergyTerm.bounded,
+                [[atom(p, b, "N"), atom(p, b + 1, "O")]],
+                [[1.0 + 0.4 * b % 4, 3.0, 0.4, 1.0]],
+            )
+            cs = add(
+                cs,
+                ConstraintEnergyTerm.harmonic_coordinate,
+                [[ca]],
+                [[0.5, float(b), 1.0, -2.0, 0.7]],
+            )
+            cs = add(
+                cs,
+                ConstraintEnergyTerm.circularharmonic,
+                [[ca, atom(p, b, "C"), atom(p, b + 1, "N"), ca1]],
+                [[math.pi, 0.2, 0.1]],
+            )
+    return attrs.evolve(stack, constraint_set=cs)
+
+
+def test_whole_pose_constraints_match_block_pair_sums(
+    ubq_pdb, default_database, torch_device
+):
+    stack = _jagged_stack_with_every_constraint_type(ubq_pdb, torch_device)
+    sfxn = ScoreFunction(default_database, torch_device)
+    sfxn.set_weight(ScoreType.constraint, 1.0)
+
+    coords = stack.coords.detach().clone().requires_grad_(True)
+    total = sfxn.render_whole_pose_scoring_module(stack)(coords)
+    (grad,) = torch.autograd.grad(total.sum(), coords)
+    block = sfxn.render_block_pair_scoring_module(stack)(stack.coords)
+
+    pose_sums = block.sum(dim=(-2, -1)).reshape(-1)
+    torch.testing.assert_close(total.reshape(-1), pose_sums, rtol=1e-5, atol=1e-4)
+    assert float(total[2]) == 0.0
+    assert torch.isfinite(grad[~torch.isnan(stack.coords)]).all()
+
+
+def test_cuda_graphed_constraint_score_matches_eager(
+    ubq_pdb, default_database, torch_device
+):
+    if torch_device.type != "cuda":
+        pytest.skip("CUDA graph test")
+    stack = _jagged_stack_with_every_constraint_type(ubq_pdb, torch_device)
+    sfxn = ScoreFunction(default_database, torch_device)
+    sfxn.set_weight(ScoreType.constraint, 1.0)
+    sfxn.set_weight(ScoreType.fa_ljatr, 1.0)
+
+    eager_coords = stack.coords.detach().clone().requires_grad_(True)
+    expected = sfxn.render_whole_pose_scoring_module(stack)(eager_coords)
+    (expected_grad,) = torch.autograd.grad(expected.sum(), eager_coords)
+
+    graphed = sfxn.render_whole_pose_scoring_module(stack, cuda_graph=True)
+    for _ in range(2):  # capture, then replay
+        coords = stack.coords.detach().clone().requires_grad_(True)
+        score = graphed(coords)
+        (grad,) = torch.autograd.grad(score.sum(), coords)
+        torch.testing.assert_close(score, expected, rtol=1e-5, atol=1e-3)
+        torch.testing.assert_close(grad, expected_grad, rtol=1e-4, atol=1e-3)

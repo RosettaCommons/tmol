@@ -176,8 +176,10 @@ class SegmentedLBFGSPolicy(SegmentedLBFGSSetup):
             return False
 
         newly_converged = self._zeros_like(ctx.converged)
+        small_grad = None
         if ctx.gradtol is not None:
-            newly_converged |= self._seg_amax(self._abs(ctx.flat_grad)) <= ctx.gradtol
+            small_grad = self._seg_amax(self._abs(ctx.flat_grad)) <= ctx.gradtol
+            newly_converged |= ctx.needs_reset & small_grad
         if ctx.prev_loss_vec is not None:
             dE = self._abs(ctx.loss_vec - ctx.prev_loss_vec)
             small = self._zeros_like(ctx.converged)
@@ -197,7 +199,10 @@ class SegmentedLBFGSPolicy(SegmentedLBFGSSetup):
             ctx.small_steps = self._copy(
                 ctx.small_steps, self._where(ctx.needs_reset, ctx.small_steps, counted)
             )
-            newly_converged |= ctx.small_steps >= ctx.patience
+            energy_converged = ctx.small_steps >= ctx.patience
+            if small_grad is not None:
+                energy_converged &= small_grad
+            newly_converged |= energy_converged
         ctx.converged |= newly_converged
         done = self._inactive(ctx)
 

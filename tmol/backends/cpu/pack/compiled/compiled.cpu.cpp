@@ -6,7 +6,7 @@
 
 #include <tmol/backends/cpu/score/common/device_operations.cpu.impl.hh>
 
-#include <tmol/pack/compiled/annealer_cpu.hh>
+#include <tmol/pack/compiled/annealer_cpu_funnel.hh>
 #include <tmol/score/common/tview_binder.hh>
 #include <tmol/pack/compiled/compiled.impl.hh>
 #include <tmol/pack/compiled/streaming_interaction_graph.impl.hh>
@@ -31,20 +31,23 @@ auto AnnealerDispatch<D>::forward(
     TView<int64_t, 1, D> neighbor_chunk_offset_offsets,
     TView<int64_t, 1, D> chunk_offsets,  // n-chunks-on-interacting-res
     TView<float, 1, D> energy1b,
-    TView<float, 1, D> energy2b)
-    -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D>> {
+    TView<float, 1, D> energy2b,
+    int n_hitemp_traj) -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D>> {
   int const n_poses = pose_n_res.size(0);
   int const max_n_res = n_rotamers_for_res.size(1);
   int const n_rotamers = res_for_rot.size(0);
 
-  int n_traj = 1;
+  AnnealerTrajectoryCounts counts(n_hitemp_traj, true);
+  bool const funnel =
+      native::get_num_threads() >= AnnealerTrajectoryCounts::min_cpu_threads;
+  int const n_traj = funnel ? counts.final : 1;
 
   auto scores_t = TPack<float, 2, D>::zeros({n_poses, n_traj});
   auto current_rotamer_assignments_t =
-      TPack<int, 3, D>::zeros({n_poses, n_traj, max_n_res});
+      TPack<int, 3, D>::zeros({funnel ? 0 : n_poses, 1, max_n_res});
   auto best_rotamer_assignments_t =
       TPack<int, 3, D>::zeros({n_poses, n_traj, max_n_res});
-  auto quench_order_t = TPack<int, 1, D>::zeros({n_rotamers});
+  auto quench_order_t = TPack<int, 1, D>::zeros({funnel ? 0 : n_rotamers});
 
   auto scores = scores_t.view;
   auto current_rotamer_assignments = current_rotamer_assignments_t.view;
@@ -71,7 +74,21 @@ auto AnnealerDispatch<D>::forward(
   c.neighbor_blocks = neighbor_blocks;
   c.chunk_size = chunk_size;
   auto seed = native::random_seed_tensor({}, native::Device(native::kCPU));
-  run_cpu_annealer(c, static_cast<uint64_t>(seed.item<int64_t>()));
+  if (funnel) {
+    CpuFunnelWorkspace shape(n_poses, max_n_res, n_hitemp_traj);
+    auto scratch = TPack<uint8_t, 1, D>::empty({shape.bytes});
+    CpuFunnelWorkspace workspace(
+        n_poses, max_n_res, n_hitemp_traj, scratch.view.data(), shape.bytes);
+    run_cpu_funnel(
+        c,
+        workspace,
+        static_cast<uint64_t>(seed.item<int64_t>()),
+        [](int64_t begin, int64_t end, int64_t grain, auto fn) {
+          native::parallel_for(begin, end, grain, fn);
+        });
+  } else {
+    run_cpu_annealer(c, static_cast<uint64_t>(seed.item<int64_t>()));
+  }
 
   return {scores_t, best_rotamer_assignments_t};
 }

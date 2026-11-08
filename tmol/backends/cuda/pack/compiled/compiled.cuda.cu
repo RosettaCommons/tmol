@@ -23,24 +23,29 @@ auto AnnealerDispatch<D>::forward(
     TView<int64_t, 1, D> neighbor_chunk_offset_offsets,
     TView<int64_t, 1, D> chunk_offsets,
     TView<float, 1, D> energy1b,
-    TView<float, 1, D> energy2b)
-    -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D>> {
+    TView<float, 1, D> energy2b,
+    int n_hitemp_traj) -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D>> {
   int const n_poses_cpu = pose_n_res.size(0);
   int const max_n_res_cpu = n_rotamers_for_res.size(1);
 
-  int const n_final = CudaAnnealerPolicy::final_trajectories;
+  int const n_final = AnnealerTrajectoryCounts(n_hitemp_traj).final;
   CudaAnnealerWorkspace shape(
       n_poses_cpu,
       max_n_res_cpu,
       max_n_rotamers_per_pose,
-      neighbor_blocks.size(0));
+      neighbor_blocks.size(0),
+      nullptr,
+      -1,
+      n_hitemp_traj);
   auto scratch = TPack<uint8_t, 1, D>::empty({shape.bytes});
   CudaAnnealerWorkspace workspace(
       n_poses_cpu,
       max_n_res_cpu,
       max_n_rotamers_per_pose,
       neighbor_blocks.size(0),
-      scratch.view.data());
+      scratch.view.data(),
+      shape.bytes,
+      n_hitemp_traj);
   auto scores = TPack<float, 2, D>::empty({n_poses_cpu, n_final});
   auto assignments =
       TPack<int32_t, 3, D>::empty({n_poses_cpu, n_final, max_n_res_cpu});

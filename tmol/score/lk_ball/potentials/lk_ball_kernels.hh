@@ -450,7 +450,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_energies_by_block(
   CTA_LAUNCH_T_PARAMS;
   constexpr auto pair_mode = PairMode;
   constexpr auto index_mode = IndexMode;
-  auto score_inter_lk_ball_atom_pair = ([=] TMOL_DEVICE_FUNC(
+  auto score_inter_lk_ball_atom_pair = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
                                             int pol_start,
                                             int occ_start,
                                             int pol_ind,
@@ -483,7 +483,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_energies_by_block(
     inter_dat.pair_data.total_lk_bridge_uncpl += E.lkbridge_uncpl;
   });
 
-  auto score_intra_lk_ball_atom_pair = ([=] TMOL_DEVICE_FUNC(
+  auto score_intra_lk_ball_atom_pair = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
                                             int pol_start,
                                             int occ_start,
                                             int pol_ind,
@@ -556,36 +556,41 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_energies_by_block(
   int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
 
   auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA(ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTERRES_DATA(ctx));
 
   auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED(ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES1_TILE_DATA_TO_SHARED(ctx));
 
   auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED(ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES2_TILE_DATA_TO_SHARED(ctx));
 
   auto load_interres_data_from_shared =
-      ([=](int,
+      ([TMOL_CAPTURE_CTX](
+           int,
            int,
            TMOL_SHARED_REF(Shared),
            TMOL_THREAD LKBallScoringData<Real>&) {});
 
-  auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
+  auto eval_interres_atom_pair_scores =
+      ([TMOL_CAPTURE_CTX] EVAL_INTERRES_ATOM_PAIR_SCORES);
 
-  auto store_calculated_energies = ([=] STORE_POSE_CALCULATED_ENERGIES);
+  auto store_calculated_energies =
+      ([TMOL_CAPTURE_CTX] STORE_POSE_CALCULATED_ENERGIES);
 
   auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA(ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTRARES_DATA(ctx));
 
   auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED(ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES1_TILE_DATA_TO_SHARED(ctx));
 
   auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED(ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES2_TILE_DATA_TO_SHARED(ctx));
 
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
+  auto load_intrares_data_from_shared =
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES_DATA_FROM_SHARED);
 
-  auto eval_intrares_atom_pair_scores = ([=] EVAL_INTRARES_ATOM_PAIR_SCORES);
+  auto eval_intrares_atom_pair_scores =
+      ([TMOL_CAPTURE_CTX] EVAL_INTRARES_ATOM_PAIR_SCORES);
 
   tmol::score::common::tile_evaluate_rot_pair<
       DeviceDispatch,
@@ -704,7 +709,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
   auto const block_type_path_distance = ctx.block_type_path_distance;
 
   auto lk_ball_atom_derivs =
-      ([=] TMOL_DEVICE_FUNC(
+      ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
            int pol_ind,
            int occ_ind,
            int pol_tile_ind,
@@ -738,7 +743,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
       });
 
   auto score_inter_lk_ball_atom_pair =
-      ([=] TMOL_DEVICE_FUNC(
+      ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
            int pol_start,
            int occ_start,
            int pol_ind,
@@ -767,7 +772,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
       });
 
   auto score_intra_lk_ball_atom_pair =
-      ([=] TMOL_DEVICE_FUNC(
+      ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
            int pol_start,
            int occ_start,
            int pol_ind,
@@ -800,38 +805,43 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
   // every input view and is also valid in CUDA's extended device lambdas.
   TMOL_THREAD Ctx const* tile_ctx = &ctx;
   auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA(*tile_ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTERRES_DATA(*tile_ctx));
 
   auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED(*tile_ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES1_TILE_DATA_TO_SHARED(*tile_ctx));
 
   auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED(*tile_ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES2_TILE_DATA_TO_SHARED(*tile_ctx));
 
   auto load_interres_data_from_shared =
-      ([=](int,
+      ([TMOL_CAPTURE_CTX](
+           int,
            int,
            TMOL_SHARED_REF(Shared),
            TMOL_THREAD LKBallScoringData<Real>&) {});
 
-  auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
+  auto eval_interres_atom_pair_scores =
+      ([TMOL_CAPTURE_CTX] EVAL_INTERRES_ATOM_PAIR_SCORES);
 
   // Derivatives only; nothing to reduce or store.
   auto store_calculated_energies =
-      ([=](TMOL_THREAD LKBallScoringData<Real>&, TMOL_SHARED_REF(Shared)) {});
+      ([TMOL_CAPTURE_CTX](
+           TMOL_THREAD LKBallScoringData<Real>&, TMOL_SHARED_REF(Shared)) {});
 
   auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA(*tile_ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTRARES_DATA(*tile_ctx));
 
   auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED(*tile_ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES1_TILE_DATA_TO_SHARED(*tile_ctx));
 
   auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED(*tile_ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES2_TILE_DATA_TO_SHARED(*tile_ctx));
 
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
+  auto load_intrares_data_from_shared =
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES_DATA_FROM_SHARED);
 
-  auto eval_intrares_atom_pair_scores = ([=] EVAL_INTRARES_ATOM_PAIR_SCORES);
+  auto eval_intrares_atom_pair_scores =
+      ([TMOL_CAPTURE_CTX] EVAL_INTRARES_ATOM_PAIR_SCORES);
 
   tmol::score::common::tile_evaluate_rot_pair<
       DeviceDispatch,
@@ -883,7 +893,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_rotamer_energies_by_block(
     int cta,
     WorkgroupLane<Dev> lane = {}) {
   CTA_LAUNCH_T_PARAMS;
-  auto score_inter_lk_ball_atom_pair = ([=] TMOL_DEVICE_FUNC(
+  auto score_inter_lk_ball_atom_pair = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
                                             int pol_start,
                                             int occ_start,
                                             int pol_ind,
@@ -916,7 +926,7 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_rotamer_energies_by_block(
     inter_dat.pair_data.total_lk_bridge_uncpl += E.lkbridge_uncpl;
   });
 
-  auto score_intra_lk_ball_atom_pair = ([=] TMOL_DEVICE_FUNC(
+  auto score_intra_lk_ball_atom_pair = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
                                             int pol_start,
                                             int occ_start,
                                             int pol_ind,
@@ -974,36 +984,41 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_rotamer_energies_by_block(
   int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
 
   auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA(ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTERRES_DATA(ctx));
 
   auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED(ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES1_TILE_DATA_TO_SHARED(ctx));
 
   auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED(ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_INTERRES2_TILE_DATA_TO_SHARED(ctx));
 
   auto load_interres_data_from_shared =
-      ([=](int,
+      ([TMOL_CAPTURE_CTX](
+           int,
            int,
            TMOL_SHARED_REF(Shared),
            TMOL_THREAD LKBallScoringData<Real>&) {});
 
-  auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
+  auto eval_interres_atom_pair_scores =
+      ([TMOL_CAPTURE_CTX] EVAL_INTERRES_ATOM_PAIR_SCORES);
 
-  auto store_calculated_energies = ([=] STORE_ROTAMER_CALCULATED_ENERGIES);
+  auto store_calculated_energies =
+      ([TMOL_CAPTURE_CTX] STORE_ROTAMER_CALCULATED_ENERGIES);
 
   auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA(ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTRARES_DATA(ctx));
 
   auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED(ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES1_TILE_DATA_TO_SHARED(ctx));
 
   auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED(ctx));
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES2_TILE_DATA_TO_SHARED(ctx));
 
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
+  auto load_intrares_data_from_shared =
+      ([TMOL_CAPTURE_CTX] LOAD_INTRARES_DATA_FROM_SHARED);
 
-  auto eval_intrares_atom_pair_scores = ([=] EVAL_INTRARES_ATOM_PAIR_SCORES);
+  auto eval_intrares_atom_pair_scores =
+      ([TMOL_CAPTURE_CTX] EVAL_INTRARES_ATOM_PAIR_SCORES);
 
   tmol::score::common::tile_evaluate_rot_pair<
       DeviceDispatch,

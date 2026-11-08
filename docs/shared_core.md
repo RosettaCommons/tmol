@@ -82,6 +82,13 @@ Size-discovery barriers and temporary-buffer lifetimes
 are execution requirements. An adapter must preserve them instead of substituting
 Python algorithms or silently dropping unsupported cases.
 
+FastRelax uses one callable minimizer protocol, stage schedule, tolerance policy,
+and per-pose acceptance implementation in `tmol_core.relax`. Frontends provide
+coordinate or kinematic execution. Native annealers share checked trajectory
+counts and caller-owned workspace sizing: the CPU funnel applies from eight
+threads, while fewer CPU threads retain the single-trajectory schedule. Counts
+not divisible by four retain PR626's different CPU and GPU rounding.
+
 Native first derivatives do not imply arbitrary higher derivatives or every JAX
 transformation. Chi construction supports sampled-angle derivatives with fixed
 input coordinates; inverse-kinematics coordinate derivatives are not implemented.
