@@ -131,7 +131,8 @@ def _validate_payloads(samples, coordinates):
                 or atoms.device != coordinates.device
             ):
                 raise ValueError(
-                    "chi samples require matching pose dtype/device and int32 atom identities"
+                    "chi samples require matching pose dtype/device "
+                    "and int32 atom identities"
                 )
         else:
             raise NotImplementedError(
