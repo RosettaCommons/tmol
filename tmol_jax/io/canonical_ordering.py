@@ -16,15 +16,6 @@ from tmol_core.io.canonical_ordering import CanonicalOrdering as _CanonicalOrder
 class CanonicalOrdering(_CanonicalOrdering):
     """Shared canonical residue and atom identities with frontend lookups."""
 
-    def restype_index(self, name3):
-        try:
-            return self.restype_io_equiv_classes.index(name3)
-        except ValueError:
-            return -1
-
-    def atom_index(self, name3, atom_name):
-        return self.restypes_atom_index_mapping.get(name3, {}).get(atom_name, -1)
-
 
 @lru_cache(maxsize=1)
 def default_canonical_ordering() -> CanonicalOrdering:

@@ -255,6 +255,15 @@ class CanonicalOrdering:
     # yet decided; every histidine class needs them, d as well as l
     HIS_TAUTOMER_ATOMS = ["NN", "NH", "HN"]
 
+    def restype_index(self, name3):
+        try:
+            return self.restype_io_equiv_classes.index(name3)
+        except ValueError:
+            return -1
+
+    def atom_index(self, name3, atom_name):
+        return self.restypes_atom_index_mapping.get(name3, {}).get(atom_name, -1)
+
     @classmethod
     def extra_atoms(cls, chemdb: PatchedChemicalDatabase = None):
         if chemdb is None:
