@@ -26,3 +26,10 @@ auto forward64 =
     &backbone_torsion_pose_forward<SerialOps, tmol::Device::CPU, double, int>;
 auto backward64 =
     &backbone_torsion_pose_backward<SerialOps, tmol::Device::CPU, double, int>;
+
+auto forward_wide = &backbone_torsion_pose_forward<
+    SerialOps,
+    tmol::Device::CPU,
+    float,
+    int,
+    double>;

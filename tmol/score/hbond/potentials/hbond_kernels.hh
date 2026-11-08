@@ -324,33 +324,34 @@ union HBondSharedMem {
   }
 
 // done
-#define STORE_POSE_CALCULATED_ENERGIES                                         \
-  TMOL_DEVICE_FUNC(                                                            \
-      TMOL_THREAD HBondScoringData<Real>& score_dat,                           \
-      TMOL_SHARED_REF(shared_mem_union) shared) {                              \
-    auto reduce_energies = ([&](int tid) {                                     \
-      Real const cta_total_hbond =                                             \
-          DeviceDispatch<Dev>::template reduce_in_workgroup<nt>(               \
-              score_dat.pair_data.total_hbond,                                 \
-              shared,                                                          \
-              tmol::portable::plus_t<Real>(),                                  \
-              lane);                                                           \
-      if (tid == 0) {                                                          \
-        if (ctx.output_block_pair_energies) {                                  \
-          int const p = score_dat.pair_data.pose_ind;                          \
-          int const a_ind = score_dat.r1.block_ind;                            \
-          int const b_ind = score_dat.r2.block_ind;                            \
-          int const b1 = min(a_ind, b_ind);                                    \
-          int const b2 = max(a_ind, b_ind);                                    \
-          ctx.output[0][p][b1][b2] = cta_total_hbond;                          \
-        } else {                                                               \
-          int const p = score_dat.pair_data.pose_ind;                          \
-          accumulate<Dev, Real>::add(ctx.output[0][p][0][0], cta_total_hbond); \
-        }                                                                      \
-      }                                                                        \
-    });                                                                        \
-    DeviceDispatch<Dev>::template for_each_in_workgroup<nt>(                   \
-        reduce_energies, lane);                                                \
+#define STORE_POSE_CALCULATED_ENERGIES                           \
+  TMOL_DEVICE_FUNC(                                              \
+      TMOL_THREAD HBondScoringData<Real>& score_dat,             \
+      TMOL_SHARED_REF(shared_mem_union) shared) {                \
+    auto reduce_energies = ([&](int tid) {                       \
+      Real const cta_total_hbond =                               \
+          DeviceDispatch<Dev>::template reduce_in_workgroup<nt>( \
+              score_dat.pair_data.total_hbond,                   \
+              shared,                                            \
+              tmol::portable::plus_t<Real>(),                    \
+              lane);                                             \
+      if (tid == 0) {                                            \
+        if (ctx.output_block_pair_energies) {                    \
+          int const p = score_dat.pair_data.pose_ind;            \
+          int const a_ind = score_dat.r1.block_ind;              \
+          int const b_ind = score_dat.r2.block_ind;              \
+          int const b1 = min(a_ind, b_ind);                      \
+          int const b2 = max(a_ind, b_ind);                      \
+          ctx.output[0][p][b1][b2] = cta_total_hbond;            \
+        } else {                                                 \
+          int const p = score_dat.pair_data.pose_ind;            \
+          accumulate<Dev, typename Ctx::Energy>::add(            \
+              ctx.output[0][p][0][0], cta_total_hbond);          \
+        }                                                        \
+      }                                                          \
+    });                                                          \
+    DeviceDispatch<Dev>::template for_each_in_workgroup<nt>(     \
+        reduce_energies, lane);                                  \
   }
 
 #define STORE_ROTAMER_CALCULATED_ENERGIES                        \

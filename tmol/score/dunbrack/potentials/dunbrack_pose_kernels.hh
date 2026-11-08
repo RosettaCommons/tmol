@@ -36,9 +36,9 @@ using tmol::portable::Vec;
 
 // Output layout is the only difference between dense pose/block scores and
 // sparse rotamer entries. Preserve per-entry accumulation order in both modes.
-template <Device D, size_t Rank, typename Real>
+template <Device D, size_t Rank, typename EnergyReal, typename Real>
 TMOL_HOST_DEVICE_FUNC void emit_dunbrack_energy(
-    TView<Real, Rank, D> V,
+    TView<EnergyReal, Rank, D> V,
     int term,
     int pose,
     int block,
@@ -46,13 +46,13 @@ TMOL_HOST_DEVICE_FUNC void emit_dunbrack_energy(
     bool block_pairs,
     Real value) {
   if constexpr (Rank == 2) {
-    common::accumulate<D, Real>::add(
+    common::accumulate<D, EnergyReal>::add(
         V[term][block_pairs ? rotamer : pose], value);
   } else {
     if (block_pairs)
       V[term][pose][block][block] = value;
     else
-      common::accumulate<D, Real>::add(V[term][pose][0][0], value);
+      common::accumulate<D, EnergyReal>::add(V[term][pose][0][0], value);
   }
 }
 
@@ -62,7 +62,8 @@ template <
     typename Real,
     typename Int,
     typename SizeInt = int64_t,
-    size_t OutRank = 4>
+    size_t OutRank = 4,
+    typename EnergyReal = Real>
 void dunbrack_pose_forward(
     ContextManager& mgr,
     TView<Vec<Real, 3>, 1, D> rot_coords,
@@ -103,7 +104,7 @@ void dunbrack_pose_forward(
     TView<Int, 1, D> block_is_mirrored,
     bool output_block_pair_energies,
     bool compute_derivs,
-    TView<Real, OutRank, D> V,
+    TView<EnergyReal, OutRank, D> V,
     TView<Vec<Real, 3>, 2, D> dV_dx,
     TView<Vec<Int, 4>, 2, D> dihedral_atom_inds,
     TView<Real, 2, D> dihedral_values,
