@@ -96,7 +96,7 @@ auto ElecPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
     TView<Int, 1, D> shared_compact_block_neighbors,
     bool output_block_pair_energies,
     bool compute_derivs) -> std::
-    tuple<TPack<Real, 4, D>, TPack<Vec<Real, 3>, 2, D>, TPack<Int, 3, D> > {
+    tuple<TPack<Real, 4, D>, TPack<Vec<Real, 3>, 2, D>, TPack<Int, 3, D>> {
   using tmol::score::common::accumulate;
   using Real3 = Vec<Real, 3>;
   int const n_atoms = rot_coords.size(0);
@@ -511,7 +511,7 @@ auto ElecRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
     bool output_block_pair_energies,
     bool compute_derivs,
     TPack<Int, 2, D> shared_dispatch_indices) -> std::
-    tuple<TPack<Real, 2, D>, TPack<Vec<Real, 3>, 2, D>, TPack<Int, 2, D> > {
+    tuple<TPack<Real, 2, D>, TPack<Vec<Real, 3>, 2, D>, TPack<Int, 2, D>> {
   using tmol::score::common::accumulate;
   using Real3 = Vec<Real, 3>;
   int const n_poses = first_rot_for_block.size(0);
@@ -745,13 +745,17 @@ auto ElecRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
   assert(block_type_intra_repr_path_distance.size(0) == n_block_types);
   assert(block_type_intra_repr_path_distance.size(1) == max_n_block_atoms);
   assert(block_type_intra_repr_path_distance.size(2) == max_n_block_atoms);
-  auto dV_dcoords_t = TPack<Vec<Real, 3>, 2, D>::zeros({1, n_atoms});
+  using GradReal = std::conditional_t<
+      D == Device::CUDA && std::is_same_v<Real, float>,
+      double,
+      Real>;
+  auto dV_dcoords_t = TPack<Vec<GradReal, 3>, 2, D>::zeros({1, n_atoms});
   auto dV_dcoords = dV_dcoords_t.view;
   // Optimal launch box on v100 and a100 is nt=32, vt=1
   // Define nt and reduce_t
   // State the kernel bodies read, named explicitly rather than
   // captured implicitly by [=].
-  ElecCtx<Real, Int, D, 2> ctx;
+  ElecCtx<Real, Int, D, 2, GradReal> ctx;
   ctx.rot_coords = rot_coords;
   ctx.rot_coord_offset = rot_coord_offset;
   ctx.block_type_ind_for_rot = block_type_ind_for_rot;
@@ -773,7 +777,7 @@ auto ElecRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
   ctx.dV_dcoords = dV_dcoords;
   ctx.max_n_blocks = max_n_blocks;
   elec_rotamer_backward_native<DeviceDispatch, D, Real, Int>(mgr, ctx);
-  return dV_dcoords_t;
+  return dV_dcoords_t.template cast<Vec<Real, 3>>();
 }
 }  // namespace potentials
 }  // namespace elec

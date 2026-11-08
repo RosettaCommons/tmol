@@ -781,7 +781,11 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_derivs_2(
            int start_atom2,
            TMOL_THREAD ElecScoringData<Real> const& score_dat,
            int cp_separation) {
-        elec_atom_derivs<Real, D>(
+        elec_atom_derivs<
+            Real,
+            D,
+            decltype(ctx.dV_dcoords),
+            typename Ctx::GradientReal>(
             atom_tile_ind1,
             atom_tile_ind2,
             start_atom1,
@@ -1065,7 +1069,11 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_derivs(
            int start_atom2,
            TMOL_THREAD ElecScoringData<Real> const& score_dat,
            int cp_separation) {
-        elec_atom_derivs<Real, D>(
+        elec_atom_derivs<
+            Real,
+            D,
+            decltype(ctx.dV_dcoords),
+            typename Ctx::GradientReal>(
             atom_tile_ind1,
             atom_tile_ind2,
             start_atom1,
