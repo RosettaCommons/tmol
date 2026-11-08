@@ -87,5 +87,8 @@ def test_double_kinematics_preserves_float_coordinate_storage(backend, name):
         movement.move_all_named_torsions = True
         minimized = execution.minimize(movement, 5)
         assert minimized.dtype == initial.dtype
+        if backend.framework == "jax":
+            diagnostics = execution.minimization_diagnostics
+            assert diagnostics["x"].dtype == diagnostics["grad"].dtype == np.float64
         assert backend.scores(minimized).sum() < backend.scores(initial).sum() - 1e-3
         np.testing.assert_array_equal(backend.coords(), initial)

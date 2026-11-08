@@ -25,9 +25,45 @@ from .test_current_conformers import current_samplers, ensure_fallback_sampler
     + [(name, False, True) for name in ("ligand", "d_peptide")],
 )
 def test_complete_packing_selects_conformers_and_preserves_chemistry(
-    backend, name, bump, soft_rep
+    backend, name, bump, soft_rep, monkeypatch
 ):
     check_complete_packing(backend, name, bump=bump, soft_rep=soft_rep)
+    if (
+        backend.framework == "jax"
+        and name == "mixed_batch"
+        and not bump
+        and not soft_rep
+    ):
+        import tmol_core.pack.streaming as policy
+        from tmol_jax.pack import streaming
+
+        # Validate production eligibility, then exercise both native replay routes
+        # on the selected CPU or CUDA lane using the same molecular oracle.
+        assert not policy.should_stream_interaction_graph("cpu", (), False)
+        assert policy.should_stream_interaction_graph("cuda", (), False)
+        for force_pages in (False, True):
+            with monkeypatch.context() as patch:
+                patch.setattr(
+                    policy, "should_stream_interaction_graph", lambda *args: True
+                )
+                original_fit = streaming.use_complete_table
+                patch.setattr(
+                    streaming,
+                    "use_complete_table",
+                    lambda scorer, coords: original_fit(
+                        scorer, coords, **({"score_window": 1} if force_pages else {})
+                    ),
+                )
+                calls = []
+                driver = streaming.build_streaming_interaction_graph
+
+                def observe(*args, **kwargs):
+                    calls.append(True)
+                    return driver(*args, **kwargs)
+
+                patch.setattr(streaming, "build_streaming_interaction_graph", observe)
+                check_complete_packing(backend, name, bump=False)
+                assert len(calls) == int(force_pages)
 
 
 @pytest.mark.parametrize("name", ("ligand", "mixed_batch"))
