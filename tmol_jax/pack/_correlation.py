@@ -18,7 +18,13 @@ def _compatible(indices, group, conformer):
 
 @partial(jax.jit, static_argnames=("size",))
 def _remap(values, indices, keep, mapping, blocks, *, size):
-    selected = jnp.nonzero(keep, size=size)[0]
+    # The caller has already counted the compatible entries. When all survive,
+    # their original order is the complete selection; avoid a full compaction.
+    selected = (
+        jnp.arange(size, dtype=jnp.int32)
+        if size == keep.size and size <= np.iinfo(np.int32).max
+        else jnp.nonzero(keep, size=size)[0]
+    )
     a, b = mapping[indices[1:, selected]]
     swap = blocks[a] > blocks[b]
     return values[selected], jnp.stack(
