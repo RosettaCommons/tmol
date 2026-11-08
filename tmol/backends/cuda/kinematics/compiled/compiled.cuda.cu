@@ -1,4 +1,5 @@
 #include <Eigen/Core>
+#include <type_traits>
 
 #include <tmol/utility/tensor/TensorPack.h>
 
@@ -170,10 +171,13 @@ struct KinDerivDispatch {
     typedef typename mgpu::launch_params_t<256, 3> launch_t;
     constexpr int nt = launch_t::nt, vt = launch_t::vt;
 
+    using SumReal =
+        std::conditional_t<std::is_same_v<Real, float>, double, Real>;
+    using Force = Eigen::Matrix<SumReal, 6, 1>;
     auto num_atoms = dVdx.size(0);
 
     nvtx_range_push("dispatch::dalloc");
-    auto f1f2s_t = TPack<f1f2Vectors, 1, D>::empty({num_atoms});
+    auto f1f2s_t = TPack<Force, 1, D>::empty({num_atoms});
     auto f1f2s = f1f2s_t.view;
     auto dsc_ddofs_t = TPack<KintreeDof, 1, D>::empty({num_atoms});
     auto dsc_ddofs = dsc_ddofs_t.view;
@@ -184,16 +188,16 @@ struct KinDerivDispatch {
     int carryoutBuffer, scanBuffer, lbsBuffer;
     mgpu::tie(scanBuffer, carryoutBuffer, lbsBuffer) =
         getScanBufferSize(gens, nt, vt);
-    auto scanCarryout_t = TPack<f1f2Vectors, 1, D>::empty({carryoutBuffer});
+    auto scanCarryout_t = TPack<Force, 1, D>::empty({carryoutBuffer});
     auto scanCarryout = scanCarryout_t.view;
     auto scanCodes_t = TPack<int, 1, D>::empty({carryoutBuffer});
     auto scanCodes = scanCodes_t.view;
     auto LBS_t = TPack<Int, 1, D>::empty({lbsBuffer});
     auto LBS = LBS_t.view;
-    auto f1f2scan_t = TPack<f1f2Vectors, 1, D>::empty({scanBuffer});
+    auto f1f2scan_t = TPack<Force, 1, D>::empty({scanBuffer});
     auto f1f2scan = f1f2scan_t.view;
     nvtx_range_pop();
-    kin_derivatives_cuda_native<Real, Int>(
+    kin_derivatives_cuda_native<Real, Int, SumReal>(
         *current_context(mgr),
         dVdx,
         hts,
