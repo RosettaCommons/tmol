@@ -43,28 +43,33 @@ class DunbrackEnergyTerm(EnergyTerm):
 
     def setup_for_pose_stack(self, pose_stack, pbt=None, *, additional_block_types=()):
         pbt = pose_stack.packed_block_types if pbt is None else pbt
-        supported = self._prepared(
-            "scoring_types",
-            lambda: self._scoring_types(pbt),
+        libraries = self._prepared(
+            "scoring_libraries",
+            lambda: self._scoring_libraries(pbt),
             *pbt._scoring_sources,
         )
-        # Keep the complete palette and its original IDs. Only storage for a
-        # provably inactive term is omitted; design includes its actual candidates.
+        # Keep the complete palette and its original IDs. Native table storage
+        # needs only the actual pose and sampled/design candidates.
+        selected = set()
         for types in (pose_stack.block_type_ind, *additional_block_types):
             indices = np.asarray(types)
-            if np.any(supported[indices[indices >= 0]]):
-                break
-        else:
+            selected.update(map(int, libraries[np.unique(indices[indices >= 0])]))
+        selected.discard(-1)
+        table_indices = tuple(sorted(selected))
+        if not table_indices:
             return DunbrackTermState(())
         parameters = self._prepared(
             "device_parameters",
-            lambda: self._packed_parameters(pbt, pose_stack.coords.dtype),
+            lambda: self._packed_parameters(
+                pbt, pose_stack.coords.dtype, table_indices
+            ),
             *pbt._scoring_sources,
             settings=(
                 pbt.max_n_atoms,
                 pbt.max_n_conn,
                 pbt.n_atoms.device,
                 pose_stack.coords.dtype,
+                table_indices,
             ),
         )
         if not parameters:
@@ -77,18 +82,18 @@ class DunbrackEnergyTerm(EnergyTerm):
             + parameters
         )
 
-    def _scoring_types(self, pbt):
+    def _scoring_libraries(self, pbt):
         lookup = prepare_dunbrack_lookup(self.param_db.scoring.dunbrack)
         return np.array(
             [
-                dunbrack_scoring_table_indices(bt, lookup)[0] >= 0
+                dunbrack_scoring_table_indices(bt, lookup)[0]
                 for bt in pbt.active_block_types
             ],
-            dtype=bool,
+            dtype=np.int32,
         )
 
-    def _packed_parameters(self, pbt, coordinate_dtype):
-        tables = prepare_dunbrack_parameters(self.param_db)
+    def _packed_parameters(self, pbt, coordinate_dtype, table_indices):
+        tables = prepare_dunbrack_parameters(self.param_db, table_indices=table_indices)
         lookup = (
             tables.all_table_indices,
             tables.rotameric_table_indices,

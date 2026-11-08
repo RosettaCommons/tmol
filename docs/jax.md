@@ -242,9 +242,10 @@ expanded_limit=1000, limit=1000).prepare_packed_block_types(pbt)` prepares share
 library/explicit-chi metadata on the palette's device. `prepare_atom_copy_plan(pbt,
 samplers)` preserves sampler-owned retained atom identities.
 
-Dunbrack-inactive objectives retain their zero channels without uploading unused
-scoring tables. The shared chemistry lookup checks both input and sampled design
-types; the complete palette, custom mappings and parameter context stay intact.
+Dunbrack scoring prepares native tables only for libraries used by the input and
+sampled design types. The common preparation validates the complete source lookup
+and preserves custom mappings; the full palette and parameter context stay intact.
+Inactive objectives retain their zero channels without uploading scoring tables.
 For a coordinate-independent objective, JAX can prune unused inputs. Specify
 `jax.jit(..., out_shardings=coords.sharding)` to retain their device when overriding
 JAX's default device.
