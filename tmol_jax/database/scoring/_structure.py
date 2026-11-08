@@ -3,7 +3,7 @@
 from typing import NewType
 import cattr
 
-from tmol_jax.utility.angle import parse_angle
+from tmol_core.units import parse_angle
 
 Angle = NewType("Angle", float)
 cattr.register_structure_hook(Angle, lambda value, _: parse_angle(value))

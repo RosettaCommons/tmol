@@ -2,7 +2,7 @@
 
 import math
 
-from typing import Union, Tuple, NewType
+from typing import Any, Union, Tuple, NewType
 
 import pint
 import cattr
@@ -78,3 +78,25 @@ cattr.register_structure_hook(BondAngle, lambda v, t: _parse_bond_angle(v))
 
 DihedralAngle = NewType("DihedralAngle", float)
 cattr.register_structure_hook(DihedralAngle, lambda v, t: _parse_dihedral_angle(v))
+
+
+def parse_angle(v: Any) -> float:
+    """Parse a number or unit-qualified string into radians."""
+    if v is None:
+        return v  # type: ignore[return-value]
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        parts = v.strip().split()
+        if len(parts) == 1:
+            return float(parts[0])
+        if len(parts) == 2:
+            val = float(parts[0])
+            unit = parts[1].lower()
+            if unit in ("rad", "radian", "radians"):
+                return val
+            if unit in ("deg", "degree", "degrees"):
+                return val * math.pi / 180.0
+            raise ValueError(f"Unknown angle unit: {unit!r} in {v!r}")
+        raise ValueError(f"Cannot parse angle: {v!r}")
+    raise TypeError(f"Cannot parse angle from type {type(v).__name__}: {v!r}")

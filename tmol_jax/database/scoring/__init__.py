@@ -7,20 +7,25 @@ from typing import Optional
 
 import attr
 from tmol_core.database.scoring import load_scoring_parameters
+from tmol_jax._compat import alias_modules
 
 from tmol_core.database.metal_coordination import MetalCoordinationDatabase
 from tmol_core.database.na_torsion import NaTorsionDatabase
 
-from .cartbonded import CartBondedDatabase
-from .disulfide import DisulfideDatabase
-from .genbonded import GenBondedDatabase
+from tmol_core.database.cartbonded import CartBondedDatabase
+from tmol_core.database.disulfide import DisulfideDatabase
+from tmol_core.database.genbonded import GenBondedDatabase
 from .dunbrack_libraries import DunbrackRotamerLibrary
 from .elec import ElecDatabase
 from .hbond import HBondDatabase
 from .ljlk import LJLKDatabase
 from .omega_bbdep import OmegaBBDepDatabase
 from .rama import RamaDatabase
-from .ref import RefDatabase
+from tmol_core.database.ref import RefDatabase
+
+alias_modules(
+    __name__, "tmol_core.database", ("cartbonded", "disulfide", "genbonded", "ref")
+)
 
 
 @attr.s(auto_attribs=True, slots=True, frozen=True)
