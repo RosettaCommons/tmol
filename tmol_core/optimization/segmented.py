@@ -179,7 +179,12 @@ class SegmentedLBFGSPolicy(SegmentedLBFGSSetup):
         small_grad = None
         if ctx.gradtol is not None:
             small_grad = self._seg_amax(self._abs(ctx.flat_grad)) <= ctx.gradtol
-            newly_converged |= ctx.needs_reset & small_grad
+            if ctx.atol is None and ctx.rtol is None:
+                # With energy tests disabled, the gradient is the convergence
+                # criterion, including initially stationary segments.
+                newly_converged |= small_grad
+            else:
+                newly_converged |= ctx.needs_reset & small_grad
         if ctx.prev_loss_vec is not None:
             dE = self._abs(ctx.loss_vec - ctx.prev_loss_vec)
             small = self._zeros_like(ctx.converged)
