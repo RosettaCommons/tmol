@@ -164,9 +164,13 @@ auto DunbrackPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
         // Block-pair autograd recomputes coordinate derivatives in backward.
         bool const accumulate_derivs =
             compute_derivs && !output_block_pair_energies;
+        using GradReal = std::conditional_t<
+            D == Device::CUDA && std::is_same_v<Real, float>,
+            double,
+            Real>;
         auto dV_dx_t = accumulate_derivs
-                           ? TPack<Vec<Real, 3>, 2, D>::zeros({3, n_atoms})
-                           : TPack<Vec<Real, 3>, 2, D>::empty({3, 0});
+                           ? TPack<Vec<GradReal, 3>, 2, D>::zeros({3, n_atoms})
+                           : TPack<Vec<GradReal, 3>, 2, D>::empty({3, 0});
 
         // Both CUDA modes fully write every scratch element they consume.
         // Keep CPU initialization while avoiding separate CUDA memset launches.
@@ -262,7 +266,8 @@ auto DunbrackPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
             dterm_dtor_xyz,
             rotameric_rottable_assignment,
             semirotameric_rottable_assignment);
-        return std::make_tuple(V_t.template cast<Real>(), dV_dx_t);
+        return std::make_tuple(
+            V_t.template cast<Real>(), dV_dx_t.template cast<Vec<Real, 3>>());
       });
 }
 
@@ -382,7 +387,11 @@ auto DunbrackPoseScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
   assert(block_semirotameric_tableset_offset.size(0) == n_block_types);
   assert(block_is_mirrored.size(0) == n_block_types);
 
-  auto dV_dx_t = TPack<Vec<Real, 3>, 2, D>::zeros({3, n_atoms});
+  using GradReal = std::conditional_t<
+      D == Device::CUDA && std::is_same_v<Real, float>,
+      double,
+      Real>;
+  auto dV_dx_t = TPack<Vec<GradReal, 3>, 2, D>::zeros({3, n_atoms});
 
   // Each CUDA work item fully initializes the scratch for its rotamer; retain
   // the prior zero-initialized allocation on CPU.
@@ -455,7 +464,7 @@ auto DunbrackPoseScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
       dihedral_values,
       dihedral_deriv,
       dterm_dtor_xyz);
-  return dV_dx_t;
+  return dV_dx_t.template cast<Vec<Real, 3>>();
 }
 
 template <
@@ -587,9 +596,13 @@ auto DunbrackRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
     dispatch_indices_t = TPack<Int, 2, D>::zeros({3, n_poses});
   }
   bool const accumulate_derivs = compute_derivs && !output_block_pair_energies;
+  using GradReal = std::conditional_t<
+      D == Device::CUDA && std::is_same_v<Real, float>,
+      double,
+      Real>;
   auto dV_dx_t = accumulate_derivs
-                     ? TPack<Vec<Real, 3>, 2, D>::zeros({3, n_atoms})
-                     : TPack<Vec<Real, 3>, 2, D>::empty({3, 0});
+                     ? TPack<Vec<GradReal, 3>, 2, D>::zeros({3, n_atoms})
+                     : TPack<Vec<GradReal, 3>, 2, D>::empty({3, 0});
 
   // Scratch is written before use; derivative terms reuse one buffer.
   auto dihedral_atom_inds_t =
@@ -662,7 +675,7 @@ auto DunbrackRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
       block_ind_for_rot,
       block_type_ind_for_rot,
       dispatch_indices);
-  return {V_t, dV_dx_t, dispatch_indices_t};
+  return {V_t, dV_dx_t.template cast<Vec<Real, 3>>(), dispatch_indices_t};
 }
 
 template <
@@ -781,7 +794,11 @@ auto DunbrackRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
   assert(block_semirotameric_tableset_offset.size(0) == n_block_types);
   assert(block_is_mirrored.size(0) == n_block_types);
 
-  auto dV_dx_t = TPack<Vec<Real, 3>, 2, D>::zeros({3, n_atoms});
+  using GradReal = std::conditional_t<
+      D == Device::CUDA && std::is_same_v<Real, float>,
+      double,
+      Real>;
+  auto dV_dx_t = TPack<Vec<GradReal, 3>, 2, D>::zeros({3, n_atoms});
 
   auto dihedral_atom_inds_t =
       TPack<Vec<Int, DIH_N_ATOMS>, 2, D>::zeros({n_rots, max_n_dih});
@@ -846,7 +863,7 @@ auto DunbrackRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
       pose_ind_for_rot,
       block_ind_for_rot,
       block_type_ind_for_rot);
-  return dV_dx_t;
+  return dV_dx_t.template cast<Vec<Real, 3>>();
 }
 
 }  // namespace potentials
