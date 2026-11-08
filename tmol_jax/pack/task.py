@@ -123,7 +123,8 @@ class PackerTask:
                     int(self.per_block_orig_block_type[pose, block])
                 ]
                 raise ValueError(
-                    f"pose {pose} block {block} ({original.name}): no allowed block type "
+                    f"pose {pose} block {block} ({original.name}): "
+                    "no allowed block type "
                     f"has a name3 in {sorted(names)}"
                 )
         self.per_block_is_block_type_allowed = allowed
@@ -192,6 +193,7 @@ class SetPackerTask:
             np.asarray(task.per_block_considered_block_types),
             np.asarray(task.per_block_is_block_type_allowed),
         )
+        prepared = {}
         for field in fields(rows):
             value = getattr(rows, field.name)
             # Device indices use the native int32 ABI, independent of x64 mode.
@@ -199,5 +201,6 @@ class SetPackerTask:
                 if value.size and np.max(value) >= 1 << 31:
                     raise OverflowError("packing row indices exceed int32")
                 value = value.astype(np.int32)
-            setattr(result, field.name, jax.device_put(value, task.device))
+            prepared[field.name] = value
+        result.__dict__.update(jax.device_put(prepared, task.device))
         return result
