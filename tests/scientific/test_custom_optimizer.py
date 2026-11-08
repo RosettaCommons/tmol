@@ -41,7 +41,10 @@ def test_custom_cartesian_optimizer_follows_analytic_molecular_target(backend, n
     Constraints(backend).attach([("harmonic_coordinate", atoms, parameters)])
     before = backend.scores(initial).sum()
     if backend.framework == "jax":
+        from functools import partial
         from tmol_jax import run_cart_min
+
+        minimize = partial(run_cart_min, backend.pose, backend.score_function, mask)
 
         def optimizer(objective, initial, *, segment_ids, **settings):
             np.testing.assert_array_equal(
@@ -49,13 +52,57 @@ def test_custom_cartesian_optimizer_follows_analytic_molecular_target(backend, n
             )
             return gradient_step(objective, initial, **settings)
 
-        result = run_cart_min(
-            backend.pose,
-            backend.score_function,
-            mask,
-            optimizer=optimizer,
-            optimizer_kwargs={"lr": 0.25},
-        )
+        result = minimize(optimizer=optimizer, optimizer_kwargs={"lr": 0.25})
+        if name == "ligand":
+            jax, jnp = backend.module, backend.module.numpy
+            for invalid in (
+                "shape",
+                "dtype",
+                "finite",
+                "initial_energy",
+                "energy_shape",
+            ):
+
+                def invalid_optimizer(*args, **kwargs):
+                    values = optimizer(*args, **kwargs)
+                    if invalid == "shape":
+                        values["grad"] = values["grad"][:-1]
+                    elif invalid == "dtype":
+                        values["x"] = values["x"].astype(jnp.float16)
+                    elif invalid == "initial_energy":
+                        values["initial_fun"] = jnp.nan
+                    elif invalid == "energy_shape":
+                        values["fun"] = jnp.zeros((2,))
+                    else:
+                        values["grad"] = values["grad"].at[0].set(jnp.nan)
+                    return values
+
+                with pytest.raises((ValueError, FloatingPointError), match="optimizer"):
+                    minimize(
+                        optimizer=invalid_optimizer,
+                        optimizer_kwargs={"lr": 0.1},
+                    )
+                np.testing.assert_array_equal(backend.coords(), initial)
+
+            def host_energies(*args, **kwargs):
+                values = optimizer(*args, **kwargs)
+                for field in ("initial_fun", "fun"):
+                    values[field] = jax.device_put(
+                        np.asarray(values[field]), jax.devices("cpu")[0]
+                    )
+                return values
+
+            reference = minimize(optimizer=optimizer, optimizer_kwargs={"lr": 1e-8})
+            transported, diagnostics = minimize(
+                optimizer=host_energies,
+                optimizer_kwargs={"lr": 1e-8},
+                return_result=True,
+            )
+            np.testing.assert_array_equal(transported.coords, reference.coords)
+            np.testing.assert_array_equal(backend.coords(), initial)
+            assert transported.coords.device == backend.device
+            assert diagnostics["grad"].device == backend.device
+            assert np.linalg.norm(np.asarray(diagnostics["grad"])) > 1e-3
     else:
         from tmol import run_cart_min
 

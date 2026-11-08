@@ -87,6 +87,23 @@ def observe_native_seed_stream(backend, monkeypatch):
 def test_search_seed_stream_preserves_molecular_packing(
     backend, monkeypatch, seed, chunked
 ):
+    if (
+        backend.framework == "jax"
+        and backend.requested_device == "cpu"
+        and not chunked
+        and seed >= 0
+    ):
+        from tmol_jax.pack.annealing import cuda_phase_seeds
+
+        for call, expected in enumerate(CUDA_SEEDS[seed]):
+            actual = cuda_phase_seeds(seed, call)
+            assert actual.dtype == np.uint8 and actual.shape == (3, 8)
+            np.testing.assert_array_equal(
+                actual.view(np.uint64).ravel(), np.asarray(expected, np.uint64)
+            )
+        if seed == 0:
+            with pytest.raises(ValueError, match="nonnegative"):
+                cuda_phase_seeds(0, -1)
     monkeypatch.setenv("TMOL_PACK_MAX_POSES_PER_CHUNK", "1" if chunked else "2")
     cuda = backend.requested_device == "cuda"
     reference_seed = (1 << 64) - 1 if seed == -1 else seed

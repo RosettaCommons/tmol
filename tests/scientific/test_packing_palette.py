@@ -1,5 +1,8 @@
 """Chemical choice preparation is distinct from packing execution."""
 
+from contextlib import nullcontext
+from importlib import import_module
+
 import numpy as np
 import pytest
 
@@ -60,6 +63,52 @@ def test_palette_preserves_termini_chirality_and_ligand_identity(
     restored = backend.palette_choices(noncanonical_design=noncanonical_design)
     for actual, expected in zip(restored, (counts, choices, original, repack)):
         np.testing.assert_array_equal(actual, expected)
+    if not noncanonical_design:
+        b, pbt = backend, backend.pose.packed_block_types
+        frontend = import_module("tmol_jax" if b.framework == "jax" else "tmol")
+        palette = frontend.PackerPalette()
+        dtype = np.int32 if b.framework == "jax" else np.int64
+
+        def indices(values):
+            values = np.asarray(values, dtype=dtype)
+            return (
+                b.module.device_put(values, b.device)
+                if b.framework == "jax"
+                else b.module.as_tensor(values, device=b.device)
+            )
+
+        default_device = (
+            b.module.default_device(b.module.devices("cpu")[0])
+            if b.framework == "jax"
+            else nullcontext()
+        )
+        with default_device:
+            for shape in ((2, 2), (0, 2)):
+                source = indices(np.full(shape, -1, dtype))
+                counts, choices, same = palette.block_types_from_original(pbt, source)
+                repack = palette.create_restrict_to_repacking_mask(pbt, source)
+                assert all(
+                    a.device == b.device for a in (counts, choices, same, repack)
+                )
+                counts, choices, same, repack = map(
+                    b.numpy, (counts, choices, same, repack)
+                )
+                assert counts.dtype == choices.dtype == dtype
+                assert same.dtype == repack.dtype == np.bool_
+                assert counts.shape == shape and choices.shape[:2] == shape
+                np.testing.assert_array_equal(counts, 0)
+                np.testing.assert_array_equal(choices, -1)
+                assert not same.any() and not repack.any()
+            # JAX validates these indices eagerly; Torch has a different boundary.
+            if b.framework == "jax":
+                for bad in (-2, pbt.n_types):
+                    source = indices([[bad]])
+                    for method in (
+                        palette.block_types_from_original,
+                        palette.create_restrict_to_repacking_mask,
+                    ):
+                        with pytest.raises(ValueError, match="outside the palette"):
+                            method(pbt, source)
 
 
 def test_task_identity_restrictions_preserve_unselected_chemistry(backend):

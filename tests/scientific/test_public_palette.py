@@ -113,6 +113,36 @@ def test_public_palette_context_lookup_and_cpu_transport(backend, name):
         np.testing.assert_array_equal(
             b.numpy(getattr(palette, field)), b.numpy(getattr(original, field))
         )
+    if b.framework == "jax" and name == "mixed_batch":
+        jax = b.module
+        lookup = jax.jit(lambda palette, indices: palette.n_atoms[indices])
+        batched = jax.jit(jax.vmap(lookup, in_axes=(None, 0)))
+        indices = jax.device_put(
+            np.array([[0, original.n_types - 1], [1, 0]]), b.device
+        )
+        expected = np.array([len(t.atoms) for t in active])
+        for iteration in range(2):
+            if iteration:
+                collection = chemistry.ResidueTypeSet.from_database(original.chem_db)
+                palette = front.PackedBlockTypes.from_restype_list(
+                    original.chem_db, collection, active, b.device
+                )
+            np.testing.assert_array_equal(
+                lookup(palette, indices[0]), expected[[0, -1]]
+            )
+            np.testing.assert_array_equal(batched(palette, indices), expected[indices])
+            restored = jax.jit(lambda p: p)(palette)
+            assert restored.restype_set is collection
+            assert restored.chem_db is original.chem_db
+            assert all(leaf.device == b.device for leaf in jax.tree.leaves(restored))
+            torsions = jax.jit(lambda p, i: (p.n_torsions[i], p.torsion_uaids[i]))
+            count, atoms = jax.jit(jax.vmap(torsions, in_axes=(None, 0)))(
+                palette, indices
+            )
+            np.testing.assert_array_equal(count, b.numpy(palette.n_torsions)[indices])
+            np.testing.assert_array_equal(
+                atoms, b.numpy(palette.torsion_uaids)[indices]
+            )
     copied = palette.cpu()
     assert copied.chem_db is palette.chem_db and copied.restype_set is collection
     assert (

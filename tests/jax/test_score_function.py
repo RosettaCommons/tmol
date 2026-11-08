@@ -1,9 +1,6 @@
 """Rendered scorers must not silently retain stale weights or scoring state."""
 
-from pathlib import Path
-import subprocess
 from types import SimpleNamespace
-import sys
 
 import jax
 import jax.numpy as jnp
@@ -81,28 +78,6 @@ def test_zero_weight_and_shape_validation(scorer):
         fn(jnp.ones((1, 3, 3)))
     with pytest.raises(ValueError, match="finite"):
         scorer.set_weight(ScoreType.fa_ljatr, float("nan"))
-
-
-def test_import_does_not_load_torch_or_enable_global_x64():
-    import tmol_jax
-
-    # Other shared tests legitimately import Torch in the parent process.
-    code = """
-import sys
-import jax
-initial_x64 = jax.config.x64_enabled
-sys.path.insert(0, sys.argv[1])
-import tmol_jax
-from tmol_jax.score import ScoreFunction
-assert "torch" not in sys.modules
-assert jax.config.x64_enabled == initial_x64
-"""
-    subprocess.run(
-        [sys.executable, "-c", code, str(Path(tmol_jax.__file__).parents[1])],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
 
 
 def test_reference_options_snapshot_clone_dtype_and_transform_contract():

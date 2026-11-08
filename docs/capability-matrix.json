@@ -146,8 +146,7 @@
         "tests/scientific/test_complete_preset.py",
         "tests/jax/test_packing_pages.py",
         "tests/scientific/test_packing_execution.py",
-        "tests/scientific/test_packing_batches.py",
-        "tests/jax/test_complete_table_budget.py"
+        "tests/scientific/test_packing_batches.py"
       ],
       "implementation_status": "Molecular values/gradients, fixed/current conformers, pose imposition and repacking tested. Topology changes require new prepared scorers; stale plans reject. JAX now consumes the common automatic memory-based pose-chunk policy with task/constraint/fragment-aware slicing and preserved shared palette identity. Mixed-system bump and nonbump packing, constrained repeated-fragment batches, and independent CUDA device-memory query/restoration have CPU/CUDA checks. Interaction-graph tile chunk_size is a separate setting. Independent CUDA packing without bump pruning replays bounded spatial score pages through the shared three-pass graph driver; retained graph/value identities and public molecular packing pass CPU/CUDA checks. Nonspatial terms retain their native per-term layouts. Complete workflow speed and peak-memory parity remain separately gated."
     },
@@ -363,9 +362,7 @@
       "jax": "prepared_cpu_values_source_gradients_jit_vmap",
       "repro_fixture": [
         "tests/scientific/test_atom37_input.py",
-        "tests/jax/test_atom37_transforms.py",
         "tests/scientific/test_atom37_tensor_input.py",
-        "tests/jax/test_atom37_tensor_transforms.py",
         "tests/scientific/test_atomworks_encoding.py",
         "tests/scientific/test_stated_termini.py",
         "tests/scientific/test_context_reconstruction.py"
@@ -643,7 +640,7 @@
     "jax": "cpu_cuda_installed_construction_lookup_transport_topology",
     "repro_fixture": [
       "tests/scientific/test_public_palette.py",
-      "tests/jax/test_palette_runtime.py"
+      "tests/scientific/test_packing_palette.py"
     ],
     "implementation_status": "Common topology source preserves supplied chemistry, residue-set and active-object identity, ordered lookup, counts, connections, bonds and named torsions. Shared ligand/noncanonical/D/DNA/metal cases and JAX jit/vmap verify physical atom order and device placement, including Torch-free installs. Preparation remains eager; metadata arrays are pytree leaves."
   },
@@ -669,8 +666,7 @@
     "torch": "supported_closure_based_optimizer_class",
     "jax": "functional_callable_cpu_scientific_checks",
     "repro_fixture": [
-      "tests/scientific/test_custom_optimizer.py",
-      "tests/jax/test_optimizer_callable.py"
+      "tests/scientific/test_custom_optimizer.py"
     ],
     "implementation_status": "Cartesian and kinematic public minimizers accept a functional optimizer over the existing compact-variable, frozen-coordinate and per-pose objective adapter. Shared tests check independent harmonic molecular motion and injected kinematic minimization. Result shape, dtype, device and finite gradients are required; settings and additional diagnostics pass through. Torch Optimizer/nn.Module/state_dict remain framework-specific; default algorithms and existing complete-workflow numerical/performance holds are unchanged. CPU: analytical ligand/noncanonical/mixed Cartesian and injected ligand/D kinematic assertions pass in both current frontends; actual mature Torch passes the same assertions with its normal complete chemistry palette for kinematics. A minimal zero-port mature ligand palette fails earlier fold-forest construction and is recorded separately. All 34 affected CUDA checks, eight Torch-free installed checks per platform and exact package provenance pass. Matched complete custom-SGD workflows across four domains and both process orders retain all 16 mature numerical holds; warm CUDA cost is 1.34\u20131.68 times mature Torch. This adds an optimizer contract, not complete workflow parity."
   }
