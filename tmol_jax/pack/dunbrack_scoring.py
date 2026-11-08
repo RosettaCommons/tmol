@@ -1,6 +1,7 @@
 """Sparse Dunbrack execution using the same tables and kernels as pose scoring."""
 
 from functools import partial
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -9,6 +10,19 @@ import numpy as np
 from tmol_jax.score._native import register, workspace_sizes
 from tmol_jax.score.dunbrack.dunbrack_energy_term import DunbrackEnergyTerm
 from .scoring import coordinate_vjp, validate_rotamer_context
+
+
+class RotamerDunbrackState(NamedTuple):
+    parameters: tuple
+    poses: jax.Array
+    precise_gradient: bool
+
+
+jax.tree_util.register_pytree_node(
+    RotamerDunbrackState,
+    lambda state: ((state.parameters, state.poses), state.precise_gradient),
+    lambda precise, children: RotamerDunbrackState(*children, precise),
+)
 
 
 def prepare_rotamer_dunbrack(pose, rotamers, database, *, term=None):
@@ -28,7 +42,9 @@ def prepare_rotamer_dunbrack(pose, rotamers, database, *, term=None):
             rotamers.block_ind_for_rot,
             rotamers.block_type_ind_for_rot,
         )
-    return parameters, rotamers.pose_for_rot, pose.device.platform == "gpu"
+    return RotamerDunbrackState(
+        parameters, rotamers.pose_for_rot, pose.device.platform == "gpu"
+    )
 
 
 @partial(jax.jit, static_argnames=("workspace", "backward", "target"))

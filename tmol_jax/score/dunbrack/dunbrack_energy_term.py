@@ -33,6 +33,13 @@ class DunbrackTermState(NamedTuple):
     precise_gradient: bool = False
 
 
+jax.tree_util.register_pytree_node(
+    DunbrackTermState,
+    lambda state: ((state.parameters,), state.precise_gradient),
+    lambda precise, children: DunbrackTermState(children[0], precise),
+)
+
+
 class DunbrackEnergyTerm(EnergyTerm):
     @staticmethod
     def score_types_provided():
