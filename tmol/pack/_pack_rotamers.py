@@ -300,9 +300,6 @@ def _anneal_on(energy_tables, anneal_device, pose_device, n_trajectories):
         return _run_simulated_annealing(energy_tables, n_trajectories)
 
     anneal_device = torch.device(anneal_device)
-    if anneal_device == pose_device:
-        return _run_simulated_annealing(energy_tables, n_trajectories)
-
     # Not TensorGroup.to: the table group carries plain ints beside its
     # tensors, which that method rejects.
     moved = attr.evolve(
