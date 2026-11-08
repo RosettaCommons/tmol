@@ -126,15 +126,28 @@ def test_kinematic_wolfe_retains_shared_molecular_minimization_contract(
 
 
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
-def test_step_norm_preserves_dtype_device_and_array_transformations(dtype):
-    # These integer magnitudes have an exactly representable sum in both dtypes.
+@pytest.mark.parametrize("operation", ("abs_sum", "dot"))
+def test_step_reductions_preserve_dtype_device_and_array_transformations(
+    dtype, operation
+):
+    # These integer reductions are exactly representable in both dtypes.
     values = jnp.asarray([-4, 2, -1, 8], dtype=dtype)
-    norm = JaxStrongWolfeExecution.abs_sum
+    if operation == "abs_sum":
+        norm = JaxStrongWolfeExecution.abs_sum
+        expected, derivative = 15, [-1, 1, -1, 1]
+    else:
+        weights = jnp.asarray([1, 2, 3, 4], dtype=dtype)
+
+        def norm(x):
+            return JaxStrongWolfeExecution.dot(x, weights)
+
+        expected, derivative = 29, weights
     for function in (norm, jax.jit(norm)):
         result = function(values)
         assert result.dtype == values.dtype and result.device == values.device
-        np.testing.assert_array_equal(result, 15)
+        np.testing.assert_array_equal(result, expected)
     np.testing.assert_array_equal(
-        jax.jit(jax.vmap(norm))(jnp.stack((values, values * 2))), [15, 30]
+        jax.jit(jax.vmap(norm))(jnp.stack((values, values * 2))),
+        [expected, expected * 2],
     )
-    np.testing.assert_array_equal(jax.grad(norm)(values), [-1, 1, -1, 1])
+    np.testing.assert_array_equal(jax.grad(norm)(values), derivative)

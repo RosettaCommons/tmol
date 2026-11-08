@@ -10,10 +10,10 @@ from tmol_jax._compilation import jit_without_autotuning
 class JaxStrongWolfeExecution:
     # Immutable arrays can share snapshots without a device copy.
     clone = staticmethod(lambda x: x)
-    dot = staticmethod(jax.jit(jnp.dot))
+    # Scalar reductions determine trial steps and line-search decisions. Keep
+    # their compilation stable without promoting the molecular coordinate dtype.
+    dot = staticmethod(jit_without_autotuning(jnp.dot))
     abs_max = staticmethod(jax.jit(lambda x: jnp.max(jnp.abs(x))))
-    # The initial step depends on this reduction. Avoid autotuning-dependent
-    # reduction order while preserving the input dtype and common policy.
     abs_sum = staticmethod(jit_without_autotuning(lambda x: jnp.sum(jnp.abs(x))))
     sqrt = staticmethod(jnp.sqrt)
     add_scaled = staticmethod(
