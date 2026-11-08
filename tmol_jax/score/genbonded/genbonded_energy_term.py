@@ -37,6 +37,21 @@ class GenBondedEnergyTerm(EnergyTerm):
         ):
             return ()
         register("tmol_genbonded")
+        device = pose_stack.coords.device
+        chemical_arrays = prepared_palette(
+            pbt,
+            self.param_db,
+            "genbonded",
+            lambda: self._prepare_parameters(pbt, prep, blocks, device),
+            device=device,
+        )
+        return (
+            jax.device_put(bonded_pose_arguments(pose_stack, pbt), device=device)
+            + chemical_arrays
+        )
+
+    def _prepare_parameters(self, pbt, prep, blocks, device):
+        types = pbt.active_block_types
         packed = list(
             self._prepared(
                 "packed",
@@ -51,20 +66,9 @@ class GenBondedEnergyTerm(EnergyTerm):
                 padding = [(0, 0)] * packed[i].ndim
                 padding[1] = (0, ports - packed[i].shape[1])
                 packed[i] = np.pad(packed[i], padding)
-        device = pose_stack.coords.device
-        chemical_arrays = prepared_palette(
-            pbt,
-            self.param_db,
-            "genbonded",
-            lambda: jax.device_put(
-                (*packed, *self._prepared("inter_tables", prep.inter_tables)),
-                device=device,
-            ),
+        return jax.device_put(
+            (*packed, *self._prepared("inter_tables", prep.inter_tables)),
             device=device,
-        )
-        return (
-            jax.device_put(bonded_pose_arguments(pose_stack, pbt), device=device)
-            + chemical_arrays
         )
 
     @classmethod

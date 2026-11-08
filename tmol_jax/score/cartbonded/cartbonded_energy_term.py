@@ -27,6 +27,26 @@ class CartBondedEnergyTerm(EnergyTerm):
 
     def setup_for_pose_stack(self, pose_stack, pbt=None):
         pbt = pose_stack.packed_block_types if pbt is None else pbt
+        register("tmol_cartbonded")
+        precise = pose_stack.coords.device.platform == "gpu"
+        if precise:
+            register("tmol_cartbonded_precise")
+        device = pose_stack.coords.device
+        chemical_arrays = prepared_palette(
+            pbt,
+            self.param_db,
+            "cartbonded",
+            lambda: self._prepare_parameters(pbt, device),
+            device=device,
+        )
+        parameters = (
+            jax.device_put(bonded_pose_arguments(pose_stack, pbt), device=device)
+            + chemical_arrays
+        )
+
+        return parameters, precise
+
+    def _prepare_parameters(self, pbt, device):
         prep = self._prepared(
             "resolver",
             lambda: CartBondedPreparation(
@@ -38,43 +58,26 @@ class CartBondedEnergyTerm(EnergyTerm):
         host = self._prepared(
             "packed", lambda: prep.prepare_packed(types), *pbt._scoring_sources
         )
-        register("tmol_cartbonded")
-        precise = pose_stack.coords.device.platform == "gpu"
-        if precise:
-            register("tmol_cartbonded_precise")
-        device = pose_stack.coords.device
-        chemical_arrays = prepared_palette(
-            pbt,
-            self.param_db,
-            "cartbonded",
-            lambda: jax.device_put(
-                (
-                    host.atom_unique_ids,
-                    host.atom_wildcard_ids,
-                    host.atom_is_rosetta,
-                    np.asarray([bt.is_ligand_fragment for bt in types], dtype=np.int32),
-                    host.atom_cross_ids,
-                    host.connection_hash_keys,
-                    host.connection_spans,
-                    host.connection_paths,
-                    host.cartbonded_params_hash_keys,
-                    host.cartbonded_params_hash_values,
-                    host.cartbonded_subgraphs,
-                    host.cartbonded_subgraph_offsets,
-                    host.cartbonded_subgraph_type_counts,
-                    host.cartbonded_subgraph_type_offsets,
-                    host.cartbonded_subgraph_param_indices,
-                ),
-                device=device,
+        return jax.device_put(
+            (
+                host.atom_unique_ids,
+                host.atom_wildcard_ids,
+                host.atom_is_rosetta,
+                np.asarray([bt.is_ligand_fragment for bt in types], dtype=np.int32),
+                host.atom_cross_ids,
+                host.connection_hash_keys,
+                host.connection_spans,
+                host.connection_paths,
+                host.cartbonded_params_hash_keys,
+                host.cartbonded_params_hash_values,
+                host.cartbonded_subgraphs,
+                host.cartbonded_subgraph_offsets,
+                host.cartbonded_subgraph_type_counts,
+                host.cartbonded_subgraph_type_offsets,
+                host.cartbonded_subgraph_param_indices,
             ),
             device=device,
         )
-        parameters = (
-            jax.device_put(bonded_pose_arguments(pose_stack, pbt), device=device)
-            + chemical_arrays
-        )
-
-        return parameters, precise
 
     @classmethod
     def evaluate(cls, term_state, coords):
