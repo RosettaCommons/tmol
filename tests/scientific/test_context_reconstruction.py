@@ -185,6 +185,10 @@ def test_context_heavy_atom_coordinates_and_derivatives(backend, case, dtype):
             atol=3e-3 if dtype == np.float32 else 2e-6,
         )
 
+    _check_explicit_residue_reconstruction(backend, case, dtype)
+
+
+def _check_explicit_residue_reconstruction(backend, case, dtype):
     if backend.framework != "jax":
         return
     import dataclasses

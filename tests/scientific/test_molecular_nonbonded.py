@@ -51,4 +51,38 @@ def check_molecular_nonbonded_channels(backend, name, terms):
             DOMAIN_CASES[name],
             terms,
             empty_term="fa_ljatr" if len(terms) == 4 else None,
+            prepared_check=_check_explicit_nonbonded_state if terms == TERMS else None,
         )
+
+
+def _check_explicit_nonbonded_state(b, x):
+    from tmol_jax.score.nonbonded import (
+        prepare_nonbonded,
+        prepare_independent_nonbonded,
+        nonbonded_energy,
+        independent_nonbonded_energy,
+    )
+
+    # Pass the state through jit: closing over it hides traced dispatch metadata.
+    for electrostatic in (None, False, True):
+        with b.module.default_device(b.device):
+            if electrostatic is None:
+                state = prepare_nonbonded(b.pose, b.parameter_database)
+                execute = nonbonded_energy
+            else:
+                state = prepare_independent_nonbonded(
+                    b.pose, b.parameter_database, electrostatic=electrostatic
+                )
+                execute = independent_nonbonded_energy
+        expected = b.module.jit(
+            b.module.value_and_grad(lambda coords: execute(coords, state).sum())
+        )(x)
+        actual = b.module.jit(
+            b.module.value_and_grad(
+                lambda coords, prepared: execute(coords, prepared).sum()
+            )
+        )(x, state)
+        for result, reference in zip(actual, expected):
+            np.testing.assert_allclose(
+                b.numpy(result), b.numpy(reference), rtol=2e-6, atol=2e-6
+            )
