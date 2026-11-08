@@ -79,7 +79,14 @@ constexpr Device KinematicDevice = Device::CPU;
 
 template <typename Real, bool Derivative>
 struct KinematicWorkspace {
-  using Sum = Eigen::Matrix<Real, 6, 1>;
+#ifdef __CUDACC__
+  // Match the shared CUDA reverse scan's wider force accumulation. Public
+  // coordinates and DOF derivatives retain Real; forward scratch is unchanged.
+  using SumReal = std::conditional_t<Derivative, double, Real>;
+#else
+  using SumReal = Real;
+#endif
+  using Sum = Eigen::Matrix<SumReal, 6, 1>;
   using ScanValue =
       std::conditional_t<Derivative, Sum, kinematics::KinTransform<Real>>;
   ByteWorkspace storage;
@@ -179,7 +186,7 @@ void execute_kinematic_scan(
     auto dx = buffer_view<Coord, 1, D>(args[0]);
     auto ddofs = buffer_view<Dofs, 1, D>(result);
 #ifdef __CUDACC__
-    kinematics::kin_derivatives_cuda_native<Real, I>(
+    kinematics::kin_derivatives_cuda_native<Real, I, typename Work::SumReal>(
         stream,
         dx,
         hts,
