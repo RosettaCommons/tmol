@@ -2,6 +2,7 @@
 
 import attr
 import copy
+from functools import partial
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -23,6 +24,19 @@ from tmol_core.pack.kinematics import annotate_residue_rotamer_kinematics
 from tmol_jax.kinematics._host import NativePosePlanner
 from tmol_jax.score.dunbrack.parameters import prepare_dunbrack_parameters
 from ._sampler import SamplerSupport
+
+
+@partial(jax.jit, static_argnames=("n_gbt", "max_n_chi"))
+def _sampling_result(
+    counts, identities, chi, selected, types, defining, *, n_gbt, max_n_chi
+):
+    """Map native samples to considered identities in one device execution."""
+    return (
+        jnp.zeros(n_gbt, dtype=jnp.int32).at[selected].set(counts),
+        selected[identities],
+        defining[types[identities]],
+        jnp.pad(chi, ((0, 0), (0, max_n_chi - chi.shape[1]))),
+    )
 
 
 class DunbrackChiSampler(SamplerSupport):
@@ -228,7 +242,7 @@ class DunbrackChiSampler(SamplerSupport):
             np.asarray(task.cons_bt_block_type),
             np.asarray(task.cons_bt_which_block_type),
             np.asarray(task.is_cons_bt_allowed),
-            np.asarray(task.per_block_conformer_sampler_allowed[..., sampler_index]),
+            np.asarray(task.per_block_conformer_sampler_allowed)[..., sampler_index],
             np.asarray(task.per_block_chi_expansion),
             real_dtype=pose_stack.coords.dtype,
         )
@@ -273,13 +287,22 @@ class DunbrackChiSampler(SamplerSupport):
                 ),
                 max_samples_per_restype=max(task.chi_sample_budget or (0,)),
             )
-            selected = jnp.asarray(request.bbt_to_gbt, dtype=jnp.int32)
-            types = jnp.asarray(request.block_type_ind_for_bbt, dtype=jnp.int32)
-            defining = jnp.asarray(metadata.chi_defining_atom, dtype=jnp.int32)
-            chi = jnp.pad(chi, ((0, 0), (0, request.max_n_chi - chi.shape[1])))
-            return (
-                jnp.zeros(request.n_gbt, dtype=jnp.int32).at[selected].set(counts),
-                selected[identities],
-                defining[types[identities]],
+            indices = jax.device_put(
+                tuple(
+                    np.asarray(value, dtype=np.int32)
+                    for value in (
+                        request.bbt_to_gbt,
+                        request.block_type_ind_for_bbt,
+                        metadata.chi_defining_atom,
+                    )
+                ),
+                device,
+            )
+            return _sampling_result(
+                counts,
+                identities,
                 chi,
+                *indices,
+                n_gbt=request.n_gbt,
+                max_n_chi=request.max_n_chi,
             )
