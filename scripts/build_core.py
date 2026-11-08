@@ -4,12 +4,10 @@
 import argparse
 from pathlib import Path
 import shutil
-import subprocess
-import sys
 import tempfile
 import tomllib
 
-from build_source import stamp_package
+from build_source import build_stage, stamp_package
 
 
 def build_core(outdir, *, no_isolation=False, source_revision=None):
@@ -34,18 +32,7 @@ def build_core(outdir, *, no_isolation=False, source_revision=None):
         metadata = tomllib.loads((root / "pyproject.toml").read_text())
         (stage / "VERSION").write_text(metadata["project"]["version"] + "\n")
         stamp_package(root, stage, "tmol_core", source_revision)
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "build",
-                *(["--no-isolation"] if no_isolation else []),
-                "--outdir",
-                str(Path(outdir).resolve()),
-                str(stage),
-            ],
-            check=True,
-        )
+        build_stage(stage, outdir, no_isolation=no_isolation)
 
 
 if __name__ == "__main__":

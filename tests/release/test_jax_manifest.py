@@ -1,18 +1,14 @@
 """Same-version artifacts must not substitute for the recorded release."""
 
-import importlib.util
 import json
-from pathlib import Path
 import zipfile
 
 import pytest
 
+import jax_release_manifest as release
+
 
 def test_release_rejects_swapped_artifact_and_changed_native_binary(tmp_path):
-    script = Path(__file__).resolve().parents[2] / "scripts/jax_release_manifest.py"
-    spec = importlib.util.spec_from_file_location("release_manifest", script)
-    release = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(release)
     revision = "a" * 40
 
     def wheel(package, source_revision=revision, binary=b"native", recorded=b"native"):

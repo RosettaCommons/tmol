@@ -7,12 +7,10 @@ import json
 from pathlib import Path
 import os
 import shutil
-import subprocess
-import sys
 import tempfile
 import tomllib
 
-from build_source import source_identity
+from build_source import build_stage, source_identity
 
 
 def stage_native_headers(root, stage):
@@ -138,19 +136,7 @@ def main():
         environment["TMOL_JAX_NATIVE_CUDA"] = "1" if args.cuda else "0"
         if args.cuda_architectures:
             environment["CMAKE_CUDA_ARCHITECTURES"] = args.cuda_architectures
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "build",
-                "--no-isolation",
-                "--outdir",
-                str(args.outdir.resolve()),
-                str(stage),
-            ],
-            env=environment,
-            check=True,
-        )
+        build_stage(stage, args.outdir, no_isolation=True, env=environment)
 
 
 if __name__ == "__main__":

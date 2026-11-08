@@ -10,8 +10,6 @@ from pathlib import Path
 import argparse
 import inspect
 import shutil
-import subprocess
-import sys
 import tempfile
 import tomllib
 
@@ -20,7 +18,7 @@ import attr
 import yaml
 
 from build_core import build_core
-from build_source import stamp_package
+from build_source import build_stage, stamp_package
 
 
 def export_parameters(source, destination):
@@ -154,18 +152,7 @@ def main():
         metadata = tomllib.loads((root / "pyproject.toml").read_text())
         (stage / "VERSION").write_text(metadata["project"]["version"] + "\n")
         stamp_package(root, stage, "tmol_jax", args.source_revision)
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "build",
-                *(["--no-isolation"] if args.no_isolation else []),
-                "--outdir",
-                str(args.outdir.resolve()),
-                str(stage),
-            ],
-            check=True,
-        )
+        build_stage(stage, args.outdir, no_isolation=args.no_isolation)
 
 
 if __name__ == "__main__":

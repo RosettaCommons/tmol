@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 
 def source_identity(root, revision=None):
@@ -73,4 +74,20 @@ def stamp_package(root, stage, package, revision=None):
     (directory / "source.json").write_text(json.dumps(record, indent=2) + "\n")
     (stage / "MANIFEST.in").write_text(
         f"include VERSION\ninclude {package}/source.json\n"
+    )
+
+
+def build_stage(stage, outdir, *, no_isolation=False, env=None):
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "build",
+            *(["--no-isolation"] if no_isolation else []),
+            "--outdir",
+            str(Path(outdir).resolve()),
+            str(stage),
+        ],
+        check=True,
+        env=env,
     )
