@@ -19,7 +19,8 @@ source consolidation remains unfinished.
 
 `tmol_jax.ligand` exposes the common ligand preparation and parameter-file APIs.
 SMILES generation uses the shared distance-geometry bounds, chirality/planarity
-objectives and restart policy with JAX differentiation and optimization. MOL2
+objectives, stage schedules and restart policy with JAX differentiation and
+optimization. MOL2
 `mode="keep"` retains supplied geometry and charges. The returned database keeps
 the caller's subtype and must be used for subsequent pose construction and scoring.
 Optional ligand preparation dependencies are available as `tmol-jax[ligand]`
@@ -445,7 +446,9 @@ palette for ligands, noncanonical/D polymers, nucleic acids and mixed batches.
 It uses common native candidate, terminus, histidine, protonation, cycle and
 connection policies, plus shared disulfide, metal and covalent-attachment preparation. Observed
 coordinates retain their dtype and atom identities; missing leaf atoms use the
-common native frames. Explicit bonds refer to canonical residue/atom indices,
+common native frames. File and atom37 completion leave sampler-owned missing
+atoms and dependent leaves for native packing to build; observed atoms remain
+unchanged. Explicit bonds refer to canonical residue/atom indices,
 including when the input contains padding. Interior padding breaks chains by
 default; `compact_padding=True` removes virtual slots while retaining adjacency,
 matching the Torch canonical-input contract. Input preparation runs on the host;
