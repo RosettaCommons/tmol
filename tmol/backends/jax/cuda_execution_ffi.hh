@@ -291,8 +291,8 @@ struct KernelDispatch {
   template <Device D>
   using Ops = CudaOps<D>;
 };
-template <>
-struct KernelDispatch<DunbrackKernel> {
+template <bool PreciseGradient>
+struct KernelDispatch<DunbrackKernelT<PreciseGradient>> {
   template <Device D>
   using Ops = DunbrackCudaOps<D>;
 };

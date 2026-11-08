@@ -14,6 +14,7 @@ struct DunbrackWorkspace {
   Vec<I, 4>* atoms;
   Real* values;
   double* energy = nullptr;
+  double* gradient_accumulation = nullptr;
   Derivative* dihedral_derivatives;
   Derivative* term_derivatives;
   I* rotameric_assignment;
@@ -24,7 +25,8 @@ struct DunbrackWorkspace {
       size_t dihedrals,
       bool derivatives,
       void* data = nullptr,
-      size_t poses = 0)
+      size_t poses = 0,
+      size_t gradient_values = 0)
       : storage(data) {
     atoms = storage.take<Vec<I, 4>>(rots * dihedrals);
     values = storage.take<Real>(rots * dihedrals);
@@ -36,10 +38,13 @@ struct DunbrackWorkspace {
     semirotameric_assignment = storage.take<I>(rots);
     if constexpr (std::is_same_v<Real, float>)
       energy = storage.take<double>(3 * poses);
+    if constexpr (std::is_same_v<Real, float>)
+      gradient_accumulation = storage.take<double>(gradient_values);
   }
 };
 
-struct DunbrackKernel {
+template <bool PreciseGradient = false>
+struct DunbrackKernelT {
   // Shared forward evaluation writes each scratch value before reading it.
   static constexpr bool zero_workspace = false;
   static void validate(
@@ -105,10 +110,19 @@ struct DunbrackKernel {
                      dihedrals,
                      derivative,
                      nullptr,
-                     a[0].dimensions().size() == 3 ? a[0].dimensions()[0] : 0)
+                     a[0].dimensions().size() == 3 ? a[0].dimensions()[0] : 0,
+                     PreciseGradient && derivative
+                         ? gradient_values(
+                               a[0].size_bytes() / (3 * sizeof(float)))
+                         : 0)
                      .storage.size_bytes()
                : DunbrackWorkspace<double>(rots, dihedrals, derivative)
                      .storage.size_bytes();
+  }
+
+  static size_t gradient_values(size_t atoms) {
+    return score::common::checked_dispatch_product(
+        atoms, 9, "Dunbrack gradient values");
   }
 
   template <Device D, typename Real>
@@ -171,38 +185,61 @@ struct DunbrackKernel {
     auto rots = a[1].dimensions()[0], dihedrals = a[25].dimensions()[1];
     auto derivative_rots = gradient ? rots : 0;
     DunbrackWorkspace<Real> work(
-        rots, dihedrals, gradient != nullptr, workspace.untyped_data(), poses);
+        rots,
+        dihedrals,
+        gradient != nullptr,
+        workspace.untyped_data(),
+        poses,
+        PreciseGradient && gradient ? gradient_values(poses * atoms) : 0);
     ContextManager context;
     EnergyAccumulator<Ops, D, Real> total(context, energy, work.energy);
     using EnergyReal = typename decltype(total)::Value;
+    using GradReal = std::conditional_t<PreciseGradient, EnergyReal, Real>;
+    std::optional<EnergyAccumulator<Ops, D, Real>> derivative;
+    if constexpr (PreciseGradient) {
+      if (gradient)
+        derivative.emplace(context, *gradient, work.gradient_accumulation);
+    }
+    auto* gradient_data =
+        derivative ? derivative->template view<3>({3, poses * atoms, 3}).data()
+                   : (gradient ? gradient->untyped_data() : nullptr);
     std::apply(
         [&](auto... operands) {
-          score::dunbrack::potentials::
-              dunbrack_pose_forward<Ops, D, Real, I, I, 4, EnergyReal>(
-                  context,
-                  operands...,
-                  false,
-                  gradient != nullptr,
-                  total.template view<4>({3, poses, 1, 1}),
-                  contiguous_view<Vec<Real, 3>, 2, D>(
-                      gradient ? gradient->untyped_data() : nullptr,
-                      {3, gradient ? poses * atoms : 0}),
-                  contiguous_view<Vec<I, 4>, 2, D>(
-                      work.atoms, {rots, dihedrals}),
-                  contiguous_view<Real, 2, D>(work.values, {rots, dihedrals}),
-                  contiguous_view<Derivative, 2, D>(
-                      work.dihedral_derivatives, {derivative_rots, dihedrals}),
-                  contiguous_view<Derivative, 2, D>(
-                      work.term_derivatives, {derivative_rots, 3}),
-                  contiguous_view<I, 1, D>(work.rotameric_assignment, {rots}),
-                  contiguous_view<I, 1, D>(
-                      work.semirotameric_assignment, {rots}));
+          score::dunbrack::potentials::dunbrack_pose_forward<
+              Ops,
+              D,
+              Real,
+              I,
+              I,
+              4,
+              EnergyReal,
+              GradReal>(
+              context,
+              operands...,
+              false,
+              gradient != nullptr,
+              total.template view<4>({3, poses, 1, 1}),
+              contiguous_view<Vec<GradReal, 3>, 2, D>(
+                  gradient_data, {3, gradient ? poses * atoms : 0}),
+              contiguous_view<Vec<I, 4>, 2, D>(work.atoms, {rots, dihedrals}),
+              contiguous_view<Real, 2, D>(work.values, {rots, dihedrals}),
+              contiguous_view<Derivative, 2, D>(
+                  work.dihedral_derivatives, {derivative_rots, dihedrals}),
+              contiguous_view<Derivative, 2, D>(
+                  work.term_derivatives, {derivative_rots, 3}),
+              contiguous_view<I, 1, D>(work.rotameric_assignment, {rots}),
+              contiguous_view<I, 1, D>(work.semirotameric_assignment, {rots}));
         },
         arguments<D, Real>(a));
     total.finish(context);
+    if (derivative) derivative->finish(context);
   }
 };
-struct RotamerDunbrackStage {
+using DunbrackKernel = DunbrackKernelT<false>;
+using DunbrackPreciseKernel = DunbrackKernelT<true>;
+
+template <bool PreciseGradient = false>
+struct RotamerDunbrackStageT {
   static int fill(int64_t, size_t index) { return index == 1 ? -1 : 0; }
   static void validate(
       const std::vector<ffi::AnyBuffer>& a,
@@ -233,7 +270,8 @@ struct RotamerDunbrackStage {
     require_shape(
         out[1],
         ffi::DataType::U8,
-        {static_cast<int64_t>(DunbrackKernel::workspace_bytes(a, backward))});
+        {static_cast<int64_t>(
+            DunbrackKernelT<PreciseGradient>::workspace_bytes(a, backward))});
     require_shape(out[2], integer, {3, backward ? 0 : rots});
     if (atoms > INT32_MAX || rots > INT32_MAX)
       throw std::invalid_argument("Dunbrack conformer layout exceeds int32");
@@ -248,7 +286,13 @@ struct RotamerDunbrackStage {
     auto atoms = a[0].dimensions()[0], rots = a[1].dimensions()[0];
     auto dihedrals = a[25].dimensions()[1];
     DunbrackWorkspace<Real> work(
-        rots, dihedrals, backward, out[1].untyped_data());
+        rots,
+        dihedrals,
+        backward,
+        out[1].untyped_data(),
+        0,
+        PreciseGradient && backward ? DunbrackKernel::gradient_values(atoms)
+                                    : 0);
     auto scratch = std::make_tuple(
         contiguous_view<Vec<I, 4>, 2, D>(work.atoms, {rots, dihedrals}),
         contiguous_view<Real, 2, D>(work.values, {rots, dihedrals}),
@@ -261,6 +305,17 @@ struct RotamerDunbrackStage {
         buffer_view<I, 1, D>(a[37]),
         buffer_view<I, 1, D>(a[38]));
     ContextManager context;
+    using Accumulator = EnergyAccumulator<Ops, D, Real>;
+    using GradReal =
+        std::conditional_t<PreciseGradient, typename Accumulator::Value, Real>;
+    std::optional<Accumulator> derivative;
+    if constexpr (PreciseGradient) {
+      if (backward)
+        derivative.emplace(context, out[0], work.gradient_accumulation);
+    }
+    auto* gradient_data =
+        derivative ? derivative->template view<3>({3, atoms, 3}).data()
+                   : out[0].untyped_data();
     std::apply(
         [&](auto... operands) {
           std::apply(
@@ -268,15 +323,21 @@ struct RotamerDunbrackStage {
                 std::apply(
                     [&](auto... maps) {
                       if (backward) {
-                        score::dunbrack::potentials::
-                            dunbrack_pose_backward<Ops, D, Real, I, I, 2>(
-                                context,
-                                operands...,
-                                buffer_view<Real, 2, D>(a[39]),
-                                contiguous_view<Vec<Real, 3>, 2, D>(
-                                    out[0].untyped_data(), {3, atoms}),
-                                temporary...,
-                                maps...);
+                        score::dunbrack::potentials::dunbrack_pose_backward<
+                            Ops,
+                            D,
+                            Real,
+                            I,
+                            I,
+                            2,
+                            GradReal>(
+                            context,
+                            operands...,
+                            buffer_view<Real, 2, D>(a[39]),
+                            contiguous_view<Vec<GradReal, 3>, 2, D>(
+                                gradient_data, {3, atoms}),
+                            temporary...,
+                            maps...);
                       } else {
                         score::dunbrack::potentials::
                             dunbrack_pose_forward<Ops, D, Real, I, I, 2>(
@@ -301,6 +362,7 @@ struct RotamerDunbrackStage {
               scratch);
         },
         DunbrackKernel::arguments<D, Real>(a));
+    if (derivative) derivative->finish(context);
   }
   template <template <Device> class Ops, Device D>
   static void execute(
@@ -315,4 +377,6 @@ struct RotamerDunbrackStage {
       launch<Ops, D, double>(a, out, backward);
   }
 };
+using RotamerDunbrackStage = RotamerDunbrackStageT<false>;
+using RotamerDunbrackPreciseStage = RotamerDunbrackStageT<true>;
 }  // namespace tmol::jax

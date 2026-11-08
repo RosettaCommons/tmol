@@ -384,6 +384,25 @@ extern "C" uint64_t tmol_dunbrack_energy_workspace_bytes(
       });
 }
 
+extern "C" uint64_t tmol_dunbrack_precise_workspace_bytes(
+    int64_t rots,
+    int64_t dihedrals,
+    int64_t poses,
+    int64_t atoms,
+    int bits,
+    int derivative) {
+  if (poses > INT32_MAX / 3) return UINT64_MAX;
+  return workspace_bytes(
+      bits, {rots, dihedrals, poses, atoms}, [&](auto real) -> uint64_t {
+        auto gradients = derivative && sizeof(real) == sizeof(float)
+                             ? tmol::jax::DunbrackKernel::gradient_values(atoms)
+                             : 0;
+        return tmol::jax::DunbrackWorkspace<decltype(real)>(
+                   rots, dihedrals, derivative, nullptr, poses, gradients)
+            .storage.size_bytes();
+      });
+}
+
 extern "C" uint64_t tmol_backbone_torsion_workspace_bytes(
     int64_t poses, int bits, int) {
   if (poses > INT32_MAX / 2) return UINT64_MAX;

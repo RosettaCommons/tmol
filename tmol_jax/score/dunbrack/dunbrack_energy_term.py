@@ -30,6 +30,7 @@ from .parameters import (
 
 class DunbrackTermState(NamedTuple):
     parameters: tuple
+    precise_gradient: bool = False
 
 
 class DunbrackEnergyTerm(EnergyTerm):
@@ -79,7 +80,8 @@ class DunbrackEnergyTerm(EnergyTerm):
                 tuple(pose_arguments(pose_stack)),
                 device=pose_stack.coords.device,
             )
-            + parameters
+            + parameters,
+            pose_stack.coords.device.platform == "gpu",
         )
 
     def _scoring_libraries(self, pbt):
@@ -125,13 +127,18 @@ class DunbrackEnergyTerm(EnergyTerm):
         parameters = term_state.parameters
         if parameters:
             dimensions = (parameters[0].size, parameters[24].shape[1], coords.shape[0])
+            target, workspace = "tmol_dunbrack", "tmol_dunbrack_energy"
+            if term_state.precise_gradient and coords.dtype == jnp.float32:
+                target = workspace = "tmol_dunbrack_precise"
+                dimensions += (coords.shape[0] * coords.shape[1],)
+                register(target)
             values = coordinate_energy(
-                "tmol_dunbrack",
+                target,
                 coords,
                 parameters,
                 channels=3,
                 workspace_bytes=workspace_sizes(
-                    "tmol_dunbrack_energy", dimensions, coords.dtype.itemsize * 8
+                    workspace, dimensions, coords.dtype.itemsize * 8
                 ),
             )
         else:

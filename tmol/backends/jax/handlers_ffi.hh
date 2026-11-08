@@ -58,6 +58,8 @@ TMOL_JAX_ENERGY(
     .Attr<double>("pucker_temperature").Attr<double>("bin_blend_sdev"));
 
 TMOL_JAX_ENERGY(tmol_dunbrack, tmol::jax::run<tmol::jax::DunbrackKernel>, );
+TMOL_JAX_ENERGY(
+    tmol_dunbrack_precise, tmol::jax::run<tmol::jax::DunbrackPreciseKernel>, );
 
 TMOL_JAX_ENERGY(
     tmol_constraint_torsion,
@@ -130,6 +132,9 @@ TMOL_JAX_ENERGY(
 TMOL_JAX_STAGE(
     tmol_rotamer_dunbrack,
     tmol::jax::run_graph_stage<tmol::jax::RotamerDunbrackStage>, );
+TMOL_JAX_STAGE(
+    tmol_rotamer_dunbrack_precise,
+    tmol::jax::run_graph_stage<tmol::jax::RotamerDunbrackPreciseStage>, );
 
 TMOL_JAX_STAGE(
     tmol_rotamer_lk_ball,
