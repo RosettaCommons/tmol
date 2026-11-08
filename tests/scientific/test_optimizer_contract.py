@@ -125,6 +125,19 @@ def test_invalid_trial_does_not_report_convergence(backend):
     assert np.isfinite(result["fun"])
     assert not result["converged"]
 
+    if backend.framework == "jax":
+        import jax.numpy as jnp
+        from tmol_jax.optimization import lbfgs_minimize
+
+        with pytest.raises(FloatingPointError, match="finite"):
+            lbfgs_minimize(lambda x: jnp.sum(x), jnp.asarray([jnp.nan]))
+        with pytest.raises(ValueError, match="same shape"):
+            lbfgs_minimize(
+                lambda x: jnp.sum(x * x),
+                jnp.ones(2),
+                grad_mask=jnp.ones(3),
+            )
+
 
 @pytest.mark.parametrize("dtype", (np.float32, np.float64))
 @pytest.mark.parametrize("operation", ("abs_sum", "dot"))
@@ -206,6 +219,27 @@ def test_host_control_quadratic_retains_dtype_and_frozen_coordinate(backend, dty
             atol=3e-6 if dtype == np.float32 else 2e-10,
         )
         np.testing.assert_allclose(result["fun"], 48, rtol=0, atol=2e-6)
+
+    if dtype == np.float32:
+        for history in (1, 5, 50):
+            target = array([2.0, -3.0, 4.0])
+
+            def objective(x):
+                return ((x - target) ** 2).sum()
+
+            result = _wolfe_minimize(
+                backend,
+                objective,
+                array([0.0, 5.0, 9.0]),
+                grad_mask=array([1.0, 0.0, 1.0]),
+                history=history,
+            )
+            assert result["converged"]
+            result_x = backend.numpy(result["x"])
+            target_x = backend.numpy(target)
+            np.testing.assert_allclose(result_x[[0, 2]], target_x[[0, 2]], atol=1e-5)
+            assert float(result["x"][1]) == 5.0
+            assert float(result["fun"]) <= 64.0 + 1e-5
 
 
 def test_cubic_line_search_quadratic(backend):
@@ -319,3 +353,58 @@ def test_compact_execution_uses_fresh_coordinate_masks_and_parameter_snapshots(b
                     del bt.elec_partial_charges
                 else:
                     bt.elec_partial_charges = override
+
+
+def analytic_cartesian_fixture(backend, monkeypatch, *, repulsive=False):
+    """One exact quadratic fixture for Cartesian masks and relax configuration."""
+    from dataclasses import dataclass, replace
+    from types import SimpleNamespace
+    import jax.numpy as jnp
+    from tmol_jax.score.energy_term import EnergyTerm
+    from tmol_jax.score import score_function as scoring
+    from tmol_jax.score import ScoreFunction, ScoreType
+
+    channel = ScoreType.fa_ljrep if repulsive else ScoreType.fa_ljatr
+
+    @dataclass(frozen=True)
+    class Pose:
+        coords: object
+        packed_block_types: object = None
+
+        @property
+        def atom_is_real(self):
+            return jnp.asarray([[True, True, False]])
+
+        def replace(self, **updates):
+            return replace(self, **updates)
+
+    class QuadraticTerm(EnergyTerm):
+        def __init__(self, database):
+            pass
+
+        def score_types_provided(self):
+            return (channel,)
+
+        def setup_for_pose_stack(self, pose, block_types):
+            return None
+
+        def __call__(self, pose, state, coords_override=None):
+            return {channel: (coords_override**2).sum(axis=(1, 2))}
+
+    original = scoring.importlib.import_module
+    monkeypatch.setattr(
+        scoring.importlib,
+        "import_module",
+        lambda name: (
+            SimpleNamespace(QuadraticTerm=QuadraticTerm)
+            if name == "tmol_jax.score.fake.fake_energy_term"
+            else original(name)
+        ),
+    )
+    monkeypatch.setitem(scoring._TERM_FOR_TYPE, channel, ("fake", "QuadraticTerm"))
+    score = ScoreFunction(None)
+    score.set_weight(channel, 0.55 if repulsive else 1.0)
+    pose = Pose(
+        backend.module.device_put(np.ones((1, 3, 3), np.float32), backend.device)
+    )
+    return pose, score

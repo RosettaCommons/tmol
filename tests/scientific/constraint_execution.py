@@ -116,3 +116,22 @@ def check_legacy_constraint_inputs(backend):
         np.testing.assert_allclose(gradient, expected)
         state = term.setup_for_pose_stack(p)
         np.testing.assert_array_equal(term(p, state)[ScoreType.constraint], [0.0])
+
+        from tmol_jax.score import ScoreFunction
+
+        legacy_pose = SimpleNamespace(
+            coords=jnp.ones((1, 3, 3)), packed_block_types=None
+        )
+        constraints = ConstraintSet(
+            target_coords=jnp.zeros((1, 3)),
+            atom_indices=jnp.asarray([[0, 0]], dtype=jnp.int32),
+            k=jnp.ones((1,)),
+            tol=jnp.zeros((1,)),
+        )
+        score_function = ScoreFunction(None)
+        score_function.set_weight(ScoreType.constraint, 1.0)
+        scorer = score_function.render_whole_pose_scoring_module(
+            legacy_pose, constraint_set=constraints
+        )
+
+        np.testing.assert_allclose(scorer(legacy_pose.coords), [1.5], atol=1e-6)

@@ -98,3 +98,44 @@ def test_complete_preset_minimization_preserves_fixed_atoms(backend, name):
     backend.use_beta2016()
     for optimizer in (None, "strong_wolfe") if backend.framework == "jax" else (None,):
         _check_frozen_atom_minimization(backend, optimizer=optimizer)
+
+
+def test_real_score_cart_min_is_finite_and_nonincreasing(backend, tmp_path):
+    from .test_canonical_molecular_input import peptide_pdb
+
+    path = tmp_path / "tripeptide.pdb"
+    path.write_text(peptide_pdb(3))
+    backend.load(path)
+    pose, score_function = backend.pose, backend.score_function
+    initial = float(backend.scores(backend.coords()).sum())
+    if backend.framework == "jax":
+        from tmol_jax.optimization import run_cart_min, run_cart_relax
+
+        with backend.module.default_device(backend.device):
+            minimized, result = run_cart_min(
+                pose, score_function, max_iter=2, return_result=True
+            )
+            final = float(score_function.jitted(minimized)(minimized.coords).sum())
+        assert float(result["fun"]) <= initial + 1e-4
+        minimized = backend.numpy(minimized.coords)
+    else:
+        minimized = backend.minimize(np.ones(pose.coords.shape[:2], bool), iterations=2)
+        final = float(backend.scores(minimized).sum())
+    assert np.isfinite(minimized).all()
+    assert np.isfinite(final)
+    assert final <= initial + 1e-4
+    if backend.framework == "jax":
+        original_weights = score_function.weights
+        with backend.module.default_device(backend.device):
+            relaxed, result = run_cart_relax(
+                pose,
+                score_function,
+                constrain_mainchain=True,
+                ramp_schedule=(1.0,),
+                max_iter=1,
+                return_result=True,
+            )
+        assert score_function.weights == original_weights
+        assert np.isfinite(relaxed.coords).all()
+        assert np.isfinite(result["fun"])
+        assert result["fun"] <= result["initial_fun"] + 1e-4
