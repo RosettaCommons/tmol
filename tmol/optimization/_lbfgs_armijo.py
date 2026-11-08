@@ -161,7 +161,8 @@ class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
             most rtol also counts as small (default: None)
         gradtol (float): if set, energy convergence also requires
             max_i |df/dx_i| <= gradtol. A failed line search below this
-            threshold converges immediately (default: None).
+            threshold converges immediately. If atol and rtol are both None,
+            this threshold alone determines convergence (default: None).
         history_size (int): update history size (default: 200).
         segment_ids (Tensor): the segment (e.g. pose) each parameter element
             belongs to; each segment is minimized independently (default: one)
