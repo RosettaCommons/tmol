@@ -152,7 +152,8 @@ template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device Dev,
     typename Real,
-    typename Int>
+    typename Int,
+    typename GradReal = Real>
 void backbone_rotamer_score_native(
     ContextManager& mgr,
     TView<Vec<Real, 3>, 1, Dev> rot_coords,
@@ -174,7 +175,7 @@ void backbone_rotamer_score_native(
     TView<RamaTableParams<Real>, 1, Dev> omega_table_params,
     TView<Int, 2, Dev> dispatch_indices,
     TView<Real, 2, Dev> V,
-    TView<Vec<Real, 3>, 2, Dev> dV_dxyz,
+    TView<Vec<GradReal, 3>, 2, Dev> dV_dxyz,
     TView<Real, 2, Dev> dTdV,
     bool output_block_pair_energies,
     bool accumulate_derivs,
@@ -296,11 +297,11 @@ void backbone_rotamer_score_native(
           accumulate<Dev, Real>::add(V[0][V_ind], common::get<0>(rama));
         if (Backward || accumulate_derivs) {
           for (int j = 0; j < 4; ++j) {
-            accumulate<Dev, Vec<Real, 3>>::add(
+            emit_backbone_derivative<Dev>(
                 dV_dxyz[0][phi_ats[j]],
                 backbone_rotamer_derivative<Backward>(
                     common::get<1>(rama).row(j), rama_weight));
-            accumulate<Dev, Vec<Real, 3>>::add(
+            emit_backbone_derivative<Dev>(
                 dV_dxyz[0][psi_ats[j]],
                 backbone_rotamer_derivative<Backward>(
                     common::get<2>(rama).row(j), rama_weight));
@@ -368,15 +369,15 @@ void backbone_rotamer_score_native(
         if (Backward || accumulate_derivs) {
           for (int j = 0; j < 4; ++j) {
             // omega : [V, dVdphi, dVdpsi, dVdomega]
-            accumulate<Dev, Vec<Real, 3>>::add(
+            emit_backbone_derivative<Dev>(
                 dV_dxyz[1][phi_ats[j]],
                 backbone_rotamer_derivative<Backward>(
                     common::get<1>(omega).row(j), omega_weight));
-            accumulate<Dev, Vec<Real, 3>>::add(
+            emit_backbone_derivative<Dev>(
                 dV_dxyz[1][psi_ats[j]],
                 backbone_rotamer_derivative<Backward>(
                     common::get<2>(omega).row(j), omega_weight));
-            accumulate<Dev, Vec<Real, 3>>::add(
+            emit_backbone_derivative<Dev>(
                 dV_dxyz[1][omega_ats[j]],
                 backbone_rotamer_derivative<Backward>(
                     common::get<3>(omega).row(j), omega_weight));
@@ -390,7 +391,7 @@ void backbone_rotamer_score_native(
         if (Backward || accumulate_derivs) {
           for (int j = 0; j < 4; ++j) {
             // omega : [V, dVdomega]
-            accumulate<Dev, Vec<Real, 3>>::add(
+            emit_backbone_derivative<Dev>(
                 dV_dxyz[1][omega_ats[j]],
                 backbone_rotamer_derivative<Backward>(
                     common::get<1>(omega).row(j), omega_weight));
