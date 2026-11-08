@@ -105,6 +105,10 @@ def test_joint_connection_values_and_gradients_match_whole_pose(backend, family)
         execution = joint_states(execution)
         assert_joint_values_and_gradients(execution)
 
+    if backend.framework == "jax" and family == "disulfide":
+        for coupled in (False, True):
+            _assert_connected_dispatch(backend, coupled)
+
 
 def assert_joint_values_and_gradients(execution, dtype=np.float64):
     backend = execution.backend
@@ -165,3 +169,70 @@ def test_joint_backbone_third_member_values_and_gradients(backend, name, dtype):
         backend.molecule(BACKBONE_CASES[name], terms=("rama", "omega"))
         execution = joint_states(RotamerExecution(backend, family="backbone"))
         assert_joint_values_and_gradients(execution, dtype)
+
+    if (
+        backend.framework == "jax"
+        and backend.device.platform == "cpu"
+        and name == "cyclic"
+        and dtype == np.float32
+    ):
+        import attrs
+        from tmol_core.pack.correlation import CorrelatedBlockGroup
+        from .molecules import CyclicPeptideCase
+        from tmol_jax.pack.backbone_scoring import prepare_rotamer_backbone
+
+        b = backend
+        b.molecule(CyclicPeptideCase((), (("ALA", "PRO"),), ((2,),)), terms=("ref",))
+        e = RotamerExecution(b, family="genbonded")
+        with pytest.raises(ValueError, match="correspondence"):
+            prepare_rotamer_backbone(
+                b.pose,
+                attrs.evolve(
+                    e.rotamers,
+                    correlated_groups=(CorrelatedBlockGroup(0, (0, 1)),),
+                    group_for_block=e.rotamers.group_for_block.at[0, 0].set(5),
+                ),
+                b.parameter_database,
+            )
+
+
+def _assert_connected_dispatch(backend, coupled):
+    import jax.numpy as jnp
+
+    jax = backend.module
+    from tmol_jax.pack.bonded_scoring import _connected_stage
+    from tmol_jax.pack.graph import prefix_counts, load_balance
+
+    device = backend.device
+    with jax.default_device(device), jax.enable_x64(False):
+        groups = [[0, 0]] if coupled else [[-1, -1]]
+        args = tuple(
+            jnp.asarray(a, jnp.int32)
+            for a in (
+                [0, 0, 0, 1, 1, 1],
+                [0] * 6,
+                [0] * 6,
+                [[3, 3]],
+                groups,
+                [[[[1, 0]], [[0, 0]]]],
+            )
+        )
+        counts = _connected_stage(
+            args, operation=0, outputs=jax.ShapeDtypeStruct((12, 8), np.uint8)
+        )
+        offsets = prefix_counts(counts)
+        total = int(np.asarray(offsets[-1]).view(np.int64)[0])
+        owners = load_balance(offsets[:-1], total=total)
+        actual = _connected_stage(
+            (*args, jnp.asarray([[0, 3]], jnp.int32), offsets[:-1], owners),
+            operation=1,
+            outputs=jax.ShapeDtypeStruct((3, total), np.int32),
+        )
+        expected = []
+        for rot in range(6):
+            if rot < 3:
+                partners = (rot + 3,) if coupled else range(3, 6)
+                expected.extend((0, rot, other) for other in partners)
+            expected.append((0, rot, rot))
+        np.testing.assert_array_equal(actual, np.asarray(expected).T)
+        assert actual.device == device

@@ -1,10 +1,14 @@
 """Canonical input retains chemistry, atom identity, topology and physical scores."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from .molecules import DOMAIN_CASES, BACKBONE_CASES, MolecularCase
 from .metal_molecules import METAL_CASES
+
+CANONICAL_PROTEIN_PDB = Path(__file__).parents[2] / "tmol/tests/data/pdb/1ubq.pdb"
 
 CASES = {
     key: DOMAIN_CASES[key]
@@ -27,6 +31,47 @@ CASES.update(
         for name in ("CYS_DEP", "DCYS_DEP", "TYR_DEP", "DTYR_DEP", "HIS_POS")
     }
 )
+
+
+def peptide_pdb(n=3):
+    return (
+        "\n".join(
+            line
+            for line in CANONICAL_PROTEIN_PDB.read_text().splitlines()
+            if line.startswith("ATOM") and 1 <= int(line[22:26]) <= n
+        )
+        + "\nEND\n"
+    )
+
+
+def canonical_protein_input(backend):
+    from tmol_jax.io import (
+        canonical_form_from_pdb,
+        default_packed_block_types,
+        pose_stack_from_canonical_form,
+    )
+
+    canonical = canonical_form_from_pdb(CANONICAL_PROTEIN_PDB)
+    template = {
+        key: value[:, :3].copy() if isinstance(value, np.ndarray) else value
+        for key, value in canonical.items()
+    }
+    pbt = backend.module.tree.map(
+        lambda value: backend.module.device_put(value, backend.device),
+        default_packed_block_types(),
+    )
+
+    def new_input():
+        return {
+            key: value.copy() if isinstance(value, np.ndarray) else value
+            for key, value in template.items()
+        }
+
+    def build(canonical, **options):
+        with backend.module.default_device(backend.device):
+            return pose_stack_from_canonical_form(canonical, pbt, **options)
+
+    return new_input, build
 
 
 def canonical_input(case, database):
@@ -137,7 +182,7 @@ def physical_edges(b):
 
 
 @pytest.mark.parametrize("case", tuple(CASES))
-def test_canonical_input_retains_molecular_state(backend, case):
+def test_canonical_input_retains_molecular_state(backend, case, tmp_path):
     terms = ("gen_torsions", "cart_lengths", "fa_elec")
     if case.startswith("metal_"):
         terms += ("metal_coordination",)
@@ -173,6 +218,139 @@ def test_canonical_input_retains_molecular_state(backend, case):
     assert np.any(channels != 0)
     if case in ("ligand", "connected_noncanonical", "mixed_batch"):
         assert np.max(np.abs(channels[b.channel_names().index("gen_torsions")])) > 1e-3
+
+    if backend.framework != "jax" or case != "mixed_batch":
+        return
+    new_input, build = canonical_protein_input(backend)
+    canonical = new_input()
+    canonical["chain_id"] = None
+    canonical["res_num"] = None
+    pose = build(
+        canonical,
+        chain_id=[[0, 0, 1]],
+        res_num=[[10, 11, 20]],
+    )
+    assert np.asarray(pose.pdb_info.res_num)[0].tolist() == [10, 11, 20]
+    assert 2 not in np.asarray(pose.inter_residue_connections)[0, 1, :, 0]
+    assert 1 not in np.asarray(pose.inter_residue_connections)[0, 2, :, 0]
+
+    canonical = new_input()
+    expected = build(canonical)
+    for option, value in (
+        ("find_additional_metal_coordination", True),
+        ("protonation_variants", np.zeros((1, 3), np.int32)),
+    ):
+        actual = build(dict(canonical, **{option: value}))
+        np.testing.assert_array_equal(actual.coords, expected.coords)
+        np.testing.assert_array_equal(actual.block_type_ind, expected.block_type_ind)
+        np.testing.assert_array_equal(
+            actual.inter_residue_connections, expected.inter_residue_connections
+        )
+    canonical = new_input()
+    canonical["res_types"][0, 1] = canonical["res_types"][0, 0]
+    with pytest.raises(ValueError, match="residue names and res_types disagree"):
+        build(canonical)
+    for indices in (
+        np.array([[0, 0, 1.5, 1, 1]]),
+        np.array([[0, 0, 2**32, 1, 1]], np.uint64),
+    ):
+        canonical = new_input()
+        canonical["covalent_bonds"] = indices
+        with pytest.raises(ValueError, match="integer indices within the int32 range"):
+            build(canonical)
+
+    from tmol_jax import pose_stack_from_pdb, beta2016_score_function
+    from tmol_jax.io import pose_stack_from_canonical_form, default_canonical_ordering
+
+    jax = backend.module
+    with jax.default_device(backend.device):
+        from tmol_jax.io import default_packed_block_types
+
+        path = tmp_path / "tripeptide.pdb"
+        path.write_text(peptide_pdb())
+        palette = jax.tree.map(
+            lambda value: jax.device_put(value, backend.device),
+            default_packed_block_types(),
+        )
+        palette_names = tuple(residue.name for residue in palette.active_block_types)
+        pose = pose_stack_from_pdb(path, packed_block_types=palette)
+        from biotite.structure.io.pdb import PDBFile
+        from biotite.structure import stack
+        from tmol_jax.io import canonical_form_from_pdb
+        from tmol_jax.io.pose_stack_from_biotite import canonical_form_from_biotite
+
+        atoms = PDBFile.read(path).get_structure(model=1)
+        canonical = canonical_form_from_pdb(path)
+        batched = canonical_form_from_biotite(stack([atoms, atoms]))
+        for field in ("coords", "chain_id", "res_types", "atom_is_present"):
+            np.testing.assert_array_equal(
+                batched[field], np.repeat(canonical[field], 2, axis=0)
+            )
+        score_function = beta2016_score_function()
+        energy, gradient = score_function.jitted_value_and_grad(pose)(pose.coords)
+        assert (
+            tuple(
+                residue.name for residue in pose.packed_block_types.active_block_types
+            )
+            == palette_names
+        )
+        np.testing.assert_array_equal(pose.n_res_per_pose, [3])
+        assert [pose.block_type(0, i).name3 for i in range(3)] == ["MET", "GLN", "ILE"]
+        used_types = np.asarray(pose.block_type_ind)
+        assert len(np.unique(used_types[used_types >= 0])) == 3
+        # Cartesian setup must depend on topology, even when a real atom is at zero.
+        cart = next(
+            term
+            for term in score_function.terms
+            if type(term).__name__ == "CartBondedEnergyTerm"
+        )
+        shifted = pose.replace(coords=pose.coords - pose.coords[:, :1])
+        first = cart.setup_for_pose_stack(pose)
+        second = cart.setup_for_pose_stack(shifted)
+        for left, right in zip(jax.tree.leaves(first), jax.tree.leaves(second)):
+            np.testing.assert_array_equal(left, right)
+        moved = pose.to(backend.device)
+        np.testing.assert_array_equal(moved.coords, pose.coords)
+        assert moved.device == pose.device
+        assert energy.shape == (1,)
+        assert gradient.shape == pose.coords.shape
+        assert np.isfinite(energy).all()
+        assert np.isfinite(gradient).all()
+        assert np.linalg.norm(gradient) > 0
+        batch = {name: np.repeat(value, 2, axis=0) for name, value in canonical.items()}
+        batch["res_name"][1, -1] = ""
+        batch["res_types"][1, -1] = -1
+        batch["chain_id"][1, -1] = -1
+        batch["coords"][1, -1] = np.nan
+        batch["atom_is_present"][1, -1] = False
+        pose = pose_stack_from_canonical_form(batch, palette)
+        sf = beta2016_score_function()
+        energies, gradient = sf.jitted_value_and_grad(pose)(pose.coords)
+        assert np.isfinite(energies).all() and np.isfinite(gradient).all()
+        np.testing.assert_array_equal(
+            np.asarray(gradient)[~np.asarray(pose.atom_is_real)], 0
+        )
+        for index in range(2):
+            individual = pose[index]
+            expected = sf.jitted(individual)(individual.coords)
+            np.testing.assert_allclose(energies[index], expected[0], atol=1e-4)
+        canonical["coords"] = canonical["coords"].astype(np.float64) + 1.23456789e-8
+        with jax.enable_x64():
+            pose = pose_stack_from_canonical_form(canonical, palette)
+        assert pose.coords.dtype == np.float64
+        co = default_canonical_ordering()
+        for block in range(pose.max_n_blocks):
+            residue = pose.block_type(0, block)
+            offset = int(pose.block_coord_offset[0, block])
+            mapping = co.restypes_atom_index_mapping[residue.io_equiv_class]
+            for atom, record in enumerate(residue.atoms):
+                source = mapping[record.name]
+                if canonical["atom_is_present"][0, block, source]:
+                    np.testing.assert_array_equal(
+                        pose.coords[0, offset + atom],
+                        canonical["coords"][0, block, source],
+                    )
+        assert np.isfinite(pose.coords).all()
 
 
 def rebuild_canonical(

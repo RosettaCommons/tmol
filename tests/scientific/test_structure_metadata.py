@@ -57,6 +57,54 @@ def test_molecular_input_preserves_metadata(backend, name, no_optH):
     assert info.atom_occupancy[0, 0] >= 0
     assert selected.atom_occupancy[1, 0] >= 0
 
+    if backend.framework != "jax" or name != "noncanonical" or not no_optH:
+        return
+    from .test_canonical_molecular_input import canonical_protein_input
+
+    new_input, build = canonical_protein_input(backend)
+    from io import StringIO
+    import biotite.structure.io.pdb as pdb
+    from tmol_jax.io.write_pose_stack_pdb import write_pose_stack_pdb
+
+    canonical = new_input()
+    canonical["res_num"][0] = [-2, 0, 17]
+    canonical["res_ins_codes"][0] = ["A", "", "B"]
+    canonical["atom_occupancy"][:] = 0.25
+    canonical["atom_b_factor"][:] = 42.5
+    pose = build(canonical)
+    output = StringIO()
+    write_pose_stack_pdb(pose, output)
+    restored = pdb.PDBFile.read(StringIO(output.getvalue())).get_structure(
+        model=1, extra_fields=["occupancy", "b_factor"]
+    )
+    np.testing.assert_array_equal(np.unique(restored.res_id), [-2, 0, 17])
+    np.testing.assert_array_equal(restored.ins_code[restored.res_id == -2], "A")
+    np.testing.assert_array_equal(restored.ins_code[restored.res_id == 17], "B")
+    np.testing.assert_array_equal(restored.occupancy, 0.25)
+    np.testing.assert_array_equal(restored.b_factor, 42.5)
+    duplicate = pose[[0, 0]]
+    duplicate.pdb_info.atom_occupancy[0, 0] = 0.75
+    assert pose.pdb_info.atom_occupancy[0, 0] == 0.25
+    assert duplicate.pdb_info.atom_occupancy[1, 0] == 0.25
+
+    import attrs
+    from .test_pose_layout import heterogeneous_protein_pose
+
+    heterogeneous_pose = heterogeneous_protein_pose(backend)
+    for field in ("chain_id", "res_num", "res_name", "atom_record_type"):
+        pose = heterogeneous_pose.replace(
+            pdb_info=attrs.evolve(heterogeneous_pose.pdb_info, **{field: None})
+        )
+        assert getattr(pose[-1].pdb_info, field) is None
+        blank = attrs.evolve(
+            pose.pdb_info,
+            chain_id=None,
+            res_num=None,
+            res_name=None,
+            atom_record_type=None,
+        )
+        assert pose.replace(pdb_info=blank)[-1].n_poses == 1
+
 
 @pytest.mark.parametrize(
     "filename",

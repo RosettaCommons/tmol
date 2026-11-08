@@ -82,6 +82,26 @@ def test_public_palette_topology_retains_physical_atoms_and_torsions(backend, na
             else:
                 np.testing.assert_array_equal(actual, expected[slices])
 
+    if backend.framework == "jax" and name == "d_peptide":
+        from tmol_jax import beta2016_score_function, pose_stack_from_pdb
+        from .test_canonical_molecular_input import peptide_pdb
+
+        with backend.module.default_device(backend.device):
+            for n in (1, 2):
+                pose = pose_stack_from_pdb(peptide_pdb(n))
+                slots = pose.packed_block_types.max_n_conn
+                assert pose.inter_residue_connections.shape[2] == slots
+                assert pose.inter_block_bondsep.shape[-2:] == (slots, slots)
+                pbt = pose.packed_block_types
+                for atoms, count in zip(
+                    np.asarray(pbt.conn_atoms), np.asarray(pbt.n_conn)
+                ):
+                    assert np.all(atoms[count:] == -1)
+                energy, gradient = beta2016_score_function().jitted_value_and_grad(
+                    pose
+                )(pose.coords)
+                assert np.isfinite(energy).all() and np.isfinite(gradient).all()
+
 
 @pytest.mark.parametrize(
     "name", ("ligand", "connected_noncanonical", "d_peptide", "mixed_batch")

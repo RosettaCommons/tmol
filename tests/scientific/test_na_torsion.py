@@ -4,6 +4,8 @@ import attrs
 import numpy as np
 import pytest
 
+from .test_score_contract import check_coordinate_transforms
+
 from .execution import Execution
 from .na_molecules import NA_CASES
 
@@ -28,6 +30,11 @@ def test_na_channels_and_coordinate_derivatives(backend, name):
     analytic = (jacobian * direction).sum(axis=(-2, -1))
     np.testing.assert_allclose(analytic, numeric, rtol=3e-3, atol=3e-3)
     np.testing.assert_allclose(jacobian.sum(axis=-2), 0, atol=2e-3)
+
+    if name == "mixed_batch":
+        check_coordinate_transforms(
+            backend, NA_CASES[name], TERMS, empty_term="na_torsion"
+        )
 
 
 def test_na_custom_widths_affect_deviation_not_population_channel(backend):

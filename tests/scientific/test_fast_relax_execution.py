@@ -6,7 +6,7 @@ import pytest
 from .test_complete_preset import CASES
 
 
-def test_relax_minimizers_preserve_fixed_molecular_coordinates(backend):
+def test_relax_minimizers_preserve_fixed_molecular_coordinates(backend, monkeypatch):
     from importlib import import_module
 
     b = backend
@@ -40,6 +40,40 @@ def test_relax_minimizers_preserve_fixed_molecular_coordinates(backend):
         for constructor in (api.CartesianRelaxMinimizer, api.KinematicRelaxMinimizer):
             with pytest.raises(NotImplementedError, match="graph capture"):
                 constructor(cuda_graph=True)
+
+    if b.framework == "jax":
+        from tmol_jax.optimization import run_cart_relax
+        from tmol_jax.score import ScoreFunction
+        from .test_optimizer_contract import analytic_cartesian_fixture
+
+        with b.module.default_device(b.device):
+            pose, score_function = analytic_cartesian_fixture(
+                b, monkeypatch, repulsive=True
+            )
+            original_weights = score_function.weights
+            relaxed, result = run_cart_relax(
+                pose,
+                score_function,
+                ramp_schedule=(0.5, 1.0),
+                max_iter=3,
+                return_result=True,
+            )
+
+            assert score_function.weights == original_weights
+            assert len(result["stages"]) == 2
+            assert result["fun"] <= result["initial_fun"] + 1e-6
+            np.testing.assert_array_equal(relaxed.coords[:, 2], pose.coords[:, 2])
+
+            score_function = ScoreFunction(None)
+            for schedule in (
+                (),
+                (0.5,),
+                (0.5, 0.25, 1.0),
+                (0.0, 1.0),
+                (float("nan"), 1.0),
+            ):
+                with pytest.raises(ValueError, match="ramp"):
+                    run_cart_relax(pose, score_function, ramp_schedule=schedule)
 
 
 @pytest.mark.parametrize(

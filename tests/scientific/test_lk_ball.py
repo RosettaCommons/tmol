@@ -4,7 +4,9 @@ import attrs
 import numpy as np
 import pytest
 
-from .molecules import DOMAIN_CASES
+from .test_score_contract import check_coordinate_transforms
+
+from .molecules import BACKBONE_CASES, DOMAIN_CASES
 
 TERMS = ("lk_ball_iso", "lk_ball", "lk_bridge", "lk_bridge_uncpl")
 CASES = ("ligand", "connected_noncanonical", "mixed_batch", "d_peptide", "modified_dna")
@@ -38,6 +40,15 @@ def test_lk_ball_molecular_channels(backend, name):
         atol=2e-3,
     )
     np.testing.assert_allclose(gradients.sum(axis=2), 0, atol=2e-5)
+
+    if name == "mixed_batch":
+        check_coordinate_transforms(
+            backend,
+            DOMAIN_CASES[name],
+            TERMS,
+            empty_term="lk_ball",
+            empty_case=BACKBONE_CASES["mixed"],
+        )
 
 
 def test_lk_ball_free_energy_scaling_leaves_uncoupled_bridge_unchanged(backend):

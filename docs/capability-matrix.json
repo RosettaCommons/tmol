@@ -101,7 +101,7 @@
       "torch": "supported",
       "jax": "values_gradients_on_molecular_fixtures",
       "repro_fixture": [
-        "tests/jax/test_residue_blocks.py",
+        "tests/scientific/test_molecular_input.py",
         "tests/scientific/test_complete_preset.py"
       ],
       "implementation_status": "Explicit disconnected residues retain unconnected ports; complete preset values/gradients tested. No bonds are inferred by ResidueBlock input."
@@ -112,8 +112,7 @@
       "jax": "partial",
       "repro_fixture": [
         "tests/scientific/test_database_context.py",
-        "tests/jax/test_dunbrack_metadata.py",
-        "tests/jax/test_native_genbonded.py"
+        "tests/scientific/test_score_lifecycle.py"
       ],
       "implementation_status": "Common chemical and parameter context supports custom residue identities, reflected tables, charges and bonded/coordination/H-bond parameter changes. Missing required parameters raise. This is not exhaustive custom-database certification."
     },
@@ -122,7 +121,7 @@
       "torch": "supported_with_native_connection_capacity",
       "jax": "native_scoring_with_connection_capacity",
       "repro_fixture": [
-        "tests/jax/test_residue_blocks.py"
+        "tests/scientific/test_molecular_input.py"
       ],
       "implementation_status": "Explicit named ports preserve branches/cycles through common sparse topology. Shared nonbonded kernels support at most 12 connection ports per residue; full int32 atom indices. Changed-port design imposition rejects."
     },
@@ -132,7 +131,6 @@
       "jax": "whole_pose_and_one_two_block_sparse",
       "repro_fixture": [
         "tests/scientific/test_constraints.py",
-        "tests/jax/test_general_constraints.py",
         "tests/scientific/test_constraints.py::attach_multi_block_constraint"
       ],
       "implementation_status": "Whole-pose callbacks support up to four atoms spanning multiple blocks; sparse two-block constraints preserve physical atom order and parameter derivatives. Sparse candidates preserve joint-state correspondence and reject constraints on more than two distinct blocks. Whole-pose three/four-block callback energy and gradient identities have CPU/CUDA checks. The common segment-count correction preserves trailing poses without movable atoms during masked minimization; JAX jit/vmap and installed contracts pass. Higher coordinate derivatives depend on native geometry and callback. Sparse constraints across three/four physical blocks are unsupported in both: actual mature and current Torch expansion omit their nonzero contributions; JAX rejects explicitly. Whole-pose callbacks across those blocks remain supported."
@@ -142,9 +140,9 @@
       "torch": "supported",
       "jax": "values_gradients_on_molecular_fixtures",
       "repro_fixture": [
-        "tests/jax/test_native_genbonded.py",
+        "tests/scientific",
         "tests/scientific/test_complete_preset.py",
-        "tests/jax/test_packing_pages.py",
+        "tests/scientific/test_complete_rotamer_score.py",
         "tests/scientific/test_packing_execution.py",
         "tests/scientific/test_packing_batches.py"
       ],
@@ -155,9 +153,8 @@
       "torch": "supported",
       "jax": "complete_preset_on_molecular_fixtures",
       "repro_fixture": [
-        "tests/jax/test_optimization.py",
         "tests/scientific/test_molecular_minimization.py",
-        "tests/jax/test_shared_wolfe.py"
+        "tests/scientific/test_optimizer_contract.py"
       ],
       "implementation_status": "Complete 25-channel objectives decrease for ligand, noncanonical, D, modified DNA, metal and mixed cases. The default segmented Armijo executor shares mature per-pose convergence/history/restart policy and supports masks and checkpoint continuation. Explicit strong_wolfe uses the shared line search and L-BFGS policy with a fixed-capacity JAX history and reusable rendered gradients. Nonfinite trial failure cannot report convergence. Matched full CPU/CUDA minimization workloads retain cold-time, CUDA warm-time and device-peak gaps."
     },
@@ -172,7 +169,6 @@
         "tests/scientific/test_opth_sampling.py",
         "tests/scientific/test_correlated_graph.py",
         "tests/scientific/test_correlated_connection_scores.py",
-        "tests/jax/test_pose_imposition.py",
         "tests/scientific/test_constrained_design.py",
         "tests/scientific/test_conformer_coordinates.py",
         "tests/scientific/test_packing_seed.py"
@@ -186,7 +182,6 @@
       "repro_fixture": [
         "tests/scientific/test_fold_forest.py",
         "tests/scientific/test_kinematics.py",
-        "tests/jax/test_native_kinematics.py",
         "tests/scientific/test_molecular_kinematics.py"
       ],
       "implementation_status": "Shared molecular forest, native inverse/forward scans and first DOF reverse derivatives; jit/vmap and CPU/CUDA placement tested. Optional kin_dtype controls DOF precision independently of stored coordinates. Mixed float64 DOF/float32-coordinate mapping and minimization pass shared CPU/CUDA molecular checks in both frontends. Objective precision promotion is a new capability beyond the tested mature baseline. Inverse-coordinate AD and forward-scan higher AD are absent. Float32 rotational cancellation persists in sensitive systems."
@@ -218,7 +213,7 @@
       "repro_fixture": [
         "tests/scientific/test_block_pair_scoring.py",
         "tests/scientific/test_fragment_attribution.py",
-        "tests/jax/test_block_pair_transforms.py"
+        "tests/scientific/test_selected_pair_scoring.py"
       ],
       "implementation_status": "Shared fragment-column validation and sparse requested-pair reduction through common native conformer physics. Exact installed CPU and actual CUDA checks pass. Full9278-atom input/render/fragment-energy/coordinate-gradient workflow matches corrected mature d758 at2e-10. Latest matched controls use a separate fresh compilation cache per process: warm JAX/Torch ratios0.726/0.715, cold1.309/1.295; warm process peaks1701024/1704924 versus1588840/1585920KiB. Cold/memory HOLD remains. Earlier reverse-order measurements reused one persistent JAX compilation; preserved results are explicitly marked. This is selected-fragment attribution, not whole-protein angular-gradient equivalence or isolated scratch-memory measurement."
     },
@@ -227,11 +222,10 @@
       "torch": "supported",
       "jax": "partial",
       "repro_fixture": [
-        "tests/jax/test_residue_blocks.py",
-        "tests/jax/test_protein.py",
+        "tests/scientific/test_molecular_input.py",
+        "tests/scientific/test_canonical_molecular_input.py",
         "tests/scientific/test_leaf_reconstruction.py",
         "tests/scientific/test_canonical_topology.py",
-        "tests/scientific/test_canonical_molecular_input.py",
         "tests/scientific/test_canonical_connections.py",
         "tests/scientific/test_histidine_input.py",
         "tests/scientific/test_context_reconstruction.py",
@@ -246,7 +240,7 @@
       "torch": "torch_autograd",
       "jax": "partial",
       "repro_fixture": [
-        "tests/jax/test_native_genbonded.py"
+        "tests/scientific"
       ],
       "implementation_status": "Whole-pose scoring supports first coordinate derivatives and sequential vmap on native CPU/CUDA. Sparse scoring requires eager fixed-neighbor preparation. Sampling, graph cardinality and discrete topology preparation remain eager."
     },
@@ -255,7 +249,7 @@
       "torch": "framework_specific",
       "jax": "partial",
       "repro_fixture": [
-        "tests/jax/test_native_genbonded.py"
+        "tests/scientific"
       ],
       "implementation_status": "Whole-pose native scores support first JVPs; sparse physical scores do not. Linear DOF copy/assignment and pose imposition support JVP and higher AD. Chi correction supports reverse Hessian products; inverse and forward-scan higher AD remain absent."
     },
@@ -264,7 +258,7 @@
       "torch": "supported",
       "jax": "common_native_scoring_and_packing_with_parity_gaps",
       "repro_fixture": [
-        "tests/jax/test_native_genbonded.py"
+        "tests/scientific"
       ],
       "implementation_status": "All molecular score families execute common typed native physics. Core/JAX/native wheels and standalone sdists tested without Torch installed or linked. Current graph and packing paths retain performance gaps."
     },
@@ -273,7 +267,7 @@
       "torch": "supported",
       "jax": "common_native_scoring_and_packing_with_parity_gaps",
       "repro_fixture": [
-        "tests/jax/test_native_genbonded.py"
+        "tests/scientific"
       ],
       "implementation_status": "All molecular score families and packing execute common typed CUDA kernels through FFI on scheduled GPUs. Correctness and placement tested; matched benchmarks retain unresolved overhead. No all-fast claim."
     },
@@ -282,8 +276,7 @@
       "torch": "supported",
       "jax": "molecular_objectives_and_shared_movement_policy",
       "repro_fixture": [
-        "tests/scientific/test_molecular_movement.py",
-        "tests/jax/test_jax_move_map.py"
+        "tests/scientific/test_molecular_movement.py"
       ],
       "implementation_status": "Shared MoveMap and native chemical DOF resolution with JAX L-BFGS; molecular objective decrease and frozen-DOF invariants tested CPU/CUDA. Torch optimizer/module interfaces are framework-specific; the functional injection contract is recorded separately below. Explicit strong-Wolfe also consumes the shared policy and reusable compact molecular objective; ligand, connected noncanonical and D-peptide frozen-DOF contracts have CPU/CUDA checks."
     },
@@ -342,7 +335,6 @@
       "jax": "default_cartesian_kinematic_cpu_cuda_installed",
       "repro_fixture": [
         "tests/scientific/test_armijo_execution.py",
-        "tests/jax/test_armijo_native.py",
         "tests/scientific/test_armijo_checkpoint.py"
       ],
       "implementation_status": "Default shared segmented Armijo settings, history, restart/convergence policy and native transitions. Cartesian/kinematic molecular minimization and scattered objectives pass CPU/CUDA checks. Checkpoint continuation matches uninterrupted history; frozen atoms remain exact and incompatible restoration rejects. Matched fixed-iteration float64 CPU trajectories agree with mature Torch; complete optimizer compatibility and runtime/peak-memory parity remain open."
@@ -507,8 +499,7 @@
       ],
       "repro_fixture": [
         "tests/scientific/test_dunbrack.py",
-        "tests/scientific/test_canonical_palette_choices.py",
-        "tests/jax/test_dunbrack_precision.py"
+        "tests/scientific/test_canonical_palette_choices.py"
       ],
       "coverage": "L/D, variants, mixed cases, custom widths and full coordinate gradients. Inactive whole/sparse objectives use common eligibility without narrowing the public palette; actual L/D design candidates still receive nonzero native scoring. Bounded storage, zero channels, dtype and transformed gradients are covered separately from complete workflow parity."
     },
@@ -648,8 +639,7 @@
     "torch": "supported",
     "jax": "implemented",
     "repro_fixture": [
-      "tests/scientific/test_selected_pair_scoring.py",
-      "tests/jax/test_block_pair_transforms.py"
+      "tests/scientific/test_selected_pair_scoring.py"
     ],
     "implementation_status": "Rendered block-pair scorers expose mature unweighted_scores and score_interactions over the existing shared native physics. Ligand, noncanonical and mixed-system contracts cover selected-energy conservation, physical gradients and repeated/empty selections. Invalid eager indices reject; invalid transformed indices produce NaN. This public API capability does not resolve mature whole-workflow numerical or runtime/memory gaps. A fixed selection can reuse the ordinary RenderedScore compiled execution and autodiff adapter with fresh index/parameter operands. Custom well-depth changes have independent fourfold energy/gradient and old-snapshot invariants. This adapter targets measured preparation/execution overhead; mature runtime/memory parity remains pending."
   },
@@ -658,7 +648,7 @@
     "jax": "implemented",
     "repro_fixture": [
       "tests/scientific/test_rendered_score_options.py",
-      "tests/jax/test_score_function.py"
+      "tests/scientific/test_score_lifecycle.py"
     ],
     "implementation_status": "Rendered whole-pose scorers accept per-call sum_terms/apply_weights and expose unweighted_scores. Alternate static reductions reuse prepared parameter/topology operands and retain original configuration after score-function mutation. Existing render defaults, mapped-coordinate execution and chemistry-owner lifetime are preserved; complete mature end-to-end parity remains separately gated."
   },

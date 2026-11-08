@@ -167,7 +167,7 @@ class MolecularKinematicExecution(KinematicExecution):
             ]
         return self.backend.numpy(mask)
 
-    def minimize(self, move_map, iterations):
+    def minimize(self, move_map, iterations, *, optimizer="armijo"):
         backend = self.backend
         options = {}
         if self.kin_dtype is not None:
@@ -184,6 +184,7 @@ class MolecularKinematicExecution(KinematicExecution):
                 backend.score_function,
                 move_map,
                 max_iter=iterations,
+                optimizer=optimizer,
                 return_result=True,
                 **options,
             )

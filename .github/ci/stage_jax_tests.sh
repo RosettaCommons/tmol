@@ -5,7 +5,7 @@ destination=${1:?test source destination required}
 mkdir -p "${destination}/tests" "${destination}/tmol/tests" \
   "${destination}/tmol/database/default"
 cp tests/__init__.py "${destination}/tests/"
-for suite in core jax scientific; do
+for suite in core scientific; do
   cp -R "tests/${suite}" "${destination}/tests/${suite}"
 done
 cp -R tmol/tests/data "${destination}/tmol/tests/data"

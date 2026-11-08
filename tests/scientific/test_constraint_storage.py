@@ -41,6 +41,33 @@ def test_constraint_replication_clone_and_transport_preserve_parameter_history(b
     _, empty = cls.replicate_constraints(3, atoms, None)
     assert empty is None
 
+    if backend.framework == "jax":
+        import jax
+        import jax.numpy as jnp
+
+        def build(parameters):
+            constraints = cls.create_empty(backend.device, n_poses=3).add_constraints(
+                lambda atoms, p: (atoms[:, 0, 0] - p[:, 0]) ** 2,
+                np.array([[[0, 0]]], np.int32),
+                parameters,
+            )
+            return cls.concatenate([constraints.split(2), constraints.split(0)])
+
+        parameters = adapter.array(np.array([[2.0, 3.0]], np.float32))
+
+        def objective(p):
+            return jnp.sum(build(p).constraint_params ** 2)
+
+        np.testing.assert_array_equal(jax.grad(objective)(parameters), 4 * parameters)
+        np.testing.assert_array_equal(
+            jax.hessian(objective)(parameters).reshape(2, 2), np.eye(2) * 4
+        )
+        constraints = build(parameters)
+        np.testing.assert_array_equal(
+            jax.jit(lambda cs: cs.constraint_params)(constraints), [[2, 3], [2, 3]]
+        )
+        np.testing.assert_array_equal(constraints.constraint_atoms[:, 0, 0], [0, 1])
+
 
 def test_constraint_clone_and_device_copy_keep_molecular_atom_identity(backend):
     b = backend.molecule(BACKBONE_CASES["mixed"], terms=("constraint",))

@@ -1,1 +1,1 @@
-"""Keep pytest from exposing tests/jax as an installed JAX namespace package."""
+"""Shared core, release and backend-parametrized scientific test suites."""

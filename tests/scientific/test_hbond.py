@@ -4,6 +4,8 @@ import attrs
 import numpy as np
 import pytest
 
+from .test_score_contract import check_coordinate_transforms
+
 from .hbond_molecules import HBOND_CASES
 
 
@@ -46,6 +48,11 @@ def test_noncanonical_hbond_gradient_and_custom_donor_weights(backend, name):
     restored = backend.value_and_grad(coordinates)
     for actual, expected in zip(restored, (values, gradients)):
         np.testing.assert_allclose(actual, expected, rtol=2e-5, atol=2e-5)
+
+    if name == "mixed_batch":
+        check_coordinate_transforms(
+            backend, HBOND_CASES[name], ("hbond",), empty_term="hbond"
+        )
 
 
 def test_hbond_custom_family_index_above_byte_range(backend):

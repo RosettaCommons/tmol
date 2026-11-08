@@ -3,6 +3,8 @@
 import numpy as np
 import pytest
 
+from .test_score_contract import check_coordinate_transforms
+
 from .molecules import DOMAIN_CASES
 
 TERMS = ("fa_ljatr", "fa_ljrep", "fa_lk", "fa_elec")
@@ -42,3 +44,11 @@ def check_molecular_nonbonded_channels(backend, name, terms):
     # Measure cancellation in float64 without changing the computed gradients.
     # Float32 summation can obscure a small net force among large pair forces.
     np.testing.assert_allclose(gradient.sum(axis=2, dtype=np.float64), 0, atol=1e-3)
+
+    if name == "mixed_batch":
+        check_coordinate_transforms(
+            backend,
+            DOMAIN_CASES[name],
+            terms,
+            empty_term="fa_ljatr" if len(terms) == 4 else None,
+        )
