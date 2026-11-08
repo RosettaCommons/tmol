@@ -135,11 +135,13 @@ def _canonical_indices(indices, block_of):
 
 
 def build_interaction_graph(
-    rotamers, values, indices, *, chunk_size=16, bump_check=False
+    rotamers, values=None, indices=None, *, scorer=None, chunk_size=16, bump_check=False
 ):
     """Build native background, one-body and chunked two-body energy tables.
 
     Inputs are uncoalesced scalar entries and [3, entries] pose/rotamer indices.
+    Alternatively, supply a scorer to produce those entries here, allowing
+    obsolete entry arrays to be released as the graph is constructed.
     Duplicate entries accumulate. Distinct alternatives of one block cannot
     share an energy entry. Producer-declared joint conformers are collapsed
     through the shared correspondence plan. Optional bump pruning uses the common
@@ -147,6 +149,12 @@ def build_interaction_graph(
     Discrete allocation is
     eager and energy-table construction currently has no AD rule.
     """
+    if scorer is not None:
+        if values is not None or indices is not None:
+            raise ValueError("supply either sparse entries or a scorer")
+        values, indices = scorer(rotamers.coords)
+    elif values is None or indices is None:
+        raise ValueError("supply both values and indices, or a scorer")
     if any(isinstance(a, jax.core.Tracer) for a in (values, indices)):
         raise TypeError("dynamic interaction graphs must be built outside jit/vmap/AD")
     if not isinstance(chunk_size, (int, np.integer)) or not 0 < chunk_size < 1 << 31:

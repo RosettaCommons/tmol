@@ -1,4 +1,4 @@
-"""Eager packing orchestration over shared conformer, score, graph and search kernels."""
+"""Eager packing over shared conformer, score, graph and search kernels."""
 
 import jax
 import numpy as np
@@ -125,9 +125,8 @@ def _pack_rotamers(
             scorer, rotamers.coords, chunk_size=chunk_size
         )
     else:
-        values, indices = scorer(rotamers.coords)
         graph = build_interaction_graph(
-            rotamers, values, indices, chunk_size=chunk_size, bump_check=task.bump_check
+            rotamers, scorer=scorer, chunk_size=chunk_size, bump_check=task.bump_check
         )
     r = graph["retained"]
     arguments = tuple(
