@@ -118,18 +118,12 @@ def _ljlk_distances(pose, database):
     )
 
 
-def prepare_nonbonded(pose, database, *, soft_repulsive=False):
-    """Materialize canonical chemistry/parameters in the native operand layout."""
-    pbt = pose.packed_block_types
-    lj, lj_global = _ljlk_parameters(pose, database, soft_repulsive=soft_repulsive)
-    elec = _electrostatic_parameters(pose, database)
-    lj_paths, generic = _ljlk_distances(pose, database)
+def _nonbonded_topology(pose):
+    _validate_native_connections(pose.packed_block_types)
     offsets, first, indices, _ = pose_arguments(pose)
     poses, blocks = indices.shape
     near, separation = _pose_connections(pose)
-    _validate_native_connections(pbt)
-    device = pose.coords.device
-    topology = jax.device_put(
+    return jax.device_put(
         (
             offsets,
             first,
@@ -139,44 +133,65 @@ def prepare_nonbonded(pose, database, *, soft_repulsive=False):
             near,
             separation,
         ),
-        device=device,
+        device=pose.coords.device,
     )
-    chemical = prepared_palette(
+
+
+def _nonbonded_chemistry(pose, database, *, electrostatic, soft_repulsive=False):
+    """Share one device snapshot per family across whole and sparse scoring."""
+    pbt, device = pose.packed_block_types, pose.coords.device
+    if electrostatic:
+        elec = _electrostatic_parameters(pose, database)
+        generic = elec.all_ligand_typed
+        specific = (elec.charges, elec.inter, elec.intra, elec.global_parameters)
+        name, reach, sources = "elec_native", elec.global_parameters[0, 4], (elec,)
+    else:
+        parameters, globals_ = _ljlk_parameters(
+            pose, database, soft_repulsive=soft_repulsive
+        )
+        paths, generic = _ljlk_distances(pose, database)
+        specific = (pbt.atom_types, paths, parameters, globals_)
+        name, reach, sources = "ljlk_native", globals_[0, 0], ()
+    arrays = prepared_palette(
         pbt,
         database,
-        "nonbonded",
+        name,
         lambda: jax.device_put(
-            (
-                pbt.n_atoms,
-                pbt.atom_types,
-                pbt.n_conn,
-                pbt.conn_atoms,
-                lj_paths,
-                generic,
-                lj,
-                lj_global,
-                elec.charges,
-                elec.inter,
-                elec.intra,
-                elec.global_parameters,
-            ),
-            device=device,
+            (pbt.n_atoms, pbt.n_conn, pbt.conn_atoms, generic, *specific), device
         ),
         device=device,
         settings=(soft_repulsive,),
-        sources=(elec,),
+        sources=sources,
     )
-    parameters = (*topology, *chemical)
+    return arrays, float(reach)
+
+
+def prepare_nonbonded(pose, database, *, soft_repulsive=False):
+    """Materialize canonical chemistry/parameters in the native operand layout."""
+    topology = _nonbonded_topology(pose)
+    ljlk, lj_reach = _nonbonded_chemistry(
+        pose, database, electrostatic=False, soft_repulsive=soft_repulsive
+    )
+    elec, elec_reach = _nonbonded_chemistry(pose, database, electrostatic=True)
+    n_atoms, n_conn, conn_atoms, generic, atom_types, paths, lj, globals_ = ljlk
+    parameters = (
+        *topology,
+        n_atoms,
+        atom_types,
+        n_conn,
+        conn_atoms,
+        paths,
+        generic,
+        lj,
+        globals_,
+        *elec[4:],
+    )
     precise_gradient = pose.coords.device.platform == "gpu"
     for target in ("tmol_nonbonded", "tmol_nonbonded_weighted"):
         register(target)
         if precise_gradient:
             register(target + "_precise")
-    return (
-        parameters,
-        float(max(lj_global[0, 0], elec.global_parameters[0, 4])),
-        precise_gradient,
-    )
+    return parameters, max(lj_reach, elec_reach), precise_gradient
 
 
 def nonbonded_energy(coords, state, weights=None):
@@ -202,54 +217,21 @@ def nonbonded_energy(coords, state, weights=None):
 def prepare_independent_nonbonded(
     pose, database, *, electrostatic, soft_repulsive=False
 ):
-    pbt = pose.packed_block_types
-    _validate_native_connections(pbt)
-    types = pbt.active_block_types
-    offsets, first, indices, _ = pose_arguments(pose)
-    poses, blocks = indices.shape
-    near, separation = _pose_connections(pose)
-    if electrostatic:
-        elec = _electrostatic_parameters(pose, database)
-        generic = elec.all_ligand_typed
-        specific = (elec.charges, elec.inter, elec.intra, elec.global_parameters)
-        target, channels, reach = "tmol_elec", 1, elec.global_parameters[0, 4]
-        # Preserve existing palette charge inspection and immutable scorer snapshots.
-        pbt.elec_partial_charge = jax.device_put(
-            elec.charges, device=pose.coords.device
-        )
-        pbt._elec_owners = (database.scoring.elec, types)
-    else:
-        parameters, globals_ = _ljlk_parameters(
-            pose, database, soft_repulsive=soft_repulsive
-        )
-        paths, generic = _ljlk_distances(pose, database)
-        specific = (pbt.atom_types, paths, parameters, globals_)
-        target, channels, reach = "tmol_ljlk", 3, globals_[0, 0]
-    operands = (
-        offsets,
-        first,
-        np.tile(np.arange(blocks, dtype=np.int32), poses),
-        np.repeat(np.arange(poses, dtype=np.int32), blocks),
-        indices,
-        near,
-        separation,
-        pbt.n_atoms,
-        pbt.n_conn,
-        pbt.conn_atoms,
-        generic,
-        *specific,
+    topology = _nonbonded_topology(pose)
+    chemical, reach = _nonbonded_chemistry(
+        pose, database, electrostatic=electrostatic, soft_repulsive=soft_repulsive
     )
+    if electrostatic:
+        pbt = pose.packed_block_types
+        # Inspection and older scorers retain the same frozen parameter snapshot.
+        pbt.elec_partial_charge = chemical[4]
+        pbt._elec_owners = (database.scoring.elec, pbt.active_block_types)
+    target, channels = ("tmol_elec", 1) if electrostatic else ("tmol_ljlk", 3)
     register(target)
     precise_gradient = not electrostatic and pose.coords.device.platform == "gpu"
     if precise_gradient:
         register(target + "_precise")
-    return (
-        target,
-        channels,
-        jax.device_put(tuple(operands), device=pose.coords.device),
-        float(reach),
-        precise_gradient,
-    )
+    return target, channels, (*topology, *chemical), reach, precise_gradient
 
 
 def independent_nonbonded_energy(coords, state):
