@@ -1,4 +1,5 @@
 #pragma once
+#include <tmol/score/common/pose_energy_accumulation.hh>
 
 #include <tmol/utility/portable/matrix.hh>
 #include <type_traits>
@@ -155,103 +156,114 @@ auto DunbrackPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
   assert(block_is_mirrored.size(0) == n_block_types);
 
   int n_V = output_block_pair_energies ? max_n_blocks : 1;
-  TPack<Real, 4, D> V_t = TPack<Real, 4, D>::zeros({3, n_poses, n_V, n_V});
-  // Block-pair autograd recomputes coordinate derivatives in backward.
-  bool const accumulate_derivs = compute_derivs && !output_block_pair_energies;
-  auto dV_dx_t = accumulate_derivs
-                     ? TPack<Vec<Real, 3>, 2, D>::zeros({3, n_atoms})
-                     : TPack<Vec<Real, 3>, 2, D>::empty({3, 0});
+  return score::common::with_pose_energy_accumulation<D, Real>(
+      output_block_pair_energies, [&](auto precision) {
+        using EnergyReal = decltype(precision);
+        TPack<EnergyReal, 4, D> V_t =
+            TPack<EnergyReal, 4, D>::zeros({3, n_poses, n_V, n_V});
+        // Block-pair autograd recomputes coordinate derivatives in backward.
+        bool const accumulate_derivs =
+            compute_derivs && !output_block_pair_energies;
+        auto dV_dx_t = accumulate_derivs
+                           ? TPack<Vec<Real, 3>, 2, D>::zeros({3, n_atoms})
+                           : TPack<Vec<Real, 3>, 2, D>::empty({3, 0});
 
-  // Both CUDA modes fully write every scratch element they consume.
-  // Keep CPU initialization while avoiding separate CUDA memset launches.
-  auto dihedral_atom_inds_t =
-      D == Device::CPU
-          ? TPack<Vec<Int, DIH_N_ATOMS>, 2, D>::zeros({n_rots, max_n_dih})
-          : TPack<Vec<Int, DIH_N_ATOMS>, 2, D>::empty({n_rots, max_n_dih});
-  auto dihedral_atom_inds = dihedral_atom_inds_t.view;
-  auto dihedral_values_t = D == Device::CPU
-                               ? TPack<Real, 2, D>::zeros({n_rots, max_n_dih})
-                               : TPack<Real, 2, D>::empty({n_rots, max_n_dih});
-  auto dihedral_values = dihedral_values_t.view;
-  // Score-only and block-pair forward calls never consume derivative scratch.
-  int const n_deriv_rots = accumulate_derivs ? n_rots : 0;
-  auto dihedral_deriv_t =
-      D == Device::CPU && accumulate_derivs
-          ? TPack<CoordQuad<Real>, 2, D>::zeros({n_deriv_rots, max_n_dih})
-          : TPack<CoordQuad<Real>, 2, D>::empty({n_deriv_rots, max_n_dih});
-  auto dihedral_deriv = dihedral_deriv_t.view;
+        // Both CUDA modes fully write every scratch element they consume.
+        // Keep CPU initialization while avoiding separate CUDA memset launches.
+        auto dihedral_atom_inds_t =
+            D == Device::CPU
+                ? TPack<Vec<Int, DIH_N_ATOMS>, 2, D>::zeros({n_rots, max_n_dih})
+                : TPack<Vec<Int, DIH_N_ATOMS>, 2, D>::empty(
+                      {n_rots, max_n_dih});
+        auto dihedral_atom_inds = dihedral_atom_inds_t.view;
+        auto dihedral_values_t =
+            D == Device::CPU ? TPack<Real, 2, D>::zeros({n_rots, max_n_dih})
+                             : TPack<Real, 2, D>::empty({n_rots, max_n_dih});
+        auto dihedral_values = dihedral_values_t.view;
+        // Score-only and block-pair forward calls never consume derivative
+        // scratch.
+        int const n_deriv_rots = accumulate_derivs ? n_rots : 0;
+        auto dihedral_deriv_t =
+            D == Device::CPU && accumulate_derivs
+                ? TPack<CoordQuad<Real>, 2, D>::zeros({n_deriv_rots, max_n_dih})
+                : TPack<CoordQuad<Real>, 2, D>::empty(
+                      {n_deriv_rots, max_n_dih});
+        auto dihedral_deriv = dihedral_deriv_t.view;
 
-  auto rotameric_rottable_assignment_t =
-      D == Device::CPU ? TPack<Int, 1, D>::zeros({n_rots})
-                       : TPack<Int, 1, D>::empty({n_rots});
-  auto rotameric_rottable_assignment = rotameric_rottable_assignment_t.view;
+        auto rotameric_rottable_assignment_t =
+            D == Device::CPU ? TPack<Int, 1, D>::zeros({n_rots})
+                             : TPack<Int, 1, D>::empty({n_rots});
+        auto rotameric_rottable_assignment =
+            rotameric_rottable_assignment_t.view;
 
-  auto semirotameric_rottable_assignment_t =
-      D == Device::CPU ? TPack<Int, 1, D>::zeros({n_rots})
-                       : TPack<Int, 1, D>::empty({n_rots});
-  auto semirotameric_rottable_assignment =
-      semirotameric_rottable_assignment_t.view;
+        auto semirotameric_rottable_assignment_t =
+            D == Device::CPU ? TPack<Int, 1, D>::zeros({n_rots})
+                             : TPack<Int, 1, D>::empty({n_rots});
+        auto semirotameric_rottable_assignment =
+            semirotameric_rottable_assignment_t.view;
 
-  // These three terms consume their derivatives sequentially within each
-  // rotamer's thread. Reuse one buffer after each contribution is accumulated.
-  auto dterm_dtor_xyz_t =
-      D == Device::CPU && accumulate_derivs
-          ? TPack<CoordQuad<Real>, 2, D>::zeros({n_deriv_rots, 3})
-          : TPack<CoordQuad<Real>, 2, D>::empty({n_deriv_rots, 3});
-  auto dterm_dtor_xyz = dterm_dtor_xyz_t.view;
+        // These three terms consume their derivatives sequentially within each
+        // rotamer's thread. Reuse one buffer after each contribution is
+        // accumulated.
+        auto dterm_dtor_xyz_t =
+            D == Device::CPU && accumulate_derivs
+                ? TPack<CoordQuad<Real>, 2, D>::zeros({n_deriv_rots, 3})
+                : TPack<CoordQuad<Real>, 2, D>::empty({n_deriv_rots, 3});
+        auto dterm_dtor_xyz = dterm_dtor_xyz_t.view;
 
-  auto V = V_t.view;
-  auto dV_dx = dV_dx_t.view;
+        auto V = V_t.view;
+        auto dV_dx = dV_dx_t.view;
 
-  dunbrack_pose_forward<DeviceDispatch, D, Real, Int>(
-      mgr,
-      rot_coords,
-      rot_coord_offset,
-      first_rot_for_block,
-      first_rot_block_type,
-      pose_stack_inter_block_connections,
-      block_type_atom_downstream_of_conn,
-      rotameric_neglnprob_tables,
-      rotprob_table_sizes,
-      rotprob_table_strides,
-      rotameric_mean_tables,
-      rotameric_sdev_tables,
-      rotmean_table_sizes,
-      rotmean_table_strides,
-      rotameric_bb_start,
-      rotameric_bb_step,
-      rotameric_bb_periodicity,
-      rotameric_rotind2tableind,
-      semirotameric_rotind2tableind,
-      semirotameric_tables,
-      semirot_table_sizes,
-      semirot_table_strides,
-      semirot_start,
-      semirot_step,
-      semirot_periodicity,
-      block_n_dihedrals,
-      block_dih_uaids,
-      block_rotamer_table_set,
-      block_rotameric_index,
-      block_semirotameric_index,
-      block_n_chi,
-      block_n_rotameric_chi,
-      block_probability_table_offset,
-      block_mean_table_offset,
-      block_rotamer_index_to_table_index,
-      block_semirotameric_tableset_offset,
-      block_is_mirrored,
-      output_block_pair_energies,
-      compute_derivs,
-      V,
-      dV_dx,
-      dihedral_atom_inds,
-      dihedral_values,
-      dihedral_deriv,
-      dterm_dtor_xyz,
-      rotameric_rottable_assignment,
-      semirotameric_rottable_assignment);
-  return {V_t, dV_dx_t};
+        dunbrack_pose_forward<DeviceDispatch, D, Real, Int>(
+            mgr,
+            rot_coords,
+            rot_coord_offset,
+            first_rot_for_block,
+            first_rot_block_type,
+            pose_stack_inter_block_connections,
+            block_type_atom_downstream_of_conn,
+            rotameric_neglnprob_tables,
+            rotprob_table_sizes,
+            rotprob_table_strides,
+            rotameric_mean_tables,
+            rotameric_sdev_tables,
+            rotmean_table_sizes,
+            rotmean_table_strides,
+            rotameric_bb_start,
+            rotameric_bb_step,
+            rotameric_bb_periodicity,
+            rotameric_rotind2tableind,
+            semirotameric_rotind2tableind,
+            semirotameric_tables,
+            semirot_table_sizes,
+            semirot_table_strides,
+            semirot_start,
+            semirot_step,
+            semirot_periodicity,
+            block_n_dihedrals,
+            block_dih_uaids,
+            block_rotamer_table_set,
+            block_rotameric_index,
+            block_semirotameric_index,
+            block_n_chi,
+            block_n_rotameric_chi,
+            block_probability_table_offset,
+            block_mean_table_offset,
+            block_rotamer_index_to_table_index,
+            block_semirotameric_tableset_offset,
+            block_is_mirrored,
+            output_block_pair_energies,
+            compute_derivs,
+            V,
+            dV_dx,
+            dihedral_atom_inds,
+            dihedral_values,
+            dihedral_deriv,
+            dterm_dtor_xyz,
+            rotameric_rottable_assignment,
+            semirotameric_rottable_assignment);
+        return std::make_tuple(V_t.template cast<Real>(), dV_dx_t);
+      });
 }
 
 template <

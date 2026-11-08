@@ -1,4 +1,5 @@
 #pragma once
+#include <tmol/score/common/pose_energy_accumulation.hh>
 #include <tmol/score/backbone_torsion/potentials/backbone_rotamer_kernels.hh>
 
 #include <tmol/utility/portable/reduce_ops.hh>
@@ -91,34 +92,39 @@ auto BackboneTorsionPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
   assert(pose_stack_block_type.size(0) == n_poses);
   assert(pose_stack_block_type.size(1) == max_n_blocks);
   int const n_V = output_block_pair_energies ? max_n_blocks : 1;
-  auto V_t = TPack<Real, 4, Dev>::zeros({2, n_poses, n_V, n_V});
-  bool const accumulate_derivs = compute_derivs && !output_block_pair_energies;
-  auto dV_dxyz_t = accumulate_derivs
-                       ? TPack<Vec<Real, 3>, 2, Dev>::zeros({2, n_atoms})
-                       : TPack<Vec<Real, 3>, 2, Dev>::empty({2, 0});
-  backbone_torsion_pose_forward<DeviceDispatch, Dev, Real, Int>(
-      mgr,
-      rot_coords,
-      rot_coord_offset,
-      first_rot_for_block,
-      first_rot_block_type,
-      pose_stack_inter_block_connections,
-      block_type_atom_downstream_of_conn,
-      block_type_rama_table,
-      block_type_omega_table,
-      block_type_lower_conn_ind,
-      block_type_upper_conn_ind,
-      block_type_is_pro,
-      block_type_torsion_atoms,
-      rama_tables,
-      rama_table_params,
-      omega_tables,
-      omega_table_params,
-      output_block_pair_energies,
-      compute_derivs,
-      V_t.view,
-      dV_dxyz_t.view);
-  return {V_t, dV_dxyz_t};
+  return score::common::with_pose_energy_accumulation<Dev, Real>(
+      output_block_pair_energies, [&](auto precision) {
+        using EnergyReal = decltype(precision);
+        auto V_t = TPack<EnergyReal, 4, Dev>::zeros({2, n_poses, n_V, n_V});
+        bool const accumulate_derivs =
+            compute_derivs && !output_block_pair_energies;
+        auto dV_dxyz_t = accumulate_derivs
+                             ? TPack<Vec<Real, 3>, 2, Dev>::zeros({2, n_atoms})
+                             : TPack<Vec<Real, 3>, 2, Dev>::empty({2, 0});
+        backbone_torsion_pose_forward<DeviceDispatch, Dev, Real, Int>(
+            mgr,
+            rot_coords,
+            rot_coord_offset,
+            first_rot_for_block,
+            first_rot_block_type,
+            pose_stack_inter_block_connections,
+            block_type_atom_downstream_of_conn,
+            block_type_rama_table,
+            block_type_omega_table,
+            block_type_lower_conn_ind,
+            block_type_upper_conn_ind,
+            block_type_is_pro,
+            block_type_torsion_atoms,
+            rama_tables,
+            rama_table_params,
+            omega_tables,
+            omega_table_params,
+            output_block_pair_energies,
+            compute_derivs,
+            V_t.view,
+            dV_dxyz_t.view);
+        return std::make_tuple(V_t.template cast<Real>(), dV_dxyz_t);
+      });
 }
 
 template <

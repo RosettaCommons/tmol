@@ -2,6 +2,8 @@
 #include <tmol/score/dunbrack/potentials/dunbrack_pose_kernels.hh>
 #include "native_test_ops.hh"
 #include <array>
+#include <algorithm>
+#include <tmol/score/common/pose_energy_accumulation.hh>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -38,8 +40,8 @@ auto indices32 =
 // Scratch must be overwritten before consumption. Exercise all three score
 // channels, real and undefined torsions, mirrored defaults, padded blocks and
 // residue types without a Dunbrack assignment. No framework allocator is used.
-template <class Real>
-std::vector<Real> evaluate(bool poison, bool derivs, bool block_pairs) {
+template <class Real, class EnergyReal = Real>
+std::vector<EnergyReal> evaluate(bool poison, bool derivs, bool block_pairs) {
   using namespace tmol_test;
   using tmol::portable::Vec;
   using Quad = tmol::portable::Mat<Real, 4, 3>;
@@ -105,7 +107,7 @@ std::vector<Real> evaluate(bool poison, bool derivs, bool block_pairs) {
   for (auto& v : assignments) v = ifill;
   for (auto& v : semiassignments) v = ifill;
   int nv = block_pairs ? 3 : 1;
-  std::vector<Real> energy(3 * 2 * nv * nv, 0);
+  std::vector<EnergyReal> energy(3 * 2 * nv * nv, 0);
   Vec<Real, 3> gradient[3 * na];
   for (auto& v : gradient) v = Vec<Real, 3>::Zero();
   tmol::ContextManager mgr;
@@ -186,7 +188,36 @@ void check_workspace() {
         if (!std::isfinite(value)) throw std::runtime_error("nonfinite result");
     }
 }
+void check_wide_accumulation() {
+  auto wide = evaluate<float, double>(false, true, false);
+  auto narrow = evaluate<float>(false, true, false);
+  auto blocks = evaluate<float>(false, false, true);
+  for (int term = 0; term < 3; ++term)
+    for (int pose = 0; pose < 2; ++pose) {
+      long double sum = 0;
+      for (int cell = 0; cell < 9; ++cell)
+        sum += blocks[(term * 2 + pose) * 9 + cell];
+      if (wide[term * 2 + pose] != sum)
+        throw std::runtime_error("wide total changed per-block float physics");
+    }
+  for (std::size_t i = 6; i < wide.size(); ++i)
+    if (wide[i] != narrow[i])
+      throw std::runtime_error("energy storage changed coordinate derivatives");
+
+  // Completed float contributions must survive cancellation independently of
+  // the order in which GPU workgroups arrive at a pose total.
+  std::array<float, 3> contributions{-16777216.f, 1.f, 16777216.f};
+  do {
+    double total = 0;
+    for (float contribution : contributions)
+      emit_dunbrack_energy<tmol::Device::CPU>(
+          tmol_test::view(&total, {1, 1}), 0, 0, 0, 0, false, contribution);
+    if (total != 1) throw std::runtime_error("lost float energy contribution");
+  } while (std::next_permutation(contributions.begin(), contributions.end()));
+}
+
 int main() {
   check_workspace<float>();
   check_workspace<double>();
+  check_wide_accumulation();
 }

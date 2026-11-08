@@ -13,7 +13,7 @@ using tmol_test::SerialOps;
 using tmol_test::view;
 
 // Compile both complete native entries without framework headers or linkage.
-template <typename Real>
+template <typename Real, typename EnergyReal = Real>
 void instantiate() {
   tmol::ContextManager mgr;
   HBondBasesCtx<Real, int, tmol::Device::CPU> bases;
@@ -41,12 +41,13 @@ void instantiate() {
       Backward>;
   (void)forward;
   (void)backward;
-  HBondCtx<Real, int, tmol::Device::CPU> pose;
+  HBondCtx<Real, int, tmol::Device::CPU, 4, 3, 2, EnergyReal> pose;
   launch_hbond_pose<SerialOps, tmol::Device::CPU, Real, int>(
       pose, 1, 2, 1, false, [](auto kernel) { kernel(0); });
 }
 template void instantiate<float>();
 template void instantiate<double>();
+template void instantiate<float, double>();
 
 template <typename Real>
 void check_indices() {

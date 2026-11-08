@@ -42,6 +42,12 @@ angles use `atan2` to retain precision near planar geometries. Historical
 float32 logarithms and `acos` torsions can differ numerically; dtype preservation
 does not imply bitwise agreement with those older calculations.
 
+CUDA whole-pose hydrogen-bond, Dunbrack and backbone-torsion totals can use
+wider accumulation without changing per-interaction physics or coordinate
+derivatives. Torch selects this for float32 pose totals and casts the completed
+result back to float32. CPU, Metal and block-pair storage retain their existing
+behavior; the wider buffer scales with poses and terms, not block pairs.
+
 `prepare_dunbrack_lookup` and `DunbrackSamplingMetadata.from_database` accept the
 same source library as table preparation, without fitting coefficients.
 `dunbrack_scoring_table_indices` shares scoring eligibility with block preparation;
