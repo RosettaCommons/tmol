@@ -87,10 +87,16 @@ def test_covalent_file_complete_packing_energy_gradient_repeats(backend, filenam
         assert np.max(np.abs(terms[channels.index(name)])) > 1e-3
     reference_energy, reference_gradient = b.value_and_grad(coordinates)
     assert np.linalg.norm(reference_gradient) > 1e-3
+    minimum_energy = reference_energy.copy()
+    maximum_energy = reference_energy.copy()
     # Retain the complete-workflow float32 bounds. Native CUDA reductions must
     # satisfy these on the actual covalent system, not only on small proteins.
     for _ in range(30):
         energy, gradient = b.value_and_grad(coordinates)
+        minimum_energy = np.minimum(minimum_energy, energy)
+        maximum_energy = np.maximum(maximum_energy, energy)
         np.testing.assert_allclose(energy, reference_energy, rtol=3e-6, atol=3e-5)
         np.testing.assert_allclose(gradient, reference_gradient, rtol=3e-6, atol=3e-5)
+    # A middle first result must not hide a larger difference between repeats.
+    np.testing.assert_allclose(maximum_energy, minimum_energy, rtol=3e-6, atol=3e-5)
     np.testing.assert_array_equal(b.coords(), coordinates)
