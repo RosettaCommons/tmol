@@ -100,3 +100,27 @@ def test_covalent_file_complete_packing_energy_gradient_repeats(backend, filenam
     # A middle first result must not hide a larger difference between repeats.
     np.testing.assert_allclose(maximum_energy, minimum_energy, rtol=3e-6, atol=3e-5)
     np.testing.assert_array_equal(b.coords(), coordinates)
+
+
+def test_nglycan_hbond_and_generic_bonded_fixed_coordinate_repeats(backend):
+    """Tiny native accumulation variation must not seed optimizer divergence."""
+    b = backend
+    frontend = prepared_covalent_file(b, "nglycan_tree_1ax2.cif")
+    b.use_beta2016()
+    preset = b.score_function
+    coordinates = b.coords().copy()
+    for name in ("hbond", "gen_torsions"):
+        channel = getattr(frontend.ScoreType, name)
+        b.score_function = frontend.ScoreFunction(
+            b.parameter_database, *((b.device,) if b.framework == "torch" else ())
+        )
+        b.score_function.set_weight(channel, preset.get_weight(channel))
+        if b.framework == "torch":
+            b._render_torch()
+        reference = b.value_and_grad(coordinates)
+        assert np.max(np.abs(reference[0])) > 1e-3
+        assert np.linalg.norm(reference[1]) > 1e-3
+        for _ in range(64):
+            for actual, expected in zip(b.value_and_grad(coordinates), reference):
+                np.testing.assert_array_equal(actual, expected)
+        np.testing.assert_array_equal(b.coords(), coordinates)

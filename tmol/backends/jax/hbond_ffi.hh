@@ -6,15 +6,19 @@
 #include <tmol/score/hbond/potentials/native_hbond_bases.hh>
 
 namespace tmol::jax {
-template <typename Real, bool Sparse = false>
+template <typename Real, bool Sparse = false, bool Precise = false>
 struct HBondWorkspace {
   ByteWorkspace storage;
   Real *spheres = nullptr, *derived_coords;
-  double* energy = nullptr;
+  double *energy = nullptr, *gradient = nullptr;
   int32_t* neighbors = nullptr;
   size_t neighbor_capacity = 0;
   HBondWorkspace(
-      size_t poses, size_t blocks, size_t atoms, void* data = nullptr)
+      size_t poses,
+      size_t blocks,
+      size_t atoms,
+      void* data = nullptr,
+      bool derivative = false)
       : storage(data) {
     if constexpr (!Sparse) {
       auto pairs =
@@ -28,10 +32,12 @@ struct HBondWorkspace {
     derived_coords = storage.take<Real>((Sparse ? atoms : poses * atoms) * 9);
     if constexpr (!Sparse && std::is_same_v<Real, float>)
       energy = storage.take<double>(poses);
+    if constexpr (!Sparse && Precise && std::is_same_v<Real, float>)
+      if (derivative) gradient = storage.take<double>(poses * atoms * 3);
   }
 };
 
-template <bool Sparse = false, bool Weighted = false>
+template <bool Sparse = false, bool Weighted = false, bool Precise = false>
 struct HBondKernelT {
   // Every live scratch element is overwritten below; padding spheres and
   // unused compact-list entries are never read by the common dispatch.
@@ -111,14 +117,17 @@ struct HBondKernelT {
       throw std::invalid_argument("HBond flattened layout exceeds int32");
   }
 
-  static size_t workspace_bytes(const std::vector<ffi::AnyBuffer>& a, bool) {
+  static size_t workspace_bytes(
+      const std::vector<ffi::AnyBuffer>& a, bool derivative) {
     auto poses = a[3].dimensions()[0],
          atoms = a[0].dimensions()[Sparse ? 0 : 1];
     auto blocks = a[3].dimensions()[1];
     return a[0].element_type() == ffi::DataType::F32
-               ? HBondWorkspace<float, Sparse>(poses, blocks, atoms)
+               ? HBondWorkspace<float, Sparse, Precise>(
+                     poses, blocks, atoms, nullptr, derivative)
                      .storage.size_bytes()
-               : HBondWorkspace<double, Sparse>(poses, blocks, atoms)
+               : HBondWorkspace<double, Sparse, Precise>(
+                     poses, blocks, atoms, nullptr, derivative)
                      .storage.size_bytes();
   }
 
@@ -137,8 +146,8 @@ struct HBondKernelT {
          atoms = a[0].dimensions()[Sparse ? 0 : 1];
     auto blocks = a[3].dimensions()[1], rots = a[1].dimensions()[0],
          count = Sparse ? atoms : poses * atoms;
-    HBondWorkspace<Real, Sparse> work(
-        poses, blocks, atoms, workspace.untyped_data());
+    HBondWorkspace<Real, Sparse, Precise> work(
+        poses, blocks, atoms, workspace.untyped_data(), gradient != nullptr);
     auto xyz =
         contiguous_view<Vec<Real, 3>, 1, D>(a[0].untyped_data(), {count});
     auto types =
@@ -205,8 +214,14 @@ struct HBondKernelT {
     using Accumulator = EnergyAccumulator<Ops, D, Real>;
     using EnergyReal =
         std::conditional_t<Sparse, Real, typename Accumulator::Value>;
-    std::optional<Accumulator> total;
+    using GradReal =
+        std::conditional_t<Precise, typename Accumulator::Value, Real>;
+    std::optional<Accumulator> total, derivatives;
     if constexpr (!Sparse) total.emplace(context, energy, work.energy);
+    if constexpr (Precise) {
+      static_assert(!Sparse);
+      if (gradient) derivatives.emplace(context, *gradient, work.gradient);
+    }
     HBondCtx<
         Real,
         I,
@@ -214,7 +229,8 @@ struct HBondKernelT {
         Sparse ? 2 : 4,
         Sparse ? 2 : 3,
         Weighted ? 1 : 2,
-        EnergyReal>
+        EnergyReal,
+        GradReal>
         score{};
     score.rot_coords = xyz;
     score.rot_coord_offset = bases.rot_coord_offset;
@@ -253,7 +269,11 @@ struct HBondKernelT {
           contiguous_view<Real, 4, D>(energy.untyped_data(), {1, poses, 1, 1});
     }
     if (gradient) {
-      if constexpr (Weighted)
+      if constexpr (Precise) {
+        auto values = derivatives->template view<2>({count, 3});
+        score.dV_dcoords =
+            contiguous_view<Vec<GradReal, 3>, 2, D>(values.data(), {1, count});
+      } else if constexpr (Weighted)
         score.dV_dcoords = buffer_view<Vec<Real, 3>, 1, D>(*gradient);
       else
         score.dV_dcoords = contiguous_view<Vec<Real, 3>, 2, D>(
@@ -279,10 +299,13 @@ struct HBondKernelT {
       launch_hbond_pose<Ops, D, Real, I>(
           score, poses, rots, work.neighbor_capacity, true, launch);
       total->finish(context);
+      if constexpr (Precise)
+        if (gradient) derivatives->finish(context);
     }
   }
 };
 using HBondKernel = HBondKernelT<false>;
+using HBondPreciseKernel = HBondKernelT<false, false, true>;
 
 struct RotamerHBondStage {
   static int fill(int64_t, size_t index) { return index == 0 ? 0 : -1; }

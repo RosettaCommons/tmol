@@ -606,6 +606,26 @@ extern "C" uint64_t tmol_lk_ball_weighted_precise_workspace_bytes(
       poses, blocks, atoms, bits, derivative);
 }
 
+extern "C" uint64_t tmol_genbonded_precise_workspace_bytes(
+    int64_t poses, int64_t atoms, int bits, int derivative) {
+  return workspace_bytes(bits, {poses, atoms}, [&](auto real) -> uint64_t {
+    if constexpr (std::is_same_v<decltype(real), float>)
+      return tmol::jax::GenBondedPreciseKernel::values(poses, atoms, derivative)
+             * sizeof(double);
+    return 0;
+  });
+}
+
+extern "C" uint64_t tmol_hbond_precise_workspace_bytes(
+    int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
+  return workspace_bytes(
+      bits, {poses, blocks, atoms}, [&](auto real) -> uint64_t {
+        return tmol::jax::HBondWorkspace<decltype(real), false, true>(
+                   poses, blocks, atoms, nullptr, derivative)
+            .storage.size_bytes();
+      });
+}
+
 extern "C" uint64_t tmol_hbond_workspace_bytes(
     int64_t poses, int64_t blocks, int64_t atoms, int bits, int derivative) {
   return workspace_bytes(

@@ -151,13 +151,16 @@ def prepare_hbond(pose, database, *, rotamers=None):
     return (*topology[:8], *chemical_arrays, *topology[8:])
 
 
-def hbond_energy(coords, parameters):
+def hbond_energy(coords, parameters, *, precise=False):
+    target = "tmol_hbond"
+    if precise and coords.dtype == np.float32:
+        target += "_precise"
     return coordinate_energy(
-        "tmol_hbond",
+        target,
         coords,
         parameters,
         workspace_bytes=workspace_sizes(
-            "tmol_hbond",
+            target,
             (coords.shape[0], parameters[2].shape[1], coords.shape[1]),
             coords.dtype.itemsize * 8,
         ),

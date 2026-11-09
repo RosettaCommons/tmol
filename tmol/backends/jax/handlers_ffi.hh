@@ -39,6 +39,9 @@
 
 #ifndef TMOL_JAX_ONLY_NONBONDED
 TMOL_JAX_ENERGY(tmol_genbonded, tmol::jax::run<tmol::jax::GenBondedKernel>, );
+TMOL_JAX_ENERGY(
+    tmol_genbonded_precise,
+    tmol::jax::run<tmol::jax::GenBondedPreciseKernel>, );
 
 TMOL_JAX_ENERGY(tmol_cartbonded, tmol::jax::run<tmol::jax::CartBondedKernel>, );
 TMOL_JAX_ENERGY(
@@ -92,6 +95,8 @@ TMOL_JAX_ENERGY(
 TMOL_JAX_ENERGY(tmol_disulfide, tmol::jax::run<tmol::jax::DisulfideKernel>, );
 
 TMOL_JAX_ENERGY(tmol_hbond, tmol::jax::run<tmol::jax::HBondKernel>, );
+TMOL_JAX_ENERGY(
+    tmol_hbond_precise, tmol::jax::run<tmol::jax::HBondPreciseKernel>, );
 
 TMOL_JAX_ENERGY(
     tmol_lk_ball_weighted,

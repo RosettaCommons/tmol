@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <vector>
 #include <tuple>
+#include <type_traits>
 #include "xla/ffi/api/ffi.h"
 #include <tmol/score/genbonded/potentials/genbonded_pose_kernels.hh>
 
@@ -122,34 +123,36 @@ inline void validate_genbonded(
   }
 }
 
-template <template <Device> class Ops, Device D, typename Real>
+template <
+    template <Device> class Ops,
+    Device D,
+    typename Real,
+    typename AccumReal = Real>
 void execute_genbonded(
-    const std::vector<ffi::AnyBuffer>& a,
-    ffi::AnyBuffer energy,
-    const ffi::AnyBuffer* gradient) {
+    const std::vector<ffi::AnyBuffer>& a, void* energy, void* gradient) {
   using I = int32_t;
   auto poses = a[0].dimensions()[0], atoms = a[0].dimensions()[1];
   auto xyz =
       contiguous_view<Vec<Real, 3>, 1, D>(a[0].untyped_data(), {poses * atoms});
-  auto e = contiguous_view<Real, 4, D>(energy.untyped_data(), {1, poses, 1, 1});
-  auto g = contiguous_view<Vec<Real, 3>, 2, D>(
-      gradient ? gradient->untyped_data() : nullptr,
-      {1, gradient ? poses * atoms : 0});
+  auto e = contiguous_view<AccumReal, 4, D>(energy, {1, poses, 1, 1});
+  auto g = contiguous_view<Vec<AccumReal, 3>, 2, D>(
+      gradient, {1, gradient ? poses * atoms : 0});
   ContextManager context;
   std::apply(
       [&](auto... tables) {
-        score::genbonded::potentials::genbonded_pose_forward<Ops, D, Real, I>(
-            context,
-            xyz,
-            buffer_view<I, 1, D>(a[1]),
-            buffer_view<I, 2, D>(a[2]),
-            buffer_view<I, 2, D>(a[3]),
-            buffer_view<Vec<I, 2>, 3, D>(a[4]),
-            tables...,
-            false,
-            gradient != nullptr,
-            e,
-            g);
+        score::genbonded::potentials::
+            genbonded_pose_forward<Ops, D, Real, I, AccumReal, AccumReal>(
+                context,
+                xyz,
+                buffer_view<I, 1, D>(a[1]),
+                buffer_view<I, 2, D>(a[2]),
+                buffer_view<I, 2, D>(a[3]),
+                buffer_view<Vec<I, 2>, 3, D>(a[4]),
+                tables...,
+                false,
+                gradient != nullptr,
+                e,
+                g);
       },
       genbonded_tables<D, Real>(a));
 }
@@ -176,7 +179,58 @@ struct GenBondedKernel {
       const std::vector<ffi::AnyBuffer>& a,
       ffi::AnyBuffer e,
       const ffi::AnyBuffer* g) {
-    execute_genbonded<Ops, D, Real>(a, e, g);
+    execute_genbonded<Ops, D, Real>(
+        a, e.untyped_data(), g ? g->untyped_data() : nullptr);
+  }
+};
+
+// Separate target preserves the legacy result ABI and CPU/float64 execution.
+struct GenBondedPreciseKernel : GenBondedKernel {
+  static size_t values(size_t poses, size_t atoms, bool derivative) {
+    auto gradients = derivative ? score::common::checked_dispatch_product(
+                                      poses,
+                                      score::common::checked_dispatch_product(
+                                          atoms, 3, "generic bonded atoms"),
+                                      "generic bonded gradients")
+                                : 0;
+    if (poses > INT32_MAX - gradients)
+      throw std::length_error("generic bonded accumulator exceeds int32");
+    return poses + gradients;
+  }
+  static size_t workspace_bytes(
+      const std::vector<ffi::AnyBuffer>& a, bool derivative) {
+    return a[0].element_type() == ffi::DataType::F32
+               ? values(a[0].dimensions()[0], a[0].dimensions()[1], derivative)
+                     * sizeof(double)
+               : 0;
+  }
+  template <template <Device> class Ops, Device D, typename Real>
+  static void execute(
+      const std::vector<ffi::AnyBuffer>& a,
+      ffi::AnyBuffer energy,
+      const ffi::AnyBuffer* gradient,
+      ffi::AnyBuffer workspace) {
+    if constexpr (!std::is_same_v<Real, float>) {
+      GenBondedKernel::execute<Ops, D, Real>(a, energy, gradient);
+    } else {
+      auto poses = a[0].dimensions()[0], atoms = a[0].dimensions()[1];
+      auto count = values(poses, atoms, gradient != nullptr);
+      auto* wide = static_cast<double*>(workspace.untyped_data());
+      execute_genbonded<Ops, D, Real, double>(
+          a, wide, gradient ? wide + poses : nullptr);
+      auto* e = static_cast<Real*>(energy.untyped_data());
+      auto* g =
+          gradient ? static_cast<Real*>(gradient->untyped_data()) : nullptr;
+      ContextManager context;
+      LAUNCH_BOX_32;
+      Ops<D>::template forall<launch_t>(
+          context, count, [=] TMOL_DEVICE_FUNC(int i) {
+            if (i < poses)
+              e[i] = Real(wide[i]);
+            else
+              g[i - poses] = Real(wide[i]);
+          });
+    }
   }
 };
 }  // namespace tmol::jax

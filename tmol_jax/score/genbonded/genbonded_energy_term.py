@@ -5,7 +5,12 @@ import jax.numpy as jnp
 import numpy as np
 
 from tmol_core.scoring.genbonded import GenBondedPreparation
-from tmol_jax.score._native import coordinate_energy, register, bonded_pose_arguments
+from tmol_jax.score._native import (
+    coordinate_energy,
+    register,
+    bonded_pose_arguments,
+    workspace_sizes,
+)
 from tmol_jax.score.energy_term import EnergyTerm, prepared_palette
 from tmol_jax.score.score_types import ScoreType
 
@@ -37,6 +42,9 @@ class GenBondedEnergyTerm(EnergyTerm):
         ):
             return ()
         register("tmol_genbonded")
+        precise = pose_stack.coords.device.platform == "gpu"
+        if precise:
+            register("tmol_genbonded_precise")
         device = pose_stack.coords.device
         chemical_arrays = prepared_palette(
             pbt,
@@ -45,10 +53,11 @@ class GenBondedEnergyTerm(EnergyTerm):
             lambda: self._prepare_parameters(pbt, prep, blocks, device),
             device=device,
         )
-        return (
+        parameters = (
             jax.device_put(bonded_pose_arguments(pose_stack, pbt), device=device)
             + chemical_arrays
         )
+        return parameters, precise
 
     def _prepare_parameters(self, pbt, prep, blocks, device):
         types = pbt.active_block_types
@@ -76,5 +85,10 @@ class GenBondedEnergyTerm(EnergyTerm):
         if not term_state:
             value = jnp.zeros(coords.shape[0], coords.dtype)
         else:
-            value = coordinate_energy("tmol_genbonded", coords, term_state)
+            parameters, precise = term_state
+            target, sizes = "tmol_genbonded", None
+            if precise and coords.dtype == np.float32:
+                target += "_precise"
+                sizes = workspace_sizes(target, coords.shape[:2], 32)
+            value = coordinate_energy(target, coords, parameters, workspace_bytes=sizes)
         return {ScoreType.gen_torsions: value}

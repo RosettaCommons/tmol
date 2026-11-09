@@ -59,9 +59,7 @@ def prepare_rotamer_bonded(
         cls = CartBondedEnergyTerm if cartesian else GenBondedEnergyTerm
         options = {} if cartesian else {"include_empty": True}
         term = cls(database) if term is None else term
-        parameters = term.setup_for_pose_stack(pose, **options)
-        if cartesian:
-            parameters, _ = parameters
+        parameters, _ = term.setup_for_pose_stack(pose, **options)
         owners, indices = (
             connected_candidates(pose, rotamers) if candidates is None else candidates
         )
