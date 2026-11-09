@@ -317,11 +317,16 @@ def move_particular_setter_name_for_doftype(doftype):
         raise ValueError(f"doftype {doftype} not recognized")
 
 
+@pytest.mark.usefixtures("torch_device")
+@pytest.mark.parametrize(
+    "move_map_fixture",
+    ("mm_for_two_six_res_ubqs_no_term", "mm_for_jagged_465_ubqs"),
+)
 @pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
 def test_set_move_particular_doftypes_for_block_by_integer(
-    doftype, mm_for_two_six_res_ubqs_no_term
+    doftype, move_map_fixture, request
 ):
-    mm = mm_for_two_six_res_ubqs_no_term
+    mm = request.getfixturevalue(move_map_fixture)
 
     varname = f"move_{doftype}"
     maskname = f"move_{doftype}_mask"
@@ -339,60 +344,16 @@ def test_set_move_particular_doftypes_for_block_by_integer(
     assert mask[1, 4, 1]
 
 
-@pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
-def test_set_move_particular_doftypes_for_block_by_integer_jagged(
-    doftype, mm_for_jagged_465_ubqs
-):
-    mm = mm_for_jagged_465_ubqs
-
-    varname = f"move_{doftype}"
-    maskname = f"move_{doftype}_mask"
-
-    var = getattr(mm, varname)
-    mask = getattr(mm, maskname)
-
-    assert var[1, 4, 1].item() is False
-    assert mask[1, 4, 1].item() is False
-
-    setter = getattr(mm, move_particular_setter_name_for_doftype(doftype))
-    setter(1, 4, 1)
-
-    assert var[1, 4, 1]
-    assert mask[1, 4, 1]
-
-
+@pytest.mark.usefixtures("torch_device")
+@pytest.mark.parametrize(
+    "move_map_fixture",
+    ("mm_for_two_six_res_ubqs_no_term", "mm_for_jagged_465_ubqs"),
+)
 @pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
 def test_set_move_particular_doftypes_for_block_by_boolean_mask(
-    doftype, mm_for_two_six_res_ubqs_no_term
+    doftype, move_map_fixture, request
 ):
-    mm = mm_for_two_six_res_ubqs_no_term
-
-    varname = f"move_{doftype}"
-    maskname = f"move_{doftype}_mask"
-
-    var = getattr(mm, varname)
-    mask = getattr(mm, maskname)
-
-    bool_mask = torch.zeros(
-        (mm.n_poses, mm.max_n_blocks, mm.max_n_named_torsions), dtype=torch.bool
-    )
-    bool_mask[1, 4, 3] = True
-
-    setter = getattr(mm, move_particular_setter_name_for_doftype(doftype))
-    setter(bool_mask)
-
-    for i in range(2):
-        for j in range(6):
-            for k in range(4):
-                assert var[i, j, k] == bool_mask[i, j, k]
-                assert mask[i, j, k] == bool_mask[i, j, k]
-
-
-@pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
-def test_set_move_particular_doftypes_for_block_by_boolean_mask_jagged(
-    doftype, mm_for_jagged_465_ubqs
-):
-    mm = mm_for_jagged_465_ubqs
+    mm = request.getfixturevalue(move_map_fixture)
 
     varname = f"move_{doftype}"
     maskname = f"move_{doftype}_mask"
