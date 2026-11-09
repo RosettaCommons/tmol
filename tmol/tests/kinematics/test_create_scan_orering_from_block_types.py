@@ -569,49 +569,7 @@ def test_get_scans_for_two_copies_of_6_res_ubq_H(
     )
     kincoords[1:] = pose_stack.coords.view(-1, 3)[kmd.forest.id[1:]]
 
-    raw_dofs = _inverse_kin(
-        kincoords,
-        kmd.forest.parent,
-        kmd.forest.frame_x,
-        kmd.forest.frame_y,
-        kmd.forest.frame_z,
-        kmd.forest.doftype,
-    )
-
-    assert raw_dofs is not None
-
-    def _p(t):
-        return torch.nn.Parameter(t, requires_grad=False)
-
-    def _tint(ts):
-        return tuple(map(lambda t: t.to(torch.int32), ts))
-
-    kinforest = _p(
-        torch.stack(
-            _tint(
-                [
-                    kmd.forest.id,
-                    kmd.forest.doftype,
-                    kmd.forest.parent,
-                    kmd.forest.frame_x,
-                    kmd.forest.frame_y,
-                    kmd.forest.frame_z,
-                ]
-            ),
-            dim=1,
-        )
-    )
-
-    new_coords = _forward_kin_op(
-        raw_dofs,
-        kmd.scan_data_fw.nodes,
-        kmd.scan_data_fw.scans,
-        kmd.scan_data_fw.gens,
-        kmd.scan_data_bw.nodes,
-        kmd.scan_data_bw.scans,
-        kmd.scan_data_bw.gens,
-        kinforest,
-    )
+    new_coords = _refold(kmd, kincoords)
 
     torch.testing.assert_close(kincoords, new_coords, rtol=1e-5, atol=1e-5)
 
@@ -637,49 +595,7 @@ def test_get_scans_for_two_copies_of_6_res_ubq_U(
     # c1 c2 126 111
     # get_c1_and_c2_atoms: jump atom 182, 181, 167
 
-    raw_dofs = _inverse_kin(
-        kincoords,
-        kmd.forest.parent,
-        kmd.forest.frame_x,
-        kmd.forest.frame_y,
-        kmd.forest.frame_z,
-        kmd.forest.doftype,
-    )
-
-    assert raw_dofs is not None
-
-    def _p(t):
-        return torch.nn.Parameter(t, requires_grad=False)
-
-    def _tint(ts):
-        return tuple(map(lambda t: t.to(torch.int32), ts))
-
-    kinforest = _p(
-        torch.stack(
-            _tint(
-                [
-                    kmd.forest.id,
-                    kmd.forest.doftype,
-                    kmd.forest.parent,
-                    kmd.forest.frame_x,
-                    kmd.forest.frame_y,
-                    kmd.forest.frame_z,
-                ]
-            ),
-            dim=1,
-        )
-    )
-
-    new_coords = _forward_kin_op(
-        raw_dofs,
-        kmd.scan_data_fw.nodes,
-        kmd.scan_data_fw.scans,
-        kmd.scan_data_fw.gens,
-        kmd.scan_data_bw.nodes,
-        kmd.scan_data_bw.scans,
-        kmd.scan_data_bw.gens,
-        kinforest,
-    )
+    new_coords = _refold(kmd, kincoords)
 
     torch.testing.assert_close(kincoords, new_coords, rtol=1e-5, atol=1e-5)
 
@@ -705,49 +621,7 @@ def test_get_scans_for_two_copies_of_6_res_ubq_K(
     # c1 c2 126 111
     # get_c1_and_c2_atoms: jump atom 182, 181, 167
 
-    raw_dofs = _inverse_kin(
-        kincoords,
-        kmd.forest.parent,
-        kmd.forest.frame_x,
-        kmd.forest.frame_y,
-        kmd.forest.frame_z,
-        kmd.forest.doftype,
-    )
-
-    assert raw_dofs is not None
-
-    def _p(t):
-        return torch.nn.Parameter(t, requires_grad=False)
-
-    def _tint(ts):
-        return tuple(map(lambda t: t.to(torch.int32), ts))
-
-    kinforest = _p(
-        torch.stack(
-            _tint(
-                [
-                    kmd.forest.id,
-                    kmd.forest.doftype,
-                    kmd.forest.parent,
-                    kmd.forest.frame_x,
-                    kmd.forest.frame_y,
-                    kmd.forest.frame_z,
-                ]
-            ),
-            dim=1,
-        )
-    )
-
-    new_coords = _forward_kin_op(
-        raw_dofs,
-        kmd.scan_data_fw.nodes,
-        kmd.scan_data_fw.scans,
-        kmd.scan_data_fw.gens,
-        kmd.scan_data_bw.nodes,
-        kmd.scan_data_bw.scans,
-        kmd.scan_data_bw.gens,
-        kinforest,
-    )
+    new_coords = _refold(kmd, kincoords)
 
     torch.testing.assert_close(kincoords, new_coords, rtol=1e-5, atol=1e-5)
 
@@ -765,49 +639,7 @@ def test_kinmodule_construction_for_jagged_stack_H(
     )
     kincoords[1:] = pose_stack.coords.view(-1, 3)[kmd.forest.id[1:]]
 
-    raw_dofs = _inverse_kin(
-        kincoords,
-        kmd.forest.parent,
-        kmd.forest.frame_x,
-        kmd.forest.frame_y,
-        kmd.forest.frame_z,
-        kmd.forest.doftype,
-    )
-
-    assert raw_dofs is not None
-
-    def _p(t):
-        return torch.nn.Parameter(t, requires_grad=False)
-
-    def _tint(ts):
-        return tuple(map(lambda t: t.to(torch.int32), ts))
-
-    kinforest = _p(
-        torch.stack(
-            _tint(
-                [
-                    kmd.forest.id,
-                    kmd.forest.doftype,
-                    kmd.forest.parent,
-                    kmd.forest.frame_x,
-                    kmd.forest.frame_y,
-                    kmd.forest.frame_z,
-                ]
-            ),
-            dim=1,
-        )
-    )
-
-    new_coords = _forward_kin_op(
-        raw_dofs,
-        kmd.scan_data_fw.nodes,
-        kmd.scan_data_fw.scans,
-        kmd.scan_data_fw.gens,
-        kmd.scan_data_bw.nodes,
-        kmd.scan_data_bw.scans,
-        kmd.scan_data_bw.gens,
-        kinforest,
-    )
+    new_coords = _refold(kmd, kincoords)
 
     torch.testing.assert_close(kincoords, new_coords, rtol=1e-5, atol=1e-5)
 
@@ -825,49 +657,7 @@ def test_kinmodule_construction_for_jagged_stack_star(
     )
     kincoords[1:] = pose_stack.coords.view(-1, 3)[kmd.forest.id[1:]]
 
-    raw_dofs = _inverse_kin(
-        kincoords,
-        kmd.forest.parent,
-        kmd.forest.frame_x,
-        kmd.forest.frame_y,
-        kmd.forest.frame_z,
-        kmd.forest.doftype,
-    )
-
-    assert raw_dofs is not None
-
-    def _p(t):
-        return torch.nn.Parameter(t, requires_grad=False)
-
-    def _tint(ts):
-        return tuple(map(lambda t: t.to(torch.int32), ts))
-
-    kinforest = _p(
-        torch.stack(
-            _tint(
-                [
-                    kmd.forest.id,
-                    kmd.forest.doftype,
-                    kmd.forest.parent,
-                    kmd.forest.frame_x,
-                    kmd.forest.frame_y,
-                    kmd.forest.frame_z,
-                ]
-            ),
-            dim=1,
-        )
-    )
-
-    new_coords = _forward_kin_op(
-        raw_dofs,
-        kmd.scan_data_fw.nodes,
-        kmd.scan_data_fw.scans,
-        kmd.scan_data_fw.gens,
-        kmd.scan_data_bw.nodes,
-        kmd.scan_data_bw.scans,
-        kmd.scan_data_bw.gens,
-        kinforest,
-    )
+    new_coords = _refold(kmd, kincoords)
 
     torch.testing.assert_close(kincoords, new_coords, rtol=1e-5, atol=1e-5)
 
@@ -883,6 +673,8 @@ def _refold(kmd, kincoords):
         forest.frame_z,
         forest.doftype,
     )
+    assert raw_dofs is not None
+
     kinforest = torch.nn.Parameter(
         torch.stack(
             [
