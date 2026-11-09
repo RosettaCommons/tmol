@@ -409,6 +409,17 @@ def test_default_packing_chunk_size_tiers(n_blocks, expected, monkeypatch):
     assert _max_poses_per_packing_chunk(pose_stack) == expected
 
 
+def test_packing_chunk_size_counts_cached_allocator_memory(monkeypatch):
+    monkeypatch.delenv("TMOL_PACK_MAX_POSES_PER_CHUNK", raising=False)
+    gib = 1024**3
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda device: (4 * gib, 0))
+    monkeypatch.setattr(torch.cuda, "memory_reserved", lambda device: 100 * gib)
+    monkeypatch.setattr(torch.cuda, "memory_allocated", lambda device: 4 * gib)
+    pose_stack = SimpleNamespace(max_n_blocks=800, device=torch.device("cuda"))
+    # 0.25 * (4 + 96) GiB over 800 blocks * 2 MiB per block
+    assert _max_poses_per_packing_chunk(pose_stack) == 10
+
+
 @pytest.mark.parametrize("configured", ["0", "-1", "not-an-int"])
 def test_packing_chunk_size_rejects_invalid_override(configured, monkeypatch):
     monkeypatch.setenv("TMOL_PACK_MAX_POSES_PER_CHUNK", configured)

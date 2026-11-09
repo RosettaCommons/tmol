@@ -32,8 +32,12 @@ def _lbfgs_two_loop(grad, dirs, stps):
     return _lbfgs_two_loop_impl(grad, dirs, stps)
 
 
-def _lbfgs_two_loop_impl(grad, dirs, stps, history_start=0):
-    """Compact solve with histories kept in their physical circular slots."""
+def _lbfgs_two_loop_impl(grad, dirs, stps, history_start=0, double_scratch=None):
+    """Compact solve with histories kept in their physical circular slots.
+
+    double_scratch: optional full-capacity float64 (dirs, stps) buffers that
+    receive the promoted histories instead of fresh allocations.
+    """
     unbatched = grad.dim() == 1
     if unbatched:
         grad = grad.unsqueeze(0)
@@ -45,8 +49,15 @@ def _lbfgs_two_loop_impl(grad, dirs, stps, history_start=0):
     #  a) imprecise on CUDA at float32
     #  b) small matrices (M x M) where M is history length (typically 128)
     # promote to float64
-    S = stps.double()
-    Y = dirs.double()
+    if double_scratch is None or stps.dtype == torch.float64:
+        S = stps.double()
+        Y = dirs.double()
+    else:
+        # The history grows a row per call until full, so a fresh cast never
+        # fits the block the previous call freed and grows the CUDA cache.
+        m = stps.shape[0]
+        Y = double_scratch[0][:m].view_as(dirs).copy_(dirs)
+        S = double_scratch[1][:m].view_as(stps).copy_(stps)
     q = -grad.double()
     # Explicit batched products avoid einsum's repeated layout planning. Keep
     # the single-segment, broadcast, and differentiable paths: their reduction
@@ -263,16 +274,12 @@ class LBFGS_Armijo(Optimizer):
     Parameters:
         lr (float): learning rate (default: 1)
         max_iter (int): maximal number of iterations (default: 200)
-        atol (float): an iteration whose energy change is at most atol counts
-            as small (default: 1e-2, energy units)
-        patience (int): a segment converges after this many consecutive small
-            iterations (default: 5)
-        rtol (float): if set, an iteration whose relative energy change is at
-            most rtol also counts as small (default: None)
-        gradtol (float): if set, a segment also converges once
-            max_i |df/dx_i| <= gradtol, in the units of the minimized degrees
-            of freedom (default: None)
-        history_size (int): update history size (default: 128).
+        rtol (float): relative energy-change tolerance (default: None)
+        atol (float): absolute energy-change tolerance (default: 1e-2)
+        patience (int): consecutive small iterations required (default: 5)
+        gradtol (float): max |gradient| required for convergence; a failed
+            line search below it also converges (default: None)
+        history_size (int): update history size (default: 200).
         segment_ids (Tensor): the segment (e.g. pose) each parameter element
             belongs to; each segment is minimized independently (default: one)
         value_only_line_search (bool): evaluate Armijo trial points with a
@@ -350,7 +357,7 @@ class LBFGS_Armijo(Optimizer):
         rtol=None,
         atol=1e-2,
         gradtol=None,
-        history_size=128,
+        history_size=200,
         minstep=1e-12,
         verbose=False,
         segment_ids=None,
@@ -400,6 +407,7 @@ class LBFGS_Armijo(Optimizer):
 
         self._last_loss_vec = None
         self._sum_scratch = None
+        self._double_history_scratch = None
         if segment_ids is None:
             # the whole parameter as one segment: the same code path as a stack
             segment_ids = torch.zeros(
@@ -515,6 +523,23 @@ class LBFGS_Armijo(Optimizer):
                 device=values.device,
             )
         return self._pad(values, out=self._sum_scratch).sum(-1)
+
+    def _double_history(self, hist):
+        """Reused float64 (dirs, stps) buffers shaped like the history matrices."""
+        if hist.dtype == torch.float64:
+            return None
+        scratch = self._double_history_scratch
+        if (
+            scratch is None
+            or scratch[0].shape != hist.shape
+            or scratch[0].device != hist.device
+        ):
+            scratch = tuple(
+                torch.empty(hist.shape, dtype=torch.float64, device=hist.device)
+                for _ in range(2)
+            )
+            self._double_history_scratch = scratch
+        return scratch
 
     def _seg_amax(self, values):
         """Maximum of a parameter-shaped vector within each segment."""
@@ -810,6 +835,7 @@ class LBFGS_Armijo(Optimizer):
                                 old_dirs_view,
                                 old_stps_view,
                                 ctx.history_start,
+                                self._double_history(ctx.old_dirs_mat),
                             )
                         )
                     )
@@ -950,8 +976,11 @@ class LBFGS_Armijo(Optimizer):
             return False
 
         newly_converged = torch.zeros_like(ctx.converged)
+        small_grad = None
         if ctx.gradtol is not None:
-            newly_converged |= self._seg_amax(ctx.flat_grad.abs()) <= ctx.gradtol
+            small_grad = self._seg_amax(ctx.flat_grad.abs()) <= ctx.gradtol
+            # a line search that just failed at a low-gradient point is done
+            newly_converged |= ctx.needs_reset & small_grad
         if ctx.prev_loss_vec is not None:
             dE = (ctx.loss_vec - ctx.prev_loss_vec).abs()
             small = torch.zeros_like(ctx.converged)
@@ -967,7 +996,10 @@ class LBFGS_Armijo(Optimizer):
             ctx.small_steps.copy_(
                 torch.where(ctx.needs_reset, ctx.small_steps, counted)
             )
-            newly_converged |= ctx.small_steps >= ctx.patience
+            energy_converged = ctx.small_steps >= ctx.patience
+            if small_grad is not None:
+                energy_converged &= small_grad
+            newly_converged |= energy_converged
         ctx.converged |= newly_converged
         done = self._inactive(ctx)
 

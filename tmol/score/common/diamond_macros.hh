@@ -36,6 +36,15 @@
 #define TMOL_DEVICE_FUNC
 #endif
 
+// Capture list for lambdas inside a kernel body taking ctx by reference:
+// copying ctx into every lambda is costly on the host, but nvcc's __device__
+// lambdas cannot capture by reference.
+#ifdef __NVCC__
+#define TMOL_CAPTURE_CTX =
+#else
+#define TMOL_CAPTURE_CTX =, &ctx
+#endif
+
 // Retrieve the architecture-specific nt/vt params
 // from the launch_t struct; requires a launch_box
 // specification (perhaps from launch_box_macros.hh)
