@@ -10,13 +10,17 @@ CPU_PYTEST_WORKERS="${CPU_PYTEST_WORKERS:-4}"
 export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 
+python -I - <<'PY'
+from importlib.util import find_spec
+
+assert find_spec("jax") is None, "Torch-only CI unexpectedly contains JAX"
+PY
+
+TMOL_TEST_DEVICE=cpu TMOL_TEST_BACKENDS="${TMOL_TEST_BACKENDS:-torch-cpu,torch-mps}" \
 CUDA_VISIBLE_DEVICES="" COVERAGE_FILE="${GITHUB_WORKSPACE}/.coverage.cpu" \
   pytest -p no:rerunfailures -ra --durations=25 \
   -n "${CPU_PYTEST_WORKERS}" --dist=worksteal \
   --cov="${GITHUB_WORKSPACE}/tmol" \
   --cov-report="xml:${GITHUB_WORKSPACE}/coverage.cpu.xml" \
-  --junitxml="${GITHUB_WORKSPACE}/testing.cpu.junit.xml" -k "not cuda" \
-  . .github/scripts
-# .github/scripts is named explicitly: pytest's default norecursedirs skips
-# dot-directories, so the release/publish wiring tests there were collected by
-# nobody and had never run.
+  --junitxml="${GITHUB_WORKSPACE}/testing.cpu.junit.xml" \
+  --ignore=tests/release .

@@ -5,6 +5,7 @@ import yaml
 from typing import Tuple, Optional
 
 from tmol.types._torch import Tensor
+from tmol_core.database.library_records import DunMappingParams
 
 
 @attr.s(auto_attribs=True, slots=True, frozen=True)
@@ -65,12 +66,6 @@ class SemiRotamericAADunbrackLibrary:
 
 
 @attr.s(auto_attribs=True, slots=True, frozen=True)
-class DunMappingParams:
-    dun_table_name: str
-    residue_name: str
-
-
-@attr.s(auto_attribs=True, slots=True, frozen=True)
 class DunbrackRotamerLibrary:
     dun_lookup: Tuple[DunMappingParams, ...]
     rotameric_libraries: Tuple[RotamericAADunbrackLibrary, ...]
@@ -85,6 +80,10 @@ class DunbrackRotamerLibrary:
                 DunbrackRotamerLibrary,
                 (DunbrackRotamerLibrary, f"{_OLD}.DunbrackRotamerLibrary"),
                 DunMappingParams,
+                (
+                    DunMappingParams,
+                    "tmol.database.scoring._dunbrack_libraries.DunMappingParams",
+                ),
                 (DunMappingParams, f"{_OLD}.DunMappingParams"),
                 SemiRotamericAADunbrackLibrary,
                 (

@@ -682,23 +682,24 @@ class LKBallScoringData {
   LKBallResPairData<Real> pair_data;
 };
 
-template <typename Real, int TILE_SIZE, int MAX_N_WATER, int MAX_N_CONN>
+template <typename Real, int TileSize, int MaxNWater, int MaxNConn>
 struct LKBallBlockPairSharedData {
-  Real pose_coords1[TILE_SIZE * 3];  // 768 bytes for coords
-  Real pose_coords2[TILE_SIZE * 3];
+  Real pose_coords1[TileSize * 3];  // 768 bytes for coords
+  Real pose_coords2[TileSize * 3];
 
   unsigned char n_polars1;  // 4 bytes for counts
   unsigned char n_polars2;
   unsigned char n_occluders1;
   unsigned char n_occluders2;
-  unsigned char pol_occ_tile_inds1[TILE_SIZE];  // 64 bytes for indices
-  unsigned char pol_occ_tile_inds2[TILE_SIZE];
+  unsigned char pol_occ_tile_inds1[TileSize];  // 64 bytes for indices
+  unsigned char pol_occ_tile_inds2[TileSize];
 
-  unsigned char conn_ats1[MAX_N_CONN];  // 12 bytes
-  unsigned char conn_ats2[MAX_N_CONN];
-  unsigned char path_dist1[MAX_N_CONN * TILE_SIZE];  // 384 bytes
-  unsigned char path_dist2[MAX_N_CONN * TILE_SIZE];
-  unsigned char conn_seps[MAX_N_CONN * MAX_N_CONN];  // 144 bytes
+  int conn_ats1[MaxNConn];  // Full residue atom indices, including atoms above
+                            // 255.
+  int conn_ats2[MaxNConn];
+  unsigned char path_dist1[MaxNConn * TileSize];  // 384 bytes
+  unsigned char path_dist2[MaxNConn * TileSize];
+  unsigned char conn_seps[MaxNConn * MaxNConn];  // 144 bytes
 };
 
 #undef def
@@ -708,7 +709,7 @@ template <
     tmol::Device Dev,
     int nt,
     typename Int,
-    int MAX_N_WATER,
+    int MaxNWater,
     typename Real,
     typename PoseCoordsView,
     typename WaterCoordsView,
@@ -727,8 +728,8 @@ void TMOL_DEVICE_FUNC lk_ball_load_block_coords_and_params_into_shared(
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
     WorkgroupLane<Dev> lane = {}) {
-  // pre-condition: n_atoms_to_load < TILE_SIZE
-  // Note that TILE_SIZE is not explicitly passed in, but is "present"
+  // pre-condition: n_atoms_to_load < TileSize
+  // Note that TileSize is not explicitly passed in, but is "present"
   // in r_dat.coords allocation
 
   // Waters and per-atom parameters are immutable and already contiguous for
@@ -768,8 +769,8 @@ template <
     tmol::Device Dev,
     int nt,
     typename Int,
-    int TILE_SIZE,
-    int MAX_N_WATER,
+    int TileSize,
+    int MaxNWater,
     typename Real,
     typename PoseCoordsView,
     typename WaterCoordsView,
@@ -788,7 +789,7 @@ void TMOL_DEVICE_FUNC lk_ball_load_block_into_shared(
     int n_atoms_to_load,
     int start_atom,
     bool count_pair_striking_dist,
-    TMOL_SHARED_PTR(unsigned char) conn_ats,
+    TMOL_SHARED_PTR(int) conn_ats,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
     WorkgroupLane<Dev> lane = {}) {
@@ -797,7 +798,7 @@ void TMOL_DEVICE_FUNC lk_ball_load_block_into_shared(
       Dev,
       nt,
       Int,
-      MAX_N_WATER>(
+      MaxNWater>(
       pose_coords,
       water_coords,
       block_type_tile_pol_occ_inds,
@@ -815,7 +816,7 @@ void TMOL_DEVICE_FUNC lk_ball_load_block_into_shared(
       for (int j = 0; j < r_dat.n_conn; ++j) {
         unsigned char ij_path_dist =
             block_type_path_distance[r_dat.block_type][conn_ats[j]][atid];
-        r_dat.path_dist[j * TILE_SIZE + count] = ij_path_dist;
+        r_dat.path_dist[j * TileSize + count] = ij_path_dist;
       }
     }
   });
@@ -831,9 +832,9 @@ template <
     int nt,
     typename Int,
     typename Real,
-    int TILE_SIZE,
-    int MAX_N_WATER,
-    int MAX_N_CONN,
+    int TileSize,
+    int MaxNWater,
+    int MaxNConn,
     typename RotCoordOffsetView,
     typename BlockTypeIndForRotView,
     typename PoseStackInterResidueConnectionsView,
@@ -864,7 +865,7 @@ void TMOL_DEVICE_FUNC lk_ball_load_tile_invariant_interres_data(
     int n_atoms2,
     TMOL_THREAD LKBallScoringData<Real>& inter_dat,
     TMOL_SHARED_REF(
-        LKBallBlockPairSharedData<Real, TILE_SIZE, MAX_N_WATER, MAX_N_CONN>)
+        LKBallBlockPairSharedData<Real, TileSize, MaxNWater, MaxNConn>)
         shared_m,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
@@ -948,9 +949,9 @@ template <
     tmol::Device Dev,
     int nt,
     typename Int,
-    int TILE_SIZE,
-    int MAX_N_WATER,
-    int MAX_N_CONN,
+    int TileSize,
+    int MaxNWater,
+    int MaxNConn,
     typename Real,
     typename PoseCoordsView,
     typename WaterCoordsView,
@@ -972,7 +973,7 @@ void TMOL_DEVICE_FUNC lk_ball_load_interres1_tile_data_to_shared(
     int n_atoms_to_load1,
     TMOL_THREAD LKBallScoringData<Real>& inter_dat,
     TMOL_SHARED_REF(
-        LKBallBlockPairSharedData<Real, TILE_SIZE, MAX_N_WATER, MAX_N_CONN>)
+        LKBallBlockPairSharedData<Real, TileSize, MaxNWater, MaxNConn>)
         shared_m,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
@@ -997,8 +998,8 @@ void TMOL_DEVICE_FUNC lk_ball_load_interres1_tile_data_to_shared(
       Dev,
       nt,
       Int,
-      TILE_SIZE,
-      MAX_N_WATER>(
+      TileSize,
+      MaxNWater>(
       pose_coords,
       water_coords,
       block_type_tile_pol_occ_inds,
@@ -1019,9 +1020,9 @@ template <
     tmol::Device Dev,
     int nt,
     typename Int,
-    int TILE_SIZE,
-    int MAX_N_WATER,
-    int MAX_N_CONN,
+    int TileSize,
+    int MaxNWater,
+    int MaxNConn,
     typename Real,
     typename PoseCoordsView,
     typename WaterCoordsView,
@@ -1043,7 +1044,7 @@ void TMOL_DEVICE_FUNC lk_ball_load_interres2_tile_data_to_shared(
     int n_atoms_to_load2,
     TMOL_THREAD LKBallScoringData<Real>& inter_dat,
     TMOL_SHARED_REF(
-        LKBallBlockPairSharedData<Real, TILE_SIZE, MAX_N_WATER, MAX_N_CONN>)
+        LKBallBlockPairSharedData<Real, TileSize, MaxNWater, MaxNConn>)
         shared_m,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
@@ -1068,8 +1069,8 @@ void TMOL_DEVICE_FUNC lk_ball_load_interres2_tile_data_to_shared(
       Dev,
       nt,
       Int,
-      TILE_SIZE,
-      MAX_N_WATER>(
+      TileSize,
+      MaxNWater>(
       pose_coords,
       water_coords,
       block_type_tile_pol_occ_inds,
@@ -1091,9 +1092,9 @@ template <
     int nt,
     typename Int,
     typename Real,
-    int TILE_SIZE,
-    int MAX_N_WATER,
-    int MAX_N_CONN,
+    int TileSize,
+    int MaxNWater,
+    int MaxNConn,
     typename RotCoordOffsetView,
     typename BlockTypeIndForRotView,
     typename GlobalParamsView>
@@ -1109,7 +1110,7 @@ void TMOL_DEVICE_FUNC lk_ball_load_tile_invariant_intrares_data(
     int n_atoms1,
     TMOL_THREAD LKBallScoringData<Real>& intra_dat,
     TMOL_SHARED_REF(
-        LKBallBlockPairSharedData<Real, TILE_SIZE, MAX_N_WATER, MAX_N_CONN>)
+        LKBallBlockPairSharedData<Real, TileSize, MaxNWater, MaxNConn>)
         shared_m,
     // Unused here -- this loader reaches no workgroup primitive -- but taken
     // for uniformity with its siblings, whose call sites in
@@ -1164,9 +1165,9 @@ template <
     tmol::Device Dev,
     int nt,
     typename Int,
-    int TILE_SIZE,
-    int MAX_N_WATER,
-    int MAX_N_CONN,
+    int TileSize,
+    int MaxNWater,
+    int MaxNConn,
     typename Real,
     typename PoseCoordsView,
     typename WaterCoordsView,
@@ -1186,7 +1187,7 @@ void TMOL_DEVICE_FUNC lk_ball_load_intrares1_tile_data_to_shared(
     int n_atoms_to_load1,
     TMOL_THREAD LKBallScoringData<Real>& intra_dat,
     TMOL_SHARED_REF(
-        LKBallBlockPairSharedData<Real, TILE_SIZE, MAX_N_WATER, MAX_N_CONN>)
+        LKBallBlockPairSharedData<Real, TileSize, MaxNWater, MaxNConn>)
         shared_m,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
@@ -1210,7 +1211,7 @@ void TMOL_DEVICE_FUNC lk_ball_load_intrares1_tile_data_to_shared(
       Dev,
       nt,
       Int,
-      MAX_N_WATER>(
+      MaxNWater>(
       pose_coords,
       water_coords,
       block_type_tile_pol_occ_inds,
@@ -1228,9 +1229,9 @@ template <
     tmol::Device Dev,
     int nt,
     typename Int,
-    int TILE_SIZE,
-    int MAX_N_WATER,
-    int MAX_N_CONN,
+    int TileSize,
+    int MaxNWater,
+    int MaxNConn,
     typename Real,
     typename PoseCoordsView,
     typename WaterCoordsView,
@@ -1250,7 +1251,7 @@ void TMOL_DEVICE_FUNC lk_ball_load_intrares2_tile_data_to_shared(
     int n_atoms_to_load2,
     TMOL_THREAD LKBallScoringData<Real>& intra_dat,
     TMOL_SHARED_REF(
-        LKBallBlockPairSharedData<Real, TILE_SIZE, MAX_N_WATER, MAX_N_CONN>)
+        LKBallBlockPairSharedData<Real, TileSize, MaxNWater, MaxNConn>)
         shared_m,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
@@ -1279,7 +1280,7 @@ void TMOL_DEVICE_FUNC lk_ball_load_intrares2_tile_data_to_shared(
       Dev,
       nt,
       Int,
-      MAX_N_WATER>(
+      MaxNWater>(
       pose_coords,
       water_coords,
       block_type_tile_pol_occ_inds,
@@ -1294,15 +1295,15 @@ void TMOL_DEVICE_FUNC lk_ball_load_intrares2_tile_data_to_shared(
 
 template <
     tmol::Device Dev,
-    int TILE_SIZE,
-    int MAX_N_WATER,
-    int MAX_N_CONN,
+    int TileSize,
+    int MaxNWater,
+    int MaxNConn,
     typename Real>
 void TMOL_DEVICE_FUNC lk_ball_load_intrares_data_from_shared(
     int tile_ind1,
     int tile_ind2,
     TMOL_SHARED_REF(
-        LKBallBlockPairSharedData<Real, TILE_SIZE, MAX_N_WATER, MAX_N_CONN>)
+        LKBallBlockPairSharedData<Real, TileSize, MaxNWater, MaxNConn>)
         shared_m,
     TMOL_THREAD LKBallScoringData<Real>& intra_dat) {
   // set the pointers in intra_dat to point at the shared-memory arrays
@@ -1335,12 +1336,12 @@ void TMOL_DEVICE_FUNC lk_ball_load_intrares_data_from_shared(
   }
 }
 
-template <int MAX_N_WATER, typename Real>
+template <int MaxNWater, typename Real>
 TMOL_DEVICE_FUNC lk_ball_Vt<Real> lk_ball_atom_energy_full(
     int polar_ind,               // in [0:n_polar)
     int occluder_ind,            // in [0:n_occluders)
-    int polar_atom_tile_ind,     // in [0:TILE_SIZE)
-    int occluder_atom_tile_ind,  // in [0:TILE_SIZE)
+    int polar_atom_tile_ind,     // in [0:TileSize)
+    int occluder_atom_tile_ind,  // in [0:TileSize)
     int polar_start,
     int occluder_start,
     TMOL_THREAD LKBallSingleResData<Real> const& polar_block_dat,
@@ -1366,18 +1367,18 @@ TMOL_DEVICE_FUNC lk_ball_Vt<Real> lk_ball_atom_energy_full(
     return {0, 0, 0, 0};
   }
 
-  tmol::portable::Mat<Real, MAX_N_WATER, 3> wmat_polar;
-  tmol::portable::Mat<Real, MAX_N_WATER, 3> wmat_occluder;
+  tmol::portable::Mat<Real, MaxNWater, 3> wmat_polar;
+  tmol::portable::Mat<Real, MaxNWater, 3> wmat_occluder;
 
-  for (int wi = 0; wi < MAX_N_WATER; wi++) {
+  for (int wi = 0; wi < MaxNWater; wi++) {
     tmol::portable::row_ref(wmat_polar, wi) = coord_from_shared(
-        polar_block_dat.water_coords, MAX_N_WATER * polar_atom_tile_ind + wi);
+        polar_block_dat.water_coords, MaxNWater * polar_atom_tile_ind + wi);
     tmol::portable::row_ref(wmat_occluder, wi) = coord_from_shared(
         occluder_block_dat.water_coords,
-        MAX_N_WATER * occluder_atom_tile_ind + wi);
+        MaxNWater * occluder_atom_tile_ind + wi);
   }
 
-  return lk_ball_score<Real, MAX_N_WATER>::V(
+  return lk_ball_score<Real, MaxNWater>::V(
       polar_xyz,
       occluder_xyz,
       wmat_polar,
@@ -1396,18 +1397,19 @@ TMOL_DEVICE_FUNC lk_ball_Vt<Real> lk_ball_atom_energy_full(
 // Calculate and write to global memory only the derivatives for the two
 // indicated atoms. Does not return the score
 template <
-    int TILE_SIZE,
-    int MAX_N_WATER,
+    int TileSize,
+    int MaxNWater,
     typename Real,
     tmol::Device Dev,
     bool UseSharedScratch = false,
+    typename GradReal = Real,
     typename PoseDerivView = void,
     typename WaterDerivView = void>
 TMOL_DEVICE_FUNC void lk_ball_atom_derivs_full(
     int polar_ind,               // in [0:n_polar)
     int occluder_ind,            // in [0:n_occluders)
-    int polar_atom_tile_ind,     // in [0:TILE_SIZE)
-    int occluder_atom_tile_ind,  // in [0:TILE_SIZE)
+    int polar_atom_tile_ind,     // in [0:TileSize)
+    int occluder_atom_tile_ind,  // in [0:TileSize)
     int polar_start,
     int occluder_start,
     TMOL_THREAD LKBallSingleResData<Real> const& polar_block_dat,
@@ -1441,19 +1443,19 @@ TMOL_DEVICE_FUNC void lk_ball_atom_derivs_full(
       >= distance_threshold * distance_threshold)
     return;
 
-  tmol::portable::Mat<Real, MAX_N_WATER, 3> wmat_polar;
-  tmol::portable::Mat<Real, MAX_N_WATER, 3> wmat_occluder;
+  tmol::portable::Mat<Real, MaxNWater, 3> wmat_polar;
+  tmol::portable::Mat<Real, MaxNWater, 3> wmat_occluder;
 
-  for (int wi = 0; wi < MAX_N_WATER; wi++) {
+  for (int wi = 0; wi < MaxNWater; wi++) {
     tmol::portable::row_ref(wmat_polar, wi) = coord_from_shared(
-        polar_block_dat.water_coords, MAX_N_WATER * polar_atom_tile_ind + wi);
+        polar_block_dat.water_coords, MaxNWater * polar_atom_tile_ind + wi);
     tmol::portable::row_ref(wmat_occluder, wi) = coord_from_shared(
         occluder_block_dat.water_coords,
-        MAX_N_WATER * occluder_atom_tile_ind + wi);
+        MaxNWater * occluder_atom_tile_ind + wi);
   }
 
   auto dV =
-      lk_ball_score<Real, MAX_N_WATER>::template weighted_dV<UseSharedScratch>(
+      lk_ball_score<Real, MaxNWater>::template weighted_dV<UseSharedScratch>(
           polar_xyz,
           occluder_xyz,
           wmat_polar,
@@ -1471,7 +1473,7 @@ TMOL_DEVICE_FUNC void lk_ball_atom_derivs_full(
            TMOL_THREAD Real3 const& derivs) {
         for (int j = 0; j < 3; ++j) {
           if (derivs[j] != 0) {
-            accumulate_grad<Dev, Real>::add(
+            accumulate_grad<Dev, GradReal>::add(
                 dV_d_pose_coords[block_dat.rot_coord_offset + atom_ind][j],
                 derivs[j]);
           }
@@ -1483,11 +1485,10 @@ TMOL_DEVICE_FUNC void lk_ball_atom_derivs_full(
            TMOL_THREAD LKBallSingleResData<Real> const& block_dat,
            int atom_ind,
            int water_ind,
-           TMOL_THREAD tmol::portable::Mat<Real, MAX_N_WATER, 3> const&
-               derivs) {
+           TMOL_THREAD tmol::portable::Mat<Real, MaxNWater, 3> const& derivs) {
         for (int j = 0; j < 3; ++j) {
           if (derivs(water_ind, j) != 0) {
-            accumulate_grad<Dev, Real>::add(
+            accumulate_grad<Dev, GradReal>::add(
                 dV_d_water_coords[block_dat.rot_coord_offset + atom_ind]
                                  [water_ind][j],
                 derivs(water_ind, j));
@@ -1498,18 +1499,18 @@ TMOL_DEVICE_FUNC void lk_ball_atom_derivs_full(
   accum_derivs(polar_block_dat, polar_start + polar_atom_tile_ind, dV.dI);
   accum_derivs(
       occluder_block_dat, occluder_start + occluder_atom_tile_ind, dV.dJ);
-  for (int i = 0; i < MAX_N_WATER; ++i) {
+  for (int i = 0; i < MaxNWater; ++i) {
     if (tmol::portable::math::isnan(
             polar_block_dat
-                .water_coords[3 * (MAX_N_WATER * polar_atom_tile_ind + i)]))
+                .water_coords[3 * (MaxNWater * polar_atom_tile_ind + i)]))
       continue;
     water_accum_derivs(
         polar_block_dat, polar_start + polar_atom_tile_ind, i, dV.dWI);
   }
-  for (int i = 0; i < MAX_N_WATER; ++i) {
+  for (int i = 0; i < MaxNWater; ++i) {
     if (tmol::portable::math::isnan(
             occluder_block_dat
-                .water_coords[3 * (MAX_N_WATER * occluder_atom_tile_ind + i)]))
+                .water_coords[3 * (MaxNWater * occluder_atom_tile_ind + i)]))
       continue;
     water_accum_derivs(
         occluder_block_dat, occluder_start + occluder_atom_tile_ind, i, dV.dWJ);

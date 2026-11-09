@@ -1,0 +1,666 @@
+{
+  "scope": "Current implementation, not an all-TMol parity claim. Input support does not imply complete scoring.",
+  "domains": [
+    {
+      "domain": "canonical_proteins",
+      "torch": "supported",
+      "jax": "values_gradients_on_molecular_fixtures",
+      "repro_fixture": [
+        "tests/scientific/test_score_contract.py",
+        "tests/scientific/test_complete_preset.py"
+      ],
+      "implementation_status": "Complete 25-channel preset values and coordinate gradients on molecular fixtures; canonical input now executes common native chemistry selection and missing-leaf reconstruction."
+    },
+    {
+      "domain": "noncanonical_polymers",
+      "torch": "supported",
+      "jax": "values_gradients_on_molecular_fixtures",
+      "repro_fixture": [
+        "tests/scientific/test_cartbonded.py",
+        "tests/scientific/test_molecular_nonbonded.py",
+        "tests/scientific/test_complete_preset.py"
+      ],
+      "implementation_status": "Explicit B3Q/B3D identities retain topology/parameters; complete preset and nonzero per-term gradients tested CPU/CUDA. Supplied-palette canonical input has CPU atom/topology and per-term gradient identity coverage; canonical input also passes CUDA value/gradient checks. The B3Q/B3D fixture has no terminal variants: its uncapped public AtomArray form fails in both frontends; supported explicit/canonical gap-aware construction is distinct."
+    },
+    {
+      "domain": "d_amino_acids",
+      "torch": "supported",
+      "jax": "values_gradients_on_molecular_fixtures",
+      "repro_fixture": [
+        "tests/scientific/test_cartbonded.py",
+        "tests/scientific/test_molecular_nonbonded.py",
+        "tests/scientific/test_dunbrack.py",
+        "tests/scientific/test_complete_preset.py"
+      ],
+      "implementation_status": "Explicit D identities, shared stereochemistry and reflected Dunbrack/backbone tables. Complete preset and per-term coordinate gradients tested CPU/CUDA."
+    },
+    {
+      "domain": "modifications_and_termini",
+      "torch": "supported",
+      "jax": "explicit_prepared_types",
+      "repro_fixture": [
+        "tests/scientific/test_backbone_torsion.py",
+        "tests/scientific/test_stated_termini.py"
+      ],
+      "implementation_status": "Shared selection retains HYP, HIS_D/HIS_POS, CYD, terminal patches and modified nucleotides. Public input, protonation and explicit canonical fixtures exercise variant selection. Chemistry without the necessary variant/terminal records is not silently converted to a canonical residue. Prepared AtomArray input now consumes the complete common canonical host plan; supplied neutral termini suppress short-gap polymer connections, including bondless consecutive labels. Source CPU/CUDA and installed checks retain supplied coordinates, disconnected ports, all 25 finite values/gradients and minimization. Complete mature workflow equivalence remains separate."
+    },
+    {
+      "domain": "ligand_only",
+      "torch": "supported",
+      "jax": "values_gradients_on_molecular_fixtures",
+      "repro_fixture": [
+        "tests/scientific/test_cartbonded.py",
+        "tests/scientific/test_molecular_nonbonded.py",
+        "tests/scientific/test_complete_preset.py",
+        "tests/scientific/test_ligand_preparation.py",
+        "tests/scientific/test_native_ligand_preparation.py"
+      ],
+      "implementation_status": "Complete preset and nonzero genbonded on prepared ligands. Shared SMILES, MOL2 and automatic structure preparation retain caller database context, atom identity and charges. Generated L/D ligands, aspirin and supplied MOL2 have coordinate-gradient and minimization checks; input/scoring paths have CPU/CUDA and installed validation. Seeded numerical parameter preparation runs on CPU independently of the scoring device; prepared pose execution supports CPU/CUDA. Generated trajectories and complete preparation runtime/memory parity remain open. An opt-in shared native CPU conformer executor passes generated L/D, aspirin and protonation molecular contracts in both frontends. Its generated geometries and derived parameters differ from historical mature preparation; defaults remain unchanged and full historical numerical parity is unresolved."
+    },
+    {
+      "domain": "protein_ligand_mixed",
+      "torch": "supported",
+      "jax": "values_gradients_on_molecular_fixtures",
+      "repro_fixture": [
+        "tests/scientific/test_cartbonded.py",
+        "tests/scientific/test_molecular_nonbonded.py",
+        "tests/scientific/test_complete_preset.py"
+      ],
+      "implementation_status": "Explicit mixed poses and heterogeneous batches support all enabled score families and coordinate gradients. Input preparation remains distinct from scoring support."
+    },
+    {
+      "domain": "nucleic_acids",
+      "torch": "supported",
+      "jax": "values_gradients_on_molecular_fixtures",
+      "repro_fixture": [
+        "tests/scientific/test_cartbonded.py",
+        "tests/scientific/test_molecular_nonbonded.py",
+        "tests/scientific/test_na_torsion.py",
+        "tests/scientific/test_complete_preset.py"
+      ],
+      "implementation_status": "DNA, RNA, termini and methylcytosine values/gradients and native glycosidic/proton-chi sampling tested CPU/CUDA. Fixed-plan parameter JVP/HVP supported. Float32 reconstructed backbones have rounding differences."
+    },
+    {
+      "domain": "metals_and_coordination",
+      "torch": "supported",
+      "jax": "values_gradients_on_molecular_fixtures",
+      "repro_fixture": [
+        "tests/scientific/test_cartbonded.py",
+        "tests/scientific/test_molecular_nonbonded.py",
+        "tests/scientific/test_metal_coordination.py",
+        "tests/scientific/test_complete_preset.py",
+        "tests/scientific/test_canonical_molecular_input.py",
+        "tests/scientific/test_metal_placement.py",
+        "tests/scientific/test_protonation_input.py",
+        "tests/scientific/test_atom_array_input.py"
+      ],
+      "implementation_status": "Zinc, calcium, bridging donors and iron-sulfur clusters use shared native coordination values/gradients; custom width/depth scaling tested. Shared input geometry/donor inference, donor-palette growth and virtual placement have CPU/CUDA checks. Hydrogen-evidence precedence and explicit strict-donor behavior have installed and CUDA validation. Inferred virtual-site derivatives are distinguished from mature detached fitting."
+    },
+    {
+      "domain": "disconnected_components",
+      "torch": "supported",
+      "jax": "values_gradients_on_molecular_fixtures",
+      "repro_fixture": [
+        "tests/scientific/test_molecular_input.py",
+        "tests/scientific/test_complete_preset.py"
+      ],
+      "implementation_status": "Explicit disconnected residues retain unconnected ports; complete preset values/gradients tested. No bonds are inferred by ResidueBlock input."
+    },
+    {
+      "domain": "custom_database",
+      "torch": "supported",
+      "jax": "partial",
+      "repro_fixture": [
+        "tests/scientific/test_database_context.py",
+        "tests/scientific/test_score_lifecycle.py"
+      ],
+      "implementation_status": "Common chemical and parameter context supports custom residue identities, reflected tables, charges and bonded/coordination/H-bond parameter changes. Missing required parameters raise. This is not exhaustive custom-database certification."
+    },
+    {
+      "domain": "arbitrary_connectivity",
+      "torch": "supported_with_native_connection_capacity",
+      "jax": "native_scoring_with_connection_capacity",
+      "repro_fixture": [
+        "tests/scientific/test_molecular_input.py"
+      ],
+      "implementation_status": "Explicit named ports preserve branches/cycles through common sparse topology. Shared nonbonded kernels support at most 12 connection ports per residue; full int32 atom indices. Changed-port design imposition rejects."
+    },
+    {
+      "domain": "constraints",
+      "torch": "whole_pose_and_one_two_block_sparse",
+      "jax": "whole_pose_and_one_two_block_sparse",
+      "repro_fixture": [
+        "tests/scientific/test_constraints.py",
+        "tests/scientific/test_constraints.py::attach_multi_block_constraint"
+      ],
+      "implementation_status": "Whole-pose callbacks support up to four atoms spanning multiple blocks; sparse two-block constraints preserve physical atom order and parameter derivatives. Sparse candidates preserve joint-state correspondence and reject constraints on more than two distinct blocks. Whole-pose three/four-block callback energy and gradient identities have CPU/CUDA checks. The common segment-count correction preserves trailing poses without movable atoms during masked minimization; JAX jit/vmap and installed contracts pass. Higher coordinate derivatives depend on native geometry and callback. Sparse constraints across three/four physical blocks are unsupported in both: actual mature and current Torch expansion omit their nonzero contributions; JAX rejects explicitly. Whole-pose callbacks across those blocks remain supported."
+    },
+    {
+      "domain": "heterogeneous_batches",
+      "torch": "supported",
+      "jax": "values_gradients_on_molecular_fixtures",
+      "repro_fixture": [
+        "tests/scientific",
+        "tests/scientific/test_complete_preset.py",
+        "tests/scientific/test_complete_rotamer_score.py",
+        "tests/scientific/test_packing_execution.py",
+        "tests/scientific/test_packing_batches.py"
+      ],
+      "implementation_status": "Molecular values/gradients, fixed/current conformers, pose imposition and repacking tested. Topology changes require new prepared scorers; stale plans reject. JAX now consumes the common automatic memory-based pose-chunk policy with task/constraint/fragment-aware slicing and preserved shared palette identity. Mixed-system bump and nonbump packing, constrained repeated-fragment batches, and independent CUDA device-memory query/restoration have CPU/CUDA checks. Interaction-graph tile chunk_size is a separate setting. Independent CUDA packing without bump pruning replays bounded spatial score pages through the shared three-pass graph driver; retained graph/value identities and public molecular packing pass CPU/CUDA checks. Nonspatial terms retain their native per-term layouts. Complete workflow speed and peak-memory parity remain separately gated."
+    },
+    {
+      "domain": "cartesian_minimization",
+      "torch": "supported",
+      "jax": "complete_preset_on_molecular_fixtures",
+      "repro_fixture": [
+        "tests/scientific/test_molecular_minimization.py",
+        "tests/scientific/test_optimizer_contract.py"
+      ],
+      "implementation_status": "Complete 25-channel objectives decrease for ligand, noncanonical, D, modified DNA, metal and mixed cases. The default segmented Armijo executor shares mature per-pose convergence/history/restart policy and supports masks and checkpoint continuation. Explicit strong_wolfe uses the shared line search and L-BFGS policy with a fixed-capacity JAX history and reusable rendered gradients. Nonfinite trial failure cannot report convergence. Matched full CPU/CUDA minimization workloads retain cold-time, CUDA warm-time and device-peak gaps."
+    },
+    {
+      "domain": "packing_design_mutation",
+      "torch": "supported",
+      "jax": "native_cpu_cuda_repacking_and_partial_design",
+      "repro_fixture": [
+        "tests/scientific/test_packing_execution.py",
+        "tests/scientific/test_pose_imposition.py",
+        "tests/scientific/test_packing_palette.py",
+        "tests/scientific/test_opth_sampling.py",
+        "tests/scientific/test_correlated_graph.py",
+        "tests/scientific/test_correlated_connection_scores.py",
+        "tests/scientific/test_constrained_design.py",
+        "tests/scientific/test_conformer_coordinates.py",
+        "tests/scientific/test_packing_seed.py"
+      ],
+      "implementation_status": "Common native CPU/CUDA sampling, sparse scoring, graph construction, annealing and imposition support repacking and selected L/D design choices. Task masks, budgets, bundles, correlation collapse and bump pruning preserve original member identities. Declared lockstep backbone groups include third-member values and physical gradients for canonical, cyclic, D, hydroxyproline and mixed cases; independently varying third-member context remains unsupported. Prepared biotin, O-glycan and N-glycan groups have full all-channel energies, physical gradients and native packing checks. Constrained L/D design preserves unchanged backbone atom identities through compacted atom layouts; independent distance values/gradients pass both CPU backends, and full physical source gradients pass JAX. Changed connection ports or constrained atom indices still reject; complete task/design API parity remains open. Unchanged-identity constrained-design installed and actual CUDA checks passed. Explicit anneal_device selects native CPU/CUDA search independently of scoring and returns assignments to the pose device; mixed-system CPU-to-CUDA and CUDA-to-CPU molecular checks pass, including a clean installed Torch-free CUDA lane. RotamerSet.to_atom_array uses one shared host visualization projection; molecular conformer coordinates, model IDs, atom names and elements have shared L/D/variant/noncanonical-ligand tests. Eager defines_rotamers_for_bts queries use existing residue policies; shared native sampling checks cover Dunbrack, nucleic-acid, fixed-amino-acid, current and ligand OptH support. Explicit search seeds use mature CPU MT19937 and shared CUDA Philox streams across pose chunks and FastRelax stages. This changes earlier JAX seeded choices; shared seed streams do not establish historical full-workflow numerical parity."
+    },
+    {
+      "domain": "kinematics",
+      "torch": "supported",
+      "jax": "molecular_forests_first_reverse",
+      "repro_fixture": [
+        "tests/scientific/test_fold_forest.py",
+        "tests/scientific/test_kinematics.py",
+        "tests/scientific/test_molecular_kinematics.py"
+      ],
+      "implementation_status": "Shared molecular forest, native inverse/forward scans and first DOF reverse derivatives; jit/vmap and CPU/CUDA placement tested. Optional kin_dtype controls DOF precision independently of stored coordinates. Mixed float64 DOF/float32-coordinate mapping and minimization pass shared CPU/CUDA molecular checks in both frontends. Objective precision promotion is a new capability beyond the tested mature baseline. Inverse-coordinate AD and forward-scan higher AD are absent. Float32 rotational cancellation persists in sensitive systems."
+    },
+    {
+      "domain": "fast_relax",
+      "torch": "supported",
+      "jax": "shared_protocol_with_optimizer_parity_gaps",
+      "repro_fixture": [
+        "tests/scientific/test_fast_relax_execution.py",
+        "tmol/tests/relax/test_fast_relax.py"
+      ],
+      "implementation_status": "One common schedule, stage-tolerance and per-pose acceptance policy with frontend-owned CartesianRelaxMinimizer/KinematicRelaxMinimizer objects and movement maps. The keyword-only minimizer and packer_palette API, frozen coordinates, wrong-map rejection, custom callback rtol and release hooks have actual CPU/CUDA and Torch-free installed molecular checks. Packing uses shared native trajectory metadata and algorithms, including CPU funnel execution with at least eight configured threads. Component tests do not establish complete default-workflow trajectory, runtime or peak-memory parity; those comparisons and actual final Metal validation remain separate. Explicit strong-Wolfe in KinematicRelaxMinimizer retains its own gtol/ftol rather than receiving incompatible Armijo defaults or stage rtol; fixed noncanonical coordinates and moving ligand/D-peptide checks pass on CPU/CUDA."
+    },
+    {
+      "domain": "explicit_cuda_graph_capture",
+      "torch": "supported_by_relax_minimizers",
+      "jax": "armijo_scoring_modes_supported",
+      "repro_fixture": [
+        "tests/scientific/test_fast_relax_execution.py",
+        "tmol/tests/relax/test_fast_relax.py"
+      ],
+      "implementation_status": "JAX Cartesian/kinematic public minimizers and relax minimizer objects select XLA command-buffer scoring with cuda_graph=True/False; None preserves automatic execution. Explicit capture requires Armijo and a rendered TMol scorer on CUDA. For other optimizers, False preserves legacy automatic execution as None does. Actual public minimizer traces verify scoring graph launches enabled and absent when disabled; optimizer array operations remain compiled. Existing molecular checks retain coordinates, dtype/device, fresh masks and parameter snapshots. Complete mature-workflow runtime, peak-memory and trajectory parity remain separate unmet gates."
+    },
+    {
+      "domain": "fragment_interactions",
+      "torch": "supported",
+      "jax": "cpu_block_pair_and_original_fragment_attribution",
+      "repro_fixture": [
+        "tests/scientific/test_block_pair_scoring.py",
+        "tests/scientific/test_fragment_attribution.py",
+        "tests/scientific/test_selected_pair_scoring.py"
+      ],
+      "implementation_status": "Shared fragment-column validation and sparse requested-pair reduction through common native conformer physics. Exact installed CPU and actual CUDA checks pass. Full9278-atom input/render/fragment-energy/coordinate-gradient workflow matches corrected mature d758 at2e-10. Latest matched controls use a separate fresh compilation cache per process: warm JAX/Torch ratios0.726/0.715, cold1.309/1.295; warm process peaks1701024/1704924 versus1588840/1585920KiB. Cold/memory HOLD remains. Earlier reverse-order measurements reused one persistent JAX compilation; preserved results are explicitly marked. This is selected-fragment attribution, not whole-protein angular-gradient equivalence or isolated scratch-memory measurement."
+    },
+    {
+      "domain": "structure_io",
+      "torch": "supported",
+      "jax": "partial",
+      "repro_fixture": [
+        "tests/scientific/test_molecular_input.py",
+        "tests/scientific/test_canonical_molecular_input.py",
+        "tests/scientific/test_leaf_reconstruction.py",
+        "tests/scientific/test_canonical_topology.py",
+        "tests/scientific/test_canonical_connections.py",
+        "tests/scientific/test_histidine_input.py",
+        "tests/scientific/test_context_reconstruction.py",
+        "tests/scientific/test_protonation_input.py",
+        "tests/scientific/test_metal_placement.py",
+        "tests/scientific/test_atom_array_input.py"
+      ],
+      "implementation_status": "ResidueBlock, canonical, public AtomArray and PDB/CIF/MOL2/SDF inputs share chemistry, atom mapping, hydrogen/protonation, metal and connectivity preparation. Default missing-sidechain/OptH native packing and fragment imposition retain parameter context. Common AtomArray export has molecular CPU roundtrip checks. Prepared and tensor Atom37 coordinate overrides are implemented and validated; exhaustive public API compatibility remains open; input preparation is eager. Corrected-source installed CPU and actual CUDA gates passed for the listed workflows; complete runtime/memory parity remains pending."
+    },
+    {
+      "domain": "jit_vmap_reverse_ad",
+      "torch": "torch_autograd",
+      "jax": "partial",
+      "repro_fixture": [
+        "tests/scientific"
+      ],
+      "implementation_status": "Whole-pose scoring supports first coordinate derivatives and sequential vmap on native CPU/CUDA. Sparse scoring requires eager fixed-neighbor preparation. Sampling, graph cardinality and discrete topology preparation remain eager. CUDA Atom37 zinc input-gradient CI remains blocked; an independent pure-JAX constant-index scatter reproduces an out-of-bounds read with JAX 0.11.2 and 0.12.0.1. Isolated ordinary passes do not clear this gate."
+    },
+    {
+      "domain": "forward_ad",
+      "torch": "framework_specific",
+      "jax": "partial",
+      "repro_fixture": [
+        "tests/scientific"
+      ],
+      "implementation_status": "Whole-pose native scores support first JVPs; sparse physical scores do not. Linear DOF copy/assignment and pose imposition support JVP and higher AD. Chi correction supports reverse Hessian products; inverse and forward-scan higher AD remain absent."
+    },
+    {
+      "domain": "native_cpu",
+      "torch": "supported",
+      "jax": "common_native_scoring_and_packing_with_parity_gaps",
+      "repro_fixture": [
+        "tests/scientific"
+      ],
+      "implementation_status": "All molecular score families execute common typed native physics. Core/JAX/native wheels and standalone sdists tested without Torch installed or linked. Current graph and packing paths retain performance gaps."
+    },
+    {
+      "domain": "native_cuda",
+      "torch": "supported",
+      "jax": "common_native_scoring_and_packing_with_parity_gaps",
+      "repro_fixture": [
+        "tests/scientific"
+      ],
+      "implementation_status": "All molecular score families and packing execute common typed CUDA kernels through FFI on scheduled GPUs. Correctness and placement tested; matched benchmarks retain unresolved overhead. No all-fast claim."
+    },
+    {
+      "domain": "internal_coordinate_minimization",
+      "torch": "supported",
+      "jax": "molecular_objectives_and_shared_movement_policy",
+      "repro_fixture": [
+        "tests/scientific/test_molecular_movement.py"
+      ],
+      "implementation_status": "Shared MoveMap and native chemical DOF resolution with JAX L-BFGS; molecular objective decrease and frozen-DOF invariants tested CPU/CUDA. Torch optimizer/module interfaces are framework-specific; the functional injection contract is recorded separately below. Explicit strong-Wolfe also consumes the shared policy and reusable compact molecular objective; ligand, connected noncanonical and D-peptide frozen-DOF contracts have CPU/CUDA checks."
+    },
+    {
+      "domain": "named_torsion_queries",
+      "torch": "supported",
+      "jax": "eager_host_queries",
+      "repro_fixture": [
+        "tests/scientific/test_named_torsions.py",
+        "tests/core/test_named_torsion_query.py"
+      ],
+      "implementation_status": "Shared selection and result structure preserve atom identity, paired requests and missing-neighbor NaN behavior. Native double measurement returns coordinate precision. Public scalar/name-dictionary/pose-block results; no differentiable host-query claim."
+    },
+    {
+      "domain": "ligand_preparation",
+      "torch": "supported",
+      "jax": "smiles_and_mol2_cpu_workflows",
+      "repro_fixture": [
+        "tests/scientific/test_ligand_preparation.py"
+      ],
+      "implementation_status": "Common typing, protonation, bounds, objectives, anneal/stress/planar stage schedules, restart and parameter injection; thin execution adapters. Torch and JAX each retain their prior captured stage results after extraction. JAX host preparation preserves planar float64 even with global x64 disabled, and seeded parameters are independent of the scoring device. Public generated/supplied ligands have Torch-free installed CPU/CUDA scoring, coordinate-gradient and minimization checks. Generated geometry and derived parameters still differ from mature Torch; complete preparation cold/warm/peak-memory parity is not established."
+    },
+    {
+      "domain": "public_atom_array_context",
+      "torch": "supported_including_default_input_packing_and_fragments",
+      "jax": "shared_preparation_default_input_packing_file_loading",
+      "repro_fixture": [
+        "tests/scientific/test_atom_array_input.py",
+        "tests/scientific/test_stated_termini.py"
+      ],
+      "implementation_status": "Shared normalization, hydrogen/protonation, strict heavy atom identity, neutral-terminal mapping and reusable custom parameter context. Default missing-sidechain/OptH routing uses shared policy and native packing; noncanonical HYP and D missing-sidechain cases, ligand MOL2/CIF and metal/disulfide CPU workflows have finite full25E/G plus derivative and identity checks in both frameworks. Fragmented reconstruction and Atom37 replay use common plans; exact installed CPU and actual CUDA gates cover input packing, source gradients and tested metadata round trips. Complete public API compatibility remains open. Prepared AtomArray input now consumes the complete common canonical host plan; supplied neutral termini suppress short-gap polymer connections, including bondless consecutive labels. Source CPU/CUDA and installed checks retain supplied coordinates, disconnected ports, all 25 finite values/gradients and minimization; mature complete workflow equivalence remains separate."
+    },
+    {
+      "domain": "structure_metadata",
+      "torch": "supported",
+      "jax": "source_projection_packing_slicing_and_pdb_output",
+      "repro_fixture": [
+        "tests/scientific/test_structure_metadata.py",
+        "tests/scientific/test_pose_imposition.py"
+      ],
+      "implementation_status": "Common metadata and split-block models; preserves insertion codes, source occupancy/B factors, residue annotations and metal origins during canonical projection. JAX legacy labels retained; design follows mature defaults for changed residue identities. Common AtomArray export now retains original fragment/metal identity and rejects conflicting multi-model metadata. Metadata integration passed exact installed and actual CUDA checks."
+    },
+    {
+      "domain": "fragmented_ligand_input_and_reconstruction",
+      "torch": "supported_with_repeated_identity_fix",
+      "jax": "cpu_cuda_installed_values_and_physical_gradients",
+      "repro_fixture": [
+        "tests/scientific/test_fragment_input.py",
+        "tests/scientific/test_pdb_fragment_identity.py"
+      ],
+      "implementation_status": "Common named cut-bond and original-atom plans; independent physical groups for repeated ligands. Real protein-ligand and repeated ligand-only CPU cases preserve all 25 term values and physical gradients against uncut molecules in float64 (2e-6 tolerance), nonzero genbonded, default input packing and ligand minimization. Reconstruction preserves coordinate dtype/autodiff, original author labels, per-atom metadata and constraint atoms. Shared fixes also improve Torch; fragment attribution and exact installed CPU/CUDA gates passed. Externally bonded fragmented-ligand generation is not established by these cases. The JAX record-based PDB writer also uses the common original-identity restoration, with an explicit merge_fragments=False option; repeated-ligand record and coordinate checks pass on CPU. Wider installed/CUDA output gates remain pending."
+    },
+    {
+      "domain": "mature_segmented_armijo",
+      "torch": "supported",
+      "jax": "default_cartesian_kinematic_cpu_cuda_installed",
+      "repro_fixture": [
+        "tests/scientific/test_armijo_execution.py",
+        "tests/scientific/test_armijo_checkpoint.py"
+      ],
+      "implementation_status": "Default shared segmented Armijo settings, history, restart/convergence policy and native transitions. Cartesian/kinematic molecular minimization and scattered objectives pass CPU/CUDA checks. Checkpoint continuation matches uninterrupted history; frozen atoms remain exact and incompatible restoration rejects. Matched fixed-iteration float64 CPU trajectories agree with mature Torch; complete optimizer compatibility and runtime/peak-memory parity remain open."
+    },
+    {
+      "domain": "molecular_atomarray_export",
+      "torch": "supported_with_shared_metadata_validation",
+      "jax": "shared_cpu_roundtrip_values_gradients",
+      "repro_fixture": [
+        "tests/scientific/test_structure_export.py"
+      ],
+      "implementation_status": "Shared canonical atom projection, physical-chain graph, Biotite metadata/bonds/metal restoration and original fragment identity. Zinc, PLP/CSD, 2ML isopeptide, repeated glycans and repeated ligand molecules have CPU all-25-term value/gradient roundtrips; source parameters/atom identity preserved. JAX automatic polymer preparation now exposes the common Dunbrack library alias. Conflicting B factors, residue annotations and metal origins in multi-model export reject explicitly. Export is host I/O, not differentiable or jittable. Exact a0a installed CPU and actual CUDA gates passed."
+    },
+    {
+      "domain": "prepared_atom37_input",
+      "torch": "supported_missing_HYP_source_AD_fix_cpu_cuda_Apple_validated",
+      "jax": "prepared_cpu_values_source_gradients_jit_vmap",
+      "repro_fixture": [
+        "tests/scientific/test_atom37_input.py",
+        "tests/scientific/test_atom37_tensor_input.py",
+        "tests/scientific/test_atomworks_encoding.py",
+        "tests/scientific/test_stated_termini.py",
+        "tests/scientific/test_context_reconstruction.py"
+      ],
+      "implementation_status": "Shared atom routing; native leaf/H and fixed metal reconstruction; shared input packing and finite-input/frozen-block derivative restoration. Eight molecular first/replay cases, GLN/HIS OptH and four public AtomArray/topology overload cases pass CPU checks in both frameworks. Missing HYP/D-proline native packing and source-energy gradients pass JAX; The native exact-zero-cotangent guard fixes the previously recorded21-NaN Torch HYP source gradient; CPU/CUDA caller gates and bounded actual Apple callers pass. Geometry searches for extra disulfides/cycles are off by default; prepared chemistry and sampling choices are fixed. Tensor-only API now shares the validated common routing plan, with custom layouts, explicit bonds and suppressed polymer connections. Seven canonical/noncanonical molecular CPU full source-energy/gradient and directional-difference checks pass both backends; two JAX jit/vmap/invalid-input contracts pass. Frozen cf0e43 tensor/OptH adapters passed exact installed45+380, JAXCUDA48 and TorchCUDA39. Canonical AtomWorks compatibility input/export, common library-record aliases, tensor-gap semantics and optional identity metadata passed exact installed CPU and actual CUDA gates. Prepared input now consumes one common canonical plan including supplied terminal chemistry and explicit protonation variants. Both frontends preserve CCD-style terminal H coordinates and source derivatives; this extension has CPU/CUDA and Torch-free installed checks. These are bounded cases, not exhaustive API parity. Input completion excludes sampler-owned missing atoms from context reconstruction and leaves dependent leaves for native packing. Shared ligand/noncanonical identity invariants and complete HYP/D-peptide packing/source-gradient cases pass CPU/CUDA and clean installed checks. The O-glycan first-input missing-atom mask now matches Torch; generated finite geometry and parameter parity remain unresolved."
+    },
+    {
+      "domain": "pose_concatenation",
+      "torch": "supported",
+      "jax": "shared_cpu_cuda_installed_validated",
+      "repro_fixture": "tests/scientific/test_pose_concatenation.py",
+      "implementation_status": "Common exact chemical-prefix identity, merged palettes, metadata and fragment maps; JAX buffer copying preserves coordinate dtype/derivatives, sparse bond distances and constraints. Four CPU checks per backend cover mixed ligand/noncanonical/D batches, all26 per-term values/gradients, distinct palettes and repeated fragment identity. Exact71c9 CUDA/install gates passed; complete workflow runtime/memory parity remains pending."
+    },
+    {
+      "domain": "named_torsion_updates",
+      "torch": "supported",
+      "jax": "cpu_cuda_installed_scientific_checks",
+      "repro_fixture": [
+        "tests/scientific/test_named_torsion_updates.py"
+      ],
+      "implementation_status": "Common ownership, target and error policy with native inverse/forward execution and additive DOF updates. Mixed ligand/noncanonical, D/beta peptide and DNA/RNA checks cover targets, bond lengths, input identity, dtype and device. Initialization is eager; bound native kinematics separately supports first reverse derivatives, jit and vmap."
+    },
+    {
+      "domain": "score_term_lifecycle",
+      "torch": "supported",
+      "jax": "cpu_cuda_installed_scientific_checks",
+      "repro_fixture": [
+        "tests/scientific/test_score_lifecycle.py"
+      ],
+      "implementation_status": "Shared term registry, body-count grouping, removal and channel order. Retained zero-weight channels, aligned weight tensors and rendered snapshots pass CPU/CUDA checks. Float32 repeated gradients use a scoped rounding bound established by unchanged-scorer and float64 controls."
+    },
+    {
+      "domain": "logical_chain_metadata",
+      "torch": "supported",
+      "jax": "cpu_cuda_installed_scientific_checks",
+      "repro_fixture": [
+        "tests/scientific/test_pose_chains.py",
+        "tests/scientific/test_pose_concatenation.py",
+        "tests/scientific/test_fragment_input.py"
+      ],
+      "implementation_status": "Logical IDs are independent of author labels through sequence/canonical input, selection, repetition, concatenation and fragment reconstruction. CPU/CUDA and installed molecular checks retain source-coordinate derivatives."
+    },
+    {
+      "domain": "public_sequence_construction",
+      "torch": "supported",
+      "jax": "cpu_cuda_installed_scientific_checks",
+      "repro_fixture": [
+        "tests/scientific/test_sequence_construction.py",
+        "tests/scientific/test_pose_chains.py"
+      ],
+      "implementation_status": "Common grammar, ideal geometry and named ports; thin native torsion execution. Protein, D, DNA/RNA, variants, custom HYP/ligand contexts and SMILES tested. Logical chains are independent of author labels. Full mature comparisons retain initializer/near-planar torsion numerical differences and protein/D runtime gaps."
+    },
+    {
+      "domain": "block_selection_and_repetition",
+      "torch": "supported",
+      "jax": "cpu_cuda_installed_scientific_checks",
+      "repro_fixture": "tests/scientific/test_block_selection.py",
+      "implementation_status": "Common identity, connection and metadata plans; JAX device gathers preserve coordinate derivatives and retained original bond paths. Selection requires homogeneous selected layouts, drops constraints and rejects split metadata as in mature TMol. Repetition retains constraints and independent metadata copies."
+    },
+    {
+      "domain": "notebook_visualization",
+      "torch": "supported",
+      "jax": "cpu_cuda_installed_real_html_checks",
+      "repro_fixture": "tests/scientific/test_visualization.py",
+      "implementation_status": "Shared view/switchable_view/overlay_view/selection_gallery with lazy pose export. Real mixed molecular poses, atom selections and HTML checked; no browser/WebGL validation claim."
+    }
+  ],
+  "validation": "The listed scientific fixtures have source, installed Torch-free CPU and actual CUDA validation; coverage is bounded by their molecular and API contracts. Complete supported mature functionality and matched end-to-end cold/warm runtime and peak host/device memory parity remain incomplete. Mature comparisons retain historical angular/table precision differences, float32 initialization/repeat variation and measured CUDA runtime/memory gaps. Same-coordinate agreement with current Torch does not erase these end-to-end limitations. Actual Torch/Metal validation is owned separately; native JAX MPS is not advertised.",
+  "score_terms": {
+    "nonbonded": {
+      "torch": "implemented",
+      "jax": "implemented",
+      "channels": [
+        "fa_ljatr",
+        "fa_ljrep",
+        "fa_lk",
+        "fa_elec"
+      ],
+      "repro_fixture": "tests/scientific/test_molecular_nonbonded.py",
+      "coverage": "Independent full coordinate gradients, nonzero ligand/mixed cases, custom charges and parameter prerequisites."
+    },
+    "cartbonded": {
+      "torch": "implemented",
+      "jax": "implemented",
+      "channels": [
+        "cart_lengths",
+        "cart_angles",
+        "cart_torsions",
+        "cart_impropers",
+        "cart_hxltorsions"
+      ],
+      "repro_fixture": "tests/scientific/test_cartbonded.py",
+      "coverage": "Connected beta-amino, D, nucleic acid, ligand and mixed cases; independent per-term coordinate derivatives."
+    },
+    "genbonded": {
+      "torch": "implemented",
+      "jax": "implemented",
+      "channels": [
+        "gen_torsions"
+      ],
+      "repro_fixture": "tests/scientific/test_genbonded.py",
+      "coverage": "Nonzero ligand torsions and custom bonded parameter scaling; value and full coordinate-gradient comparisons."
+    },
+    "hbond": {
+      "torch": "implemented",
+      "jax": "implemented",
+      "channels": [
+        "hbond"
+      ],
+      "repro_fixture": "tests/scientific/test_hbond.py",
+      "coverage": "Nonzero ligand, D, beta-amino, modified-DNA and mixed donors/acceptors; custom weights and wide family indices."
+    },
+    "lk_ball": {
+      "torch": "implemented",
+      "jax": "implemented",
+      "channels": [
+        "lk_ball_iso",
+        "lk_ball",
+        "lk_bridge",
+        "lk_bridge_uncpl"
+      ],
+      "repro_fixture": "tests/scientific/test_lk_ball.py",
+      "coverage": "Molecular values/full gradients and weighted reverse accumulation; degenerate geometry retains native behavior."
+    },
+    "backbone": {
+      "torch": "implemented",
+      "jax": "implemented",
+      "channels": [
+        "omega",
+        "rama"
+      ],
+      "repro_fixture": "tests/scientific/test_backbone_torsion.py",
+      "coverage": "L/D, connected noncanonical, variants and termini; shared table identity and coordinate derivatives."
+    },
+    "dunbrack": {
+      "torch": "implemented",
+      "jax": "implemented",
+      "channels": [
+        "dunbrack_rot",
+        "dunbrack_rotdev",
+        "dunbrack_semirot"
+      ],
+      "repro_fixture": [
+        "tests/scientific/test_dunbrack.py",
+        "tests/scientific/test_canonical_palette_choices.py"
+      ],
+      "coverage": "L/D, variants, mixed cases, custom widths and full coordinate gradients. Inactive whole/sparse objectives use common eligibility without narrowing the public palette; actual L/D design candidates still receive nonzero native scoring. Bounded storage, zero channels, dtype and transformed gradients are covered separately from complete workflow parity. Samplers retain an owned library snapshot even when the source changes before first use; newly prepared scorers observe live parameter changes. Prepared whole and sparse states keep dispatch metadata static under JAX transformations."
+    },
+    "na": {
+      "torch": "implemented",
+      "jax": "implemented",
+      "channels": [
+        "na_torsion",
+        "na_torsion_well"
+      ],
+      "repro_fixture": "tests/scientific/test_na_torsion.py",
+      "coverage": "DNA/RNA, methylcytosine, termini and mixed systems; custom population widths and coordinate derivatives."
+    },
+    "metal": {
+      "torch": "implemented",
+      "jax": "implemented",
+      "channels": [
+        "metal_coordination"
+      ],
+      "repro_fixture": "tests/scientific/test_metal_coordination.py",
+      "coverage": "Zinc, calcium, iron-sulfur clusters and bridging donors; width/depth scaling and derivatives."
+    },
+    "disulfide": {
+      "torch": "implemented",
+      "jax": "implemented",
+      "channels": [
+        "disulfide"
+      ],
+      "repro_fixture": "tests/scientific/test_disulfide.py",
+      "coverage": "Explicit disulfide connectivity, L/D stereochemistry and coordinate derivatives."
+    },
+    "reference": {
+      "torch": "implemented",
+      "jax": "implemented",
+      "channels": [
+        "ref"
+      ],
+      "repro_fixture": "tests/scientific/test_reference_energy.py",
+      "coverage": "Shared residue reference lookup; coordinate-independent values."
+    },
+    "constraints": {
+      "torch": "implemented",
+      "jax": "implemented",
+      "channels": [
+        "constraint"
+      ],
+      "repro_fixture": "tests/scientific/test_constraints.py",
+      "coverage": "Framework-native callbacks over common atom identities/geometry; coordinate and parameter derivatives."
+    }
+  },
+  "acceptance_gaps": {
+    "mature_functionality": [
+      "Continue auditing custom database, score-option and packing/design contracts beyond validated fixtures. Changed constraint atom indices and connection ports remain guarded; the mature imposition path also lacks identity remapping.",
+      "Public API and molecular fixture coverage do not establish exhaustive mature functionality.",
+      "Validate complete large-batch cold/warm runtime and peak memory against mature Torch; automatic common pose batching and metadata-aware slicing are implemented, but focused correctness checks do not establish that parity."
+    ],
+    "validation_and_performance": [
+      "CUDA Atom37 zinc input-gradient CI remains unresolved. A pure-JAX constant-index scatter reproducer reads beyond its index buffer with JAX 0.11.2 and 0.12.0.1. An actual ptxas 13.3.73 compiler control also fails; no dependency pin or source workaround is qualified. Defer investigation without skipping the failing gate or claiming complete CUDA transformation support.",
+      "Matched mature complete workflow cold/warm runtime and peak host/device memory parity are not met. Packing, CUDA minimization and some sequence cases retain measured slowdowns; compilation contributes substantially to peak memory.",
+      "Shared CUDA float32 backbone and sparse-electrostatics derivative accumulation resolves the retained repeat failures on their tested inputs: six default 200-step ubiquitin Cartesian minimizations have exactly repeated coordinates, energies and gradients, and all eight unchanged sparse-electrostatics snapshot checks pass. Original failures remain recorded. Additional derivative scratch is 48 bytes per atom for whole-pose backbone and 24 bytes per sparse atom; complete workflow runtime and physical peak-memory parity remain separately gated. These checks do not establish arbitrary-input determinism, long float64 repeatability or exhaustive mature functionality.",
+      "Older mature torsion formulas and float32 reduction order differ from the current shared kernels; retain per-term numerical exceptions and independent derivative evidence.",
+      "Apple validation is a separate actual Torch/Metal gate; no native JAX MPS support is advertised.",
+      "Earlier float32 CUDA FastRelax repeat failures motivated shared precise accumulation for nonbonded, cartbonded, LKBall and water gradients. Both the corrected component and combined source pass five tested molecular domains with five repeats in both current frontends. Matched mature complete workflows retain numerical/runtime/memory holds, and final actual Apple validation remains separate; earlier failures are retained.",
+      "Shared native ligand preparation retains historical seeded geometry, derived-parameter and downstream energy/gradient differences. Pointwise analytic-gradient and molecular-invariant passes do not establish historical prepared-system equivalence.",
+      "Long float64 CUDA minimization with history_size=128 and max_iter=140 can exceed the retained 2e-10 repeat-gradient bound on ubiquitin. This occurs in the current baseline as well as held compilation experiments; the five-domain float32 FastRelax repeat checks do not establish this longer-workflow contract.",
+      "Complete CUDA allocation-event traces distinguish device allocations, static storage and pinned host buffers from driver/context residency. They retain canonical and mixed-system memory differences versus mature Torch; neither allocator counters nor sampled residency establish total physical peak-memory parity.",
+      "Shared native wider CUDA accumulation for hydrogen-bond derivatives and generic-torsion values/derivatives closes the tested float32 branched N-glycan repeat failures: full-default Cartesian/kinematic minimization and FastRelax pass cold-plus-five-warm coordinate, energy, gradient and chemical-record checks in each frontend. Three JAX workflows also pass across two fresh processes; Cartesian FastRelax has one process per frontend. Original failures remain recorded. Cross-framework generated glycan ideal coordinates, starting hydrogen positions and optimized endpoints differ; full prepared parameter identity is not established by chemical-record checks. Other glycan/protein complete workflows, historical trajectories and runtime/physical peak-memory parity remain separate gates.",
+      "Standalone LJ/LK float32 CUDA gradients now use wider accumulation in the same shared native physics, preserving pair calculations and returning the caller dtype. The original lifecycle repeat gate, independent per-channel domain values and coordinate gradients, and jit/JVP/vmap/dtype/device checks pass with the changed implementation on CPU/CUDA. A 100-evaluation control retains exactly repeated float32 gradients before and after score-function mutation; original failing-source evidence remains recorded. Full workflow cost and peak-memory validation remain separate, and its scope is distinct from the energy-accumulation correction.",
+      "Shared CUDA kinematic force accumulation uses wider scratch and returns the caller dtype. JAX full-default biotin kinematic FastRelax now repeats coordinates, energies, gradients and connectivity exactly within and across two fresh processes, each with five warm runs; independent CPU/CUDA kinematic derivatives and molecular tests pass. Tested canonical, ligand and connected-noncanonical JAX minimizations also repeat, but optimized endpoints differ from the prior implementation beyond the retained bounds. The subsequent shared joint LKBall/water-gradient adapter closes the retained float32 Torch full biotin repeat failure on the tested processes. JAX full biotin kinematic FastRelax remains bitexact to its previous implementation; float64 native gradients retain tiny variation. These scoped repeat checks do not clear historical optimized-endpoint differences. Original failures, numerical endpoint holds, complete workflow runtime and physical peak-memory parity remain separate gates."
+    ],
+    "framework_specific_or_not_mature_parity": [
+      "Higher derivatives through native torsion/forward-kinematics kernels are not advertised by mature Torch either",
+      "Dynamic topology/sampling/graph allocation remains eager; JAX jit/vmap extensions beyond mature execution are tracked separately",
+      "Independent varying third-backbone context lacks a validated mature native contract; do not count it as established Torch capability",
+      "JAX inferred-metal virtual translation derivatives exceed the mature detached-fit path; track separately from physical source-coordinate parity",
+      "Torch design currently retains connection/constraint indices across identity changes; reordered or missing atom/port identities are not established mature-correct capabilities. JAX rejects these cases while the common scientific audit is pending."
+    ],
+    "unsupported_by_both": [
+      "Float64 discrete packing/FastRelax is not supported by the tested native sampling paths: JAX rejects it explicitly and mature Torch fails its native dtype contract. Float64 scoring and Cartesian minimization are distinct supported capabilities.",
+      "Changed-identity constraint atom remapping and changed connection-port design require capabilities absent from the tested mature imposition path as well.",
+      "Sparse packing constraints spanning three/four physical blocks: the mature and current Torch expansion omit their nonzero contributions when multiple conformers are present. JAX rejects explicitly; whole-pose multi-block callbacks are a separate supported capability."
+    ],
+    "jax_extensions": [
+      "Mixed float64 internal DOFs with float32 stored coordinates: mapping, AD and minimization are implemented in both frontends, with shared CPU/CUDA ligand/D-peptide checks. Torch promotes the objective to the parameter precision without lowering higher-precision losses. This is additional capability beyond the tested mature baseline, separate from mature-functionality parity.",
+      "FallbackSampler batch support queries are available in JAX; the mature Torch method raises NotImplementedError. Fallback conformer sampling itself is implemented in both. The shared test asserts that boundary explicitly."
+    ],
+    "source_consolidation": [
+      "Standalone tmol_jax.numeric spline utilities still duplicate native numerical algorithms. Molecular parameter preparation and scoring already use shared native splines. Removing this remaining duplication must preserve public degree/rank/dtype, device and differentiation contracts; overall source reduction is not established."
+    ]
+  },
+  "score_file_options": {
+    "torch": "implemented",
+    "jax": "cpu_installed_and_cuda_validated",
+    "repro_fixture": [
+      "tests/scientific/test_score_files.py",
+      "tests/scientific/test_soft_repulsion.py"
+    ],
+    "implementation_status": "Common versioned .sfxn parser; explicit reference overrides and soft_rep reach whole-pose, block-pair and packing preparation. Four ligand/noncanonical/D/mixed full beta_soft cases compare all 25 values and coordinate gradients to actual Torch at float64 2e-10. Whole/pair conservation and independent directional derivatives tested. Unknown options reject."
+  },
+  "task_sampler_defaults": {
+    "torch": "supported",
+    "jax": "cpu_cuda_installed_validated",
+    "repro_fixture": "tests/scientific/test_task_sampler_defaults.py",
+    "implementation_status": "Tasks inherit palette defaults with sampler-instance deduplication and independent masks. Ligand, D-peptide and DNA default packing preserve coordinates/topology and all 25 per-term values and gradients on CPU. Custom palette instance ownership tested on both backends; exact installed and actual CUDA gates passed."
+  },
+  "public_pose_storage": {
+    "torch": "supported",
+    "jax": "cpu_installed_cuda_validated",
+    "repro_fixture": [
+      "tests/scientific/test_pose_layout.py",
+      "tests/scientific/test_constraint_storage.py"
+    ],
+    "implementation_status": "Layout masks/counts/expansion, pose splitting and constraint clone/device transport/replication preserve mixed molecular identity and coordinate/parameter derivatives. JAX immutable clones share arrays. Runtime adapters consume common topology and constraint policy."
+  },
+  "public_pose_queries_and_mutation": {
+    "torch": "supported",
+    "jax": "cpu_cuda_installed_scientific_checks",
+    "repro_fixture": [
+      "tests/scientific/test_pose_queries.py",
+      "tests/scientific/test_public_mutation.py"
+    ],
+    "implementation_status": "Common selection/query/mutation policy; mixed noncanonical/D/ligand identity, author insertion codes, frozen input/other blocks/poses and all-channel finite gradients tested on both CPU frameworks."
+  },
+  "canonical_palette_retention": {
+    "torch": "supported",
+    "jax": "cpu_cuda_installed_scientific_checks",
+    "repro_fixture": "tests/scientific/test_canonical_palette_choices.py",
+    "implementation_status": "Canonical input preserves the supplied residue choices. L/D histidine keeps both neutral tautomers and four OptH samples; unused custom ligand and GLY design identities remain available. CPU/CUDA and Torch-free installed checks cover topology, full-preset values/gradients and design choices. Restored ligand choices can change packing trajectories; complete mature equivalence remains open."
+  },
+  "public_palette_construction": {
+    "torch": "supported",
+    "jax": "cpu_cuda_installed_construction_lookup_transport_topology",
+    "repro_fixture": [
+      "tests/scientific/test_public_palette.py",
+      "tests/scientific/test_packing_palette.py"
+    ],
+    "implementation_status": "Common topology source preserves supplied chemistry, residue-set and active-object identity, ordered lookup, counts, connections, bonds and named torsions. Shared ligand/noncanonical/D/DNA/metal cases and JAX jit/vmap verify physical atom order and device placement, including Torch-free installs. Preparation remains eager; metadata arrays are pytree leaves."
+  },
+  "selected_block_pair_api": {
+    "torch": "supported",
+    "jax": "implemented",
+    "repro_fixture": [
+      "tests/scientific/test_selected_pair_scoring.py"
+    ],
+    "implementation_status": "Rendered block-pair scorers expose mature unweighted_scores and score_interactions over the existing shared native physics. Ligand, noncanonical and mixed-system contracts cover selected-energy conservation, physical gradients and repeated/empty selections. Invalid eager indices reject; invalid transformed indices produce NaN. This public API capability does not resolve mature whole-workflow numerical or runtime/memory gaps. A fixed selection can reuse the ordinary RenderedScore compiled execution and autodiff adapter with fresh index/parameter operands. Custom well-depth changes have independent fourfold energy/gradient and old-snapshot invariants. This adapter targets measured preparation/execution overhead; mature runtime/memory parity remains pending."
+  },
+  "rendered_whole_score_options": {
+    "torch": "supported",
+    "jax": "implemented",
+    "repro_fixture": [
+      "tests/scientific/test_rendered_score_options.py",
+      "tests/scientific/test_score_lifecycle.py"
+    ],
+    "implementation_status": "Rendered whole-pose scorers accept per-call sum_terms/apply_weights and expose unweighted_scores. Alternate static reductions reuse prepared parameter/topology operands and retain original configuration after score-function mutation. Existing render defaults, mapped-coordinate execution and chemistry-owner lifetime are preserved; complete mature end-to-end parity remains separately gated."
+  },
+  "custom_optimizer_injection": {
+    "torch": "supported_closure_based_optimizer_class",
+    "jax": "functional_callable_cpu_scientific_checks",
+    "repro_fixture": [
+      "tests/scientific/test_custom_optimizer.py"
+    ],
+    "implementation_status": "Cartesian and kinematic public minimizers accept a functional optimizer over the existing compact-variable, frozen-coordinate and per-pose objective adapter. Shared tests check independent harmonic molecular motion and injected kinematic minimization. Result shape, dtype, device and finite gradients are required; settings and additional diagnostics pass through. Torch Optimizer/nn.Module/state_dict remain framework-specific; default algorithms and existing complete-workflow numerical/performance holds are unchanged. CPU: analytical ligand/noncanonical/mixed Cartesian and injected ligand/D kinematic assertions pass in both current frontends; actual mature Torch passes the same assertions with its normal complete chemistry palette for kinematics. A minimal zero-port mature ligand palette fails earlier fold-forest construction and is recorded separately. All 34 affected CUDA checks, eight Torch-free installed checks per platform and exact package provenance pass. Matched complete custom-SGD workflows across four domains and both process orders retain all 16 mature numerical holds; warm CUDA cost is 1.34\u20131.68 times mature Torch. This adds an optimizer contract, not complete workflow parity."
+  }
+}

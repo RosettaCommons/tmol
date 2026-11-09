@@ -1,4 +1,6 @@
 #pragma once
+#include <tmol/score/common/pose_energy_accumulation.hh>
+#include <tmol/score/backbone_torsion/potentials/backbone_rotamer_kernels.hh>
 
 #include <tmol/utility/portable/reduce_ops.hh>
 #include <tmol/utility/portable/matrix.hh>
@@ -25,16 +27,12 @@
 
 // Operator definitions; safe for CPU compilation
 
-#include <chrono>
+#include "backbone_torsion_pose_kernels.hh"
 
 namespace tmol {
 namespace score {
 namespace backbone_torsion {
 namespace potentials {
-
-using tmol::portable::Vec;
-template <typename Real>
-using CoordQuad = tmol::portable::Mat<Real, 4, 3>;
 
 template <
     template <tmol::Device> class DeviceDispatch,
@@ -78,301 +76,62 @@ auto BackboneTorsionPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
     bool output_block_pair_energies,
     bool compute_derivs)
     -> std::tuple<TPack<Real, 4, Dev>, TPack<Vec<Real, 3>, 2, Dev>> {
-  using tmol::score::common::accumulate;
-  using Real3 = Vec<Real, 3>;
-
   int const n_atoms = rot_coords.size(0);
-  int const n_poses = first_rot_for_block.size(0);
   int const n_rots = rot_coord_offset.size(0);
+  int const n_poses = first_rot_for_block.size(0);
   int const max_n_blocks = first_rot_for_block.size(1);
-
-  int const max_n_conn = pose_stack_inter_block_connections.size(2);
-  int const n_block_types = block_type_atom_downstream_of_conn.size(0);
-  int const max_n_atoms_per_block_type =
-      block_type_atom_downstream_of_conn.size(1);
-  int const n_rama_tables = rama_tables.size(0);
-  int const n_omega_tables = omega_tables.size(0);
-
-  assert(first_rot_block_type.size(0) == n_poses);
-  assert(first_rot_block_type.size(1) == max_n_blocks);
-
   assert(block_ind_for_rot.size(0) == n_rots);
   assert(pose_ind_for_rot.size(0) == n_rots);
   assert(block_type_ind_for_rot.size(0) == n_rots);
-
   assert(n_rots_for_pose.size(0) == n_poses);
   assert(rot_offset_for_pose.size(0) == n_poses);
-
   assert(n_rots_for_block.size(0) == n_poses);
   assert(n_rots_for_block.size(1) == max_n_blocks);
-
   assert(rot_offset_for_block.size(0) == n_poses);
   assert(rot_offset_for_block.size(1) == max_n_blocks);
-
   assert(pose_stack_block_type.size(0) == n_poses);
   assert(pose_stack_block_type.size(1) == max_n_blocks);
-
-  assert(pose_stack_inter_block_connections.size(0) == n_poses);
-  assert(pose_stack_inter_block_connections.size(1) == max_n_blocks);
-
-  assert(block_type_rama_table.size(0) == n_block_types);
-  assert(block_type_omega_table.size(0) == n_block_types);
-  assert(block_type_lower_conn_ind.size(0) == n_block_types);
-  assert(block_type_upper_conn_ind.size(0) == n_block_types);
-
-  assert(block_type_torsion_atoms.size(0) == n_block_types);
-  assert(block_type_torsion_atoms.size(1) == 12);
-
-  assert(rama_table_params.size(0) == n_rama_tables);
-  assert(omega_table_params.size(0) == n_omega_tables);
-
-  LAUNCH_BOX_32;
-  // Define nt
-  CTA_LAUNCH_T_PARAMS;
-
-  // RamaPrePro is a pseudo-1body term that's really a 2-body term:
-  // the score for residue i changes if residue i+1 becomes proline.
-
-  TPack<Real, 4, Dev> V_t;
-  if (output_block_pair_energies) {
-    V_t = TPack<Real, 4, Dev>::zeros({2, n_poses, max_n_blocks, max_n_blocks});
-  } else {
-    V_t = TPack<Real, 4, Dev>::zeros({2, n_poses, 1, 1});
-  }
-  // Block-pair autograd recomputes coordinate derivatives in backward.
-  bool const accumulate_derivs = compute_derivs && !output_block_pair_energies;
-  auto dV_dxyz_t = accumulate_derivs
-                       ? TPack<Vec<Real, 3>, 2, Dev>::zeros({2, n_atoms})
-                       : TPack<Vec<Real, 3>, 2, Dev>::empty({2, 0});
-
-  auto V = V_t.view;
-  auto dV_dxyz = dV_dxyz_t.view;
-
-  auto rama_omega_func = ([=] TMOL_DEVICE_FUNC(int ind) {
-    int const pose_ind = ind / max_n_blocks;
-    int const block_ind1 = ind % max_n_blocks;
-    int const block_type1 = first_rot_block_type[pose_ind][block_ind1];
-    int const rot_ind1 = first_rot_for_block[pose_ind][block_ind1];
-
-    if (block_type1 == -1) {
-      // Filter out blocks that are not real
-      return;
-    }
-
-    bool block1_has_upper_neighbor = true;
-    int const upper_conn = block_type_upper_conn_ind[block_type1];
-    if (upper_conn < 0) {
-      return;
-    }
-    int const block_ind2 =
-        pose_stack_inter_block_connections[pose_ind][block_ind1][upper_conn][0];
-    if (block_ind2 == -1) {
-      // the upper neighbor is not a real residue: skip
-      return;
-    }
-    int const block_type2 = first_rot_block_type[pose_ind][block_ind2];
-    int const rot_ind2 = first_rot_for_block[pose_ind][block_ind2];
-
-    int const upper_nbr_is_pro = block_type_is_pro[block_type2];
-    int const rama_table_ind =
-        block_type_rama_table[block_type1][upper_nbr_is_pro];
-    int const omega_table_ind =
-        block_type_omega_table[block_type1][upper_nbr_is_pro];
-
-    int const rot_offset1 = rot_coord_offset[rot_ind1];
-
-    // correction for cyclic peptides
-    int const V_ind1 =
-        output_block_pair_energies ? min(block_ind1, block_ind2) : 0;
-    int const V_ind2 =
-        output_block_pair_energies ? max(block_ind1, block_ind2) : 0;
-
-    bool valid_phipsi = true;
-    Vec<Int, 4> phi_ats;
-    for (int i = 0; i < 4; ++i) {
-      UnresolvedAtomID<Int> i_at = block_type_torsion_atoms[block_type1][i];
-      phi_ats[i] = resolve_rotamer_pair_atom_from_uaid(
-          i_at,
-          rot_ind1,
-          rot_ind2,
-          block_ind1,
-          block_ind2,
-          block_type2,
-          pose_ind,
-          rot_coord_offset,
-          first_rot_for_block,
-          first_rot_block_type,
-          pose_stack_inter_block_connections,
-          block_type_atom_downstream_of_conn);
-      valid_phipsi &= phi_ats[i] != -1;
-    }
-    CoordQuad<Real> phi_coords;
-    if (valid_phipsi) {
-      for (int i = 0; i < 4; ++i) {
-        tmol::portable::row_ref(phi_coords, i) = rot_coords[phi_ats[i]];
-      }
-    }
-
-    Vec<Int, 4> psi_ats;
-    for (int i = 0; i < 4; ++i) {
-      UnresolvedAtomID<Int> i_at = block_type_torsion_atoms[block_type1][i + 4];
-      psi_ats[i] = resolve_rotamer_pair_atom_from_uaid(
-          i_at,
-          rot_ind1,
-          rot_ind2,
-          block_ind1,
-          block_ind2,
-          block_type2,
-          pose_ind,
-          rot_coord_offset,
-          first_rot_for_block,
-          first_rot_block_type,
-          pose_stack_inter_block_connections,
-          block_type_atom_downstream_of_conn);
-      valid_phipsi &= psi_ats[i] != -1;
-    }
-    CoordQuad<Real> psi_coords;
-    if (valid_phipsi) {
-      for (int i = 0; i < 4; ++i) {
-        tmol::portable::row_ref(psi_coords, i) = rot_coords[psi_ats[i]];
-      }
-    }
-
-    // accumulate rama
-    if (valid_phipsi && rama_table_ind >= 0) {
-      if (accumulate_derivs) {
-        auto rama = rama_V_dV<Dev, Real, Int>(
-            phi_coords,
-            psi_coords,
-            rama_tables[rama_table_ind],
-            tmol::portable::vec_from<Real, 2>(
-                rama_table_params[rama_table_ind].bbstarts),
-            tmol::portable::vec_from<Real, 2>(
-                rama_table_params[rama_table_ind].bbsteps));
-        accumulate<Dev, Real>::add(
-            V[0][pose_ind][V_ind1][V_ind2], common::get<0>(rama));
-        for (int j = 0; j < 4; ++j) {
-          accumulate<Dev, Vec<Real, 3>>::add(
-              dV_dxyz[0][phi_ats[j]], common::get<1>(rama).row(j));
-          accumulate<Dev, Vec<Real, 3>>::add(
-              dV_dxyz[0][psi_ats[j]], common::get<2>(rama).row(j));
-        }
-      } else {
-        accumulate<Dev, Real>::add(
-            V[0][pose_ind][V_ind1][V_ind2],
-            rama_V<Dev, Real, Int>(
-                phi_coords,
-                psi_coords,
-                rama_tables[rama_table_ind],
-                tmol::portable::vec_from<Real, 2>(
-                    rama_table_params[rama_table_ind].bbstarts),
-                tmol::portable::vec_from<Real, 2>(
-                    rama_table_params[rama_table_ind].bbsteps)));
-      }
-    }
-
-    if (omega_table_ind < 0) {
-      return;
-    }
-
-    CoordQuad<Real> omega_coords;
-    Vec<Int, 4> omega_ats;
-    for (int i = 0; i < 4; ++i) {
-      // TO DO: replace "8" in the lookup below
-      UnresolvedAtomID<Int> i_at = block_type_torsion_atoms[block_type1][i + 8];
-
-      // Check to see if the omega uaids are actually defined for this block
-      // type. If the atom offset [0] or the connection index [1] are both -1,
-      // this is a sentinel for an undefined omega.
-      if (i_at.atom_id == -1 && i_at.conn_id == -1)
-        return;  // no omega and we already calculated rama
-
-      omega_ats[i] = resolve_rotamer_pair_atom_from_uaid(
-          i_at,
-          rot_ind1,
-          rot_ind2,
-          block_ind1,
-          block_ind2,
-          block_type2,
-          pose_ind,
-          rot_coord_offset,
-          first_rot_for_block,
-          first_rot_block_type,
-          pose_stack_inter_block_connections,
-          block_type_atom_downstream_of_conn);
-
-      // omega_atom_ind == -1 -> UAID resolution failed
-      if (omega_ats[i] == -1)
-        return;  // no omega and we already calculated rama
-    }
-
-    for (int i = 0; i < 4; ++i) {
-      tmol::portable::row_ref(omega_coords, i) = rot_coords[omega_ats[i]];
-    }
-
-    if (valid_phipsi && omega_table_ind >= 0) {
-      if (accumulate_derivs) {
-        auto omega = omega_bbdep_V_dV<Dev, Real, Int>(
-            phi_coords,
-            psi_coords,
-            omega_coords,
-            omega_tables[omega_table_ind][0],
-            omega_tables[omega_table_ind][1],
-            tmol::portable::vec_from<Real, 2>(
-                omega_table_params[omega_table_ind].bbstarts),
-            tmol::portable::vec_from<Real, 2>(
-                omega_table_params[omega_table_ind].bbsteps),
-            32.8);
-        accumulate<Dev, Real>::add(
-            V[1][pose_ind][V_ind1][V_ind2], common::get<0>(omega));
-        for (int j = 0; j < 4; ++j) {
-          // omega : [V, dVdphi, dVdpsi, dVdomega]
-          accumulate<Dev, Vec<Real, 3>>::add(
-              dV_dxyz[1][phi_ats[j]], common::get<1>(omega).row(j));
-          accumulate<Dev, Vec<Real, 3>>::add(
-              dV_dxyz[1][psi_ats[j]], common::get<2>(omega).row(j));
-          accumulate<Dev, Vec<Real, 3>>::add(
-              dV_dxyz[1][omega_ats[j]], common::get<3>(omega).row(j));
-        }
-      } else {
-        accumulate<Dev, Real>::add(
-            V[1][pose_ind][V_ind1][V_ind2],
-            omega_bbdep_V<Dev, Real, Int>(
-                phi_coords,
-                psi_coords,
-                omega_coords,
-                omega_tables[omega_table_ind][0],
-                omega_tables[omega_table_ind][1],
-                tmol::portable::vec_from<Real, 2>(
-                    omega_table_params[omega_table_ind].bbstarts),
-                tmol::portable::vec_from<Real, 2>(
-                    omega_table_params[omega_table_ind].bbsteps),
-                32.8));
-      }
-    } else {
-      // if rama is undefined, fall back to old version
-      if (accumulate_derivs) {
-        auto omega = omega_V_dV<Dev, Real, Int>(omega_coords, 32.8);
-        accumulate<Dev, Real>::add(
-            V[1][pose_ind][V_ind1][V_ind2], common::get<0>(omega));
-        for (int j = 0; j < 4; ++j) {
-          // omega : [V, dVdomega]
-          accumulate<Dev, Vec<Real, 3>>::add(
-              dV_dxyz[1][omega_ats[j]], common::get<1>(omega).row(j));
-        }
-      } else {
-        accumulate<Dev, Real>::add(
-            V[1][pose_ind][V_ind1][V_ind2],
-            omega_V<Real>(omega_coords, Real(32.8)));
-      }
-    }
-  });
-
-  DeviceDispatch<Dev>::template forall_grouped<launch_t>(
-      mgr, n_poses, max_n_blocks, rama_omega_func);
-
-  return {V_t, dV_dxyz_t};
-};
+  int const n_V = output_block_pair_energies ? max_n_blocks : 1;
+  return score::common::with_pose_energy_accumulation<Dev, Real>(
+      output_block_pair_energies, [&](auto precision) {
+        using EnergyReal = decltype(precision);
+        auto V_t = TPack<EnergyReal, 4, Dev>::zeros({2, n_poses, n_V, n_V});
+        bool const accumulate_derivs =
+            compute_derivs && !output_block_pair_energies;
+        using GradReal = std::conditional_t<
+            Dev == Device::CUDA && std::is_same_v<Real, float>,
+            double,
+            Real>;
+        auto dV_dxyz_t =
+            accumulate_derivs
+                ? TPack<Vec<GradReal, 3>, 2, Dev>::zeros({2, n_atoms})
+                : TPack<Vec<GradReal, 3>, 2, Dev>::empty({2, 0});
+        backbone_torsion_pose_forward<DeviceDispatch, Dev, Real, Int>(
+            mgr,
+            rot_coords,
+            rot_coord_offset,
+            first_rot_for_block,
+            first_rot_block_type,
+            pose_stack_inter_block_connections,
+            block_type_atom_downstream_of_conn,
+            block_type_rama_table,
+            block_type_omega_table,
+            block_type_lower_conn_ind,
+            block_type_upper_conn_ind,
+            block_type_is_pro,
+            block_type_torsion_atoms,
+            rama_tables,
+            rama_table_params,
+            omega_tables,
+            omega_table_params,
+            output_block_pair_energies,
+            compute_derivs,
+            V_t.view,
+            dV_dxyz_t.view);
+        return std::make_tuple(
+            V_t.template cast<Real>(), dV_dxyz_t.template cast<Vec<Real, 3>>());
+      });
+}
 
 template <
     template <tmol::Device> class DeviceDispatch,
@@ -416,259 +175,48 @@ auto BackboneTorsionPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
 
     TView<Real, 4, Dev> dTdV  // nterms x nposes x (len) x (len)
     ) -> TPack<Vec<Real, 3>, 2, Dev> {
-  using tmol::score::common::accumulate;
-  using Real3 = Vec<Real, 3>;
-
   int const n_atoms = rot_coords.size(0);
-  int const n_poses = first_rot_for_block.size(0);
   int const n_rots = rot_coord_offset.size(0);
+  int const n_poses = first_rot_for_block.size(0);
   int const max_n_blocks = first_rot_for_block.size(1);
-
-  int const max_n_conn = pose_stack_inter_block_connections.size(2);
-  int const n_block_types = block_type_atom_downstream_of_conn.size(0);
-  int const max_n_atoms_per_block_type =
-      block_type_atom_downstream_of_conn.size(1);
-  int const n_rama_tables = rama_tables.size(0);
-  int const n_omega_tables = omega_tables.size(0);
-
-  assert(first_rot_block_type.size(0) == n_poses);
-  assert(first_rot_block_type.size(1) == max_n_blocks);
-
   assert(block_ind_for_rot.size(0) == n_rots);
   assert(pose_ind_for_rot.size(0) == n_rots);
   assert(block_type_ind_for_rot.size(0) == n_rots);
-
   assert(n_rots_for_pose.size(0) == n_poses);
   assert(rot_offset_for_pose.size(0) == n_poses);
-
   assert(n_rots_for_block.size(0) == n_poses);
   assert(n_rots_for_block.size(1) == max_n_blocks);
-
   assert(rot_offset_for_block.size(0) == n_poses);
   assert(rot_offset_for_block.size(1) == max_n_blocks);
-
   assert(pose_stack_block_type.size(0) == n_poses);
   assert(pose_stack_block_type.size(1) == max_n_blocks);
-
-  assert(pose_stack_inter_block_connections.size(0) == n_poses);
-  assert(pose_stack_inter_block_connections.size(1) == max_n_blocks);
-
-  assert(block_type_rama_table.size(0) == n_block_types);
-  assert(block_type_omega_table.size(0) == n_block_types);
-  assert(block_type_lower_conn_ind.size(0) == n_block_types);
-  assert(block_type_upper_conn_ind.size(0) == n_block_types);
-
-  assert(block_type_torsion_atoms.size(0) == n_block_types);
-  assert(block_type_torsion_atoms.size(1) == 12);
-
-  assert(rama_table_params.size(0) == n_rama_tables);
-  assert(omega_table_params.size(0) == n_omega_tables);
-
-  auto dV_dxyz_t = TPack<Vec<Real, 3>, 2, Dev>::zeros({2, n_atoms});
-
-  auto dV_dxyz = dV_dxyz_t.view;
-
-  LAUNCH_BOX_32;
-  // Define nt
-  CTA_LAUNCH_T_PARAMS;
-
-  auto rama_omega_func = ([=] TMOL_DEVICE_FUNC(int ind) {
-    int const pose_ind = ind / max_n_blocks;
-    int const block_ind1 = ind % max_n_blocks;
-    int const block_type1 = first_rot_block_type[pose_ind][block_ind1];
-    int const rot_ind1 = first_rot_for_block[pose_ind][block_ind1];
-
-    if (block_type1 == -1) {
-      // Filter out blocks that are not real
-      return;
-    }
-
-    bool block1_has_upper_neighbor = true;
-    int const upper_conn = block_type_upper_conn_ind[block_type1];
-    if (upper_conn < 0) {
-      return;
-    }
-    int const block_ind2 =
-        pose_stack_inter_block_connections[pose_ind][block_ind1][upper_conn][0];
-    if (block_ind2 == -1) {
-      // the upper neighbor is not a real residue: skip
-      return;
-    }
-
-    // The forward pass writes a block pair at its canonical (min, max) slot so
-    // a cycle's closing bond does not collide with the bond that opens it;
-    // read the same slot here or that bond's gradient is silently zero.
-    int const dTdV_ind1 = min(block_ind1, block_ind2);
-    int const dTdV_ind2 = max(block_ind1, block_ind2);
-
-    if (dTdV[0][pose_ind][dTdV_ind1][dTdV_ind2] == 0
-        && dTdV[1][pose_ind][dTdV_ind1][dTdV_ind2] == 0) {
-      return;
-    }
-
-    int const block_type2 = first_rot_block_type[pose_ind][block_ind2];
-    int const rot_ind2 = first_rot_for_block[pose_ind][block_ind2];
-
-    int const upper_nbr_is_pro = block_type_is_pro[block_type2];
-    int const rama_table_ind =
-        block_type_rama_table[block_type1][upper_nbr_is_pro];
-    int const omega_table_ind =
-        block_type_omega_table[block_type1][upper_nbr_is_pro];
-
-    int const rot_offset1 = rot_coord_offset[rot_ind1];
-
-    bool valid_phipsi = true;
-    Vec<Int, 4> phi_ats;
-    for (int i = 0; i < 4; ++i) {
-      UnresolvedAtomID<Int> i_at = block_type_torsion_atoms[block_type1][i];
-      phi_ats[i] = resolve_rotamer_pair_atom_from_uaid(
-          i_at,
-          rot_ind1,
-          rot_ind2,
-          block_ind1,
-          block_ind2,
-          block_type2,
-          pose_ind,
-          rot_coord_offset,
-          first_rot_for_block,
-          first_rot_block_type,
-          pose_stack_inter_block_connections,
-          block_type_atom_downstream_of_conn);
-      valid_phipsi &= phi_ats[i] != -1;
-    }
-    CoordQuad<Real> phi_coords;
-    if (valid_phipsi) {
-      for (int i = 0; i < 4; ++i) {
-        tmol::portable::row_ref(phi_coords, i) = rot_coords[phi_ats[i]];
-      }
-    }
-
-    Vec<Int, 4> psi_ats;
-    for (int i = 0; i < 4; ++i) {
-      UnresolvedAtomID<Int> i_at = block_type_torsion_atoms[block_type1][i + 4];
-      psi_ats[i] = resolve_rotamer_pair_atom_from_uaid(
-          i_at,
-          rot_ind1,
-          rot_ind2,
-          block_ind1,
-          block_ind2,
-          block_type2,
-          pose_ind,
-          rot_coord_offset,
-          first_rot_for_block,
-          first_rot_block_type,
-          pose_stack_inter_block_connections,
-          block_type_atom_downstream_of_conn);
-      valid_phipsi &= psi_ats[i] != -1;
-    }
-    CoordQuad<Real> psi_coords;
-    if (valid_phipsi) {
-      for (int i = 0; i < 4; ++i) {
-        tmol::portable::row_ref(psi_coords, i) = rot_coords[psi_ats[i]];
-      }
-    }
-
-    // accumulate rama
-    Real rama_block_weight = dTdV[0][pose_ind][dTdV_ind1][dTdV_ind2];
-    if (valid_phipsi && rama_table_ind >= 0) {
-      auto rama = rama_V_dV<Dev, Real, Int>(
-          phi_coords,
-          psi_coords,
-          rama_tables[rama_table_ind],
-          tmol::portable::vec_from<Real, 2>(
-              rama_table_params[rama_table_ind].bbstarts),
-          tmol::portable::vec_from<Real, 2>(
-              rama_table_params[rama_table_ind].bbsteps));
-      for (int j = 0; j < 4; ++j) {
-        accumulate<Dev, Vec<Real, 3>>::add(
-            dV_dxyz[0][phi_ats[j]],
-            common::get<1>(rama).row(j) * rama_block_weight);
-        accumulate<Dev, Vec<Real, 3>>::add(
-            dV_dxyz[0][psi_ats[j]],
-            common::get<2>(rama).row(j) * rama_block_weight);
-      }
-    }
-
-    if (omega_table_ind < 0) {
-      return;
-    }
-
-    CoordQuad<Real> omega_coords;
-    Vec<Int, 4> omega_ats;
-    for (int i = 0; i < 4; ++i) {
-      UnresolvedAtomID<Int> i_at = block_type_torsion_atoms[block_type1][i + 8];
-
-      // Check to see if the omega uaids are actually defined for this block
-      // type. If the atom offset [0] or the connection index [1] are both -1,
-      // this is a sentinel for an undefined omega.
-      if (i_at.atom_id == -1 && i_at.conn_id == -1)
-        return;  // no omega and we already calculated rama
-
-      omega_ats[i] = resolve_rotamer_pair_atom_from_uaid(
-          i_at,
-          rot_ind1,
-          rot_ind2,
-          block_ind1,
-          block_ind2,
-          block_type2,
-          pose_ind,
-          rot_coord_offset,
-          first_rot_for_block,
-          first_rot_block_type,
-          pose_stack_inter_block_connections,
-          block_type_atom_downstream_of_conn);
-
-      // omega_atom_ind == -1 -> UAID resolution failed
-      if (omega_ats[i] == -1)
-        return;  // no omega and we already calculated rama
-    }
-
-    for (int i = 0; i < 4; ++i) {
-      tmol::portable::row_ref(omega_coords, i) = rot_coords[omega_ats[i]];
-    }
-
-    Real omega_block_weight = dTdV[1][pose_ind][dTdV_ind1][dTdV_ind2];
-    if (valid_phipsi && omega_table_ind >= 0) {
-      auto omega = omega_bbdep_V_dV<Dev, Real, Int>(
-          phi_coords,
-          psi_coords,
-          omega_coords,
-          omega_tables[omega_table_ind][0],
-          omega_tables[omega_table_ind][1],
-          tmol::portable::vec_from<Real, 2>(
-              omega_table_params[omega_table_ind].bbstarts),
-          tmol::portable::vec_from<Real, 2>(
-              omega_table_params[omega_table_ind].bbsteps),
-          32.8);
-      for (int j = 0; j < 4; ++j) {
-        // omega : [V, dVdphi, dVdpsi, dVdomega]
-        accumulate<Dev, Vec<Real, 3>>::add(
-            dV_dxyz[1][phi_ats[j]],
-            common::get<1>(omega).row(j) * omega_block_weight);
-        accumulate<Dev, Vec<Real, 3>>::add(
-            dV_dxyz[1][psi_ats[j]],
-            common::get<2>(omega).row(j) * omega_block_weight);
-        accumulate<Dev, Vec<Real, 3>>::add(
-            dV_dxyz[1][omega_ats[j]],
-            common::get<3>(omega).row(j) * omega_block_weight);
-      }
-    } else {
-      // if rama is undefined, fall back to old version
-      auto omega = omega_V_dV<Dev, Real, Int>(omega_coords, 32.8);
-      for (int j = 0; j < 4; ++j) {
-        // omega : [V, dVdomega]
-        accumulate<Dev, Vec<Real, 3>>::add(
-            dV_dxyz[1][omega_ats[j]],
-            common::get<1>(omega).row(j) * omega_block_weight);
-      }
-    }
-  });
-
-  DeviceDispatch<Dev>::template forall_grouped<launch_t>(
-      mgr, n_poses, max_n_blocks, rama_omega_func);
-
-  return dV_dxyz_t;
-};
+  using GradReal = std::conditional_t<
+      Dev == Device::CUDA && std::is_same_v<Real, float>,
+      double,
+      Real>;
+  auto dV_dxyz_t = TPack<Vec<GradReal, 3>, 2, Dev>::zeros({2, n_atoms});
+  backbone_torsion_pose_backward<DeviceDispatch, Dev, Real, Int>(
+      mgr,
+      rot_coords,
+      rot_coord_offset,
+      first_rot_for_block,
+      first_rot_block_type,
+      pose_stack_inter_block_connections,
+      block_type_atom_downstream_of_conn,
+      block_type_rama_table,
+      block_type_omega_table,
+      block_type_lower_conn_ind,
+      block_type_upper_conn_ind,
+      block_type_is_pro,
+      block_type_torsion_atoms,
+      rama_tables,
+      rama_table_params,
+      omega_tables,
+      omega_table_params,
+      dTdV,
+      dV_dxyz_t.view);
+  return dV_dxyz_t.template cast<Vec<Real, 3>>();
+}
 
 template <
     template <tmol::Device> class DeviceDispatch,
@@ -711,7 +259,8 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
         TView<Real, 4, Dev> omega_tables,
         TView<RamaTableParams<Real>, 1, Dev> omega_table_params,
         bool output_block_pair_energies,
-        bool topology_only)
+        bool topology_only,
+        TView<Int, 2, Dev> lockstep_group_for_block)
         -> std::tuple<
             TPack<Real, 2, Dev>,
             TPack<Vec<Real, 3>, 2, Dev>,
@@ -778,51 +327,16 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
   auto n_energies_for_block_t =
       TPack<int64_t, 2, Dev>::zeros({n_poses, max_n_blocks});
   auto n_energies_for_block = n_energies_for_block_t.view;
-  auto count_n_rotamer_energies = ([=] TMOL_DEVICE_FUNC(int index) {
-    // Look at each residue and make sure that it has both upper and lower
-    // neighbors and then write down the number of rotamer pair energies to
-    // evaluate as n_rots_i * n_rots_upper
-    int const pose_ind = index / max_n_blocks;
-    int const block_ind = index % max_n_blocks;
-
-    int const pose_block_type = pose_stack_block_type[pose_ind][block_ind];
-    if (pose_block_type == -1) {
-      return;
-    }
-    int const n_rots = n_rots_for_block[pose_ind][block_ind];
-
-    int const upper_conn = block_type_upper_conn_ind[pose_block_type];
-    if (upper_conn < 0) {
-      return;
-    }
-    int const lower_conn = block_type_upper_conn_ind[pose_block_type];
-    if (lower_conn < 0) {
-      return;
-    }
-    int const lower_nbr_block_ind =
-        pose_stack_inter_block_connections[pose_ind][block_ind][lower_conn][0];
-    if (lower_nbr_block_ind < 0) {
-      // no lower neighbor --> no backbone torsion term
-      return;
-    }
-
-    int const upper_nbr_block_ind =
-        pose_stack_inter_block_connections[pose_ind][block_ind][upper_conn][0];
-    if (upper_nbr_block_ind < 0) {
-      return;
-    }
-    // the upper neighbor is a real residue: we will score
-    // the n_rots_i x n_rots_j rotamers for this pair.
-    // This will properly include upper neighbors for circular peptides,
-    // too.
-    int const upper_n_rots = n_rots_for_block[pose_ind][upper_nbr_block_ind];
-
-    n_energies_for_block[pose_ind][block_ind] = int64_t(n_rots) * upper_n_rots;
-  });
-  int const n_pose_block_cells = score::common::checked_dispatch_product(
+  int const n_pose_block_cells = common::checked_dispatch_product(
       n_poses, max_n_blocks, "backbone-torsion count dispatch");
-  DeviceDispatch<Dev>::template forall<launch_t>(
-      mgr, n_pose_block_cells, count_n_rotamer_energies);
+  backbone_rotamer_count_native<DeviceDispatch, Dev, Real, Int>(
+      mgr,
+      n_rots_for_block,
+      pose_stack_block_type,
+      pose_stack_inter_block_connections,
+      block_type_upper_conn_ind,
+      n_energies_for_block,
+      lockstep_group_for_block);
 
   auto n_energies_for_block_offset_t =
       TPack<int64_t, 2, Dev>::zeros({n_poses, max_n_blocks});
@@ -849,9 +363,13 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
   }
   // Per-pair backward recomputes weighted derivatives from the saved inputs.
   bool const accumulate_derivs = !topology_only && !output_block_pair_energies;
+  using GradReal = std::conditional_t<
+      Dev == Device::CUDA && std::is_same_v<Real, float>,
+      double,
+      Real>;
   auto dV_dxyz_t = accumulate_derivs
-                       ? TPack<Vec<Real, 3>, 2, Dev>::zeros({2, n_atoms})
-                       : TPack<Vec<Real, 3>, 2, Dev>::empty({2, 0});
+                       ? TPack<Vec<GradReal, 3>, 2, Dev>::zeros({2, n_atoms})
+                       : TPack<Vec<GradReal, 3>, 2, Dev>::empty({2, 0});
 
   // Which block each dispatch index belongs to. Walking the sparse list is
   // what keeps this bounded: a dense (block x rot1 x rot2) grid would be
@@ -869,242 +387,50 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
   auto dV_dxyz = dV_dxyz_t.view;
   auto dispatch_indices = dispatch_indices_t.view;
 
-  auto mark_dispatch_indices = ([=] TMOL_DEVICE_FUNC(int index) {
-    int const pose_and_block = block_for_dispatch[index];
-    int const pose_ind = pose_and_block / max_n_blocks;
-    int const block1_ind = pose_and_block % max_n_blocks;
-
-    int const pose_block_type = pose_stack_block_type[pose_ind][block1_ind];
-    int const upper_conn = block_type_upper_conn_ind[pose_block_type];
-    int const upper_nbr_block_ind =
-        pose_stack_inter_block_connections[pose_ind][block1_ind][upper_conn][0];
-    int const upper_n_rots = n_rots_for_block[pose_ind][upper_nbr_block_ind];
-
-    // invert the sparse index this block's pairs were counted into
-    int const within =
-        index - n_energies_for_block_offset[pose_ind][block1_ind];
-    int const local_rot1_ind = within / upper_n_rots;
-    int const local_rot2_ind = within - local_rot1_ind * upper_n_rots;
-
-    int const rot1_ind =
-        first_rot_for_block[pose_ind][block1_ind] + local_rot1_ind;
-    int const rot2_ind =
-        first_rot_for_block[pose_ind][upper_nbr_block_ind] + local_rot2_ind;
-
-    dispatch_indices[0][index] = pose_ind;
-    // The sparse rotamer-pair output is upper triangular, which
-    // test_closure_rotamer_pairs_reach_the_packer pins, so the pair is ordered
-    // here. Note that a two-block cycle is bonded both ways and its two
-    // directed entries therefore canonicalise to the same pair; the direction
-    // re-derived below then picks one of its two peptide bonds twice. Scoring
-    // both while keeping the output triangular needs the output to accumulate,
-    // not the dispatch to stop ordering.
-    dispatch_indices[1][index] = min(rot1_ind, rot2_ind);
-    dispatch_indices[2][index] = max(rot1_ind, rot2_ind);
-  });
-  DeviceDispatch<Dev>::template forall<launch_t>(
-      mgr, n_dispatch_total, mark_dispatch_indices);
+  backbone_rotamer_fill_native<DeviceDispatch, Dev, Real, Int>(
+      mgr,
+      first_rot_for_block,
+      n_rots_for_block,
+      pose_stack_block_type,
+      pose_stack_inter_block_connections,
+      block_type_upper_conn_ind,
+      n_energies_for_block_offset,
+      block_for_dispatch,
+      dispatch_indices,
+      lockstep_group_for_block);
 
   if (topology_only) {
-    return {V_t, dV_dxyz_t, dispatch_indices_t};
+    return {V_t, dV_dxyz_t.template cast<Vec<Real, 3>>(), dispatch_indices_t};
   }
 
-  auto rama_omega_func = ([=] TMOL_DEVICE_FUNC(int ind) {
-    int const pose_ind = dispatch_indices[0][ind];
+  backbone_rotamer_score_native<false, DeviceDispatch, Dev, Real, Int>(
+      mgr,
+      rot_coords,
+      rot_coord_offset,
+      first_rot_for_block,
+      first_rot_block_type,
+      block_ind_for_rot,
+      block_type_ind_for_rot,
+      pose_stack_inter_block_connections,
+      block_type_atom_downstream_of_conn,
+      block_type_rama_table,
+      block_type_omega_table,
+      block_type_upper_conn_ind,
+      block_type_is_pro,
+      block_type_torsion_atoms,
+      rama_tables,
+      rama_table_params,
+      omega_tables,
+      omega_table_params,
+      dispatch_indices,
+      V,
+      dV_dxyz,
+      {},
+      output_block_pair_energies,
+      accumulate_derivs,
+      lockstep_group_for_block);
 
-    int rot_ind1 = dispatch_indices[1][ind];
-    int rot_ind2 = dispatch_indices[2][ind];
-
-    int block_ind1 = block_ind_for_rot[rot_ind1];
-    int block_ind2 = block_ind_for_rot[rot_ind2];
-
-    int block_type1 = block_type_ind_for_rot[rot_ind1];
-    int block_type2 = block_type_ind_for_rot[rot_ind2];
-
-    // correction for cyclic peptides
-    int const stored_upper_conn = block_type_upper_conn_ind[block_type1];
-    if (stored_upper_conn < 0
-        || pose_stack_inter_block_connections[pose_ind][block_ind1]
-                                             [stored_upper_conn][0]
-               != block_ind2) {
-      int const swap_rot = rot_ind1;
-      int const swap_block = block_ind1;
-      int const swap_block_type = block_type1;
-      rot_ind1 = rot_ind2;
-      block_ind1 = block_ind2;
-      block_type1 = block_type2;
-      rot_ind2 = swap_rot;
-      block_ind2 = swap_block;
-      block_type2 = swap_block_type;
-    }
-
-    // Where will we write the output?
-    // In block-pair-scoring mode, we store one energy per rotamer;
-    // In non-block-pair-scoring mode, we store one energy per pose
-    // (using atomic_add to accumulate for each block/rotamer in the pose)
-    int const V_ind = (output_block_pair_energies) ? ind : pose_ind;
-
-    int const upper_nbr_is_pro = block_type_is_pro[block_type2];
-    int const rama_table_ind =
-        block_type_rama_table[block_type1][upper_nbr_is_pro];
-    int const omega_table_ind =
-        block_type_omega_table[block_type1][upper_nbr_is_pro];
-
-    int const rot_offset1 = rot_coord_offset[rot_ind1];
-
-    bool valid_phipsi = true;
-    Vec<Int, 4> phi_ats;
-    for (int i = 0; i < 4; ++i) {
-      UnresolvedAtomID<Int> i_at = block_type_torsion_atoms[block_type1][i];
-      phi_ats[i] = resolve_rotamer_pair_atom_from_uaid(
-          i_at,
-          rot_ind1,
-          rot_ind2,
-          block_ind1,
-          block_ind2,
-          block_type2,
-          pose_ind,
-          rot_coord_offset,
-          first_rot_for_block,
-          first_rot_block_type,
-          pose_stack_inter_block_connections,
-          block_type_atom_downstream_of_conn);
-      valid_phipsi &= phi_ats[i] != -1;
-    }
-    CoordQuad<Real> phi_coords;
-    if (valid_phipsi) {
-      for (int i = 0; i < 4; ++i) {
-        tmol::portable::row_ref(phi_coords, i) = rot_coords[phi_ats[i]];
-      }
-    }
-
-    Vec<Int, 4> psi_ats;
-    for (int i = 0; i < 4; ++i) {
-      UnresolvedAtomID<Int> i_at = block_type_torsion_atoms[block_type1][i + 4];
-      psi_ats[i] = resolve_rotamer_pair_atom_from_uaid(
-          i_at,
-          rot_ind1,
-          rot_ind2,
-          block_ind1,
-          block_ind2,
-          block_type2,
-          pose_ind,
-          rot_coord_offset,
-          first_rot_for_block,
-          first_rot_block_type,
-          pose_stack_inter_block_connections,
-          block_type_atom_downstream_of_conn);
-      valid_phipsi &= psi_ats[i] != -1;
-    }
-    CoordQuad<Real> psi_coords;
-    if (valid_phipsi) {
-      for (int i = 0; i < 4; ++i) {
-        tmol::portable::row_ref(psi_coords, i) = rot_coords[psi_ats[i]];
-      }
-    }
-
-    // accumulate rama
-    if (valid_phipsi && rama_table_ind >= 0) {
-      auto rama = rama_V_dV<Dev, Real, Int>(
-          phi_coords,
-          psi_coords,
-          rama_tables[rama_table_ind],
-          tmol::portable::vec_from<Real, 2>(
-              rama_table_params[rama_table_ind].bbstarts),
-          tmol::portable::vec_from<Real, 2>(
-              rama_table_params[rama_table_ind].bbsteps));
-      accumulate<Dev, Real>::add(V[0][V_ind], common::get<0>(rama));
-      if (accumulate_derivs) {
-        for (int j = 0; j < 4; ++j) {
-          accumulate<Dev, Vec<Real, 3>>::add(
-              dV_dxyz[0][phi_ats[j]], common::get<1>(rama).row(j));
-          accumulate<Dev, Vec<Real, 3>>::add(
-              dV_dxyz[0][psi_ats[j]], common::get<2>(rama).row(j));
-        }
-      }
-    }
-
-    if (omega_table_ind < 0) {
-      return;
-    }
-
-    CoordQuad<Real> omega_coords;
-    Vec<Int, 4> omega_ats;
-    for (int i = 0; i < 4; ++i) {
-      // TO DO: replace "8" in the lookup below
-      UnresolvedAtomID<Int> i_at = block_type_torsion_atoms[block_type1][i + 8];
-
-      // Check to see if the omega uaids are actually defined for this block
-      // type. If the atom offset [0] or the connection index [1] are both -1,
-      // this is a sentinel for an undefined omega.
-      if (i_at.atom_id == -1 && i_at.conn_id == -1)
-        return;  // no omega and we already calculated rama
-
-      omega_ats[i] = resolve_rotamer_pair_atom_from_uaid(
-          i_at,
-          rot_ind1,
-          rot_ind2,
-          block_ind1,
-          block_ind2,
-          block_type2,
-          pose_ind,
-          rot_coord_offset,
-          first_rot_for_block,
-          first_rot_block_type,
-          pose_stack_inter_block_connections,
-          block_type_atom_downstream_of_conn);
-
-      // omega_atom_ind == -1 -> UAID resolution failed
-      if (omega_ats[i] == -1)
-        return;  // no omega and we already calculated rama
-    }
-
-    for (int i = 0; i < 4; ++i) {
-      tmol::portable::row_ref(omega_coords, i) = rot_coords[omega_ats[i]];
-    }
-
-    if (valid_phipsi && omega_table_ind >= 0) {
-      auto omega = omega_bbdep_V_dV<Dev, Real, Int>(
-          phi_coords,
-          psi_coords,
-          omega_coords,
-          omega_tables[omega_table_ind][0],
-          omega_tables[omega_table_ind][1],
-          tmol::portable::vec_from<Real, 2>(
-              omega_table_params[omega_table_ind].bbstarts),
-          tmol::portable::vec_from<Real, 2>(
-              omega_table_params[omega_table_ind].bbsteps),
-          32.8);
-      accumulate<Dev, Real>::add(V[1][V_ind], common::get<0>(omega));
-      if (accumulate_derivs) {
-        for (int j = 0; j < 4; ++j) {
-          // omega : [V, dVdphi, dVdpsi, dVdomega]
-          accumulate<Dev, Vec<Real, 3>>::add(
-              dV_dxyz[1][phi_ats[j]], common::get<1>(omega).row(j));
-          accumulate<Dev, Vec<Real, 3>>::add(
-              dV_dxyz[1][psi_ats[j]], common::get<2>(omega).row(j));
-          accumulate<Dev, Vec<Real, 3>>::add(
-              dV_dxyz[1][omega_ats[j]], common::get<3>(omega).row(j));
-        }
-      }
-    } else {
-      // if rama is undefined, fall back to old version
-      auto omega = omega_V_dV<Dev, Real, Int>(omega_coords, 32.8);
-      accumulate<Dev, Real>::add(V[1][V_ind], common::get<0>(omega));
-      if (accumulate_derivs) {
-        for (int j = 0; j < 4; ++j) {
-          // omega : [V, dVdomega]
-          accumulate<Dev, Vec<Real, 3>>::add(
-              dV_dxyz[1][omega_ats[j]], common::get<1>(omega).row(j));
-        }
-      }
-    }
-  });
-
-  DeviceDispatch<Dev>::template forall<launch_t>(
-      mgr, n_dispatch_total, rama_omega_func);
-
-  return {V_t, dV_dxyz_t, dispatch_indices_t};
+  return {V_t, dV_dxyz_t.template cast<Vec<Real, 3>>(), dispatch_indices_t};
 };
 
 template <
@@ -1149,8 +475,9 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
         TView<RamaTableParams<Real>, 1, Dev> omega_table_params,
 
         TView<Int, 2, Dev> dispatch_indices,  // from forward pass
-        TView<Real, 2, Dev> dTdV  // nterms x nposes x (1|len) x (1|len)
-        ) -> TPack<Vec<Real, 3>, 2, Dev> {
+        TView<Real, 2, Dev> dTdV,  // nterms x nposes x (1|len) x (1|len)
+        TView<Int, 2, Dev> lockstep_group_for_block)
+        -> TPack<Vec<Real, 3>, 2, Dev> {
   using tmol::score::common::accumulate;
   using Real3 = Vec<Real, 3>;
 
@@ -1199,210 +526,42 @@ auto BackboneTorsionRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::
   assert(rama_table_params.size(0) == n_rama_tables);
   assert(omega_table_params.size(0) == n_omega_tables);
 
-  auto dV_dxyz_t = TPack<Vec<Real, 3>, 2, Dev>::zeros({2, n_atoms});
+  using GradReal = std::conditional_t<
+      Dev == Device::CUDA && std::is_same_v<Real, float>,
+      double,
+      Real>;
+  auto dV_dxyz_t = TPack<Vec<GradReal, 3>, 2, Dev>::zeros({2, n_atoms});
 
   auto dV_dxyz = dV_dxyz_t.view;
 
-  LAUNCH_BOX_32;
-  // Define nt
-  CTA_LAUNCH_T_PARAMS;
+  backbone_rotamer_score_native<true, DeviceDispatch, Dev, Real, Int>(
+      mgr,
+      rot_coords,
+      rot_coord_offset,
+      first_rot_for_block,
+      first_rot_block_type,
+      block_ind_for_rot,
+      block_type_ind_for_rot,
+      pose_stack_inter_block_connections,
+      block_type_atom_downstream_of_conn,
+      block_type_rama_table,
+      block_type_omega_table,
+      block_type_upper_conn_ind,
+      block_type_is_pro,
+      block_type_torsion_atoms,
+      rama_tables,
+      rama_table_params,
+      omega_tables,
+      omega_table_params,
+      dispatch_indices,
+      {},
+      dV_dxyz,
+      dTdV,
+      true,
+      true,
+      lockstep_group_for_block);
 
-  auto rama_omega_func = ([=] TMOL_DEVICE_FUNC(int ind) {
-    int const pose_ind = dispatch_indices[0][ind];
-
-    int rot_ind1 = dispatch_indices[1][ind];
-    int rot_ind2 = dispatch_indices[2][ind];
-
-    int block_ind1 = block_ind_for_rot[rot_ind1];
-    int block_ind2 = block_ind_for_rot[rot_ind2];
-
-    int block_type1 = block_type_ind_for_rot[rot_ind1];
-    int block_type2 = block_type_ind_for_rot[rot_ind2];
-
-    // correction for cyclic peptides
-    int const stored_upper_conn = block_type_upper_conn_ind[block_type1];
-    if (stored_upper_conn < 0
-        || pose_stack_inter_block_connections[pose_ind][block_ind1]
-                                             [stored_upper_conn][0]
-               != block_ind2) {
-      int const swap_rot = rot_ind1;
-      int const swap_block = block_ind1;
-      int const swap_block_type = block_type1;
-      rot_ind1 = rot_ind2;
-      block_ind1 = block_ind2;
-      block_type1 = block_type2;
-      rot_ind2 = swap_rot;
-      block_ind2 = swap_block;
-      block_type2 = swap_block_type;
-    }
-
-    // Where did we write the output?
-    // In block-pair-scoring mode, we store one energy per rotamer;
-    // In non-block-pair-scoring mode, we store one energy per pose
-    // (using atomic_add to accumulate for each block/rotamer in the pose)
-    // NOTE: we only ever call this function if output_block_pair_energies is
-    // true so previous logic just boils down to V_ind = ind;
-    int const V_ind = ind;
-
-    int const upper_nbr_is_pro = block_type_is_pro[block_type2];
-    int const rama_table_ind =
-        block_type_rama_table[block_type1][upper_nbr_is_pro];
-    int const omega_table_ind =
-        block_type_omega_table[block_type1][upper_nbr_is_pro];
-
-    int const rot_offset1 = rot_coord_offset[rot_ind1];
-
-    bool valid_phipsi = true;
-    Vec<Int, 4> phi_ats;
-    for (int i = 0; i < 4; ++i) {
-      UnresolvedAtomID<Int> i_at = block_type_torsion_atoms[block_type1][i];
-      phi_ats[i] = resolve_rotamer_pair_atom_from_uaid(
-          i_at,
-          rot_ind1,
-          rot_ind2,
-          block_ind1,
-          block_ind2,
-          block_type2,
-          pose_ind,
-          rot_coord_offset,
-          first_rot_for_block,
-          first_rot_block_type,
-          pose_stack_inter_block_connections,
-          block_type_atom_downstream_of_conn);
-      valid_phipsi &= phi_ats[i] != -1;
-    }
-    CoordQuad<Real> phi_coords;
-    if (valid_phipsi) {
-      for (int i = 0; i < 4; ++i) {
-        tmol::portable::row_ref(phi_coords, i) = rot_coords[phi_ats[i]];
-      }
-    }
-
-    Vec<Int, 4> psi_ats;
-    for (int i = 0; i < 4; ++i) {
-      UnresolvedAtomID<Int> i_at = block_type_torsion_atoms[block_type1][i + 4];
-      psi_ats[i] = resolve_rotamer_pair_atom_from_uaid(
-          i_at,
-          rot_ind1,
-          rot_ind2,
-          block_ind1,
-          block_ind2,
-          block_type2,
-          pose_ind,
-          rot_coord_offset,
-          first_rot_for_block,
-          first_rot_block_type,
-          pose_stack_inter_block_connections,
-          block_type_atom_downstream_of_conn);
-      valid_phipsi &= psi_ats[i] != -1;
-    }
-    CoordQuad<Real> psi_coords;
-    if (valid_phipsi) {
-      for (int i = 0; i < 4; ++i) {
-        tmol::portable::row_ref(psi_coords, i) = rot_coords[psi_ats[i]];
-      }
-    }
-
-    // accumulate rama
-    Real rama_block_weight = dTdV[0][V_ind];
-    if (valid_phipsi && rama_table_ind >= 0) {
-      auto rama = rama_V_dV<Dev, Real, Int>(
-          phi_coords,
-          psi_coords,
-          rama_tables[rama_table_ind],
-          tmol::portable::vec_from<Real, 2>(
-              rama_table_params[rama_table_ind].bbstarts),
-          tmol::portable::vec_from<Real, 2>(
-              rama_table_params[rama_table_ind].bbsteps));
-      for (int j = 0; j < 4; ++j) {
-        accumulate<Dev, Vec<Real, 3>>::add(
-            dV_dxyz[0][phi_ats[j]],
-            common::get<1>(rama).row(j) * rama_block_weight);
-        accumulate<Dev, Vec<Real, 3>>::add(
-            dV_dxyz[0][psi_ats[j]],
-            common::get<2>(rama).row(j) * rama_block_weight);
-      }
-    }
-
-    if (omega_table_ind < 0) {
-      return;
-    }
-
-    CoordQuad<Real> omega_coords;
-    Vec<Int, 4> omega_ats;
-    for (int i = 0; i < 4; ++i) {
-      UnresolvedAtomID<Int> i_at = block_type_torsion_atoms[block_type1][i + 8];
-
-      // Check to see if the omega uaids are actually defined for this block
-      // type. If the atom offset [0] or the connection index [1] are both -1,
-      // this is a sentinel for an undefined omega.
-      if (i_at.atom_id == -1 && i_at.conn_id == -1)
-        return;  // no omega and we already calculated rama
-
-      omega_ats[i] = resolve_rotamer_pair_atom_from_uaid(
-          i_at,
-          rot_ind1,
-          rot_ind2,
-          block_ind1,
-          block_ind2,
-          block_type2,
-          pose_ind,
-          rot_coord_offset,
-          first_rot_for_block,
-          first_rot_block_type,
-          pose_stack_inter_block_connections,
-          block_type_atom_downstream_of_conn);
-
-      // omega_atom_ind == -1 -> UAID resolution failed
-      if (omega_ats[i] == -1)
-        return;  // no omega and we already calculated rama
-    }
-
-    for (int i = 0; i < 4; ++i) {
-      tmol::portable::row_ref(omega_coords, i) = rot_coords[omega_ats[i]];
-    }
-
-    Real omega_block_weight = dTdV[1][V_ind];
-    if (valid_phipsi && omega_table_ind >= 0) {
-      auto omega = omega_bbdep_V_dV<Dev, Real, Int>(
-          phi_coords,
-          psi_coords,
-          omega_coords,
-          omega_tables[omega_table_ind][0],
-          omega_tables[omega_table_ind][1],
-          tmol::portable::vec_from<Real, 2>(
-              omega_table_params[omega_table_ind].bbstarts),
-          tmol::portable::vec_from<Real, 2>(
-              omega_table_params[omega_table_ind].bbsteps),
-          32.8);
-      for (int j = 0; j < 4; ++j) {
-        // omega : [V, dVdphi, dVdpsi, dVdomega]
-        accumulate<Dev, Vec<Real, 3>>::add(
-            dV_dxyz[1][phi_ats[j]],
-            common::get<1>(omega).row(j) * omega_block_weight);
-        accumulate<Dev, Vec<Real, 3>>::add(
-            dV_dxyz[1][psi_ats[j]],
-            common::get<2>(omega).row(j) * omega_block_weight);
-        accumulate<Dev, Vec<Real, 3>>::add(
-            dV_dxyz[1][omega_ats[j]],
-            common::get<3>(omega).row(j) * omega_block_weight);
-      }
-    } else {
-      // if rama is undefined, fall back to old version
-      auto omega = omega_V_dV<Dev, Real, Int>(omega_coords, 32.8);
-      for (int j = 0; j < 4; ++j) {
-        // omega : [V, dVdomega]
-        accumulate<Dev, Vec<Real, 3>>::add(
-            dV_dxyz[1][omega_ats[j]],
-            common::get<1>(omega).row(j) * omega_block_weight);
-      }
-    }
-  });
-
-  DeviceDispatch<Dev>::template forall<launch_t>(
-      mgr, dispatch_indices.size(1), rama_omega_func);
-
-  return dV_dxyz_t;
+  return dV_dxyz_t.template cast<Vec<Real, 3>>();
 };
 
 }  // namespace potentials

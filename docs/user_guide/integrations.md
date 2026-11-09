@@ -141,7 +141,8 @@ and batch shape. The default `opt_h=False` preserves finite supplied protein
 hydrogens and builds missing atoms. Pass `opt_h=True` when polar-hydrogen
 optimization is part of your preparation protocol. For one-off conversion,
 `pose_stack_from_atom37_and_topology(atom37_coords, atom_array, context)` remains
-available.
+available. Metal-containing inputs refit site geometry and detect donors on
+every call; they do not use the fixed leaf-atom topology cache.
 
 A single `AtomArray` may provide topology for a batch of coordinate tensors. An
 `AtomArrayStack` must either have the same number of models as the tensor batch
@@ -149,8 +150,11 @@ or one model that can be broadcast. Finite mapped tensor coordinates replace
 the reference coordinates; unmapped slots (`-1`) and non-finite tensor entries
 retain their reference coordinates. TMol-generated atoms, such
 as hydrogens, are left in their built or optimized positions. Gradients from
-TMol coordinates route back to the mapped Atom37 entries even when hydrogen
-optimization is enabled. Missing, out-of-range, or ambiguous routing annotations
+supplied atom coordinates route back to the mapped Atom37 entries even when
+hydrogen optimization is enabled. Frozen residues retain derivatives of their
+built atoms. Sampled coordinates are selected as values: the discrete packing
+choice and the optimized hydrogen positions are not differentiated. Missing,
+out-of-range, or ambiguous routing annotations
 raise `Atom37MappingError`, so callers can handle mapping failures without
 catching unrelated pose-construction errors.
 

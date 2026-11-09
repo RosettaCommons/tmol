@@ -12,9 +12,8 @@ bonded to a sidechain at all, forms no group and is left alone.
 """
 
 import attr
+from tmol_core.pack.correlation import GroupCollapse, expand_group_assignments
 from collections import OrderedDict
-import networkx
-import numpy
 import torch
 
 from tmol.pose._conjugated_groups import (  # noqa: F401
@@ -24,49 +23,21 @@ from tmol.pose._conjugated_groups import (  # noqa: F401
 )
 
 
+from tmol_core.pack.conjugated import (  # noqa: F401 legacy import paths
+    GroupSamplingTopology,  # noqa: F401 legacy import path
+    GroupSamplingPlan,  # noqa: F401 legacy import path
+    group_atom_context,
+    group_sampling_topology,
+    sampled_group_chi,
+    registration_masks,
+    resolve_group_atom as _resolve_group_atom,  # noqa: F401 legacy import path
+)
+
+
 def _group_atom_context(group, pose_stack):
-    """Local residue types, group atom offsets and connection partners."""
     pbt = pose_stack.packed_block_types
     indices = pose_stack.block_type_ind[group.pose, list(group.blocks)].tolist()
-    types = [pbt.active_block_types[index] for index in indices]
-    offsets = numpy.cumsum([0] + [bt.n_atoms for bt in types])
-    partners = {}
-    for a, ac, b, bc in group.links:
-        partners[a, ac] = (b, bc)
-        partners[b, bc] = (a, ac)
-    return types, offsets, partners
-
-
-def _resolve_group_atom(uaid, owner, block_types, offsets, partners):
-    """Resolve a torsion atom into the group's concatenated atom numbering."""
-    atom, conn, sep = (int(v) for v in uaid)
-    if conn != -1:
-        partner = partners.get((owner, conn))
-        if partner is None:
-            return -1
-        owner, conn = partner
-        downstream = block_types[owner].atom_downstream_of_conn
-        if not 0 <= sep < downstream.shape[1]:
-            return -1
-        atom = int(downstream[conn, sep])
-    return int(offsets[owner]) + atom if atom >= 0 else -1
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class GroupSamplingTopology:
-    block_types: list
-    offsets: numpy.ndarray
-    partners: dict
-    kinforest: object
-    # Unordered axis -> its child in the rooted tree, for budget depth.
-    movable_axes: dict
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class GroupSamplingPlan:
-    group: ConjugatedGroup
-    topology: GroupSamplingTopology
-    owners: tuple
+    return group_atom_context(group, [pbt.active_block_types[i] for i in indices])
 
 
 def _group_sampling_topology(group, pose_stack, fixed_owners=()):
@@ -100,46 +71,12 @@ def _group_sampling_topology(group, pose_stack, fixed_owners=()):
 
 
 def _group_sampling_topology_impl(group, pose_stack, fixed_owners=()):
-    from tmol.kinematics._scan_ordering import _block_group_kinforest_data
-
-    types, offsets, partners = _group_atom_context(group, pose_stack)
-    rkd, offsets = _block_group_kinforest_data(types, group.links, anchor=0)
-    graph = networkx.Graph()
-    graph.add_nodes_from(range(int(offsets[-1])))
-    for i, bt in enumerate(types):
-        graph.add_edges_from(numpy.asarray(bt.bond_indices) + offsets[i])
-    for a, ac, b, bc in group.links:
-        graph.add_edge(
-            int(offsets[a]) + int(types[a].ordered_connection_atoms[ac]),
-            int(offsets[b]) + int(types[b].ordered_connection_atoms[bc]),
-        )
-    fixed = numpy.zeros(int(offsets[-1]), dtype=bool)
-    fixed[rkd.jump_atom] = True
-    for owner in fixed_owners:
-        fixed[int(offsets[owner]) : int(offsets[owner + 1])] = True
-    backbone_owners = {0}
-    for owner, conn, _partner, _partner_conn in group.external_links:
-        atom = int(offsets[owner]) + int(types[owner].ordered_connection_atoms[conn])
-        fixed[atom] = True
-        fixed[list(graph[atom])] = True
-        backbone_owners.add(owner)
-    for owner in backbone_owners:
-        bt = types[owner]
-        polymer = getattr(getattr(bt, "properties", None), "polymer", None)
-        mainchain = set(getattr(polymer, "mainchain_atoms", None) or ())
-        for atom, definition in enumerate(bt.atoms):
-            if definition.name in mainchain:
-                fixed[int(offsets[owner]) + atom] = True
-    for child in reversed(rkd.bfto_2_orig):
-        parent = rkd.preds[child]
-        if parent >= 0:
-            fixed[parent] |= fixed[child]
-    axes = {}
-    for a, b in networkx.bridges(graph):
-        child = a if rkd.preds[a] == b else b
-        if not fixed[child]:
-            axes[frozenset((a, b))] = int(child)
-    return GroupSamplingTopology(types, offsets, partners, rkd, axes)
+    return group_sampling_topology(
+        group,
+        pose_stack.packed_block_types.active_block_types,
+        pose_stack.block_type_ind[group.pose, list(group.blocks)].tolist(),
+        fixed_owners,
+    )
 
 
 def _group_sampled_chi(
@@ -154,78 +91,18 @@ def _group_sampled_chi(
     include_anchor=False,
     sampled_members=None,
 ):
-    """Which chi of a group's attached blocks survive the budget.
-
-    The whole group enumerates one product, so the budget is applied across it
-    rather than to each block: seven sugars of six chi each would otherwise
-    multiply out. Chi freeze from the tip of the group inward, using depth in
-    the kinforest that builds the group, so the linkage torsions nearest the
-    anchor -- the ones that move the most atoms -- are the last to go. Library
-    axes are excluded. Additional anchor axes may be included explicitly.
-
-    The budget counts rotamers, not conformers. Every active member costs one
-    rotamer per conformer; inactive members each cost one background rotamer.
-    Subtract that background cost before dividing by the active member count.
-
-    Returns a list of (index within the group, ChiSamples) for the survivors.
-    """
-    from tmol.pack.rotamer._chi_budget import _budgeted_chi_samples, _chi_depths
-
     topology = topology or _group_sampling_topology(group, pose_stack)
-    block_types, offsets, partners = (
-        topology.block_types,
-        topology.offsets,
-        topology.partners,
+    return sampled_group_chi(
+        group,
+        topology,
+        expanded_limit,
+        limit,
+        library_size,
+        reserve_current,
+        exclude_axes,
+        include_anchor,
+        sampled_members,
     )
-
-    selected = []
-    seen = set(exclude_axes)
-    # Prefer the downstream owner's definition when both sides name one axis.
-    for i, bt in reversed(list(enumerate(block_types))):
-        if i == 0 and not include_anchor:
-            continue
-        for j, cs in enumerate(bt.chi_samples):
-            if cs.is_proton:
-                continue
-            atoms = [
-                _resolve_group_atom(u, i, block_types, offsets, partners)
-                for u in bt.torsion_to_uaids[cs.chi_dihedral][1:3]
-            ]
-            if min(atoms) < 0:
-                raise ValueError(f"Cannot resolve group torsion {cs.chi_dihedral}")
-            axis = frozenset(atoms)
-            if axis in seen or axis not in topology.movable_axes:
-                continue
-            seen.add(axis)
-            selected.append((i, j, cs, topology.movable_axes[axis]))
-    selected.sort(key=lambda item: item[:2])
-    entries = [item[2] for item in selected]
-    owners = [item[0] for item in selected]
-    depths = _chi_depths(topology.kinforest, [item[3] for item in selected])
-    # Only active members carry a copy of each conformer.
-    n_blocks = len(group.blocks) if sampled_members is None else sampled_members
-    fixed_members = len(group.blocks) - n_blocks
-    expanded_limit = (expanded_limit - fixed_members) // n_blocks
-    limit = (limit - fixed_members) // n_blocks
-    # With no library axes, a one-state budget keeps the input itself. There
-    # is no need to reserve a second identical empty-product conformer.
-    if (
-        reserve_current
-        and library_size == 1
-        and not exclude_axes
-        and max(expanded_limit, limit) == 1
-    ):
-        return []
-    reserve_current = reserve_current and bool(entries or exclude_axes)
-    kept = _budgeted_chi_samples(
-        entries,
-        depths,
-        max(expanded_limit - int(reserve_current), 0),
-        max(limit - int(reserve_current), 0),
-        library_size=library_size,
-    )
-
-    return [(owners[index], cs) for index, cs in kept]
 
 
 def _add_conjugated_group_sampler(task, pose_stack, sampler=None, exclude=()):
@@ -257,12 +134,9 @@ def _add_conjugated_group_sampler(task, pose_stack, sampler=None, exclude=()):
         sampler = ConjugatedChiSampler(library_sampler=library)
     with_anchor = sampler.library_sampler is not None
 
-    sampled = numpy.zeros((pose_stack.n_poses, pose_stack.max_n_blocks), dtype=bool)
-    members = numpy.zeros_like(sampled)
-    for group in groups:
-        members[group.pose, list(group.blocks)] = True
-        for block in group.blocks if with_anchor else group.blocks[1:]:
-            sampled[group.pose, block] = True
+    sampled, members = registration_masks(
+        groups, (pose_stack.n_poses, pose_stack.max_n_blocks), with_anchor
+    )
 
     def _mask(arr):
         return torch.tensor(arr, dtype=torch.bool, device=pose_stack.device)
@@ -284,147 +158,42 @@ def _add_conjugated_group_sampler(task, pose_stack, sampler=None, exclude=()):
     return sampler
 
 
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class GroupCollapse:
-    """How a group's members were folded into one choice for the packer.
-
-    The packer is handed a smaller rotamer set than was built: a member's
-    rotamers past the first are gone, and every reference to them has been sent
-    to the representative's corresponding rotamer, so the packer chooses once
-    for the whole group and cannot pick conformer 5 of one sugar against
-    conformer 200 of the next. The tensors named ``compact_`` describe that
-    smaller set and are what the interaction graph is built from;
-    ``rot_offset_for_block`` and ``members`` stay in the original indexing,
-    which is what the rotamer set's coordinates are addressed by.
-    """
-
-    # original rotamer index -> its index in the compacted set, with a member's
-    #    rotamers pointing at the representative's
-    rot_map: torch.Tensor
-    # compacted rotamer index -> the original rotamer it stands for
-    compact_to_orig: torch.Tensor
-    compact_n_rots_for_block: torch.Tensor
-    compact_rot_offset_for_block: torch.Tensor
-    compact_block_ind_for_rot: torch.Tensor
-    compact_pose_for_rot: torch.Tensor
-    compact_block_type_ind_for_rot: torch.Tensor
-    compact_n_rots_for_pose: torch.Tensor
-    compact_rot_offset_for_pose: torch.Tensor
-    # original indexing, for writing the chosen conformer back out
-    rot_offset_for_block: torch.Tensor
-    n_rots_for_block: torch.Tensor
-    # (pose, representative block, [(member block, that member's rot offset)])
-    members: tuple
-
-
 def _collapse_group_rotamers(pose_stack, rotamer_set, groups):
-    """Fold each group's members into a single block for the packer.
-
-    Returns the replacement bookkeeping, or None when there is nothing to fold.
-    """
     if not groups:
         return None
+    from types import SimpleNamespace
+    from tmol_core.pack.correlation import collapse_group_rotamers
 
-    device = rotamer_set.coords.device
-    n_rots = rotamer_set.block_ind_for_rot.shape[0]
-    rot_map = torch.arange(n_rots, dtype=torch.int64, device=device)
-    keep = torch.ones((n_rots,), dtype=torch.bool, device=device)
-    n_rots_for_block = rotamer_set.n_rots_for_block.clone()
-    rot_offset = rotamer_set.rot_offset_for_block
-    group_of_rot = torch.full((n_rots,), -1, dtype=torch.int64, device=device)
-    conformer_of_rot = torch.full((n_rots,), -1, dtype=torch.int64, device=device)
-
-    members = []
-    for gi, group in enumerate(groups):
-        counts = [int(n_rots_for_block[group.pose, b]) for b in group.blocks]
-        sampled = [b for b, c in zip(group.blocks, counts) if c > 1]
-        if len(sampled) < 2:
-            continue  # nothing to correlate
-        n_conf = int(n_rots_for_block[group.pose, sampled[0]])
-        if any(int(n_rots_for_block[group.pose, b]) != n_conf for b in sampled):
-            raise ValueError(
-                f"group at anchor {group.anchor} has members with differing "
-                "rotamer counts; they cannot be in lockstep"
-            )
-
-        rep = sampled[0]
-        rep_off = int(rot_offset[group.pose, rep])
-        entry = []
-        for b in sampled:
-            off = int(rot_offset[group.pose, b])
-            entry.append((b, off))
-            idx = torch.arange(off, off + n_conf, dtype=torch.int64, device=device)
-            group_of_rot[idx] = gi
-            conformer_of_rot[idx] = torch.arange(
-                n_conf, dtype=torch.int64, device=device
-            )
-            if b == rep:
-                continue
-            rot_map[idx] = torch.arange(
-                rep_off, rep_off + n_conf, dtype=torch.int64, device=device
-            )
-            # One rotamer, not none: a real block with no rotamers is neither
-            #    molten nor background, and the packer's bookkeeping needs it to
-            #    be one or the other. The one it keeps carries no energy -- every
-            #    reference to this member was remapped onto the representative --
-            #    and its coordinates are overwritten once the group's conformer
-            #    is chosen, so it is a placeholder and nothing more.
-            keep[idx[1:]] = False
-            n_rots_for_block[group.pose, b] = 1
-        members.append((group.pose, rep, tuple(entry)))
-
-    if not members:
+    fields = (
+        "block_ind_for_rot",
+        "n_rots_for_block",
+        "rot_offset_for_block",
+        "rot_offset_for_pose",
+        "n_rots_for_pose",
+        "pose_for_rot",
+        "block_type_ind_for_rot",
+    )
+    layout = SimpleNamespace(
+        **{name: getattr(rotamer_set, name).detach().cpu().numpy() for name in fields}
+    )
+    result = collapse_group_rotamers(layout, groups)
+    if result is None:
         return None
-
-    # Counts and offsets have to keep describing a partition of the rotamer
-    #    range: the interaction graph recovers a block's rotamer count by
-    #    differencing consecutive blocks' offsets, so a rotamer left sitting in
-    #    a gap is silently charged to whichever block precedes it.
-    # Include the exclusive end: trailing zero-rotamer blocks and empty poses
-    # can have an offset equal to n_rots.
-    orig_to_compact = torch.cat(
-        (torch.zeros(1, dtype=torch.int64, device=device), keep.cumsum(0))
-    )
-    compact_to_orig = torch.nonzero(keep).view(-1)
-
-    compact_rot_offset_for_block = torch.where(
-        rot_offset >= 0,
-        orig_to_compact[rot_offset.clamp_min(0).to(torch.int64)],
-        rot_offset,
-    )
-    compact_rot_offset_for_pose = orig_to_compact[
-        rotamer_set.rot_offset_for_pose.to(torch.int64)
-    ]
-    n_rots_for_pose = torch.zeros_like(rotamer_set.n_rots_for_pose)
-    n_poses = n_rots_for_pose.shape[0]
-    for pose in range(n_poses):
-        start = int(rotamer_set.rot_offset_for_pose[pose])
-        stop = start + int(rotamer_set.n_rots_for_pose[pose])
-        n_rots_for_pose[pose] = int(keep[start:stop].sum())
-
+    collapse, group, conformer = result
+    device = rotamer_set.coords.device
     return (
-        GroupCollapse(
-            rot_map=orig_to_compact[rot_map],
-            compact_to_orig=compact_to_orig,
-            compact_n_rots_for_block=n_rots_for_block,
-            compact_rot_offset_for_block=compact_rot_offset_for_block.to(
-                rot_offset.dtype
-            ),
-            compact_block_ind_for_rot=rotamer_set.block_ind_for_rot[compact_to_orig],
-            compact_pose_for_rot=rotamer_set.pose_for_rot[compact_to_orig],
-            compact_block_type_ind_for_rot=rotamer_set.block_type_ind_for_rot[
-                compact_to_orig
-            ],
-            compact_n_rots_for_pose=n_rots_for_pose,
-            compact_rot_offset_for_pose=compact_rot_offset_for_pose.to(
-                rotamer_set.rot_offset_for_pose.dtype
-            ),
-            rot_offset_for_block=rot_offset,
-            n_rots_for_block=n_rots_for_block,
-            members=tuple(members),
+        attr.evolve(
+            collapse,
+            **{
+                field.name: torch.as_tensor(
+                    getattr(collapse, field.name), device=device
+                )
+                for field in attr.fields(GroupCollapse)
+                if field.name != "members"
+            },
         ),
-        group_of_rot,
-        conformer_of_rot,
+        torch.as_tensor(group, device=device),
+        torch.as_tensor(conformer, device=device),
     )
 
 
@@ -481,21 +250,19 @@ def _write_group_members(new_pose_stack, rotamer_set, collapse, assignment):
     coords = new_pose_stack.coords.clone()
     pbt = new_pose_stack.packed_block_types
 
+    host_collapse = attr.evolve(
+        collapse,
+        rot_offset_for_block=collapse.rot_offset_for_block.cpu().numpy(),
+        n_rots_for_block=collapse.n_rots_for_block.cpu().numpy(),
+    )
+    sources = expand_group_assignments(assignment.cpu().numpy(), host_collapse)
     for pose, rep, entry in collapse.members:
-        rep_off = int(collapse.rot_offset_for_block[pose, rep])
-        chosen = int(assignment[pose, rep]) - rep_off
-        if chosen < 0 or chosen >= int(collapse.n_rots_for_block[pose, rep]):
-            raise ValueError(
-                f"group representative block {rep} of pose {pose} was assigned "
-                f"rotamer {int(assignment[pose, rep])}, which is not one of the "
-                f"{int(collapse.n_rots_for_block[pose, rep])} it offered"
-            )
         for block, off in entry:
             if block == rep:
                 continue
             n = int(pbt.n_atoms[int(new_pose_stack.block_type_ind[pose, block])])
             start = int(new_pose_stack.block_coord_offset[pose, block])
-            src = int(rotamer_set.coord_offset_for_rot[off + chosen])
+            src = int(rotamer_set.coord_offset_for_rot[int(sources[pose, block])])
             coords[pose, start : start + n] = rotamer_set.coords[src : src + n]
 
     return attr.evolve(new_pose_stack, coords=coords)

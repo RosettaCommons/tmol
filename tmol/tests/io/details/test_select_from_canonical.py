@@ -139,6 +139,23 @@ def test_annotate_pbt_w_canonical_res_order_caching(
     _annotate_packed_block_types_w_canonical_res_order(co, pbt)
     ann2 = pbt.canonical_ordering_annotation
     assert ann1 is ann2
+    # The same prepared chemistry may be read using a different valid canonical
+    # order. Cached atom IDs must continue to denote the same named atoms.
+    reordered = CanonicalOrdering.from_chemdb(
+        evolve(
+            fresh_default_restype_set.chem_db,
+            residues=tuple(reversed(fresh_default_restype_set.chem_db.residues)),
+        )
+    )
+    _annotate_packed_block_types_w_canonical_res_order(reordered, pbt)
+    updated = pbt.canonical_ordering_annotation
+    assert updated is not ann1
+    for index, block in enumerate(pbt.active_block_types):
+        names = reordered.restypes_ordered_atom_names[block.io_equiv_class]
+        mapping = (
+            updated.bt_canonical_atom_ind_map[index, : block.n_atoms].cpu().tolist()
+        )
+        assert [names[atom] for atom in mapping] == [atom.name for atom in block.atoms]
 
 
 def test_assign_block_types(torch_device, ubq_pdb):

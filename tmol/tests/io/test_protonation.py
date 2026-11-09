@@ -310,3 +310,54 @@ def test_an_unchanged_protonated_ensemble_retains_identity():
     model = atom_array_from_ccd_code("ALA")
     stack = biotite.structure.stack([model, model.copy()])
     assert protonation._with_atomworks_hydrogens(stack) is stack
+
+
+def test_identity_proof_agrees_with_native_variant_selection(torch_device):
+    import numpy as np
+    import torch
+    from tmol_core.io.protonation import ProtonationPlan, protonation_is_identity
+    from tmol_core.chemical import DEPROTONATED_VAR_IND
+    from tmol.io.details.compiled._compiled import _ops
+
+    plan = ProtonationPlan(
+        np.array([[1, 1, 0, 0]], bool),
+        np.array([[0, 1, 0, 0]], bool),
+        np.array([[0, 0, 1, 0]], bool),
+        np.array([[1, 0, 0, 0]], bool),
+        np.array([[1, 0, 0, 0, 0]], bool),
+        np.zeros((1, 5, 4), bool),
+    )
+    plan.donates[0, 1, 2] = True
+    masks = np.array([[(mask >> a) & 1 for a in range(4)] for mask in range(16)], bool)
+    types = np.zeros((1, 80), np.int32)
+    variants = np.repeat(np.arange(5, dtype=np.int32), 16)[None]
+    present = np.tile(masks, (5, 1))[None]
+    empty = np.empty((0, 3), np.int64)
+    inputs = [types, variants, present, *plan.arrays, np.empty((0, 5), np.int64), empty]
+    output, unresolved = _ops.protonation(
+        [torch.from_numpy(x).to(torch_device) for x in inputs], DEPROTONATED_VAR_IND
+    )
+    got, bad = output.cpu().numpy(), unresolved.cpu().numpy()
+    proofs = np.array(
+        [
+            protonation_is_identity(
+                plan,
+                types[:, i : i + 1],
+                variants[:, i : i + 1],
+                present[:, i : i + 1],
+                empty,
+            )
+            for i in range(80)
+        ]
+    )
+    assert proofs.any() and (~proofs).any()
+    np.testing.assert_array_equal(got[:, proofs], variants[:, proofs])
+    assert not bad[:, proofs].any()
+    assert (got != variants).any()  # native selector really changes this fixture
+    assert not protonation_is_identity(
+        plan, types, variants, present, np.array([[0, 0, 2]], np.int64)
+    )
+    # Padding keeps even an out-of-range variant unchanged.
+    assert protonation_is_identity(
+        plan, np.array([[-1]]), np.array([[99]]), np.zeros((1, 1, 4), bool), empty
+    )

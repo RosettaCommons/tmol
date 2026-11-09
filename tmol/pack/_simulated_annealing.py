@@ -3,7 +3,10 @@ import torch
 from tmol.pack._datatypes import PackerEnergyTables
 from tmol.types._torch import Tensor
 
-DEFAULT_ANNEAL_TRAJECTORIES = 128
+from tmol_core.pack.annealing import (
+    DEFAULT_ANNEAL_TRAJECTORIES as DEFAULT_ANNEAL_TRAJECTORIES,
+    validate_anneal_trajectories,
+)
 
 
 def _run_simulated_annealing(
@@ -28,8 +31,7 @@ def _run_simulated_annealing(
     """
     from tmol.pack.compiled._compiled import _pack_anneal
 
-    if n_trajectories < 4:
-        raise ValueError(f"n_trajectories must be at least 4; got {n_trajectories}")
+    n_trajectories = validate_anneal_trajectories(n_trajectories)
 
     return _pack_anneal(
         energy_tables.max_n_rotamers_per_pose,

@@ -12,21 +12,16 @@ from tmol.io._canonical_ordering import CanonicalOrdering
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
 
-# Use AtomWorks' protein token order and atom slots as the source of truth.
-# This module therefore has a runtime AtomWorks dependency. Copy the public
-# lists so callers cannot mutate AtomWorks' shared encoding.
-from atomworks.ml.encoding_definitions import UNIFIED_ATOM37_ENCODING
-
-_ATOMWORKS_MIN_PROTEIN_IDX = UNIFIED_ATOM37_ENCODING.token_to_idx["ALA"]
-_ATOMWORKS_MAX_PROTEIN_IDX = UNIFIED_ATOM37_ENCODING.token_to_idx["VAL"]
-ATOMWORKS_NAME3S = UNIFIED_ATOM37_ENCODING.tokens[
-    : UNIFIED_ATOM37_ENCODING.token_to_idx["UNK"] + 1
-].tolist()
-ATOMWORKS_ATOM37_NAMES = {
-    name: UNIFIED_ATOM37_ENCODING.token_atoms[name].tolist()
-    for name in ATOMWORKS_NAME3S
-}
-
+from tmol_core.io.atomworks_encoding import (  # noqa: F401
+    ATOMWORKS_ATOM37_NAMES,
+    ATOMWORKS_NAME3S,
+)
+from tmol_core.io.atomworks_encoding import (
+    _ATOMWORKS_MIN_PROTEIN_IDX,
+    _ATOMWORKS_MAX_PROTEIN_IDX,
+    atomworks_restype_map,
+    canonical_to_atomworks_mappings,
+)
 
 # ---------------------------------------------------------------------------
 # Forward: atomworks tensors -> PoseStack
@@ -39,7 +34,7 @@ def pose_stack_from_canonical_aa_atom37(
     residue_type: torch.Tensor,
     chain_iid: torch.Tensor,
     **kwargs,
-) -> PoseStack:
+) -> PoseStack | tuple[PoseStack, dict]:
     """Build a PoseStack from atomworks UNIFIED_ATOM37_ENCODING tensors.
 
     This is the **tensor-only** Atom37 entry point. Residue identity comes from
@@ -70,7 +65,9 @@ def pose_stack_from_canonical_aa_atom37(
 
     Returns
     -------
-    PoseStack
+    PoseStack or (PoseStack, dict)
+        Optional canonical return flags include chain indices, atom mappings,
+        or missing-atom masks in the dictionary.
 
     Raises
     ------
@@ -245,11 +242,13 @@ def atomworks_from_pose_stack(
     """
     from tmol.io._pose_stack_deconstruction import _canonical_form_from_pose_stack
 
-    co = _canonical_ordering_for_atomworks()
+    co = CanonicalOrdering.from_chemdb(pose_stack.packed_block_types.chem_db)
     cf = _canonical_form_from_pose_stack(co, pose_stack)
 
     device = cf.coords.device
-    tmol_2_aw_rtmap, tmol_2_aw_atmap, tmol_at_is_real = _get_tmol_2_aw_mappings(device)
+    tmol_2_aw_rtmap, tmol_2_aw_atmap, tmol_at_is_real = (
+        torch.as_tensor(x, device=device) for x in canonical_to_atomworks_mappings(co)
+    )
 
     n_poses, max_n_res = cf.res_types.shape
     res_types_i64 = cf.res_types.to(torch.int64)
@@ -258,6 +257,10 @@ def atomworks_from_pose_stack(
     # Map residue types: tmol restype index -> atomworks index
     aw_res_types = torch.zeros((n_poses, max_n_res), dtype=torch.int64, device=device)
     aw_res_types[is_real_res] = tmol_2_aw_rtmap[res_types_i64[is_real_res]]
+    if torch.any(is_real_res & (aw_res_types == 0)):
+        raise ValueError(
+            "AtomWorks protein encoding cannot represent nonprotein residues"
+        )
 
     # Build per-residue atom mapping using the restype of each position
     # Clamp to 0 for padding positions (they won't be used because of
@@ -297,21 +300,9 @@ def _paramdb_for_atomworks() -> ParameterDatabase:
     acids together with every tautomer and disulfide form sharing their IO
     equivalence class, and the canonical n- and c-termini patches.
     """
-    covered_equiv_classes = {n for n in ATOMWORKS_NAME3S if n not in ("<M>", "UNK")}
-    chemdb = ParameterDatabase.get_default().chemical
-    # The encoding names residues by IO equivalence class, so ask the database
-    # which unpatched types fall into each rather than listing them here; a
-    # list would silently omit a form the rest of the pipeline can produce.
-    desired_rt_names = sorted(
-        rt.name
-        for rt in chemdb.residues
-        if rt.name == rt.base_name and rt.io_equiv_class in covered_equiv_classes
-    )
-    desired_variants_display_names = ["nterm", "cterm"]
+    from tmol_core.io.atomworks_encoding import atomworks_parameter_database
 
-    return ParameterDatabase.get_default().create_stable_subset(
-        desired_rt_names, desired_variants_display_names
-    )
+    return atomworks_parameter_database(ParameterDatabase.get_default())
 
 
 @toolz.functoolz.memoize
@@ -343,47 +334,15 @@ def _packed_block_types_for_atomworks(device: torch.device) -> PackedBlockTypes:
 @toolz.functoolz.memoize
 def _aw_2_tmol_restype_map(device: torch.device):
     """Atomworks residue index -> tmol canonical residue type (-1 if tmol has none)."""
-    classes = _canonical_ordering_for_atomworks().restype_io_equiv_classes
-    return torch.tensor(
-        [classes.index(n) if n in classes else -1 for n in ATOMWORKS_NAME3S],
-        dtype=torch.int64,
-        device=device,
+    return torch.as_tensor(
+        atomworks_restype_map(_canonical_ordering_for_atomworks()), device=device
     )
 
 
 @toolz.functoolz.memoize
 def _get_tmol_2_aw_mappings(device: torch.device):
     """Build reverse mapping tensors: tmol canonical -> atomworks atom37 slot."""
-    co = _canonical_ordering_for_atomworks()
-
-    n_co_restypes = len(co.restype_io_equiv_classes)
-    max_n_canonical_atoms = co.max_n_canonical_atoms
-
-    tmol_2_aw_rtmap = torch.full((n_co_restypes,), 0, dtype=torch.int64)
-    tmol_2_aw_atmap = torch.full(
-        (n_co_restypes, max_n_canonical_atoms), -1, dtype=torch.int64
+    return tuple(
+        torch.as_tensor(x, device=device)
+        for x in canonical_to_atomworks_mappings(_canonical_ordering_for_atomworks())
     )
-    tmol_at_is_real = torch.zeros(
-        (n_co_restypes, max_n_canonical_atoms), dtype=torch.bool
-    )
-
-    for aw_idx, name3 in enumerate(ATOMWORKS_NAME3S):
-        if name3 not in co.restype_io_equiv_classes:
-            continue
-        tmol_rt_idx = co.restype_io_equiv_classes.index(name3)
-        tmol_2_aw_rtmap[tmol_rt_idx] = aw_idx
-
-        aw_atoms = ATOMWORKS_ATOM37_NAMES[name3]
-        tmol_atom_mapping = co.restypes_atom_index_mapping[name3]
-        for at37_slot, at_name in enumerate(aw_atoms):
-            if at_name == "":
-                continue
-            if at_name in tmol_atom_mapping:
-                canon_at_idx = tmol_atom_mapping[at_name]
-                tmol_2_aw_atmap[tmol_rt_idx, canon_at_idx] = at37_slot
-                tmol_at_is_real[tmol_rt_idx, canon_at_idx] = True
-
-    def _d(x):
-        return x.to(device=device)
-
-    return _d(tmol_2_aw_rtmap), _d(tmol_2_aw_atmap), _d(tmol_at_is_real)

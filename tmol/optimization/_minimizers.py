@@ -134,6 +134,11 @@ def _run_min(
     )
     if segmented:
         optimizer_kwargs = dict(optimizer_kwargs, segment_ids=segment_ids)
+        n_segments = getattr(sfxn_module, "n_segments", None)
+        if n_segments is not None and getattr(
+            optimizer_cls, "supports_segment_count", False
+        ):
+            optimizer_kwargs["n_segments"] = n_segments
 
     optimizer = optimizer_cls(sfxn_module.parameters(), **optimizer_kwargs)
 
@@ -302,6 +307,7 @@ class _ReusableLBFGSFactory:
     """Construct once, then reset LBFGS when parameters and options match."""
 
     supports_segments = True
+    supports_segment_count = True
 
     def __init__(self):
         self.optimizer: LBFGS_Armijo | None = None

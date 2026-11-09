@@ -1,34 +1,14 @@
+"""Torch-compatible enumeration of the common scientific score channels."""
+
 from tmol.utility._auto_number import AutoNumber
+from tmol_core.scoring.channels import SCORE_TYPE_NAMES, TERM_CHANNELS
+
+# Preserve the public Enum base, name and module for existing serialized values.
+ScoreType = AutoNumber(
+    "ScoreType", {name: () for name in SCORE_TYPE_NAMES}, module=__name__
+)
+ScoreType.__doc__ = "Stable indices for energy terms in score-function weight tensors."
 
 
-class ScoreType(AutoNumber):
-    """Stable indices for energy terms in score-function weight tensors."""
-
-    fa_ljatr = ()
-    fa_ljrep = ()
-    fa_lk = ()
-    fa_elec = ()
-    hbond = ()
-    cart_lengths = ()
-    cart_angles = ()
-    cart_torsions = ()
-    cart_impropers = ()
-    cart_hxltorsions = ()
-    constraint = ()
-    disulfide = ()
-    omega = ()
-    rama = ()
-    dunbrack_rot = ()
-    dunbrack_rotdev = ()
-    dunbrack_semirot = ()
-    lk_ball_iso = ()
-    lk_ball = ()
-    lk_bridge = ()
-    lk_bridge_uncpl = ()
-    ref = ()
-    gen_torsions = ()
-    na_torsion = ()
-    na_torsion_well = ()
-    metal_coordination = ()
-    # keep this one last
-    n_score_types = ()
+def _score_types_for_term(name):
+    return [ScoreType[channel] for channel in TERM_CHANNELS[name]]

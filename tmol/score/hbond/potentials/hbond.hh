@@ -38,8 +38,8 @@ class HBondSingleResData {
   unsigned char n_acc;
   TMOL_SHARED_PTR(unsigned char) donH_tile_inds;
   TMOL_SHARED_PTR(unsigned char) acc_tile_inds;
-  TMOL_SHARED_PTR(unsigned char) donH_type;
-  TMOL_SHARED_PTR(unsigned char) acc_type;
+  TMOL_SHARED_PTR(int) donH_type;
+  TMOL_SHARED_PTR(int) acc_type;
   TMOL_SHARED_PTR(unsigned char) acc_hybridization;
   TMOL_SHARED_PTR(unsigned char) path_dist;
 };
@@ -86,15 +86,15 @@ struct HBondBlockPairSharedData {
   unsigned char don_inds2[TILE_SIZE];
   unsigned char acc_inds1[TILE_SIZE];
   unsigned char acc_inds2[TILE_SIZE];
-  unsigned char don_type1[TILE_SIZE];
-  unsigned char don_type2[TILE_SIZE];
-  unsigned char acc_type1[TILE_SIZE];
-  unsigned char acc_type2[TILE_SIZE];
+  int don_type1[TILE_SIZE];
+  int don_type2[TILE_SIZE];
+  int acc_type1[TILE_SIZE];
+  int acc_type2[TILE_SIZE];
   unsigned char acc_hybridization1[TILE_SIZE];
   unsigned char acc_hybridization2[TILE_SIZE];
 
-  unsigned char conn_ats1[MAX_N_CONN];  // 12 bytes
-  unsigned char conn_ats2[MAX_N_CONN];
+  int conn_ats1[MAX_N_CONN];  // Full residue atom indices
+  int conn_ats2[MAX_N_CONN];
   unsigned char path_dist1[MAX_N_CONN * TILE_SIZE];  // 384 bytes
   unsigned char path_dist2[MAX_N_CONN * TILE_SIZE];
   unsigned char conn_seps[MAX_N_CONN * MAX_N_CONN];  // 144 bytes
@@ -190,7 +190,7 @@ void TMOL_DEVICE_FUNC hbond_load_block_into_shared(
     int n_atoms_to_load,
     int start_atom,
     bool count_pair_striking_dist,
-    TMOL_SHARED_PTR(unsigned char) conn_ats,
+    TMOL_SHARED_PTR(int) conn_ats,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required by
     // the Metal backend. See workgroup_lane.hh.
     WorkgroupLane<Dev> lane = {}) {
@@ -794,8 +794,8 @@ TMOL_DEVICE_FUNC Real hbond_atom_energy_full(
     Real3 Bxyz = derived_coords[A_pose_atom_ind][1];
     Real3 B0xyz = derived_coords[A_pose_atom_ind][2];
 
-    unsigned char dt = don_dat.donH_type[donH_ind];
-    unsigned char at = acc_dat.acc_type[acc_ind];
+    int dt = don_dat.donH_type[donH_ind];
+    int at = acc_dat.acc_type[acc_ind];
 
     return hbond_score<Real, Int>::V(
         Dxyz,
@@ -875,8 +875,8 @@ TMOL_DEVICE_FUNC Real hbond_atom_derivs(
     int const B_pose_atom_ind = derived_atom_inds[A_pose_atom_ind][1];
     int const B0_pose_atom_ind = derived_atom_inds[A_pose_atom_ind][2];
 
-    unsigned char dt = don_dat.donH_type[donH_ind];
-    unsigned char at = acc_dat.acc_type[acc_ind];
+    int dt = don_dat.donH_type[donH_ind];
+    int at = acc_dat.acc_type[acc_ind];
 
     auto hbond_V_dV = hbond_score<Real, Int>::V_dV(
         Dxyz,
@@ -916,6 +916,7 @@ template <
     tmol::Device Dev,
     typename Real,
     typename Int,
+    typename GradReal = Real,
     typename DerivedCoordsView,
     typename DerivedAtomIndsView,
     typename PairParamsView,
@@ -974,8 +975,8 @@ TMOL_DEVICE_FUNC Real hbond_atom_energy_and_derivs_full(
     int const B_pose_atom_ind = derived_atom_inds[A_pose_atom_ind][1];
     int const B0_pose_atom_ind = derived_atom_inds[A_pose_atom_ind][2];
 
-    unsigned char dt = don_dat.donH_type[donH_ind];
-    unsigned char at = acc_dat.acc_type[acc_ind];
+    int dt = don_dat.donH_type[donH_ind];
+    int at = acc_dat.acc_type[acc_ind];
 
     auto hbond_V_dV = hbond_score<Real, Int>::V_dV(
         Dxyz,
@@ -991,7 +992,8 @@ TMOL_DEVICE_FUNC Real hbond_atom_energy_and_derivs_full(
       if (atom_ind < 0) return;
       for (int j = 0; j < 3; ++j) {
         if (dV_dat[j] != 0) {
-          accumulate<Dev, Real>::add(dV_dcoords[0][atom_ind][j], dV_dat[j]);
+          accumulate<Dev, GradReal>::add(
+              dV_dcoords[0][atom_ind][j], GradReal(dV_dat[j]));
         }
       }
     });

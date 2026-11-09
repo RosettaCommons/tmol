@@ -1,5 +1,11 @@
 #pragma once
 
-#define TILE_SIZE 32
-#define MAX_N_WATER 4
-#define MAX_N_CONN 12
+namespace tmol {
+namespace score {
+namespace lk_ball {
+namespace potentials {
+enum { lk_tile_size = 32, lk_max_n_water = 4, lk_max_n_conn = 12 };
+}
+}  // namespace lk_ball
+}  // namespace score
+}  // namespace tmol

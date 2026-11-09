@@ -40,3 +40,25 @@ def test_create_stable_subset_error_handline(default_database):
         gold_error = "ERROR: could not build the requested PachedChemcialDatabase subset because 'FEE' is not present in the original set"
         assert str(e) == gold_error
     assert threw
+
+
+def test_parameter_context_preserves_subtype_and_default_isolation():
+    class CustomContext(ParameterDatabase):
+        pass
+
+    original = ParameterDatabase.get_default()
+    custom = CustomContext.get_default()
+    assert type(custom) is CustomContext
+    assert custom is CustomContext.get_default()
+    assert custom is not original
+    assert ParameterDatabase.get_default() is original
+    subset = custom.create_stable_subset(["MET", "GLY"], [])
+    assert type(subset) is CustomContext
+    assert subset.scoring is custom.scoring
+    assert all(
+        alias.read_as in {"MET", "GLY"} for alias in subset.chemical.name3_aliases
+    )
+    assert any(alias.name3 == "MSE" for alias in subset.chemical.name3_aliases)
+    symmetric = subset.with_symmetric_gly()
+    assert type(symmetric) is CustomContext
+    assert symmetric is not subset

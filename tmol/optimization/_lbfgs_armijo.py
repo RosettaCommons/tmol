@@ -1,11 +1,17 @@
 from contextlib import nullcontext
-from math import isfinite
-from numbers import Integral, Real
-from types import SimpleNamespace
 from typing import Any
 
 import torch
 from torch.optim import Optimizer
+
+from tmol_core.optimization.armijo import armijo_linesearch_segmented
+from tmol_core.optimization.lbfgs import compact_lbfgs_direction
+from tmol_core.optimization.segmented import SegmentedLBFGSPolicy
+from tmol_core.optimization.setup import (
+    LBFGS_DEFAULTS,
+    migrate_settings,
+    validate_settings,
+)
 
 from tmol.optimization._armijo_compiled import (
     _armijo_classify,
@@ -32,104 +38,56 @@ def _lbfgs_two_loop(grad, dirs, stps):
     return _lbfgs_two_loop_impl(grad, dirs, stps)
 
 
+class _TorchCompactLBFGS:
+    float64 = staticmethod(torch.Tensor.double)
+    cast = staticmethod(torch.Tensor.to)
+    mv = staticmethod(torch.mv)
+    mm = staticmethod(torch.mm)
+    bmm = staticmethod(torch.bmm)
+    einsum = staticmethod(torch.einsum)
+    roll = staticmethod(torch.roll)
+    triu = staticmethod(torch.triu)
+    solve_triangular = staticmethod(torch.linalg.solve_triangular)
+
+    @staticmethod
+    def diagonal(matrix):
+        return matrix.diagonal(dim1=-2, dim2=-1)
+
+    @staticmethod
+    def fill_diagonal_where(matrix, mask, value):
+        matrix.diagonal(dim1=-2, dim2=-1).masked_fill_(mask, value)
+        return matrix
+
+
 def _lbfgs_two_loop_impl(grad, dirs, stps, history_start=0, double_scratch=None):
-    """Compact solve with histories kept in their physical circular slots.
-
-    double_scratch: optional full-capacity float64 (dirs, stps) buffers that
-    receive the promoted histories instead of fresh allocations.
-    """
-    unbatched = grad.dim() == 1
-    if unbatched:
-        grad = grad.unsqueeze(0)
-        dirs = dirs.unsqueeze(1)
-        stps = stps.unsqueeze(1)
-
-    out_dtype = grad.dtype
-    # Triangular solves are:
-    #  a) imprecise on CUDA at float32
-    #  b) small matrices (M x M) where M is history length (typically 128)
-    # promote to float64
-    if double_scratch is None or stps.dtype == torch.float64:
-        S = stps.double()
-        Y = dirs.double()
-    else:
-        # The history grows a row per call until full, so a fresh cast never
-        # fits the block the previous call freed and grows the CUDA cache.
+    promoted_history = None
+    if double_scratch is not None and stps.dtype != torch.float64:
         m = stps.shape[0]
-        Y = double_scratch[0][:m].view_as(dirs).copy_(dirs)
-        S = double_scratch[1][:m].view_as(stps).copy_(stps)
-    q = -grad.double()
-    # Explicit batched products avoid einsum's repeated layout planning. Keep
-    # the single-segment, broadcast, and differentiable paths: their reduction
-    # layouts can differ at tight double-precision tolerances.
-    single_segment = grad.shape[0] == 1 and out_dtype == torch.float32
-    use_bmm = (
-        q.shape[0] > 1
-        and S.shape[1] == Y.shape[1] == q.shape[0]
-        and S.shape[2] == Y.shape[2] == q.shape[1]
-        and not (
-            torch.is_grad_enabled()
-            and (grad.requires_grad or dirs.requires_grad or stps.requires_grad)
+        promoted_history = (
+            double_scratch[0][:m].view_as(dirs).copy_(dirs),
+            double_scratch[1][:m].view_as(stps).copy_(stps),
         )
+    unbatched = grad.dim() == 1
+    poses = 1 if unbatched else grad.shape[0]
+    return compact_lbfgs_direction(
+        grad,
+        dirs,
+        stps,
+        history_start,
+        execution=_TorchCompactLBFGS,
+        promoted_history=promoted_history,
+        single_segment=poses == 1 and grad.dtype == torch.float32,
+        use_bmm=(
+            not unbatched
+            and poses > 1
+            and stps.shape[1] == dirs.shape[1] == poses
+            and stps.shape[2] == dirs.shape[2] == grad.shape[1]
+            and not (
+                torch.is_grad_enabled()
+                and (grad.requires_grad or dirs.requires_grad or stps.requires_grad)
+            )
+        ),
     )
-    if single_segment:
-        S_one, Y_one = S[:, 0], Y[:, 0]
-        a = torch.mv(S_one, q[0]).unsqueeze(0)  # a_i = s_i . g
-        SY = torch.mm(S_one, Y_one.T).unsqueeze(0)  # SY_ij = s_i . y_j
-    elif use_bmm:
-        S_by_pose, Y_by_pose = S.transpose(0, 1), Y.transpose(0, 1)
-        a = torch.bmm(S_by_pose, q.unsqueeze(-1)).squeeze(-1)
-        SY = torch.bmm(S_by_pose, Y_by_pose.transpose(-2, -1))
-    else:
-        a = torch.einsum("ipk,pk->pi", S, q)
-        SY = torch.einsum("ipk,jpk->pij", S, Y)
-    # Only the small history-space products need chronological ordering.
-    # Moving entire (history, pose, coordinate) arrays after every wrap would
-    # duplicate both histories. Coefficients return to physical slot order
-    # before multiplying by S or Y below.
-    if history_start:
-        a = torch.roll(a, -history_start, dims=-1)
-        SY = torch.roll(SY, (-history_start, -history_start), dims=(-2, -1))
-    R = torch.triu(SY)  # upper-triangular incl. diagonal
-    D = SY.diagonal(dim1=-2, dim2=-1)  # D_i = s_i . y_i
-
-    # An absent slot has an all-zero row and column; a unit diagonal there keeps
-    # R invertible and leaves the search direction unchanged.
-    R.diagonal(dim1=-2, dim2=-1).masked_fill_(D == 0, 1)
-
-    # u = R^-1 a
-    u = torch.linalg.solve_triangular(R, a.unsqueeze(-1), upper=True).squeeze(-1)
-    # q = g - Y u; v = D u - Y^T q avoids forming Y^T Y.
-    Du = D * u
-    if history_start:
-        u = torch.roll(u, history_start, dims=-1)
-    if single_segment:
-        q = (q[0] - torch.mv(Y_one.T, u[0])).unsqueeze(0)
-        v = torch.mv(Y_one, q[0]).unsqueeze(0)
-    elif use_bmm:
-        q = q - torch.bmm(u.unsqueeze(1), Y_by_pose).squeeze(1)
-        v = torch.bmm(Y_by_pose, q.unsqueeze(-1)).squeeze(-1)
-    else:
-        q = q - torch.einsum("pi,ipk->pk", u, Y)
-        v = torch.einsum("ipk,pk->pi", Y, q)
-    if history_start:
-        v = torch.roll(v, -history_start, dims=-1)
-    v = Du - v
-    # p = R^-T v
-    p = torch.linalg.solve_triangular(
-        R.transpose(-2, -1), v.unsqueeze(-1), upper=False
-    ).squeeze(-1)
-    if history_start:
-        p = torch.roll(p, history_start, dims=-1)
-    # result = q + S p
-    if single_segment:
-        result = (q[0] + torch.mv(S_one.T, p[0])).unsqueeze(0)
-    elif use_bmm:
-        result = q + torch.bmm(p.unsqueeze(1), S_by_pose).squeeze(1)
-    else:
-        result = q + torch.einsum("pi,ipk->pk", p, S)
-    result = result.to(out_dtype)
-    return result.squeeze(0) if unbatched else result
 
 
 # per-segment line search states
@@ -144,6 +102,23 @@ def _any_true(mask):
     return bool(mask) if mask.numel() == 1 else bool(mask.any())
 
 
+class _TorchArmijoExecution:
+    start = staticmethod(_armijo_start)
+    classify = staticmethod(_armijo_classify)
+    trial = staticmethod(_armijo_trial)
+    update = staticmethod(_armijo_update)
+    any_true = staticmethod(_any_true)
+    equal = staticmethod(torch.equal)
+
+    @staticmethod
+    def decisions(failed, active):
+        return torch.stack((failed, active)).any(dim=1).tolist()
+
+    @staticmethod
+    def failed_indices(failed):
+        return failed.nonzero(as_tuple=False).flatten().tolist()
+
+
 def _armijo_linesearch_segmented(
     func,
     derphi0,
@@ -155,118 +130,22 @@ def _armijo_linesearch_segmented(
     sigma_increase=0.8,
     minstep=1e-6,
 ):
-    """Minimize over alpha, the function ``f(xk+alpha pk)``.
-
-    Each segment gets its own alpha; one call to f evaluates all of them.
-
-    Arguments:
-        f (callable): Function to be minimized, f(step)
-        derphi0 : (Tensor) directional derivative, per segment
-        fval0 : (Tensor) func(0), the value of the function at the origin
-        alpha0 : (Tensor) the initial stepsize, per segment
-        searching : (Tensor) which segments take part in the search
-        sigma_increase : (float) initial stepsize
-                         [must be in (0,1) and >=sigma_decrease]
-        sigma_decrease : (float) initial stepsize
-                         [must be in (0,1) and <=sigma_increase]
-        factor : (float) scalefactor in modifying stepsize [must be in (0,1)]
-        minstep : (float) minimum stepsize to take
-
-    Returns:
-        stepsize - accepted stepsize, per segment
-        f_val - final function value, per segment
-        n_evals - number of calls to f
-        status - per segment, one of the _LS_ codes
-        trial_is_accepted - whether the last trial evaluated the accepted steps
-
-    Notes
-        See D.P. Bertsekas, Nonlinear Programming, 2nd ed, 1999, page 29.
-
-        (fd) A few notes about this specific implementation:
-        0) I believe this method was originally from Jim Havranek
-        1) 'factor' corresponds roughly to 'beta', BUT on a successful initial step,
-           factor is used to increase the stepsize.  When factor is used to decrease
-           stepsize, factor^2 is used
-        2) The stopping critera used is that in the paper, the first integer m>=0 s.t.:
-             f(x_k) - f(x_k+beta^m*s*d_k) >= -sigma * beta^m * s * grad{f}(x_k) * d_k
-           however, the two different values of sigma are used:
-              * sigma_increase (0.8) is used to trigger an _increased_ stepsize
-              * sigma_decrease (0.1) is _required_ or the step size is decreased
-        3) in the code
-              * 'alpha' corresponds to 's' in the text
-              * 'factor' corresponds roughly to 'beta' in the text (see point 1)
-    """
-    phi0 = old_fval
-    alpha = _armijo_start(searching, alpha0)
-
-    phi = func(alpha)
-    n_evals = 1
-
-    # sigma_increase > sigma_decrease, so a linear-looking step also has
-    # sufficient decrease; it is the one case where a longer step is tried
-    accepted, phi_accepted, status, active = _armijo_classify(
-        searching,
-        alpha,
-        phi,
-        phi0,
+    return armijo_linesearch_segmented(
+        func,
         derphi0,
-        sigma_increase,
+        old_fval,
+        alpha0,
+        searching,
+        factor,
         sigma_decrease,
+        sigma_increase,
+        minstep,
+        execution=_TorchArmijoExecution,
+        combine_checks=searching.is_cuda and searching.numel() > 1,
     )
 
-    combine_cuda_checks = searching.is_cuda and searching.numel() > 1
-    any_active = _any_true(active)
-    while any_active:
-        trial = _armijo_trial(status, alpha, accepted, factor)
-        phi_trial = func(trial)
-        n_evals += 1
 
-        accepted, phi_accepted, status, failed, active = _armijo_update(
-            status,
-            trial,
-            accepted,
-            phi_accepted,
-            phi,
-            phi_trial,
-            phi0,
-            derphi0,
-            sigma_decrease,
-            minstep,
-        )
-        if combine_cuda_checks:
-            # Transfer both decisions together and reuse the active flag on
-            # the next iteration instead of synchronizing its mask again.
-            any_failed, any_active = torch.stack((failed, active)).any(dim=1).tolist()
-        else:
-            any_failed = _any_true(failed)
-        if any_failed:
-            for p in failed.nonzero(as_tuple=False).flatten().tolist():
-                step = float(trial[p])
-                finite = (
-                    (float(phi_trial[p]) - float(phi0[p])) / step
-                    if step
-                    else float("inf")
-                )
-                print(
-                    "Inaccurate G! Segment=",
-                    p,
-                    " Step=",
-                    step,
-                    " Deriv=",
-                    float(derphi0[p]),
-                    " Finite=",
-                    finite,
-                )
-
-        alpha = trial
-        phi = phi_trial
-        if not combine_cuda_checks:
-            any_active = _any_true(active)
-
-    return accepted, phi_accepted, n_evals, status, bool(torch.equal(alpha, accepted))
-
-
-class LBFGS_Armijo(Optimizer):
+class LBFGS_Armijo(SegmentedLBFGSPolicy, Optimizer):
     """
     Implements L-BFGS algorithm with Armijo line search.
     All scaling and parameters taken directly from Rosetta
@@ -274,14 +153,21 @@ class LBFGS_Armijo(Optimizer):
     Parameters:
         lr (float): learning rate (default: 1)
         max_iter (int): maximal number of iterations (default: 200)
-        rtol (float): relative energy-change tolerance (default: None)
-        atol (float): absolute energy-change tolerance (default: 1e-2)
-        patience (int): consecutive small iterations required (default: 5)
-        gradtol (float): max |gradient| required for convergence; a failed
-            line search below it also converges (default: None)
+        atol (float): an iteration whose energy change is at most atol counts
+            as small (default: 1e-2, energy units)
+        patience (int): a segment converges after this many consecutive small
+            iterations (default: 5)
+        rtol (float): if set, an iteration whose relative energy change is at
+            most rtol also counts as small (default: None)
+        gradtol (float): if set, energy convergence also requires
+            max_i |df/dx_i| <= gradtol. A failed line search below this
+            threshold converges immediately. If atol and rtol are both None,
+            this threshold alone determines convergence (default: None).
         history_size (int): update history size (default: 200).
         segment_ids (Tensor): the segment (e.g. pose) each parameter element
             belongs to; each segment is minimized independently (default: one)
+        n_segments (int): explicit pose count, retaining empty/frozen segments.
+            If omitted, segment IDs must cover every segment.
         value_only_line_search (bool): evaluate Armijo trial points with a
             separate value-only closure and refresh the gradient only at the
             accepted point (default: False)
@@ -290,6 +176,7 @@ class LBFGS_Armijo(Optimizer):
     """
 
     supports_segments = True
+    supports_segment_count = True
 
     def add_param_group(self, param_group: dict[str, Any]) -> None:
         """Add the optimizer's sole parameter group without compiler imports.
@@ -352,19 +239,20 @@ class LBFGS_Armijo(Optimizer):
     def __init__(
         self,
         params,
-        lr=1,
-        max_iter=200,
-        rtol=None,
-        atol=1e-2,
-        gradtol=None,
-        history_size=200,
-        minstep=1e-12,
-        verbose=False,
+        lr=LBFGS_DEFAULTS["lr"],
+        max_iter=LBFGS_DEFAULTS["max_iter"],
+        rtol=LBFGS_DEFAULTS["rtol"],
+        atol=LBFGS_DEFAULTS["atol"],
+        gradtol=LBFGS_DEFAULTS["gradtol"],
+        history_size=LBFGS_DEFAULTS["history_size"],
+        minstep=LBFGS_DEFAULTS["minstep"],
+        verbose=LBFGS_DEFAULTS["verbose"],
         segment_ids=None,
-        fixed_iterations=False,
+        fixed_iterations=LBFGS_DEFAULTS["fixed_iterations"],
         *,
-        patience=5,
-        value_only_line_search: bool = False,
+        n_segments=None,
+        patience=LBFGS_DEFAULTS["patience"],
+        value_only_line_search: bool = LBFGS_DEFAULTS["value_only_line_search"],
     ):
         defaults = dict(
             lr=lr,
@@ -379,19 +267,7 @@ class LBFGS_Armijo(Optimizer):
         super(LBFGS_Armijo, self).__init__(params, defaults)
 
         group = self.param_groups[0]
-        patience = group["patience"]
-        if (
-            isinstance(patience, bool)
-            or not isinstance(patience, Integral)
-            or patience < 1
-        ):
-            raise ValueError("patience must be a positive integer")
-        for name in ("rtol", "atol", "gradtol"):
-            value = group[name]
-            if value is not None and (
-                not isinstance(value, Real) or not isfinite(value) or value < 0
-            ):
-                raise ValueError(f"{name} must be None or a finite nonnegative number")
+        validate_settings(group, value_only_line_search)
 
         if len(self.param_groups) != 1:
             raise ValueError(
@@ -401,8 +277,6 @@ class LBFGS_Armijo(Optimizer):
         self._params = self.param_groups[0]["params"]
         self._minstep = minstep
         self.verbose = verbose
-        if not isinstance(value_only_line_search, bool):
-            raise TypeError("value_only_line_search must be bool")
         self.value_only_line_search = value_only_line_search
 
         self._last_loss_vec = None
@@ -415,19 +289,12 @@ class LBFGS_Armijo(Optimizer):
                 dtype=torch.int64,
                 device=self._params[0].device,
             )
-        self._init_segments(segment_ids)
+        self._init_segments(segment_ids, n_segments)
 
     def __setstate__(self, state):
         super().__setstate__(state)
         group = self.param_groups[0]
-        if "patience" not in group:
-            # Older checkpoints stopped after one small step and used dtype
-            # tolerances for None; new checkpoints use None to disable them.
-            group["patience"] = 1
-            tolerance = float(torch.finfo(group["params"][0].dtype).eps ** 0.5)
-            for name in ("rtol", "atol"):
-                if group[name] is None:
-                    group[name] = tolerance
+        migrate_settings(group, float(torch.finfo(group["params"][0].dtype).eps ** 0.5))
 
     def reset(self) -> None:
         """Reset trajectory state while retaining shape-compatible scratch.
@@ -458,59 +325,41 @@ class LBFGS_Armijo(Optimizer):
         state["any_inactive"] = False
         self._last_loss_vec = None
 
-    def _init_segments(self, segment_ids):
-        """Set up the mapping from parameter elements to independent blocks.
-
-        Builds the index that scatters a parameter-shaped vector into a dense
-        (n_segments, segment_size) layout, so all per-segment reductions are
-        batched tensor ops rather than a loop over segments.
-        """
+    def _init_segments(self, segment_ids, n_segments=None):
         assert len(self._params) == 1, "segment_ids requires a single tensor"
-        param = self._params[0]
-        segment_ids = segment_ids.reshape(-1).to(torch.int64)
-        assert (
-            segment_ids.numel() == param.numel()
-        ), "segment_ids needs one entry per parameter element"
-        assert bool((segment_ids >= 0).all()), "segment_ids must be non-negative"
+        super()._init_segments(segment_ids, n_segments)
 
-        n_segments = int(segment_ids.max().item()) + 1
-        if n_segments == 1:
-            self._segment_ids = segment_ids
-            self._n_segments = 1
-            self._segment_size = segment_ids.numel()
-            self._segments_are_dense = True
-            self._pad_index = None
-            return
+    _parameter_size = staticmethod(torch.Tensor.numel)
 
-        counts = torch.bincount(segment_ids, minlength=n_segments)
-        assert bool((counts > 0).all()), "segment_ids must not skip a segment"
-        segment_size = int(counts.max().item())
+    @staticmethod
+    def _segment_vector(segment_ids):
+        return segment_ids.reshape(-1).to(torch.int64)
 
-        # Avoid sorting the overwhelmingly common dense layout: one pose, or
-        # equal-sized poses stored contiguously. Dense reductions only reshape
-        # the parameter vector and never consult ``_pad_index``.
-        segments_are_dense = False
-        if bool((counts == segment_size).all()):
-            expected = torch.arange(n_segments, device=segment_ids.device)
-            expected = expected.repeat_interleave(segment_size)
-            segments_are_dense = torch.equal(segment_ids, expected)
+    @staticmethod
+    def _all_true(value):
+        return bool(value.all())
 
-        self._segment_ids = segment_ids
-        self._n_segments = n_segments
-        self._segment_size = segment_size
-        self._segments_are_dense = segments_are_dense
-        if segments_are_dense:
-            self._pad_index = None
-            return
+    @staticmethod
+    def _max_index(value):
+        return int(value.max().item())
 
-        # rank of each element within its own segment
+    @staticmethod
+    def _segment_counts(segment_ids, n_segments):
+        return torch.bincount(segment_ids, minlength=n_segments)
+
+    @staticmethod
+    def _dense_segment_order(segment_ids, n_segments, segment_size):
+        expected = torch.arange(n_segments, device=segment_ids.device)
+        return torch.equal(segment_ids, expected.repeat_interleave(segment_size))
+
+    @staticmethod
+    def _segment_ranks(segment_ids, counts):
         order = torch.argsort(segment_ids, stable=True)
         offsets = torch.cumsum(counts, 0) - counts
         rank = torch.empty_like(order)
         arange = torch.arange(segment_ids.numel(), device=order.device)
         rank[order] = arange - offsets[segment_ids[order]]
-
-        self._pad_index = segment_ids * segment_size + rank
+        return rank
 
     def _seg_sum(self, values):
         """Sum a parameter-shaped vector within each segment."""
@@ -528,7 +377,7 @@ class LBFGS_Armijo(Optimizer):
         """Reused float64 (dirs, stps) buffers shaped like the history matrices."""
         if hist.dtype == torch.float64:
             return None
-        scratch = self._double_history_scratch
+        scratch = getattr(self, "_double_history_scratch", None)
         if (
             scratch is None
             or scratch[0].shape != hist.shape
@@ -545,7 +394,7 @@ class LBFGS_Armijo(Optimizer):
         """Maximum of a parameter-shaped vector within each segment."""
         if self._segments_are_dense:
             return values.view(self._n_segments, self._segment_size).amax(-1)
-        out = torch.empty(self._n_segments, dtype=values.dtype, device=values.device)
+        out = torch.zeros(self._n_segments, dtype=values.dtype, device=values.device)
         return out.scatter_reduce_(
             0, self._segment_ids, values, "amax", include_self=False
         )
@@ -596,10 +445,19 @@ class LBFGS_Armijo(Optimizer):
 
         A closure may return one energy per segment; the line search needs the
         total, while the convergence tests want the per-segment values.
+        Promote lower-precision objectives to parameter precision for the native
+        line search; never lower the precision of an objective.
         """
 
         def wrapped():
             loss = closure()
+            dtype = self._params[0].dtype
+            if torch.is_tensor(loss) and loss.dtype != dtype:
+                if torch.promote_types(loss.dtype, dtype) != dtype:
+                    raise TypeError(
+                        "objective precision exceeds optimizer parameter precision"
+                    )
+                loss = loss.to(dtype=dtype)
             if (
                 self._segment_ids is not None
                 and torch.is_tensor(loss)
@@ -612,527 +470,117 @@ class LBFGS_Armijo(Optimizer):
 
         return wrapped
 
-    def _step_setup(self, closure):
-        """Prepare for L-BFGS:
-        read config
-        initialize state (history buffers, x_ref, preallocate d and x_backup)
-        evaluate initial loss and gradient
-        returns a SimpleNamespace ctx"""
-        # lbfgs only works w/ single parameter group
+    def _setup_group(self):
         assert len(self.param_groups) == 1
         assert len(self._params) == 1, "This version requires single tensor"
+        return self.param_groups[0]
 
-        group = self.param_groups[0]
-        lr = group["lr"]
-        max_iter = group["max_iter"]
-        rtol = group["rtol"]
-        atol = group["atol"]
-        patience = group["patience"]
-        gradtol = group["gradtol"]
-        history_size = group["history_size"]
-        fixed_iterations = group["fixed_iterations"]
-        # At most one curvature pair is created after each iteration beyond
-        # the first. Short protocols should not allocate the default 128 slots.
-        history_size = min(history_size, max(1, max_iter - 1))
+    def _setup_parameter(self):
+        return self._params[0]
 
-        # tolerances below sqrt(eps) of the parameter dtype cannot be resolved
-        #   float32 : eps~3.45e-4
-        #   float64 : eps~1.49e-8
-        dtype_based_tol = float(torch.finfo(self._params[0].dtype).eps ** 0.5)
-        if rtol is not None and 0 < rtol < dtype_based_tol:
-            print(f"  WARNING: rtol ({rtol}) is too low for dtype! ({dtype_based_tol})")
-        if atol is not None and 0 < atol < dtype_based_tol:
-            print(f"  WARNING: atol ({atol}) is too low for dtype! ({dtype_based_tol})")
+    def _setup_state(self, param):
+        return self.state[param]
 
-        param = self._params[0]
+    def _dtype_tolerance(self):
+        return float(torch.finfo(self._params[0].dtype).eps ** 0.5)
 
-        # NOTE: LBFGS has only global state, but we register it as state for
-        # the first param, because this helps with casting in load_state_dict
-        state = self.state[param]
-        state.setdefault("func_evals", 0)
-        state.setdefault("n_iter", 0)
+    @staticmethod
+    def _setup_vectors(param):
+        return param.data.view(-1), param.grad.data.view(-1)
 
-        # evaluate initial f(x)
-        orig_loss = closure()
-        # The optimizer uses the per-segment tensor below for all line-search
-        # and convergence decisions. Materializing a Python scalar here forces
-        # a device synchronization and is only useful for verbose reporting.
-        loss = float(orig_loss.detach()) if self.verbose else None
-        loss_vec = self._last_loss_vec
-        state["func_evals"] += 1
+    _empty_like = staticmethod(torch.empty_like)
 
-        x = param.data.view(-1)
-        flat_grad = param.grad.data.view(-1)
+    @staticmethod
+    def _allocate(shape, reference, kind, *, zero):
+        dtype = {"real": reference.dtype, "bool": torch.bool, "index": torch.int64}[
+            kind
+        ]
+        allocate = torch.zeros if zero else torch.empty
+        return allocate(shape, dtype=dtype, device=reference.device)
 
-        # Preallocate on first call. `d` and `x_backup` must have stable
-        # tensor identity so linefn (defined once in step) can capture them.
-        L = x.numel()
-        if state.get("d") is None:
-            state["d"] = torch.empty_like(x)
-            state["x_backup"] = torch.empty_like(x)
-            if self._segment_ids is None:
-                hist_shape = (history_size, L)
-            else:
-                hist_shape = (history_size, self._n_segments, self._segment_size)
-                if not self._segments_are_dense:
-                    state["grad_pad"] = torch.zeros(
-                        hist_shape[1:], device=x.device, dtype=x.dtype
-                    )
-            # Only ``history_count`` written slots are consumed. Non-dense
-            # segmented writes explicitly zero their own padding.
-            state["old_dirs_mat"] = torch.empty(
-                hist_shape, device=x.device, dtype=x.dtype
-            )
-            state["old_stps_mat"] = torch.empty(
-                hist_shape, device=x.device, dtype=x.dtype
-            )
-            state["history_start"] = 0  # Circular buffer start index
-            state["history_count"] = 0  # Number of items in history
-            state["x_ref"] = x.clone()  # reference position for s computation
-            flags = dict(dtype=torch.bool, device=x.device)
-            # stationary segments; segments that gave up; segments owed a
-            # steepest-descent restart after a failed line search
-            state["converged"] = torch.zeros(self._n_segments, **flags)
-            state["stalled"] = torch.zeros(self._n_segments, **flags)
-            state["needs_reset"] = torch.zeros(self._n_segments, **flags)
-            state["was_reset"] = torch.zeros(self._n_segments, **flags)
-            state["any_was_reset"] = False
-        # consecutive small iterations per segment; old state dictionaries lack it
-        if state.get("small_steps") is None:
-            state["small_steps"] = torch.zeros(
-                self._n_segments, dtype=torch.int64, device=x.device
-            )
+    @staticmethod
+    def _state_cast(value, kind):
+        return value.bool() if kind == "bool" else value.long()
 
-        # State loading casts tensor masks to the parameter's floating dtype.
-        for key in ("converged", "stalled", "needs_reset", "was_reset"):
-            state[key] = state[key].bool()
-        state["small_steps"] = state["small_steps"].long()
+    # Storage and execution hooks for the shared scientific policy.
+    _copy = staticmethod(torch.Tensor.copy_)
+    _clone = staticmethod(torch.Tensor.clone)
+    _zero = staticmethod(torch.Tensor.zero_)
+    _where = staticmethod(torch.where)
+    _abs = staticmethod(torch.abs)
+    _sign = staticmethod(torch.sign)
+    _zeros_like = staticmethod(torch.zeros_like)
+    _any_true = staticmethod(_any_true)
+    _line_search = staticmethod(_armijo_linesearch_segmented)
+    _finalize_search = staticmethod(_armijo_finalize)
 
-        return SimpleNamespace(
-            # Keep the wrapped closure local to this step. Storing it on the
-            # optimizer creates a cycle through the wrapper's self reference.
-            closure=closure,
-            # config
-            max_iter=max_iter,
-            lr=lr,
-            rtol=rtol,
-            atol=atol,
-            patience=patience,
-            gradtol=gradtol,
-            history_size=history_size,
-            fixed_iterations=fixed_iterations,
-            # torch / state
-            state=state,
-            param=param,
-            x=x,
-            flat_grad=flat_grad,
-            # preallocated scratch (stable refs captured by linefn)
-            d=state["d"],
-            x_backup=state["x_backup"],
-            # cached across steps
-            t=state.get("t"),
-            prev_flat_grad=state.get("prev_flat_grad"),
-            prev_loss_vec=state.get("prev_loss_vec"),
-            # history
-            old_dirs_mat=state["old_dirs_mat"],
-            old_stps_mat=state["old_stps_mat"],
-            history_start=state["history_start"],
-            history_count=state["history_count"],
-            x_ref=state["x_ref"],
-            converged=state["converged"],
-            stalled=state["stalled"],
-            needs_reset=state["needs_reset"],
-            was_reset=state["was_reset"],
-            small_steps=state["small_steps"],
-            # Host mirrors of predicates already synchronized in the previous
-            # iteration. Reusing them avoids repeating identical device-to-host
-            # checks at the start of the next iteration.
-            any_needs_reset=state.get("any_needs_reset", False),
-            # Old state dictionaries lack this host mirror. Clear their mask
-            # once conservatively instead of trusting its contents.
-            any_was_reset=state.get("any_was_reset", "was_reset" in state),
-            any_inactive=state.get("any_inactive", False),
-            gtd_seg=None,
-            # current eval
-            orig_loss=orig_loss,
-            loss=loss,
-            loss_vec=loss_vec,
-            # line-search accounting
-            ls_evals=0,
-        )
+    @staticmethod
+    def _steepest_direction(direction, gradient):
+        return direction.copy_(gradient).neg_()
 
-    def _compute_search_direction(self, ctx):
-        """L-BFGS update + two-loop recursion."""
-        flat_grad = ctx.flat_grad
-        d = ctx.d
-        x = ctx.x
+    @staticmethod
+    def _count_true(mask):
+        return int(mask.sum().item())
 
-        if ctx.state["n_iter"] == 1:
-            # initialize
-            d.copy_(flat_grad).neg_()
-            ctx.history_count = 0
+    @staticmethod
+    def _total_loss(loss):
+        return float(loss.sum())
+
+    @staticmethod
+    def _cap_step(step, maximum):
+        return step.clamp(max=maximum)
+
+    @staticmethod
+    def _freeze_direction(direction, active):
+        return direction.mul_(active.to(direction.dtype))
+
+    def _initial_step(self, x, value):
+        return torch.full((self._n_segments,), value, dtype=x.dtype, device=x.device)
+
+    def _update_trial(self, ctx, step):
+        torch.addcmul(ctx.x_backup, ctx.d, self._per_element(step), out=ctx.x)
+
+    @staticmethod
+    def _current_gradient(ctx):
+        return ctx.param.grad.data.view(-1)
+
+    def _write_history(self, ctx, idx, y, s, keep):
+        # Preserve the mature dense/scattered writes and storage identity.
+        if self._n_segments == 1:
+            ctx.old_dirs_mat[idx, 0].copy_(y)
+            ctx.old_stps_mat[idx, 0].copy_(s)
+            ctx.x_ref.copy_(ctx.x)
         else:
-            # do lbfgs update (update memory)
-            y = flat_grad.sub(ctx.prev_flat_grad)
-            s = x.sub(ctx.x_ref)  # cumulative displacement since last good step
-            # a segment with no curvature of its own contributes no history
-            keep = self._seg_sum(y * s) > 1e-6
-
-            if _any_true(keep):
-                # updating memory - write directly into circular buffer
-                if ctx.history_count < ctx.history_size:
-                    # Still filling up the buffer
-                    idx = ctx.history_count
-                    ctx.history_count += 1
-                else:
-                    # Buffer full, overwrite oldest entry
-                    idx = ctx.history_start
-                    ctx.history_start = (ctx.history_start + 1) % ctx.history_size
-
-                # Advance the reference only for segments that took a good step.
-                if self._n_segments == 1:
-                    ctx.old_dirs_mat[idx, 0].copy_(y)
-                    ctx.old_stps_mat[idx, 0].copy_(s)
-                    ctx.x_ref.copy_(x)
-                else:
-                    keep_elem = self._per_element(keep)
-                    zero = torch.zeros((), dtype=y.dtype, device=y.device)
-                    if self._segments_are_dense:
-                        torch.where(
-                            keep_elem, y, zero, out=ctx.old_dirs_mat[idx].view(-1)
-                        )
-                        torch.where(
-                            keep_elem, s, zero, out=ctx.old_stps_mat[idx].view(-1)
-                        )
-                    else:
-                        self._pad(
-                            torch.where(keep_elem, y, zero), out=ctx.old_dirs_mat[idx]
-                        )
-                        self._pad(
-                            torch.where(keep_elem, s, zero), out=ctx.old_stps_mat[idx]
-                        )
-                    ctx.x_ref = torch.where(keep_elem, x, ctx.x_ref)
-
-            # compute the approximate (L-BFGS) inverse Hessian
-            if ctx.history_count == 0:
-                # No history: use steepest descent direction
-                d.copy_(flat_grad).neg_()
+            keep_elem = self._per_element(keep)
+            zero = torch.zeros((), dtype=y.dtype, device=y.device)
+            if self._segments_are_dense:
+                torch.where(keep_elem, y, zero, out=ctx.old_dirs_mat[idx].view(-1))
+                torch.where(keep_elem, s, zero, out=ctx.old_stps_mat[idx].view(-1))
             else:
-                old_dirs_view = ctx.old_dirs_mat[: ctx.history_count]
-                old_stps_view = ctx.old_stps_mat[: ctx.history_count]
+                self._pad(torch.where(keep_elem, y, zero), out=ctx.old_dirs_mat[idx])
+                self._pad(torch.where(keep_elem, s, zero), out=ctx.old_stps_mat[idx])
+            ctx.x_ref = torch.where(keep_elem, ctx.x, ctx.x_ref)
 
-                # Dense gradients already have the layout consumed by the
-                # two-loop calculation; only scattered segments need a copy.
-                grad_pad = self._pad(
-                    flat_grad,
-                    out=None if self._segments_are_dense else ctx.state["grad_pad"],
-                )
-                with torch.inference_mode() if grad_pad.is_cuda else nullcontext():
-                    d.copy_(
-                        self._unpad(
-                            _lbfgs_two_loop_impl(
-                                grad_pad,
-                                old_dirs_view,
-                                old_stps_view,
-                                ctx.history_start,
-                                self._double_history(ctx.old_dirs_mat),
-                            )
-                        )
+    def _history_direction(self, ctx, old_dirs_view, old_stps_view):
+        grad_pad = self._pad(
+            ctx.flat_grad,
+            out=None if self._segments_are_dense else ctx.state["grad_pad"],
+        )
+        with torch.inference_mode() if grad_pad.is_cuda else nullcontext():
+            return ctx.d.copy_(
+                self._unpad(
+                    _lbfgs_two_loop_impl(
+                        grad_pad,
+                        old_dirs_view,
+                        old_stps_view,
+                        ctx.history_start,
+                        self._double_history(ctx.old_dirs_mat),
                     )
+                )
+            )
 
-        self._restart_failed_segments(ctx)
-        self._freeze_converged(ctx)
-
-    def _restart_failed_segments(self, ctx):
-        """Give a segment whose line search failed a fresh steepest descent.
-
-        Its history is dropped (zeroed slots read as absent) and it is marked as
-        restarted, so a second failure retires it instead of searching again.
-        """
-        if not ctx.any_needs_reset:
-            if ctx.any_was_reset:
-                ctx.was_reset.zero_()
-                ctx.any_was_reset = False
-            return
-        ctx.was_reset.copy_(ctx.needs_reset)
-        ctx.any_was_reset = True
+    @staticmethod
+    def _reset_history(ctx):
         reset = ctx.needs_reset.nonzero(as_tuple=False).squeeze(-1)
         ctx.old_dirs_mat[:, reset, :] = 0.0
         ctx.old_stps_mat[:, reset, :] = 0.0
-        reset_elem = self._per_element(ctx.needs_reset)
-        ctx.d.copy_(torch.where(reset_elem, -ctx.flat_grad, ctx.d))
-        ctx.x_ref = torch.where(reset_elem, ctx.x, ctx.x_ref)
-        ctx.needs_reset.zero_()
-        ctx.any_needs_reset = False
-
-    def _inactive(self, ctx):
-        """Segments that no longer move: converged or retired."""
-        return ctx.converged | ctx.stalled
-
-    def _freeze_converged(self, ctx):
-        """Hold converged or retired segments still by zeroing their direction."""
-        if not ctx.any_inactive:
-            return
-        inactive = self._inactive(ctx)
-        ctx.d.mul_(self._per_element((~inactive).to(ctx.d.dtype)))
-
-    def _directional_derivative(self, ctx, correct=True):
-        """Compute and cache the directional derivative g . d per segment."""
-        flat_grad, d = ctx.flat_grad, ctx.d
-        gtd_seg = self._seg_sum(flat_grad * d)
-        if correct:
-            for check in (1, 2):
-                bad = (gtd_seg > -1e-5) & ~self._inactive(ctx)
-                if not _any_true(bad):
-                    break
-                bad_elem = self._per_element(bad)
-                if check == 1:
-                    repaired = d * -torch.sign(flat_grad * d)
-                else:
-                    repaired = -flat_grad
-                d.copy_(torch.where(bad_elem, repaired, d))
-                gtd_seg = self._seg_sum(flat_grad * d)
-        ctx.gtd_seg = gtd_seg
-
-    def _segment_line_search(self, ctx, linefn_vec):
-        """Line search with an independent step size per segment."""
-        # a segment with no downhill direction cannot search; any negative
-        # slope is worth searching, however small, since the Armijo test
-        # scales with it
-        searching = ~self._inactive(ctx) & (ctx.gtd_seg < 0)
-        # match Rosetta: start at 2x prev accepted step, capped at 1.0
-        start_t = (ctx.t / 0.5).clamp(max=1.0)
-
-        accepted, phi_accepted, ls_evals, status, trial_is_accepted = (
-            _armijo_linesearch_segmented(
-                linefn_vec,
-                ctx.gtd_seg,
-                ctx.prev_loss_vec,  # energies at x_backup
-                start_t,
-                searching,
-                factor=0.5,
-                sigma_decrease=0.1,
-                sigma_increase=0.8,
-                minstep=self._minstep,
-            )
-        )
-        ctx.ls_evals = ls_evals
-
-        if self.value_only_line_search:
-            torch.addcmul(
-                ctx.x_backup,
-                ctx.d,
-                self._per_element(accepted),
-                out=ctx.x,
-            )
-            # Refresh only the gradient; keep Armijo energies on one evaluator.
-            ctx.closure()
-            ctx.loss_vec = phi_accepted
-        else:
-            if not trial_is_accepted:
-                torch.addcmul(
-                    ctx.x_backup,
-                    ctx.d,
-                    self._per_element(accepted),
-                    out=ctx.x,
-                )
-                ctx.closure()
-            ctx.loss_vec = self._last_loss_vec
-        # Keep the normal optimization path asynchronous. The scalar total is
-        # only needed for human-readable progress output.
-        ctx.loss = float(ctx.loss_vec.sum()) if self.verbose else None
-
-        # a failed search gets one steepest-descent restart, applied on the next
-        # iteration so the other segments are not held up; then it is retired
-        ctx.t, failed = _armijo_finalize(
-            status,
-            ctx.gtd_seg,
-            accepted,
-            start_t,
-            searching,
-            self._minstep,
-        )
-        any_failed = _any_true(failed)
-        if any_failed:
-            ctx.stalled |= failed & ctx.was_reset
-            ctx.needs_reset |= failed & ~ctx.was_reset
-        # A failure is the only way needs_reset can become true. It is safe to
-        # be conservative when all failed segments were already restarted;
-        # the next iteration will process an empty mask and clear this flag.
-        ctx.any_needs_reset = any_failed
-
-    def _check_segment_convergence(self, ctx, n_iter):
-        """Freeze independently converged segments; stop when all are done.
-
-        A segmented run must stop each segment at the same iteration where an
-        equivalent one-segment run would stop. Otherwise an early-converged pose
-        keeps moving while another pose finishes, making batch minimization
-        depend on which other structures happen to share the stack.
-        """
-        if ctx.fixed_iterations:
-            # Benchmarking and truncated inference protocols often require an
-            # exact iteration count. Skip convergence reductions and their
-            # device-to-host synchronization while preserving failure resets.
-            return False
-
-        newly_converged = torch.zeros_like(ctx.converged)
-        small_grad = None
-        if ctx.gradtol is not None:
-            small_grad = self._seg_amax(ctx.flat_grad.abs()) <= ctx.gradtol
-            # a line search that just failed at a low-gradient point is done
-            newly_converged |= ctx.needs_reset & small_grad
-        if ctx.prev_loss_vec is not None:
-            dE = (ctx.loss_vec - ctx.prev_loss_vec).abs()
-            small = torch.zeros_like(ctx.converged)
-            if ctx.atol is not None:
-                small |= dE <= ctx.atol
-            if ctx.rtol is not None:
-                rdiff = 2 * dE / (ctx.loss_vec.abs() + ctx.prev_loss_vec.abs() + 1e-10)
-                small |= rdiff <= ctx.rtol
-            # A rejected zero step also has dE == 0, but it is not progress or
-            # its absence: the next iteration must try the scheduled
-            # steepest-descent reset, so it neither counts nor resets the run.
-            counted = torch.where(small, ctx.small_steps + 1, 0)
-            ctx.small_steps.copy_(
-                torch.where(ctx.needs_reset, ctx.small_steps, counted)
-            )
-            energy_converged = ctx.small_steps >= ctx.patience
-            if small_grad is not None:
-                energy_converged &= small_grad
-            newly_converged |= energy_converged
-        ctx.converged |= newly_converged
-        done = self._inactive(ctx)
-
-        n_done = int(done.sum().item())
-        ctx.any_inactive = n_done != 0
-        if self.verbose:
-            n_stalled = int(ctx.stalled.sum().item())
-            print(
-                f"  iter {n_iter:4d}  E={ctx.loss:.6f}"
-                f"  evals={ctx.ls_evals}"
-                f"  done={n_done}/{self._n_segments}"
-                + (f"  stalled={n_stalled}" if n_stalled else "")
-            )
-        if n_done == self._n_segments:
-            if self.verbose:
-                print(
-                    f"  finished: {self._n_segments - n_stalled} converged,"
-                    f" {n_stalled} stalled"
-                )
-            return True
-        return False
-
-    def step(self, closure, value_only_closure=None):
-        """
-        The LBFGS minimization algorithm. Despite the name, this performs the full
-        LBFGS minimization trajectory.
-
-        Arguments:
-            closure (callable): a function that evaluates energy and gradient
-            value_only_closure (callable): a function that evaluates only
-                energy. Required when ``value_only_line_search`` is enabled.
-
-        Returns:
-            The initial loss, matching the ``Optimizer.step`` convention.
-        """
-        closure = self._wrap_closure(closure)
-        if self.value_only_line_search:
-            if value_only_closure is None:
-                raise ValueError(
-                    "value_only_closure is required when value_only_line_search "
-                    "is enabled"
-                )
-            line_search_closure = self._wrap_closure(value_only_closure)
-        else:
-            line_search_closure = closure
-        ctx = self._step_setup(closure)
-
-        x = ctx.x
-        x_backup = ctx.x_backup
-        d = ctx.d
-
-        def linefn(alpha_vec):
-            """Evaluate every segment at its own step size."""
-            self.ls_func_evals += 1
-            # Direct parameter update - eliminates _set_x_from_flat overhead
-            torch.addcmul(
-                x_backup,
-                d,
-                self._per_element(alpha_vec),
-                out=x,
-            )
-            line_search_closure()
-            return self._last_loss_vec
-
-        current_evals = 1
-        n_iter = 0
-        while n_iter < ctx.max_iter:
-            n_iter += 1
-            ctx.state["n_iter"] += 1
-
-            self._compute_search_direction(ctx)
-
-            if ctx.prev_flat_grad is None:
-                ctx.prev_flat_grad = ctx.flat_grad.clone()
-            else:
-                ctx.prev_flat_grad.copy_(ctx.flat_grad)
-            ctx.prev_loss_vec = ctx.loss_vec
-
-            # Armijo updates will track step length during optimization
-            # thus, "learning rate" is only applied for the initial step
-            if ctx.state["n_iter"] == 1:
-                ctx.t = torch.full(
-                    (self._n_segments,), ctx.lr, dtype=x.dtype, device=x.device
-                )
-
-            # directional derivative
-            # (fd) this is some hacky stuff I put in R3 that is not typically part
-            # (fd)   of lbfgs because the bfgs update had us frequently searching
-            # (fd)   in positive grad directions
-            # check 1: if dir. deriv. is positive, flip signs of positive components
-            # check 2: if derivative is still positive, reset Hessian
-            self._directional_derivative(ctx)
-
-            # define the line search function
-            # we do not need to compute gradients in here
-            self.ls_func_evals = 0
-
-            # Optimization: save original position and work directly with param.data
-            x_backup.copy_(x)
-
-            self._segment_line_search(ctx, linefn)
-
-            ctx.flat_grad = ctx.param.grad.data.view(-1)  # Direct reference
-
-            # update func eval
-            current_evals += self.ls_func_evals
-            ctx.state["func_evals"] += self.ls_func_evals
-            if self.value_only_line_search:
-                current_evals += 1
-                ctx.state["func_evals"] += 1
-
-            if self._check_segment_convergence(ctx, n_iter):
-                break
-
-        if self.verbose:
-            print(
-                f"  LBFGS_Armijo done: {n_iter} iters,"
-                f" {current_evals} func evals,"
-                f" E={ctx.loss:.4f}"
-            )
-
-        # d and x_backup persist via preallocation in state; save the rest.
-        ctx.state["t"] = ctx.t
-        ctx.state["history_start"] = ctx.history_start
-        ctx.state["history_count"] = ctx.history_count
-        ctx.state["prev_flat_grad"] = ctx.prev_flat_grad
-        ctx.state["prev_loss_vec"] = ctx.prev_loss_vec
-        ctx.state["x_ref"] = ctx.x_ref
-        ctx.state["needs_reset"] = ctx.needs_reset
-        ctx.state["was_reset"] = ctx.was_reset
-        ctx.state["small_steps"] = ctx.small_steps
-        ctx.state["any_needs_reset"] = ctx.any_needs_reset
-        ctx.state["any_was_reset"] = ctx.any_was_reset
-        ctx.state["any_inactive"] = ctx.any_inactive
-
-        return ctx.orig_loss

@@ -7,6 +7,8 @@ import threading
 import attr
 import pytest
 
+from tmol.tests import requires_cuda
+
 from tmol.score import _score_function as score_function_module, _non_memoized_beta2016
 from tmol import (
     ScoreFunction,
@@ -343,6 +345,7 @@ def test_fused_ljlk_elec_preserves_term_lanes_weights_and_gradients(
     assert torch.count_nonzero(fused.weights.grad[:4]) != 0
 
 
+@pytest.mark.parametrize("family", ["nonbonded", "cartbonded", "lkball"])
 @pytest.mark.parametrize("weighted", [False, True])
 @pytest.mark.parametrize("batched", [False, True])
 def test_cuda_fused_pose_accumulation_stability(
@@ -352,20 +355,39 @@ def test_cuda_fused_pose_accumulation_stability(
     torch_device,
     weighted,
     batched,
+    family,
 ):
     if torch_device.type != "cuda":
         pytest.skip("CUDA block-pair accumulation regression")
     pose = stack_of_distinct_poses if batched else distinct_pose_stacks[-1]
     sfxn = ScoreFunction(default_database, torch_device)
-    for term, weight in (
-        (ScoreType.fa_ljatr, 1.0),
-        (ScoreType.fa_ljrep, 0.55),
-        (ScoreType.fa_lk, 1.0),
-        (ScoreType.fa_elec, 1.0),
-    ):
+    terms = {
+        "nonbonded": (
+            (ScoreType.fa_ljatr, 1.0),
+            (ScoreType.fa_ljrep, 0.55),
+            (ScoreType.fa_lk, 1.0),
+            (ScoreType.fa_elec, 1.0),
+        ),
+        "cartbonded": tuple(
+            (getattr(ScoreType, name), 1.0)
+            for name in (
+                "cart_lengths",
+                "cart_angles",
+                "cart_torsions",
+                "cart_impropers",
+                "cart_hxltorsions",
+            )
+        ),
+        "lkball": tuple(
+            (getattr(ScoreType, name), 1.0)
+            for name in ("lk_ball_iso", "lk_ball", "lk_bridge", "lk_bridge_uncpl")
+        ),
+    }
+    for term, weight in terms[family]:
         sfxn.set_weight(term, weight)
     scorer = sfxn.render_whole_pose_scoring_module(pose)
-    assert scorer._execution_modules[0].classname == "LJLK+Elec"
+    if family == "nonbonded":
+        assert scorer._execution_modules[0].classname == "LJLK+Elec"
     # Exercise both independent term lanes and the compact weighted lane.
     scorer._force_weighted_fusion_for_cuda_graph = weighted
     with torch.no_grad():
@@ -382,6 +404,23 @@ def test_cuda_fused_pose_accumulation_stability(
     torch.testing.assert_close(
         repeated,
         repeated[0].expand_as(repeated),
+        rtol=torch.finfo(torch.float32).eps,
+        atol=0,
+    )
+
+    # The same stability is required for derivatives used by line searches.
+    # Exercise native independent lanes and the compact weighted derivative.
+    coords = pose.coords.detach().requires_grad_(True)
+    gradients = torch.stack(
+        [
+            torch.autograd.grad(scorer(coords, sum_terms=weighted).sum(), coords)[0]
+            for _ in range(20)
+        ]
+    )
+    assert torch.isfinite(gradients).all() and torch.count_nonzero(gradients)
+    torch.testing.assert_close(
+        gradients,
+        gradients[0].expand_as(gradients),
         rtol=torch.finfo(torch.float32).eps,
         atol=0,
     )
@@ -622,6 +661,7 @@ def test_weighted_fused_score_adaptive_dispatch():
     assert score_function_module._use_weighted_fused_score(cpu)
 
 
+@requires_cuda
 def test_weighted_fused_score_cuda_adaptive_dispatch():
     if not torch.cuda.is_available():
         pytest.skip("CUDA is not available")
@@ -754,6 +794,7 @@ def test_whole_pose_gradients_respect_per_pose_upstream_weights(
     )
 
 
+@requires_cuda
 @pytest.mark.parametrize("device_index", [0, 1])
 def test_cuda_term_gradients_accept_strided_lane_weights(ubq_pdb, device_index):
     if torch.cuda.device_count() <= device_index:
@@ -865,6 +906,45 @@ def test_weight_tensor_refresh_preserves_score_type_order(
         torch.tensor([1.0, 4.0, 3.0], device=torch_device),
     )
     assert sfxn._weight_indices_tensor is indices
+
+
+def test_direct_term_removal_refreshes_layout_and_preserves_rendered_snapshot(
+    ubq_pdb, default_database, torch_device
+):
+    pose = pose_stack_from_file(
+        ubq_pdb,
+        torch_device,
+        residue_end=4,
+        no_optH=True,
+        missing_density_distance_threshold=0.0,
+    )
+    sfxn = ScoreFunction(default_database, torch_device)
+    sfxn.set_weight(ScoreType.fa_ljatr, 1.0)
+    scorer = sfxn.render_whole_pose_scoring_module(pose)
+    coords = pose.coords.detach().clone().requires_grad_(True)
+    energy = scorer(coords)
+    gradient = torch.autograd.grad(energy.sum(), coords)[0]
+    captured_weights = scorer.weights.detach().clone()
+    original_term = sfxn.all_terms()[0]
+    assert sfxn.weights_tensor().shape == (3,)
+    sfxn.remove_term_for_score_type(ScoreType.fa_ljrep)
+    assert sfxn.all_terms() == []
+    assert sfxn.weights_tensor().numel() == 0
+    sfxn.set_weight(ScoreType.fa_ljatr, 2.0)
+    assert sfxn.all_terms()[0] is not original_term
+    again = scorer(coords)
+    again_grad = torch.autograd.grad(again.sum(), coords)[0]
+    torch.testing.assert_close(again, energy, rtol=0, atol=0)
+    assert torch.equal(scorer.weights, captured_weights)
+    # Atomic CUDA accumulation can round repeated calls differently even without
+    # mutation. Keep the energy/weights exact and bound gradient roundoff at two
+    # float32 epsilons of the force scale; CPU retains its exact-repeat contract.
+    atol = (
+        2 * torch.finfo(gradient.dtype).eps * float(gradient.abs().max())
+        if coords.is_cuda
+        else 0
+    )
+    torch.testing.assert_close(again_grad, gradient, rtol=0, atol=atol)
 
 
 def test_packed_block_setup_is_reused_and_cross_score_function_safe(
@@ -1270,7 +1350,9 @@ def test_rotamer_scorer_combines_identical_sparse_layouts(
     torch.testing.assert_close(coords.grad, torch.tensor(61.0, device=torch_device))
 
 
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_rotamer_weighted_reduction_preserves_layout_values_and_gradients(
+    dtype,
     torch_device: torch.device,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1306,6 +1388,7 @@ def test_rotamer_weighted_reduction_preserves_layout_values_and_gradients(
         torch.tensor([[7.0, 8.0, 9.0], [-3.0, 2.0, 1.0]], device=torch_device),
         torch.tensor([[2.0, 5.0], [4.0, -6.0]], device=torch_device),
     ]
+    score_lanes = [score.to(dtype=dtype) for score in score_lanes]
     weights = torch.tensor([0.0, 2.0, -1.0, 0.0, 4.0, -3.0, 0.5], device=torch_device)
     scorer = RotamerScoringModule(
         weights,
@@ -1316,7 +1399,7 @@ def test_rotamer_weighted_reduction_preserves_layout_values_and_gradients(
         ],
     )
     scorer.weights.requires_grad_(True)
-    coords = torch.tensor(1.25, device=torch_device, requires_grad=True)
+    coords = torch.tensor(1.25, dtype=dtype, device=torch_device, requires_grad=True)
 
     indices, values = scorer.forward_sparse_entries(coords)
 
@@ -1341,6 +1424,12 @@ def test_rotamer_weighted_reduction_preserves_layout_values_and_gradients(
     torch.testing.assert_close(values, reference_values)
     torch.testing.assert_close(actual_grads[0], reference_grads[0])
     torch.testing.assert_close(actual_grads[1].reshape(-1), reference_grads[1])
+    with torch.no_grad():
+        for workers in (0, 2):
+            scorer._cpu_term_workers = workers if torch_device.type == "cpu" else 0
+            repeated_indices, repeated_values = scorer.forward_sparse_entries(coords)
+            assert torch.equal(repeated_indices, indices)
+            torch.testing.assert_close(repeated_values, reference_values)
 
 
 def test_weighted_score_sum_has_output_sized_cuda_peak_growth(
@@ -2219,7 +2308,7 @@ def test_score_function_all_score_types_protein_dna(protein_dna_pdb):
     gold_score_map = {
         ScoreType.fa_ljatr: n([-1210.854248]),
         ScoreType.fa_ljrep: n([805.994080]),
-        ScoreType.fa_lk: n([809.354553]),
+        ScoreType.fa_lk: n([808.497986]),
         ScoreType.fa_elec: n([-337.304199]),
         ScoreType.hbond: n([-173.997391]),
         ScoreType.cart_lengths: n([157.134415]),
@@ -2234,7 +2323,7 @@ def test_score_function_all_score_types_protein_dna(protein_dna_pdb):
         ScoreType.dunbrack_rot: n([198.613831]),
         ScoreType.dunbrack_rotdev: n([553.206238]),
         ScoreType.dunbrack_semirot: n([175.140625]),
-        ScoreType.lk_ball_iso: n([1092.989990]),
+        ScoreType.lk_ball_iso: n([1092.919800]),
         ScoreType.lk_ball: n([401.814789]),
         ScoreType.lk_bridge: n([2.487589]),
         ScoreType.lk_bridge_uncpl: n([23.090977]),

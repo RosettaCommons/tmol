@@ -32,8 +32,12 @@ template <
     template <typename, int> class View,
     typename Real,
     typename Int,
-    int OutRank>
+    int OutRank,
+    typename GradReal = Real,
+    typename EnergyReal = Real>
 struct LKBallCtxT {
+  using Gradient = GradReal;
+  using Energy = EnergyReal;
   // Coordinates, the attached waters, and the block indexing that locates them
   View<Vec<Real, 3>, 1> rot_coords;
   View<Vec<Real, 3>, 2> water_coords;
@@ -64,13 +68,13 @@ struct LKBallCtxT {
   View<LKBallGlobalParams<Real>, 1> global_params;
 
   // Output
-  View<Real, OutRank> output;
+  View<EnergyReal, OutRank> output;
 
   // Backward pass only: the upstream weights and the two derivative
   // accumulators. Left unbound by the forward entries, which never read them.
   View<Real, 4> dTdV;
-  View<Vec<Real, 3>, 1> dV_d_pose_coords;
-  View<Vec<Real, 3>, 2> dV_d_water_coords;
+  View<Vec<GradReal, 3>, 1> dV_d_pose_coords;
+  View<Vec<GradReal, 3>, 2> dV_d_water_coords;
 
   // Enumerate the views in a fixed order, applying f to each.
   //

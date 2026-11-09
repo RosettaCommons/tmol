@@ -3,6 +3,7 @@ from .test_energy_term import (  # noqa: F401 - shared test utilities
     DummyEnergyTerm,
     EnergyTermBaseTester,
     EnergyTermTestBase,
+    UbiquitinEnergyTermTestBase,
     assert_allclose,
     get_notallclose_msg,
     print_table,

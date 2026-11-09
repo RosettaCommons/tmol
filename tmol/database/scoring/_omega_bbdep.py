@@ -4,17 +4,9 @@ import torch
 from typing import Tuple
 
 from tmol.types._torch import Tensor
+from tmol_core.database.library_records import OmegaBBDepMappingParams
 
 from ._content_hash import _content_hash
-
-
-@attr.s(auto_attribs=True, frozen=True, slots=True)
-class OmegaBBDepMappingParams:
-    table_id: str
-    res_middle: str
-    res_upper: str = "_"
-    invert_phi: bool = False
-    invert_psi: bool = False
 
 
 @attr.s(auto_attribs=True, frozen=True, slots=True)
@@ -41,6 +33,10 @@ class OmegaBBDepDatabase:
                 OmegaBBDepDatabase,
                 (OmegaBBDepDatabase, f"{_OLD}.OmegaBBDepDatabase"),
                 OmegaBBDepMappingParams,
+                (
+                    OmegaBBDepMappingParams,
+                    "tmol.database.scoring._omega_bbdep.OmegaBBDepMappingParams",
+                ),
                 (OmegaBBDepMappingParams, f"{_OLD}.OmegaBBDepMappingParams"),
                 OmegaBBDepTables,
                 (OmegaBBDepTables, f"{_OLD}.OmegaBBDepTables"),

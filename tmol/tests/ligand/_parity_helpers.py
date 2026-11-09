@@ -38,11 +38,6 @@ def _chi_axes_from_reference(ref) -> set:
     return {frozenset((quad[1], quad[2])) for _n, quad, _biaryl in ref.chis}
 
 
-def _chi_axes_from_prep(prep) -> set:
-    """Return the unordered set of central CHI bond {b, c} pairs from a prep."""
-    return {frozenset((tor.b.atom, tor.c.atom)) for tor in prep.residue_type.torsions}
-
-
 def chi_axes_equivalent(prep, ref, *, view=None) -> bool:
     """Compare prep vs reference CHI axes *name-agnostically*.
 
@@ -67,44 +62,6 @@ def chi_axes_equivalent(prep, ref, *, view=None) -> bool:
             return False
         mapped.add(frozenset((mapping[b], mapping[c])))
     return mapped == _chi_axes_from_reference(ref)
-
-
-def proton_chi_by_axis_from_reference(ref) -> dict:
-    """Map each CHI axis to its ``(sorted samples, expansions)`` from a ref.
-
-    Reads ``PROTON_CHI n SAMPLES k v.. [EXTRA m e..]`` lines and resolves the
-    CHI number ``n`` to the central ``{b, c}`` bond of the matching CHI record.
-    """
-    axis_by_num = {num: frozenset((quad[1], quad[2])) for num, quad, _b in ref.chis}
-    out: dict = {}
-    for line in ref.proton_chis:
-        toks = line.split()
-        num = int(toks[1])
-        si = toks.index("SAMPLES")
-        k = int(toks[si + 1])
-        samples = tuple(sorted(float(x) for x in toks[si + 2 : si + 2 + k]))
-        expansions: tuple = ()
-        if "EXTRA" in toks:
-            ei = toks.index("EXTRA")
-            m = int(toks[ei + 1])
-            expansions = tuple(float(x) for x in toks[ei + 2 : ei + 2 + m])
-        out[axis_by_num[num]] = (samples, expansions)
-    return out
-
-
-def proton_chi_by_axis_from_prep(prep) -> dict:
-    """Map each CHI axis to its ``(sorted samples, expansions)`` from a prep."""
-    axis_by_name = {
-        tor.name: frozenset((tor.b.atom, tor.c.atom))
-        for tor in prep.residue_type.torsions
-    }
-    return {
-        axis_by_name[cs.chi_dihedral]: (
-            tuple(sorted(cs.samples)),
-            tuple(cs.expansions),
-        )
-        for cs in prep.residue_type.chi_samples
-    }
 
 
 def reference_view_from_params(ref) -> SimpleNamespace:

@@ -57,17 +57,18 @@ class LJLKScoringData {
   Real total_lk;
 };
 
-template <typename Real, int TILE_SIZE, int MAX_N_CONN>
+template <typename Real, int TileSize, int MaxNConn>
 struct LJLKBlockPairSharedData {
-  Real coords1[TILE_SIZE * 3];  // 384 bytes for coords
-  Real coords2[TILE_SIZE * 3];
-  short atom_types1[TILE_SIZE];  // 64 bytes of type indices, not params
-  short atom_types2[TILE_SIZE];
-  unsigned char conn_ats1[MAX_N_CONN];  // 12 bytes
-  unsigned char conn_ats2[MAX_N_CONN];
-  unsigned char path_dist1[MAX_N_CONN * TILE_SIZE];  // 384 bytes
-  unsigned char path_dist2[MAX_N_CONN * TILE_SIZE];
-  unsigned char conn_seps[MAX_N_CONN * MAX_N_CONN];  // 144 bytes
+  Real coords1[TileSize * 3];  // 384 bytes for coords
+  Real coords2[TileSize * 3];
+  short atom_types1[TileSize];  // 64 bytes of type indices, not params
+  short atom_types2[TileSize];
+  int conn_ats1[MaxNConn];  // Full residue atom indices, including atoms above
+                            // 255.
+  int conn_ats2[MaxNConn];
+  unsigned char path_dist1[MaxNConn * TileSize];  // 384 bytes
+  unsigned char path_dist2[MaxNConn * TileSize];
+  unsigned char conn_seps[MaxNConn * MaxNConn];  // 144 bytes
 };
 
 // Count-pair separation for an inter-residue atom pair.
@@ -132,8 +133,8 @@ void TMOL_DEVICE_FUNC ljlk_load_block_coords_and_params_into_shared(
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
     WorkgroupLane<D> lane = {}) {
-  // pre-condition: n_atoms_to_load < TILE_SIZE
-  // Note that TILE_SIZE is not explicitly passed in, but is "present"
+  // pre-condition: n_atoms_to_load < TileSize
+  // Note that TileSize is not explicitly passed in, but is "present"
   // in r_dat.coords allocation
   DeviceDispatch<D>::template copy_contiguous_data<nt, 3>(
       r_dat.coords,
@@ -159,7 +160,7 @@ template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
     int nt,
-    int TILE_SIZE,
+    int TileSize,
     typename Real,
     typename Int,
     typename CoordsView,
@@ -176,7 +177,7 @@ void TMOL_DEVICE_FUNC ljlk_load_block_into_shared(
     int n_atoms_to_load,
     int start_atom,
     bool count_pair_striking_dist,
-    TMOL_SHARED_PTR(unsigned char) conn_ats,
+    TMOL_SHARED_PTR(int) conn_ats,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
     WorkgroupLane<D> lane = {}) {
@@ -202,7 +203,7 @@ void TMOL_DEVICE_FUNC ljlk_load_block_into_shared(
         for (int j = 0; j < r_dat.n_conn; ++j) {
           unsigned char ij_path_dist =
               block_type_path_distance[r_dat.block_type][conn_ats[j]][atid];
-          r_dat.path_dist[j * TILE_SIZE + count] = ij_path_dist;
+          r_dat.path_dist[j * TileSize + count] = ij_path_dist;
         }
       }
     }
@@ -216,8 +217,8 @@ template <
     int nt,
     typename Int,
     typename Real,
-    int TILE_SIZE,
-    int MAX_N_CONN,
+    int TileSize,
+    int MaxNConn,
     typename RotCoordOffsetView,
     typename PoseStackNearBlocksView,
     typename BlockTypeNInterblockBondsView,
@@ -244,8 +245,7 @@ void TMOL_DEVICE_FUNC ljlk_load_tile_invariant_interres_data(
     int n_atoms1,
     int n_atoms2,
     TMOL_THREAD LJLKScoringData<Real>& inter_dat,
-    TMOL_SHARED_REF(LJLKBlockPairSharedData<Real, TILE_SIZE, MAX_N_CONN>)
-        shared_m,
+    TMOL_SHARED_REF(LJLKBlockPairSharedData<Real, TileSize, MaxNConn>) shared_m,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
     WorkgroupLane<D> lane = {}) {
@@ -324,8 +324,8 @@ template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
     int nt,
-    int TILE_SIZE,
-    int MAX_N_CONN,
+    int TileSize,
+    int MaxNConn,
     typename Real,
     typename Int,
     typename CoordsView,
@@ -341,12 +341,11 @@ void TMOL_DEVICE_FUNC ljlk_load_interres1_tile_data_to_shared(
     int start_atom1,
     int n_atoms_to_load1,
     TMOL_THREAD LJLKScoringData<Real>& inter_dat,
-    TMOL_SHARED_REF(LJLKBlockPairSharedData<Real, TILE_SIZE, MAX_N_CONN>)
-        shared_m,
+    TMOL_SHARED_REF(LJLKBlockPairSharedData<Real, TileSize, MaxNConn>) shared_m,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
     WorkgroupLane<D> lane = {}) {
-  ljlk_load_block_into_shared<DeviceDispatch, D, nt, TILE_SIZE, Real, Int>(
+  ljlk_load_block_into_shared<DeviceDispatch, D, nt, TileSize, Real, Int>(
       coords,
       block_type_atom_types,
       type_params,
@@ -364,8 +363,8 @@ template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
     int nt,
-    int TILE_SIZE,
-    int MAX_N_CONN,
+    int TileSize,
+    int MaxNConn,
     typename Real,
     typename Int,
     typename CoordsView,
@@ -381,12 +380,11 @@ void TMOL_DEVICE_FUNC ljlk_load_interres2_tile_data_to_shared(
     int start_atom2,
     int n_atoms_to_load2,
     TMOL_THREAD LJLKScoringData<Real>& inter_dat,
-    TMOL_SHARED_REF(LJLKBlockPairSharedData<Real, TILE_SIZE, MAX_N_CONN>)
-        shared_m,
+    TMOL_SHARED_REF(LJLKBlockPairSharedData<Real, TileSize, MaxNConn>) shared_m,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
     WorkgroupLane<D> lane = {}) {
-  ljlk_load_block_into_shared<DeviceDispatch, D, nt, TILE_SIZE, Real, Int>(
+  ljlk_load_block_into_shared<DeviceDispatch, D, nt, TileSize, Real, Int>(
       coords,
       block_type_atom_types,
       type_params,
@@ -406,8 +404,8 @@ template <
     int nt,
     typename Int,
     typename Real,
-    int TILE_SIZE,
-    int MAX_N_CONN,
+    int TileSize,
+    int MaxNConn,
     typename RotCoordOffsetView,
     typename GlobalParamsView>
 void TMOL_DEVICE_FUNC ljlk_load_tile_invariant_intrares_data(
@@ -420,8 +418,7 @@ void TMOL_DEVICE_FUNC ljlk_load_tile_invariant_intrares_data(
     int block_type1,
     int n_atoms1,
     TMOL_THREAD LJLKScoringData<Real>& intra_dat,
-    TMOL_SHARED_REF(LJLKBlockPairSharedData<Real, TILE_SIZE, MAX_N_CONN>)
-        shared_m,
+    TMOL_SHARED_REF(LJLKBlockPairSharedData<Real, TileSize, MaxNConn>) shared_m,
     // Unused here -- this loader reaches no workgroup primitive -- but taken
     // for uniformity with its siblings, whose call sites in ljlk_kernels.hh
     // are generated by the same macro.
@@ -473,8 +470,8 @@ template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
     int nt,
-    int TILE_SIZE,
-    int MAX_N_CONN,
+    int TileSize,
+    int MaxNConn,
     typename Real,
     typename Int,
     typename CoordsView,
@@ -488,8 +485,7 @@ void TMOL_DEVICE_FUNC ljlk_load_intrares1_tile_data_to_shared(
     int start_atom1,
     int n_atoms_to_load1,
     TMOL_THREAD LJLKScoringData<Real>& intra_dat,
-    TMOL_SHARED_REF(LJLKBlockPairSharedData<Real, TILE_SIZE, MAX_N_CONN>)
-        shared_m,
+    TMOL_SHARED_REF(LJLKBlockPairSharedData<Real, TileSize, MaxNConn>) shared_m,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
     WorkgroupLane<D> lane = {}) {
@@ -513,8 +509,8 @@ template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
     int nt,
-    int TILE_SIZE,
-    int MAX_N_CONN,
+    int TileSize,
+    int MaxNConn,
     typename Real,
     typename Int,
     typename CoordsView,
@@ -528,8 +524,7 @@ void TMOL_DEVICE_FUNC ljlk_load_intrares2_tile_data_to_shared(
     int start_atom2,
     int n_atoms_to_load2,
     TMOL_THREAD LJLKScoringData<Real>& intra_dat,
-    TMOL_SHARED_REF(LJLKBlockPairSharedData<Real, TILE_SIZE, MAX_N_CONN>)
-        shared_m,
+    TMOL_SHARED_REF(LJLKBlockPairSharedData<Real, TileSize, MaxNConn>) shared_m,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required
     // by the Metal backend. See workgroup_lane.hh.
     WorkgroupLane<D> lane = {}) {
@@ -554,12 +549,11 @@ void TMOL_DEVICE_FUNC ljlk_load_intrares2_tile_data_to_shared(
       lane);
 }
 
-template <int TILE_SIZE, int MAX_N_CONN, typename Real>
+template <int TileSize, int MaxNConn, typename Real>
 void TMOL_DEVICE_FUNC ljlk_load_intrares_data_from_shared(
     int tile_ind1,
     int tile_ind2,
-    TMOL_SHARED_REF(LJLKBlockPairSharedData<Real, TILE_SIZE, MAX_N_CONN>)
-        shared_m,
+    TMOL_SHARED_REF(LJLKBlockPairSharedData<Real, TileSize, MaxNConn>) shared_m,
     TMOL_THREAD LJLKScoringData<Real>& intra_dat) {
   // set the pointers in intra_dat to point at the shared-memory arrays
   // If we are evaluating the energies between atoms in the same tile
@@ -624,6 +618,7 @@ TMOL_DEVICE_FUNC tmol::portable::array<Real, 3> ljlk_atom_energy(
 template <
     typename Real,
     tmol::Device D,
+    typename GradReal = Real,
     typename DvDcoordsView,
     typename TypeParamsView>
 TMOL_DEVICE_FUNC void ljlk_atom_derivs(
@@ -681,11 +676,11 @@ TMOL_DEVICE_FUNC void ljlk_atom_derivs(
 #pragma unroll
   for (int j = 0; j < 3; ++j) {
     if (dxyz_at1[j] == 0) continue;
-    accumulate_grad<D, Real>::add(
+    accumulate_grad<D, GradReal>::add(
         dV_dcoords[score_dat.r1.rot_coord_offset + atom_tile_ind1 + start_atom1]
                   [j],
         dxyz_at1[j]);
-    accumulate_grad<D, Real>::add(
+    accumulate_grad<D, GradReal>::add(
         dV_dcoords[score_dat.r2.rot_coord_offset + atom_tile_ind2 + start_atom2]
                   [j],
         -dxyz_at1[j]);
@@ -695,6 +690,7 @@ TMOL_DEVICE_FUNC void ljlk_atom_derivs(
 template <
     typename Real,
     tmol::Device D,
+    typename GradReal = Real,
     typename DvDcoordsView,
     typename TypeParamsView>
 TMOL_DEVICE_FUNC tmol::portable::array<Real, 3>
@@ -754,14 +750,14 @@ ljlk_atom_energy_and_derivs_full(
 #pragma unroll
     for (int j = 0; j < 3; ++j) {
       if (dxyz_at1[j] != 0) {
-        accumulate_grad<D, Real>::add(
+        accumulate_grad<D, GradReal>::add(
             dV_dcoords[score_type]
                       [score_dat.r1.rot_coord_offset + atom_tile_ind1
                        + start_atom1][j],
             dxyz_at1[j]);
       }
       if (dxyz_at1[j] != 0) {
-        accumulate_grad<D, Real>::add(
+        accumulate_grad<D, GradReal>::add(
             dV_dcoords[score_type]
                       [score_dat.r2.rot_coord_offset + atom_tile_ind2
                        + start_atom2][j],

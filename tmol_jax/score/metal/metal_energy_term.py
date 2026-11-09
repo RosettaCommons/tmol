@@ -1,0 +1,78 @@
+"""Thin coordinate-runtime adapter for canonical metal coordination scoring."""
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+
+from tmol_core.scoring.metal import MetalCoordinationPreparation, validate_donors
+from tmol_jax.score._native import coordinate_energy, pose_arguments, register
+from tmol_jax.score.energy_term import EnergyTerm, prepared_palette
+from tmol_jax.score.score_types import ScoreType
+
+
+class MetalCoordinationEnergyTerm(EnergyTerm):
+    @staticmethod
+    def score_types_provided():
+        return [ScoreType.metal_coordination]
+
+    def setup_for_pose_stack(self, pose_stack, pbt=None, *, include_empty=False):
+        pbt = pose_stack.packed_block_types if pbt is None else pbt
+        types = pbt.active_block_types
+        indices = np.asarray(pose_stack.block_type_ind)
+        used = np.unique(indices[indices >= 0])
+        if not include_empty and all(not types[i].metal_sites for i in used):
+            return ()
+        device = pose_stack.coords.device
+
+        def prepare():
+            prep = MetalCoordinationPreparation(
+                self.param_db.scoring.metal_coordination
+            )
+            host = prep.prepare_packed(
+                types, pbt.chem_db.atom_types, max_n_conn=pbt.max_n_conn
+            )
+            arrays = jax.device_put(
+                (
+                    pbt.conn_atoms,
+                    *(
+                        host["metal_coordination_" + name]
+                        for name in (
+                            "conn_metal",
+                            "conn_virt",
+                            "conn_key",
+                            "site_params",
+                            "fan_atoms",
+                            "fan_params",
+                            "bridge_internal_metal",
+                            "bridge_internal_d0",
+                            "bridge_params",
+                        )
+                    ),
+                ),
+                device=device,
+            )
+            return (
+                host["metal_coordination_conn_virt"],
+                host["metal_coordination_conn_key"],
+                arrays,
+            )
+
+        virtuals, keys, chemical = prepared_palette(
+            pbt, self.param_db, "metal", prepare, device=device
+        )
+        validate_donors(
+            indices, np.asarray(pose_stack.inter_residue_connections), virtuals, keys
+        )
+        register("tmol_metal_coordination")
+        return (
+            jax.device_put(tuple(pose_arguments(pose_stack)), device=device) + chemical
+        )
+
+    @classmethod
+    def evaluate(cls, term_state, coords):
+        values = (
+            coordinate_energy("tmol_metal_coordination", coords, term_state)
+            if term_state
+            else jnp.zeros(coords.shape[0], coords.dtype)
+        )
+        return {ScoreType.metal_coordination: values}

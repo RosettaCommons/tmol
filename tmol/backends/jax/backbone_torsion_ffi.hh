@@ -1,0 +1,164 @@
+// Runtime buffer contract for the common whole-pose backbone kernels.
+#pragma once
+#include "energy_accumulator_ffi.hh"
+#include <tmol/score/common/counting.hh>
+#include <tmol/score/backbone_torsion/potentials/backbone_torsion_pose_kernels.hh>
+
+namespace tmol::jax {
+inline void validate_backbone_tables(
+    const std::vector<ffi::AnyBuffer>& a, ffi::DataType real, int64_t ports) {
+  auto integer = ffi::DataType::S32;
+  require_shape(a[5], integer, {-1, ports, -1});
+  auto types = a[5].dimensions()[0];
+  for (int index : {6, 7}) require_shape(a[index], integer, {types, 2});
+  for (int index : {8, 9, 10}) require_shape(a[index], integer, {types});
+  require_shape(a[11], integer, {types, 12, 3});
+  require_shape(a[12], real, {-1, -1, -1});
+  require_shape(a[13], real, {a[12].dimensions()[0], 4});
+  require_shape(a[14], real, {-1, 2, -1, -1});
+  require_shape(a[15], real, {a[14].dimensions()[0], 4});
+}
+template <bool Sparse, Device D, typename Real>
+auto backbone_tables(const std::vector<ffi::AnyBuffer>& a) {
+  using I = int32_t;
+  using Params = score::backbone_torsion::potentials::RamaTableParams<Real>;
+  static_assert(sizeof(Params) == 4 * sizeof(Real));
+  static_assert(sizeof(UnresolvedAtomID<I>) == 3 * sizeof(I));
+  auto lower = [&] {
+    if constexpr (Sparse)
+      return std::tuple<>();
+    else
+      return std::make_tuple(buffer_view<I, 1, D>(a[8]));
+  }();
+  return std::tuple_cat(
+      std::make_tuple(
+          buffer_view<I, 3, D>(a[5]),
+          buffer_view<I, 2, D>(a[6]),
+          buffer_view<I, 2, D>(a[7])),
+      lower,
+      std::make_tuple(
+          buffer_view<I, 1, D>(a[9]),
+          buffer_view<I, 1, D>(a[10]),
+          buffer_view<UnresolvedAtomID<I>, 2, D>(a[11]),
+          buffer_view<Real, 3, D>(a[12]),
+          buffer_view<Params, 1, D>(a[13]),
+          buffer_view<Real, 4, D>(a[14]),
+          buffer_view<Params, 1, D>(a[15])));
+}
+
+template <typename Real>
+struct BackboneWorkspace {
+  ByteWorkspace storage;
+  double* energy = nullptr;
+  double* gradient = nullptr;
+  BackboneWorkspace(size_t poses, size_t gradient_values, void* data = nullptr)
+      : storage(data) {
+    if constexpr (std::is_same_v<Real, float>) {
+      energy = storage.take<double>(2 * poses);
+      gradient = storage.take<double>(gradient_values);
+    }
+  }
+};
+
+inline size_t backbone_gradient_values(size_t atoms, bool sparse = false) {
+  return score::common::checked_dispatch_product(
+      atoms, sparse ? 3 : 6, "backbone gradient values");
+}
+
+template <bool PreciseGradient = false>
+struct BackboneTorsionKernelT {
+  static constexpr bool zero_workspace = false;
+  static size_t workspace_bytes(
+      const std::vector<ffi::AnyBuffer>& a, bool derivative) {
+    auto values = PreciseGradient && derivative
+                      ? backbone_gradient_values(
+                            a[0].dimensions()[0] * a[0].dimensions()[1])
+                      : 0;
+    return a[0].element_type() == ffi::DataType::F32
+               ? BackboneWorkspace<float>(a[0].dimensions()[0], values)
+                     .storage.size_bytes()
+               : 0;
+  }
+  static void validate(
+      const std::vector<ffi::AnyBuffer>& a,
+      ffi::AnyBuffer energy,
+      const ffi::AnyBuffer* gradient) {
+    if (a.size() != 16)
+      throw std::invalid_argument("backbone torsion FFI expects 16 operands");
+    auto real = a[0].element_type();
+    if (real != ffi::DataType::F32 && real != ffi::DataType::F64)
+      throw std::invalid_argument("backbone coordinates must be float32/64");
+    auto integer = ffi::DataType::S32;
+    require_shape(a[0], real, {-1, -1, 3});
+    auto poses = a[0].dimensions()[0], atoms = a[0].dimensions()[1];
+    require_shape(a[3], integer, {poses, -1});
+    auto blocks = a[3].dimensions()[1];
+    require_shape(a[1], integer, {poses * blocks});
+    require_shape(a[2], integer, {poses, blocks});
+    require_shape(a[4], integer, {poses, blocks, -1, 2});
+    auto ports = a[4].dimensions()[2];
+    validate_backbone_tables(a, real, ports);
+    require_shape(energy, real, {2, poses});
+    if (gradient) require_shape(*gradient, real, {2, poses, atoms, 3});
+    if (poses * atoms > std::numeric_limits<int32_t>::max())
+      throw std::invalid_argument("backbone atom count exceeds int32");
+  }
+
+  template <template <Device> class Ops, Device D, typename Real>
+  static void execute(
+      const std::vector<ffi::AnyBuffer>& a,
+      ffi::AnyBuffer energy,
+      const ffi::AnyBuffer* gradient,
+      ffi::AnyBuffer workspace) {
+    using I = int32_t;
+    auto poses = a[0].dimensions()[0], atoms = a[0].dimensions()[1];
+    auto xyz = contiguous_view<Vec<Real, 3>, 1, D>(
+        a[0].untyped_data(), {poses * atoms});
+    ContextManager context;
+    BackboneWorkspace<Real> work(
+        poses,
+        PreciseGradient && gradient ? backbone_gradient_values(poses * atoms)
+                                    : 0,
+        workspace.untyped_data());
+    EnergyAccumulator<Ops, D, Real> total(context, energy, work.energy);
+    using EnergyReal = typename decltype(total)::Value;
+    auto e = total.template view<4>({2, poses, 1, 1});
+    using GradReal = std::conditional_t<PreciseGradient, EnergyReal, Real>;
+    std::optional<EnergyAccumulator<Ops, D, Real>> derivative;
+    if constexpr (PreciseGradient) {
+      if (gradient) derivative.emplace(context, *gradient, work.gradient);
+    }
+    auto* gradient_data =
+        derivative ? derivative->template view<3>({2, poses * atoms, 3}).data()
+                   : (gradient ? gradient->untyped_data() : nullptr);
+    auto g = contiguous_view<Vec<GradReal, 3>, 2, D>(
+        gradient_data, {2, gradient ? poses * atoms : 0});
+    std::apply(
+        [&](auto... tables) {
+          score::backbone_torsion::potentials::backbone_torsion_pose_forward<
+              Ops,
+              D,
+              Real,
+              I,
+              EnergyReal,
+              GradReal>(
+              context,
+              xyz,
+              buffer_view<I, 1, D>(a[1]),
+              buffer_view<I, 2, D>(a[2]),
+              buffer_view<I, 2, D>(a[3]),
+              buffer_view<Vec<I, 2>, 3, D>(a[4]),
+              tables...,
+              false,
+              gradient != nullptr,
+              e,
+              g);
+        },
+        backbone_tables<false, D, Real>(a));
+    total.finish(context);
+    if (derivative) derivative->finish(context);
+  }
+};
+using BackboneTorsionKernel = BackboneTorsionKernelT<false>;
+using BackboneTorsionPreciseKernel = BackboneTorsionKernelT<true>;
+}  // namespace tmol::jax

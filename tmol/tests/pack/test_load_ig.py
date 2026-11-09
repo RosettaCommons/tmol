@@ -998,5 +998,8 @@ def test_no_bump_graph_takes_more_blocks_than_a_block_pair_table_indexes(
         )
 
     assert len(build(False)) == 16
-    with pytest.raises((OverflowError, RuntimeError), match="block-pair dispatch"):
+    with pytest.raises(
+        (OverflowError, RuntimeError),
+        match=f"bump block pairs requires {n_blocks * n_blocks} interactions",
+    ):
         build(True)

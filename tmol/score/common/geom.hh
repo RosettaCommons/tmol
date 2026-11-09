@@ -181,6 +181,24 @@ struct pt_cos_interior_angle {
 
 template <typename Real>
 struct dihedral_angle {
+  // atan2 retains the small signed sine near planar cis/trans geometries,
+  // where acos of a float32 cosine can round a nonzero angle to zero/pi.
+  // The analytic Blondel/Karplus coordinate derivatives below are unchanged.
+  static def from_normals(Real3 A, Real3 B, Real3 G) -> Real {
+    Real norm_G = G.norm();
+    Real sine = norm_G == 0 ? Real(0) : -G.dot(A.cross(B)) / norm_G;
+    // Preserve the historical negative-pi branch for exactly planar trans
+    // geometry, including either sign of a zero scalar triple product.
+    if (sine == 0) sine = -Real(0);
+    Real cosine = A.dot(B);
+    // Keep the legacy value-only convention for missing (NaN) coordinates.
+    // The coordinate derivatives remain undefined for such geometry.
+    if (tmol::portable::math::isnan(sine)
+        || tmol::portable::math::isnan(cosine))
+      return Real(0);
+    return tmol::portable::math::atan2(sine, cosine);
+  }
+
   struct V_dV_T {
     Real V;
     Real3 dV_dI;
@@ -202,14 +220,7 @@ struct dihedral_angle {
     auto A = F.cross(G);
     auto B = H.cross(G);
 
-    Real sign = G.dot(A.cross(B)) >= 0 ? -1.0 : 1.0;
-
-    return sign
-           * tmol::portable::math::acos(
-               tmol::portable::math::fmax(
-                   (Real)-1.0,
-                   tmol::portable::math::fmin(
-                       A.dot(B) / (A.norm() * B.norm()), (Real)1.0)));
+    return from_normals(A, B, G);
   }
 
   static def V_dV(Real3 I, Real3 J, Real3 K, Real3 L) -> V_dV_T {
@@ -223,13 +234,7 @@ struct dihedral_angle {
     auto A = F.cross(G);
     auto B = H.cross(G);
 
-    Real sign = G.dot(A.cross(B)) >= 0 ? -1.0 : 1.0;
-    auto V = sign
-             * tmol::portable::math::acos(
-                 tmol::portable::math::fmax(
-                     (Real)-1.0,
-                     tmol::portable::math::fmin(
-                         A.dot(B) / (A.norm() * B.norm()), (Real)1.0)));
+    auto V = from_normals(A, B, G);
 
     return {
         V,
@@ -239,6 +244,38 @@ struct dihedral_angle {
         -G.norm() / B.dot(B) * B - F.dot(G) / (A.dot(A) * G.norm()) * A
             + (H.dot(G) / (B.dot(B) * G.norm())) * B,
         G.norm() / B.dot(B) * B};
+  }
+
+  struct Gradient {
+    Real3 dI, dJ, dK, dL;
+  };
+
+  // Directional derivative of the Blondel/Karplus gradient above. This avoids
+  // finite differences and shares torsion curvature with every native caller.
+  static def gradient_jvp(
+      Real3 I,
+      Real3 J,
+      Real3 K,
+      Real3 L,
+      Real3 dI,
+      Real3 dJ,
+      Real3 dK,
+      Real3 dL) -> Gradient {
+    auto F = I - J, G = J - K, H = L - K;
+    auto dF = dI - dJ, dG = dJ - dK, dH = dL - dK;
+    auto A = F.cross(G), B = H.cross(G);
+    auto dA = dF.cross(G) + F.cross(dG), dB = dH.cross(G) + H.cross(dG);
+    Real u = G.norm(), a = A.dot(A), b = B.dot(B);
+    Real du = G.dot(dG) / u, da = 2 * A.dot(dA), db = 2 * B.dot(dB);
+    Real p = u / a, q = F.dot(G) / (a * u), r = H.dot(G) / (b * u), t = u / b;
+    Real dp = (du - p * da) / a, dt = (du - t * db) / b;
+    Real dq = (dF.dot(G) + F.dot(dG) - q * (da * u + a * du)) / (a * u);
+    Real dr = (dH.dot(G) + H.dot(dG) - r * (db * u + b * du)) / (b * u);
+    return {
+        -dp * A - p * dA,
+        (dp + dq) * A + (p + q) * dA - dr * B - r * dB,
+        -dq * A - q * dA + (dr - dt) * B + (r - t) * dB,
+        dt * B + t * dB};
   }
 };
 

@@ -38,8 +38,10 @@ template <
     template <typename, int> class View,
     typename Real,
     typename Int,
-    int OutRank>
+    int OutRank,
+    typename GradReal = Real>
 struct ElecCtxT {
+  using GradientReal = GradReal;
   // Coordinates and the rotamer/block indexing that locates them
   View<Vec<Real, 3>, 1> rot_coords;
   View<Int, 1> rot_coord_offset;
@@ -69,7 +71,7 @@ struct ElecCtxT {
   // Outputs
   View<Real, OutRank> output;
   View<Real, OutRank> dTdV;
-  View<Vec<Real, 3>, 2> dV_dcoords;
+  View<Vec<GradReal, 3>, 2> dV_dcoords;
 
   // Enumerate the views in a fixed order, applying f to each.
   //

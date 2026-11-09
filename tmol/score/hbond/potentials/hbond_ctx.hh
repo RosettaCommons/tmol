@@ -51,8 +51,12 @@ template <
     typename PolyReal,
     int OutRank,
     int DispRank,
-    int DerivRank = 2>
+    int DerivRank = 2,
+    typename EnergyReal = Real,
+    typename GradReal = Real>
 struct HBondCtxT {
+  using Energy = EnergyReal;
+  using Gradient = GradReal;
   // Coordinates and the rotamer/block indexing that locates them
   View<Vec<Real, 3>, 1> rot_coords;
   View<Int, 1> rot_coord_offset;
@@ -92,9 +96,9 @@ struct HBondCtxT {
   View<Int, DispRank> dispatch_indices;
 
   // Outputs
-  View<Real, OutRank> output;
+  View<EnergyReal, OutRank> output;
   View<Real, OutRank> dTdV;
-  View<Vec<Real, 3>, DerivRank> dV_dcoords;
+  View<Vec<GradReal, 3>, DerivRank> dV_dcoords;
 
   // Enumerate the views in a fixed order, applying f to each.
   //

@@ -56,7 +56,11 @@ pose_stack, context = pose_stack_from_atom_array(
 Reading preserves supplied names, coordinates, hydrogens and covalent bonds;
 declared unresolved heavy atoms carry NaN coordinates. The context contains the
 parameter database, canonical ordering, and packed block types. Reuse it for
-structures with compatible chemistry.
+structures with compatible chemistry. Metal geometry, donor and site indices
+are validated;
+conflicting site declarations raise an error. Supplied hydrogens take precedence
+over imported coordination requests. Set `require_all_metal_donors=True` to
+reject any requested coordination bond missing from the final assignments.
 
 Set `prepare_ligands=False` when all required nonstandard chemistry has already
 been registered. By default, pose construction packs hydrogens with OptH; pass

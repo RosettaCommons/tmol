@@ -1,7 +1,9 @@
-import copy
+from tmol_core.pose.sequences import (
+    find_connections_in_sequences,
+    resolve_connection_pairs,
+)
 
 import itertools
-from dataclasses import replace
 
 import numpy
 import torch
@@ -22,15 +24,18 @@ from tmol.pose._pose_stack import PoseStack
 from tmol.pose._constraint_set import ConstraintSet
 from tmol.pose._split_block_mapping import SplitBlockMapping
 from tmol.utility.tensor._common_operations import (
-    _exclusive_cumsum1d,
     _exclusive_cumsum2d,
 )
 from tmol.utility import resolve_device
 
-
-def _is_leading_run(items, of) -> bool:
-    """Whether ``items`` begin ``of``, as the same objects."""
-    return len(items) <= len(of) and all(a is b for a, b in zip(items, of))
+from tmol_core.pose.concatenation import (
+    is_leading_run as _is_leading_run,
+    concatenation_layout,
+    widest_packed_block_types,
+    merged_block_types,
+    concatenate_split_mapping,
+    concatenate_pdb_info,
+)
 
 
 class PoseStackBuilder:
@@ -38,22 +43,7 @@ class PoseStackBuilder:
 
     @staticmethod
     def _widest_packed_block_types(pose_stacks):
-        """The packed block types over the largest chemical database.
-
-        Databases grow only by appending residues; each must be a leading run of it.
-        """
-        widest = max(
-            (ps.packed_block_types for ps in pose_stacks),
-            key=lambda pbt: (len(pbt.chem_db.residues), pbt.n_types),
-        )
-        for ps in pose_stacks:
-            residues = ps.packed_block_types.chem_db.residues
-            if not _is_leading_run(residues, widest.chem_db.residues):
-                raise ValueError(
-                    "pose stacks were built from chemical databases neither of "
-                    "which extends the other; build them from one context"
-                )
-        return widest
+        return widest_packed_block_types(pose_stacks)
 
     @classmethod
     @_validate_args
@@ -83,29 +73,19 @@ class PoseStackBuilder:
         if reuse_pbt:
             packed_block_types = pbt0
         else:
-            all_bt = [
-                bt
-                for pose_stack in pose_stacks
-                for bt in pose_stack.packed_block_types.active_block_types
-            ]
-            bt_set = {}
-            for bt in all_bt:
-                if bt.name not in bt_set:
-                    bt_set[bt.name] = bt
-            uniq_bt = [v for _, v in bt_set.items()]
+            uniq_bt = merged_block_types(pose_stacks)
             packed_block_types = PackedBlockTypes.from_restype_list(
                 pbt0.chem_db, pbt0.restype_set, uniq_bt, device
             )
 
-        max_n_blocks = max(pose_stack.max_n_blocks for pose_stack in pose_stacks)
+        layout = concatenation_layout(pose_stacks)
+        max_n_blocks = layout.max_n_blocks
         coords, block_coord_offset = cls._pack_pose_stack_coords(
             packed_block_types, pose_stacks, max_n_blocks, device
         )
 
-        n_poses = sum(len(ps) for ps in pose_stacks)
-        ps_offset = _exclusive_cumsum1d(
-            torch.tensor([len(ps) for ps in pose_stacks], dtype=torch.int64)
-        )
+        n_poses = layout.n_poses
+        ps_offset = torch.from_numpy(layout.pose_offsets)
 
         inter_residue_connections = cls._inter_residue_connections_from_pose_stacks(
             packed_block_types, pose_stacks, n_poses, ps_offset, max_n_blocks, device
@@ -166,37 +146,7 @@ class PoseStackBuilder:
         packed_block_types: PackedBlockTypes,
         pose_stacks: List[PoseStack],
     ) -> SplitBlockMapping | None:
-        """Concatenate split-block metadata and remap original block types."""
-        if not any(
-            pose_stack.split_block_mapping is not None
-            and pose_stack.split_block_mapping.entries
-            for pose_stack in pose_stacks
-        ):
-            return None
-
-        block_type_index_by_name = {
-            block_type.name: index
-            for index, block_type in enumerate(packed_block_types.active_block_types)
-        }
-        combined_entries = []
-        pose_offset = 0
-        for pose_stack in pose_stacks:
-            mapping = pose_stack.split_block_mapping
-            if mapping is not None:
-                source_block_types = pose_stack.packed_block_types.active_block_types
-                combined_entries.extend(
-                    replace(
-                        entry,
-                        pose_ind=pose_offset + entry.pose_ind,
-                        orig_block_type_ind=block_type_index_by_name[
-                            source_block_types[entry.orig_block_type_ind].name
-                        ],
-                    )
-                    for entry in mapping.entries
-                )
-            pose_offset += pose_stack.n_poses
-
-        return SplitBlockMapping(entries=tuple(combined_entries))
+        return concatenate_split_mapping(packed_block_types, pose_stacks)
 
     @classmethod
     @_validate_args
@@ -348,57 +298,12 @@ class PoseStackBuilder:
         must be resolved by name, such as disulfides, then handle these
         few connections one-by-one.
         """
-        ps_conn_inds = []
-        bt_inds = block_types64.cpu()
-
-        def conn_ind_for_bt(bt_ind, c_name):
-            bt = pbt.active_block_types[bt_ind]
-            return bt.connection_to_cidx[c_name]
-
-        for i, pose_conns in enumerate(residue_connections):
-            pose_conn_inds = []
-            for r1, c_name1, r2, c_name2 in pose_conns:
-                c1, c2 = None, None
-                try:
-                    bt1_ind = bt_inds[i, r1]
-                    bt2_ind = bt_inds[i, r2]
-                    c1 = conn_ind_for_bt(bt1_ind, c_name1)
-                    c2 = conn_ind_for_bt(bt2_ind, c_name2)
-                    pose_conn_inds.append((r1, c1, r2, c2))
-                except KeyError:
-                    if c1 is None:
-                        missing = (c_name1, r1, bt1_ind, c_name2, r2)
-                    else:
-                        missing = (c_name2, r2, bt2_ind, c_name1, r1)
-
-                    new_err_msg = (
-                        "Failed to find connection '"
-                        + missing[0]
-                        + "' on residue type '"
-                        + sequences[i][missing[1]]
-                        + "' which is listed as forming a chemical"
-                        + " bond to connection '"
-                        + missing[3]
-                        + "' on residue type '"
-                        + sequences[i][missing[4]]
-                        + "'\n"
-                        + "Valid connection names on '"
-                        + sequences[i][missing[1]]
-                        + "' are: "
-                        + "'"
-                        + "', '".join(
-                            x
-                            for x in pbt.active_block_types[
-                                missing[2]
-                            ].connection_to_cidx.keys()
-                            if x is not None
-                        )
-                        + "'"
-                    )
-                    raise ValueError(new_err_msg)
-
-            ps_conn_inds.append(pose_conn_inds)
-        return ps_conn_inds
+        return resolve_connection_pairs(
+            pbt.active_block_types,
+            sequences,
+            block_types64.cpu().numpy(),
+            residue_connections,
+        )
 
     @classmethod
     @_validate_args
@@ -521,63 +426,10 @@ class PoseStackBuilder:
         ps_offsets: Tensor[torch.int64][:],
         max_n_blocks: int,
     ) -> PDBInfo:
-        ps_offsets = ps_offsets.cpu().numpy()
-
-        max_n_atoms = max(ps.coords.shape[1] for ps in pose_stacks)
-
-        residue_labels = numpy.full((n_poses, max_n_blocks), 0, dtype=int)
-        residue_insertion_codes = numpy.full((n_poses, max_n_blocks), "", dtype=object)
-        chain_labels = numpy.full((n_poses, max_n_blocks), "", dtype=object)
-        atom_occupancy = numpy.full((n_poses, max_n_atoms), 1.0, dtype=numpy.float32)
-        atom_b_factor = numpy.full((n_poses, max_n_atoms), 0.0, dtype=numpy.float32)
-        metal_origins = (
-            numpy.full((n_poses, max_n_blocks), None, dtype=object)
-            if any(ps.pdb_info.metal_origins is not None for ps in pose_stacks)
-            else None
-        )
-        annotations = [ps.pdb_info.residue_annotations for ps in pose_stacks]
-        residue_annotations = (
-            numpy.zeros((n_poses, max_n_blocks), dtype=annotations[0].dtype)
-            if all(a is not None for a in annotations)
-            and len({a.dtype for a in annotations}) == 1
-            else None
-        )
-
-        for i, pose_stack in enumerate(pose_stacks):
-            offset = ps_offsets[i]
-            i_nblocks = pose_stack.pdb_info.residue_labels.shape[1]
-            if pose_stack.pdb_info.metal_origins is not None:
-                metal_origins[offset : (offset + len(pose_stack)), :i_nblocks] = (
-                    pose_stack.pdb_info.metal_origins
-                )
-            if residue_annotations is not None:
-                residue_annotations[offset : (offset + len(pose_stack)), :i_nblocks] = (
-                    pose_stack.pdb_info.residue_annotations
-                )
-            residue_labels[offset : (offset + len(pose_stack)), :i_nblocks] = (
-                pose_stack.pdb_info.residue_labels
-            )
-            residue_insertion_codes[offset : (offset + len(pose_stack)), :i_nblocks] = (
-                pose_stack.pdb_info.residue_insertion_codes
-            )
-            chain_labels[offset : (offset + len(pose_stack)), :i_nblocks] = (
-                pose_stack.pdb_info.chain_labels
-            )
-            i_natoms = pose_stack.coords.shape[1]
-            atom_occupancy[offset : (offset + len(pose_stack)), :i_natoms] = (
-                pose_stack.pdb_info.atom_occupancy
-            )
-            atom_b_factor[offset : (offset + len(pose_stack)), :i_natoms] = (
-                pose_stack.pdb_info.atom_b_factor
-            )
         return PDBInfo(
-            residue_labels=residue_labels,
-            residue_insertion_codes=residue_insertion_codes,
-            chain_labels=chain_labels,
-            atom_occupancy=atom_occupancy,
-            atom_b_factor=atom_b_factor,
-            metal_origins=metal_origins,
-            residue_annotations=residue_annotations,
+            **concatenate_pdb_info(
+                pose_stacks, n_poses, ps_offsets.cpu().numpy(), max_n_blocks
+            )
         )
 
     @classmethod
@@ -669,62 +521,7 @@ class PoseStackBuilder:
         pbt: PackedBlockTypes,
         sequences,  # List[List[str]] -- too slow to type check
     ):
-        ps_conns = []
-        trimmed_seqs = copy.deepcopy(sequences)
-        for i in range(len(sequences)):
-            labels = {}
-            p_conns = []
-            completed_labels = {}
-            for j, resname in enumerate(sequences[i]):
-                if len(resname) < 6:
-                    # X--C-I
-                    # is the shortest possible string containing
-                    # an inter-residue connection
-                    continue
-                connections = resname.split("--")
-                if len(connections) < 2:
-                    # no inter-residue connections specified here,
-                    # just a long name for the residue type
-                    continue
-                trimmed_seqs[i][j] = connections[0]
-                for conn in connections[1:]:
-                    conn_name, conn_label = conn.split("-")
-                    if conn_label in labels:
-                        partner, partner_conn_name = labels[conn_label]
-                        if partner == -1:
-                            # error: more than two inter-residue connections have
-                            # been given the same connection label
-                            prev_conn = completed_labels[conn_label]
-                            err_msg = (
-                                "Fatal error: found more than two "
-                                + "residue-connections with the "
-                                + 'same connection label: "'
-                                + conn_label
-                                + '"'
-                                + "\nPreviously encountered between residues "
-                                + str(prev_conn[0])
-                                + ", conn "
-                                + prev_conn[1]
-                                + " and "
-                                + str(prev_conn[2])
-                                + ", conn "
-                                + prev_conn[3]
-                                + " and "
-                                + "now found again for "
-                                + str(j)
-                                + " as part of the residue "
-                                + resname
-                                + "\n"
-                            )
-                            raise ValueError(err_msg)
-                        conn = (partner, partner_conn_name, j, conn_name)
-                        completed_labels[conn_label] = conn
-                        labels[conn_label] = (-1, None)
-                        p_conns.append(conn)
-                    else:
-                        labels[conn_label] = (j, conn_name)
-            ps_conns.append(p_conns)
-        return trimmed_seqs, ps_conns
+        return find_connections_in_sequences(sequences)
 
     @classmethod
     @_validate_args
@@ -810,121 +607,48 @@ class PoseStackBuilder:
         assert block_type_ind64.shape[0] == n_poses
         assert block_type_ind64.shape[1] == max_n_res
 
-        device = pbt.device
-
-        # 1) inter_residue_connections:
-        max_n_conn = pbt.max_n_conn
-        inter_residue_connections64 = torch.full(
-            (n_poses, max_n_res, max_n_conn, 2), -1, dtype=torch.int64, device=device
+        from tmol_core.pose.sequences import chain_ids_from_lengths
+        from tmol._construction_ops import _canonical_chain_endings
+        from tmol.pose._connections import _wire_canonical_connections
+        from tmol.pose._packed_block_types import (
+            _annotate_packed_block_types_w_dslf_conn_inds,
         )
 
-        # let's find the up connection indices of the n-terminal sides of
-        # each connection and the down connection indices of the c-terminal
-        # sides of each connection
-        res_is_real_and_not_n_term = real_res.clone()
-        res_is_real_and_not_n_term[:, 0] = False
-
-        res_is_real_and_not_c_term = real_res.clone()
-        npose_arange = torch.arange(n_poses, dtype=torch.int64, device=device)
-        res_is_real_and_not_c_term[npose_arange, n_res - 1] = False
-
-        connected_up_conn_inds = pbt.up_conn_inds[
-            block_type_ind64[res_is_real_and_not_c_term]
-        ].to(torch.int64)
-        connected_down_conn_inds = pbt.down_conn_inds[
-            block_type_ind64[res_is_real_and_not_n_term]
-        ].to(torch.int64)
-
-        # TO DO: handle termini patches!
-
-        (
-            nz_res_is_real_and_not_n_term_pose_ind,
-            nz_res_is_real_and_not_n_term_res_ind,
-        ) = torch.nonzero(res_is_real_and_not_n_term, as_tuple=True)
-        (
-            nz_res_is_real_and_not_c_term_pose_ind,
-            nz_res_is_real_and_not_c_term_res_ind,
-        ) = torch.nonzero(res_is_real_and_not_c_term, as_tuple=True)
-
-        inter_residue_connections64[
-            nz_res_is_real_and_not_c_term_pose_ind,
-            nz_res_is_real_and_not_c_term_res_ind,
-            connected_up_conn_inds,
-            0,  # residue id
-        ] = nz_res_is_real_and_not_n_term_res_ind
-        inter_residue_connections64[
-            nz_res_is_real_and_not_c_term_pose_ind,
-            nz_res_is_real_and_not_c_term_res_ind,
-            connected_up_conn_inds,
-            1,  # connection id
-        ] = connected_down_conn_inds
-
-        inter_residue_connections64[
-            nz_res_is_real_and_not_n_term_pose_ind,
-            nz_res_is_real_and_not_n_term_res_ind,
-            connected_down_conn_inds,
-            0,  # residue id
-        ] = nz_res_is_real_and_not_c_term_res_ind
-        inter_residue_connections64[
-            nz_res_is_real_and_not_n_term_pose_ind,
-            nz_res_is_real_and_not_n_term_res_ind,
-            connected_down_conn_inds,
-            1,  # connection id
-        ] = connected_up_conn_inds
-
-        if chain_lengths:
-            n_chains = [len(c_lens) for c_lens in chain_lengths]
-            max_n_chains_minus1 = max(n_chains) - 1
-            n_chains = torch.tensor(n_chains, dtype=torch.int64, device=device)
-            chain_lengths_t = torch.full(
-                (n_poses, max_n_chains_minus1), -1, dtype=torch.int64
+        device = pbt.device
+        chain_id = torch.from_numpy(
+            chain_ids_from_lengths(n_res.cpu().numpy(), max_n_res, chain_lengths)
+        ).to(device)
+        if not hasattr(pbt, "_sequence_polymer_flags"):
+            pbt._sequence_polymer_flags = torch.tensor(
+                [bt.properties.polymer.is_polymer for bt in pbt.active_block_types],
+                dtype=torch.bool,
+                device=device,
             )
-            for i, c_lens in enumerate(chain_lengths):
-                for j, chain_length in enumerate(c_lens):
-                    if j != len(c_lens) - 1:
-                        # we will leave off the last chain from each pose
-                        chain_lengths_t[i, j] = chain_length
-            chain_lengths_t = chain_lengths_t.to(device)
-            cl_real = chain_lengths_t != -1
-            cl_offsets = torch.cumsum(chain_lengths_t, dim=1)
-
-            # mark the first residue of each chain with a 1, then run inclusive cumsum
-            # to get chain IDs
-            cl_real_real = (chain_lengths_t != -1) & (cl_offsets <= n_res[:, None])
-            cl_real_real_pose_ind, _ = torch.nonzero(cl_real_real, as_tuple=True)
-            chain_id = torch.zeros(
-                (n_poses, max_n_res), dtype=torch.int32, device=device
-            )
-            chain_id[cl_real_real_pose_ind, cl_offsets[cl_real_real]] = 1
-            chain_id = torch.cumsum(chain_id, dim=1).to(torch.int32)
-            chain_id[torch.logical_not(real_res)] = -1
-
-            nz_cl_real_pose_ind, _ = torch.nonzero(cl_real, as_tuple=True)
-            n_term_res = cl_offsets[cl_real]
-            c_term_res = n_term_res - 1
-
-            cterm_bts = block_type_ind64[nz_cl_real_pose_ind, c_term_res]
-            up_conn_for_cterm = pbt.up_conn_inds[cterm_bts].to(torch.int64)
-
-            nterm_bts = block_type_ind64[nz_cl_real_pose_ind, n_term_res]
-            down_conn_for_nterm = pbt.down_conn_inds[nterm_bts].to(torch.int64)
-
-            # sentinel out the down connection residue and connection
-            inter_residue_connections64[
-                nz_cl_real_pose_ind, n_term_res, down_conn_for_nterm, 0:2
-            ] = -1
-            # sentinel out the up connection residue and connection
-            inter_residue_connections64[
-                nz_cl_real_pose_ind, c_term_res, up_conn_for_cterm, 0:1
-            ] = -1
-        else:
-            # everything is in a single chain, so mark the real residues as chain 0
-            chain_id = torch.full(
-                (n_poses, max_n_res), -1, dtype=torch.int32, device=device
-            )
-            chain_id[real_res] = 0
-
-        return inter_residue_connections64, chain_id
+        broken = torch.zeros((n_poses, max_n_res, 2), dtype=torch.bool, device=device)
+        empty = torch.empty((0, 3), dtype=torch.int64, device=device)
+        inputs = [
+            chain_id,
+            block_type_ind64,
+            broken,
+            real_res,
+            pbt._sequence_polymer_flags,
+            pbt.polymeric_conn_inds.to(torch.int64),
+            empty,
+            broken,
+        ]
+        if device.type == "mps":
+            inputs = [x.cpu() for x in inputs]
+        _, first, last, polymeric = _canonical_chain_endings(inputs)
+        _annotate_packed_block_types_w_dslf_conn_inds(pbt)
+        connections = _wire_canonical_connections(
+            pbt,
+            block_type_ind64,
+            polymeric.to(device),
+            first.to(device),
+            last.to(device),
+            broken,
+        )
+        return connections, chain_id
 
     @classmethod
     @_validate_args

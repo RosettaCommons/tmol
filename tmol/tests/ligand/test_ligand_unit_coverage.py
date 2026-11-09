@@ -368,7 +368,7 @@ class TestDetectHelpers:
     def test_non_authoritative_charge_models_regenerate_in_auto(
         self, monkeypatch, tmp_path, charge_model
     ) -> None:
-        import tmol.ligand._preparation as preparation
+        import tmol_core.ligand._preparation as preparation
 
         path = tmp_path / "ammonium.mol2"
         path.write_text(NEUTRALIZED_AMMONIUM_MOL2.format(charge_model=charge_model))
@@ -468,8 +468,8 @@ class TestDetectHelpers:
     ) -> None:
         from types import SimpleNamespace
 
-        import tmol.ligand._detect as detect
-        import tmol.ligand._preparation as preparation
+        import tmol_core.ligand._detect as detect
+        import tmol_core.ligand._preparation as preparation
 
         info = SimpleNamespace(skip_protonation=prepared_input)
         monkeypatch.setattr(

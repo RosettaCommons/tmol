@@ -107,7 +107,12 @@ def _extension_load_error_details(exc: OSError) -> str:
 def _resolve_negative(operator, *args, **kwargs):
     # Resolve views before native boxing so Torch owns the clone's gradient edge.
     def resolve(value):
-        return value.resolve_neg() if isinstance(value, torch.Tensor) else value
+        if isinstance(value, torch.Tensor):
+            return value.resolve_neg()
+        # Tensor-list operands participate in Negative dispatch as well.
+        if isinstance(value, (list, tuple)):
+            return type(value)(resolve(item) for item in value)
+        return value
 
     return operator(
         *(resolve(value) for value in args),

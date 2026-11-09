@@ -1,4 +1,11 @@
+from tmol_core.scoring.count_pair import packed_ljlk_distances
 import numpy
+from tmol_core.scoring.ljlk import (
+    LJLK_NATIVE_TYPE_FIELDS,
+    LJLK_NATIVE_GLOBAL_FIELDS,
+    native_ljlk_type_parameters,
+    native_ljlk_global_parameters,
+)
 import torch
 
 from .._annotation_cache import AnnotationKey, _cached_annotation, _store_annotation
@@ -123,25 +130,12 @@ class LJLKEnergyTerm(AtomTypeDependentTerm, BondDependentTerm):
             torch.as_tensor(n_heavy_ats_in_tile, device=self.device),
         )
 
-        # A pair of ligand-typed atoms uses CP_CROSSOVER_3FULL: 1-4 pairs get
-        # full weight (1.0), encoded by rewriting path_dist 3 and 4 to 5 so
-        # connectivity_weight returns 1.0. The convention follows the atoms,
-        # not the residue: a noncanonical whose sidechain is ligand-typed is
-        # still a polymer. Keep bond_separation unchanged for hbond, which
-        # excludes on a binary rule.
-        rosetta_typed = self.rosetta_typed
-        ljlk_bond_separation = packed_block_types.bond_separation.clone()
-        ligand = numpy.zeros(ljlk_bond_separation.shape[:2], dtype=bool)
-        all_ligand = numpy.zeros(len(ligand), dtype=numpy.int32)
-        for i, bt in enumerate(packed_block_types.active_block_types):
-            typed = [a.atom_type not in rosetta_typed for a in bt.atoms]
-            ligand[i, : len(typed)] = typed
-            all_ligand[i] = all(typed)
-        ligand = torch.from_numpy(ligand).to(ljlk_bond_separation.device)
-        both = ligand.unsqueeze(2) & ligand.unsqueeze(1)
-        ljlk_bond_separation[
-            both & ((ljlk_bond_separation == 3) | (ljlk_bond_separation == 4))
-        ] = 5
+        distances, all_ligand = packed_ljlk_distances(
+            packed_block_types.active_block_types,
+            packed_block_types.max_n_atoms,
+            self.rosetta_typed,
+        )
+        ljlk_bond_separation = torch.from_numpy(distances).to(self.device)
         setattr(packed_block_types, "ljlk_bond_separation", ljlk_bond_separation)
         setattr(
             packed_block_types,
@@ -197,46 +191,20 @@ class LJLKEnergyTerm(AtomTypeDependentTerm, BondDependentTerm):
     def get_score_term_attributes(self, pose_stack):
         annotation = self.setup_packed_block_types(pose_stack.packed_block_types)
 
-        def _t(ts):
-            return tuple(map(lambda t: t.to(torch.float), ts))
+        def host_fields(record, fields):
+            return {name: getattr(record, name).numpy(force=True) for name in fields}
 
-        type_params = torch.stack(
-            _t(
-                [
-                    self.type_params.lj_radius,
-                    torch.sqrt(self.type_params.lj_wdepth),
-                    self.type_params.lk_dgfree,
-                    self.type_params.lk_lambda,
-                    self.type_params.lk_volume,
-                    self.type_params.is_donor,
-                    self.type_params.is_hydroxyl,
-                    self.type_params.is_polarh,
-                    self.type_params.is_acceptor,
-                    self.type_params.is_carbon_lk,
-                    self.type_params.is_hydrogen,
-                    -self.type_params.lk_dgfree
-                    / (2 * 5.56832799683 * self.type_params.lk_lambda),
-                    1 / (self.type_params.lk_lambda * self.type_params.lk_lambda),
-                ]
-            ),
-            dim=1,
-        )
-        global_params = torch.stack(
-            _t(
-                [
-                    self.global_params.max_dis,
-                    (
-                        self.global_params.lj_dlin_sigma_factor_soft
-                        if self.soft_repulsive
-                        else self.global_params.lj_dlin_sigma_factor
-                    ),
-                    self.global_params.lj_hbond_dis,
-                    self.global_params.lj_hbond_OH_donor_dis,
-                    self.global_params.lj_hbond_hdis,
-                ]
-            ),
-            dim=1,
-        )
+        type_params = torch.from_numpy(
+            native_ljlk_type_parameters(
+                host_fields(self.type_params, LJLK_NATIVE_TYPE_FIELDS)
+            )
+        ).to(self.device)
+        global_params = torch.from_numpy(
+            native_ljlk_global_parameters(
+                host_fields(self.global_params, LJLK_NATIVE_GLOBAL_FIELDS),
+                self.soft_repulsive,
+            )
+        ).to(self.device)
         return [
             pose_stack.inter_block_bondsep.near_blocks,
             pose_stack.inter_block_bondsep.bondsep,

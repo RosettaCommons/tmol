@@ -36,14 +36,14 @@
 #include <tmol/utility/portable/device.hh>
 #include <tmol/utility/portable/metal_view.hh>
 
-// The maximum number of inter-residue chemical bonds
-#define MAX_N_CONN 12
-#define TILE_SIZE 32
-
 namespace tmol {
 namespace score {
 namespace hbond {
 namespace potentials {
+
+// Scoped capacities: including this kernel must not rewrite other terms'
+// template arguments or leak its private callback macros into a frontend.
+enum : int { MAX_N_CONN = 12, TILE_SIZE = 32 };
 
 using tmol::portable::Vec;
 using tmol::score::common::accumulate;
@@ -85,57 +85,62 @@ union HBondSharedMem {
 };
 
 // done
-#define HBOND_ATOM_ENERGY                                                      \
-  TMOL_DEVICE_FUNC(                                                            \
-      int don_ind,                                                             \
-      int acc_ind,                                                             \
-      int don_tile_ind,                                                        \
-      int acc_tile_ind,                                                        \
-      int don_start,                                                           \
-      int acc_start,                                                           \
-      TMOL_THREAD HBondSingleResData<Real> const& don_dat,                     \
-      TMOL_THREAD HBondSingleResData<Real> const& acc_dat,                     \
-      TMOL_THREAD HBondRotPairData<Real> const& respair_dat,                   \
-      int cp_separation) {                                                     \
-    if (cp_separation < 5) {                                                   \
-      return Real(0.0);                                                        \
-    }                                                                          \
-    if (accumulate_derivs) {                                                   \
-      Real val = hbond_atom_energy_and_derivs_full<TILE_SIZE, Dev, Real, Int>( \
-          don_ind,                                                             \
-          acc_ind,                                                             \
-          don_tile_ind,                                                        \
-          acc_tile_ind,                                                        \
-          don_start,                                                           \
-          acc_start,                                                           \
-          don_dat,                                                             \
-          acc_dat,                                                             \
-          respair_dat,                                                         \
-          cp_separation,                                                       \
-          ctx.derived_coords,                                                  \
-          ctx.derived_atom_inds,                                               \
-          ctx.pair_params,                                                     \
-          ctx.pair_polynomials,                                                \
-          ctx.dV_dcoords);                                                     \
-      return val;                                                              \
-    } else {                                                                   \
-      Real val = hbond_atom_energy_full<TILE_SIZE, Real, Int>(                 \
-          don_ind,                                                             \
-          acc_ind,                                                             \
-          don_tile_ind,                                                        \
-          acc_tile_ind,                                                        \
-          don_start,                                                           \
-          acc_start,                                                           \
-          don_dat,                                                             \
-          acc_dat,                                                             \
-          respair_dat,                                                         \
-          cp_separation,                                                       \
-          ctx.derived_coords,                                                  \
-          ctx.derived_atom_inds,                                               \
-          ctx.pair_params,                                                     \
-          ctx.pair_polynomials);                                               \
-      return val;                                                              \
-    }                                                                          \
+#define HBOND_ATOM_ENERGY                                      \
+  TMOL_DEVICE_FUNC(                                            \
+      int don_ind,                                             \
+      int acc_ind,                                             \
+      int don_tile_ind,                                        \
+      int acc_tile_ind,                                        \
+      int don_start,                                           \
+      int acc_start,                                           \
+      TMOL_THREAD HBondSingleResData<Real> const& don_dat,     \
+      TMOL_THREAD HBondSingleResData<Real> const& acc_dat,     \
+      TMOL_THREAD HBondRotPairData<Real> const& respair_dat,   \
+      int cp_separation) {                                     \
+    if (cp_separation < 5) {                                   \
+      return Real(0.0);                                        \
+    }                                                          \
+    if (accumulate_derivs) {                                   \
+      Real val = hbond_atom_energy_and_derivs_full<            \
+          TILE_SIZE,                                           \
+          Dev,                                                 \
+          Real,                                                \
+          Int,                                                 \
+          typename Ctx::Gradient>(                             \
+          don_ind,                                             \
+          acc_ind,                                             \
+          don_tile_ind,                                        \
+          acc_tile_ind,                                        \
+          don_start,                                           \
+          acc_start,                                           \
+          don_dat,                                             \
+          acc_dat,                                             \
+          respair_dat,                                         \
+          cp_separation,                                       \
+          ctx.derived_coords,                                  \
+          ctx.derived_atom_inds,                               \
+          ctx.pair_params,                                     \
+          ctx.pair_polynomials,                                \
+          ctx.dV_dcoords);                                     \
+      return val;                                              \
+    } else {                                                   \
+      Real val = hbond_atom_energy_full<TILE_SIZE, Real, Int>( \
+          don_ind,                                             \
+          acc_ind,                                             \
+          don_tile_ind,                                        \
+          acc_tile_ind,                                        \
+          don_start,                                           \
+          acc_start,                                           \
+          don_dat,                                             \
+          acc_dat,                                             \
+          respair_dat,                                         \
+          cp_separation,                                       \
+          ctx.derived_coords,                                  \
+          ctx.derived_atom_inds,                               \
+          ctx.pair_params,                                     \
+          ctx.pair_polynomials);                               \
+      return val;                                              \
+    }                                                          \
   }
 
 // done
@@ -324,33 +329,34 @@ union HBondSharedMem {
   }
 
 // done
-#define STORE_POSE_CALCULATED_ENERGIES                                         \
-  TMOL_DEVICE_FUNC(                                                            \
-      TMOL_THREAD HBondScoringData<Real>& score_dat,                           \
-      TMOL_SHARED_REF(shared_mem_union) shared) {                              \
-    auto reduce_energies = ([&](int tid) {                                     \
-      Real const cta_total_hbond =                                             \
-          DeviceDispatch<Dev>::template reduce_in_workgroup<nt>(               \
-              score_dat.pair_data.total_hbond,                                 \
-              shared,                                                          \
-              tmol::portable::plus_t<Real>(),                                  \
-              lane);                                                           \
-      if (tid == 0) {                                                          \
-        if (ctx.output_block_pair_energies) {                                  \
-          int const p = score_dat.pair_data.pose_ind;                          \
-          int const a_ind = score_dat.r1.block_ind;                            \
-          int const b_ind = score_dat.r2.block_ind;                            \
-          int const b1 = min(a_ind, b_ind);                                    \
-          int const b2 = max(a_ind, b_ind);                                    \
-          ctx.output[0][p][b1][b2] = cta_total_hbond;                          \
-        } else {                                                               \
-          int const p = score_dat.pair_data.pose_ind;                          \
-          accumulate<Dev, Real>::add(ctx.output[0][p][0][0], cta_total_hbond); \
-        }                                                                      \
-      }                                                                        \
-    });                                                                        \
-    DeviceDispatch<Dev>::template for_each_in_workgroup<nt>(                   \
-        reduce_energies, lane);                                                \
+#define STORE_POSE_CALCULATED_ENERGIES                           \
+  TMOL_DEVICE_FUNC(                                              \
+      TMOL_THREAD HBondScoringData<Real>& score_dat,             \
+      TMOL_SHARED_REF(shared_mem_union) shared) {                \
+    auto reduce_energies = ([&](int tid) {                       \
+      Real const cta_total_hbond =                               \
+          DeviceDispatch<Dev>::template reduce_in_workgroup<nt>( \
+              score_dat.pair_data.total_hbond,                   \
+              shared,                                            \
+              tmol::portable::plus_t<Real>(),                    \
+              lane);                                             \
+      if (tid == 0) {                                            \
+        if (ctx.output_block_pair_energies) {                    \
+          int const p = score_dat.pair_data.pose_ind;            \
+          int const a_ind = score_dat.r1.block_ind;              \
+          int const b_ind = score_dat.r2.block_ind;              \
+          int const b1 = min(a_ind, b_ind);                      \
+          int const b2 = max(a_ind, b_ind);                      \
+          ctx.output[0][p][b1][b2] = cta_total_hbond;            \
+        } else {                                                 \
+          int const p = score_dat.pair_data.pose_ind;            \
+          accumulate<Dev, typename Ctx::Energy>::add(            \
+              ctx.output[0][p][0][0], cta_total_hbond);          \
+        }                                                        \
+      }                                                          \
+    });                                                          \
+    DeviceDispatch<Dev>::template for_each_in_workgroup<nt>(     \
+        reduce_energies, lane);                                  \
   }
 
 #define STORE_ROTAMER_CALCULATED_ENERGIES                        \
@@ -795,29 +801,20 @@ template <
     typename Real,
     typename Int,
     typename launch_t,
-    bool AccumulateDerivs,
     typename Ctx,
-    typename Shared>
-TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_energies(
+    typename Shared,
+    typename AtomEnergy,
+    typename Store>
+TMOL_HOST_DEVICE_FUNC void hbond_rotamer_evaluate(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
+    AtomEnergy hbond_atom_energy,
+    Store store_calculated_energies,
     WorkgroupLane<Dev> lane = {}) {
   CTA_LAUNCH_T_PARAMS;
   typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
       shared_mem_union;
-  // Compile-time, not `ctx.accumulate_derivs`. The two branches of
-  // HBOND_ATOM_ENERGY are both valid code, so a plain `if` on a constant is
-  // enough for the optimizer to drop the unused one -- and dropping the
-  // derivative branch is worth real occupancy: it takes this entry's
-  // maxTotalThreadsPerThreadgroup from 384 to 448. Packing never wants
-  // derivatives, so the launcher picks the energies-only instantiation for
-  // every call it makes; the other exists so a gradient-carrying rotamer call
-  // is still correct rather than silently wrong.
-  bool const accumulate_derivs = AccumulateDerivs;
-
-  auto hbond_atom_energy = ([TMOL_CAPTURE_CTX] HBOND_ATOM_ENERGY);
-
   auto score_inter_hbond_atom_pair =
       ([TMOL_CAPTURE_CTX] SCORE_INTER_HBOND_ATOM_PAIR);
 
@@ -858,9 +855,6 @@ TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_energies(
 
   auto eval_interres_atom_pair_scores =
       ([TMOL_CAPTURE_CTX] EVAL_INTERRES_ATOM_PAIR_SCORES);
-
-  auto store_calculated_energies =
-      ([TMOL_CAPTURE_CTX] STORE_ROTAMER_CALCULATED_ENERGIES);
 
   auto load_tile_invariant_intrares_data =
       ([TMOL_CAPTURE_CTX] LOAD_TILE_INVARIANT_INTRARES_DATA);
@@ -909,7 +903,116 @@ TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_energies(
       lane);
 }
 
+template <
+    template <tmol::Device> class DeviceDispatch,
+    tmol::Device Dev,
+    typename Real,
+    typename Int,
+    typename launch_t,
+    bool AccumulateDerivs,
+    typename Ctx,
+    typename Shared>
+TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_energies(
+    TMOL_THREAD Ctx const& ctx,
+    TMOL_SHARED_REF(Shared) shared,
+    int cta,
+    WorkgroupLane<Dev> lane = {}) {
+  CTA_LAUNCH_T_PARAMS;
+  using shared_mem_union =
+      HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>;
+  // Compile-time, not `ctx.accumulate_derivs`. The two branches of
+  // HBOND_ATOM_ENERGY are both valid code, so a plain `if` on a constant is
+  // enough for the optimizer to drop the unused one -- and dropping the
+  // derivative branch is worth real occupancy: it takes this entry's
+  // maxTotalThreadsPerThreadgroup from 384 to 448. Packing never wants
+  // derivatives, so the launcher picks the energies-only instantiation for
+  // every call it makes; the other exists so a gradient-carrying rotamer call
+  // is still correct rather than silently wrong.
+  bool const accumulate_derivs = AccumulateDerivs;
+
+  auto hbond_atom_energy = ([TMOL_CAPTURE_CTX] HBOND_ATOM_ENERGY);
+
+  auto store_calculated_energies =
+      ([TMOL_CAPTURE_CTX] STORE_ROTAMER_CALCULATED_ENERGIES);
+  hbond_rotamer_evaluate<DeviceDispatch, Dev, Real, Int, launch_t>(
+      ctx, shared, cta, hbond_atom_energy, store_calculated_energies, lane);
+}
+
+template <
+    template <tmol::Device> class DeviceDispatch,
+    tmol::Device Dev,
+    typename Real,
+    typename Int,
+    typename launch_t,
+    typename Ctx,
+    typename Shared>
+TMOL_HOST_DEVICE_FUNC void hbond_rotamer_eval_derivs(
+    TMOL_THREAD Ctx const& ctx,
+    TMOL_SHARED_REF(Shared) shared,
+    int cta,
+    WorkgroupLane<Dev> lane = {}) {
+  CTA_LAUNCH_T_PARAMS;
+  using shared_mem_union =
+      HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>;
+  auto hbond_atom_energy =
+      ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
+           int don_ind,
+           int acc_ind,
+           int don_tile_ind,
+           int acc_tile_ind,
+           int don_start,
+           int acc_start,
+           TMOL_THREAD HBondSingleResData<Real> const& don_dat,
+           TMOL_THREAD HBondSingleResData<Real> const& acc_dat,
+           TMOL_THREAD HBondRotPairData<Real> const& respair_dat,
+           int cp_separation) {
+        if (cp_separation < 5) {
+          return Real(0.0);
+        }
+        hbond_atom_derivs<TILE_SIZE, Dev, Real, Int>(
+            don_ind,
+            acc_ind,
+            don_tile_ind,
+            acc_tile_ind,
+            don_start,
+            acc_start,
+            don_dat,
+            acc_dat,
+            respair_dat,
+            cp_separation,
+            ctx.dTdV[0][cta],
+            ctx.derived_coords,
+            ctx.derived_atom_inds,
+            ctx.pair_params,
+            ctx.pair_polynomials,
+            ctx.dV_dcoords);
+        return Real(0.0);
+      });
+
+  auto store_calculated_energies = [TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(
+                                       TMOL_THREAD HBondScoringData<Real>&,
+                                       TMOL_SHARED_REF(shared_mem_union)) {};
+  hbond_rotamer_evaluate<DeviceDispatch, Dev, Real, Int, launch_t>(
+      ctx, shared, cta, hbond_atom_energy, store_calculated_energies, lane);
+}
+
 }  // namespace potentials
 }  // namespace hbond
 }  // namespace score
 }  // namespace tmol
+
+#undef HBOND_ATOM_ENERGY
+#undef SCORE_INTER_HBOND_ATOM_PAIR
+#undef SCORE_INTRA_HBOND_ATOM_PAIR
+#undef LOAD_TILE_INVARIANT_INTERRES_DATA
+#undef LOAD_INTERRES1_TILE_DATA_TO_SHARED
+#undef LOAD_INTERRES2_TILE_DATA_TO_SHARED
+#undef LOAD_INTERRES_DATA_FROM_SHARED
+#undef EVAL_INTERRES_ATOM_PAIR_SCORES
+#undef STORE_POSE_CALCULATED_ENERGIES
+#undef STORE_ROTAMER_CALCULATED_ENERGIES
+#undef LOAD_TILE_INVARIANT_INTRARES_DATA
+#undef LOAD_INTRARES1_TILE_DATA_TO_SHARED
+#undef LOAD_INTRARES2_TILE_DATA_TO_SHARED
+#undef LOAD_INTRARES_DATA_FROM_SHARED
+#undef EVAL_INTRARES_ATOM_PAIR_SCORES

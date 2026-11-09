@@ -1,4 +1,5 @@
 #include <tmol/utility/tensor/native_library.hh>
+#include <tmol/utility/tensor/autograd_operator.hh>
 
 #include <limits>
 
@@ -736,74 +737,8 @@ class LJLKRotamerScoreOp : public tmol::native::autograd::Function<
   }
 };
 
-template <template <tmol::Device> class DispatchMethod>
-std::vector<Tensor> ljlk_pose_scores_op(
-    // common params
-    Tensor rot_coords,
-    Tensor rot_coord_offset,
-    Tensor pose_ind_for_atom,
-    Tensor first_rot_for_block,
-    Tensor first_rot_block_type,
-    Tensor block_ind_for_rot,
-    Tensor pose_ind_for_rot,
-    Tensor block_type_ind_for_rot,
-    Tensor n_rots_for_pose,
-    Tensor rot_offset_for_pose,
-    Tensor n_rots_for_block,
-    Tensor rot_offset_for_block,
-    int64_t max_n_rots_per_pose,
-
-    Tensor pose_stack_near_blocks,
-    Tensor pose_stack_inter_block_bondsep,
-    Tensor block_type_n_atoms,
-    Tensor block_type_n_heavy_atoms_in_tile,
-
-    Tensor block_type_heavy_atoms_in_tile,
-    Tensor block_type_atom_types,
-    Tensor block_type_n_interblock_bonds,
-    Tensor block_type_atoms_forming_chemical_bonds,
-    Tensor block_type_path_distance,
-    Tensor block_type_all_atoms_ligand_typed,
-
-    Tensor ljlk_type_params,
-    Tensor global_params,
-    double max_dis,
-    bool output_block_pair_energies,
-    Tensor shared_compact_block_neighbors) {
-  return LJLKPoseScoreOp<DispatchMethod>::apply(
-      // common params
-      rot_coords,
-      rot_coord_offset,
-      pose_ind_for_atom,
-      first_rot_for_block,
-      first_rot_block_type,
-      block_ind_for_rot,
-      pose_ind_for_rot,
-      block_type_ind_for_rot,
-      n_rots_for_pose,
-      rot_offset_for_pose,
-      n_rots_for_block,
-      rot_offset_for_block,
-      max_n_rots_per_pose,
-
-      pose_stack_near_blocks,
-      pose_stack_inter_block_bondsep,
-      block_type_n_atoms,
-      block_type_n_heavy_atoms_in_tile,
-
-      block_type_heavy_atoms_in_tile,
-      block_type_atom_types,
-      block_type_n_interblock_bonds,
-      block_type_atoms_forming_chemical_bonds,
-      block_type_path_distance,
-      block_type_all_atoms_ligand_typed,
-
-      ljlk_type_params,
-      global_params,
-      max_dis,
-      output_block_pair_energies,
-      shared_compact_block_neighbors);
-}
+using ljlk_pose_scores_op_binding =
+    native::AutogradOperator<LJLKPoseScoreOp<common::DeviceOperations>>;
 
 template <template <tmol::Device> class DispatchMethod>
 std::vector<Tensor> ljlk_elec_pose_scores_op(
@@ -869,80 +804,11 @@ std::vector<Tensor> ljlk_elec_pose_scores_op(
       n_valid_rots);
 }
 
-template <template <tmol::Device> class DispatchMethod>
-std::vector<Tensor> ljlk_elec_weighted_pose_scores_op(
-    Tensor rot_coords,
-    Tensor rot_coord_offset,
-    Tensor pose_ind_for_atom,
-    Tensor first_rot_for_block,
-    Tensor first_rot_block_type,
-    Tensor block_ind_for_rot,
-    Tensor pose_ind_for_rot,
-    Tensor block_type_ind_for_rot,
-    Tensor n_rots_for_pose,
-    Tensor rot_offset_for_pose,
-    Tensor n_rots_for_block,
-    Tensor rot_offset_for_block,
-    int64_t max_n_rots_per_pose,
-    Tensor pose_stack_near_blocks,
-    Tensor pose_stack_inter_block_bondsep,
-    Tensor block_type_n_atoms,
-    Tensor block_type_atom_types,
-    Tensor block_type_n_interblock_bonds,
-    Tensor block_type_atoms_forming_chemical_bonds,
-    Tensor block_type_ljlk_path_distance,
-    Tensor block_type_all_atoms_ligand_typed,
-    Tensor ljlk_type_params,
-    Tensor ljlk_global_params,
-    Tensor block_type_partial_charge,
-    Tensor block_type_elec_inter_repr_path_distance,
-    Tensor block_type_elec_intra_repr_path_distance,
-    Tensor elec_global_params,
-    Tensor shared_compact_block_neighbors,
-    Tensor score_weights,
-    int64_t n_valid_rots) {
-  return LJLKAndElecPoseScoreOp<DispatchMethod, true>::apply(
-      rot_coords,
-      rot_coord_offset,
-      pose_ind_for_atom,
-      first_rot_for_block,
-      first_rot_block_type,
-      block_ind_for_rot,
-      pose_ind_for_rot,
-      block_type_ind_for_rot,
-      n_rots_for_pose,
-      rot_offset_for_pose,
-      n_rots_for_block,
-      rot_offset_for_block,
-      max_n_rots_per_pose,
-      pose_stack_near_blocks,
-      pose_stack_inter_block_bondsep,
-      block_type_n_atoms,
-      block_type_atom_types,
-      block_type_n_interblock_bonds,
-      block_type_atoms_forming_chemical_bonds,
-      block_type_ljlk_path_distance,
-      block_type_all_atoms_ligand_typed,
-      ljlk_type_params,
-      ljlk_global_params,
-      block_type_partial_charge,
-      block_type_elec_inter_repr_path_distance,
-      block_type_elec_intra_repr_path_distance,
-      elec_global_params,
-      shared_compact_block_neighbors,
-      score_weights,
-      n_valid_rots);
-}
+using ljlk_elec_weighted_pose_scores_op_binding = native::AutogradOperator<
+    LJLKAndElecPoseScoreOp<common::DeviceOperations, true>>;
 
-template <template <tmol::Device> class DispatchMethod>
-std::vector<Tensor> weighted_fused_score_sum_op(
-    Tensor score_lanes,
-    Tensor score_weights,
-    int64_t fused_weight_begin,
-    int64_t fused_weight_width) {
-  return WeightedFusedScoreSumOp<DispatchMethod>::apply(
-      score_lanes, score_weights, fused_weight_begin, fused_weight_width);
-}
+using weighted_fused_score_sum_op_binding =
+    native::AutogradOperator<WeightedFusedScoreSumOp<common::DeviceOperations>>;
 
 std::vector<Tensor> build_compact_block_neighbors_op(
     Tensor rot_coords,
@@ -1001,74 +867,8 @@ std::vector<Tensor> build_compact_block_neighbors_op(
   return {neighbor_indices};
 }
 
-template <template <tmol::Device> class DispatchMethod>
-std::vector<Tensor> ljlk_rotamer_scores_op(
-    // common params
-    Tensor rot_coords,
-    Tensor rot_coord_offset,
-    Tensor pose_ind_for_atom,
-    Tensor first_rot_for_block,
-    Tensor first_rot_block_type,
-    Tensor block_ind_for_rot,
-    Tensor pose_ind_for_rot,
-    Tensor block_type_ind_for_rot,
-    Tensor n_rots_for_pose,
-    Tensor rot_offset_for_pose,
-    Tensor n_rots_for_block,
-    Tensor rot_offset_for_block,
-    Tensor lockstep_group_for_block,
-    int64_t max_n_rots_per_pose,
-
-    Tensor pose_stack_near_blocks,
-    Tensor pose_stack_inter_block_bondsep,
-    Tensor block_type_n_atoms,
-    Tensor block_type_n_heavy_atoms_in_tile,
-
-    Tensor block_type_heavy_atoms_in_tile,
-    Tensor block_type_atom_types,
-    Tensor block_type_n_interblock_bonds,
-    Tensor block_type_atoms_forming_chemical_bonds,
-    Tensor block_type_path_distance,
-    Tensor block_type_all_atoms_ligand_typed,
-
-    Tensor ljlk_type_params,
-    Tensor global_params,
-    double max_dis,
-    bool output_block_pair_energies) {
-  return LJLKRotamerScoreOp<DispatchMethod>::apply(
-      // common params
-      rot_coords,
-      rot_coord_offset,
-      pose_ind_for_atom,
-      first_rot_for_block,
-      first_rot_block_type,
-      block_ind_for_rot,
-      pose_ind_for_rot,
-      block_type_ind_for_rot,
-      n_rots_for_pose,
-      rot_offset_for_pose,
-      n_rots_for_block,
-      rot_offset_for_block,
-      lockstep_group_for_block,
-      max_n_rots_per_pose,
-
-      pose_stack_near_blocks,
-      pose_stack_inter_block_bondsep,
-      block_type_n_atoms,
-      block_type_n_heavy_atoms_in_tile,
-
-      block_type_heavy_atoms_in_tile,
-      block_type_atom_types,
-      block_type_n_interblock_bonds,
-      block_type_atoms_forming_chemical_bonds,
-      block_type_path_distance,
-      block_type_all_atoms_ligand_typed,
-
-      ljlk_type_params,
-      global_params,
-      max_dis,
-      output_block_pair_energies);
-}
+using ljlk_rotamer_scores_op_binding =
+    native::AutogradOperator<LJLKRotamerScoreOp<common::DeviceOperations>>;
 
 template <template <tmol::Device> class DispatchMethod>
 Tensor ljlk_elec_rotamer_dispatch_op(
@@ -1234,7 +1034,7 @@ std::vector<Tensor> ljlk_elec_weighted_rotamer_scores_op(
 
 // See https://stackoverflow.com/a/3221914
 TMOL_LIBRARY(tmol_ljlk, m) {
-  m.def("ljlk_pose_scores", TMOL_FN(&ljlk_pose_scores_op<DeviceOperations>));
+  m.def("ljlk_pose_scores", TMOL_FN(&ljlk_pose_scores_op_binding::call));
   // Preserve the inferred argument names for existing callers while adding
   // an optional topology hint used only to choose the CUDA launch strategy.
   m.def(
@@ -1262,13 +1062,11 @@ TMOL_LIBRARY(tmol_ljlk, m) {
       "Tensor _21, Tensor _22, Tensor _23, "
       "Tensor _24, Tensor _25, Tensor _26, "
       "Tensor _27, Tensor _28, int n_valid_rots=-1) -> Tensor[] _0",
-      TMOL_FN(&ljlk_elec_weighted_pose_scores_op<DeviceOperations>));
+      TMOL_FN(&ljlk_elec_weighted_pose_scores_op_binding::call));
   m.def(
       "weighted_fused_score_sum",
-      TMOL_FN(&weighted_fused_score_sum_op<DeviceOperations>));
-  m.def(
-      "ljlk_rotamer_scores",
-      TMOL_FN(&ljlk_rotamer_scores_op<DeviceOperations>));
+      TMOL_FN(&weighted_fused_score_sum_op_binding::call));
+  m.def("ljlk_rotamer_scores", TMOL_FN(&ljlk_rotamer_scores_op_binding::call));
   m.def(
       "ljlk_elec_rotamer_dispatch",
       TMOL_FN(&ljlk_elec_rotamer_dispatch_op<DeviceOperations>));

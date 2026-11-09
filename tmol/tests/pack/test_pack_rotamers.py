@@ -1103,8 +1103,13 @@ def test_pack_rotamers_w_cst(
         torch.cuda.synchronize()
 
 
-def test_pack_rotamers_w_empty_interaction_graph(
-    default_database, disulfide_pdb, dun_sampler, torch_device
+@pytest.mark.parametrize(
+    "score_function_factory",
+    (get_constraints_only_sfxn, get_packer_sfxn),
+    ids=("empty_interaction_graph", "disulfide"),
+)
+def test_pack_rotamers_with_disulfide_pose(
+    default_database, disulfide_pdb, dun_sampler, torch_device, score_function_factory
 ):
     n_poses = 4
     p = pose_stack_from_file(
@@ -1117,52 +1122,7 @@ def test_pack_rotamers_w_empty_interaction_graph(
         [p] * n_poses, torch_device, dun_sampler
     )
     task = SetPackerTask.from_packer_task(task)
-    sfxn = get_constraints_only_sfxn(default_database, torch_device)
-    pose_stack, rotamer_set = build_rotamers(
-        pose_stack, task, pose_stack.packed_block_types.chem_db
-    )
-    (
-        rotamer_for_nonmolten_block,
-        n_molten_blocks_per_pose,
-        bc_rot_offset_for_molten_block,
-        bc_rot_to_orig_rot,
-        bg_bg_energies,
-        packer_energy_tables,
-    ) = build_packer_energy_tables(pose_stack, rotamer_set, sfxn)
-    # bg_bg_energies, packer_energy_tables = build_packer_energy_tables(
-    #     pose_stack, rotamer_set, sfxn
-    # )
-    _, _ = run_pack_and_assert_scores(
-        pose_stack,
-        rotamer_set,
-        packer_energy_tables,
-        sfxn,
-        rotamer_for_nonmolten_block,
-        n_molten_blocks_per_pose,
-        bc_rot_offset_for_molten_block,
-        bc_rot_to_orig_rot,
-        bg_bg_energies,
-    )
-    # run_pack_and_assert_scores(
-    #     pose_stack, rotamer_set, packer_energy_tables, sfxn, bg_bg_energies
-    # )
-
-
-def test_pack_rotamers_w_dslf(
-    default_database, disulfide_pdb, dun_sampler, torch_device
-):
-    n_poses = 4
-    p = pose_stack_from_file(
-        disulfide_pdb,
-        torch_device,
-        no_optH=True,
-        missing_density_distance_threshold=0.0,
-    )
-    pose_stack, task = setup_pose_stack_and_task(
-        [p] * n_poses, torch_device, dun_sampler
-    )
-    task = SetPackerTask.from_packer_task(task)
-    sfxn = get_packer_sfxn(default_database, torch_device)
+    sfxn = score_function_factory(default_database, torch_device)
     pose_stack, rotamer_set = build_rotamers(
         pose_stack, task, pose_stack.packed_block_types.chem_db
     )
@@ -1272,3 +1232,21 @@ def test_pack_a_capped_structure(stem, torch_device):
     after = packed.block_type_ind64.cpu()
     assert torch.equal(before, after), "repacking must not change the cap types"
     assert torch.all(torch.isfinite(packed.coords))
+
+
+def test_common_packing_budget_and_page_conservation():
+    from tmol_core.pack.streaming import packing_pose_chunk_size, packing_windows
+
+    previous = 0
+    for free_bytes in (0, 1 << 20, 1 << 30, 1 << 40):
+        count = packing_pose_chunk_size(76, free_bytes)
+        assert previous <= count <= 25
+        assert count == 1 or count * 76 * (2 << 20) <= free_bytes // 4
+        previous = count
+    assert packing_pose_chunk_size(76, 0, "7") == 7
+    for count in (0, 1, 7, 8, 18):
+        pages = list(packing_windows(count, 7))
+        assert all(0 < size <= 7 for _, size in pages)
+        assert [i for begin, size in pages for i in range(begin, begin + size)] == list(
+            range(count)
+        )

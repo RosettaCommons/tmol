@@ -223,3 +223,59 @@ def test_closure_rotamer_pairs_reach_the_packer(
     block_for_rot = rotamer_set.block_ind_for_rot
     pairs = {(int(a), int(b)) for a, b in zip(block_for_rot[rot1], block_for_rot[rot2])}
     assert (0, len(SEQUENCE) - 1) in pairs
+
+
+@pytest.mark.parametrize("names", [("ALA", "PRO"), ("DALA", "DPRO")])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_two_residue_cycle_scores_both_directions(
+    default_database, torch_device, names, dtype
+):
+    """A unique conformer pair must include each directed peptide bond once."""
+    from tmol import PackedBlockTypes, PoseStackBuilder
+    from tmol.chemical._restypes import ResidueTypeSet
+
+    restypes = ResidueTypeSet.from_database(default_database.chemical)
+    by_name = {bt.name: bt for bt in restypes.residue_types}
+    types = [by_name[name] for name in names]
+    pbt = PackedBlockTypes.from_restype_list(
+        default_database.chemical, restypes, types, torch_device
+    )
+    pose = PoseStackBuilder.from_block_type_names(
+        pbt, [[names[0] + "--down-close", names[1] + "--up-close"]], [[2]]
+    )
+    rng = numpy.random.default_rng(237)
+    for block, bt in enumerate(types):
+        start = int(pose.block_coord_offset[0, block])
+        xyz = bt.ideal_coords[bt.at_to_icoor_ind].copy()
+        xyz += rng.normal(0, 0.04, xyz.shape) + numpy.array(
+            [3.2 * block, 0.3 * block, 0]
+        )
+        pose.coords[0, start : start + len(xyz)] = torch.as_tensor(
+            xyz, device=torch_device
+        )
+    task = PackerTask(pose, PackerPalette())
+    task.restrict_to_repacking()
+    task.add_conformer_sampler(IncludeCurrentSampler())
+    pose, rots = build_rotamers(
+        pose, SetPackerTask.from_packer_task(task), default_database.chemical
+    )
+    assert rots.n_rots_for_block.tolist() == [[1, 1]]
+    term = _backbone_torsion_term(default_database, pose)
+    x = rots.coords.detach().to(dtype).requires_grad_()
+    whole = term.render_whole_pose_scoring_module(pose)
+    sparse = term.render_rotamer_scoring_module(pose, rots)
+    expected = whole(x.unsqueeze(0))
+    values, indices = sparse(x)
+    weights = x.new_tensor([0.7, -0.4]).reshape(2, 1)
+    observed = values.sum(dim=1, keepdim=True)
+    actual_gradient = torch.autograd.grad((values * weights).sum(), x)[0]
+    expected_gradient = torch.autograd.grad((expected * weights).sum(), x)[0]
+    tolerance = 2e-4 if dtype == torch.float32 else 1e-9
+    assert torch.isfinite(expected).all() and expected.abs().min() > 1e-3
+    assert expected_gradient.abs().max() > 1e-3
+    torch.testing.assert_close(observed, expected, atol=tolerance, rtol=tolerance)
+    torch.testing.assert_close(
+        actual_gradient, expected_gradient, atol=tolerance, rtol=tolerance
+    )
+    assert indices.shape == (3, 1)
+    assert indices[:, 0].tolist() == [0, 0, 1]

@@ -1,0 +1,40 @@
+tmol-jax-native contains thin XLA execution bindings and shared TMol scientific kernels.
+Copyright (c) 2026, Institute for Protein Design, University of Washington.
+The accompanying LICENSE contains the BSD-3-Clause terms for TMol.
+Source: https://github.com/RosettaCommons/tmol
+
+The bindings compile OpenXLA FFI API headers supplied by the installed JAX/JAXlib
+build dependency. Copyright 2023 The OpenXLA Authors. Apache-2.0 terms are in
+licenses/APACHE-2.0.txt. JAX/JAXlib is installed separately, not bundled here.
+Source: https://github.com/openxla/xla/tree/main/xla/ffi/api
+
+Eigen headers are vendored in tmol/extern/Eigen in the TMol source repository.
+They are primarily MPL-2.0, with individual permissive third-party notices.
+The complete vendored COPYING.* set is retained in licenses/Eigen, including
+COPYING.README describing the optional LGPL portions of the source tree.
+Shipping those license texts does not mean those optional portions are compiled.
+Corresponding source: https://github.com/RosettaCommons/tmol/tree/master/tmol/extern/Eigen
+The Core headers include Intel BSD-3-Clause material (COPYING.BSD), TensorFlow
+BFloat16 code (Copyright 2017 The TensorFlow Authors; COPYING.APACHE), and the
+following notice from src/Core/arch/Default/Half.h:
+
+Copyright (c) Fabian Giesen, 2016
+All rights reserved.
+Redistribution and use in source and binary forms, with or without
+modification, are permitted.
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Optional CUDA execution uses vendored ModernGPU headers.
+Copyright (c) 2016, Sean Baxter. BSD-2-Clause terms and the additional disclaimer
+are reproduced in licenses/moderngpu-LICENSE.md.
+Source: https://github.com/moderngpu/moderngpu

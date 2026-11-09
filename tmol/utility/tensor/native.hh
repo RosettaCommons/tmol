@@ -143,6 +143,9 @@ struct Tensor {
   Tensor sum(IntList dims) const;
   Tensor sum(int64_t d) const { return sum(IntList(&d, 1)); }
   Tensor index_select(int64_t d, const Tensor& index) const;
+  Tensor to(ScalarType dtype) const {
+    return stable::to(handle(), dtype, std::nullopt, device());
+  }
   Tensor to(Device device) const {
     return stable::to(handle(), scalar_type(), std::nullopt, device);
   }
@@ -266,6 +269,9 @@ using torch::kFloat64;
 using torch::kInt32;
 using torch::kMPS;
 namespace autograd = torch::autograd;
+inline Tensor realigned_copy(const Tensor& source) {
+  return at::empty(source.sizes(), source.options()).copy_(source);
+}
 inline ScalarType scalar_type_from_options(const TensorOptions& o) {
   return c10::typeMetaToScalarType(o.dtype());
 }

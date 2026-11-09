@@ -540,3 +540,96 @@ def test_lbfgs_armijo_wrapped_segment_histories(torch_device, first_segment_size
     optimizer.step(closure)
     assert optimizer.state[x]["n_iter"] > 4
     torch.testing.assert_close(x, torch.ones_like(x), atol=1e-6, rtol=0)
+
+
+@pytest.mark.parametrize("segmented", [False, True])
+@pytest.mark.parametrize("value_only", [False, True])
+def test_lower_precision_objective(torch_device, segmented, value_only):
+    """F64 parameters can minimize a differentiable F32 coordinate objective."""
+    x = torch.tensor(
+        [2.0, -3.0], device=torch_device, dtype=torch.float64, requires_grad=True
+    )
+    target = torch.tensor([1.0, 2.0], device=torch_device)
+    ids = torch.arange(2, device=torch_device) if segmented else None
+    optimizer = LBFGS_Armijo(
+        [x], max_iter=5, segment_ids=ids, value_only_line_search=value_only
+    )
+
+    def energy():
+        terms = (x.float() - target).square()
+        return terms if segmented else terms.sum()
+
+    def closure():
+        optimizer.zero_grad()
+        loss = energy()
+        loss.sum().backward()
+        return loss
+
+    loss = optimizer.step(closure, energy if value_only else None)
+    assert loss.dtype == x.dtype == x.grad.dtype == torch.float64
+    torch.testing.assert_close(x.float(), target, atol=1e-6, rtol=1e-6)
+    assert energy().dtype == torch.float32
+
+
+def test_objective_precision_is_not_lowered(torch_device):
+    x = torch.tensor([2.0], device=torch_device, requires_grad=True)
+    optimizer = LBFGS_Armijo([x], max_iter=2)
+
+    def closure():
+        optimizer.zero_grad()
+        loss = x.double().square().sum()
+        loss.backward()
+        return loss
+
+    with pytest.raises(TypeError, match="objective precision exceeds"):
+        optimizer.step(closure)
+
+
+@pytest.mark.parametrize("active_segments", [(0, 1), (1, 2), (0, 2), ()])
+@pytest.mark.parametrize("value_only", [False, True])
+def test_explicit_empty_segments(torch_device, active_segments, value_only):
+    """Frozen leading/interior/trailing poses retain loss identity and no DOFs."""
+    ids = torch.tensor(active_segments, device=torch_device, dtype=torch.int64)
+    x = torch.nn.Parameter(
+        torch.full((len(active_segments),), 3.0, device=torch_device)
+    )
+    optimizer = LBFGS_Armijo(
+        [x],
+        segment_ids=ids,
+        n_segments=3,
+        max_iter=8,
+        value_only_line_search=value_only,
+        gradtol=1e-6,
+    )
+
+    def energy():
+        # Independent constants ensure dropping a frozen pose changes the objective.
+        terms = torch.arange(3, dtype=x.dtype, device=x.device) + 1
+        return terms.scatter_add(0, ids, (x - 1).square())
+
+    def closure():
+        optimizer.zero_grad()
+        loss = energy()
+        loss.sum().backward()
+        return loss
+
+    optimizer.step(closure, energy) if value_only else optimizer.step(closure)
+    torch.testing.assert_close(x, torch.ones_like(x), atol=1e-6, rtol=0)
+    torch.testing.assert_close(
+        energy(), torch.arange(3, dtype=x.dtype, device=x.device) + 1
+    )
+    assert optimizer._n_segments == 3
+    torch.testing.assert_close(
+        optimizer._seg_amax(torch.zeros_like(x)), torch.zeros(3, device=x.device)
+    )
+
+
+@pytest.mark.parametrize("count", [0, -1, True, 1.5, 1])
+def test_invalid_explicit_segment_count(torch_device, count):
+    x = torch.nn.Parameter(torch.ones(1, device=torch_device))
+    with pytest.raises(ValueError, match="n_segments"):
+        LBFGS_Armijo(
+            [x],
+            segment_ids=torch.ones(1, dtype=torch.int64, device=x.device),
+            n_segments=count,
+        )

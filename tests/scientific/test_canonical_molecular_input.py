@@ -1,0 +1,422 @@
+"""Canonical input retains chemistry, atom identity, topology and physical scores."""
+
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from .molecules import DOMAIN_CASES, BACKBONE_CASES, MolecularCase
+from .metal_molecules import METAL_CASES
+
+CANONICAL_PROTEIN_PDB = Path(__file__).parents[2] / "tmol/tests/data/pdb/1ubq.pdb"
+
+CASES = {
+    key: DOMAIN_CASES[key]
+    for key in (
+        "ligand",
+        "noncanonical",
+        "connected_noncanonical",
+        "d_peptide",
+        "dna",
+        "rna",
+        "modified_dna",
+        "mixed_batch",
+    )
+}
+CASES["cyclic"] = BACKBONE_CASES["cyclic"]
+CASES.update({"metal_" + key: value for key, value in METAL_CASES.items()})
+CASES.update(
+    {
+        "protonation_" + name: MolecularCase((), ((name,),), ((1,),))
+        for name in ("CYS_DEP", "DCYS_DEP", "TYR_DEP", "DTYR_DEP", "HIS_POS")
+    }
+)
+
+
+def peptide_pdb(n=3):
+    return (
+        "\n".join(
+            line
+            for line in CANONICAL_PROTEIN_PDB.read_text().splitlines()
+            if line.startswith("ATOM") and 1 <= int(line[22:26]) <= n
+        )
+        + "\nEND\n"
+    )
+
+
+def canonical_protein_input(backend):
+    from tmol_jax.io import (
+        canonical_form_from_pdb,
+        default_packed_block_types,
+        pose_stack_from_canonical_form,
+    )
+
+    canonical = canonical_form_from_pdb(CANONICAL_PROTEIN_PDB)
+    template = {
+        key: value[:, :3].copy() if isinstance(value, np.ndarray) else value
+        for key, value in canonical.items()
+    }
+    pbt = backend.module.tree.map(
+        lambda value: backend.module.device_put(value, backend.device),
+        default_packed_block_types(),
+    )
+
+    def new_input():
+        return {
+            key: value.copy() if isinstance(value, np.ndarray) else value
+            for key, value in template.items()
+        }
+
+    def build(canonical, **options):
+        with backend.module.default_device(backend.device):
+            return pose_stack_from_canonical_form(canonical, pbt, **options)
+
+    return new_input, build
+
+
+def canonical_input(case, database):
+    from tmol_core.io.canonical_ordering import CanonicalOrdering
+    from tmol_core.chemical.restypes import refined_from_raw
+
+    co = CanonicalOrdering.from_chemdb(database.chemical)
+    raw = {r.name: r for r in database.chemical.residues}
+    rows = case.blocks(database)
+    shape = (len(rows), max(map(len, rows)))
+    coords = np.full((*shape, co.max_n_canonical_atoms, 3), np.nan, np.float32)
+    types = np.full(shape, -1, np.int32)
+    chains = np.full(shape, -1, np.int32)
+    gaps = np.zeros((*shape, 2), bool)
+    for p, row in enumerate(rows):
+        start = 0
+        for chain, length in enumerate(case.chain_lengths[p]):
+            chains[p, start : start + length] = chain
+            gaps[p, start, 0] = gaps[p, start + length - 1, 1] = True
+            start += length
+        for r, (name, names, xyz) in enumerate(row):
+            residue = refined_from_raw(raw[name])
+            equiv = residue.io_equiv_class
+            types[p, r] = co.restype_io_equiv_classes.index(equiv)
+            indices = [co.restypes_atom_index_mapping[equiv][a] for a in names]
+            coords[p, r, indices] = xyz
+    cycles = np.array(
+        [
+            (p, a, c)
+            for p, edges in enumerate(case.extra_connections())
+            for a, b, c, d in edges
+            if b == "up" and d == "down"
+        ],
+        np.int32,
+    ).reshape(-1, 3)
+    from tmol_core.chemical import GEOMETRY_NAMES, _site_connections
+
+    metal_sites, coordination = [], []
+    for p, row in enumerate(rows):
+        for r, (name, _, _) in enumerate(row):
+            residue = refined_from_raw(raw[name])
+            if residue.metal_sites:
+                metal_sites.append(
+                    (p, r, GEOMETRY_NAMES.index(residue.metal_sites[0].geometry))
+                )
+        for metal, port, donor, donor_port in case.extra_connections()[p]:
+            if port in ("up", "down"):
+                continue
+            metal_type = refined_from_raw(raw[row[metal][0]])
+            donor_type = refined_from_raw(raw[row[donor][0]])
+            if port not in _site_connections(metal_type):
+                continue
+            atom = donor_type.connections[
+                donor_type.connection_to_cidx[donor_port]
+            ].atom
+            coordination.append(
+                (
+                    p,
+                    metal,
+                    _site_connections(metal_type).index(port),
+                    donor,
+                    co.restypes_atom_index_mapping[donor_type.io_equiv_class][atom],
+                )
+            )
+    metal_sites = np.array(metal_sites, np.int32).reshape(-1, 3)
+    coordination = np.array(coordination, np.int32).reshape(-1, 5)
+    if shape[1] > 1:
+        # Internal padding must not change polymer adjacency or declared cycles.
+        coords = np.insert(coords, 1, np.nan, axis=1)
+        types = np.insert(types, 1, -1, axis=1)
+        chains = np.insert(chains, 1, -1, axis=1)
+        gaps = np.insert(gaps, 1, False, axis=1)
+        cycles[:, 1:] += cycles[:, 1:] >= 1
+        metal_sites[:, 1] += metal_sites[:, 1] >= 1
+        coordination[:, [1, 3]] += coordination[:, [1, 3]] >= 1
+    return co, dict(
+        coords=coords,
+        res_types=types,
+        chain_id=chains,
+        res_gap=gaps,
+        cyclic_bonds=cycles,
+        metal_sites=metal_sites,
+        metal_coordination=coordination,
+        find_additional_cyclic_closures=False,
+    )
+
+
+def physical_edges(b):
+    pose = b.pose
+    types = b.numpy(pose.block_type_ind)
+    connections = b.numpy(pose.inter_residue_connections)
+    result = set()
+    for p, r, port in zip(*np.nonzero(connections[..., 0] >= 0)):
+        other, other_port = connections[p, r, port]
+        if r < other:
+            first = pose.packed_block_types.active_block_types[types[p, r]]
+            second = pose.packed_block_types.active_block_types[types[p, other]]
+            result.add(
+                (
+                    p,
+                    r,
+                    first.connections[port].atom,
+                    other,
+                    second.connections[other_port].atom,
+                )
+            )
+    return result
+
+
+@pytest.mark.parametrize("case", tuple(CASES))
+def test_canonical_input_retains_molecular_state(backend, case, tmp_path):
+    terms = ("gen_torsions", "cart_lengths", "fa_elec")
+    if case.startswith("metal_"):
+        terms += ("metal_coordination",)
+    b = backend.molecule(CASES[case], terms=terms)
+    expected_coords = b.coords().copy()
+    expected_edges = physical_edges(b)
+    expected_names = [
+        [b.pose.block_type(p, r).name for r in range(len(row))]
+        for p, row in enumerate(CASES[case].sequences)
+    ]
+    expected_channels, expected_gradient = b.channel_values_and_gradients(
+        expected_coords
+    )
+    co, cf = canonical_input(CASES[case], b.parameter_database)
+    rebuild_canonical(b, co, cf, unpatched_metals=case.startswith("metal_"))
+    np.testing.assert_array_equal(b.coords(), expected_coords)
+    assert physical_edges(b) == expected_edges
+    assert [
+        [b.pose.block_type(p, r).name for r in range(len(row))]
+        for p, row in enumerate(CASES[case].sequences)
+    ] == expected_names
+    channels, gradient = b.channel_values_and_gradients(b.coords())
+    if b.requested_device == "cpu":
+        np.testing.assert_array_equal(channels, expected_channels)
+        np.testing.assert_array_equal(gradient, expected_gradient)
+    else:
+        # Native CUDA electrostatics uses atomic reductions: unchanged repeated
+        # evaluations also differ. Retain the shared molecular scoring bound;
+        # coordinates, atom/type identities and topology above stay exact.
+        np.testing.assert_allclose(channels, expected_channels, rtol=3e-5, atol=3e-5)
+        np.testing.assert_allclose(gradient, expected_gradient, rtol=3e-5, atol=3e-5)
+    assert np.isfinite(gradient).all() and np.linalg.norm(gradient) > 0
+    assert np.any(channels != 0)
+    if case in ("ligand", "connected_noncanonical", "mixed_batch"):
+        assert np.max(np.abs(channels[b.channel_names().index("gen_torsions")])) > 1e-3
+
+    if backend.framework != "jax" or case != "mixed_batch":
+        return
+    new_input, build = canonical_protein_input(backend)
+    canonical = new_input()
+    canonical["chain_id"] = None
+    canonical["res_num"] = None
+    pose = build(
+        canonical,
+        chain_id=[[0, 0, 1]],
+        res_num=[[10, 11, 20]],
+    )
+    assert np.asarray(pose.pdb_info.res_num)[0].tolist() == [10, 11, 20]
+    assert 2 not in np.asarray(pose.inter_residue_connections)[0, 1, :, 0]
+    assert 1 not in np.asarray(pose.inter_residue_connections)[0, 2, :, 0]
+
+    canonical = new_input()
+    expected = build(canonical)
+    for option, value in (
+        ("find_additional_metal_coordination", True),
+        ("protonation_variants", np.zeros((1, 3), np.int32)),
+    ):
+        actual = build(dict(canonical, **{option: value}))
+        np.testing.assert_array_equal(actual.coords, expected.coords)
+        np.testing.assert_array_equal(actual.block_type_ind, expected.block_type_ind)
+        np.testing.assert_array_equal(
+            actual.inter_residue_connections, expected.inter_residue_connections
+        )
+    canonical = new_input()
+    canonical["res_types"][0, 1] = canonical["res_types"][0, 0]
+    with pytest.raises(ValueError, match="residue names and res_types disagree"):
+        build(canonical)
+    for indices in (
+        np.array([[0, 0, 1.5, 1, 1]]),
+        np.array([[0, 0, 2**32, 1, 1]], np.uint64),
+    ):
+        canonical = new_input()
+        canonical["covalent_bonds"] = indices
+        with pytest.raises(ValueError, match="integer indices within the int32 range"):
+            build(canonical)
+
+    from tmol_jax import pose_stack_from_pdb, beta2016_score_function
+    from tmol_jax.io import pose_stack_from_canonical_form, default_canonical_ordering
+
+    jax = backend.module
+    with jax.default_device(backend.device):
+        from tmol_jax.io import default_packed_block_types
+
+        path = tmp_path / "tripeptide.pdb"
+        path.write_text(peptide_pdb())
+        palette = jax.tree.map(
+            lambda value: jax.device_put(value, backend.device),
+            default_packed_block_types(),
+        )
+        palette_names = tuple(residue.name for residue in palette.active_block_types)
+        pose = pose_stack_from_pdb(path, packed_block_types=palette)
+        from biotite.structure.io.pdb import PDBFile
+        from biotite.structure import stack
+        from tmol_jax.io import canonical_form_from_pdb
+        from tmol_jax.io.pose_stack_from_biotite import canonical_form_from_biotite
+
+        atoms = PDBFile.read(path).get_structure(model=1)
+        canonical = canonical_form_from_pdb(path)
+        batched = canonical_form_from_biotite(stack([atoms, atoms]))
+        for field in ("coords", "chain_id", "res_types", "atom_is_present"):
+            np.testing.assert_array_equal(
+                batched[field], np.repeat(canonical[field], 2, axis=0)
+            )
+        score_function = beta2016_score_function()
+        energy, gradient = score_function.jitted_value_and_grad(pose)(pose.coords)
+        assert (
+            tuple(
+                residue.name for residue in pose.packed_block_types.active_block_types
+            )
+            == palette_names
+        )
+        np.testing.assert_array_equal(pose.n_res_per_pose, [3])
+        assert [pose.block_type(0, i).name3 for i in range(3)] == ["MET", "GLN", "ILE"]
+        used_types = np.asarray(pose.block_type_ind)
+        assert len(np.unique(used_types[used_types >= 0])) == 3
+        # Cartesian setup must depend on topology, even when a real atom is at zero.
+        cart = next(
+            term
+            for term in score_function.terms
+            if type(term).__name__ == "CartBondedEnergyTerm"
+        )
+        shifted = pose.replace(coords=pose.coords - pose.coords[:, :1])
+        first = cart.setup_for_pose_stack(pose)
+        second = cart.setup_for_pose_stack(shifted)
+        for left, right in zip(jax.tree.leaves(first), jax.tree.leaves(second)):
+            np.testing.assert_array_equal(left, right)
+        moved = pose.to(backend.device)
+        np.testing.assert_array_equal(moved.coords, pose.coords)
+        assert moved.device == pose.device
+        assert energy.shape == (1,)
+        assert gradient.shape == pose.coords.shape
+        assert np.isfinite(energy).all()
+        assert np.isfinite(gradient).all()
+        assert np.linalg.norm(gradient) > 0
+        batch = {name: np.repeat(value, 2, axis=0) for name, value in canonical.items()}
+        batch["res_name"][1, -1] = ""
+        batch["res_types"][1, -1] = -1
+        batch["chain_id"][1, -1] = -1
+        batch["coords"][1, -1] = np.nan
+        batch["atom_is_present"][1, -1] = False
+        pose = pose_stack_from_canonical_form(batch, palette)
+        sf = beta2016_score_function()
+        energies, gradient = sf.jitted_value_and_grad(pose)(pose.coords)
+        assert np.isfinite(energies).all() and np.isfinite(gradient).all()
+        np.testing.assert_array_equal(
+            np.asarray(gradient)[~np.asarray(pose.atom_is_real)], 0
+        )
+        for index in range(2):
+            individual = pose[index]
+            expected = sf.jitted(individual)(individual.coords)
+            np.testing.assert_allclose(energies[index], expected[0], atol=1e-4)
+        canonical["coords"] = canonical["coords"].astype(np.float64) + 1.23456789e-8
+        with jax.enable_x64():
+            pose = pose_stack_from_canonical_form(canonical, palette)
+        assert pose.coords.dtype == np.float64
+        co = default_canonical_ordering()
+        for block in range(pose.max_n_blocks):
+            residue = pose.block_type(0, block)
+            offset = int(pose.block_coord_offset[0, block])
+            mapping = co.restypes_atom_index_mapping[residue.io_equiv_class]
+            for atom, record in enumerate(residue.atoms):
+                source = mapping[record.name]
+                if canonical["atom_is_present"][0, block, source]:
+                    np.testing.assert_array_equal(
+                        pose.coords[0, offset + atom],
+                        canonical["coords"][0, block, source],
+                    )
+        assert np.isfinite(pose.coords).all()
+
+
+def rebuild_canonical(
+    b, co, cf, *, unpatched_metals=False, build_missing_context=False
+):
+    if b.framework == "jax":
+        from tmol_jax.io import pose_stack_from_canonical_form
+        from tmol_jax.pose.packed_block_types import PackedBlockTypes
+
+        chemistry = b.parameter_database.chemical
+        if unpatched_metals:
+            from tmol_jax.database import ParameterDatabase
+
+            chemistry = ParameterDatabase.get_default().chemical
+            assert not any("metal_OD1" in r.name for r in chemistry.residues)
+        with b.module.default_device(b.device):
+            b.pose = pose_stack_from_canonical_form(
+                dict(cf, canonical_ordering=co),
+                PackedBlockTypes.default(chemistry),
+                compact_padding=True,
+                build_missing_context=build_missing_context,
+            )
+        b.pose = b.pose.to(b.device)
+    else:
+        from tmol.io._pose_stack_construction import _pose_stack_from_canonical_form
+        from tmol.io._canonical_ordering import CanonicalOrdering
+
+        co = CanonicalOrdering.from_chemdb(b.parameter_database.chemical)
+        pbt = b.pose.packed_block_types
+        if unpatched_metals:
+            from tmol import ParameterDatabase, PackedBlockTypes
+            from tmol.chemical._restypes import ResidueTypeSet
+
+            chemistry = ParameterDatabase.get_default().chemical
+            restypes = ResidueTypeSet.from_database(chemistry)
+            pbt = PackedBlockTypes.from_restype_list(
+                chemistry, restypes, restypes.residue_types, b.device
+            )
+        b.pose = _pose_stack_from_canonical_form(
+            co,
+            pbt,
+            b.module.as_tensor(cf["chain_id"], device=b.device),
+            b.module.as_tensor(cf["res_types"], device=b.device),
+            b.module.as_tensor(cf["coords"], device=b.device),
+            None,
+            None,
+            None,
+            res_not_connected=b.module.as_tensor(cf["res_gap"], device=b.device),
+            cyclic_bonds=b.module.as_tensor(
+                cf["cyclic_bonds"].astype(np.int64), device=b.device
+            ),
+            find_additional_cyclic_closures=False,
+            ligand_hydrogens="input",
+            require_all_metal_donors=cf.get("require_all_metal_donors", False),
+            protonation_variants=(
+                None
+                if cf.get("protonation_variants") is None
+                else b.module.as_tensor(
+                    cf["protonation_variants"].astype(np.int64), device=b.device
+                )
+            ),
+            metal_sites=b.module.as_tensor(
+                cf["metal_sites"].astype(np.int64), device=b.device
+            ),
+            metal_coordination=b.module.as_tensor(
+                cf["metal_coordination"].astype(np.int64), device=b.device
+            ),
+        )
+        b._render_torch()

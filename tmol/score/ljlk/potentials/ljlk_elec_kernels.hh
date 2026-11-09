@@ -80,8 +80,8 @@ struct LJLKElecSharedData {
   short atom_types2[TILE];
   Real charges1[TILE];
   Real charges2[TILE];
-  unsigned char conn_ats1[MAX_CONN];
-  unsigned char conn_ats2[MAX_CONN];
+  int conn_ats1[MAX_CONN];
+  int conn_ats2[MAX_CONN];
   unsigned char ljlk_path_dist1[MAX_CONN * TILE];
   unsigned char ljlk_path_dist2[MAX_CONN * TILE];
   unsigned char elec_path_dist1[MAX_CONN * TILE];
@@ -266,7 +266,7 @@ TMOL_HOST_DEVICE_FUNC void ljlk_elec_eval_weighted_rotamer_energies(
                         int count,
                         bool count_pair,
                         TMOL_THREAD LJLKElecSingleResData<Real> const& res,
-                        TMOL_SHARED_PTR(unsigned char) conn_ats) {
+                        TMOL_SHARED_PTR(int) conn_ats) {
     DeviceDispatch<D>::template copy_contiguous_data<nt, 3>(
         res.coords,
         reinterpret_cast<TMOL_DEVICE_PTR(Real)>(

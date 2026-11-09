@@ -10,6 +10,10 @@ bootstrap=$(mktemp -d)
 trap 'rm -rf "$bootstrap"' EXIT
 python3.12 -m venv "$bootstrap/env"
 "$bootstrap/env/bin/python" -m pip install packaging
+core_args=()
+if compgen -G "core-dist/tmol_core-*.whl" >/dev/null; then
+  core_args=(--core-wheel core-dist/tmol_core-*.whl)
+fi
 for backend in cu12 cu13; do
   case "$backend" in
     cu12) torch_cuda=cu128 ;;
@@ -17,6 +21,19 @@ for backend in cu12 cu13; do
   esac
   "$bootstrap/env/bin/python" scripts/test_package_install.py \
     --wheel wheels/tmol_ops_${backend}-*.whl --base-wheel base-wheel/*.whl \
-    --torch-version 2.11.0 \
+    "${core_args[@]}" --torch-version 2.11.0 \
     --torch-index "https://download.pytorch.org/whl/$torch_cuda" --device cuda
 done
+if [ "${TEST_JAX:-false}" = true ]; then
+  for backend in cu12 cu13; do
+    "$bootstrap/env/bin/python" scripts/jax_release_manifest.py \
+      --revision "$(git rev-parse HEAD)" \
+      --wheel jax-wheel/tmol_jax-*.whl --core-wheel core-dist/tmol_core-*.whl \
+      --native-wheel "jax-native/$backend"/tmol_jax_native-*.whl \
+      --output "$bootstrap/jax-$backend.json"
+    "$bootstrap/env/bin/python" scripts/test_jax_package_install.py \
+      --wheel jax-wheel/tmol_jax-*.whl --core-wheel core-dist/tmol_core-*.whl \
+      --native-wheel "jax-native/$backend"/tmol_jax_native-*.whl \
+      --backend "$backend" --manifest "$bootstrap/jax-$backend.json"
+  done
+fi

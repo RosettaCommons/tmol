@@ -5,6 +5,7 @@ import pandas
 import pytest
 
 from tmol.score.dunbrack._params import DunbrackParamResolver
+from tmol_core.scoring.dunbrack import _DunbrackBuilder
 from tmol.tests.score.dunbrack.test_empty_libraries import select_libraries
 
 
@@ -57,7 +58,7 @@ def test_bad_lookup_is_rejected_before_tensor_preparation(
         pytest.fail("derived tensor preparation reached before lookup validation")
 
     monkeypatch.setattr(
-        DunbrackParamResolver, "_create_nchi_for_table_set", unexpected_allocation
+        _DunbrackBuilder, "_create_nchi_for_table_set", unexpected_allocation
     )
     with pytest.raises(ValueError, match=message):
         DunbrackParamResolver.from_database(database, torch_device)

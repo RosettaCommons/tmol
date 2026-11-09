@@ -7,7 +7,7 @@ from tmol.database import ParameterDatabase
 from tmol.score.common._scoring_module import _coordinate_independent_score
 
 from tmol.chemical import RefinedResidueType
-from tmol.database.chemical import _l_base_name
+from tmol_core.scoring.ref import reference_energies, reference_weight
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
 
@@ -75,12 +75,7 @@ class RefEnergyTerm(EnergyTerm):
         if cached is not None:
             return cached
 
-        # read the map actually in use: a score function may override the
-        #    database weights with one covering fewer residues, so a d-amino
-        #    acid falls back to the l form it mirrors rather than to zero
-        ref_weight = src.get(block_type.base_name)
-        if ref_weight is None:
-            ref_weight = src.get(_l_base_name(block_type), 0.0)
+        ref_weight = reference_weight(block_type, src)
 
         setattr(block_type, "ref_weight", ref_weight)
         return _store_annotation(
@@ -138,10 +133,12 @@ class RefEnergyTerm(EnergyTerm):
         # this pose stack; the rotamer path indexes by block type and needs the
         # raw weights instead.
         ref_weights = pose_stack.packed_block_types.ref_weights
-        bt = pose_stack.block_type_ind64
-        weights = ref_weights[bt.clamp_min(0)]
-        block_ref = torch.where(bt >= 0, weights, torch.zeros_like(weights))
-        pose_ref = torch.sum(block_ref, dim=1).unsqueeze(0)
+        block_ref, pose_ref = reference_energies(
+            pose_stack.block_type_ind.detach().cpu().numpy(),
+            ref_weights.detach().cpu().numpy(),
+        )
+        block_ref = torch.as_tensor(block_ref, device=self.device)
+        pose_ref = torch.as_tensor(pose_ref, device=self.device).unsqueeze(0)
         return [block_ref, pose_ref, ref_weights]
 
 

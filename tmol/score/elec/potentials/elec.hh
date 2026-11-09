@@ -63,8 +63,9 @@ template <typename Real, int TILE_SIZE, int MAX_N_CONN>
 struct ElecBlockPairSharedData {
   Real coords1[TILE_SIZE * 3];  // 768 bytes for coords
   Real coords2[TILE_SIZE * 3];
-  unsigned char conn_ats1[MAX_N_CONN];  // 12 bytes
-  unsigned char conn_ats2[MAX_N_CONN];
+  int conn_ats1[MAX_N_CONN];  // Full residue atom indices, including atoms
+                              // above 255.
+  int conn_ats2[MAX_N_CONN];
   unsigned char path_dist1[MAX_N_CONN * TILE_SIZE];  // 384 bytes
   unsigned char path_dist2[MAX_N_CONN * TILE_SIZE];
   unsigned char conn_seps[MAX_N_CONN * MAX_N_CONN];  // 144 bytes
@@ -147,7 +148,7 @@ void TMOL_DEVICE_FUNC elec_load_block_into_shared(
     int n_atoms_to_load,
     int start_atom,
     bool count_pair_striking_dist,
-    TMOL_SHARED_PTR(unsigned char) conn_ats,
+    TMOL_SHARED_PTR(int) conn_ats,
     // Trailing lane handle: empty and omissible on CPU and CUDA, required by
     // the Metal backend. See workgroup_lane.hh.
     WorkgroupLane<D> lane = {}) {
@@ -530,7 +531,11 @@ TMOL_DEVICE_FUNC Real elec_atom_energy(
   return result;
 }
 
-template <typename Real, tmol::Device D, typename DvDcoordsView>
+template <
+    typename Real,
+    tmol::Device D,
+    typename DvDcoordsView,
+    typename GradReal = Real>
 TMOL_DEVICE_FUNC void elec_atom_derivs(
     int atom_tile_ind1,
     int atom_tile_ind2,
@@ -561,14 +566,15 @@ TMOL_DEVICE_FUNC void elec_atom_derivs(
   // all threads accumulate derivatives for atom 1 to global memory
   // Remove "0.5 *" as the energy is no longer split between the i,j and j,i
   // pair
+  // Preserve pair and weight arithmetic; widen only the accumulated sum.
   Vec<Real, 3> elec_dxyz_at1 = dTdV * dV_ddist * ddist_dat1;
   for (int j = 0; j < 3; ++j) {
     if (elec_dxyz_at1[j] != 0) {
-      accumulate_grad<D, Real>::add(
+      accumulate_grad<D, GradReal>::add(
           dV_dcoords[0]
                     [score_dat.r1.rot_coord_offset + atom_tile_ind1
                      + start_atom1][j],
-          elec_dxyz_at1[j]);
+          GradReal(elec_dxyz_at1[j]));
     }
   }
 
@@ -576,11 +582,11 @@ TMOL_DEVICE_FUNC void elec_atom_derivs(
   Vec<Real, 3> elec_dxyz_at2 = -elec_dxyz_at1;
   for (int j = 0; j < 3; ++j) {
     if (elec_dxyz_at2[j] != 0) {
-      accumulate_grad<D, Real>::add(
+      accumulate_grad<D, GradReal>::add(
           dV_dcoords[0]
                     [score_dat.r2.rot_coord_offset + atom_tile_ind2
                      + start_atom2][j],
-          elec_dxyz_at2[j]);
+          GradReal(elec_dxyz_at2[j]));
     }
   }
 }

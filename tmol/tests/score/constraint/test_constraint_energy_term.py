@@ -440,6 +440,46 @@ def test_create_coordinate_constraints(
     )
 
 
+@pytest.mark.parametrize(
+    "kind,parameters",
+    [
+        ("harmonic", [1.3, 0.7]),
+        ("harmonic_coordinate", [0.2, 1.0, 0.3, -0.2, 0.7]),
+        ("bounded", [0.5, 1.5, 0.8, 0.6]),
+    ],
+)
+def test_constraint_formulas_preserve_coordinate_and_parameter_higher_derivatives(
+    kind, parameters
+):
+    atoms = torch.tensor(
+        [[[0.1, 0.2, 0.3], [2.4, -0.4, 0.8]]], dtype=torch.float64, requires_grad=True
+    )
+    params = torch.tensor([parameters], dtype=torch.float64, requires_grad=True)
+    function = getattr(ConstraintEnergyTerm, kind)
+    assert torch.autograd.gradcheck(function, (atoms, params))
+    assert torch.autograd.gradgradcheck(function, (atoms, params))
+
+
+def test_bounded_constraint_piecewise_invariants_and_inactive_zero_deviation():
+    atoms = torch.zeros((5, 2, 3), dtype=torch.float64)
+    atoms[:, 1, 0] = torch.tensor([0.25, 1.5, 2.25, 3.0, 1.5])
+    atoms.requires_grad_()
+    params = torch.tensor([[1.0, 2.0, 1.0, 1.2]] * 5, dtype=torch.float64)
+    params[-1, 2] = 0.0  # No penalty inside bounds, even with unused sd=0.
+    params.requires_grad_()
+    value = ConstraintEnergyTerm.bounded(atoms, params)
+    torch.testing.assert_close(
+        value, torch.tensor([0.5625, 0.0, 0.0625, 0.96, 0.0], dtype=torch.float64)
+    )
+    coord_grad, param_grad = torch.autograd.grad(value.sum(), (atoms, params))
+    torch.testing.assert_close(
+        coord_grad[:, 1, 0],
+        torch.tensor([-1.5, 0.0, 0.5, 2.4, 0.0], dtype=torch.float64),
+    )
+    assert torch.isfinite(param_grad).all()
+    torch.testing.assert_close(param_grad[-1], torch.zeros(4, dtype=torch.float64))
+
+
 def test_bounded_matches_piecewise_definition():
     lb, ub, sd, rswitch = 2.0, 3.0, 0.5, 1.5
     dists = torch.tensor([1.0, 2.5, 3.1, 4.0], dtype=torch.float64)  # each branch

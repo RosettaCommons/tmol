@@ -1,4 +1,5 @@
 import numpy
+from tmol_core.scoring.na_torsion_topology import prepare_na_torsion_topology
 import torch
 
 from .._energy_term import EnergyTerm
@@ -249,64 +250,6 @@ class NaTorsionEnergyTerm(EnergyTerm):
         return [*self.get_score_term_attributes(pose_stack), *indices]
 
 
-def _resolve_uaids(
-    uaids, block_type, block_coord_offset, inter_res_conn, atom_downstream_of_conn
-):
-    """Global (flattened) atom indices for unresolved atom ids; -1 if absent.
-
-    A uaid is (atom, connection, bonds-from-connection): connection -1 means the
-    atom is local, otherwise it is reached through a residue connection.
-    """
-    n_poses, max_n_blocks = block_type.shape
-    trailing = uaids.shape[2:-1]  # (n_torsion, 4)
-    shape = (n_poses, max_n_blocks) + tuple(trailing)
-
-    atom = uaids[..., 0].to(torch.int64)
-    conn = uaids[..., 1].to(torch.int64)
-    sep = uaids[..., 2].to(torch.int64)
-    is_inter = conn >= 0
-
-    self_block = (
-        torch.arange(max_n_blocks, device=uaids.device)
-        .view(1, max_n_blocks, *([1] * len(trailing)))
-        .expand_as(atom)
-    )
-
-    # partner block/connection for every inter-residue uaid
-    conn_idx = conn.clamp_min(0).reshape(n_poses, max_n_blocks, -1)
-    other_block = torch.gather(inter_res_conn[..., 0].to(torch.int64), 2, conn_idx)
-    other_conn = torch.gather(inter_res_conn[..., 1].to(torch.int64), 2, conn_idx)
-    other_block = other_block.reshape(atom.shape)
-    other_conn = other_conn.reshape(atom.shape)
-
-    target_block = torch.where(is_inter, other_block, self_block)
-    # an inter-residue uaid carries atom == -1; its atom index comes from the
-    # partner block below
-    ok = torch.where(is_inter, other_block >= 0, atom >= 0)
-    target_block_safe = target_block.clamp_min(0)
-
-    target_bt = torch.gather(
-        block_type.to(torch.int64), 1, target_block_safe.reshape(n_poses, -1)
-    ).reshape(*shape)
-    ok = ok & (target_bt >= 0)
-
-    local_inter = atom_downstream_of_conn.to(torch.int64)[
-        target_bt.clamp_min(0), other_conn.clamp_min(0), sep.clamp_min(0)
-    ]
-    local = torch.where(is_inter, local_inter, atom)
-    ok = ok & (local >= 0)
-
-    offset = torch.gather(
-        block_coord_offset.to(torch.int64), 1, target_block_safe.reshape(n_poses, -1)
-    ).reshape(*shape)
-    pose = (
-        torch.arange(n_poses, device=uaids.device)
-        .view(n_poses, *([1] * (atom.dim() - 1)))
-        .expand_as(atom)
-    )
-    return pose, offset + local, ok
-
-
 def _eval_na_torsion_for_pose(
     # common args
     rot_coords,
@@ -365,7 +308,7 @@ def _eval_na_torsion_for_pose(
         )
         return _finish((zero, zero), output_block_pair_energies)
 
-    if rot_coords.is_cuda and not output_block_pair_energies:
+    if rot_coords.device.type in ("cpu", "cuda") and not output_block_pair_energies:
         from .potentials._compiled import _na_torsion_pose_score
 
         return _na_torsion_pose_score(
@@ -435,55 +378,15 @@ def _eval_na_torsion_for_pose(
     )
 
 
-def _pose_indices(
-    block_type_ind_for_rot,
-    bt_base,
-    bt_uaids,
-    bt_ring,
-    bt_down,
-    atom_downstream_of_conn,
-    block_coord_offset,
-    inter_residue_connections,
-    max_n_atoms,
-):
-    """Resolve immutable nucleic-acid topology once for repeated scoring."""
-    n_poses, max_n_blocks = block_coord_offset.shape
-    block_type = block_type_ind_for_rot.view(n_poses, max_n_blocks).to(torch.int64)
-    real = block_type >= 0
-    bt_safe = block_type.clamp_min(0)
-    base = torch.where(real, bt_base.to(torch.int64)[bt_safe], -1)
-    is_na = base >= 0
-
-    pose, index, ok = _resolve_uaids(
-        bt_uaids[bt_safe],
-        block_type,
-        block_coord_offset,
-        inter_residue_connections,
-        atom_downstream_of_conn,
+def _pose_indices(*args):
+    # Static topology is prepared once on the host. Coordinate execution stays
+    # on the requested device and uses these immutable index arrays.
+    device = args[0].device
+    arrays = [a.detach().cpu().numpy() for a in args[:-1]]
+    return tuple(
+        torch.as_tensor(value, device=device)
+        for value in prepare_na_torsion_topology(*arrays, args[-1])
     )
-    torsion_indices = (pose * max_n_atoms + index).clamp_min(0)
-    torsion_ok = ok.all(-1) & is_na.unsqueeze(-1)
-
-    ring_local = bt_ring.to(torch.int64)[bt_safe]
-    ring_pose = torch.arange(n_poses, device=block_type.device).view(n_poses, 1, 1)
-    ring_index = block_coord_offset.to(torch.int64).unsqueeze(-1) + ring_local
-    ring_indices = (ring_pose * max_n_atoms + ring_index).clamp_min(0)
-    ring_ok = (ring_local >= 0) & is_na.unsqueeze(-1)
-
-    down = bt_down.to(torch.int64)[bt_safe]
-    prev_block = torch.gather(
-        inter_residue_connections[..., 0].to(torch.int64),
-        2,
-        down.clamp_min(0)[..., None],
-    ).squeeze(-1)
-    has_prev = (down >= 0) & (prev_block >= 0)
-    pose_ind = torch.arange(n_poses, device=block_type.device).view(n_poses, 1)
-    prev = torch.where(
-        has_prev,
-        pose_ind * max_n_blocks + prev_block,
-        torch.full_like(prev_block, -1),
-    )
-    return base, is_na, torsion_indices, torsion_ok, ring_indices, ring_ok, prev
 
 
 def _pose_subterms(
@@ -738,54 +641,6 @@ def _subterm_energies(
     return e_bb, e_chi, e_sugar, e_well
 
 
-def _resolve_rotamer_uaids(
-    uaids,
-    pose_ind_for_rot,
-    block_ind_for_rot,
-    rot_coord_offset,
-    first_rot_for_block,
-    first_rot_block_type,
-    inter_res_conn,
-    atom_downstream_of_conn,
-):
-    """Indices into the rotamer coordinate array for unresolved atom ids.
-
-    Atoms reached through a residue connection come from the neighbor's
-    background rotamer: only one block at a time is being rebuilt.
-    """
-    n_rots = uaids.shape[0]
-    trailing = uaids.shape[1:-1]  # (n_torsion, 4)
-    view = (n_rots,) + (1,) * len(trailing)
-
-    atom = uaids[..., 0].to(torch.int64)
-    conn = uaids[..., 1].to(torch.int64)
-    sep = uaids[..., 2].to(torch.int64)
-    is_inter = conn >= 0
-
-    pose = pose_ind_for_rot.to(torch.int64).view(view).expand_as(atom)
-    block = block_ind_for_rot.to(torch.int64).view(view).expand_as(atom)
-
-    other = inter_res_conn.to(torch.int64)[pose, block, conn.clamp_min(0)]
-    other_block = other[..., 0]
-    other_conn = other[..., 1]
-    ok = torch.where(is_inter, other_block >= 0, atom >= 0)
-
-    other_safe = other_block.clamp_min(0)
-    other_rot = first_rot_for_block.to(torch.int64)[pose, other_safe]
-    other_bt = first_rot_block_type.to(torch.int64)[pose, other_safe]
-    ok = ok & (~is_inter | ((other_rot >= 0) & (other_bt >= 0)))
-
-    local_inter = atom_downstream_of_conn.to(torch.int64)[
-        other_bt.clamp_min(0), other_conn.clamp_min(0), sep.clamp_min(0)
-    ]
-    local = torch.where(is_inter, local_inter, atom)
-    ok = ok & (local >= 0)
-
-    self_rot = torch.arange(n_rots, device=uaids.device).view(view).expand_as(atom)
-    rot = torch.where(is_inter, other_rot.clamp_min(0), self_rot)
-    return rot_coord_offset.to(torch.int64)[rot] + local, ok
-
-
 def _rotamer_indices(
     block_type_ind_for_rot,
     pose_ind_for_rot,
@@ -800,52 +655,33 @@ def _rotamer_indices(
     bt_ring,
     bt_down,
 ):
-    """Resolve immutable candidate atom indices for rotamer/search scoring."""
-    bt = block_type_ind_for_rot.to(torch.int64)
-    bt_safe = bt.clamp_min(0)
-    base = torch.where(bt >= 0, bt_base.to(torch.int64)[bt_safe], -1)
-    pose = pose_ind_for_rot.to(torch.int64)
-    block = block_ind_for_rot.to(torch.int64)
+    """Resolve candidate topology with the common native background convention.
 
-    torsion_indices, atom_ok = _resolve_rotamer_uaids(
-        bt_uaids[bt_safe],
-        pose,
-        block,
+    Inactive atom indices use -1; valid indices and masks retain their meaning.
+    Host metadata preparation supports devices without a native topology launch.
+    """
+    from .potentials._compiled import _na_rotamer_topology
+
+    device = block_type_ind_for_rot.device
+    execution_device = device if device.type in ("cpu", "cuda") else torch.device("cpu")
+    inputs = (
+        block_type_ind_for_rot,
+        pose_ind_for_rot,
+        block_ind_for_rot,
         rot_coord_offset,
         first_rot_for_block,
         first_rot_block_type,
         inter_residue_connections,
         atom_downstream_of_conn,
+        bt_base,
+        bt_uaids,
+        bt_ring,
+        bt_down,
     )
-    is_na = base >= 0
-    torsion_ok = atom_ok.all(-1) & is_na.unsqueeze(-1)
-
-    ring_local = bt_ring.to(torch.int64)[bt_safe]
-    ring_ok = (ring_local >= 0) & is_na.unsqueeze(-1)
-    ring_indices = rot_coord_offset.to(torch.int64).unsqueeze(-1) + ring_local
-
-    # A candidate's beta term reads the BI/BII state of the preceding
-    # nucleotide from that block's first (background) rotamer.
-    down = bt_down.to(torch.int64)[bt_safe]
-    prev_block = inter_residue_connections.to(torch.int64)[
-        pose, block, down.clamp_min(0), 0
-    ]
-    has_prev = (down >= 0) & (prev_block >= 0)
-    prev = torch.where(
-        has_prev,
-        first_rot_for_block.to(torch.int64)[pose, prev_block.clamp_min(0)],
-        torch.full_like(prev_block, -1),
+    result = _na_rotamer_topology(
+        *(value.to(device=execution_device, dtype=torch.int64) for value in inputs)
     )
-    return (
-        base,
-        is_na,
-        torsion_indices,
-        atom_ok,
-        torsion_ok,
-        ring_indices,
-        ring_ok,
-        prev,
-    )
+    return tuple(value.to(device=device) for value in result)
 
 
 def _eval_na_torsion_for_rotamers(
@@ -915,77 +751,33 @@ def _eval_na_torsion_for_rotamers(
     if not has_na:
         score = torch.zeros((2, n_rots), dtype=dtype, device=device)
     else:
-        base = rotamer_base
-        is_na = rotamer_is_na
-        if rot_coords.is_cuda and not rot_coords.requires_grad:
-            from .potentials._compiled import _na_torsion_pose_score
-
-            score = _na_torsion_pose_score(
-                rot_coords,
-                base.unsqueeze(1),
-                is_na.unsqueeze(1),
-                rotamer_torsion_indices.unsqueeze(1),
-                rotamer_torsion_ok.unsqueeze(1),
-                rotamer_ring_indices.unsqueeze(1),
-                rotamer_ring_ok.unsqueeze(1),
-                rotamer_prev.unsqueeze(1),
-                backbone_means,
-                backbone_sdev,
-                sugar_means,
-                chi_means,
-                sdev_sugar,
-                sdev_chi,
-                well_pucker,
-                well_alpha_gamma,
-                well_bibii_pucker,
-                well_alphanext_bibii,
-                well_chi_syn,
-                is_north,
-                weight_bb,
-                weight_chi,
-                weight_sugar,
-                pucker_temperature,
-                bin_blend_sdev,
-            )[0]
-        else:
-
-            def gather_coords(index, ok):
-                xyz = rot_coords[index.clamp_min(0).reshape(-1)].reshape(
-                    *index.shape, 3
-                )
-                return torch.where(ok.unsqueeze(-1), xyz, torch.zeros_like(xyz))
-
-            xyz = gather_coords(rotamer_torsion_indices, rotamer_atom_ok)
-            ring_xyz = gather_coords(rotamer_ring_indices, rotamer_ring_ok)
-            e_bb, e_chi, e_sugar, e_well = _subterm_energies(
-                xyz,
-                rotamer_torsion_ok,
-                ring_xyz,
-                base,
-                rotamer_prev,
-                backbone_means,
-                backbone_sdev,
-                sugar_means,
-                chi_means,
-                sdev_sugar,
-                sdev_chi,
-                well_pucker,
-                well_alpha_gamma,
-                well_bibii_pucker,
-                well_alphanext_bibii,
-                well_chi_syn,
-                is_north,
-                pucker_temperature,
-                bin_blend_sdev,
-            )
-            poly = _polymer_index(base)
-            harmonic = (
-                weight_bb[poly] * e_bb
-                + weight_chi[poly] * e_chi
-                + weight_sugar[poly] * e_sugar
-            )
-            score = torch.stack([harmonic, e_well])
-            score = torch.where(is_na.unsqueeze(0), score, torch.zeros_like(score))
+        score = _na_rotamer_score(
+            rot_coords,
+            rotamer_base.unsqueeze(1),
+            rotamer_is_na.unsqueeze(1),
+            rotamer_torsion_indices.unsqueeze(1),
+            rotamer_torsion_ok.unsqueeze(1),
+            rotamer_ring_indices.unsqueeze(1),
+            rotamer_ring_ok.unsqueeze(1),
+            rotamer_prev.unsqueeze(1),
+            backbone_means,
+            backbone_sdev,
+            sugar_means,
+            chi_means,
+            sdev_sugar,
+            sdev_chi,
+            well_pucker,
+            well_alpha_gamma,
+            well_bibii_pucker,
+            well_alphanext_bibii,
+            well_chi_syn,
+            is_north,
+            weight_bb,
+            weight_chi,
+            weight_sugar,
+            pucker_temperature,
+            bin_blend_sdev,
+        )
 
     if output_block_pair_energies:
         # a one-body term: each energy sits on the diagonal of the rotamer pair
@@ -1005,3 +797,79 @@ def _finish(scores, output_block_pair_energies):
     if output_block_pair_energies:
         return torch.diag_embed(stacked), None
     return torch.sum(stacked, dim=2), None
+
+
+def _na_rotamer_score_torch(
+    coords,
+    base,
+    is_na,
+    torsion_indices,
+    torsion_ok,
+    ring_indices,
+    ring_ok,
+    prev,
+    *parameters,
+):
+    # Reuse the whole-pose gather and portable equations for higher derivatives
+    # and devices without a native NA kernel. One row represents one candidate.
+    (
+        *energy_params,
+        weight_bb,
+        weight_chi,
+        weight_sugar,
+        pucker_temperature,
+        bin_blend_sdev,
+    ) = parameters
+    bb, chi, sugar, well = _pose_subterms(
+        coords,
+        base,
+        is_na,
+        torsion_indices,
+        torsion_ok,
+        ring_indices,
+        ring_ok,
+        prev,
+        *energy_params,
+        pucker_temperature,
+        bin_blend_sdev,
+    )
+    poly = _polymer_index(base)
+    harmonic = (
+        weight_bb[poly] * bb + weight_chi[poly] * chi + weight_sugar[poly] * sugar
+    )
+    score = torch.stack((harmonic, well))
+    return torch.where(is_na.unsqueeze(0), score, torch.zeros_like(score)).squeeze(-1)
+
+
+class _NativeNaRotamerScore(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, *args):
+        from .potentials._compiled import _na_torsion_native_score
+
+        ctx.save_for_backward(*args[:-2])
+        ctx.constants = args[-2:]
+        # The unused cotangent input avoids an allocation on the forward path.
+        return _na_torsion_native_score(*args, args[0], False)[0]
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        args = (*ctx.saved_tensors, *ctx.constants)
+        if torch.is_grad_enabled():
+            # Preserve higher coordinate derivatives through the portable path.
+            score = _na_rotamer_score_torch(*args)
+            gradient = torch.autograd.grad(
+                score, args[0], grad_output, create_graph=True
+            )[0]
+        else:
+            from .potentials._compiled import _na_torsion_native_score
+
+            gradient = _na_torsion_native_score(*args, grad_output, True)[1]
+        return (gradient,) + (None,) * (len(args) - 1)
+
+
+def _na_rotamer_score(*args):
+    if args[0].device.type in ("cpu", "cuda") and not any(
+        value.requires_grad for value in args[1:-2] if value.is_floating_point()
+    ):
+        return _NativeNaRotamerScore.apply(*args)
+    return _na_rotamer_score_torch(*args)

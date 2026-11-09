@@ -386,8 +386,39 @@ def test_explicit_opth_flags_preserve_previous_results(
     assert not torch.equal(actual.block_type_ind, preserved.block_type_ind) or not (
         torch.allclose(actual.coords, preserved.coords)
     )
-    actual.coords[actual.real_atoms].sum().backward()
-    assert torch.count_nonzero(coords.grad) > 0
+    # Supplied heavy atoms have the identity mapping even after OptH selection.
+    heavy = torch.zeros_like(actual.real_atoms)
+    input_starts = struc.get_residue_starts(structure, add_exclusive_stop=True)
+    for block, kind in enumerate(actual.block_type_ind[0].tolist()):
+        if kind < 0:
+            continue
+        residue = actual.packed_block_types.active_block_types[kind]
+        offset = int(actual.block_coord_offset[0, block])
+        names = set(structure.atom_name[input_starts[block] : input_starts[block + 1]])
+        for atom_index, atom in enumerate(residue.atoms):
+            heavy[0, offset + atom_index] = atom.name in names
+    actual.coords[heavy].sum().backward(retain_graph=True)
+    expected_grad = torch.zeros_like(coords)
+    expected_grad[:, :, 1] = 1
+    torch.testing.assert_close(coords.grad, expected_grad, rtol=0, atol=0)
+
+    # The first residue (MET or LEU) is frozen during OptH. Its generated
+    # hydrogens must retain the same geometry and derivatives as before packing.
+    unoptimized = builder(coords)
+    frozen = actual.packed_block_types.active_block_types[
+        int(actual.block_type_ind[0, 0])
+    ]
+    assert frozen.name3 in ("MET", "LEU")
+    hydrogens = actual.packed_block_types.atom_is_hydrogen[
+        int(actual.block_type_ind[0, 0]), : len(frozen.atoms)
+    ].bool()
+    actual_h = actual.coords[0, : len(frozen.atoms)][hydrogens]
+    reference_h = unoptimized.coords[0, : len(frozen.atoms)][hydrogens]
+    torch.testing.assert_close(actual_h, reference_h, rtol=0, atol=0)
+    gradient = torch.autograd.grad(actual_h.square().sum(), coords)[0]
+    reference_gradient = torch.autograd.grad(reference_h.square().sum(), coords)[0]
+    assert torch.count_nonzero(reference_gradient) > 0
+    torch.testing.assert_close(gradient, reference_gradient, rtol=0, atol=0)
 
 
 def test_prepared_atom37_builder_replays_variable_leaf_presence(
@@ -495,6 +526,105 @@ def test_atom37_pose_uses_ligand_context(torch_device, prebuilt):
         (pose.coords.detach().double().requires_grad_(),),
         fast_mode=True,
     )
+
+
+def test_noncanonical_atom37_inputs_match_initial_and_cached_replay(torch_device):
+    from tmol import atom_array_from_pose_stack
+    from tmol.tests.ligand.test_nonstandard_backbones import _hyp_structure
+
+    structure = _hyp_structure({})
+    starts = struc.get_residue_starts(structure, add_exclusive_stop=True)
+    residue = int(np.flatnonzero(structure.res_name[starts[:-1]] == "HYP")[0])
+    structure = structure[starts[max(0, residue - 1)] : starts[residue + 2]]
+    ordinary, context = pose_stack_from_atom_array(
+        structure,
+        torch_device,
+        ligand_params_files=[
+            str(data_path("ligand_params", "noncanonical_alpha_aa.tmol"))
+        ],
+        no_optH=True,
+        ligand_hydrogens="input",
+        missing_density_distance_threshold=0.0,
+        return_context=True,
+    )
+    atoms = atom_array_from_pose_stack(ordinary)
+    hydrogen = (atoms.res_name == "HYP") & (atoms.element == "H")
+    assert hydrogen.sum() >= 7
+    atoms.coord[hydrogen] += np.array([0.02, -0.03, 0.01], np.float32)
+    atoms, coords = _atomized_atom37(atoms, torch_device, n_poses=2)
+    coords.requires_grad_(True)
+    builder = prepare_atom37_pose_builder(atoms, context)
+    direct = pose_stack_from_atom37_and_topology(coords, atoms, context, no_optH=True)
+    for pose in (direct, builder(coords), builder(coords)):
+        # Every supplied atom is retained, including the noncanonical hydrogens;
+        # the first build and cached replay have the same identity Jacobian.
+        starts = struc.get_residue_starts(atoms, add_exclusive_stop=True)
+        source_atoms = []
+        for block, kind in enumerate(pose.block_type_ind[0].tolist()):
+            residue_type = pose.packed_block_types.active_block_types[kind]
+            by_name = {
+                str(atoms.atom_name[i]): i
+                for i in range(starts[block], starts[block + 1])
+            }
+            source_atoms.extend(by_name[atom.name] for atom in residue_type.atoms)
+        assert sorted(source_atoms) == list(range(len(atoms)))
+        actual = pose.coords[pose.real_atoms].reshape(2, len(atoms), 3)
+        torch.testing.assert_close(actual, coords[:, source_atoms, 1], rtol=0, atol=0)
+        gradient = torch.autograd.grad(actual.sum(), coords)[0]
+        expected = torch.zeros_like(coords)
+        expected[:, :, 1] = 1
+        torch.testing.assert_close(gradient, expected, rtol=0, atol=0)
+
+
+def test_metal_atom37_replay_refits_virtuals(biotite_1ubq, torch_device):
+    from tmol import atom_array_from_pose_stack, beta2016_score_function
+
+    # A free zinc has no donor frame from which the ordinary leaf-atom builder
+    # can reconstruct its virtual sites. Keep a real peptide in the scored batch.
+    peptide = _first_residues(biotite_1ubq, 2)
+    metal = struc.AtomArray(1)
+    metal.res_name[:] = "ZN"
+    metal.atom_name[:] = "ZN"
+    metal.element[:] = "Zn"
+    metal.chain_id[:] = "Z"
+    metal.res_id[:] = 1
+    metal.hetero[:] = True
+    metal.coord[:] = peptide.coord.mean(axis=0) + [10, 0, 0]
+    ordinary, context = pose_stack_from_atom_array(
+        peptide + metal, torch_device, no_optH=True, return_context=True
+    )
+    atoms, coordinates = _atomized_atom37(
+        atom_array_from_pose_stack(ordinary), torch_device, n_poses=2
+    )
+    builder = prepare_atom37_pose_builder(atoms, context)
+    initial = builder(coordinates)
+    assert torch.isfinite(initial.coords[initial.real_atoms]).all()
+    sfxn = beta2016_score_function(torch_device, param_db=context.parameter_database)
+    for shift in (0.0, 0.3):
+        source = (coordinates + shift).requires_grad_()
+        replay = builder(source)
+        fresh = pose_stack_from_atom37_and_topology(
+            source, atoms, context, no_optH=True
+        )
+        assert torch.isfinite(replay.coords[replay.real_atoms]).all()
+        torch.testing.assert_close(
+            replay.coords[replay.real_atoms],
+            initial.coords[initial.real_atoms] + shift,
+            rtol=2e-5,
+            atol=2e-5,
+        )
+        torch.testing.assert_close(replay.coords, fresh.coords, rtol=0, atol=0)
+        torch.testing.assert_close(
+            replay.inter_residue_connections, fresh.inter_residue_connections
+        )
+        actual = sfxn.render_whole_pose_scoring_module(replay)(replay.coords)
+        expected = sfxn.render_whole_pose_scoring_module(fresh)(fresh.coords)
+        assert torch.isfinite(actual).all()
+        torch.testing.assert_close(actual, expected)
+        grad = torch.autograd.grad(actual.sum(), source)[0]
+        reference = torch.autograd.grad(expected.sum(), source)[0]
+        assert torch.isfinite(grad).all() and torch.linalg.norm(grad) > 0
+        torch.testing.assert_close(grad, reference)
 
 
 def test_pose_stack_from_biotite_accepts_atom37_directly(biotite_1ubq, torch_device):
@@ -646,3 +776,48 @@ def test_geometric_gap_drops_bond_inferred_from_consecutive_numbering(
         (bonds[:, 1] == 4) & (bonds[:, 3] == 3)
     )
     assert not bool(across.any())
+
+
+@pytest.mark.parametrize("hydrogen_name", ["H1", "H"])
+def test_neutral_terminal_direct_and_batched_prepared_source_gradients(hydrogen_name):
+    """The source H identity and variant survive direct and cached batch binding."""
+    from tmol import atom_array_from_file
+
+    atoms = atom_array_from_file(
+        data_path("sweep_regressions", "stated_terminus_5lh4.pdb")
+    )
+    atoms = atoms[atoms.res_id == 132]
+    hydrogen = int(np.flatnonzero(atoms.atom_name == "H1")[0])
+    atoms.atom_name[hydrogen] = hydrogen_name
+    topology, coordinates = _atomized_atom37(atoms, torch.device("cpu"), n_poses=2)
+    ordinary, context = pose_stack_from_atom_array(
+        atoms, torch.device("cpu"), no_optH=True, return_context=True
+    )
+    builder = prepare_atom37_pose_builder(topology, context)
+    for mode in ("direct", "prepared", "cached"):
+        source = coordinates.clone().requires_grad_(True)
+        if mode == "direct":
+            pose = pose_stack_from_atom37_and_topology(
+                source, topology, context, no_optH=True
+            )
+        else:
+            pose = builder(source)
+        residue = pose.block_type(0, 0)
+        assert residue.name == ordinary.block_type(0, 0).name
+        bonds = np.asarray(residue.bond_indices).reshape(-1, 2)
+        nitrogen = residue.atom_to_idx["N"]
+        hydrogens = (
+            pose.packed_block_types.atom_is_hydrogen[int(pose.block_type_ind[0, 0])]
+            .cpu()
+            .numpy()
+        )
+        assert np.count_nonzero((bonds[:, 0] == nitrogen) & hydrogens[bonds[:, 1]]) == 2
+        torch.testing.assert_close(
+            pose.coords[0], ordinary.coords[0], rtol=0, atol=1e-5
+        )
+        slot = pose.block_type(0, 0).atom_to_idx["H1"]
+        torch.testing.assert_close(pose.coords[:, slot], source[:, hydrogen, 1])
+        gradient = torch.autograd.grad(pose.coords[:, slot].sum(), source)[0]
+        expected = torch.zeros_like(source)
+        expected[:, hydrogen, 1] = 1
+        torch.testing.assert_close(gradient, expected, rtol=0, atol=0)

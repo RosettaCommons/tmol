@@ -3,6 +3,13 @@ import copy
 import os
 import time
 
+from tmol_core.pack.streaming import (
+    PACKER_TASK_POSE_TENSORS as _PACKER_TASK_POSE_TENSORS,
+    interaction_graph_chunk_size,
+    packing_pose_chunk_size,
+    should_stream_interaction_graph,
+)
+
 import attr
 import torch
 
@@ -177,82 +184,20 @@ def pack_rotamers(
     return new_pose_stack
 
 
-_SMALL_PACKING_POSE_CHUNK = 25
-_DEFAULT_PACKING_POSE_CHUNK = 10
-_ESTIMATED_PACKING_BYTES_PER_BLOCK = 2 * 1024 * 1024
-_PACKING_FREE_MEMORY_FRACTION = 0.25
-_CPU_INTERACTION_GRAPH_CHUNK_SIZE = 16
-_CUDA_INTERACTION_GRAPH_CHUNK_SIZE = 32
-
-
 def _interaction_graph_chunk_size(device: torch.device) -> int:
-    """Select the benchmarked backend-specific sparse-table chunk width."""
-    return (
-        _CUDA_INTERACTION_GRAPH_CHUNK_SIZE
-        if device.type == "cuda"
-        else _CPU_INTERACTION_GRAPH_CHUNK_SIZE
-    )
+    return interaction_graph_chunk_size(device.type)
 
 
 def _max_poses_per_packing_chunk(pose_stack: PoseStack) -> int:
-    """Return a bounded, memory-aware native-packer batch size.
-
-    Native score dispatches use signed 32-bit per-chunk indices. Keeping the
-    batch bounded prevents a wide pose stack from overflowing those indices
-    and also limits transient score/index storage. The size cutoff and memory
-    estimate are deliberately conservative: packing scratch grows with both
-    residue count and rotamer density. The environment override is primarily
-    for deterministic tests and performance tuning.
-    """
     configured = os.environ.get("TMOL_PACK_MAX_POSES_PER_CHUNK")
-    if configured is not None:
-        try:
-            chunk_size = int(configured)
-        except ValueError as error:
-            raise ValueError(
-                "TMOL_PACK_MAX_POSES_PER_CHUNK must be a positive integer; "
-                f"got {configured!r}"
-            ) from error
-        if chunk_size <= 0:
-            raise ValueError(
-                "TMOL_PACK_MAX_POSES_PER_CHUNK must be a positive integer; "
-                f"got {configured!r}"
-            )
-        return chunk_size
-
-    max_n_blocks = pose_stack.max_n_blocks
-    chunk_size = (
-        _SMALL_PACKING_POSE_CHUNK
-        if max_n_blocks <= 256
-        else _DEFAULT_PACKING_POSE_CHUNK
-    )
-
-    if pose_stack.device.type == "cuda":
+    free_bytes = None
+    if configured is None and pose_stack.device.type == "cuda":
         free_bytes, _ = torch.cuda.mem_get_info(pose_stack.device)
-        # Blocks cached but unused by torch's allocator are free to the packer too.
+        # Cached but unused Torch allocations are available to packing too.
         free_bytes += torch.cuda.memory_reserved(
             pose_stack.device
         ) - torch.cuda.memory_allocated(pose_stack.device)
-        memory_budget = int(free_bytes * _PACKING_FREE_MEMORY_FRACTION)
-        estimated_bytes_per_pose = (
-            max(1, max_n_blocks) * _ESTIMATED_PACKING_BYTES_PER_BLOCK
-        )
-        memory_limited_chunk = max(1, memory_budget // estimated_bytes_per_pose)
-        chunk_size = min(chunk_size, memory_limited_chunk)
-    return chunk_size
-
-
-_PACKER_TASK_POSE_TENSORS = (
-    "is_real_block",
-    "per_block_orig_block_type",
-    "per_block_n_considered_block_types",
-    "per_block_considered_block_types",
-    "per_block_considered_block_types_is_orig",
-    "restrict_to_repacking_masks",
-    "per_block_is_block_type_allowed",
-    "per_block_conformer_sampler_allowed",
-    "per_block_chi_expansion",
-)
+    return packing_pose_chunk_size(pose_stack.max_n_blocks, free_bytes, configured)
 
 
 def _slice_pose_stack_for_packing(
@@ -355,9 +300,6 @@ def _anneal_on(energy_tables, anneal_device, pose_device, n_trajectories):
         return _run_simulated_annealing(energy_tables, n_trajectories)
 
     anneal_device = torch.device(anneal_device)
-    if anneal_device == pose_device:
-        return _run_simulated_annealing(energy_tables, n_trajectories)
-
     # Not TensorGroup.to: the table group carries plain ints beside its
     # tensors, which that method rejects.
     moved = attr.evolve(
@@ -374,10 +316,8 @@ def _anneal_on(energy_tables, anneal_device, pose_device, n_trajectories):
 
 def _should_stream_interaction_graph(pose_stack, rotamer_set, task) -> bool:
     """Select the non-differentiable bounded-memory CUDA packing path."""
-    return (
-        pose_stack.device.type == "cuda"
-        and not rotamer_set.correlated_groups
-        and not task.bump_check
+    return should_stream_interaction_graph(
+        pose_stack.device.type, rotamer_set.correlated_groups, task.bump_check
     )
 
 
@@ -747,144 +687,20 @@ def _build_streaming_interaction_graph(
     graph_inputs,
     verbose,
 ):
-    """Build a CUDA interaction graph with three bounded score passes.
+    from tmol.pack.compiled import _compiled as execution
+    from tmol_core.pack.streaming import build_streaming_interaction_graph
 
-    The graph is inference-only. Running the passes under ``no_grad`` keeps
-    each bounded page from retaining autograd state for the whole candidate
-    set, which otherwise accumulates across FastRelax packing stages.
-    """
-    from tmol.pack.compiled._compiled import (
-        _accumulate_interaction_graph_entries,
-        _build_interaction_graph,
-        _finalize_interaction_graph_chunk_topology,
-        _finalize_interaction_graph_topology,
-        _initialize_interaction_graph_topology,
-        _note_interaction_graph_chunk_topology,
-        _note_interaction_graph_topology,
-    )
-
-    (
-        max_n_block_types,
-        n_rots_for_pose,
-        rot_offset_for_pose,
-        n_rots_for_block,
-        rot_offset_for_block,
-        pose_for_rot,
-        block_type_ind_for_rot,
-        block_ind_for_rot,
-    ) = graph_inputs
-    empty_indices = torch.empty((3, 0), dtype=torch.int32, device=coords.device)
-    empty_values = torch.empty(0, dtype=torch.float32, device=coords.device)
-
-    # Empty no-bump construction establishes the canonical kept/fixed rotamer
-    # numbering without retaining any score layout.
-    base = list(
-        _build_interaction_graph(
-            False,
-            chunk_size,
-            max_n_block_types,
-            n_rots_for_pose,
-            rot_offset_for_pose,
-            n_rots_for_block,
-            rot_offset_for_block,
-            pose_for_rot,
-            block_type_ind_for_rot,
-            block_ind_for_rot,
-            empty_indices,
-            empty_values,
-            # The table is empty: this call establishes the kept/fixed rotamer
-            # numbering and retains no score layout, so "all entries unique"
-            # is both true and irrelevant.
-            -1,
-            verbose,
+    def entries(*, topology_only):
+        return rotamer_scoring_module._iter_weighted_sparse_entries(
+            coords, retain_shared_dispatch=False, topology_only=topology_only
         )
-    )
-    block_adjacency, orig_block_to_molten = _initialize_interaction_graph_topology(
-        n_rots_for_block,
-        base[4],
-        empty_values,
-    )
 
-    # Pass one records block topology only. Chunk support is allocated after
-    # the sparse block graph is known, avoiding a global n_chunks**2 bitset.
-    for _, indices, values in rotamer_scoring_module._iter_weighted_sparse_entries(
-        coords, retain_shared_dispatch=False, topology_only=True
-    ):
-        (block_adjacency,) = _note_interaction_graph_topology(
-            block_ind_for_rot,
-            orig_block_to_molten,
-            block_adjacency,
-            indices,
-            values,
-        )
-        del indices, values
-
-    chunk_topology = list(
-        _finalize_interaction_graph_topology(
-            chunk_size,
-            base[4],
-            block_adjacency,
-            empty_values,
-        )
-    )
-    del block_adjacency
-
-    # Pass two records chunk support inside each observed block edge.
-    for _, indices, values in rotamer_scoring_module._iter_weighted_sparse_entries(
-        coords, retain_shared_dispatch=False, topology_only=True
-    ):
-        (chunk_topology[4],) = _note_interaction_graph_chunk_topology(
-            chunk_size,
-            n_rots_for_block,
-            rot_offset_for_block,
-            block_ind_for_rot,
-            orig_block_to_molten,
-            base[4],
-            chunk_topology[0],
-            chunk_topology[1],
-            chunk_topology[3],
-            chunk_topology[4],
-            indices,
-            values,
-        )
-        del indices, values
-
-    base[11], base[12], base[13] = chunk_topology[:3]
-    base[14], base[15] = _finalize_interaction_graph_chunk_topology(
+    return build_streaming_interaction_graph(
+        entries,
+        graph_inputs,
         chunk_size,
-        base[4],
-        chunk_topology[0],
-        chunk_topology[1],
-        chunk_topology[2],
-        chunk_topology[3],
-        chunk_topology[4],
-        empty_values,
+        torch.empty((3, 0), dtype=torch.int32, device=coords.device),
+        torch.empty(0, dtype=torch.float32, device=coords.device),
+        execution,
+        verbose,
     )
-    del chunk_topology
-
-    # Pass three adds terms in canonical order. Native accumulation is
-    # additive, preserving duplicate coordinates and CSR transpose symmetry.
-    for _, indices, values in rotamer_scoring_module._iter_weighted_sparse_entries(
-        coords, retain_shared_dispatch=False
-    ):
-        base[9], base[10], base[15] = _accumulate_interaction_graph_entries(
-            chunk_size,
-            n_rots_for_block,
-            rot_offset_for_block,
-            block_ind_for_rot,
-            orig_block_to_molten,
-            base[7],
-            base[4],
-            base[5],
-            base[11],
-            base[12],
-            base[13],
-            base[14],
-            base[9],
-            base[10],
-            base[15],
-            indices,
-            values,
-        )
-        del indices, values
-    return tuple(base)

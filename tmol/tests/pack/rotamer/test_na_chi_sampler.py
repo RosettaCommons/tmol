@@ -3,8 +3,6 @@
 import torch
 import pytest
 
-import tmol.pack.rotamer._na_chi_sampler as na_chi_sampler_module
-
 from tmol.io._canonical_ordering import (
     _default_canonical_ordering,
     _default_packed_block_types,
@@ -168,13 +166,13 @@ def test_na_sampler_measures_only_enabled_na_puckers(
     assert 0 < expected < task.cons_bt_block_type.shape[0]
 
     calls = []
-    original = na_chi_sampler_module.pucker_weights
+    original = NaChiRotamerSampler._pucker_for_blocks
 
-    def record_pucker_count(xyz, temperature):
-        calls.append(xyz.shape[0])
-        return original(xyz, temperature)
+    def record_pucker_count(self, poses, pbt, pose_indices, *args):
+        calls.append(pose_indices.shape[0])
+        return original(self, poses, pbt, pose_indices, *args)
 
-    monkeypatch.setattr(na_chi_sampler_module, "pucker_weights", record_pucker_count)
+    monkeypatch.setattr(NaChiRotamerSampler, "_pucker_for_blocks", record_pucker_count)
     sampler.sample_chi_for_poses(poses, task)
 
     assert calls == [expected]
@@ -276,3 +274,73 @@ def test_na_sampler_ignores_sampling_work_for_non_nucleotides(
     sampler.annotate_residue_type(rt)
     assert rt.na_chi_sampler_params["base"] == -1
     assert rt.na_chi_sampler_params["proton_chi"] == []
+
+
+@pytest.mark.parametrize("syn", [False, True])
+def test_na_sampler_custom_table_derivatives(rna_pdb, default_database, syn):
+    """Learnable table values retain their derivative through discrete sampling."""
+    import attr
+
+    poses = _pose_stack(rna_pdb, torch.device("cpu"))
+    sampler = NaChiRotamerSampler.from_database(
+        default_database, poses.device, chi_sample_level=1, sample_syn=syn
+    )
+    means = sampler.params.chi_means.clone().requires_grad_()
+    sdev = sampler.params.sdev_chi.clone().requires_grad_()
+    sampler = attr.evolve(
+        sampler, params=attr.evolve(sampler.params, chi_means=means, sdev_chi=sdev)
+    )
+    task = _set_task(poses, sampler)
+    cache = sampler.annotate_packed_block_types(poses.packed_block_types)
+    original_proton = cache["proton"]
+    proton = original_proton.clone().requires_grad_()
+    cache["proton"] = proton
+    try:
+        parameters = (means, sdev, proton)
+        # Perturb each table in the same physical angular units: library
+        # means/widths are degrees, whereas proton samples are radians.
+        directions = tuple(
+            torch.cos(torch.arange(p.numel(), dtype=p.dtype)).reshape_as(p) * scale
+            for p, scale in zip(parameters, (180.0 / torch.pi, 180.0 / torch.pi, 1.0))
+        )
+        chi = sampler.sample_chi_for_poses(poses, task)[3]
+        # Accumulate the diagnostic objective in double precision so subtraction
+        # of many float32 sample values does not dominate the finite difference.
+        loss = chi.double().sin().sum()
+        gradients = torch.autograd.grad(loss, parameters, create_graph=True)
+        slope = sum((g * d).sum() for g, d in zip(gradients, directions))
+        hessian = torch.autograd.grad(slope, parameters)
+        curvature = sum((h * d).sum() for h, d in zip(hessian, directions))
+
+        def perturbed(eps):
+            shifted = tuple(
+                p.detach() + eps * d for p, d in zip(parameters, directions)
+            )
+            params = attr.evolve(
+                sampler.params, chi_means=shifted[0], sdev_chi=shifted[1]
+            )
+            other = attr.evolve(sampler, params=params)
+            cache["proton"] = shifted[2]
+            return other.sample_chi_for_poses(poses, _set_task(poses, other))[3]
+
+        for epsilon in (0.01, 0.003):
+            plus, minus = perturbed(epsilon), perturbed(-epsilon)
+            torch.testing.assert_close(
+                slope,
+                (plus.double().sin().sum() - minus.double().sin().sum())
+                / (2 * epsilon),
+                rtol=8e-4,
+                atol=3e-4,
+                check_dtype=False,
+            )
+            tangent = (plus - minus) / (2 * epsilon)
+            torch.testing.assert_close(
+                curvature,
+                (-chi.detach().double().sin() * tangent.double().square()).sum(),
+                rtol=8e-4,
+                atol=3e-4,
+                check_dtype=False,
+            )
+        assert all(torch.isfinite(g).all() and g.abs().sum() > 0 for g in gradients)
+    finally:
+        cache["proton"] = original_proton

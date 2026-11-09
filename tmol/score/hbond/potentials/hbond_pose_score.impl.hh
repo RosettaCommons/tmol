@@ -1,4 +1,5 @@
 #pragma once
+#include <tmol/score/common/pose_energy_accumulation.hh>
 
 #include <tmol/utility/portable/array.hh>
 #include <tmol/utility/portable/reduce_ops.hh>
@@ -28,7 +29,7 @@
 
 #include <tmol/score/hbond/potentials/hbond.hh>
 #include <tmol/score/hbond/potentials/hbond_ctx_tensor.hh>
-#include <tmol/score/hbond/potentials/hbond_kernels.hh>
+#include <tmol/score/hbond/potentials/native_hbond_pose.hh>
 #include <tmol/backends/metal/score/common/mps_launch.hh>
 #ifdef WITH_MPS
 #include <tmol/backends/metal/score/hbond/potentials/hbond_mps_kernels_source.h>
@@ -216,10 +217,6 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
 
   // Block-pair autograd recomputes coordinate derivatives in backward.
   bool const accumulate_derivs = compute_derivs && !output_block_pair_energies;
-  auto dV_dcoords_t = accumulate_derivs
-                          ? TPack<Vec<Real, 3>, 2, Dev>::zeros({1, n_atoms})
-                          : TPack<Vec<Real, 3>, 2, Dev>::empty({1, 0});
-  auto dV_dcoords = dV_dcoords_t.view;
 
   bool const use_shared_compact_block_neighbors =
       shared_compact_block_neighbors.size(0) != 0;
@@ -256,7 +253,7 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
             first_rot_block_type,
             scratch_rot_spheres,
             scratch_rot_neighbors,
-            Real(5.5));
+            Real(hbond_neighbor_reach()));
   }
 
   // Metal accumulates whole-pose totals into per-block-pair cells and reduces
@@ -272,211 +269,159 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
   // block-pair scoring already writes, so this reuses the store that is there.
   // The CPU and CUDA paths are unchanged. See elec_pose_score.impl.hh, which
   // solved this first.
-  bool const mps_cell_reduction =
-      Dev == tmol::Device::MPS && !output_block_pair_energies;
-  TPack<Real, 4, Dev> output_t;
-  TPack<Real, 4, Dev> cells_t;
-  if (output_block_pair_energies) {
-    output_t =
-        TPack<Real, 4, Dev>::zeros({1, n_poses, max_n_blocks, max_n_blocks});
-  } else {
-    output_t = TPack<Real, 4, Dev>::zeros({1, n_poses, 1, 1});
-    if (mps_cell_reduction) {
-      cells_t =
-          TPack<Real, 4, Dev>::zeros({1, n_poses, max_n_blocks, max_n_blocks});
-    }
-  }
-  auto output = mps_cell_reduction ? cells_t.view : output_t.view;
-
-  /*for(int i = 0; i < dispatch_indices.size(1); i++){
-    printf("DISPATCH %i, %i %i %i", i,
-      dispatch_indices[0][i],
-      dispatch_indices[1][i],
-      dispatch_indices[2][i]);
-  }*/
-
-  // Optimal launch box on v100 and a100 is nt=32, vt=1
-  LAUNCH_BOX_32;
-  // Define nt and reduce_t
-  CTA_REAL_REDUCE_T_TYPEDEF;
-
-  // The total number of unique block pairs (including self-pairs)
-  int const max_n_upper_triangle_inds = score::common::checked_triangular_size(
-      max_n_blocks, true, "hydrogen-bond block-pair dispatch");
-
-  // State the kernel bodies read, named explicitly rather than captured
-  // implicitly by [=]; the Metal backend has nowhere for a closure to live, so
-  // the tile machinery in hbond_kernels.hh reads this struct instead. One
-  // context serves both kernel families: whole-pose scoring writes
-  // [term, pose, block, block] and rotamer scoring [term, rot_pair].
-  HBondCtx<Real, Int, Dev, 4, 3, 2> ctx;
-  ctx.rot_coords = rot_coords;
-  ctx.rot_coord_offset = rot_coord_offset;
-  ctx.block_ind_for_rot = block_ind_for_rot;
-  ctx.block_type_ind_for_rot = block_type_ind_for_rot;
-  ctx.rot_offset_for_block = rot_offset_for_block;
-  ctx.pose_stack_near_blocks = pose_stack_near_blocks;
-  ctx.pose_stack_inter_block_bondsep = pose_stack_inter_block_bondsep;
-  ctx.block_type_n_atoms = block_type_n_atoms;
-  ctx.block_type_n_interblock_bonds = block_type_n_interblock_bonds;
-  ctx.block_type_atoms_forming_chemical_bonds =
-      block_type_atoms_forming_chemical_bonds;
-  ctx.block_type_path_distance = block_type_path_distance;
-  ctx.block_type_tile_n_donH = block_type_tile_n_donH;
-  ctx.block_type_tile_n_acc = block_type_tile_n_acc;
-  ctx.block_type_tile_donH_inds = block_type_tile_donH_inds;
-  ctx.block_type_tile_acc_inds = block_type_tile_acc_inds;
-  ctx.block_type_tile_donor_type = block_type_tile_donor_type;
-  ctx.block_type_tile_acceptor_type = block_type_tile_acceptor_type;
-  ctx.block_type_tile_hybridization = block_type_tile_hybridization;
-  ctx.pair_params = pair_params;
-  ctx.pair_polynomials = pair_polynomials;
-  ctx.global_params = global_params;
-  ctx.derived_coords = derived_coords;
-  ctx.derived_atom_inds = derived_atom_inds;
-  ctx.dispatch_indices = scratch_rot_neighbors;
-  ctx.dV_dcoords = dV_dcoords;
-  ctx.max_n_blocks = max_n_blocks;
-  ctx.output_block_pair_energies = output_block_pair_energies;
-  ctx.accumulate_derivs = accumulate_derivs;
-  ctx.output = output;
-  ctx.dTdV = output;
-  ctx.max_n_upper_triangle_inds = max_n_upper_triangle_inds;
-  ctx.use_shared_compact_block_neighbors = use_shared_compact_block_neighbors;
-  // Empty on CPU and CUDA; on Metal it carries the thread index and the
-  // reduction scratch the workgroup primitives need. See workgroup_lane.hh.
-  WorkgroupLane<Dev> lane;
-
-  using PairMode = common::TilePairMode;
-#ifdef __NVCC__
-  auto eval_energies_impl = ([=] TMOL_DEVICE_FUNC(
-                                 int cta,
-                                 auto derivative_tag,
-                                 auto pair_mode_tag) {
-    constexpr auto Mode = decltype(pair_mode_tag)::value;
-    typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    hbond_pose_eval_energies<DeviceDispatch, Dev, Real, Int, launch_t, Mode>(
-        ctx, shared, cta, derivative_tag);
-  });
-#else
-  auto eval_energies = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    hbond_pose_eval_energies<
-        DeviceDispatch,
-        Dev,
-        Real,
-        Int,
-        launch_t,
-        PairMode::InterAndIntra>(ctx, shared, cta, accumulate_derivs);
-  });
-#endif
-
-#ifdef __NVCC__
-  auto launch_energies = [&](auto eval_energies) {
-#endif
-    if (Dev == tmol::Device::MPS) {
-      // Metal cannot launch a device lambda -- there is nowhere for a closure
-      // to live, and entry points are compiled by a separate toolchain -- so
-      // the same kernel body is reached through a named entry instead. The
-      // context the lambda closes over is the same object either way.
-      //
-      // Tested ahead of the compact-block-neighbor path below because that one
-      // launches through DeviceDispatch, which on this backend would run the
-      // kernel on the CPU.
-      tmol::score::common::mps_launch_if<Dev>(
-          TMOL_MPS_SOURCE(kHBondMetalShaderSource),
-          accumulate_derivs ? "hbond_pose_eval_energies_derivs_f32"
-                            : "hbond_pose_eval_energies_f32",
-          ctx,
-          int64_t(n_poses) * int64_t(max_n_upper_triangle_inds),
-          true);
-      if (mps_cell_reduction) {
-        // Fixed-order reduction over the cells, so the pose total is
-        // bit-reproducible across calls with the same shape.
-        score::common::pose_total_reduce<DeviceDispatch, Dev, Real>::f(
-            mgr, cells_t.view, output_t.view);
-      }
-    } else if (
-        !output_block_pair_energies && use_shared_compact_block_neighbors) {
-      score::common::sphere_overlap::launch_precomputed_block_neighbors<
-          DeviceDispatch,
-          Dev,
-          launch_t,
-          Int>(
-          mgr,
-          shared_compact_block_neighbors,
-          n_poses,
-          max_n_blocks,
-          eval_energies);
-    }
-#ifdef __NVCC__
-    else if (
-        !output_block_pair_energies
-        && score::common::sphere_overlap::should_compact_block_neighbors(
-            n_poses, max_n_blocks, compute_derivs)) {
-      score::common::sphere_overlap::
-          launch_compact_block_neighbors<DeviceDispatch, Dev, launch_t, Int>(
-              mgr, scratch_rot_neighbors, eval_energies);
-    }
-#endif
-    else {
-      DeviceDispatch<Dev>::template foreach_pose_workgroup<launch_t>(
-          mgr, n_poses, max_n_upper_triangle_inds, eval_energies);
-    }
-
-#ifdef __NVCC__
-  };
-  // Split derivative evaluation only when the stack is large enough to
-  // amortize the second pass. Both passes preserve the original candidate IDs.
-  bool const split_pairs =
-      allow_split_pairs && !output_block_pair_energies
-      && use_shared_compact_block_neighbors && max_n_blocks > 1
-      && int64_t(n_poses) * max_n_blocks >= 4096
-      && shared_compact_block_neighbors.size(0) - 1 >= (1 << 15);
-  // Keep the combined latency path for small stacks. Specializing only the
-  // HBond score kernel can slow subsequent terms in this workload range.
-  if (accumulate_derivs || n_rots < 512) {
-    if (accumulate_derivs && split_pairs) {
-      auto eval_inter = ([=] TMOL_DEVICE_FUNC(int cta) {
-        eval_energies_impl(
-            cta,
-            std::true_type{},
-            std::integral_constant<PairMode, PairMode::Inter>{});
-      });
-      launch_energies(eval_inter);
-      auto eval_intra = ([=] TMOL_DEVICE_FUNC(int cta) {
-        eval_energies_impl(
-            cta,
-            std::true_type{},
-            std::integral_constant<PairMode, PairMode::Intra>{});
-      });
-      launch_energies(eval_intra);
+  return score::common::with_pose_energy_accumulation<
+      Dev,
+      Real>(output_block_pair_energies, [&](auto precision) {
+    using EnergyReal = decltype(precision);
+    // Sum CUDA float derivatives before the single public-dtype cast.
+    using GradReal = EnergyReal;
+    auto dV_dcoords_t =
+        accumulate_derivs ? TPack<Vec<GradReal, 3>, 2, Dev>::zeros({1, n_atoms})
+                          : TPack<Vec<GradReal, 3>, 2, Dev>::empty({1, 0});
+    auto dV_dcoords = dV_dcoords_t.view;
+    bool const mps_cell_reduction =
+        Dev == tmol::Device::MPS && !output_block_pair_energies;
+    TPack<EnergyReal, 4, Dev> output_t;
+    TPack<EnergyReal, 4, Dev> cells_t;
+    if (output_block_pair_energies) {
+      output_t = TPack<EnergyReal, 4, Dev>::zeros(
+          {1, n_poses, max_n_blocks, max_n_blocks});
     } else {
-      auto eval = ([=] TMOL_DEVICE_FUNC(int cta) {
-        eval_energies_impl(
-            cta,
-            accumulate_derivs,
-            std::integral_constant<PairMode, PairMode::InterAndIntra>{});
-      });
-      launch_energies(eval);
+      output_t = TPack<EnergyReal, 4, Dev>::zeros({1, n_poses, 1, 1});
+      if (mps_cell_reduction) {
+        cells_t = TPack<EnergyReal, 4, Dev>::zeros(
+            {1, n_poses, max_n_blocks, max_n_blocks});
+      }
     }
-  } else {
-    auto eval = ([=] TMOL_DEVICE_FUNC(int cta) {
-      eval_energies_impl(
-          cta,
-          std::false_type{},
-          std::integral_constant<PairMode, PairMode::InterAndIntra>{});
-    });
-    launch_energies(eval);
-  }
-#endif
+    auto output = mps_cell_reduction ? cells_t.view : output_t.view;
 
-  // DeviceDispatch<Dev>::synchronize_device();
-  return {output_t, dV_dcoords_t, scratch_rot_neighbors_t};
+    /*for(int i = 0; i < dispatch_indices.size(1); i++){
+      printf("DISPATCH %i, %i %i %i", i,
+        dispatch_indices[0][i],
+        dispatch_indices[1][i],
+        dispatch_indices[2][i]);
+    }*/
+
+    // Optimal launch box on v100 and a100 is nt=32, vt=1
+    LAUNCH_BOX_32;
+    // Define nt and reduce_t
+    CTA_REAL_REDUCE_T_TYPEDEF;
+
+    // The total number of unique block pairs (including self-pairs)
+    int const max_n_upper_triangle_inds =
+        score::common::checked_triangular_size(
+            max_n_blocks, true, "hydrogen-bond block-pair dispatch");
+
+    // State the kernel bodies read, named explicitly rather than captured
+    // implicitly by [=]; the Metal backend has nowhere for a closure to live,
+    // so the tile machinery in hbond_kernels.hh reads this struct instead. One
+    // context serves both kernel families: whole-pose scoring writes
+    // [term, pose, block, block] and rotamer scoring [term, rot_pair].
+    HBondCtx<Real, Int, Dev, 4, 3, 2, EnergyReal, GradReal> ctx;
+    ctx.rot_coords = rot_coords;
+    ctx.rot_coord_offset = rot_coord_offset;
+    ctx.block_ind_for_rot = block_ind_for_rot;
+    ctx.block_type_ind_for_rot = block_type_ind_for_rot;
+    ctx.rot_offset_for_block = rot_offset_for_block;
+    ctx.pose_stack_near_blocks = pose_stack_near_blocks;
+    ctx.pose_stack_inter_block_bondsep = pose_stack_inter_block_bondsep;
+    ctx.block_type_n_atoms = block_type_n_atoms;
+    ctx.block_type_n_interblock_bonds = block_type_n_interblock_bonds;
+    ctx.block_type_atoms_forming_chemical_bonds =
+        block_type_atoms_forming_chemical_bonds;
+    ctx.block_type_path_distance = block_type_path_distance;
+    ctx.block_type_tile_n_donH = block_type_tile_n_donH;
+    ctx.block_type_tile_n_acc = block_type_tile_n_acc;
+    ctx.block_type_tile_donH_inds = block_type_tile_donH_inds;
+    ctx.block_type_tile_acc_inds = block_type_tile_acc_inds;
+    ctx.block_type_tile_donor_type = block_type_tile_donor_type;
+    ctx.block_type_tile_acceptor_type = block_type_tile_acceptor_type;
+    ctx.block_type_tile_hybridization = block_type_tile_hybridization;
+    ctx.pair_params = pair_params;
+    ctx.pair_polynomials = pair_polynomials;
+    ctx.global_params = global_params;
+    ctx.derived_coords = derived_coords;
+    ctx.derived_atom_inds = derived_atom_inds;
+    ctx.dispatch_indices = scratch_rot_neighbors;
+    ctx.dV_dcoords = dV_dcoords;
+    ctx.max_n_blocks = max_n_blocks;
+    ctx.output_block_pair_energies = output_block_pair_energies;
+    ctx.accumulate_derivs = accumulate_derivs;
+    ctx.output = output;
+    // Forward kernels do not read the output cotangent. Preserve its original
+    // binding for equal storage types, including the Metal context layout.
+    if constexpr (std::is_same_v<EnergyReal, Real>) ctx.dTdV = output;
+    ctx.max_n_upper_triangle_inds = max_n_upper_triangle_inds;
+    ctx.use_shared_compact_block_neighbors = use_shared_compact_block_neighbors;
+    // Empty on CPU and CUDA; on Metal it carries the thread index and the
+    // reduction scratch the workgroup primitives need. See workgroup_lane.hh.
+    WorkgroupLane<Dev> lane;
+
+    auto launch_energies = [&](auto eval_energies) {
+      if (Dev == tmol::Device::MPS) {
+        // Metal cannot launch a device lambda -- there is nowhere for a closure
+        // to live, and entry points are compiled by a separate toolchain -- so
+        // the same kernel body is reached through a named entry instead. The
+        // context the lambda closes over is the same object either way.
+        //
+        // Tested ahead of the compact-block-neighbor path below because that
+        // one launches through DeviceDispatch, which on this backend would run
+        // the kernel on the CPU.
+        tmol::score::common::mps_launch_if<Dev>(
+            TMOL_MPS_SOURCE(kHBondMetalShaderSource),
+            accumulate_derivs ? "hbond_pose_eval_energies_derivs_f32"
+                              : "hbond_pose_eval_energies_f32",
+            ctx,
+            int64_t(n_poses) * int64_t(max_n_upper_triangle_inds),
+            true);
+        if (mps_cell_reduction) {
+          // Fixed-order reduction over the cells, so the pose total is
+          // bit-reproducible across calls with the same shape.
+          score::common::pose_total_reduce<DeviceDispatch, Dev, EnergyReal>::f(
+              mgr, cells_t.view, output_t.view);
+        }
+      } else if (
+          !output_block_pair_energies && use_shared_compact_block_neighbors) {
+        score::common::sphere_overlap::launch_precomputed_block_neighbors<
+            DeviceDispatch,
+            Dev,
+            launch_t,
+            Int>(
+            mgr,
+            shared_compact_block_neighbors,
+            n_poses,
+            max_n_blocks,
+            eval_energies);
+      }
+#ifdef __NVCC__
+      else if (
+          !output_block_pair_energies
+          && score::common::sphere_overlap::should_compact_block_neighbors(
+              n_poses, max_n_blocks, compute_derivs)) {
+        score::common::sphere_overlap::
+            launch_compact_block_neighbors<DeviceDispatch, Dev, launch_t, Int>(
+                mgr, scratch_rot_neighbors, eval_energies);
+      }
+#endif
+      else {
+        DeviceDispatch<Dev>::template foreach_pose_workgroup<launch_t>(
+            mgr, n_poses, max_n_upper_triangle_inds, eval_energies);
+      }
+    };
+    launch_hbond_pose<DeviceDispatch, Dev, Real, Int>(
+        ctx,
+        n_poses,
+        n_rots,
+        shared_compact_block_neighbors.size(0) - 1,
+        allow_split_pairs,
+        launch_energies);
+
+    // DeviceDispatch<Dev>::synchronize_device();
+    return std::make_tuple(
+        output_t.template cast<Real>(),
+        dV_dcoords_t.template cast<Vec<Real, 3>>(),
+        scratch_rot_neighbors_t);
+  });
 }
 
 template <
@@ -954,7 +899,7 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
               rot_offset_for_block,
               scratch_rot_spheres,
               lockstep_group_for_block,
-              Real(5.5));
+              Real(hbond_neighbor_reach()));
   }
 
   auto dispatch_indices = dispatch_indices_t.view;
@@ -973,11 +918,6 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
       dispatch_indices[1][i],
       dispatch_indices[2][i]);
   }*/
-
-  // Optimal launch box on v100 and a100 is nt=32, vt=1
-  LAUNCH_BOX_32;
-  // Define nt and reduce_t
-  CTA_REAL_REDUCE_T_TYPEDEF;
 
   // State the kernel body reads, named explicitly rather than captured
   // implicitly by [=]. The rotamer family's output is [term, rot_pair] and its
@@ -1012,34 +952,13 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
   ctx.output = output;
   ctx.dV_dcoords = dV_dcoords;
   ctx.max_n_blocks = max_n_blocks;
+  ctx.max_n_upper_triangle_inds = 0;
+  ctx.use_shared_compact_block_neighbors = false;
   ctx.output_block_pair_energies = output_block_pair_energies;
   ctx.accumulate_derivs = accumulate_derivs;
   // Read only by the backward kernel; the Metal launcher binds every view, so
   // it must not be left default-constructed.
   ctx.dTdV = output;
-
-  auto eval_energies = ([=] TMOL_DEVICE_FUNC(int cta) {
-    typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-    if (accumulate_derivs) {
-      hbond_rotamer_eval_energies<
-          DeviceDispatch,
-          Dev,
-          Real,
-          Int,
-          launch_t,
-          true>(ctx, shared, cta);
-    } else {
-      hbond_rotamer_eval_energies<
-          DeviceDispatch,
-          Dev,
-          Real,
-          Int,
-          launch_t,
-          false>(ctx, shared, cta);
-    }
-  });
 
   // Evaluate the prepared rotamer-pair dispatch list.
 
@@ -1060,12 +979,9 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
         ctx,
         dispatch_indices.size(1),
         true);
-  } else if (compute_derivs) {
-    DeviceDispatch<Dev>::template foreach_workgroup<launch_t>(
-        mgr, dispatch_indices.size(1), eval_energies);
   } else {
-    DeviceDispatch<Dev>::template foreach_independent_workgroup<launch_t>(
-        mgr, dispatch_indices.size(1), eval_energies);
+    launch_hbond_rotamer<false, DeviceDispatch, Dev, Real, Int>(
+        mgr, ctx, compute_derivs);
   }
 
   // DeviceDispatch<Dev>::synchronize_device();
@@ -1175,11 +1091,6 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
   auto dV_dcoords_t = TPack<Vec<Real, 3>, 1, Dev>::zeros({n_atoms});  // TODO
   auto dV_dcoords = dV_dcoords_t.view;
 
-  // Optimal launch box on v100 and a100 is nt=32, vt=1
-  LAUNCH_BOX_32;
-  // Define nt and reduce_t
-  CTA_REAL_REDUCE_T_TYPEDEF;
-
   // State the kernel bodies read, named explicitly rather than captured
   // implicitly by [=]; see the forward pass. The last context parameter is
   // the derivative rank: a backward pass accumulates into a rank-1 tensor
@@ -1221,134 +1132,7 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
   ctx.use_shared_compact_block_neighbors = false;
   ctx.output_block_pair_energies = true;
   ctx.accumulate_derivs = true;
-  // Empty on CPU and CUDA; on Metal it carries the thread index and the
-  // reduction scratch the workgroup primitives need. See workgroup_lane.hh.
-  WorkgroupLane<Dev> lane;
-
-  auto eval_derivs = ([=] TMOL_DEVICE_FUNC(int cta) {
-    int const max_important_bond_separation = 4;
-
-    int const pose_ind = dispatch_indices[0][cta];
-
-    int const rot_ind1 = dispatch_indices[1][cta];
-    int const rot_ind2 = dispatch_indices[2][cta];
-
-    int const block_ind1 = block_ind_for_rot[rot_ind1];
-    int const block_ind2 = block_ind_for_rot[rot_ind2];
-
-    int const block_type1 = block_type_ind_for_rot[rot_ind1];
-    int const block_type2 = block_type_ind_for_rot[rot_ind2];
-
-    int const n_atoms1 = block_type_n_atoms[block_type1];
-    int const n_atoms2 = block_type_n_atoms[block_type2];
-
-    auto hbond_atom_energy =
-        ([=] TMOL_DEVICE_FUNC(
-             int don_ind,
-             int acc_ind,
-             int don_tile_ind,
-             int acc_tile_ind,
-             int don_start,
-             int acc_start,
-             TMOL_THREAD HBondSingleResData<Real> const& don_dat,
-             TMOL_THREAD HBondSingleResData<Real> const& acc_dat,
-             TMOL_THREAD HBondRotPairData<Real> const& respair_dat,
-             int cp_separation) {
-          if (cp_separation < 5) {
-            return Real(0.0);
-          }
-          Real val = hbond_atom_derivs<TILE_SIZE, Dev, Real, Int>(
-              don_ind,
-              acc_ind,
-              don_tile_ind,
-              acc_tile_ind,
-              don_start,
-              acc_start,
-              don_dat,
-              acc_dat,
-              respair_dat,
-              cp_separation,
-              dTdV[0][cta],
-              derived_coords,
-              derived_atom_inds,
-              pair_params,
-              pair_polynomials,
-              dV_dcoords);
-          return Real(0.0);
-        });
-
-    auto score_inter_hbond_atom_pair = ([=] SCORE_INTER_HBOND_ATOM_PAIR);
-
-    auto score_intra_hbond_atom_pair = ([=] SCORE_INTRA_HBOND_ATOM_PAIR);
-
-    typedef HBondSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
-        shared_mem_union;
-    SHARED_MEMORY shared_mem_union shared;
-
-    auto load_tile_invariant_interres_data =
-        ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
-
-    auto load_interres1_tile_data_to_shared =
-        ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
-
-    auto load_interres2_tile_data_to_shared =
-        ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
-
-    auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
-
-    auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
-
-    auto store_calculated_energies =
-        ([=] TMOL_DEVICE_FUNC(
-             TMOL_THREAD HBondScoringData<Real>& score_dat,
-             TMOL_SHARED_REF(shared_mem_union) shared) { ; });
-
-    auto load_tile_invariant_intrares_data =
-        ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
-
-    auto load_intrares1_tile_data_to_shared =
-        ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
-
-    auto load_intrares2_tile_data_to_shared =
-        ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
-
-    auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
-
-    auto eval_intrares_atom_pair_scores = ([=] EVAL_INTRARES_ATOM_PAIR_SCORES);
-
-    tmol::score::common::tile_evaluate_rot_pair<
-        DeviceDispatch,
-        Dev,
-        HBondScoringData<Real>,
-        HBondScoringData<Real>,
-        Real,
-        TILE_SIZE>(
-        shared,
-        pose_ind,
-        rot_ind1,
-        rot_ind2,
-        block_ind1,
-        block_ind2,
-        block_type1,
-        block_type2,
-        n_atoms1,
-        n_atoms2,
-        load_tile_invariant_interres_data,
-        load_interres1_tile_data_to_shared,
-        load_interres2_tile_data_to_shared,
-        load_interres_data_from_shared,
-        eval_interres_atom_pair_scores,
-        store_calculated_energies,
-        load_tile_invariant_intrares_data,
-        load_intrares1_tile_data_to_shared,
-        load_intrares2_tile_data_to_shared,
-        load_intrares_data_from_shared,
-        eval_intrares_atom_pair_scores,
-        store_calculated_energies);
-  });
-
-  DeviceDispatch<Dev>::template foreach_workgroup<launch_t>(
-      mgr, dispatch_indices.size(1), eval_derivs);
+  launch_hbond_rotamer<true, DeviceDispatch, Dev, Real, Int>(mgr, ctx);
 
   return dV_dcoords_t;
 }

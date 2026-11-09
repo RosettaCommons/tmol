@@ -52,8 +52,8 @@ struct select_leaf_ancestors {
           pose_stack_inter_block_connections,
           block_type_atom_downstream_of_conn);
     });
-    int anc0, anc1, anc2;
-    float D, theta, phi;
+    Int anc0, anc1, anc2;
+    Real D, theta, phi;
 
     anc0 = get_anc(0);
     anc1 = get_anc(1);

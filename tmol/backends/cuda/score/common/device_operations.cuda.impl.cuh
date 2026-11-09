@@ -5,9 +5,10 @@ error_this_should_not_be_compiled();  // gcc should not include this file
 #endif
 
 #include <tmol/utility/portable/reduce_ops.hh>
+#include <tmol/score/common/segmented_scan_cuda.cuh>
 #include <moderngpu/transform.hxx>
 #include <moderngpu/loadstore.hxx>
-#include <moderngpu/kernel_load_balance.hxx>
+#include <tmol/score/common/load_balance.hh>
 #include <moderngpu/kernel_reduce.hxx>
 #include <moderngpu/kernel_scan.hxx>
 #include <moderngpu/kernel_segsort.hxx>
@@ -36,14 +37,6 @@ namespace common {
     }                                                                  \
   } while (0)
 
-// tmol's scan tag is backend-neutral; moderngpu needs its own. Translate at
-// the boundary so kernel bodies and the DeviceOperations interface never name
-// a moderngpu type.
-constexpr mgpu::scan_type_t mgpu_scan_type(tmol::portable::scan_type t) {
-  return t == tmol::portable::scan_type::inclusive ? mgpu::scan_type_inc
-                                                   : mgpu::scan_type_exc;
-}
-
 template <>
 struct DeviceOperations<tmol::Device::CUDA> {
   template <typename launch_t, typename Func>
@@ -65,14 +58,14 @@ struct DeviceOperations<tmol::Device::CUDA> {
     forall<launch_t>(mgr, n_items, f);
   }
 
-  static EIGEN_DEVICE_FUNC void store_idempotent(
+  static TMOL_HOST_DEVICE_FUNC void store_idempotent(
       int32_t& target, int32_t value) {
 #ifdef __CUDA_ARCH__
     atomicExch(&target, value);
 #endif
   }
 
-  static EIGEN_DEVICE_FUNC void store_idempotent(
+  static TMOL_HOST_DEVICE_FUNC void store_idempotent(
       int64_t& target, int64_t value) {
 #ifdef __CUDA_ARCH__
     atomicExch(
@@ -81,7 +74,7 @@ struct DeviceOperations<tmol::Device::CUDA> {
 #endif
   }
 
-  static EIGEN_DEVICE_FUNC void bitwise_or(int32_t& target, int32_t value) {
+  static TMOL_HOST_DEVICE_FUNC void bitwise_or(int32_t& target, int32_t value) {
 #ifdef __CUDA_ARCH__
     atomicOr(reinterpret_cast<unsigned int*>(&target), unsigned(value));
 #endif
@@ -177,7 +170,7 @@ struct DeviceOperations<tmol::Device::CUDA> {
         TPack<Int, 1, tmol::Device::CUDA>::zeros({n_work_units_total});
     auto gen_for_work_item = gen_for_work_item_t.view;
 
-    load_balance_search(
+    load_balancing_search_into_cuda(
         n_work_units_total,
         exc_scan_offsets,
         n_generators,
@@ -213,54 +206,35 @@ struct DeviceOperations<tmol::Device::CUDA> {
       int n_segs,
       OP op,
       T identity) -> TPack<T, 1, tmol::Device::CUDA> {
-    // mgpu::standard_context_t context;
-    typedef typename mgpu::launch_params_t<128, 2> launch_t;
-
-    std::shared_ptr<mgpu::standard_context_t> context = _get_context(mgr);
-
-    int const nt = launch_t::nt;
-    int const vt = launch_t::vt;
-
-    auto src_indexing = [=] MGPU_DEVICE(int i, int _seg, int _rank) {
-      return src[i];
-    };
-
-    // Copying Frank's code from kinematics/compiled/compiled.cuda.cuh
-    int const scanBuffer = n + n_segs;
-    float scanleft = std::ceil(((float)scanBuffer) / (nt * vt));
-    Int lbsBuffer = (Int)scanleft + 1;
-    Int carryoutBuffer = (Int)scanleft;
-    while (scanleft > 1) {
-      scanleft = std::ceil(scanleft / nt);
-      carryoutBuffer += (Int)scanleft;
-    }
-
-    auto scanCarryout_t =
-        TPack<T, 1, tmol::Device::CUDA>::empty({carryoutBuffer});
-    auto scanCarryout = scanCarryout_t.view;
-    auto scanCodes_t =
-        TPack<int, 1, tmol::Device::CUDA>::empty({carryoutBuffer});
-    auto scanCodes = scanCodes_t.view;
-    auto LBS_t = TPack<int, 1, tmol::Device::CUDA>::empty({lbsBuffer});
-    auto LBS = LBS_t.view;
-
-    // The return tensor
-    auto dst_scan_t = TPack<T, 1, tmol::Device::CUDA>::empty({n});
-    auto dst_scan = dst_scan_t.view;
-
-    tmol::kinematics::kernel_segscan<launch_t, mgpu_scan_type(scan_type)>(
-        src_indexing,
+    OwnedSegmentedScanWorkspace<T, Device::CUDA, TPack> workspace(n, n_segs);
+    auto result = TPack<T, 1, Device::CUDA>::empty({n});
+    segmented_scan_into<scan_type>(
+        mgr,
+        src,
+        seg_start_inds,
+        result.view.data(),
         n,
-        &seg_start_inds[0],
         n_segs,
-        &dst_scan.data()[0],
-        &scanCarryout.data()[0],
-        &scanCodes.data()[0],
-        &LBS.data()[0],
         op,
         identity,
-        *context);
-    return dst_scan_t;
+        workspace.views());
+    return result;
+  }
+
+  template <portable::scan_type Scan, typename T, typename Int, typename Op>
+  static void segmented_scan_into(
+      ContextManager& mgr,
+      T* src,
+      Int* starts,
+      T* dst,
+      int n,
+      int segments,
+      Op op,
+      T identity,
+      SegmentedScanWorkspace<T, Device::CUDA> workspace) {
+    auto context = _get_context(mgr);
+    segmented_scan_into_cuda<Scan>(
+        *context, src, starts, dst, n, segments, op, identity, workspace);
   }
 
   template <typename T, typename Int, typename Comp>

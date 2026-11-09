@@ -22,6 +22,9 @@ coord_mask[:, ligand_atom_indices] = True
 minimized_pose_stack = run_cart_min(pose_stack, sfxn, coord_mask=coord_mask)
 ```
 
+A mask may freeze an entire pose, including the final pose in a batch. Frozen
+poses retain their coordinates and their per-pose energy slot during minimization.
+
 ## Constraints
 
 Constraints affect optimization only when they are attached to the pose and the
@@ -90,6 +93,12 @@ not enable those DOFs: set the relevant flags or per-residue masks explicitly,
 as above.
 
 Use Cartesian masks to select atoms; use a `MoveMap` to select torsions and jumps.
+
+Pass `kin_dtype=torch.float64` to `run_kin_min()` to use double-precision
+kinematic DOFs while retaining the pose coordinate dtype. The optimizer promotes
+lower-precision objective values to its parameter dtype for line-search storage;
+the score calculation retains its original precision. An objective with higher
+precision than the optimizer parameters raises an error.
 
 ## Relax
 

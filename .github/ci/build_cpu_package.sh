@@ -5,7 +5,9 @@ set -euo pipefail
 python -m venv .venv
 source .venv/bin/activate
 
-python -m pip install --upgrade pip uv
+python -m pip install --upgrade pip uv build
+python scripts/build_core.py --outdir core-dist
+uv pip install core-dist/tmol_core-*.whl
 if [ "$(uname -s)" = Darwin ]; then
   # PyPI supplies the native Apple Silicon build; the PyTorch CPU index is
   # specific to Linux and Windows.

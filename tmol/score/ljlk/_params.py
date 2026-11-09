@@ -2,7 +2,6 @@ import attr
 import cattr
 
 import pandas
-import numpy
 
 import torch
 
@@ -15,6 +14,11 @@ from tmol.database.scoring import LJLKDatabase
 from tmol.database._patched_chemdb import PatchedChemicalDatabase
 
 from .._chemical_database import AtomTypeParamResolver
+from tmol_core.scoring.ljlk import (
+    LJLK_FIELDS,
+    ljlk_type_parameters,
+    validate_block_type,
+)
 
 
 @attr.s(auto_attribs=True, slots=True, frozen=True)
@@ -84,18 +88,7 @@ class LJLKParamResolver(ValidateAttrs):
 
     def validate_block_type(self, block_type):
         """Require finite parameters only for atom types used by this block."""
-        if not self.invalid_type_parameters:
-            return
-        invalid = [
-            f"{atom.name} ({atom.atom_type}): {', '.join(fields)}"
-            for atom in block_type.atoms
-            if (fields := self.invalid_type_parameters.get(atom.atom_type))
-        ]
-        if invalid:
-            raise ValueError(
-                f"Residue {block_type.name} has missing or non-finite LJLK parameters: "
-                + "; ".join(invalid)
-            )
+        validate_block_type(block_type, self.invalid_type_parameters)
 
     @classmethod
     @_validate_args
@@ -133,37 +126,11 @@ class LJLKParamResolver(ValidateAttrs):
             }
         )
 
-        # Pack the tuple of type parameters into a dataframe and reindex via
-        # the param resolver type index. This appends a "nan" row at the end of
-        # the frame for the invalid/None entry added above.
-        fields = ("lj_radius", "lj_wdepth", "lk_dgfree", "lk_lambda", "lk_volume")
-        param_records = (
-            pandas.DataFrame.from_records(
-                cattr.unstructure(ljlk_database.atom_type_parameters),
-                columns=("name", *fields),
-            )
-            .set_index("name")
-            .reindex(index=atom_type_index)
-        )
-
-        # Check the representation used by the kernels, before any device copy.
-        # Unused chemical types may lack parameters; the trailing None row is
-        # deliberately NaN for low-level padded lookups.
-        with numpy.errstate(over="ignore"):
-            values = param_records[list(fields)].to_numpy(dtype=numpy.float32)
-        finite = numpy.isfinite(values)
-        invalid_type_parameters = {
-            name: tuple(field for field, valid in zip(fields, finite[i]) if not valid)
-            for i in numpy.flatnonzero(~finite.all(axis=1))
-            if (name := atom_type_index[i]) is not None
-        }
-
-        # Rosetta's Etable::initialize_carbontypes_to_linearize_fasol
-        is_carbon_lk = torch.tensor(
-            atom_type_index.isin(("CH1", "CH2", "CH3", "Caro")),
-            dtype=torch.bool,
-            device=device,
-        )
+        host = ljlk_type_parameters(atom_type_index, ljlk_database)
+        values = host.values
+        fields = LJLK_FIELDS
+        invalid_type_parameters = host.invalid_type_parameters
+        is_carbon_lk = torch.from_numpy(host.is_carbon_lk).to(device)
 
         # Convert the param record dataframe into typed TensorGroup
         type_params = LJLKTypeParams(

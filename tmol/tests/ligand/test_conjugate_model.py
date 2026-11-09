@@ -19,7 +19,7 @@ from tmol.tests.pack.test_conjugated_group_packing import FIXTURES
 
 def prepare_uncorrected_conjugate(array, **kwargs):
     """Retain the disconnected baseline for explicit parameter-source comparisons."""
-    from tmol.ligand import _preparation
+    from tmol_core.ligand import _preparation
 
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(

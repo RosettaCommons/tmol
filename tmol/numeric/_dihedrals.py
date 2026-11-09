@@ -1,7 +1,9 @@
-import numpy
 import torch
 
-from tmol.types._array import NDArray
+from tmol_core.geometry import (  # noqa: F401
+    numpy_coord_dihedrals as _numpy_coord_dihedrals,
+)  # noqa: F401
+
 from tmol.types._functional import _validate_args
 from tmol.types._torch import Tensor
 
@@ -9,38 +11,29 @@ Coord64Array = Tensor[torch.double][:, 3]
 Angles = Tensor[float][:]
 
 
-def _numpy_coord_dihedrals(
-    a: NDArray[float][..., 3],
-    b: NDArray[float][..., 3],
-    c: NDArray[float][..., 3],
-    d: NDArray[float][..., 3],
-) -> NDArray[numpy.float32][...]:
-    """Return vectorized coordinate dihedrals for NumPy topology setup."""
-    ba = a - b
-    bc = c - b
-    cd = d - c
-    unit_bc = bc / numpy.linalg.norm(bc, axis=-1, keepdims=True)
-    v = ba - numpy.sum(ba * unit_bc, axis=-1, keepdims=True) * unit_bc
-    w = cd - numpy.sum(cd * unit_bc, axis=-1, keepdims=True) * unit_bc
-    x = numpy.sum(v * w, axis=-1)
-    y = numpy.sum(numpy.cross(unit_bc, v) * w, axis=-1)
-    return numpy.asarray(numpy.arctan2(y, x), dtype=numpy.float32)
-
-
 @_validate_args
 def coord_dihedrals(
-    a: Coord64Array, b: Coord64Array, c: Coord64Array, d: Coord64Array
-) -> Angles:
+    a: Coord64Array,
+    b: Coord64Array,
+    c: Coord64Array,
+    d: Coord64Array,
+    *,
+    output_dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
     """Dihedral angle in [-pi, pi] over the planes defined by {a, b, c} & {b, c, d}.
 
     Calculate dihedral angle from four coordinate locations, using the
     "standard" torsion angle definition of two planes defined by the points
     {a, b, c} and {b, c, d}. For a four-atom bond definition, this corrosponds
-    to rotation about the b-c bond.
+    to rotation about the b-c bond. ``output_dtype`` defaults to float32;
+    request float64 to retain the precision of the double-coordinate calculation.
     """
 
     # Implementation derived from the "Praxeolitic" method, described at
     # https://stackoverflow.com/questions/20305272/dihedral-torsion-angle-from-four-points-in-cartesian-coordinates-in-python # noqa
+
+    if output_dtype not in (torch.float32, torch.float64):
+        raise ValueError("Dihedral output dtype must be float32 or float64")
 
     ba = a - b
     bc = c - b
@@ -60,4 +53,4 @@ def coord_dihedrals(
     x = torch.sum(v * w, dim=1)
     y = torch.sum(torch.linalg.cross(ubc, v) * w, dim=1)
 
-    return torch.atan2(y, x).type(torch.float)
+    return torch.atan2(y, x).to(dtype=output_dtype)

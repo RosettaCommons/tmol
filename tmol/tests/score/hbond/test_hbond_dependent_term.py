@@ -27,21 +27,6 @@ def test_hbond_dep_term_annotate_packed_block_types_smoke(
     hbdt.setup_packed_block_types(pbt)
 
 
-def test_hbond_dep_term_setup_packed_block_types(
-    default_database, fresh_default_restype_set, torch_device
-):
-    bt_list = fresh_default_restype_set.residue_types
-    pbt = PackedBlockTypes.from_restype_list(
-        default_database.chemical, fresh_default_restype_set, bt_list, torch_device
-    )
-
-    hbdt = HBondDependentTerm(default_database, torch_device)
-    for bt in bt_list:
-        hbdt.setup_block_type(bt)
-
-    hbdt.setup_packed_block_types(pbt)
-
-
 def test_hbond_dep_term_setup_ser_block_type(
     default_database, fresh_default_restype_set, torch_device
 ):

@@ -85,16 +85,6 @@ def _noncanonical_names(array):
     return sorted({str(n) for n in np.unique(array.res_name)} - known)
 
 
-def _residue_atom_names(array):
-    """``[(res_name, (atom names...))]`` in file order."""
-    import biotite.structure as struc
-
-    return [
-        (str(residue.res_name[0]), tuple(str(a) for a in residue.atom_name))
-        for residue in struc.residue_iter(array)
-    ]
-
-
 def _pose_atom_composition(pose):
     """Atom names per block, independent of how the blocks were named."""
     types = pose.packed_block_types.active_block_types
