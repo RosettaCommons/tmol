@@ -99,10 +99,14 @@ physics for coordinate-dependent terms. Required missing parameters raise
 during preparation. See the capability matrix for tested domains and open gaps.
 
 Whole-pose hydrogen-bond, Dunbrack and backbone-torsion CUDA energy reductions
-use wider accumulators before returning the caller dtype. Both current frontends
-pass the retained float32 branched N-glycan repeat-energy and gradient checks;
-the mature baseline still fails that repeat gate. Generated ligand geometry,
-historical trajectories, complete runtime and peak-memory parity remain open.
+use wider accumulators before returning the caller dtype. Earlier bounded
+branched N-glycan repeat checks passed. Subsequent full-default CUDA N-glycan
+Cartesian and kinematic minimization repeats fail in both current frontends;
+kinematic FastRelax also fails its repeated-chemistry check. These remain
+correctness gates. Fixed-coordinate diagnostics localize variation to hydrogen
+bonds and generic torsions, but isolated kernel checks cannot establish full
+workflow repair. Generated ligand geometry, historical trajectories, complete
+runtime and peak-memory parity also remain open.
 
 Standalone LJ/LK float32 CUDA gradients now use the shared native wider
 accumulator, then convert once to the coordinate dtype. The original lifecycle
