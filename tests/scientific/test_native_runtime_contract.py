@@ -201,6 +201,7 @@ def test_cuda_memory_query_and_failure_restore_device(backend, native_runtime):
         ("lk_ball_precise", (2, 3, 17)),
         ("lk_ball_weighted_precise", (2, 3, 17)),
         ("hbond", (2, 3, 17)),
+        ("hbond_precise", (2, 3, 17)),
         ("rotamer_lk_ball", (2, 3, 17)),
         ("rotamer_hbond", (2, 3, 17)),
         ("graph_prefix", (7,)),
@@ -234,15 +235,21 @@ def test_workspace_query_precision_and_invalid_extents(
 
 
 @pytest.mark.parametrize(
-    "target", ("tmol_nonbonded", "tmol_nonbonded_weighted", "tmol_ljlk")
+    "target,dimensions",
+    (
+        ("tmol_nonbonded", (2, 3)),
+        ("tmol_nonbonded_weighted", (2, 3)),
+        ("tmol_ljlk", (2, 3)),
+        ("tmol_hbond", (2, 3, 17)),
+    ),
 )
 def test_wide_nonbonded_workspace_only_changes_float_derivatives(
-    native_runtime, target
+    native_runtime, target, dimensions
 ):
     workspace_sizes = native_runtime.workspace_sizes
 
     for bits in (32, 64):
-        old = workspace_sizes(target, (2, 3), bits)
+        old = workspace_sizes(target, dimensions, bits)
         precise = workspace_sizes(target + "_precise", (2, 3, 17), bits)
         assert old[0] == precise[0]
         if bits == 64:
@@ -254,10 +261,9 @@ def test_wide_nonbonded_workspace_only_changes_float_derivatives(
         workspace_sizes(target + "_precise", (1 << 20, 1, 1 << 20), 32)
 
 
-def test_cartesian_accumulator_workspace_precision_and_overflow(native_runtime):
+@pytest.mark.parametrize("target", ("tmol_cartbonded_precise", "tmol_genbonded_precise"))
+def test_bonded_accumulator_workspace_precision_and_overflow(native_runtime, target):
     workspace_sizes = native_runtime.workspace_sizes
-
-    target = "tmol_cartbonded_precise"
     energy, derivative = workspace_sizes(target, (2, 17), 32)
     assert derivative > energy > 0
     assert workspace_sizes(target, (2, 17), 64) == (0, 0)
