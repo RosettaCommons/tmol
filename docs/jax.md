@@ -98,15 +98,14 @@ The beta2016 preset retains all 25 declared channels and uses shared native
 physics for coordinate-dependent terms. Required missing parameters raise
 during preparation. See the capability matrix for tested domains and open gaps.
 
-Whole-pose hydrogen-bond, Dunbrack and backbone-torsion CUDA energy reductions
-use wider accumulators before returning the caller dtype. Earlier bounded
-branched N-glycan repeat checks passed. Subsequent full-default CUDA N-glycan
-Cartesian and kinematic minimization repeats fail in both current frontends;
-kinematic FastRelax also fails its repeated-chemistry check. These remain
-correctness gates. Fixed-coordinate diagnostics localize variation to hydrogen
-bonds and generic torsions, but isolated kernel checks cannot establish full
-workflow repair. Generated ligand geometry, historical trajectories, complete
-runtime and peak-memory parity also remain open.
+Shared native CUDA accumulators now keep hydrogen-bond gradients and generic
+torsion values/gradients in wider storage before returning the caller dtype.
+Full-default float32 Cartesian and kinematic minimization and FastRelax pass
+cold-plus-five-warm repeat checks for the tested branched N-glycan in both
+frontends, including full chemical records. Original failures remain recorded.
+Generated glycan ideal coordinates and starting hydrogen positions still differ
+between frontends. Historical optimized endpoints, complete cold/warm runtime
+and physical peak-memory parity remain open.
 
 Standalone LJ/LK float32 CUDA gradients now use the shared native wider
 accumulator, then convert once to the coordinate dtype. The original lifecycle
