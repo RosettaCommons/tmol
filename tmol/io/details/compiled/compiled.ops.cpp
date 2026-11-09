@@ -37,7 +37,8 @@ class PoseLeafAtomGen
       Tensor block_type_atom_ancestors,
       Tensor block_type_atom_icoors,
       Tensor block_type_atom_ancestors_backup,
-      Tensor block_type_atom_icoors_backup) {
+      Tensor block_type_atom_icoors_backup,
+      Tensor pose_stack_atom_dihedral) {
     tmol::native::Tensor new_coords;
 
     using Int = int32_t;
@@ -65,7 +66,8 @@ class PoseLeafAtomGen
                   TCAST(block_type_atom_ancestors),
                   TCAST(block_type_atom_icoors),
                   TCAST(block_type_atom_ancestors_backup),
-                  TCAST(block_type_atom_icoors_backup));
+                  TCAST(block_type_atom_icoors_backup),
+                  TCAST(pose_stack_atom_dihedral));
 
           new_coords = result.tensor;
         }));
@@ -83,7 +85,8 @@ class PoseLeafAtomGen
          block_type_atom_ancestors,
          block_type_atom_icoors,
          block_type_atom_ancestors_backup,
-         block_type_atom_icoors_backup});
+         block_type_atom_icoors_backup,
+         pose_stack_atom_dihedral});
 
     return new_coords;
   }
@@ -106,6 +109,7 @@ class PoseLeafAtomGen
     auto block_type_atom_icoors = saved[i++];
     auto block_type_atom_ancestors_backup = saved[i++];
     auto block_type_atom_icoors_backup = saved[i++];
+    auto pose_stack_atom_dihedral = saved[i++];
 
     tmol::native::Tensor dE_d_orig_coords;
 
@@ -138,7 +142,8 @@ class PoseLeafAtomGen
                   TCAST(block_type_atom_ancestors),
                   TCAST(block_type_atom_icoors),
                   TCAST(block_type_atom_ancestors_backup),
-                  TCAST(block_type_atom_icoors_backup));
+                  TCAST(block_type_atom_icoors_backup),
+                  TCAST(pose_stack_atom_dihedral));
           dE_d_orig_coords = result.tensor;
         }));
 
@@ -156,6 +161,8 @@ class PoseLeafAtomGen
         tmol::native::Tensor(),
 
         tmol::native::Tensor(),
+        tmol::native::Tensor(),
+
         tmol::native::Tensor()};
   };
 };
@@ -172,7 +179,8 @@ Tensor pose_leaf_atom_gen_op(
     Tensor block_type_atom_ancestors,
     Tensor block_type_atom_icoors,
     Tensor block_type_atom_ancestors_backup,
-    Tensor block_type_atom_icoors_backup) {
+    Tensor block_type_atom_icoors_backup,
+    Tensor pose_stack_atom_dihedral) {
   return PoseLeafAtomGen::apply(
       orig_coords,
       orig_coords_atom_missing,
@@ -185,7 +193,8 @@ Tensor pose_leaf_atom_gen_op(
       block_type_atom_ancestors,
       block_type_atom_icoors,
       block_type_atom_ancestors_backup,
-      block_type_atom_icoors_backup);
+      block_type_atom_icoors_backup,
+      pose_stack_atom_dihedral);
 };
 
 Tensor resolve_his_tautomerization(

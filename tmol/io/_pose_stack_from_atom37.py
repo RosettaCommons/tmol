@@ -236,6 +236,7 @@ def pose_stack_from_atom37(
       covalent_bonds: Explicit ``(pose, res1, atom1, res2, atom2)`` links.
       res_not_connected: Suppressed polymer connections.
       no_optH: Preserve finite input hydrogens rather than optimizing them.
+        Pass ``optH_minimize=True`` to also minimize the optimized proton chis.
 
     Returns:
       A pose whose coordinates carry gradients back to ``atom37_coords``.

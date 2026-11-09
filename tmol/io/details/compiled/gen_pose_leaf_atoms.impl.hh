@@ -59,7 +59,12 @@ struct GeneratePoseLeafAtoms {
       // n-bt x max-n-ats x 3 x 3
       TView<UnresolvedAtomID<Int>, 3, Dev> block_type_atom_ancestors_backup,
       // n-bt x max-n-ats x 3 [phi, theta, D]
-      TView<Real, 3, Dev> block_type_atom_icoors_backup
+      TView<Real, 3, Dev> block_type_atom_icoors_backup,
+
+      // n-poses x max-n-pose-atoms: the dihedral that replaces phi for an
+      // atom built from its primary ancestors; NaN keeps the stored phi.
+      // Empty (n-poses == 0) when no dihedrals are given.
+      TView<Real, 2, Dev> pose_stack_atom_dihedral
 
       ) -> TPack<Vec<Real, 3>, 2, Dev> {
     int const n_poses = orig_coords.size(0);
@@ -101,6 +106,8 @@ struct GeneratePoseLeafAtoms {
         TPack<Vec<Real, 3>, 2, Dev>::zeros({n_poses, max_n_pose_atoms});
     auto new_coords = new_coords_t.view;
 
+    bool const use_dihedrals = pose_stack_atom_dihedral.size(0) > 0;
+
     LAUNCH_BOX_32;
 
     auto f_coord_builder = ([=] TMOL_DEVICE_FUNC(int ind) {
@@ -135,6 +142,13 @@ struct GeneratePoseLeafAtoms {
             block_type_atom_ancestors_backup,
             block_type_atom_icoors_backup,
             pose_stack_atom_missing);
+        if (use_dihedrals && geom.primary) {
+          Real const dihedral =
+              pose_stack_atom_dihedral[pose_ind][block_offset + atom_ind];
+          if (!std::isnan(dihedral)) {
+            geom.phi = dihedral;
+          }
+        }
 
         // An atom that cannot be placed is left NaN rather than at the origin
         // new_coords was allocated with; the caller checks for NaN and must not
@@ -211,7 +225,12 @@ struct GeneratePoseLeafAtoms {
       // n-bt x max-n-ats x 3
       TView<UnresolvedAtomID<Int>, 3, Dev> block_type_atom_ancestors_backup,
       // n-bt x max-n-ats x 3 [phi, theta, D]
-      TView<Real, 3, Dev> block_type_atom_icoors_backup
+      TView<Real, 3, Dev> block_type_atom_icoors_backup,
+
+      // n-poses x max-n-pose-atoms: the dihedral that replaces phi for an
+      // atom built from its primary ancestors; NaN keeps the stored phi.
+      // Empty (n-poses == 0) when no dihedrals are given.
+      TView<Real, 2, Dev> pose_stack_atom_dihedral
 
       ) -> TPack<Vec<Real, 3>, 2, Dev> {
     int const n_poses = orig_coords.size(0);
@@ -253,6 +272,8 @@ struct GeneratePoseLeafAtoms {
         TPack<Vec<Real, 3>, 2, Dev>::zeros({n_poses, max_n_pose_atoms});
     auto dE_d_orig_coords = dE_d_orig_coords_t.view;
 
+    bool const use_dihedrals = pose_stack_atom_dihedral.size(0) > 0;
+
     LAUNCH_BOX_32;
 
     auto f_coord_builder_derivs = ([=] TMOL_DEVICE_FUNC(int ind) {
@@ -287,6 +308,13 @@ struct GeneratePoseLeafAtoms {
             block_type_atom_ancestors_backup,
             block_type_atom_icoors_backup,
             pose_stack_atom_missing);
+        if (use_dihedrals && geom.primary) {
+          Real const dihedral =
+              pose_stack_atom_dihedral[pose_ind][block_offset + atom_ind];
+          if (!std::isnan(dihedral)) {
+            geom.phi = dihedral;
+          }
+        }
         if (geom.anc0 == -1) {
           return;
         }
