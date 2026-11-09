@@ -204,7 +204,7 @@
         "tests/scientific/test_fast_relax_execution.py",
         "tmol/tests/relax/test_fast_relax.py"
       ],
-      "implementation_status": "JAX Cartesian/kinematic public minimizers and relax minimizer objects select XLA command-buffer scoring with cuda_graph=True/False; None preserves automatic execution. Explicit modes require Armijo and a rendered TMol scorer; capture requires CUDA. Actual public minimizer traces verify scoring graph launches enabled and absent when disabled; optimizer array operations remain compiled. Existing molecular checks retain coordinates, dtype/device, fresh masks and parameter snapshots. Complete mature-workflow runtime, peak-memory and trajectory parity remain separate unmet gates."
+      "implementation_status": "JAX Cartesian/kinematic public minimizers and relax minimizer objects select XLA command-buffer scoring with cuda_graph=True/False; None preserves automatic execution. Explicit capture requires Armijo and a rendered TMol scorer on CUDA. For other optimizers, False preserves legacy automatic execution as None does. Actual public minimizer traces verify scoring graph launches enabled and absent when disabled; optimizer array operations remain compiled. Existing molecular checks retain coordinates, dtype/device, fresh masks and parameter snapshots. Complete mature-workflow runtime, peak-memory and trajectory parity remain separate unmet gates."
     },
     {
       "domain": "fragment_interactions",

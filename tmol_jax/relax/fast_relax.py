@@ -31,7 +31,8 @@ class CartesianRelaxMinimizer:
 
     Extra options are passed to ``run_cart_min``. JAX compiles its scoring
     execution. ``cuda_graph`` explicitly enables or disables CUDA command-buffer
-    scoring; None preserves automatic execution. Explicit modes require Armijo.
+    scoring; None preserves automatic execution. Capture requires Armijo; False
+    preserves legacy automatic execution for other optimizers.
     """
 
     def __init__(self, move_map=None, *, cuda_graph=None, **options):

@@ -65,8 +65,9 @@ def run_cart_min(
     common Armijo defaults (200 iterations, 200 history entries). A callable
     ``optimizer`` uses the compact functional protocol documented in the JAX guide.
     ``cuda_graph=True`` captures native Armijo scoring through XLA command buffers;
-    False disables capture and None preserves automatic compilation. Explicit modes
-    require a rendered TMol scorer; capture requires CUDA coordinates.
+    False disables capture and None preserves automatic compilation. Explicit capture
+    requires Armijo, a rendered TMol scorer and CUDA coordinates. False preserves
+    legacy automatic execution for other optimizers.
     """
     if coord_mask is not None:
         if move_mask is not None:
@@ -171,6 +172,8 @@ def _prepare_minimization(
 ):
     if cuda_graph is not None and not isinstance(cuda_graph, bool):
         raise TypeError("cuda_graph must be True, False or None")
+    if cuda_graph is False and optimizer != "armijo":
+        cuda_graph = None  # Preserve legacy noncapture optimizer execution.
     if cuda_graph is not None and optimizer != "armijo":
         raise NotImplementedError("explicit CUDA graph mode requires Armijo execution")
     coords = jnp.asarray(pose_stack.coords)
