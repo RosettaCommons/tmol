@@ -417,9 +417,13 @@ earlier JAX releases; matching seeds
 alone does not establish complete numerical parity. Independent CUDA tasks without bump
 pruning replay bounded score pages through the shared three-pass graph driver.
 Small tables use complete fused execution when a conservative bound on all
-explicit score/candidate/scratch buffers fits one common page; unknown bounds
-retain replay. This bounds explicit buffers, not compiler or allocator overhead.
-CPU, correlated tasks and bump pruning retain complete score tables. Native
+explicit score/candidate/scoring-scratch buffers fits one common page; unknown
+bounds retain replay. This budget excludes the final graph and its accumulation
+workspace, as well as compiler and allocator overhead. CUDA float32 graph
+assembly uses eight bytes of internal double-precision scratch per graph energy
+cell and returns float32 tables. Each additive page rounds back to float32;
+bitwise identity across different page partitions is not guaranteed. CPU,
+correlated tasks and bump pruning retain complete score tables. Native
 graph tile widths default to 16 on CPU and 32 on CUDA; `chunk_size` overrides
 the width. Automatic pose batching uses the common memory policy and preserves
 task choices, constraints, fragment metadata and shared palette identity.
