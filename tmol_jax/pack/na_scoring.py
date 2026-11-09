@@ -6,16 +6,15 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_jax.score._native import register
 from tmol_jax.score.na_torsion.na_torsion_energy_term import (
     na_packed_state,
 )
+from ._ffi import stage
 from .scoring import coordinate_vjp, validate_rotamer_context
 
 
 @jax.jit
 def _topology(arguments):
-    register("tmol_na_rotamer_topology")
     r = arguments[0].shape[0]
     shape = jax.ShapeDtypeStruct
     outputs = (
@@ -28,9 +27,7 @@ def _topology(arguments):
         shape((r, 5, 8), np.uint8),
         shape((r, 5), np.bool_),
     )
-    return jax.ffi.ffi_call(
-        "tmol_na_rotamer_topology", outputs, vmap_method="sequential"
-    )(*arguments, operation=np.int64(0), extent=np.int64(0), width=np.int64(0))
+    return stage(arguments, "tmol_na_rotamer_topology", outputs, 0)
 
 
 def prepare_rotamer_na_torsion(pose, rotamers, database):
@@ -69,19 +66,14 @@ def prepare_rotamer_na_torsion(pose, rotamers, database):
 
 @partial(jax.jit, static_argnames=("attributes", "backward"))
 def _evaluate(coords, parameters, weights=None, *, attributes, backward=False):
-    register("tmol_rotamer_na_torsion")
     output = jax.ShapeDtypeStruct(
         coords.shape if backward else (2, parameters[0].shape[0]), coords.dtype
     )
-    return jax.ffi.ffi_call(
-        "tmol_rotamer_na_torsion", output, vmap_method="sequential"
-    )(
-        coords,
-        *parameters,
-        *((weights,) if backward else ()),
-        operation=np.int64(backward),
-        extent=np.int64(0),
-        width=np.int64(0),
+    return stage(
+        (coords, *parameters, *((weights,) if backward else ())),
+        "tmol_rotamer_na_torsion",
+        output,
+        backward,
         **dict(attributes),
     )
 

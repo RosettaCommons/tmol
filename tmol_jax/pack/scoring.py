@@ -6,8 +6,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_jax.score._native import register, workspace_sizes
+from tmol_jax.score._native import workspace_sizes
 from tmol_jax.score.nonbonded import prepare_independent_nonbonded
+from ._ffi import stage
 from .dispatch import rotamer_spheres, block_spheres, candidate_pair_groups
 
 
@@ -31,7 +32,6 @@ def _evaluate(
             workspace = workspace_sizes(target, (coords.shape[0],), 32)
         else:
             target = target.removesuffix("_precise")
-    register(target)
     operands = (coords, *parameters, indices)
     if backward:
         operands += (weights,)
@@ -42,13 +42,7 @@ def _evaluate(
         if workspace is None
         else (output, jax.ShapeDtypeStruct((workspace[backward],), jnp.uint8))
     )
-    result = jax.ffi.ffi_call(target, outputs, vmap_method="sequential")(
-        *operands,
-        operation=np.int64(backward),
-        extent=np.int64(0),
-        width=np.int64(0),
-        reach=np.float64(reach),
-    )
+    result = stage(operands, target, outputs, backward, reach=np.float64(reach))
     return result if workspace is None else result[0]
 
 

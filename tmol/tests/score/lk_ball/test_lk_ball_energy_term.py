@@ -4,7 +4,7 @@ import torch
 from tmol import pose_stack_from_file, PoseStackBuilder
 from tmol.score import LKBallEnergyTerm
 
-from tmol.tests.score.common import EnergyTermTestBase
+from tmol.tests.score.common import UbiquitinEnergyTermTestBase
 
 
 def test_smoke(default_database, torch_device):
@@ -76,14 +76,8 @@ def test_whole_pose_scoring_module_smoke(ubq_pdb, default_database, torch_device
     )
 
 
-class TestLKBallEnergyTerm(EnergyTermTestBase):
+class TestLKBallEnergyTerm(UbiquitinEnergyTermTestBase):
     energy_term_class = LKBallEnergyTerm
-
-    @classmethod
-    def test_whole_pose_scoring_10(cls, ubq_pdb, default_database, torch_device):
-        return super().test_whole_pose_scoring_10(
-            ubq_pdb, default_database, torch_device, update_baseline=False
-        )
 
     @classmethod
     def test_whole_pose_scoring_gradcheck(cls, ubq_pdb, default_database, torch_device):
@@ -94,25 +88,6 @@ class TestLKBallEnergyTerm(EnergyTermTestBase):
             torch_device,
             resnums=resnums,
             nondet_tol=1e-6,  # fd this is necessary here...
-        )
-
-    @classmethod
-    def test_whole_pose_scoring_jagged(
-        cls,
-        ubq_pdb,
-        default_database,
-        torch_device: torch.device,
-    ):
-        return super().test_whole_pose_scoring_jagged(
-            ubq_pdb, default_database, torch_device, update_baseline=False
-        )
-
-    @classmethod
-    def test_block_scoring_matches_whole_pose_scoring(
-        cls, ubq_pdb, default_database, torch_device
-    ):
-        return super().test_block_scoring_matches_whole_pose_scoring(
-            ubq_pdb, default_database, torch_device
         )
 
     @classmethod

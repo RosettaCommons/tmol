@@ -4,7 +4,7 @@ import attrs
 from tmol.database.scoring import CartBondedDatabase
 from tmol.score import CartBondedEnergyTerm
 from tmol import PackedBlockTypes
-from tmol.tests.score.common import EnergyTermTestBase
+from tmol.tests.score.common import UbiquitinEnergyTermTestBase
 
 
 def test_smoke(default_database, torch_device: torch.device):
@@ -163,39 +163,14 @@ def test_hack_cartbonded_params(
             assert dflt_param == new_param
 
 
-class TestCartBondedEnergyTerm(EnergyTermTestBase):
+class TestCartBondedEnergyTerm(UbiquitinEnergyTermTestBase):
     energy_term_class = CartBondedEnergyTerm
-
-    @classmethod
-    def test_whole_pose_scoring_10(cls, ubq_pdb, default_database, torch_device):
-        return super().test_whole_pose_scoring_10(
-            ubq_pdb, default_database, torch_device, update_baseline=False
-        )
-
-    @classmethod
-    def test_whole_pose_scoring_jagged(
-        cls,
-        ubq_pdb,
-        default_database,
-        torch_device: torch.device,
-    ):
-        return super().test_whole_pose_scoring_jagged(
-            ubq_pdb, default_database, torch_device, update_baseline=False
-        )
 
     @classmethod
     def test_whole_pose_scoring_gradcheck(cls, ubq_pdb, default_database, torch_device):
         resnums = [(0, 4)]
         return super().test_whole_pose_scoring_gradcheck(
             ubq_pdb, default_database, torch_device, resnums=resnums
-        )
-
-    @classmethod
-    def test_block_scoring_matches_whole_pose_scoring(
-        cls, ubq_pdb, default_database, torch_device
-    ):
-        return super().test_block_scoring_matches_whole_pose_scoring(
-            ubq_pdb, default_database, torch_device
         )
 
     @classmethod

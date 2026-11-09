@@ -4,7 +4,10 @@ import torch
 from tmol.score import LJLKEnergyTerm, ElecEnergyTerm
 from tmol import PackedBlockTypes
 
-from tmol.tests.score.common import EnergyTermTestBase, pose_stack_from_pdb_and_resnums
+from tmol.tests.score.common import (
+    UbiquitinEnergyTermTestBase,
+    pose_stack_from_pdb_and_resnums,
+)
 
 
 def test_smoke(default_database, torch_device):
@@ -72,39 +75,14 @@ def test_annotate_heavy_ats_in_tile(
     assert hasattr(pbt, "ljlk_n_heavy_atoms_in_tile")
 
 
-class TestLJLKEnergyTerm(EnergyTermTestBase):
+class TestLJLKEnergyTerm(UbiquitinEnergyTermTestBase):
     energy_term_class = LJLKEnergyTerm
-
-    @classmethod
-    def test_whole_pose_scoring_10(cls, ubq_pdb, default_database, torch_device):
-        return super().test_whole_pose_scoring_10(
-            ubq_pdb, default_database, torch_device, update_baseline=False
-        )
 
     @classmethod
     def test_whole_pose_scoring_gradcheck(cls, ubq_pdb, default_database, torch_device):
         resnums = [(0, 4)]
         return super().test_whole_pose_scoring_gradcheck(
             ubq_pdb, default_database, torch_device, resnums=resnums
-        )
-
-    @classmethod
-    def test_whole_pose_scoring_jagged(
-        cls,
-        ubq_pdb,
-        default_database,
-        torch_device: torch.device,
-    ):
-        return super().test_whole_pose_scoring_jagged(
-            ubq_pdb, default_database, torch_device, update_baseline=False
-        )
-
-    @classmethod
-    def test_block_scoring_matches_whole_pose_scoring(
-        cls, ubq_pdb, default_database, torch_device
-    ):
-        return super().test_block_scoring_matches_whole_pose_scoring(
-            ubq_pdb, default_database, torch_device
         )
 
     @classmethod

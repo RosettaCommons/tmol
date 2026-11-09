@@ -466,6 +466,33 @@ class DummyEnergyTerm(RefEnergyTerm):
     pass
 
 
+class UbiquitinEnergyTermTestBase(EnergyTermTestBase):
+    @classmethod
+    def test_whole_pose_scoring_10(cls, ubq_pdb, default_database, torch_device):
+        return super().test_whole_pose_scoring_10(
+            ubq_pdb, default_database, torch_device, update_baseline=False
+        )
+
+    @classmethod
+    def test_whole_pose_scoring_jagged(
+        cls,
+        ubq_pdb,
+        default_database,
+        torch_device: torch.device,
+    ):
+        return super().test_whole_pose_scoring_jagged(
+            ubq_pdb, default_database, torch_device, update_baseline=False
+        )
+
+    @classmethod
+    def test_block_scoring_matches_whole_pose_scoring(
+        cls, ubq_pdb, default_database, torch_device
+    ):
+        return super().test_block_scoring_matches_whole_pose_scoring(
+            ubq_pdb, default_database, torch_device
+        )
+
+
 class EnergyTermBaseTester(EnergyTermTestBase):
     energy_term_class = DummyEnergyTerm
 

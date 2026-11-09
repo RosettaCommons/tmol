@@ -5,10 +5,10 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
-from tmol_jax.score._native import register, workspace_sizes
+from tmol_jax.score._native import workspace_sizes
 from tmol_jax.score.dunbrack.dunbrack_energy_term import DunbrackEnergyTerm
+from ._ffi import stage
 from .scoring import coordinate_vjp, validate_rotamer_context
 
 
@@ -49,7 +49,6 @@ def prepare_rotamer_dunbrack(pose, rotamers, database, *, term=None):
 
 @partial(jax.jit, static_argnames=("workspace", "backward", "target"))
 def _evaluate(coords, parameters, weights=None, *, workspace, target, backward=False):
-    register(target)
     rots = parameters[0].shape[0]
     shapes = (
         jax.ShapeDtypeStruct(
@@ -59,9 +58,7 @@ def _evaluate(coords, parameters, weights=None, *, workspace, target, backward=F
         jax.ShapeDtypeStruct((3, 0 if backward else rots), jnp.int32),
     )
     operands = (coords, *parameters, *((weights,) if backward else ()))
-    values, _, _ = jax.ffi.ffi_call(target, shapes, vmap_method="sequential")(
-        *operands, operation=np.int64(backward), extent=np.int64(0), width=np.int64(0)
-    )
+    values, _, _ = stage(operands, target, shapes, backward)
     return values.sum(axis=0) if backward else values
 
 
