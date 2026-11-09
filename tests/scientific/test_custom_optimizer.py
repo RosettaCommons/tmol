@@ -44,7 +44,9 @@ def test_custom_cartesian_optimizer_follows_analytic_molecular_target(backend, n
         from functools import partial
         from tmol_jax import run_cart_min
 
-        minimize = partial(run_cart_min, backend.pose, backend.score_function, mask)
+        minimize = partial(
+            run_cart_min, backend.pose, backend.score_function, mask, cuda_graph=False
+        )
 
         def optimizer(objective, initial, *, segment_ids, **settings):
             np.testing.assert_array_equal(

@@ -37,9 +37,39 @@ def test_relax_minimizers_preserve_fixed_molecular_coordinates(backend, monkeypa
     with pytest.raises(TypeError, match="needs a MoveMap"):
         api.KinematicRelaxMinimizer(cartesian)
     if b.framework == "jax":
+        from tmol_jax.optimization.armijo import armijo_minimize
+
+        for optimizer in ("strong_wolfe", armijo_minimize):
+            result = api.CartesianRelaxMinimizer(
+                cartesian, cuda_graph=False, optimizer=optimizer
+            )(pose, b.score_function)
+            np.testing.assert_array_equal(b.numpy(result.coords), original)
+        result = api.KinematicRelaxMinimizer(
+            kinematic, cuda_graph=False, optimizer=armijo_minimize
+        )(pose, b.score_function)
+        np.testing.assert_array_equal(b.numpy(result.coords), original)
         for constructor in (api.CartesianRelaxMinimizer, api.KinematicRelaxMinimizer):
-            with pytest.raises(NotImplementedError, match="graph capture"):
-                constructor(cuda_graph=True)
+            if b.device.platform != "gpu":
+                with pytest.raises(ValueError, match="requires a CUDA pose"):
+                    constructor(cuda_graph=True)(pose, b.score_function)
+            else:
+                direct = constructor(cuda_graph=False, max_iter=2)(
+                    pose, b.score_function
+                )
+                captured = constructor(cuda_graph=True, max_iter=2)(
+                    pose, b.score_function
+                )
+                np.testing.assert_array_equal(
+                    b.numpy(captured.coords), b.numpy(direct.coords)
+                )
+                assert captured.coords.device == pose.coords.device
+                assert captured.coords.dtype == pose.coords.dtype
+        with pytest.raises(TypeError, match="cuda_graph must"):
+            api.run_cart_min(pose, b.score_function, cuda_graph="yes")
+        with pytest.raises(NotImplementedError, match="requires Armijo"):
+            api.run_cart_min(
+                pose, b.score_function, optimizer="strong_wolfe", cuda_graph=True
+            )
 
     if b.framework == "jax":
         from tmol_jax.optimization import run_cart_relax
