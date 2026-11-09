@@ -44,10 +44,10 @@ def test_relax_minimizers_preserve_fixed_molecular_coordinates(backend, monkeypa
                 cartesian, cuda_graph=False, optimizer=optimizer
             )(pose, b.score_function)
             np.testing.assert_array_equal(b.numpy(result.coords), original)
-        result = api.KinematicRelaxMinimizer(
-            kinematic, cuda_graph=False, optimizer=armijo_minimize
-        )(pose, b.score_function)
-        np.testing.assert_array_equal(b.numpy(result.coords), original)
+            result = api.KinematicRelaxMinimizer(
+                kinematic, cuda_graph=False, optimizer=optimizer
+            )(pose, b.score_function, rtol=5e-4)
+            np.testing.assert_array_equal(b.numpy(result.coords), original)
         for constructor in (api.CartesianRelaxMinimizer, api.KinematicRelaxMinimizer):
             if b.device.platform != "gpu":
                 with pytest.raises(ValueError, match="requires a CUDA pose"):

@@ -57,7 +57,12 @@ class CartesianRelaxMinimizer:
 
 
 class KinematicRelaxMinimizer:
-    """JAX torsion/jump execution of the shared kinematic relax policy."""
+    """JAX torsion/jump execution of the shared kinematic relax policy.
+
+    Extra options pass to ``run_kin_min``. Stage ``rtol`` and shared convergence
+    defaults apply to Armijo and callable optimizers. Explicit strong-Wolfe uses
+    its own ``gtol``/``ftol`` settings without adding Armijo options.
+    """
 
     def __init__(self, move_map=None, fold_forest=None, *, cuda_graph=None, **options):
         if move_map is not None and not isinstance(move_map, MoveMap):
@@ -78,17 +83,18 @@ class KinematicRelaxMinimizer:
         if fold_forest is None:
             fold_forest = FoldForest.reasonable_fold_forest(pose)
         options = dict(self.options)
-        convergence = dict(KINEMATIC_RELAX_LBFGS_OPTIONS)
-        convergence.update(options.pop("optimizer_kwargs", {}) or {})
-        if rtol is not None:
-            convergence["rtol"] = rtol
+        if options.get("optimizer", "armijo") != "strong_wolfe":
+            convergence = dict(KINEMATIC_RELAX_LBFGS_OPTIONS)
+            convergence.update(options.pop("optimizer_kwargs", {}) or {})
+            if rtol is not None:
+                convergence["rtol"] = rtol
+            options["optimizer_kwargs"] = convergence
         return run_kin_min(
             pose,
             sfxn,
             move_map,
             fold_forest=fold_forest,
             verbose=verbose,
-            optimizer_kwargs=convergence,
             cuda_graph=self.cuda_graph,
             **options,
         )
