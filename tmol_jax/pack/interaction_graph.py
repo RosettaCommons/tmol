@@ -17,19 +17,47 @@ from .graph import (
 from ._ffi import stage
 
 
+def _entry_call(arguments, outputs, operation, extent, chunk_size, aliases=None):
+    target = "tmol_graph_entries" + ("_additive" if aliases else "")
+
+    def call(*args, precise=False):
+        result_shapes = outputs
+        if precise:
+            if any(output.shape[0] > np.iinfo(np.int32).max for output in outputs):
+                raise OverflowError("graph energy table exceeds int32 dispatch")
+            size = 8 * sum(output.shape[0] for output in outputs)
+            result_shapes += (jax.ShapeDtypeStruct((size,), np.uint8),)
+        result = stage(
+            args,
+            target + ("_precise" if precise else ""),
+            result_shapes,
+            operation,
+            extent,
+            chunk_size,
+            aliases=aliases,
+        )
+        return result[:-1] if precise else result
+
+    if operation == 2 and arguments[1].dtype == np.float32:
+        # These callers are jitted so selection follows actual operand devices,
+        # including explicit CPU placement in a process whose default is CUDA.
+        return jax.lax.platform_dependent(
+            *arguments, cuda=partial(call, precise=True), default=call
+        )
+    return call(*arguments)
+
+
 @partial(jax.jit, static_argnames=("operation", "outputs", "extent", "chunk_size"))
 def entry_stage(arguments, *, operation, outputs, extent=0, chunk_size=16):
-    target = "tmol_graph_entries"
-    return stage(arguments, target, outputs, operation, extent, chunk_size)
+    return _entry_call(arguments, outputs, operation, extent, chunk_size)
 
 
 @partial(jax.jit, static_argnames=("operation", "extent", "chunk_size"))
 def additive_entry_stage(arguments, previous, *, operation, extent=0, chunk_size=16):
     """Accumulate one native page, retaining JAX input value semantics."""
     outputs = tuple(jax.ShapeDtypeStruct(a.shape, a.dtype) for a in previous)
-    return stage(
+    return _entry_call(
         (*arguments, *previous),
-        "tmol_graph_entries_additive",
         outputs,
         operation,
         extent,
