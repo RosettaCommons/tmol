@@ -85,58 +85,62 @@ union HBondSharedMem {
 };
 
 // done
-#define HBOND_ATOM_ENERGY                                                      \
-  TMOL_DEVICE_FUNC(                                                            \
-      int don_ind,                                                             \
-      int acc_ind,                                                             \
-      int don_tile_ind,                                                        \
-      int acc_tile_ind,                                                        \
-      int don_start,                                                           \
-      int acc_start,                                                           \
-      TMOL_THREAD HBondSingleResData<Real> const& don_dat,                     \
-      TMOL_THREAD HBondSingleResData<Real> const& acc_dat,                     \
-      TMOL_THREAD HBondRotPairData<Real> const& respair_dat,                   \
-      int cp_separation) {                                                     \
-    if (cp_separation < 5) {                                                   \
-      return Real(0.0);                                                        \
-    }                                                                          \
-    if (accumulate_derivs) {                                                   \
-      Real val = hbond_atom_energy_and_derivs_full<              \
-          TILE_SIZE, Dev, Real, Int, typename Ctx::Gradient>(                 \
-          don_ind,                                                             \
-          acc_ind,                                                             \
-          don_tile_ind,                                                        \
-          acc_tile_ind,                                                        \
-          don_start,                                                           \
-          acc_start,                                                           \
-          don_dat,                                                             \
-          acc_dat,                                                             \
-          respair_dat,                                                         \
-          cp_separation,                                                       \
-          ctx.derived_coords,                                                  \
-          ctx.derived_atom_inds,                                               \
-          ctx.pair_params,                                                     \
-          ctx.pair_polynomials,                                                \
-          ctx.dV_dcoords);                                                     \
-      return val;                                                              \
-    } else {                                                                   \
-      Real val = hbond_atom_energy_full<TILE_SIZE, Real, Int>(                 \
-          don_ind,                                                             \
-          acc_ind,                                                             \
-          don_tile_ind,                                                        \
-          acc_tile_ind,                                                        \
-          don_start,                                                           \
-          acc_start,                                                           \
-          don_dat,                                                             \
-          acc_dat,                                                             \
-          respair_dat,                                                         \
-          cp_separation,                                                       \
-          ctx.derived_coords,                                                  \
-          ctx.derived_atom_inds,                                               \
-          ctx.pair_params,                                                     \
-          ctx.pair_polynomials);                                               \
-      return val;                                                              \
-    }                                                                          \
+#define HBOND_ATOM_ENERGY                                      \
+  TMOL_DEVICE_FUNC(                                            \
+      int don_ind,                                             \
+      int acc_ind,                                             \
+      int don_tile_ind,                                        \
+      int acc_tile_ind,                                        \
+      int don_start,                                           \
+      int acc_start,                                           \
+      TMOL_THREAD HBondSingleResData<Real> const& don_dat,     \
+      TMOL_THREAD HBondSingleResData<Real> const& acc_dat,     \
+      TMOL_THREAD HBondRotPairData<Real> const& respair_dat,   \
+      int cp_separation) {                                     \
+    if (cp_separation < 5) {                                   \
+      return Real(0.0);                                        \
+    }                                                          \
+    if (accumulate_derivs) {                                   \
+      Real val = hbond_atom_energy_and_derivs_full<            \
+          TILE_SIZE,                                           \
+          Dev,                                                 \
+          Real,                                                \
+          Int,                                                 \
+          typename Ctx::Gradient>(                             \
+          don_ind,                                             \
+          acc_ind,                                             \
+          don_tile_ind,                                        \
+          acc_tile_ind,                                        \
+          don_start,                                           \
+          acc_start,                                           \
+          don_dat,                                             \
+          acc_dat,                                             \
+          respair_dat,                                         \
+          cp_separation,                                       \
+          ctx.derived_coords,                                  \
+          ctx.derived_atom_inds,                               \
+          ctx.pair_params,                                     \
+          ctx.pair_polynomials,                                \
+          ctx.dV_dcoords);                                     \
+      return val;                                              \
+    } else {                                                   \
+      Real val = hbond_atom_energy_full<TILE_SIZE, Real, Int>( \
+          don_ind,                                             \
+          acc_ind,                                             \
+          don_tile_ind,                                        \
+          acc_tile_ind,                                        \
+          don_start,                                           \
+          acc_start,                                           \
+          don_dat,                                             \
+          acc_dat,                                             \
+          respair_dat,                                         \
+          cp_separation,                                       \
+          ctx.derived_coords,                                  \
+          ctx.derived_atom_inds,                               \
+          ctx.pair_params,                                     \
+          ctx.pair_polynomials);                               \
+      return val;                                              \
+    }                                                          \
   }
 
 // done
