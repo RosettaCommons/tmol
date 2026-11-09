@@ -13,6 +13,12 @@ Native molecular scoring and selected packing paths have CPU/CUDA and Torch-free
 package validation; final Metal validation is tracked separately. See the [capability matrix](capability-matrix.json) for
 implemented behavior and evidence rather than assuming full TMol parity.
 
+CUDA validation retains an unresolved Atom37 zinc input-gradient failure.
+A small reproducer without TMol also exposes an out-of-bounds constant-index
+scatter in JAX 0.11.2 and 0.12.0.1. A controlled CUDA 13.3 assembler test did
+not resolve it; ordinary isolated passes do not clear the failing CI gate.
+No version pin or source workaround is qualified for this issue.
+
 The standalone periodic spline utilities retain a separate JAX implementation.
 Molecular table preparation and scoring use shared native splines; complete
 source consolidation remains unfinished.
@@ -624,7 +630,9 @@ remain compiled. Existing packing capability limits apply. The public minimizers
 shared per-pose L-BFGS/Armijo, including mature convergence, iteration and history
 settings. Packing stages and pose chunks advance one local seed stream per device.
 Explicit `optimizer="strong_wolfe"` minimizes the summed objective with
-the common strong-Wolfe search and L-BFGS recurrence. JAX supplies fixed-capacity
+the common strong-Wolfe search and L-BFGS recurrence. In
+`KinematicRelaxMinimizer`, this choice uses its own `gtol`/`ftol`; Armijo defaults
+and per-stage `rtol` are not applied. JAX supplies fixed-capacity
 device history storage and compiled array operations; movement masks and public
 relative-loss stopping settings remain supported. The shared search can choose
 different trials from earlier JAX releases. End-to-end runtime and peak-memory
