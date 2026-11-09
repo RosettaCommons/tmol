@@ -65,9 +65,10 @@ TMOL_DEVICE_FUNC void accumulate_torsion_result(
   val += common::get<0>(to_add);
   if (accumulate_derivs) {
     for (int i = 0; i < 4; i++) {
-      accumulate<D, Vec<GradReal, 3>>::add(
-          dV[atoms[i]],
-          (common::get<1>(to_add)[i] * weight).template cast<GradReal>());
+      auto const derivative = common::get<1>(to_add)[i] * weight;
+      for (int j = 0; j < 3; ++j) {
+        accumulate<D, GradReal>::add(dV[atoms[i]][j], GradReal(derivative[j]));
+      }
     }
   }
 }
