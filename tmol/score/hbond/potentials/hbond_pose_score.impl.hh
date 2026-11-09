@@ -217,10 +217,6 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
 
   // Block-pair autograd recomputes coordinate derivatives in backward.
   bool const accumulate_derivs = compute_derivs && !output_block_pair_energies;
-  auto dV_dcoords_t = accumulate_derivs
-                          ? TPack<Vec<Real, 3>, 2, Dev>::zeros({1, n_atoms})
-                          : TPack<Vec<Real, 3>, 2, Dev>::empty({1, 0});
-  auto dV_dcoords = dV_dcoords_t.view;
 
   bool const use_shared_compact_block_neighbors =
       shared_compact_block_neighbors.size(0) != 0;
@@ -277,6 +273,12 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
       Dev,
       Real>(output_block_pair_energies, [&](auto precision) {
     using EnergyReal = decltype(precision);
+    // Sum CUDA float derivatives before the single public-dtype cast.
+    using GradReal = EnergyReal;
+    auto dV_dcoords_t =
+        accumulate_derivs ? TPack<Vec<GradReal, 3>, 2, Dev>::zeros({1, n_atoms})
+                          : TPack<Vec<GradReal, 3>, 2, Dev>::empty({1, 0});
+    auto dV_dcoords = dV_dcoords_t.view;
     bool const mps_cell_reduction =
         Dev == tmol::Device::MPS && !output_block_pair_energies;
     TPack<EnergyReal, 4, Dev> output_t;
@@ -315,7 +317,7 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
     // so the tile machinery in hbond_kernels.hh reads this struct instead. One
     // context serves both kernel families: whole-pose scoring writes
     // [term, pose, block, block] and rotamer scoring [term, rot_pair].
-    HBondCtx<Real, Int, Dev, 4, 3, 2, EnergyReal> ctx;
+    HBondCtx<Real, Int, Dev, 4, 3, 2, EnergyReal, GradReal> ctx;
     ctx.rot_coords = rot_coords;
     ctx.rot_coord_offset = rot_coord_offset;
     ctx.block_ind_for_rot = block_ind_for_rot;
@@ -416,7 +418,9 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
 
     // DeviceDispatch<Dev>::synchronize_device();
     return std::make_tuple(
-        output_t.template cast<Real>(), dV_dcoords_t, scratch_rot_neighbors_t);
+        output_t.template cast<Real>(),
+        dV_dcoords_t.template cast<Vec<Real, 3>>(),
+        scratch_rot_neighbors_t);
   });
 }
 
