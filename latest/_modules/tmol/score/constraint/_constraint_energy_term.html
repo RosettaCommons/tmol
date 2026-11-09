@@ -430,14 +430,55 @@
   <h1>Source code for tmol.score.constraint._constraint_energy_term</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">attr</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">.._energy_term</span><span class="w"> </span><span class="kn">import</span> <span class="n">EnergyTerm</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">ParameterDatabase</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.chemical</span><span class="w"> </span><span class="kn">import</span> <span class="n">RefinedResidueType</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose._constraint_set</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConstraintSet</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose._packed_block_types</span><span class="w"> </span><span class="kn">import</span> <span class="n">PackedBlockTypes</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose._pose_stack</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStack</span>
+
+
+<span class="nd">@attr</span><span class="o">.</span><span class="n">s</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">slots</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">auto_attribs</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">_ConstraintScoringPlan</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Indexing that depends only on the constraint set, built at render time.</span>
+
+<span class="sd">    Selecting each function's constraints and summing them per pose would</span>
+<span class="sd">    otherwise read data-dependent sizes back to the host on every call, which</span>
+<span class="sd">    stalls CUDA scoring and breaks CUDA graph capture.</span>
+
+<span class="sd">    function_rows: (function index, constraint rows) for each function in use.</span>
+<span class="sd">    pose_rows: [n_poses, max constraints per pose] constraint rows, padded with</span>
+<span class="sd">        n_constraints, the index of an appended zero.</span>
+<span class="sd">    """</span>
+
+    <span class="n">function_rows</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">pose_rows</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">constraint_set</span><span class="p">:</span> <span class="n">ConstraintSet</span><span class="p">,</span> <span class="n">n_poses</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="n">fn_inds</span> <span class="o">=</span> <span class="n">constraint_set</span><span class="o">.</span><span class="n">constraint_function_inds</span>
+        <span class="n">function_rows</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">ind</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">constraint_set</span><span class="o">.</span><span class="n">constraint_functions</span><span class="p">)):</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">fn_inds</span> <span class="o">==</span> <span class="n">ind</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">numel</span><span class="p">():</span>
+                <span class="n">function_rows</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">ind</span><span class="p">,</span> <span class="n">rows</span><span class="p">))</span>
+
+        <span class="n">n_constraints</span> <span class="o">=</span> <span class="n">fn_inds</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">pose</span> <span class="o">=</span> <span class="n">constraint_set</span><span class="o">.</span><span class="n">constraint_unique_blocks</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">long</span><span class="p">()</span>
+        <span class="n">counts</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span><span class="n">pose</span><span class="p">,</span> <span class="n">minlength</span><span class="o">=</span><span class="n">n_poses</span><span class="p">)</span>
+        <span class="n">width</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">counts</span><span class="o">.</span><span class="n">max</span><span class="p">())</span> <span class="k">if</span> <span class="n">n_constraints</span> <span class="k">else</span> <span class="mi">0</span>
+        <span class="n">order</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">pose</span><span class="p">,</span> <span class="n">stable</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">starts</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">counts</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">-</span> <span class="n">counts</span>
+        <span class="n">slot</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_constraints</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">pose</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-</span> <span class="n">starts</span><span class="p">[</span><span class="n">pose</span><span class="p">[</span><span class="n">order</span><span class="p">]]</span>
+        <span class="n">pose_rows</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">n_poses</span><span class="p">,</span> <span class="n">width</span><span class="p">),</span> <span class="n">n_constraints</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">pose</span><span class="o">.</span><span class="n">device</span>
+        <span class="p">)</span>
+        <span class="n">pose_rows</span><span class="p">[</span><span class="n">pose</span><span class="p">[</span><span class="n">order</span><span class="p">],</span> <span class="n">slot</span><span class="p">]</span> <span class="o">=</span> <span class="n">order</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">function_rows</span><span class="p">),</span> <span class="n">pose_rows</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="ConstraintEnergyTerm">
@@ -501,21 +542,20 @@
         <span class="n">atoms2</span> <span class="o">=</span> <span class="n">atoms</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span>
         <span class="n">dist</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">atoms1</span> <span class="o">-</span> <span class="n">atoms2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
 
-        <span class="n">ret</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full_like</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-
         <span class="n">ub2</span> <span class="o">=</span> <span class="n">ub</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">sd</span>
 
-        <span class="n">g0</span> <span class="o">=</span> <span class="n">dist</span> <span class="o">&lt;</span> <span class="n">lb</span>
-        <span class="c1"># g1 = torch.logical_and(lb &lt;= dist, dist &lt;= ub) # default 0</span>
-        <span class="n">g2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">logical_and</span><span class="p">(</span><span class="n">ub</span> <span class="o">&lt;</span> <span class="n">dist</span><span class="p">,</span> <span class="n">dist</span> <span class="o">&lt;=</span> <span class="n">ub2</span><span class="p">)</span>
-        <span class="n">g3</span> <span class="o">=</span> <span class="n">dist</span> <span class="o">&gt;</span> <span class="n">ub2</span>
-
-        <span class="n">ret</span><span class="p">[</span><span class="n">g0</span><span class="p">]</span> <span class="o">=</span> <span class="p">((</span><span class="n">lb</span><span class="p">[</span><span class="n">g0</span><span class="p">]</span> <span class="o">-</span> <span class="n">dist</span><span class="p">[</span><span class="n">g0</span><span class="p">])</span> <span class="o">/</span> <span class="n">sd</span><span class="p">[</span><span class="n">g0</span><span class="p">])</span> <span class="o">**</span> <span class="mi">2</span>
-        <span class="c1"># ret[g1] = 0</span>
-        <span class="n">ret</span><span class="p">[</span><span class="n">g2</span><span class="p">]</span> <span class="o">=</span> <span class="p">((</span><span class="n">dist</span><span class="p">[</span><span class="n">g2</span><span class="p">]</span> <span class="o">-</span> <span class="n">ub</span><span class="p">[</span><span class="n">g2</span><span class="p">])</span> <span class="o">/</span> <span class="n">sd</span><span class="p">[</span><span class="n">g2</span><span class="p">])</span> <span class="o">**</span> <span class="mi">2</span>
-        <span class="n">ret</span><span class="p">[</span><span class="n">g3</span><span class="p">]</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">rswitch</span><span class="p">[</span><span class="n">g3</span><span class="p">]</span> <span class="o">*</span> <span class="p">((</span><span class="n">dist</span><span class="p">[</span><span class="n">g3</span><span class="p">]</span> <span class="o">-</span> <span class="n">ub</span><span class="p">[</span><span class="n">g3</span><span class="p">])</span> <span class="o">/</span> <span class="n">sd</span><span class="p">[</span><span class="n">g3</span><span class="p">])</span> <span class="o">-</span> <span class="n">rswitch</span><span class="p">[</span><span class="n">g3</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span>
-
-        <span class="k">return</span> <span class="n">ret</span>
+        <span class="c1"># Selected with torch.where rather than boolean masks, whose</span>
+        <span class="c1"># data-dependent sizes would sync with the host and break CUDA graph</span>
+        <span class="c1"># capture. Every branch is finite for sd &gt; 0, so the unselected ones</span>
+        <span class="c1"># contribute zero gradient.</span>
+        <span class="n">below</span> <span class="o">=</span> <span class="p">((</span><span class="n">lb</span> <span class="o">-</span> <span class="n">dist</span><span class="p">)</span> <span class="o">/</span> <span class="n">sd</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+        <span class="n">above</span> <span class="o">=</span> <span class="p">((</span><span class="n">dist</span> <span class="o">-</span> <span class="n">ub</span><span class="p">)</span> <span class="o">/</span> <span class="n">sd</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+        <span class="n">linear</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">rswitch</span> <span class="o">*</span> <span class="p">((</span><span class="n">dist</span> <span class="o">-</span> <span class="n">ub</span><span class="p">)</span> <span class="o">/</span> <span class="n">sd</span><span class="p">)</span> <span class="o">-</span> <span class="n">rswitch</span><span class="o">**</span><span class="mi">2</span>
+        <span class="n">zero</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">dist</span><span class="p">)</span>
+        <span class="c1"># lb &lt;= dist &lt;= ub scores 0</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">dist</span> <span class="o">&gt;</span> <span class="n">ub2</span><span class="p">,</span> <span class="n">linear</span><span class="p">,</span> <span class="n">zero</span><span class="p">)</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">logical_and</span><span class="p">(</span><span class="n">ub</span> <span class="o">&lt;</span> <span class="n">dist</span><span class="p">,</span> <span class="n">dist</span> <span class="o">&lt;=</span> <span class="n">ub2</span><span class="p">),</span> <span class="n">above</span><span class="p">,</span> <span class="n">ret</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">dist</span> <span class="o">&lt;</span> <span class="n">lb</span><span class="p">,</span> <span class="n">below</span><span class="p">,</span> <span class="n">ret</span><span class="p">)</span>
 
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">circularharmonic</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">atoms</span><span class="p">,</span> <span class="n">params</span><span class="p">):</span>
@@ -566,9 +606,13 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">constraint_pose_scores</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">[:</span><span class="mi">12</span><span class="p">],</span> <span class="o">*</span><span class="n">args</span><span class="p">[</span><span class="mi">13</span><span class="p">:])</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_score_term_attributes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">):</span>
-        <span class="k">return</span> <span class="p">[</span>
-            <span class="n">pose_stack</span><span class="o">.</span><span class="n">get_constraint_set</span><span class="p">(),</span>
-        <span class="p">]</span>
+        <span class="n">constraint_set</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">get_constraint_set</span><span class="p">()</span>
+        <span class="n">plan</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">constraint_set</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="n">_ConstraintScoringPlan</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">constraint_set</span><span class="p">,</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">constraint_set</span><span class="p">,</span> <span class="n">plan</span><span class="p">]</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">constraint_pose_scores</span><span class="p">(</span>  <span class="c1"># noqa: C901</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -586,6 +630,7 @@
         <span class="n">rot_offset_for_block______2</span><span class="p">,</span>  <span class="c1"># three times?!</span>
         <span class="n">max_n_rots_per_pose</span><span class="p">,</span>
         <span class="n">constraint_set</span><span class="p">,</span>
+        <span class="n">plan</span><span class="p">,</span>
         <span class="n">output_block_pair_energies</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="n">device</span> <span class="o">=</span> <span class="n">coords</span><span class="o">.</span><span class="n">device</span>
@@ -865,18 +910,20 @@
             <span class="n">cnstr_scores</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">(</span>
                 <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">types</span><span class="p">),),</span> <span class="mi">0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">coords</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">coords</span><span class="o">.</span><span class="n">device</span>
             <span class="p">)</span>
-            <span class="k">for</span> <span class="n">ind</span><span class="p">,</span> <span class="n">fn</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">functions</span><span class="p">):</span>
-
-                <span class="c1"># get the constraints that match this constraint type</span>
-                <span class="n">c_inds</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">types</span> <span class="o">==</span> <span class="n">ind</span><span class="p">)</span>
-
-                <span class="c1"># compute the scores for this function</span>
-                <span class="n">fn_coords</span> <span class="o">=</span> <span class="n">atom_coords</span><span class="p">[</span><span class="n">c_inds</span><span class="p">]</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-                <span class="n">result</span> <span class="o">=</span> <span class="n">fn</span><span class="p">(</span><span class="n">fn_coords</span><span class="p">,</span> <span class="n">params</span><span class="p">[</span><span class="n">c_inds</span><span class="p">]</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
-                <span class="n">result</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-
-                <span class="c1"># add the result to the output tensor</span>
-                <span class="n">cnstr_scores</span><span class="p">[</span><span class="n">c_inds</span><span class="p">]</span> <span class="o">+=</span> <span class="n">result</span>
+            <span class="c1"># Without rotamers the constraints keep the constraint set's order,</span>
+            <span class="c1"># so the plan's rows apply; rotamer expansion reorders them.</span>
+            <span class="k">if</span> <span class="n">plan</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_rotamers</span><span class="p">:</span>
+                <span class="n">function_rows</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">function_rows</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">function_rows</span> <span class="o">=</span> <span class="p">[</span>
+                    <span class="p">(</span><span class="n">ind</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">types</span> <span class="o">==</span> <span class="n">ind</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">())</span>
+                    <span class="k">for</span> <span class="n">ind</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">functions</span><span class="p">))</span>
+                <span class="p">]</span>
+            <span class="k">for</span> <span class="n">ind</span><span class="p">,</span> <span class="n">rows</span> <span class="ow">in</span> <span class="n">function_rows</span><span class="p">:</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="n">functions</span><span class="p">[</span><span class="n">ind</span><span class="p">](</span><span class="n">atom_coords</span><span class="p">[</span><span class="n">rows</span><span class="p">],</span> <span class="n">params</span><span class="p">[</span><span class="n">rows</span><span class="p">])</span>
+                <span class="n">cnstr_scores</span> <span class="o">=</span> <span class="n">cnstr_scores</span><span class="o">.</span><span class="n">index_put</span><span class="p">(</span>
+                    <span class="p">(</span><span class="n">rows</span><span class="p">,),</span> <span class="n">result</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">cnstr_scores</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+                <span class="p">)</span>
 
             <span class="k">return</span> <span class="n">cnstr_scores</span>
 
@@ -893,7 +940,11 @@
             <span class="n">rotamerized_params</span><span class="p">,</span>
         <span class="p">)</span>
 
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">has_rotamers</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">has_rotamers</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">output_block_pair_energies</span> <span class="ow">and</span> <span class="n">plan</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Fixed gather and sum per pose: no host sync, deterministic order.</span>
+            <span class="n">padded</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">scores</span><span class="p">,</span> <span class="n">scores</span><span class="o">.</span><span class="n">new_zeros</span><span class="p">(</span><span class="mi">1</span><span class="p">)))</span>
+            <span class="n">scores</span> <span class="o">=</span> <span class="n">padded</span><span class="p">[</span><span class="n">plan</span><span class="o">.</span><span class="n">pose_rows</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">has_rotamers</span><span class="p">:</span>
             <span class="n">max_n_blocks</span> <span class="o">=</span> <span class="n">first_rot_block_type</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
             <span class="n">n_poses</span> <span class="o">=</span> <span class="n">first_rot_block_type</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
             <span class="n">sparse_scores</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sparse_coo_tensor</span><span class="p">(</span>

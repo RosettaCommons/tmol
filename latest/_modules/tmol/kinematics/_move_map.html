@@ -446,16 +446,13 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">CartesianMoveMap</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Move map for Cartesian-space minimization.</span>
 
-<span class="sd">    A lightweight wrapper around a coordinate mask that can be passed as the</span>
-<span class="sd">    ``move_map`` argument to :func:`~tmol.fast_relax` when</span>
-<span class="sd">    using a Cartesian ``min_fn`` (e.g. one built around</span>
-<span class="sd">    :func:`~tmol.run_cart_min`).</span>
+<span class="sd">    A lightweight wrapper around a coordinate mask, passed to</span>
+<span class="sd">    :class:`~tmol.CartesianRelaxMinimizer` to choose the atoms that</span>
+<span class="sd">    :func:`~tmol.fast_relax` minimizes.</span>
 
 <span class="sd">    Unlike the full :class:`MoveMap`, which describes freedom in internal</span>
 <span class="sd">    (torsion/jump) DOF space, ``CartesianMoveMap`` works directly in atomic</span>
-<span class="sd">    Cartesian space.  The ``min_fn`` is responsible for extracting</span>
-<span class="sd">    ``coord_mask`` and passing it to</span>
-<span class="sd">    ``CartesianSfxnNetwork``.</span>
+<span class="sd">    Cartesian space.</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        coord_mask: Boolean tensor of shape ``[n_poses, max_n_atoms]``</span>

@@ -429,7 +429,11 @@
                   
   <h1>Source code for tmol.score._score_function</h1><div class="highlight"><pre>
 <span></span><span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">ctypes</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">itertools</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
@@ -479,7 +483,6 @@
 <span class="n">_CUDA_ROTAMER_LAYOUT_DEDUP_MIN_BYTES</span> <span class="o">=</span> <span class="mi">16</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span>
 <span class="n">_CPU_ROTAMER_SORTED_LAYOUT_MIN_NNZ</span> <span class="o">=</span> <span class="mi">4096</span>
 <span class="n">_MAX_CPU_SCORE_TERM_WORKERS</span> <span class="o">=</span> <span class="mi">4</span>
-<span class="n">_MAX_CPU_FUSED_SCORE_WORKERS</span> <span class="o">=</span> <span class="mi">16</span>
 <span class="n">_CPU_PARALLEL_SCORE_BACKWARD_MIN_COORD_ELEMENTS</span> <span class="o">=</span> <span class="mi">8192</span>
 <span class="c1"># Independent CUDA terms overlap profitably for one large pose or a wide batch,</span>
 <span class="c1"># but stream setup and coordination cost more than they save for small poses.</span>
@@ -496,8 +499,21 @@
 <span class="c1"># Bound dispatch scratch while amortizing CUDA launches across block pairs.</span>
 <span class="n">_PACK_ROTAMER_BLOCK_PAIR_WINDOW</span> <span class="o">=</span> <span class="mi">32</span> <span class="o">*</span> <span class="mi">1024</span>
 <span class="n">_PACK_FUSED_ROTAMER_SCORE_WINDOW</span> <span class="o">=</span> <span class="mi">4</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span>
-<span class="n">_CPU_SCORE_TERM_EXECUTORS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">ThreadPoolExecutor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="n">_CPU_SCORE_TERM_EXECUTORS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">],</span> <span class="n">ThreadPoolExecutor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
 <span class="n">_CPU_SCORE_TERM_EXECUTOR_LOCK</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+<span class="n">_BOUND_WORKER_STARTS</span> <span class="o">=</span> <span class="n">itertools</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
+<span class="c1"># On macOS, capping each pool worker at an equal share of the thread budget</span>
+<span class="c1"># starves the expensive terms while the cheap ones idle; it made Metal-offloaded</span>
+<span class="c1"># minimization ~45% slower per evaluation and CPU-only ~18% slower. Workers</span>
+<span class="c1"># there keep the whole budget; _single_openmp_thread still applies.</span>
+<span class="n">_CAP_CPU_SCORE_WORKER_THREADS</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span> <span class="o">!=</span> <span class="s2">"darwin"</span>
+<span class="c1"># Terms whose every call repeats costly setup (hbond bases; lk_ball waters and</span>
+<span class="c1"># their backward), so each neighbor-list shard pays it again. Uncapped macOS</span>
+<span class="c1"># workers already run each such term on the whole thread budget, so sharding it</span>
+<span class="c1"># there only adds that setup: minimization measured ~10% slower per evaluation.</span>
+<span class="n">_UNSHARDED_PAIR_TERMS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="nb">frozenset</span><span class="p">((</span><span class="s2">"HBond"</span><span class="p">,</span> <span class="s2">"LKBall"</span><span class="p">))</span> <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span> <span class="o">==</span> <span class="s2">"darwin"</span> <span class="k">else</span> <span class="nb">frozenset</span><span class="p">()</span>
+<span class="p">)</span>
 <span class="n">_ScoreCallResult</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">"_ScoreCallResult"</span><span class="p">)</span>
 
 
@@ -545,16 +561,147 @@
     <span class="p">)</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_cpu_score_term_executor</span><span class="p">(</span><span class="n">n_workers</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ThreadPoolExecutor</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Return a process-local executor shared by rendered CPU scorers."""</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_loaded_library_paths</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Paths of the shared libraries loaded into this process, where knowable."""</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"/proc/self/maps"</span><span class="p">)</span> <span class="k">as</span> <span class="n">maps</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{</span><span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">maps</span> <span class="k">if</span> <span class="s2">".so"</span> <span class="ow">in</span> <span class="n">line</span><span class="p">}</span>
+    <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span> <span class="o">==</span> <span class="s2">"darwin"</span><span class="p">:</span>
+        <span class="c1"># No /proc on macOS; dyld lists its loaded images instead.</span>
+        <span class="n">libc</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+        <span class="n">libc</span><span class="o">.</span><span class="n">_dyld_image_count</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_uint32</span>
+        <span class="n">libc</span><span class="o">.</span><span class="n">_dyld_get_image_name</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">ctypes</span><span class="o">.</span><span class="n">c_uint32</span><span class="p">]</span>
+        <span class="n">libc</span><span class="o">.</span><span class="n">_dyld_get_image_name</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_char_p</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">fsdecode</span><span class="p">(</span><span class="n">libc</span><span class="o">.</span><span class="n">_dyld_get_image_name</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">libc</span><span class="o">.</span><span class="n">_dyld_image_count</span><span class="p">())</span>
+        <span class="p">}</span>
+    <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>
+
+
+<span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_openmp_runtime</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""The OpenMP runtime torch already loaded, or None if there is none."""</span>
+    <span class="n">paths</span> <span class="o">=</span> <span class="n">_loaded_library_paths</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">paths</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">startswith</span><span class="p">((</span><span class="s2">"libgomp"</span><span class="p">,</span> <span class="s2">"libiomp"</span><span class="p">,</span> <span class="s2">"libomp"</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">RTLD_NOLOAD</span><span class="p">)</span>
+    <span class="k">return</span> <span class="kc">None</span>
+
+
+<span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_openmp_place_cpus</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""CPUs of all OpenMP places; empty when OpenMP binding is off."""</span>
+    <span class="n">runtime</span> <span class="o">=</span> <span class="n">_openmp_runtime</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">runtime</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">runtime</span><span class="p">,</span> <span class="s2">"omp_get_num_places"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">frozenset</span><span class="p">()</span>
+    <span class="n">cpus</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">place</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">runtime</span><span class="o">.</span><span class="n">omp_get_num_places</span><span class="p">()):</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span> <span class="o">*</span> <span class="n">runtime</span><span class="o">.</span><span class="n">omp_get_place_num_procs</span><span class="p">(</span><span class="n">place</span><span class="p">))()</span>
+        <span class="n">runtime</span><span class="o">.</span><span class="n">omp_get_place_proc_ids</span><span class="p">(</span><span class="n">place</span><span class="p">,</span> <span class="n">ids</span><span class="p">)</span>
+        <span class="n">cpus</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">cpus</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_init_cpu_score_worker</span><span class="p">(</span><span class="n">n_threads</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Executor initializer: run on every bound CPU, then cap the OpenMP team.</span>
+
+<span class="sd">    Under OpenMP binding new threads inherit the main thread's single CPU, and a</span>
+<span class="sd">    thread that starts an OpenMP team is pinned to the first place with its team</span>
+<span class="sd">    after it. So under binding a worker takes every CPU of the places, starting</span>
+<span class="sd">    on a CPU of its own, and never starts a team.</span>
+
+<span class="sd">    Every thread that enters an OpenMP region gets its own team, sized by that</span>
+<span class="sd">    thread's OpenMP setting, so uncapped workers oversubscribe the CPU. With</span>
+<span class="sd">    n_threads the worker is capped at its share; the setting is per thread, so</span>
+<span class="sd">    the caller's budget is unchanged. Query torch first: it seeds a new thread's</span>
+<span class="sd">    setting on first use.</span>
+<span class="sd">    """</span>
+    <span class="n">cpus</span> <span class="o">=</span> <span class="n">_openmp_place_cpus</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">cpus</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">os</span><span class="p">,</span> <span class="s2">"sched_setaffinity"</span><span class="p">):</span>
+            <span class="c1"># Widening alone leaves the worker on the main thread's CPU; start</span>
+            <span class="c1"># it on its own CPU, counting down from the main team's places.</span>
+            <span class="n">ordered</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">cpus</span><span class="p">)</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="n">ordered</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span> <span class="o">-</span> <span class="nb">next</span><span class="p">(</span><span class="n">_BOUND_WORKER_STARTS</span><span class="p">)</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">ordered</span><span class="p">)]</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">sched_setaffinity</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="p">{</span><span class="n">start</span><span class="p">})</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">sched_setaffinity</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">cpus</span><span class="p">)</span>
+        <span class="n">n_threads</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">n_threads</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">get_num_threads</span><span class="p">()</span>
+    <span class="n">runtime</span> <span class="o">=</span> <span class="n">_openmp_runtime</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">runtime</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">runtime</span><span class="o">.</span><span class="n">omp_set_num_threads</span><span class="p">(</span><span class="n">n_threads</span><span class="p">)</span>
+
+
+<span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_single_openmp_thread</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">"""Run the enclosed ops on this thread alone, without an OpenMP team."""</span>
+    <span class="n">runtime</span> <span class="o">=</span> <span class="n">_openmp_runtime</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">runtime</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">yield</span>
+        <span class="k">return</span>
+    <span class="n">n_threads</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">get_num_threads</span><span class="p">()</span>
+    <span class="n">runtime</span><span class="o">.</span><span class="n">omp_set_num_threads</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">yield</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">runtime</span><span class="o">.</span><span class="n">omp_set_num_threads</span><span class="p">(</span><span class="n">n_threads</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_cpu_score_term_executor</span><span class="p">(</span>
+    <span class="n">n_workers</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">share_threads</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ThreadPoolExecutor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return a process-local executor shared by rendered CPU scorers.</span>
+
+<span class="sd">    With ``share_threads`` each worker gets an equal share of the thread budget.</span>
+<span class="sd">    Without it each worker may use the whole budget, which suits a few large</span>
+<span class="sd">    tasks that parallelize internally and finish at different times. Workers</span>
+<span class="sd">    are never capped on macOS (see _CAP_CPU_SCORE_WORKER_THREADS).</span>
+<span class="sd">    """</span>
+    <span class="n">threads_per_worker</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">get_num_threads</span><span class="p">()</span> <span class="o">//</span> <span class="n">n_workers</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">share_threads</span> <span class="ow">and</span> <span class="n">_CAP_CPU_SCORE_WORKER_THREADS</span>
+        <span class="k">else</span> <span class="kc">None</span>
+    <span class="p">)</span>
+    <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">n_workers</span><span class="p">,</span> <span class="n">threads_per_worker</span><span class="p">)</span>
     <span class="k">with</span> <span class="n">_CPU_SCORE_TERM_EXECUTOR_LOCK</span><span class="p">:</span>
-        <span class="n">executor</span> <span class="o">=</span> <span class="n">_CPU_SCORE_TERM_EXECUTORS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">n_workers</span><span class="p">)</span>
+        <span class="n">executor</span> <span class="o">=</span> <span class="n">_CPU_SCORE_TERM_EXECUTORS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">executor</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">executor</span> <span class="o">=</span> <span class="n">ThreadPoolExecutor</span><span class="p">(</span>
-                <span class="n">max_workers</span><span class="o">=</span><span class="n">n_workers</span><span class="p">,</span> <span class="n">thread_name_prefix</span><span class="o">=</span><span class="s2">"tmol-score"</span>
+                <span class="n">max_workers</span><span class="o">=</span><span class="n">n_workers</span><span class="p">,</span>
+                <span class="n">thread_name_prefix</span><span class="o">=</span><span class="s2">"tmol-score"</span><span class="p">,</span>
+                <span class="n">initializer</span><span class="o">=</span><span class="n">_init_cpu_score_worker</span><span class="p">,</span>
+                <span class="n">initargs</span><span class="o">=</span><span class="p">(</span><span class="n">threads_per_worker</span><span class="p">,),</span>
             <span class="p">)</span>
-            <span class="n">_CPU_SCORE_TERM_EXECUTORS</span><span class="p">[</span><span class="n">n_workers</span><span class="p">]</span> <span class="o">=</span> <span class="n">executor</span>
+            <span class="n">_CPU_SCORE_TERM_EXECUTORS</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">executor</span>
         <span class="k">return</span> <span class="n">executor</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_split_block_neighbors</span><span class="p">(</span>
+    <span class="n">block_neighbors</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">n_shards</span><span class="p">:</span> <span class="nb">int</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Split a compact ``[count, pair...]`` neighbor list into contiguous shards.</span>
+
+<span class="sd">    Each shard keeps the compact layout and the original ascending pair order.</span>
+<span class="sd">    """</span>
+    <span class="n">n_neighbors</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">block_neighbors</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">shards</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">shard</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shards</span><span class="p">):</span>
+        <span class="n">begin</span> <span class="o">=</span> <span class="n">n_neighbors</span> <span class="o">*</span> <span class="n">shard</span> <span class="o">//</span> <span class="n">n_shards</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">n_neighbors</span> <span class="o">*</span> <span class="p">(</span><span class="n">shard</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="n">n_shards</span>
+        <span class="n">shards</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="n">block_neighbors</span><span class="o">.</span><span class="n">new_tensor</span><span class="p">([</span><span class="n">end</span> <span class="o">-</span> <span class="n">begin</span><span class="p">]),</span>
+                    <span class="n">block_neighbors</span><span class="p">[</span><span class="mi">1</span> <span class="o">+</span> <span class="n">begin</span> <span class="p">:</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">end</span><span class="p">],</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">shards</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_cpu_score_term_worker_count</span><span class="p">(</span><span class="n">n_terms</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
@@ -708,12 +855,14 @@
                 <span class="n">_score_grad_in_thread</span><span class="p">(</span><span class="o">*</span><span class="n">grad_input</span><span class="p">)</span> <span class="k">for</span> <span class="n">grad_input</span> <span class="ow">in</span> <span class="n">term_grad_inputs</span>
             <span class="p">]</span>
 
+        <span class="c1"># Small adds: a team-wide OpenMP region per add can stall on busy cores.</span>
         <span class="n">grad_coords</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">for</span> <span class="n">term_grad</span> <span class="ow">in</span> <span class="n">term_grads</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">term_grad</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">grad_coords</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="n">term_grad</span> <span class="k">if</span> <span class="n">grad_coords</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">grad_coords</span> <span class="o">+</span> <span class="n">term_grad</span>
-                <span class="p">)</span>
+        <span class="k">with</span> <span class="n">_single_openmp_thread</span><span class="p">():</span>
+            <span class="k">for</span> <span class="n">term_grad</span> <span class="ow">in</span> <span class="n">term_grads</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">term_grad</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">grad_coords</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="n">term_grad</span> <span class="k">if</span> <span class="n">grad_coords</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">grad_coords</span> <span class="o">+</span> <span class="n">term_grad</span>
+                    <span class="p">)</span>
         <span class="k">return</span> <span class="n">grad_coords</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
 
 
@@ -1624,18 +1773,26 @@
                     <span class="n">weight_begin</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execution_modules</span><span class="p">[</span><span class="n">fused_index</span><span class="p">]</span><span class="o">.</span><span class="n">n_score_types</span><span class="p">,</span>
                 <span class="p">)</span>
         <span class="n">cpu_threads</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">get_num_threads</span><span class="p">()</span> <span class="k">if</span> <span class="n">weights</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">"cpu"</span> <span class="k">else</span> <span class="mi">1</span>
+        <span class="c1"># Terms that traverse the shared block-neighbor list are split into</span>
+        <span class="c1"># neighbor-list shards so one large term cannot serialize a CPU call.</span>
         <span class="c1"># Use the same compact execution policy for single- and multi-pose</span>
         <span class="c1"># scorers so batching cannot perturb nonlinear minimization trajectories.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_fused_shards</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_sharded_term_indices</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+            <span class="n">index</span>
+            <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">term</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_execution_modules</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">"block_neighbor_cutoff"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">"classname"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_UNSHARDED_PAIR_TERMS</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_pair_shards</span> <span class="o">=</span> <span class="p">(</span>
             <span class="nb">min</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">cpu_threads</span> <span class="o">//</span> <span class="mi">2</span><span class="p">))</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fused_ljlk_elec_module_index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">cpu_threads</span> <span class="o">&gt;=</span> <span class="mi">2</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_sharded_term_indices</span> <span class="ow">and</span> <span class="n">cpu_threads</span> <span class="o">&gt;=</span> <span class="mi">2</span>
             <span class="k">else</span> <span class="mi">0</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_fused_workers</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span>
-            <span class="n">_MAX_CPU_FUSED_SCORE_WORKERS</span><span class="p">,</span>
-            <span class="n">cpu_threads</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_fused_shards</span> <span class="o">+</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_execution_modules</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span>
+        <span class="n">n_sharded_calls</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_sharded_term_indices</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_pair_shards</span>
+        <span class="n">n_other_calls</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_execution_modules</span><span class="p">)</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_sharded_term_indices</span>
         <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_sharded_workers</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">cpu_threads</span><span class="p">,</span> <span class="n">n_sharded_calls</span> <span class="o">+</span> <span class="n">n_other_calls</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_term_streams</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">Stream</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_shared_neighbor_term_indices</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
             <span class="n">index</span>
@@ -1760,13 +1917,13 @@
         <span class="p">):</span>
             <span class="k">return</span> <span class="kc">False</span>
         <span class="c1"># The generic CPU parallel autograd wrapper expects canonical term-lane</span>
-        <span class="c1"># widths. One-thread CPU, the explicit fused-shard path, and all CUDA</span>
+        <span class="c1"># widths. One-thread CPU, the explicit sharded path, and all CUDA</span>
         <span class="c1"># execution paths can consume the compact weighted lane directly.</span>
         <span class="k">if</span> <span class="n">coords</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">"cuda"</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_term_workers</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">True</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_fused_shards</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_pair_shards</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">False</span>
-        <span class="k">return</span> <span class="n">needs_gradient</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_fused_shards</span> <span class="o">&lt;=</span> <span class="mi">2</span>
+        <span class="k">return</span> <span class="n">needs_gradient</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_pair_shards</span> <span class="o">&lt;=</span> <span class="mi">2</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_reduce_weighted_fused_lanes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">score_lanes</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Combine one already-weighted fused lane in one native reduction."""</span>
@@ -1884,18 +2041,18 @@
         <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_grad_enabled</span><span class="p">()</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_has_trainable_term_parameters</span><span class="p">:</span>
             <span class="n">cpu_workers</span> <span class="o">=</span> <span class="mi">0</span>
         <span class="k">if</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_fused_shards</span> <span class="o">&gt;=</span> <span class="mi">2</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_pair_shards</span> <span class="o">&gt;=</span> <span class="mi">2</span>
             <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_has_trainable_term_parameters</span>
             <span class="ow">and</span> <span class="n">shared_block_neighbors</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="p">):</span>
-            <span class="n">fused_scores</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parallel_cpu_fused_scores</span><span class="p">(</span>
+            <span class="n">sharded_scores</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parallel_cpu_sharded_scores</span><span class="p">(</span>
                 <span class="n">coords</span><span class="p">,</span>
                 <span class="n">needs_grad</span><span class="p">,</span>
                 <span class="n">shared_block_neighbors</span><span class="p">,</span>
                 <span class="n">fused_score_weights</span><span class="p">,</span>
             <span class="p">)</span>
-            <span class="k">if</span> <span class="n">fused_scores</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">return</span> <span class="n">fused_scores</span>
+            <span class="k">if</span> <span class="n">sharded_scores</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">sharded_scores</span>
         <span class="k">if</span> <span class="n">cpu_workers</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
             <span class="n">flat_coords</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="kc">None</span>
@@ -1956,60 +2113,55 @@
         <span class="p">]</span>
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">future</span><span class="o">.</span><span class="n">result</span><span class="p">()</span> <span class="k">for</span> <span class="n">future</span> <span class="ow">in</span> <span class="n">futures</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_parallel_cpu_fused_scores</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_parallel_cpu_sharded_scores</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">coords</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">needs_grad</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
         <span class="n">shared_block_neighbors</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">fused_score_weights</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Shard a fused pair traversal while other CPU terms run concurrently."""</span>
-        <span class="n">fused_index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fused_ljlk_elec_module_index</span>
-        <span class="k">if</span> <span class="n">fused_index</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_fused_workers</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Shard pair-list terms by neighbor list; run every piece concurrently."""</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_sharded_workers</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
         <span class="n">n_neighbors</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">shared_block_neighbors</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
-        <span class="n">desired_shards</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_fused_shards</span>
+        <span class="n">desired_shards</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_pair_shards</span>
         <span class="k">if</span> <span class="n">coords</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">&lt;</span> <span class="mi">16</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">:</span>
             <span class="n">desired_shards</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">desired_shards</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
         <span class="n">n_shards</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">desired_shards</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_neighbors</span><span class="p">))</span>
         <span class="k">if</span> <span class="n">n_shards</span> <span class="o">&lt;</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">fused_score_weights</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">neighbor_shards</span> <span class="o">=</span> <span class="n">_split_block_neighbors</span><span class="p">(</span><span class="n">shared_block_neighbors</span><span class="p">,</span> <span class="n">n_shards</span><span class="p">)</span>
 
-        <span class="n">neighbor_shards</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">shard</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shards</span><span class="p">):</span>
-            <span class="n">begin</span> <span class="o">=</span> <span class="n">n_neighbors</span> <span class="o">*</span> <span class="n">shard</span> <span class="o">//</span> <span class="n">n_shards</span>
-            <span class="n">end</span> <span class="o">=</span> <span class="n">n_neighbors</span> <span class="o">*</span> <span class="p">(</span><span class="n">shard</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="n">n_shards</span>
-            <span class="n">neighbor_shards</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span>
-                    <span class="p">(</span>
-                        <span class="n">shared_block_neighbors</span><span class="o">.</span><span class="n">new_tensor</span><span class="p">([</span><span class="n">end</span> <span class="o">-</span> <span class="n">begin</span><span class="p">]),</span>
-                        <span class="n">shared_block_neighbors</span><span class="p">[</span><span class="mi">1</span> <span class="o">+</span> <span class="n">begin</span> <span class="p">:</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">end</span><span class="p">],</span>
-                    <span class="p">)</span>
-                <span class="p">)</span>
+        <span class="c1"># One call per (term, shard); unsharded terms get the whole list.</span>
+        <span class="n">calls</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">n_pieces</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">term</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_execution_modules</span><span class="p">):</span>
+            <span class="n">pieces</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">neighbor_shards</span>
+                <span class="k">if</span> <span class="n">index</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_sharded_term_indices</span>
+                <span class="k">else</span> <span class="p">[</span><span class="n">shared_block_neighbors</span><span class="p">]</span>
             <span class="p">)</span>
+            <span class="n">weights</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">fused_score_weights</span>
+                <span class="k">if</span> <span class="n">index</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fused_ljlk_elec_module_index</span>
+                <span class="k">else</span> <span class="kc">None</span>
+            <span class="p">)</span>
+            <span class="n">calls</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
+                <span class="n">partial</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_call_term</span><span class="p">,</span>
+                    <span class="n">term</span><span class="p">,</span>
+                    <span class="n">shared_block_neighbors</span><span class="o">=</span><span class="n">piece</span><span class="p">,</span>
+                    <span class="n">fused_score_weights</span><span class="o">=</span><span class="n">weights</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">for</span> <span class="n">piece</span> <span class="ow">in</span> <span class="n">pieces</span>
+            <span class="p">)</span>
+            <span class="n">n_pieces</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">pieces</span><span class="p">))</span>
 
-        <span class="n">executor</span> <span class="o">=</span> <span class="n">_cpu_score_term_executor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_fused_workers</span><span class="p">)</span>
+        <span class="n">executor</span> <span class="o">=</span> <span class="n">_cpu_score_term_executor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_sharded_workers</span><span class="p">)</span>
         <span class="n">autocast_context</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">is_autocast_enabled</span><span class="p">(</span><span class="s2">"cpu"</span><span class="p">),</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">get_autocast_dtype</span><span class="p">(</span><span class="s2">"cpu"</span><span class="p">),</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">is_autocast_cache_enabled</span><span class="p">(),</span>
-        <span class="p">)</span>
-        <span class="n">fused_term</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execution_modules</span><span class="p">[</span><span class="n">fused_index</span><span class="p">]</span>
-        <span class="n">fused_call</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">partial</span><span class="p">(</span><span class="n">fused_term</span><span class="o">.</span><span class="n">forward_weighted</span><span class="p">,</span> <span class="n">score_weights</span><span class="o">=</span><span class="n">fused_score_weights</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">fused_score_weights</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="k">else</span> <span class="n">fused_term</span>
-        <span class="p">)</span>
-        <span class="n">calls</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">partial</span><span class="p">(</span><span class="n">fused_call</span><span class="p">,</span> <span class="n">shared_block_neighbors</span><span class="o">=</span><span class="n">shard</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">shard</span> <span class="ow">in</span> <span class="n">neighbor_shards</span>
-        <span class="p">]</span>
-        <span class="n">calls</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
-            <span class="n">partial</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_call_term</span><span class="p">,</span> <span class="n">term</span><span class="p">,</span> <span class="n">shared_block_neighbors</span><span class="o">=</span><span class="n">shared_block_neighbors</span>
-            <span class="p">)</span>
-            <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">term</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_execution_modules</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">index</span> <span class="o">!=</span> <span class="n">fused_index</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">needs_grad</span><span class="p">:</span>
             <span class="c1"># Forward completion order must not determine gradient accumulation.</span>
@@ -2030,14 +2182,21 @@
                 <span class="k">for</span> <span class="n">call</span> <span class="ow">in</span> <span class="n">calls</span>
             <span class="p">]</span>
             <span class="n">combined</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">future</span><span class="o">.</span><span class="n">result</span><span class="p">()</span> <span class="k">for</span> <span class="n">future</span> <span class="ow">in</span> <span class="n">futures</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-        <span class="n">width</span> <span class="o">=</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">fused_score_weights</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">fused_term</span><span class="o">.</span><span class="n">n_score_types</span>
-        <span class="n">fused_end</span> <span class="o">=</span> <span class="n">n_shards</span> <span class="o">*</span> <span class="n">width</span>
-        <span class="n">fused_scores</span> <span class="o">=</span> <span class="n">combined</span><span class="p">[:</span><span class="n">fused_end</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">n_shards</span><span class="p">,</span> <span class="n">width</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-        <span class="n">offset</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
-            <span class="n">term</span><span class="o">.</span><span class="n">n_score_types</span> <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execution_modules</span><span class="p">[:</span><span class="n">fused_index</span><span class="p">]</span>
-        <span class="p">)</span>
-        <span class="n">other</span> <span class="o">=</span> <span class="n">combined</span><span class="p">[</span><span class="n">fused_end</span><span class="p">:]</span>
-        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">other</span><span class="p">[:</span><span class="n">offset</span><span class="p">],</span> <span class="n">fused_scores</span><span class="p">,</span> <span class="n">other</span><span class="p">[</span><span class="n">offset</span><span class="p">:]),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Sum each term's shards back into that term's lanes, in term order.</span>
+        <span class="n">term_scores</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="n">pieces</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_execution_modules</span><span class="p">,</span> <span class="n">n_pieces</span><span class="p">)):</span>
+            <span class="n">width</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="mi">1</span>
+                <span class="k">if</span> <span class="n">fused_score_weights</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="ow">and</span> <span class="n">index</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fused_ljlk_elec_module_index</span>
+                <span class="k">else</span> <span class="n">term</span><span class="o">.</span><span class="n">n_score_types</span>
+            <span class="p">)</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="n">combined</span><span class="p">[</span><span class="n">row</span> <span class="p">:</span> <span class="n">row</span> <span class="o">+</span> <span class="n">pieces</span> <span class="o">*</span> <span class="n">width</span><span class="p">]</span>
+            <span class="n">term_scores</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">pieces</span><span class="p">,</span> <span class="n">width</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+            <span class="n">row</span> <span class="o">+=</span> <span class="n">pieces</span> <span class="o">*</span> <span class="n">width</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span><span class="n">term_scores</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_parallel_cuda_scores</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -2967,9 +3126,17 @@
         <span class="p">)</span>
         <span class="n">use_fused</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_use_fused_ljlk_elec</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span>
         <span class="n">execution_terms</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execution_terms</span><span class="p">(</span><span class="n">use_fused</span><span class="p">)</span>
-        <span class="n">parallel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_term_workers</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">differentiable</span>
+        <span class="c1"># Under OpenMP binding workers cannot run teams; the terms' own OpenMP</span>
+        <span class="c1"># loops on this thread use every core instead.</span>
+        <span class="n">parallel</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_term_workers</span> <span class="o">&gt;=</span> <span class="mi">2</span>
+            <span class="ow">and</span> <span class="ow">not</span> <span class="n">differentiable</span>
+            <span class="ow">and</span> <span class="ow">not</span> <span class="n">_openmp_place_cpus</span><span class="p">()</span>
+        <span class="p">)</span>
         <span class="k">if</span> <span class="n">parallel</span><span class="p">:</span>
-            <span class="n">executor</span> <span class="o">=</span> <span class="n">_cpu_score_term_executor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_term_workers</span><span class="p">)</span>
+            <span class="n">executor</span> <span class="o">=</span> <span class="n">_cpu_score_term_executor</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_term_workers</span><span class="p">,</span> <span class="n">share_threads</span><span class="o">=</span><span class="kc">False</span>
+            <span class="p">)</span>
             <span class="n">context</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="n">torch</span><span class="o">.</span><span class="n">is_grad_enabled</span><span class="p">(),</span>
                 <span class="n">torch</span><span class="o">.</span><span class="n">is_inference_mode_enabled</span><span class="p">(),</span>

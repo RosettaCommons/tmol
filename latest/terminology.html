@@ -566,7 +566,9 @@ remains. Choose the tree and allowed moves together; see the
 <h2>MoveMap and constraints<a class="headerlink" href="#movemap-and-constraints" title="Link to this heading">#</a></h2>
 <p>A <strong>MoveMap</strong> selects torsions and jumps for kinematic movement. Creating one
 does not enable movement: set its flags or masks explicitly. A
-<strong>CartesianMoveMap</strong> selects atom coordinates for Cartesian FastRelax.</p>
+<strong>CartesianMoveMap</strong> selects atom coordinates for Cartesian minimization.
+FastRelax takes one of them inside its minimizer: <code class="docutils literal notranslate"><span class="pre">CartesianRelaxMinimizer</span></code>
+for a CartesianMoveMap, <code class="docutils literal notranslate"><span class="pre">KinematicRelaxMinimizer</span></code> for a MoveMap.</p>
 <p>A <strong>constraint</strong> adds a score penalty, such as a restraint to a target position.
 It affects optimization only when attached to the pose and given a nonzero
 score-function weight. A frozen degree of freedom cannot move; a restrained

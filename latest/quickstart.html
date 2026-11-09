@@ -562,22 +562,17 @@ fixed residues, mutation scans, and residue-level results.</p>
 <h2>Combine packing and minimization<a class="headerlink" href="#combine-packing-and-minimization" title="Link to this heading">#</a></h2>
 <p><a class="reference internal" href="terminology.html#glossary-fastrelax"><span class="std std-ref">FastRelax</span></a> alternates the two operations while
 ramping steric repulsion back to its full weight.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol</span><span class="w"> </span><span class="kn">import</span> <span class="n">CartesianMoveMap</span><span class="p">,</span> <span class="n">FoldForest</span><span class="p">,</span> <span class="n">fast_relax</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol</span><span class="w"> </span><span class="kn">import</span> <span class="n">fast_relax</span>
 
-<span class="n">relaxed</span> <span class="o">=</span> <span class="n">fast_relax</span><span class="p">(</span>
-    <span class="n">pose</span><span class="p">,</span>
-    <span class="n">sfxn</span><span class="p">,</span>
-    <span class="n">PackerPalette</span><span class="p">(),</span>
-    <span class="n">CartesianMoveMap</span><span class="p">(),</span>
-    <span class="n">FoldForest</span><span class="o">.</span><span class="n">reasonable_fold_forest</span><span class="p">(</span><span class="n">pose</span><span class="p">),</span>
-<span class="p">)</span>
+<span class="n">relaxed</span> <span class="o">=</span> <span class="n">fast_relax</span><span class="p">(</span><span class="n">pose</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">)</span>
 <span class="n">relaxed_scorer</span> <span class="o">=</span> <span class="n">sfxn</span><span class="o">.</span><span class="n">render_whole_pose_scoring_module</span><span class="p">(</span><span class="n">relaxed</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">relaxed_scorer</span><span class="p">(</span><span class="n">relaxed</span><span class="o">.</span><span class="n">coords</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
 <span class="n">file_from_pose_stack</span><span class="p">(</span><span class="n">relaxed</span><span class="p">,</span> <span class="s2">"relaxed.pdb"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>This uses Cartesian minimization with all atom coordinates free. For torsion
-or jump control, use a configured <code class="docutils literal notranslate"><span class="pre">MoveMap</span></code> and kinematic minimizer as shown in
+or jump control, pass <code class="docutils literal notranslate"><span class="pre">minimizer=KinematicRelaxMinimizer()</span></code>, which frees every
+torsion and jump, or give it a configured <code class="docutils literal notranslate"><span class="pre">MoveMap</span></code>; see
 <a class="reference internal" href="user_guide/optimization.html"><span class="doc">kinematic optimization</span></a>.</p>
 </section>
 <section id="score-a-batch">

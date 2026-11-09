@@ -465,7 +465,10 @@ make<span class="w"> </span>-C<span class="w"> </span>docs<span class="w"> </spa
 <p>Rendered HTML is written to <code class="docutils literal notranslate"><span class="pre">docs/_build/html</span></code>.</p>
 <p>nbsphinx does not execute notebooks during the Sphinx phase; the smoke command
 above executes them first and writes the plots, tables, and viewer HTML that
-Sphinx consumes. CI performs the same two-step notebook-and-Sphinx build.</p>
+Sphinx consumes. CI performs the same two-step notebook-and-Sphinx build.
+The smoke command modifies notebook files locally. Do not commit its generated
+outputs, execution counts, or execution metadata; clear them before committing.
+CI checks that published tutorial notebooks contain only authored content.</p>
 <section id="adding-a-tutorial-notebook">
 <h3>Adding a tutorial notebook<a class="headerlink" href="#adding-a-tutorial-notebook" title="Link to this heading">#</a></h3>
 <p>Put it in <code class="docutils literal notranslate"><span class="pre">docs/tutorial/</span></code> as <code class="docutils literal notranslate"><span class="pre">NN_name.ipynb</span></code> and add it to the gallery in

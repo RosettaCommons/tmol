@@ -439,7 +439,10 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack._packer_task</span><span class="w"> </span><span class="kn">import</span> <span class="n">PackerTask</span><span class="p">,</span> <span class="n">SetPackerTask</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack._datatypes</span><span class="w"> </span><span class="kn">import</span> <span class="n">PackerEnergyTables</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack._simulated_annealing</span><span class="w"> </span><span class="kn">import</span> <span class="n">_run_simulated_annealing</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack._simulated_annealing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">DEFAULT_ANNEAL_TRAJECTORIES</span><span class="p">,</span>
+    <span class="n">_run_simulated_annealing</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack._impose_rotamers</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">_impose_top_rotamer_assignments</span><span class="p">,</span>
     <span class="n">_chosen_rotamer_for_block</span><span class="p">,</span>
@@ -458,6 +461,7 @@
     <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">anneal_device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">n_anneal_trajectories</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_ANNEAL_TRAJECTORIES</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Optimize side-chain conformers for a pose stack.</span>
 
@@ -478,6 +482,9 @@
 <span class="sd">            searches both faster and far better than the host one. Left</span>
 <span class="sd">            unset, host poses anneal on Metal when it is available, unless</span>
 <span class="sd">            ``TMOL_MPS_OFFLOAD=0``.</span>
+<span class="sd">        n_anneal_trajectories: High-temperature annealing trajectories per</span>
+<span class="sd">            pose; at least 4. The single-trajectory CPU annealer, used below</span>
+<span class="sd">            8 threads, ignores it.</span>
 
 <span class="sd">    Returns:</span>
 <span class="sd">        A new pose stack containing the lowest-ranked assignment per pose.</span>
@@ -490,7 +497,12 @@
                 <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">):</span>
                     <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">pack_rotamers</span><span class="p">(</span>
-                <span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">,</span> <span class="n">task</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span> <span class="n">anneal_device</span><span class="o">=</span><span class="n">anneal_device</span>
+                <span class="n">pose_stack</span><span class="p">,</span>
+                <span class="n">sfxn</span><span class="p">,</span>
+                <span class="n">task</span><span class="p">,</span>
+                <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
+                <span class="n">anneal_device</span><span class="o">=</span><span class="n">anneal_device</span><span class="p">,</span>
+                <span class="n">n_anneal_trajectories</span><span class="o">=</span><span class="n">n_anneal_trajectories</span><span class="p">,</span>
             <span class="p">)</span>
 
     <span class="n">max_poses_per_chunk</span> <span class="o">=</span> <span class="n">_max_poses_per_packing_chunk</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">)</span>
@@ -508,6 +520,7 @@
                 <span class="n">chunk_task</span><span class="p">,</span>
                 <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
                 <span class="n">anneal_device</span><span class="o">=</span><span class="n">anneal_device</span><span class="p">,</span>
+                <span class="n">n_anneal_trajectories</span><span class="o">=</span><span class="n">n_anneal_trajectories</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="n">packed_chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">packed_chunk</span><span class="p">)</span>
         <span class="n">combined_pose_stack</span> <span class="o">=</span> <span class="n">PoseStackBuilder</span><span class="o">.</span><span class="n">from_poses</span><span class="p">(</span>
@@ -544,7 +557,7 @@
     <span class="n">end_time4</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
 
     <span class="n">_</span><span class="p">,</span> <span class="n">rotamer_assignments</span> <span class="o">=</span> <span class="n">_anneal_on</span><span class="p">(</span>
-        <span class="n">packer_energy_tables</span><span class="p">,</span> <span class="n">anneal_device</span><span class="p">,</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span>
+        <span class="n">packer_energy_tables</span><span class="p">,</span> <span class="n">anneal_device</span><span class="p">,</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">n_anneal_trajectories</span>
     <span class="p">)</span>
     <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
         <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
@@ -646,6 +659,10 @@
 
     <span class="k">if</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">"cuda"</span><span class="p">:</span>
         <span class="n">free_bytes</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">mem_get_info</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="c1"># Blocks cached but unused by torch's allocator are free to the packer too.</span>
+        <span class="n">free_bytes</span> <span class="o">+=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">memory_reserved</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span>
+        <span class="p">)</span> <span class="o">-</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">memory_allocated</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="n">memory_budget</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">free_bytes</span> <span class="o">*</span> <span class="n">_PACKING_FREE_MEMORY_FRACTION</span><span class="p">)</span>
         <span class="n">estimated_bytes_per_pose</span> <span class="o">=</span> <span class="p">(</span>
             <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_n_blocks</span><span class="p">)</span> <span class="o">*</span> <span class="n">_ESTIMATED_PACKING_BYTES_PER_BLOCK</span>
@@ -750,7 +767,7 @@
     <span class="k">return</span> <span class="n">chunk_task</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_anneal_on</span><span class="p">(</span><span class="n">energy_tables</span><span class="p">,</span> <span class="n">anneal_device</span><span class="p">,</span> <span class="n">pose_device</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_anneal_on</span><span class="p">(</span><span class="n">energy_tables</span><span class="p">,</span> <span class="n">anneal_device</span><span class="p">,</span> <span class="n">pose_device</span><span class="p">,</span> <span class="n">n_trajectories</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Anneal the interaction graph, optionally on a device of its own.</span>
 
 <span class="sd">    The graph is already built when this runs, and annealing only reads it and</span>
@@ -765,11 +782,11 @@
         <span class="k">if</span> <span class="n">mps_offload_enabled</span><span class="p">():</span>
             <span class="n">anneal_device</span> <span class="o">=</span> <span class="s2">"mps"</span>
     <span class="k">if</span> <span class="n">anneal_device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">_run_simulated_annealing</span><span class="p">(</span><span class="n">energy_tables</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_run_simulated_annealing</span><span class="p">(</span><span class="n">energy_tables</span><span class="p">,</span> <span class="n">n_trajectories</span><span class="p">)</span>
 
     <span class="n">anneal_device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">anneal_device</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">anneal_device</span> <span class="o">==</span> <span class="n">pose_device</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">_run_simulated_annealing</span><span class="p">(</span><span class="n">energy_tables</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_run_simulated_annealing</span><span class="p">(</span><span class="n">energy_tables</span><span class="p">,</span> <span class="n">n_trajectories</span><span class="p">)</span>
 
     <span class="c1"># Not TensorGroup.to: the table group carries plain ints beside its</span>
     <span class="c1"># tensors, which that method rejects.</span>
@@ -781,7 +798,7 @@
             <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_tensor</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
         <span class="p">},</span>
     <span class="p">)</span>
-    <span class="n">scores</span><span class="p">,</span> <span class="n">assignments</span> <span class="o">=</span> <span class="n">_run_simulated_annealing</span><span class="p">(</span><span class="n">moved</span><span class="p">)</span>
+    <span class="n">scores</span><span class="p">,</span> <span class="n">assignments</span> <span class="o">=</span> <span class="n">_run_simulated_annealing</span><span class="p">(</span><span class="n">moved</span><span class="p">,</span> <span class="n">n_trajectories</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">scores</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">pose_device</span><span class="p">),</span> <span class="n">assignments</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">pose_device</span><span class="p">)</span>
 
 
