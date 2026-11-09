@@ -143,7 +143,8 @@ def pose_stack_from_atom37_and_topology(
     no_optH : bool
         Preserve finite input hydrogens and leave newly built hydrogens at ideal
         positions when True (default). Pass False to run TMol's hydrogen
-        optimization pipeline.
+        optimization pipeline, and also ``optH_minimize=True`` to minimize the
+        optimized proton chis.
     **kwargs
         Additional arguments forwarded to ``pose_stack_from_atom_array``.
 

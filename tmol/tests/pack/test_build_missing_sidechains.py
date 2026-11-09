@@ -115,7 +115,7 @@ def test_build_missing_sidechains_freezes_complete_non_opth_blocks(
     )
 
     real = pose_stack.block_type_ind64 >= 0
-    supported = real & OptHSampler().defines_rotamers_for_bts(
+    supported = real & OptHSampler(flip_NHQ=False).defines_rotamers_for_bts(
         pose_stack.packed_block_types,
         pose_stack.block_type_ind64.clamp_min(0),
     )

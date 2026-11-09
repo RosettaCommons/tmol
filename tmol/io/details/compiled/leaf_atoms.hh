@@ -21,9 +21,11 @@ struct select_leaf_ancestors {
     Real D;
     Real theta;
     Real phi;
+    // built from the primary (rather than the backup) ancestors
+    bool primary;
 
     static anc_and_geom TMOL_HOST_DEVICE_FUNC empty() {
-      return {Int(-1), Int(-1), Int(-1), Real(0), Real(0), Real(0)};
+      return {Int(-1), Int(-1), Int(-1), Real(0), Real(0), Real(0), false};
     }
   };
 
@@ -54,6 +56,7 @@ struct select_leaf_ancestors {
     });
     int anc0, anc1, anc2;
     float D, theta, phi;
+    bool primary = true;
 
     anc0 = get_anc(0);
     anc1 = get_anc(1);
@@ -88,13 +91,14 @@ struct select_leaf_ancestors {
       D = block_type_atom_icoors_backup[block_type][atom_ind][2];      // D
       theta = block_type_atom_icoors_backup[block_type][atom_ind][1];  // theta
       phi = block_type_atom_icoors_backup[block_type][atom_ind][0];    // phi
+      primary = false;
 
     } else {
       D = block_type_atom_icoors[block_type][atom_ind][2];      // D
       theta = block_type_atom_icoors[block_type][atom_ind][1];  // theta
       phi = block_type_atom_icoors[block_type][atom_ind][0];    // phi
     }
-    return anc_and_geom({anc0, anc1, anc2, D, theta, phi});
+    return anc_and_geom({anc0, anc1, anc2, D, theta, phi, primary});
   }
 };
 

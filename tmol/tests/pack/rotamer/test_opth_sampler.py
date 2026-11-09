@@ -134,8 +134,9 @@ def test_optH_rotamer_sampler_flipNHQ(ubq_pdb, torch_device):
             assert cache.n_proton_samples == 0 or n_rots == cache.n_proton_samples + 1
 
 
-def test_optH_flips_a_doubly_protonated_histidine_ring_back(torch_device):
+def test_optH_leaves_a_histidine_ring_as_given(torch_device):
     # 1YG0 ASN13-HIS14-CYS15; His14 is deposited with HD1 and HE2 (HIS_POS).
+    # Pose construction's optH does not flip NHQ: either ring orientation stays.
     array = atom_array_from_file(
         data_path("atomworks_regressions/his_pos_ring_1yg0.cif.zst")
     )
@@ -147,16 +148,23 @@ def test_optH_flips_a_doubly_protonated_histidine_ring_back(torch_device):
     arm = array.coord[ring] - cg
     flipped = array.copy()
     flipped.coord[ring] = cg + 2 * numpy.outer(arm @ axis, axis) - arm
-    rings = []
     for structure in (array, flipped):
         pose = pose_stack_from_atom_array(structure, torch_device, no_optH=False)
         bt = pose.packed_block_types.active_block_types[int(pose.block_type_ind[0, 1])]
         assert bt.name == "HIS_POS"
         start = int(pose.block_coord_offset[0, 1])
-        rings.append(
-            pose.coords[0, [start + bt.atom_to_idx[n] for n in ("ND1", "NE2")]]
+        given = numpy.stack(
+            [
+                structure.coord[his & (structure.atom_name == n)][0]
+                for n in ("ND1", "NE2")
+            ]
         )
-    torch.testing.assert_close(*rings, atol=0.1, rtol=0)
+        torch.testing.assert_close(
+            pose.coords[0, [start + bt.atom_to_idx[n] for n in ("ND1", "NE2")]],
+            torch.tensor(given, dtype=torch.float32, device=torch_device),
+            atol=1e-4,
+            rtol=0,
+        )
 
 
 def test_optH_rotamer_sampler_no_flipNHQ(ubq_pdb, torch_device):

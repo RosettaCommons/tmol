@@ -291,9 +291,18 @@ def _build_coords_from_icoors(
     offsets,
     block_types,
     connections,
+    dihedrals=None,
 ):
+    """Build the targeted atoms of a pose from their icoors.
+
+    dihedrals, shaped like coords without its last dimension, replaces the
+    stored dihedral of each atom built from its primary ancestors; NaN keeps
+    the stored one. Gradients do not flow to it.
+    """
     from tmol.io.details.compiled._compiled import _gen_pose_leaf_atoms
 
+    if dihedrals is None:
+        dihedrals = coords.new_empty((0, 0))
     return _gen_pose_leaf_atoms(
         coords,
         targets,
@@ -307,6 +316,7 @@ def _build_coords_from_icoors(
         pbt.build_missing_leaf_atom_icoor_ann.geom,
         pbt.build_missing_leaf_atom_icoor_ann.anc_uaids_backup,
         pbt.build_missing_leaf_atom_icoor_ann.geom_backup,
+        dihedrals.detach(),
     )
 
 

@@ -49,7 +49,12 @@ struct GeneratePoseLeafAtoms {
       // n-bt x max-n-ats x 3
       TView<UnresolvedAtomID<Int>, 3, Dev> block_type_atom_ancestors_backup,
       // n-bt x max-n-ats x 3 [phi, theta, D]
-      TView<Real, 3, Dev> block_type_atom_icoors_backup
+      TView<Real, 3, Dev> block_type_atom_icoors_backup,
+
+      // n-poses x max-n-pose-atoms: the dihedral that replaces phi for an
+      // atom built from its primary ancestors; NaN keeps the stored phi.
+      // Empty (n-poses == 0) when no dihedrals are given.
+      TView<Real, 2, Dev> pose_stack_atom_dihedral
 
       ) -> TPack<Vec<Real, 3>, 2, Dev>;
 
@@ -85,7 +90,12 @@ struct GeneratePoseLeafAtoms {
       // n-bt x max-n-ats x 3
       TView<UnresolvedAtomID<Int>, 3, Dev> block_type_atom_ancestors_backup,
       // n-bt x max-n-ats x 3 [phi, theta, D]
-      TView<Real, 3, Dev> block_type_atom_icoors_backup
+      TView<Real, 3, Dev> block_type_atom_icoors_backup,
+
+      // n-poses x max-n-pose-atoms: the dihedral that replaces phi for an
+      // atom built from its primary ancestors; NaN keeps the stored phi.
+      // Empty (n-poses == 0) when no dihedrals are given.
+      TView<Real, 2, Dev> pose_stack_atom_dihedral
 
       ) -> TPack<Vec<Real, 3>, 2, Dev>;
 };

@@ -358,15 +358,15 @@ def test_prepared_atom37_builder_is_reusable_and_differentiable(
 
 
 @pytest.mark.parametrize(
-    ("residue_start", "residue_stop", "nhq_name"),
-    [(0, 2, "GLN"), (66, 69, "HIS")],
+    ("residue_start", "residue_stop", "res_name"),
+    [(4, 8, "THR"), (64, 68, "HIS")],
 )
 def test_explicit_opth_flags_preserve_previous_results(
-    biotite_1ubq, torch_device, residue_start, residue_stop, nhq_name
+    biotite_1ubq, torch_device, residue_start, residue_stop, res_name
 ):
     starts = struc.get_residue_starts(biotite_1ubq, add_exclusive_stop=True)
     structure = biotite_1ubq[starts[residue_start] : starts[residue_stop]].copy()
-    assert nhq_name in structure.res_name
+    assert res_name in structure.res_name
     structure = structure[structure.element != "H"]
     structure, atom37 = _atomized_atom37(structure, torch_device)
     context = build_context_from_atom_array(structure, torch_device)
@@ -383,9 +383,9 @@ def test_explicit_opth_flags_preserve_previous_results(
 
     torch.testing.assert_close(actual.block_type_ind, expected.block_type_ind)
     torch.testing.assert_close(actual.coords, expected.coords)
-    assert not torch.equal(actual.block_type_ind, preserved.block_type_ind) or not (
-        torch.allclose(actual.coords, preserved.coords)
-    )
+    # optH turns hydroxyl hydrogens; no NHQ flip, so histidine keeps its tautomer
+    torch.testing.assert_close(actual.block_type_ind, preserved.block_type_ind)
+    assert not torch.allclose(actual.coords, preserved.coords)
     actual.coords[actual.real_atoms].sum().backward()
     assert torch.count_nonzero(coords.grad) > 0
 

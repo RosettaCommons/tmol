@@ -42,6 +42,12 @@ def _pose_stack_from_canonical_form(  # noqa: C901
     return_atom_mapping: bool = False,
     return_block_has_missing_atoms: bool = False,
     packer_atoms=None,
+    rebuild_coincident_hydrogens: bool = False,
+    rebuild_hydrogens: bool = False,
+    return_block_keeps_input_hydrogens: bool = False,
+    opth_score_function=None,
+    opth_minimize: bool = False,
+    packer_seed: Optional[int] = None,
 ):
     """Build a pose stack from tensors in canonical atom ordering.
 
@@ -97,6 +103,21 @@ def _pose_stack_from_canonical_form(  # noqa: C901
             blocks missing non-leaf input atoms instead of rejecting them.
         packer_atoms: Given a block type, the atoms rotamer packing will place;
             missing ones are left for the packer instead of built here.
+        rebuild_coincident_hydrogens: Rebuild input hydrogens that sit on their
+            bonded parent; reject coincident bonded heavy atoms.
+        rebuild_hydrogens: Rebuild every hydrogen the icoors can place, input
+            ones included. Otherwise input hydrogens keep their coordinates:
+            hydrogen optimization skips a block whose proton-chi hydrogens the
+            input gives.
+        return_block_keeps_input_hydrogens: Include that ``[pose, residue]``
+            mask of blocks hydrogen optimization skips.
+        opth_score_function: When given, optimize proton-chi hydrogens with
+            this score function; ASN/GLN/HIS are not flipped. Coordinates stay
+            differentiable with respect to ``coords``. Skipped when a block is
+            missing heavy atoms: the packer that builds them places hydrogens.
+        opth_minimize: After packing, minimize the proton chis optH sampled
+            with the same score function.
+        packer_seed: Seed of the packer hydrogen optimization runs.
 
     Returns:
         The pose stack. If any return flag is set, returns ``(pose_stack,
@@ -161,7 +182,7 @@ def _pose_stack_from_canonical_form(  # noqa: C901
     #         now-assigned block types, discarding/ignoring
     #         any others that may have been provided
     # step 7: if any atoms missing, build them
-    # step 8: construct PoseStack object
+    # step 8: construct PoseStack object, then optimize its hydrogens
     # step 9: construct the forward/reverse atom mapping indices if required
 
     # 1: look for NaNs in the input coordinates tensor
@@ -359,6 +380,19 @@ def _pose_stack_from_canonical_form(  # noqa: C901
         pbt, block_types64, block_coords, missing_atoms, metal_assignments
     )
 
+    # 6b: rebuilding a hydrogen is building it as if the input lacked it
+    from tmol.io.details._build_missing_leaf_atoms import (
+        _annotate_packed_block_types_atom_is_leaf_atom,
+    )
+
+    _annotate_packed_block_types_atom_is_leaf_atom(pbt)
+    is_hydrogen = (pbt.atom_is_hydrogen[block_types64.clamp_min(0)] != 0) & real_atoms
+    if rebuild_hydrogens:
+        missing_atoms = missing_atoms | (
+            is_hydrogen & pbt.is_leaf_atom[block_types64.clamp_min(0)]
+        )
+    given_hydrogens = is_hydrogen & ~missing_atoms
+
     # 7
     inter_residue_connections = inter_residue_connections64.to(torch.int32)
     (
@@ -427,6 +461,32 @@ def _pose_stack_from_canonical_form(  # noqa: C901
         device=pbt.device,
     )
 
+    # 8a: a hydrogen on its parent gives packing no direction to start from
+    if rebuild_coincident_hydrogens:
+        from tmol.io._input_geometry import _rebuild_coincident_hydrogens
+
+        ps = _rebuild_coincident_hydrogens(ps)
+
+    # 8b: proton chis only, so the atom layout and mapping below are unchanged
+    block_keeps_input_hydrogens = None
+    if opth_score_function is not None or return_block_keeps_input_hydrogens:
+        from tmol.io.details._optimize_hydrogens import (
+            _blocks_with_given_proton_hydrogens,
+            _optimize_hydrogens,
+        )
+
+        block_keeps_input_hydrogens = _blocks_with_given_proton_hydrogens(
+            pbt, block_types64, given_hydrogens
+        )
+    if opth_score_function is not None and not bool(torch.any(block_has_missing_atoms)):
+        ps = _optimize_hydrogens(
+            ps,
+            opth_score_function,
+            packer_seed,
+            minimize=opth_minimize,
+            fixed_blocks=block_keeps_input_hydrogens,
+        )
+
     # 9
     if return_atom_mapping:
         (
@@ -467,6 +527,8 @@ def _pose_stack_from_canonical_form(  # noqa: C901
         opt_return_vals["ps_atom_mapping"] = ps_atom_mapping
     if return_block_has_missing_atoms:
         opt_return_vals["block_has_missing_atoms"] = block_has_missing_atoms
+    if return_block_keeps_input_hydrogens:
+        opt_return_vals["block_keeps_input_hydrogens"] = block_keeps_input_hydrogens
 
     if len(opt_return_vals) > 0:
         return ps, opt_return_vals

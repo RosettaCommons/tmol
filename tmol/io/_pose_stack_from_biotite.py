@@ -21,7 +21,6 @@ from tmol.io._atomworks_reader import (
     INFERRED_POLYMER_BOND,
     _renumbered_decreasing_chains,
 )
-from tmol.io._input_geometry import _rebuild_coincident_hydrogens
 from tmol.io.details._select_from_canonical import _validate_ligand_hydrogens
 from tmol.io._input_termini import (
     EXPLICIT_TERMINI,
@@ -110,8 +109,14 @@ class _PreparedAtom37PoseTopology:
             real_atoms=pose_stack.real_atoms,
         )
 
-    def pose_from_canonical(self, canonical_coords: torch.Tensor) -> PoseStack:
-        """Rebind coordinates and rebuild leaf atoms in the prepared pose layout."""
+    def pose_from_canonical(
+        self, canonical_coords: torch.Tensor, rebuild_hydrogens: bool = False
+    ) -> tuple[PoseStack, torch.Tensor]:
+        """Rebind coordinates and rebuild leaf atoms in the prepared pose layout.
+
+        Also returns the blocks whose proton-chi hydrogens the input gives,
+        which hydrogen optimization leaves alone.
+        """
         mapping = self.canonical_atom_mapping
         pose_mapping = self.pose_atom_mapping
         source_coords = canonical_coords[mapping[:, 0], mapping[:, 1], mapping[:, 2]]
@@ -134,22 +139,33 @@ class _PreparedAtom37PoseTopology:
         pbt = self.pose_stack.packed_block_types
         from tmol.io.details._build_missing_leaf_atoms import (
             _apply_h_geometric_completion,
+            _build_coords_from_icoors,
         )
-        from tmol.io.details.compiled._compiled import _gen_pose_leaf_atoms
+        from tmol.io.details._optimize_hydrogens import (
+            _block_atoms,
+            _blocks_with_given_proton_hydrogens,
+        )
 
-        coords = _gen_pose_leaf_atoms(
+        types = self.pose_stack.block_type_ind64
+        p, b, a = _block_atoms(self.pose_stack)
+        is_hydrogen = torch.zeros_like(block_leaf_atom_is_missing)
+        is_hydrogen[p, b, a] = pbt.atom_is_hydrogen[types[p, b], a] != 0
+        if rebuild_hydrogens:
+            rebuilt = is_hydrogen & pbt.is_leaf_atom[types.clamp_min(0)]
+            block_leaf_atom_is_missing |= rebuilt
+            pose_atom_is_missing[
+                p, self.pose_stack.block_coord_offset64[p, b] + a
+            ] |= rebuilt[p, b, a]
+        given_hydrogens = is_hydrogen & ~block_leaf_atom_is_missing
+
+        coords = _build_coords_from_icoors(
+            pbt,
             coords,
             block_leaf_atom_is_missing,
             pose_atom_is_missing,
             self.pose_stack.block_coord_offset,
             self.pose_stack.block_type_ind,
             self.pose_stack.inter_residue_connections,
-            pbt.n_atoms,
-            pbt.atom_downstream_of_conn,
-            pbt.build_missing_leaf_atom_icoor_ann.anc_uaids,
-            pbt.build_missing_leaf_atom_icoor_ann.geom,
-            pbt.build_missing_leaf_atom_icoor_ann.anc_uaids_backup,
-            pbt.build_missing_leaf_atom_icoor_ann.geom_backup,
         )
         coords = _apply_h_geometric_completion(
             pbt,
@@ -161,7 +177,9 @@ class _PreparedAtom37PoseTopology:
         )
         pose_stack = _clone_pose_topology(self.pose_stack)
         pose_stack.coords = coords
-        return pose_stack
+        return pose_stack, _blocks_with_given_proton_hydrogens(
+            pbt, types, given_hydrogens
+        )
 
     def has_missing_nonleaf(self, canonical_coords: torch.Tensor) -> bool:
         """Return whether replay would require sidechain packing."""
@@ -218,6 +236,8 @@ class PreparedAtom37PoseBuilder:
         atom37_coords: torch.Tensor,
         *,
         opt_h: bool = False,
+        opt_h_minimize: bool = False,
+        rebuild_hydrogens: bool = False,
     ) -> PoseStack:
         """Build a differentiable pose batch.
 
@@ -226,6 +246,10 @@ class PreparedAtom37PoseBuilder:
                 ``[n_poses, n_tokens, 37, 3]`` on the context's device.
             opt_h: Optimize hydrogen positions after construction. Disabled by
                 default so finite input coordinates are preserved.
+            opt_h_minimize: With ``opt_h``, also minimize the optimized proton
+                chis after packing them.
+            rebuild_hydrogens: Rebuild every hydrogen, input ones included,
+                instead of keeping the input's hydrogens where they are.
 
         Returns:
             A pose whose coordinates remain differentiable with respect to
@@ -237,6 +261,8 @@ class PreparedAtom37PoseBuilder:
                 self._canonical_form(canonical_coords),
                 self.context,
                 no_optH=not opt_h,
+                optH_minimize=opt_h_minimize,
+                rebuild_hydrogens=rebuild_hydrogens,
                 atom37_coords=atom37_coords,
                 fragment_mapping=self.fragment_mapping,
             )
@@ -255,12 +281,14 @@ class PreparedAtom37PoseBuilder:
             )
             block_has_missing_atoms = details["block_has_missing_atoms"]
             if bool(torch.any(block_has_missing_atoms)):
-                if not opt_h:
+                if not (opt_h or rebuild_hydrogens):
                     return pose_stack
                 return _pose_stack_from_canonical_form_and_context(
                     cf,
                     self.context,
-                    no_optH=False,
+                    no_optH=not opt_h,
+                    optH_minimize=opt_h_minimize,
+                    rebuild_hydrogens=rebuild_hydrogens,
                     atom37_coords=atom37_coords,
                     fragment_mapping=self.fragment_mapping,
                 )
@@ -278,35 +306,32 @@ class PreparedAtom37PoseBuilder:
                     self._canonical_form(canonical_coords),
                     self.context,
                     no_optH=not opt_h,
+                    optH_minimize=opt_h_minimize,
+                    rebuild_hydrogens=rebuild_hydrogens,
                     atom37_coords=atom37_coords,
                     fragment_mapping=self.fragment_mapping,
                 )
-            pose_stack = topology.pose_from_canonical(canonical_coords)
+        # a new topology replays too, so every call places hydrogens the same way
+        pose_stack, fixed_blocks = topology.pose_from_canonical(
+            canonical_coords, rebuild_hydrogens
+        )
         if len(self._pose_topologies) >= _MAX_PREPARED_BATCH_SIZES:
             self._pose_topologies.pop(next(iter(self._pose_topologies)))
         self._pose_topologies[n_poses] = topology
 
         if opt_h:
-            from tmol.pack._build_missing_sidechains import _build_missing_sidechains
+            from tmol.io.details._optimize_hydrogens import _optimize_hydrogens
 
-            pose_stack = _build_missing_sidechains(
+            pose_stack = _optimize_hydrogens(
                 pose_stack,
                 self.context._opth_score_function,
-                self.context._dunbrack_sampler,
-                topology.block_has_missing_atoms,
-                no_optH=False,
-                has_missing_atoms=False,
-            )
-            pose_stack = _restore_canonical_input_coords(
-                pose_stack,
-                canonical_coords,
-                topology.canonical_atom_mapping,
-                topology.pose_atom_mapping,
+                minimize=opt_h_minimize,
+                fixed_blocks=fixed_blocks,
             )
         # Pose construction validates the initial topology. Check the initial
         # packed result too, but do not force a CUDA-to-host synchronization on
         # every replay of an already validated fixed topology.
-        if opt_h and not topology_was_cached:
+        if (opt_h or rebuild_hydrogens) and not topology_was_cached:
             _assert_no_nan_coords(pose_stack, topology.real_atoms)
         return pose_stack
 
@@ -629,6 +654,8 @@ def pose_stack_from_atom_array(  # noqa: C901
     param_db: ParameterDatabase | None = None,
     missing_density_distance_threshold: float = 2.4,
     no_optH: bool = False,
+    optH_minimize: bool = False,
+    rebuild_hydrogens: bool = False,
     prepare_ligands: bool = False,
     ligand_ph: float = 7.4,
     strict_atom_types: bool = False,
@@ -680,10 +707,20 @@ def pose_stack_from_atom_array(  # noqa: C901
             hydrogen-parent pairs, which are rebuilt with a warning,
             and build only missing hydrogens and heavy-atom sidechains. When
             False (default), residues with complete heavy atoms are packed with
-            OptHSampler to optimize hydrogen positions and NHQ flips, while
+            OptHSampler to optimize proton-chi hydrogens (no NHQ flips) the
+            input does not give (see ``rebuild_hydrogens``), while
             residues with missing heavy atoms are rebuilt with
             DunbrackChiSampler. Generated ligand hydrogens follow
             ``ligand_hydrogens`` instead.
+        optH_minimize: Unless ``no_optH``, minimize the proton chis in torsion
+            space after packing them, rather than leaving them at the sampled
+            values.
+        rebuild_hydrogens: When False (default), hydrogens the input gives
+            keep their coordinates; hydrogen optimization leaves alone a
+            residue whose proton-chi hydrogens are given. When True, every
+            hydrogen is rebuilt from ideal geometry (and then optimized
+            unless ``no_optH``). Generated ligand hydrogens still follow
+            ``ligand_hydrogens`` when False.
         prepare_ligands: If True, detect and prepare non-standard residues
             (see ``build_context_from_atom_array`` for details).
         ligand_ph: pH AtomWorks protonates residues lacking hydrogens at
@@ -834,6 +871,8 @@ def pose_stack_from_atom_array(  # noqa: C901
         cf,
         context,
         no_optH=no_optH,
+        optH_minimize=optH_minimize,
+        rebuild_hydrogens=rebuild_hydrogens,
         atom37_coords=atom37_coords,
         fragment_mapping=fragment_mapping,
         return_context=return_context,
@@ -849,6 +888,8 @@ def _pose_stack_from_canonical_form_and_context(
     *,
     no_optH: bool,
     atom37_coords: torch.Tensor | None,
+    optH_minimize: bool = False,
+    rebuild_hydrogens: bool = False,
     fragment_mapping=None,
     return_context: bool = False,
     packer_seed: int | None = None,
@@ -875,6 +916,9 @@ def _pose_stack_from_canonical_form_and_context(
       cf: Canonical-form tensors describing residue identity and coordinates.
       context: Structure-independent chemistry resolved once.
       no_optH: Preserve finite input hydrogens instead of optimizing them.
+      optH_minimize: Minimize the optimized proton chis after packing them.
+      rebuild_hydrogens: Rebuild every hydrogen, input ones included, rather
+        than keeping the input's hydrogens where they are.
       atom37_coords: When supplied, the autograd-tracked source of ``cf``'s
         coordinates; retained so gradients survive hydrogen rebuilding.
       fragment_mapping: Mapping produced when fragmented ligands were expanded.
@@ -925,18 +969,28 @@ def _pose_stack_from_canonical_form_and_context(
     return_block_has_missing_atoms = bool(
         kwargs.pop("return_block_has_missing_atoms", False)
     )
+    # Construction optimizes hydrogens differentiably, unless ligand fragments
+    # have yet to be joined; missing heavy atoms leave it to the packer below.
+    opth_in_construction = not no_optH and fragment_mapping is None
     result = _pose_stack_from_canonical_form(
         context.canonical_ordering,
         context.packed_block_types,
         *cf,
         return_block_has_missing_atoms=True,
         packer_atoms=packer_atoms,
+        rebuild_coincident_hydrogens=atom37_coords is None,
+        opth_score_function=(
+            context._opth_score_function if opth_in_construction else None
+        ),
+        opth_minimize=optH_minimize,
+        rebuild_hydrogens=rebuild_hydrogens,
+        return_block_keeps_input_hydrogens=True,
+        packer_seed=packer_seed,
         **kwargs,
     )
 
     pose_stack, opt_return_vals = result
-    if atom37_coords is None:
-        pose_stack = _rebuild_coincident_hydrogens(pose_stack)
+    block_keeps_input_hydrogens = opt_return_vals.pop("block_keeps_input_hydrogens")
     if fragment_mapping is not None:
         from tmol.ligand._fragmentation import _apply_fragment_connections
 
@@ -951,7 +1005,7 @@ def _pose_stack_from_canonical_form_and_context(
         _assert_no_ligand_with_missing_atoms(pose_stack, block_has_missing_atoms)
 
     needs_packing = block_has_missing_atoms is not None and (
-        has_missing_atoms or not no_optH
+        has_missing_atoms or not (no_optH or opth_in_construction)
     )
     if needs_packing:
         sfxn = (
@@ -976,7 +1030,16 @@ def _pose_stack_from_canonical_form_and_context(
             na_sampler=na_sampler,
             has_missing_atoms=has_missing_atoms,
             seed=packer_seed,
+            fixed_blocks=block_keeps_input_hydrogens,
         )
+        if optH_minimize and not no_optH:
+            from tmol.io.details._optimize_hydrogens import _minimize_proton_chis
+
+            pose_stack = _minimize_proton_chis(
+                pose_stack,
+                context._opth_score_function,
+                block_keeps_input_hydrogens & ~block_has_missing_atoms,
+            )
 
     if atom37_coords is not None and needs_packing:
         pose_stack = _restore_canonical_input_coords(
@@ -984,6 +1047,7 @@ def _pose_stack_from_canonical_form_and_context(
             cf.coords,
             opt_return_vals["can_atom_mapping"],
             opt_return_vals["ps_atom_mapping"],
+            restore_hydrogens=not rebuild_hydrogens,
         )
     if atom37_coords is not None and not caller_requested_atom_mapping:
         del opt_return_vals["can_atom_mapping"]
@@ -1008,8 +1072,11 @@ def _restore_canonical_input_coords(
     canonical_coords: torch.Tensor,
     canonical_atom_mapping: torch.Tensor,
     pose_atom_mapping: torch.Tensor,
+    restore_hydrogens: bool = True,
 ) -> PoseStack:
     """Restore finite canonical inputs after coordinate rebuilding or packing.
+
+    With restore_hydrogens False, rebuilt hydrogens stay as built.
 
     TMol's packing pipeline deliberately treats coordinates as values rather
     than as an autograd graph. Atom37 callers need the reverse behavior: keep
@@ -1027,6 +1094,15 @@ def _restore_canonical_input_coords(
     ]
     coords = pose_stack.coords.clone()
     finite = torch.isfinite(source_coords).all(dim=-1)
+    if not restore_hydrogens:
+        pose, block = canonical_atom_mapping[:, 0], canonical_atom_mapping[:, 1]
+        atom = pose_atom_mapping[:, 1] - pose_stack.block_coord_offset64[pose, block]
+        finite &= (
+            pose_stack.packed_block_types.atom_is_hydrogen[
+                pose_stack.block_type_ind64[pose, block], atom
+            ]
+            == 0
+        )
     coords[
         pose_atom_mapping[finite, 0],
         pose_atom_mapping[finite, 1],
