@@ -261,7 +261,9 @@ def test_wide_nonbonded_workspace_only_changes_float_derivatives(
         workspace_sizes(target + "_precise", (1 << 20, 1, 1 << 20), 32)
 
 
-@pytest.mark.parametrize("target", ("tmol_cartbonded_precise", "tmol_genbonded_precise"))
+@pytest.mark.parametrize(
+    "target", ("tmol_cartbonded_precise", "tmol_genbonded_precise")
+)
 def test_bonded_accumulator_workspace_precision_and_overflow(native_runtime, target):
     workspace_sizes = native_runtime.workspace_sizes
     energy, derivative = workspace_sizes(target, (2, 17), 32)
