@@ -22,7 +22,8 @@ template <
     int OutRank = 4,
     int DispRank = 3,
     int DerivRank = 2,
-    typename EnergyReal = Real>
+    typename EnergyReal = Real,
+    typename GradReal = Real>
 using HBondCtx = HBondCtxT<
     tmol::score::common::TViewBinder<D>::template View,
     Real,
@@ -31,7 +32,8 @@ using HBondCtx = HBondCtxT<
     OutRank,
     DispRank,
     DerivRank,
-    EnergyReal>;
+    EnergyReal,
+    GradReal>;
 
 }  // namespace potentials
 }  // namespace hbond

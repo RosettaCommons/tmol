@@ -1,4 +1,5 @@
 #pragma once
+#include <tmol/score/common/pose_energy_accumulation.hh>
 #include <tmol/score/genbonded/potentials/genbonded_rotamer_kernels.hh>
 
 #include <tmol/utility/portable/reduce_ops.hh>
@@ -83,37 +84,43 @@ auto GenBondedPoseScoreDispatch<DeviceOps, D, Real, Int>::forward(
   int const n_atoms = rot_coords.size(0);
   int const n_poses = first_rot_for_block.size(0);
   int const n_V = output_block_pair_energies ? first_rot_for_block.size(1) : 1;
-  auto V_t = TPack<Real, 4, D>::zeros({1, n_poses, n_V, n_V});
-  bool const accumulate_derivs = compute_derivs && !output_block_pair_energies;
-  auto dV_dx_t = accumulate_derivs
-                     ? TPack<Vec<Real, 3>, 2, D>::zeros({1, n_atoms})
-                     : TPack<Vec<Real, 3>, 2, D>::empty({1, 0});
-  genbonded_pose_forward<DeviceOps, D, Real, Int>(
-      mgr,
-      rot_coords,
-      rot_coord_offset,
-      first_rot_for_block,
-      first_rot_block_type,
-      pose_stack_inter_block_connections,
-      atom_paths_from_conn,
-      gen_intra_subgraphs,
-      gen_intra_subgraph_offsets,
-      gen_intra_params,
-      gen_atom_type_hierarchy,
-      gen_atom_is_rosetta,
-      gen_connection_bond_bins,
-      gen_conn_scored_elsewhere,
-      gen_source_atom_index,
-      gen_source_block_type_index,
-      gen_inter_torsion_hash_keys,
-      gen_inter_torsion_hash_values,
-      gen_inter_improper_hash_keys,
-      gen_inter_improper_hash_values,
-      output_block_pair_energies,
-      compute_derivs,
-      V_t.view,
-      dV_dx_t.view);
-  return {V_t, dV_dx_t};
+  return score::common::with_pose_energy_accumulation<D, Real>(
+      output_block_pair_energies, [&](auto precision) {
+        using AccumReal = decltype(precision);
+        auto V_t = TPack<AccumReal, 4, D>::zeros({1, n_poses, n_V, n_V});
+        bool const accumulate_derivs =
+            compute_derivs && !output_block_pair_energies;
+        auto dV_dx_t = accumulate_derivs
+                           ? TPack<Vec<AccumReal, 3>, 2, D>::zeros({1, n_atoms})
+                           : TPack<Vec<AccumReal, 3>, 2, D>::empty({1, 0});
+        genbonded_pose_forward<DeviceOps, D, Real, Int>(
+            mgr,
+            rot_coords,
+            rot_coord_offset,
+            first_rot_for_block,
+            first_rot_block_type,
+            pose_stack_inter_block_connections,
+            atom_paths_from_conn,
+            gen_intra_subgraphs,
+            gen_intra_subgraph_offsets,
+            gen_intra_params,
+            gen_atom_type_hierarchy,
+            gen_atom_is_rosetta,
+            gen_connection_bond_bins,
+            gen_conn_scored_elsewhere,
+            gen_source_atom_index,
+            gen_source_block_type_index,
+            gen_inter_torsion_hash_keys,
+            gen_inter_torsion_hash_values,
+            gen_inter_improper_hash_keys,
+            gen_inter_improper_hash_values,
+            output_block_pair_energies,
+            compute_derivs,
+            V_t.view,
+            dV_dx_t.view);
+        return std::make_tuple(
+            V_t.template cast<Real>(), dV_dx_t.template cast<Vec<Real, 3>>());
+      });
 }
 
 template <

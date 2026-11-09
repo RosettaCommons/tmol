@@ -916,6 +916,7 @@ template <
     tmol::Device Dev,
     typename Real,
     typename Int,
+    typename GradReal = Real,
     typename DerivedCoordsView,
     typename DerivedAtomIndsView,
     typename PairParamsView,
@@ -991,7 +992,8 @@ TMOL_DEVICE_FUNC Real hbond_atom_energy_and_derivs_full(
       if (atom_ind < 0) return;
       for (int j = 0; j < 3; ++j) {
         if (dV_dat[j] != 0) {
-          accumulate<Dev, Real>::add(dV_dcoords[0][atom_ind][j], dV_dat[j]);
+          accumulate<Dev, GradReal>::add(
+              dV_dcoords[0][atom_ind][j], GradReal(dV_dat[j]));
         }
       }
     });

@@ -54,19 +54,20 @@ TMOL_DEVICE_FUNC Vec<Int, size> atom_local_to_global_indices(
 // Mirrors cartbonded's accumulate_result but specialised for the
 // tuple<Real, Vec<Real3,4>> returned by gbtorsion_V_dV.
 // ---------------------------------------------------------------------------
-template <typename Real, typename Int, tmol::Device D>
+template <typename Real, typename Int, tmol::Device D, typename GradReal = Real>
 TMOL_DEVICE_FUNC void accumulate_torsion_result(
     Real& val,
     common::tuple<Real, Vec<Real3, 4>> to_add,
     Vec<Int, 4> atoms,
     bool accumulate_derivs,
-    TensorAccessor<Vec<Real, 3>, 1, D> dV,
+    TensorAccessor<Vec<GradReal, 3>, 1, D> dV,
     const Real& weight = 1.0) {
   val += common::get<0>(to_add);
   if (accumulate_derivs) {
     for (int i = 0; i < 4; i++) {
-      accumulate<D, Vec<Real, 3>>::add(
-          dV[atoms[i]], common::get<1>(to_add)[i] * weight);
+      accumulate<D, Vec<GradReal, 3>>::add(
+          dV[atoms[i]],
+          (common::get<1>(to_add)[i] * weight).template cast<GradReal>());
     }
   }
 }
@@ -363,7 +364,9 @@ template <
     template <tmol::Device> class DeviceOps,
     tmol::Device D,
     typename Real,
-    typename Int>
+    typename Int,
+    typename EnergyReal = Real,
+    typename GradReal = Real>
 void genbonded_pose_forward(
     ContextManager& mgr,
     TView<Vec<Real, 3>, 1, D> rot_coords,
@@ -389,8 +392,8 @@ void genbonded_pose_forward(
 
     bool output_block_pair_energies,
     bool compute_derivs,
-    TView<Real, 4, D> V,
-    TView<Vec<Real, 3>, 2, D> dV_dx) {
+    TView<EnergyReal, 4, D> V,
+    TView<Vec<GradReal, 3>, 2, D> dV_dx) {
   int const n_atoms = rot_coords.size(0);
   int const n_poses = first_rot_for_block.size(0);
   int const max_n_blocks = first_rot_for_block.size(1);
@@ -646,10 +649,11 @@ void genbonded_pose_forward(
           // Two residues can be joined by more than one connection -- a cyclic
           // dipeptide is bonded both up and down -- and each connection's CTA
           // writes this same pair, so assignment would drop one of them.
-          accumulate<D, Real>::add(
-              V[0][pose_ind][block_ind1][block_ind2], cta_score);
+          accumulate<D, EnergyReal>::add(
+              V[0][pose_ind][block_ind1][block_ind2], EnergyReal(cta_score));
         } else {
-          accumulate<D, Real>::add(V[0][pose_ind][0][0], cta_score);
+          accumulate<D, EnergyReal>::add(
+              V[0][pose_ind][0][0], EnergyReal(cta_score));
         }
       }
     });

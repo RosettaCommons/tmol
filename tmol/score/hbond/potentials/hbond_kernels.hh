@@ -101,7 +101,8 @@ union HBondSharedMem {
       return Real(0.0);                                                        \
     }                                                                          \
     if (accumulate_derivs) {                                                   \
-      Real val = hbond_atom_energy_and_derivs_full<TILE_SIZE, Dev, Real, Int>( \
+      Real val = hbond_atom_energy_and_derivs_full<              \
+          TILE_SIZE, Dev, Real, Int, typename Ctx::Gradient>(                 \
           don_ind,                                                             \
           acc_ind,                                                             \
           don_tile_ind,                                                        \
