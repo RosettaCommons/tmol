@@ -1,6 +1,7 @@
 // Typed entry stages for the canonical streaming interaction graph.
 #pragma once
 #include "graph_topology_ffi.hh"
+#include "energy_accumulator_ffi.hh"
 #include <algorithm>
 #include <tmol/pack/compiled/streaming_interaction_graph_kernels.hh>
 
@@ -58,17 +59,28 @@ struct GraphEntryStage {
     }
   }
 
-  template <template <Device> class Ops, Device D, typename Real>
+  template <
+      template <Device> class Ops,
+      Device D,
+      typename Real,
+      bool Precise = false>
   static void launch(
       const std::vector<ffi::AnyBuffer>& a,
       const std::vector<ffi::AnyBuffer>& out,
       int64_t op,
-      int64_t width) {
+      int64_t width,
+      bool preserve_output = false) {
     using namespace pack::compiled;
+    using Accumulator = EnergyAccumulator<Ops, D, Real>;
+    using Value =
+        std::conditional_t<Precise, typename Accumulator::Value, Real>;
+    std::array<std::optional<Accumulator>, 3> totals;
+    ContextManager manager;
     InteractionGraphEntryCtxT<
         score::common::TViewBinder<D>::template View,
         Real,
-        int32_t>
+        int32_t,
+        Value>
         c{};
 #define IN(T, R, K) buffer_view<T, R, D>(a[K])
 #define OUT(T, R, K) buffer_view<T, R, D>(out[K])
@@ -100,9 +112,23 @@ struct GraphEntryStage {
         c.bc_rot_offset_for_molten_block = IN(int32_t, 2, 7);
         c.neighbor_chunk_offset_offsets = IN(int64_t, 1, 10);
         c.chunk_offsets = IN(int64_t, 1, 11);
-        c.bg_bg_energies = OUT(Real, 1, 0);
-        c.energy1b = OUT(Real, 1, 1);
-        c.energy2b = OUT(Real, 1, 2);
+        if constexpr (Precise) {
+          ByteWorkspace work(out[3].untyped_data());
+          for (size_t i = 0; i < totals.size(); ++i)
+            totals[i].emplace(
+                manager,
+                out[i],
+                work.take<double>(out[i].dimensions()[0]),
+                preserve_output);
+          c.bg_bg_energies =
+              totals[0]->template view<1>({out[0].dimensions()[0]});
+          c.energy1b = totals[1]->template view<1>({out[1].dimensions()[0]});
+          c.energy2b = totals[2]->template view<1>({out[2].dimensions()[0]});
+        } else {
+          c.bg_bg_energies = OUT(Real, 1, 0);
+          c.energy1b = OUT(Real, 1, 1);
+          c.energy2b = OUT(Real, 1, 2);
+        }
       }
     }
     auto entry = [=] TMOL_DEVICE_FUNC(int index) {
@@ -119,10 +145,11 @@ struct GraphEntryStage {
     if constexpr (D == Device::CPU) {
       for (int row = 0; row < n; ++row) entry(row);
     } else {
-      ContextManager manager;
       LAUNCH_BOX_32;
       Ops<D>::template forall<launch_t>(manager, n, entry);
     }
+    if constexpr (Precise)
+      for (const auto& total : totals) total->finish(manager);
 #undef IN
 #undef OUT
   }
@@ -170,4 +197,48 @@ struct AdditiveGraphEntryStage : GraphEntryStage {
     }
   }
 };
+// Keep the original entry-stage ABI for older callers. The precise CUDA path
+// adds one XLA-owned byte buffer, with no public float64 arrays or global flag.
+template <bool Additive>
+struct PreciseGraphEntryStageT
+    : std::conditional_t<Additive, AdditiveGraphEntryStage, GraphEntryStage> {
+  using Base =
+      std::conditional_t<Additive, AdditiveGraphEntryStage, GraphEntryStage>;
+  static int fill(int64_t op, size_t index) {
+    return index == 3 ? -1 : Base::fill(op, index);
+  }
+  static void validate(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out,
+      int64_t op,
+      int64_t extent,
+      int64_t width) {
+    if (op != 2 || out.size() != 4 || a.size() < 2
+        || a[1].element_type() != ffi::DataType::F32)
+      throw std::invalid_argument(
+          "precise graph entries require float32 energies and workspace");
+    Base::validate(a, {out.begin(), out.begin() + 3}, op, extent, width);
+    ByteWorkspace work;
+    for (size_t i = 0; i < 3; ++i) {
+      score::common::checked_dispatch_size(
+          out[i].dimensions()[0], "graph energy table");
+      work.take<double>(out[i].dimensions()[0]);
+    }
+    require_shape(out[3], ffi::DataType::U8, {int64_t(work.size_bytes())});
+    if (reinterpret_cast<uintptr_t>(out[3].untyped_data()) % alignof(double))
+      throw std::invalid_argument("graph workspace is misaligned");
+  }
+  template <template <Device> class Ops, Device D>
+  static void execute(
+      const std::vector<ffi::AnyBuffer>& a,
+      const std::vector<ffi::AnyBuffer>& out,
+      int64_t op,
+      int64_t,
+      int64_t width) {
+    GraphEntryStage::template launch<Ops, D, float, true>(
+        a, out, op, width, Additive);
+  }
+};
+using PreciseGraphEntryStage = PreciseGraphEntryStageT<false>;
+using PreciseAdditiveGraphEntryStage = PreciseGraphEntryStageT<true>;
 }  // namespace tmol::jax

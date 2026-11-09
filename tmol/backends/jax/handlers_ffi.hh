@@ -230,6 +230,12 @@ TMOL_JAX_STAGE(
 TMOL_JAX_STAGE(
     tmol_graph_entries_additive,
     tmol::jax::run_graph_stage<tmol::jax::AdditiveGraphEntryStage>, );
+TMOL_JAX_STAGE(
+    tmol_graph_entries_precise,
+    tmol::jax::run_graph_stage<tmol::jax::PreciseGraphEntryStage>, );
+TMOL_JAX_STAGE(
+    tmol_graph_entries_additive_precise,
+    tmol::jax::run_graph_stage<tmol::jax::PreciseAdditiveGraphEntryStage>, );
 
 TMOL_JAX_STAGE(
     tmol_na_sampling,

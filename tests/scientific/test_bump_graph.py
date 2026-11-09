@@ -576,6 +576,68 @@ def test_native_graph_energy_for_every_assignment(graph_backend, dtype, counts, 
         )
 
 
+@pytest.mark.parametrize("dtype", (np.float32, np.float64))
+def test_graph_accumulation_keeps_small_terms_and_previous_pages(graph_backend, dtype):
+    jax, jnp, device = graph_backend
+    from tmol_jax.pack.interaction_graph import (
+        build_interaction_graph,
+        additive_entry_stage,
+    )
+    from tmol_jax.pack.graph import topology_stage, _wide
+
+    with jax.enable_x64(dtype == np.float64), jax.default_device(device):
+        rotamers = synthetic_rotamers(np.array([[1, 2, 2]], np.int32), jax, device)
+        # Exercise background, fixed/molten and both directed pair tables.
+        indices = jnp.asarray(
+            np.repeat([[0, 0, 0], [0, 0, 1], [0, 1, 3]], 96, axis=1), jnp.int32
+        )
+        # CPU float32 retains its serial arithmetic; CUDA must retain the small
+        # contribution across large cancellation without enabling JAX float64.
+        large = 2**24 if dtype == np.float64 or device.platform == "gpu" else 4
+        values = jnp.asarray(np.tile([large, 1, -large], 96), dtype)
+        graph = build_interaction_graph(rotamers, values, indices, chunk_size=2)
+        names = ("background", "energy1b", "energy2b")
+        initial = tuple(graph[name] for name in names)
+        for value, expected in zip(initial, (32, 32, 64)):
+            np.testing.assert_equal(np.asarray(value).sum(), expected)
+            assert value.dtype == dtype and value.device == device
+        retained = graph["retained"]
+        mapping = topology_stage(
+            (rotamers.n_rots_for_block,), operation=0, outputs=_wide(1, 3)
+        )
+        topology = (
+            rotamers.block_ind_for_rot,
+            mapping,
+            rotamers.rot_offset_for_block,
+            retained["fixed"],
+            retained["block_rotamer_counts"],
+            retained["block_rotamer_offsets"],
+            graph["neighbor_row_offsets"],
+            graph["neighbor_blocks"],
+            graph["neighbor_chunk_offset_offsets"],
+            graph["chunk_offsets"],
+        )
+        saved = tuple(np.asarray(value).copy() for value in initial)
+
+        def add(page, previous):
+            return additive_entry_stage(
+                (indices, page, *topology),
+                previous,
+                operation=2,
+                extent=initial[1].size,
+                chunk_size=2,
+            )
+
+        actual = jax.jit(jax.vmap(add))(
+            jnp.stack((values, values)),
+            tuple(jnp.stack((value, value)) for value in initial),
+        )
+        for value, before, original in zip(actual, saved, initial):
+            np.testing.assert_array_equal(value, np.stack((2 * before, 2 * before)))
+            np.testing.assert_array_equal(original, before)
+            assert value.dtype == dtype and value.device == device
+
+
 @pytest.mark.parametrize("counts", ([[1, 1], [0, 0]], [[], []], []))
 @pytest.mark.parametrize("bump_check", (False, True))
 def test_native_graph_empty_entries_and_fixed_blocks(graph_backend, counts, bump_check):

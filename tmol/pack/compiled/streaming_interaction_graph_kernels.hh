@@ -23,8 +23,13 @@ namespace tmol {
 namespace pack {
 namespace compiled {
 
-template <template <typename, int> class View, typename Real, typename Int>
+template <
+    template <typename, int> class View,
+    typename Real,
+    typename Int,
+    typename Accum = Real>
 struct InteractionGraphEntryCtxT {
+  using Accumulator = Accum;
   // The table being walked: [3, n] (pose, rot1, rot2) and [n] energies
   View<int32_t, 2> sparse_inds;
   View<Real, 1> sparse_energies;
@@ -47,9 +52,9 @@ struct InteractionGraphEntryCtxT {
   // Outputs: adjacency bitsets, then the energy tables
   View<int32_t, 3> block_adjacency;
   View<int32_t, 1> chunk_adjacency;
-  View<Real, 1> bg_bg_energies;
-  View<Real, 1> energy1b;
-  View<Real, 1> energy2b;
+  View<Accum, 1> bg_bg_energies;
+  View<Accum, 1> energy1b;
+  View<Accum, 1> energy2b;
 
   int chunk_size = {};
   int max_n_molten_blocks = {};
@@ -190,12 +195,13 @@ TMOL_HOST_DEVICE_FUNC void ig_accumulate_entry(
   int64_t const molten2 = ctx.orig_block_to_molten[pose][block2];
   bool const kept_block1 = molten1 >= 0;
   bool const kept_block2 = molten2 >= 0;
-  Real const energy = ctx.sparse_energies[index];
+  using Accum = typename Ctx::Accumulator;
+  Accum const energy = Accum(ctx.sparse_energies[index]);
 
   if (!kept_block1 && !kept_block2) {
     if (rot1 == ctx.rotamer_for_nonmolten_block[pose][block1]
         && rot2 == ctx.rotamer_for_nonmolten_block[pose][block2]) {
-      accumulate<D, Real>::add(ctx.bg_bg_energies[pose], energy);
+      accumulate<D, Accum>::add(ctx.bg_bg_energies[pose], energy);
     }
     return;
   }
@@ -212,18 +218,18 @@ TMOL_HOST_DEVICE_FUNC void ig_accumulate_entry(
   }
   if (!kept_block1) {
     if (rot1 == ctx.rotamer_for_nonmolten_block[pose][block1]) {
-      accumulate<D, Real>::add(ctx.energy1b[bc_rot2], energy);
+      accumulate<D, Accum>::add(ctx.energy1b[bc_rot2], energy);
     }
     return;
   }
   if (!kept_block2) {
     if (rot2 == ctx.rotamer_for_nonmolten_block[pose][block2]) {
-      accumulate<D, Real>::add(ctx.energy1b[bc_rot1], energy);
+      accumulate<D, Accum>::add(ctx.energy1b[bc_rot1], energy);
     }
     return;
   }
   if (block1 == block2) {
-    accumulate<D, Real>::add(ctx.energy1b[bc_rot1], energy);
+    accumulate<D, Accum>::add(ctx.energy1b[bc_rot1], energy);
     return;
   }
 
@@ -252,9 +258,9 @@ TMOL_HOST_DEVICE_FUNC void ig_accumulate_entry(
   int64_t const offset21 = ctx.chunk_offsets
                                [ctx.neighbor_chunk_offset_offsets[edge21]
                                 + chunk2 * n_chunks1 + chunk1];
-  accumulate<D, Real>::add(
+  accumulate<D, Accum>::add(
       ctx.energy2b[offset12 + in_chunk1 * chunk2_size + in_chunk2], energy);
-  accumulate<D, Real>::add(
+  accumulate<D, Accum>::add(
       ctx.energy2b[offset21 + in_chunk2 * chunk1_size + in_chunk1], energy);
 }
 

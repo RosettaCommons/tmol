@@ -11,22 +11,31 @@ class EnergyAccumulator {
   using Value = std::conditional_t<precise, double, Real>;
 
   EnergyAccumulator(
-      ContextManager& context, ffi::AnyBuffer output, double* scratch)
+      ContextManager& context,
+      ffi::AnyBuffer output,
+      double* scratch,
+      bool preserve_output = false)
       : output_(output),
         values_(precise ? static_cast<void*>(scratch) : output.untyped_data()) {
     if (output.size_bytes() / sizeof(Real) > INT32_MAX)
       throw std::invalid_argument("native energy dispatch exceeds int32");
-    initialize(context, output, scratch);
+    initialize(context, output, scratch, preserve_output);
   }
 
   // CUDA extended device lambdas require an addressable enclosing function.
   static void initialize(
-      ContextManager& context, ffi::AnyBuffer output, double* scratch) {
+      ContextManager& context,
+      ffi::AnyBuffer output,
+      double* scratch,
+      bool preserve_output = false) {
     if constexpr (precise) {
       LAUNCH_BOX_32;
       auto count = output.size_bytes() / sizeof(Real);
+      auto source = static_cast<Real*>(output.untyped_data());
       Ops<D>::template forall<launch_t>(
-          context, count, [=] TMOL_DEVICE_FUNC(int i) { scratch[i] = 0; });
+          context, count, [=] TMOL_DEVICE_FUNC(int i) {
+            scratch[i] = preserve_output ? double(source[i]) : 0;
+          });
     }
   }
 
