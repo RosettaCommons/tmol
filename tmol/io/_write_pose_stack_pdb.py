@@ -140,14 +140,7 @@ def _atom_records_from_coords(
         dtype=torch.int64,
         device=pbt.device,
     ).repeat_interleave(n_pose_atoms, dim=0)
-    block_for_atom = torch.zeros(
-        (n_poses, max_n_pose_atoms), dtype=torch.int64, device=pbt.device
-    )
-    block_for_atom[
-        real_block_pose, block_coord_offset64[real_block_pose, real_block_block]
-    ] = 1
-    block_for_atom = torch.cumsum(block_for_atom, dim=1) - 1
-    block_for_real_atom = block_for_atom[atom_is_real]
+    block_for_real_atom = block_for_pose_atom[atom_is_real]
 
     block_local_atom_index_for_pose_atom = (
         torch.arange(max_n_pose_atoms, dtype=torch.int32, device=pbt.device).repeat(
@@ -190,9 +183,10 @@ def _atom_records_from_coords(
     # END BLOCK OF CODE FOR CREATING FROM-1 RESIDUE INDICES FROM CHAIN INDICES
 
     block_chain_local_index_for_real_atom = (
-        block_for_atom
+        block_for_pose_atom
         - block_offset_for_chain[
-            pose_for_pose_atom, chain_ind_for_block[pose_for_pose_atom, block_for_atom]
+            pose_for_pose_atom,
+            chain_ind_for_block[pose_for_pose_atom, block_for_pose_atom],
         ]
     )
 
@@ -201,13 +195,8 @@ def _atom_records_from_coords(
     # ok, let's move everything to the cpu/numpy from here forward
     block_types64 = block_types64.cpu().numpy()
     pose_like_coords = pose_like_coords.cpu().detach().numpy()
-    block_coord_offset = block_coord_offset.cpu().numpy()
-    is_real_block = is_real_block.cpu().numpy()
-    n_block_atoms = n_block_atoms.cpu().numpy()
-    n_pose_atoms = n_pose_atoms.cpu().numpy()
     pose_for_real_atom = pose_for_real_atom.cpu().numpy()
     atom_is_real = atom_is_real.cpu().numpy()
-    block_for_atom = block_for_atom.cpu().numpy()
     block_for_real_atom = block_for_real_atom.cpu().numpy()
     block_chain_local_index_for_real_atom = (
         block_chain_local_index_for_real_atom.cpu().numpy()
