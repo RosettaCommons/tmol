@@ -20,6 +20,10 @@ struct HBondWorkspace {
       void* data = nullptr,
       bool derivative = false)
       : storage(data) {
+    auto count = score::common::checked_dispatch_product(
+        Sparse ? 1 : poses, atoms, "HB atoms");
+    if (count > INT32_MAX / 9)
+      throw std::invalid_argument("HBond flattened layout exceeds int32");
     if constexpr (!Sparse) {
       auto pairs =
           score::common::checked_triangular_size(blocks, true, "HB neighbors");
@@ -29,11 +33,11 @@ struct HBondWorkspace {
       spheres = storage.take<Real>(poses * blocks * 4);
       neighbors = storage.take<int32_t>(neighbor_capacity);
     }
-    derived_coords = storage.take<Real>((Sparse ? atoms : poses * atoms) * 9);
+    derived_coords = storage.take<Real>(count * 9);
     if constexpr (!Sparse && std::is_same_v<Real, float>)
       energy = storage.take<double>(poses);
     if constexpr (!Sparse && Precise && std::is_same_v<Real, float>)
-      if (derivative) gradient = storage.take<double>(poses * atoms * 3);
+      if (derivative) gradient = storage.take<double>(count * 3);
   }
 };
 
