@@ -74,18 +74,11 @@ def reset_opth_dofs(
 
 @partial(jax.jit, static_argnames=("operation", "extent", "width"))
 def _conformer_indices(arguments, *, operation, extent, width):
-    from tmol_jax.score._native import register
     from .dispatch import _narrow_prefix
 
-    register("tmol_conformer_indices")
     output = jax.ShapeDtypeStruct((2, extent, 8), np.uint8)
-    indices = jax.ffi.ffi_call(
-        "tmol_conformer_indices", output, vmap_method="sequential"
-    )(
-        *arguments,
-        operation=np.int64(operation),
-        extent=np.int64(extent),
-        width=np.int64(width),
+    indices = stage(
+        arguments, "tmol_conformer_indices", output, operation, extent, width
     )
     return _narrow_prefix(indices.reshape(-1, 8)).reshape(2, extent)
 
@@ -221,10 +214,7 @@ def assign_conformer_chi(dofs, chi, *metadata):
 
 @partial(jax.jit, static_argnames=("operation",))
 def _chi_derivative_stage(arguments, *, operation):
-    from tmol_jax.score._native import register
-
     target = "tmol_conformer_chi_derivatives"
-    register(target)
     if operation == 0:
         results = (jax.ShapeDtypeStruct((5, arguments[3].size, 8), np.uint8),)
     else:
@@ -232,9 +222,7 @@ def _chi_derivative_stage(arguments, *, operation):
             jax.ShapeDtypeStruct(a.shape, a.dtype)
             for a in arguments[: 2 if operation == 2 else 1]
         )
-    return jax.ffi.ffi_call(target, results, vmap_method="sequential")(
-        *arguments, operation=np.int64(operation), extent=np.int64(0), width=np.int64(0)
-    )
+    return stage(arguments, target, results, operation)
 
 
 @jax.custom_vjp
