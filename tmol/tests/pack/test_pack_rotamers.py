@@ -1103,8 +1103,13 @@ def test_pack_rotamers_w_cst(
         torch.cuda.synchronize()
 
 
-def test_pack_rotamers_w_empty_interaction_graph(
-    default_database, disulfide_pdb, dun_sampler, torch_device
+@pytest.mark.parametrize(
+    "score_function_factory",
+    (get_constraints_only_sfxn, get_packer_sfxn),
+    ids=("empty_interaction_graph", "disulfide"),
+)
+def test_pack_rotamers_with_disulfide_pose(
+    default_database, disulfide_pdb, dun_sampler, torch_device, score_function_factory
 ):
     n_poses = 4
     p = pose_stack_from_file(
@@ -1117,52 +1122,7 @@ def test_pack_rotamers_w_empty_interaction_graph(
         [p] * n_poses, torch_device, dun_sampler
     )
     task = SetPackerTask.from_packer_task(task)
-    sfxn = get_constraints_only_sfxn(default_database, torch_device)
-    pose_stack, rotamer_set = build_rotamers(
-        pose_stack, task, pose_stack.packed_block_types.chem_db
-    )
-    (
-        rotamer_for_nonmolten_block,
-        n_molten_blocks_per_pose,
-        bc_rot_offset_for_molten_block,
-        bc_rot_to_orig_rot,
-        bg_bg_energies,
-        packer_energy_tables,
-    ) = build_packer_energy_tables(pose_stack, rotamer_set, sfxn)
-    # bg_bg_energies, packer_energy_tables = build_packer_energy_tables(
-    #     pose_stack, rotamer_set, sfxn
-    # )
-    _, _ = run_pack_and_assert_scores(
-        pose_stack,
-        rotamer_set,
-        packer_energy_tables,
-        sfxn,
-        rotamer_for_nonmolten_block,
-        n_molten_blocks_per_pose,
-        bc_rot_offset_for_molten_block,
-        bc_rot_to_orig_rot,
-        bg_bg_energies,
-    )
-    # run_pack_and_assert_scores(
-    #     pose_stack, rotamer_set, packer_energy_tables, sfxn, bg_bg_energies
-    # )
-
-
-def test_pack_rotamers_w_dslf(
-    default_database, disulfide_pdb, dun_sampler, torch_device
-):
-    n_poses = 4
-    p = pose_stack_from_file(
-        disulfide_pdb,
-        torch_device,
-        no_optH=True,
-        missing_density_distance_threshold=0.0,
-    )
-    pose_stack, task = setup_pose_stack_and_task(
-        [p] * n_poses, torch_device, dun_sampler
-    )
-    task = SetPackerTask.from_packer_task(task)
-    sfxn = get_packer_sfxn(default_database, torch_device)
+    sfxn = score_function_factory(default_database, torch_device)
     pose_stack, rotamer_set = build_rotamers(
         pose_stack, task, pose_stack.packed_block_types.chem_db
     )
