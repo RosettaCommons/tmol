@@ -174,7 +174,23 @@ def test_custom_kinematic_optimizer_uses_shared_movement_policy(backend, name):
             optimizer_kwargs={"max_iter": 3},
         )
     assert calls == [True]
-    actual = backend.numpy(result.coords)
-    assert np.isfinite(actual).all()
-    assert backend.scores(actual).sum() < backend.scores(initial).sum() - 1e-3
-    np.testing.assert_array_equal(backend.coords(), initial)
+    results = [result]
+    if backend.framework == "jax":
+        from tmol_jax import KinematicRelaxMinimizer
+
+        results.append(
+            KinematicRelaxMinimizer(
+                movement, optimizer="strong_wolfe", max_iter=3, cuda_graph=False
+            )(backend.pose, backend.score_function, rtol=5e-4)
+        )
+        with pytest.raises(ValueError, match="optimizer_kwargs requires"):
+            KinematicRelaxMinimizer(
+                movement, optimizer="strong_wolfe", optimizer_kwargs={"rtol": 5e-4}
+            )(backend.pose, backend.score_function)
+    for result in results:
+        actual = backend.numpy(result.coords)
+        assert np.isfinite(actual).all()
+        assert backend.scores(actual).sum() < backend.scores(initial).sum() - 1e-3
+        assert result.coords.dtype == backend.pose.coords.dtype
+        assert result.coords.device == backend.pose.coords.device
+        np.testing.assert_array_equal(backend.coords(), initial)
