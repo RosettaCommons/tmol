@@ -99,7 +99,7 @@ def test_colab_selects_cuda_major_and_preserves_torch(
     )
     module.setup_colab([])
     assert len(calls) == 1
-    assert calls[0][0][0] == f"tmol[{extra}]=={module.TMOL_RELEASE}"
+    assert calls[0][0][0] == f"tmol[{extra},ligand]=={module.TMOL_RELEASE}"
     assert calls[0][1] == torch_version
 
 
