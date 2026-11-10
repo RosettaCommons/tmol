@@ -65,7 +65,7 @@ dev = [
     "tmol[ligand]",
     # Linters & formatters
     # Keep formatter and linter pins in sync with .pre-commit-config.yaml.
-    "black==26.10.0",
+    "black==26.10.1",
     "flake8==7.4.1",
     "pre-commit>=4.0",
     "clang-format==23.1.2",
