@@ -21,7 +21,7 @@ It does not use TorchConfig.cmake or the unstable Torch C++ ABI for production.
 
 Requirements:
 
-- Python 3.11 or newer.
+- Python 3.12 or newer.
 - PyTorch 2.14+ build headers; PyTorch 2.11+ runtime.
 - A C++17 compiler (C++20 for test/JIT extensions with recent PyTorch).
 - CMake 3.24 or newer.
@@ -171,7 +171,7 @@ Versioned wheel and sdist publication happens from `v*` tags. The tag version
 must match `[project].version` in `pyproject.toml`.
 
 `scripts/release_matrix.py` defines 28 wheels: 12 CPU/API wheels and 16 CUDA
-operator wheels across Python 3.11–3.14 and supported platforms. CUDA builds
+operator wheels across Python 3.12–3.14 and supported platforms. CUDA builds
 use a toolkit floor of 12.8 or 13.0, independent of the build-time Torch minor.
 All three project versions and the extras/dependencies must agree.
 

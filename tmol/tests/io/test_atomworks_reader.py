@@ -208,6 +208,8 @@ def test_isolated_halogen_charge_provenance(
 
     path = _write_halogen_cif(tmp_path, source_charge)
     source = atom_array_from_file(path)
+    assert source.entity_id.tolist() == ["1"]
+    assert source.tmol_polymer_entity.tolist() == [False]
     expected_charge = 0 if source_charge == "0" else -1
     assert source.charge.tolist() == [expected_charge]
     assert source.tmol_source_formal_charge.tolist() == [source_charge]

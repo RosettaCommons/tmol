@@ -2105,8 +2105,8 @@ def _extract_residue_metadata(
     # Author chain labels can be shared by a polymer and separate ligand
     # entities. That must not hide the polymer's terminal boundary.
     keys = ["chain_id"]
-    if "label_entity_id" in biotite_structure.get_annotation_categories():
-        keys.append("label_entity_id")
+    if "entity_id" in biotite_structure.get_annotation_categories():
+        keys.append("entity_id")
     if "sym_id" in biotite_structure.get_annotation_categories():
         keys.append("sym_id")
     boundaries = numpy.zeros(max(0, len(biotite_residue_starts) - 1), dtype=bool)

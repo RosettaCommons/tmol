@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import biotite.structure as struc
 import biotite.structure.io.pdbx as pdbx
-from biotite.structure.io.pdb.hybrid36 import decode_hybrid36
+from biotite.rust.structure.io.pdb import decode_hybrid36
 import numpy as np
 from rdkit import Chem
 
@@ -42,7 +42,7 @@ _AUTHOR_FIELDS = {
 }
 _FIELDS = [
     *_AUTHOR_FIELDS.values(),
-    "label_entity_id",
+    "entity_id",
     "pdbx_formal_charge",
     "partial_charge",
 ]
@@ -912,7 +912,7 @@ def _read_structure(path, *, model=1, assembly_id=None):
         "atom_name",
         "element",
         "charge",
-        "label_entity_id",
+        "entity_id",
         "pdbx_formal_charge",
         "partial_charge",
         "is_polymer",

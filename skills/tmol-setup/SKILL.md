@@ -15,7 +15,7 @@ Produce a verified TMol installation using the least expensive path compatible
 with the user's Python, PyTorch, platform, and device. Run commands from the TMol
 repository root only when building a checkout.
 
-This workflow requires Python 3.11+ and PyTorch 2.11+. Source or JIT builds need
+This workflow requires Python 3.12+ and PyTorch 2.11+. Source or JIT builds need
 a C++ compiler; only CUDA source or JIT builds need `nvcc`.
 
 ## Select the installation path

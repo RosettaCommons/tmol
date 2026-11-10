@@ -3,7 +3,7 @@ name = "tmol-ops-cu13"
 version = "0.3.0"
 description = "TMol native operators for CUDA 13"
 readme = {text = "CUDA 13 native operators for TMol. Install `tmol[cu13]` with a CUDA 13-enabled PyTorch build. The Python API and data are provided by `tmol`.", content-type = "text/markdown"}
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = {text = "BSD-3-Clause"}
 dependencies = ["tmol==0.3.0", "torch>=2.11"]
 

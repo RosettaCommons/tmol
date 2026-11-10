@@ -23,11 +23,11 @@ def test_release_matrix_is_complete_and_unique():
     release_gpu = gpu_wheel_rows()
     smoke_linux = linux_wheel_rows()
 
-    assert len(release_gpu) == 16
-    assert len(cpu_wheel_rows()) == 8
-    assert len(macos_wheel_rows()) == 4
+    assert len(release_gpu) == 12
+    assert len(cpu_wheel_rows()) == 6
+    assert len(macos_wheel_rows()) == 3
     assert len(smoke_linux) == len(release_gpu) + len(cpu_wheel_rows())
-    assert len(expected_wheel_keys()) == 28
+    assert len(expected_wheel_keys()) == 21
     assert len(
         {(row["python-tag"], row["local-tag"], row["arch"]) for row in smoke_linux}
     ) == len(smoke_linux)
@@ -37,7 +37,7 @@ def test_release_matrix_is_complete_and_unique():
         for row in cpu_wheel_rows() + macos_wheel_rows()
     } == {
         ("2.14", python_version, arch)
-        for python_version in ("3.11", "3.12", "3.13", "3.14")
+        for python_version in ("3.12", "3.13", "3.14")
         for arch in ("x86_64", "aarch64", "arm64")
     }
 
@@ -49,7 +49,7 @@ def test_matrix_cli_emits_workflow_json():
         "linux-cpu": len(cpu_wheel_rows()),
         "macos": len(macos_wheel_rows()),
         "linux": len(linux_wheel_rows()),
-        "test": 48,
+        "test": 36,
     }.items():
         result = subprocess.run(
             [sys.executable, str(script), name],
@@ -65,8 +65,8 @@ def test_matrix_cli_emits_workflow_json():
     [
         ("tmol_ops_cu13-*-cp314-cp314-*x86_64.whl", "cu13:cp314:x86_64"),
         (
-            "tmol-*-cp311-cp311-manylinux_2_28_x86_64.whl",
-            "cpu:cp311:x86_64",
+            "tmol-*-cp312-cp312-manylinux_2_28_x86_64.whl",
+            "cpu:cp312:x86_64",
         ),
         (
             "tmol-*-cp314-cp314-macosx_14_0_arm64.whl",

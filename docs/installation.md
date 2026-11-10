@@ -21,13 +21,17 @@ and relaxation do not need OpenBabel. The `dev` and `docs` extras include it.
 
 ## Requirements
 
-- Python 3.11–3.14 and PyTorch 2.11 or newer.
+- Python 3.12–3.14 and PyTorch 2.11 or newer.
+- AtomWorks 3.1 or newer with Biotite 2.0.0 and NumPy 2.1 or newer.
 - Linux `x86_64` or `aarch64` with glibc 2.28 or newer, or Apple Silicon with
   macOS 14 or newer. Native Windows and Intel Mac wheels are not provided;
   Windows users can use Linux through WSL2.
 - For GPU execution: Linux, an NVIDIA GPU with compute capability 7.5 or newer,
   CUDA-enabled PyTorch, and a compatible NVIDIA driver. See
   [driver compatibility](#cuda-driver-errors).
+
+The development version requires Python 3.12+ for AtomWorks 3.1. TMol 0.3.0
+remains available for Python 3.11 with AtomWorks 3.0 and Biotite 1.6.
 
 Pip selects the wheel for your Python version and platform. Wheel installation
 needs no compiler or local CUDA toolkit (`nvcc`). Add `--only-binary=:all:` to

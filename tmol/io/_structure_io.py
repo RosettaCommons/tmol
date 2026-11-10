@@ -12,7 +12,7 @@ from typing import IO, Literal, Optional, Union
 import biotite.structure as struc
 import numpy
 import torch
-from atomworks.io.utils.io_utils import CIFWriteConfig, to_cif_string
+from atomworks.io.files import CIFWriteConfig, atom_array_to_file
 from atomworks.io.utils.link_chemistry import DEFAULT_VALENCE
 from biotite.structure.io.pdb import PDBFile
 from biotite.structure.io.pdbx import CIFCategory, CIFFile
@@ -191,20 +191,22 @@ def _cif_text(atom_array) -> str:
         include_entity_categories=True,
         chem_comp_source="array",
         warn_on_ccd_without_registry=False,
+        coord_decimals=None,
     )
     # an input's entity ids belong to its label chains, not the author chains
     # written here, so the writer assigns entities itself
-    if "label_entity_id" in atom_array.get_annotation_categories():
+    if "entity_id" in atom_array.get_annotation_categories():
         atom_array = atom_array.copy()
-        atom_array.del_annotation("label_entity_id")
+        atom_array.del_annotation("entity_id")
     # the writer takes models as a list of AtomArrays
     models = (
         list(atom_array) if isinstance(atom_array, struc.AtomArrayStack) else atom_array
     )
-    cif = CIFFile.read(io.StringIO(to_cif_string(models, config=config)))
+    cif = CIFFile.read(
+        io.StringIO(atom_array_to_file(models, file_type="cif", config=config))
+    )
     _number_label_seq_ids(cif.block)
     _declare_links_without_valence(cif.block, atom_array)
-    _restore_coordinate_precision(cif.block, atom_array)
     out = io.StringIO()
     cif.write(out)
     return out.getvalue()
@@ -286,19 +288,6 @@ def _declare_links_without_valence(block, atom_array):
     block["struct_conn"] = CIFCategory(
         {c: numpy.array([r.get(c, "?") for r in rows]) for c in columns}
     )
-
-
-def _restore_coordinate_precision(block, atom_array):
-    """Overwrite the writer's three-decimal coordinates with the array's own.
-
-    TEMP until atomworks allows precision control.
-    """
-    site = block["atom_site"]
-    coord = atom_array.coord.reshape(-1, 3)
-    if len(site["Cartn_x"].as_array(str)) != len(coord):
-        raise ValueError("CIF atom_site rows do not match the written atoms")
-    for axis, name in enumerate(("Cartn_x", "Cartn_y", "Cartn_z")):
-        site[name] = coord[:, axis]
 
 
 def _number_label_seq_ids(block):
