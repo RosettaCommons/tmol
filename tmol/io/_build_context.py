@@ -60,10 +60,10 @@ class PoseBuildContext:
             self.packed_block_types.device,
             param_db=self.parameter_database,
         )
-        # OptH changes only proton chis. These terms depend only on residue
-        # identity, disulfide geometry, protein backbone, or nucleic-acid
-        # heavy-atom torsions, so they are constant across every OptH
-        # candidate and cannot affect the selected assignment.
+        # OptH changes proton chis and terminal NHQ groups. These terms depend
+        # only on residue identity, disulfide geometry, protein backbone, or
+        # nucleic-acid heavy-atom torsions, so they are constant across every
+        # OptH candidate and cannot affect the selected assignment.
         for score_type in (
             ScoreType.disulfide,
             ScoreType.omega,
