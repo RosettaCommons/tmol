@@ -371,7 +371,7 @@ def test_explicit_opth_flags_preserve_previous_results(
     structure, atom37 = _atomized_atom37(structure, torch_device)
     context = build_context_from_atom_array(structure, torch_device)
     builder = prepare_atom37_pose_builder(structure, context)
-    preserved = builder(atom37)
+    preserved = builder(atom37, opt_h=False)
     coords = atom37.detach().requires_grad_(True)
 
     torch.manual_seed(0)
@@ -388,6 +388,120 @@ def test_explicit_opth_flags_preserve_previous_results(
     assert not torch.allclose(actual.coords, preserved.coords)
     actual.coords[actual.real_atoms].sum().backward()
     assert torch.count_nonzero(coords.grad) > 0
+
+
+def test_atom37_opth_does_not_flip(biotite_1ubq, torch_device):
+    structure = biotite_1ubq[biotite_1ubq.element != "H"]
+
+    def od1(pose):
+        """Each ASN's OD1."""
+        pbt = pose.packed_block_types
+        rows = []
+        for b, t in enumerate(pose.block_type_ind[0].tolist()):
+            bt = pbt.active_block_types[t] if t >= 0 else None
+            if bt is not None and bt.base_name == "ASN":
+                rows.append(int(pose.block_coord_offset[0, b]) + bt.atom_to_idx["OD1"])
+        return pose.coords[0, rows]
+
+    # a structure loaded from a file has amides flipped
+    unflipped = pose_stack_from_atom_array(structure, torch_device, no_optH=True)
+    loaded = pose_stack_from_atom_array(structure, torch_device, packer_seed=0)
+    assert torch.any((od1(loaded) - od1(unflipped)).norm(dim=-1) > 0.5)
+
+    # the same structure through atom37 keeps every heavy atom and block type
+    structure, atom37 = _atomized_atom37(structure, torch_device)
+    context = build_context_from_atom_array(structure, torch_device)
+    builder = prepare_atom37_pose_builder(structure, context)
+    given = pose_stack_from_atom37_and_topology(
+        atom37, structure, context, no_optH=True
+    )
+    for pose in (
+        pose_stack_from_atom37_and_topology(
+            atom37, structure, context, no_optH=False, packer_seed=0
+        ),
+        builder(atom37, opt_h=True),
+    ):
+        torch.testing.assert_close(pose.block_type_ind, given.block_type_ind)
+        real = given.real_atoms
+        pbt = given.packed_block_types
+        p, b = torch.nonzero(given.block_type_ind64 >= 0, as_tuple=True)
+        is_h = torch.cat(
+            [
+                pbt.atom_is_hydrogen[t, : pbt.n_atoms[t]]
+                for t in given.block_type_ind64[p, b].tolist()
+            ]
+        ).bool()
+        torch.testing.assert_close(
+            pose.coords[real][~is_h], given.coords[real][~is_h], rtol=0, atol=0
+        )
+        assert not torch.equal(pose.coords[real][is_h], given.coords[real][is_h])
+
+
+def test_atom37_opth_keeps_input_hydrogens(biotite_1ubq, torch_device):
+    from tmol import beta2016_score_function
+    from tmol.pack._build_missing_sidechains import _build_missing_sidechains
+
+    # drop every other SER/THR hydroxyl hydrogen; every other hydrogen is given.
+    # (A TYR without HH would be read as deprotonated.)
+    structure = biotite_1ubq.copy()
+    hydroxyl = np.flatnonzero(
+        np.isin(structure.atom_name, ["HG", "HG1"])
+        & np.isin(structure.res_name, ["SER", "THR"])
+    )
+    dropped = {
+        (int(structure.res_id[i]) - 1, str(structure.atom_name[i]))
+        for i in hydroxyl[::2]
+    }
+    structure = structure[~np.isin(np.arange(len(structure)), hydroxyl[::2])]
+    structure, atom37 = _atomized_atom37(structure, torch_device)
+    context = build_context_from_atom_array(structure, torch_device)
+
+    given = pose_stack_from_atom37_and_topology(
+        atom37, structure, context, no_optH=True
+    )
+    # optH as master ran it, with every hydrogen free to move
+    unrestricted = _build_missing_sidechains(
+        given,
+        beta2016_score_function(torch_device),
+        None,
+        torch.zeros_like(given.block_type_ind64, dtype=torch.bool),
+        has_missing_atoms=False,
+        seed=0,
+        flip_NHQ=False,
+    )
+    # optH is on by default for atom37
+    pose = pose_stack_from_atom37_and_topology(
+        atom37, structure, context, packer_seed=0
+    )
+    torch.testing.assert_close(pose.block_type_ind, given.block_type_ind)
+
+    pbt = pose.packed_block_types
+    blocks, atoms = [], []
+    for b, t in enumerate(pose.block_type_ind[0].tolist()):
+        if t < 0:
+            continue
+        for a, atom in enumerate(pbt.active_block_types[t].atoms):
+            blocks.append((b, atom.name) in dropped)
+            atoms.append(int(pose.block_coord_offset[0, b]) + a)
+    missing = torch.tensor(blocks, device=torch_device)
+    ind = torch.tensor(atoms, device=torch_device)
+    assert int(missing.sum()) == len(dropped)
+
+    # missing hydrogens: where master's optH puts them
+    torch.testing.assert_close(
+        pose.coords[0, ind[missing]],
+        unrestricted.coords[0, ind[missing]],
+        atol=1e-3,
+        rtol=0,
+    )
+    assert torch.any(
+        (pose.coords[0, ind[missing]] - given.coords[0, ind[missing]]).norm(dim=-1)
+        > 1e-2
+    )
+    # every other atom, given hydroxyl hydrogens included, as the input gave it
+    torch.testing.assert_close(
+        pose.coords[0, ind[~missing]], given.coords[0, ind[~missing]], rtol=0, atol=0
+    )
 
 
 def test_prepared_atom37_builder_replays_variable_leaf_presence(

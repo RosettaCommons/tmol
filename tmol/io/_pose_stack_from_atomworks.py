@@ -38,6 +38,7 @@ def pose_stack_from_canonical_aa_atom37(
     coords: torch.Tensor,
     residue_type: torch.Tensor,
     chain_iid: torch.Tensor,
+    no_optH: bool = False,
     **kwargs,
 ) -> PoseStack:
     """Build a PoseStack from atomworks UNIFIED_ATOM37_ENCODING tensors.
@@ -65,6 +66,11 @@ def pose_stack_from_canonical_aa_atom37(
         padding.
     chain_iid : Tensor[int64], shape [batch, n_res]
         Chain identifiers (integer IDs, not string labels).
+    no_optH : bool
+        Leave built hydrogens at their ideal positions when True. By default
+        (False) they are optimized, differentiably and without ASN/GLN/HIS
+        flips. Pass ``opth_minimize=True`` to also minimize the optimized
+        proton chis, and ``packer_seed`` to seed the optimization.
     **kwargs
         Additional arguments passed to ``_pose_stack_from_canonical_form``.
 
@@ -85,6 +91,14 @@ def pose_stack_from_canonical_aa_atom37(
     co = _canonical_ordering_for_atomworks()
     pbt = _packed_block_types_for_atomworks(cf.coords.device)
 
+    if not no_optH:
+        kwargs.setdefault(
+            "opth_score_function",
+            _build_context_for_atomworks(cf.coords.device)._opth_score_function,
+        )
+    # atom37 inputs keep their heavy atoms, block types and input hydrogens
+    kwargs.setdefault("opth_flip_NHQ", False)
+    kwargs.setdefault("opth_keep_input_hydrogens", True)
     return _pose_stack_from_canonical_form(co, pbt, *cf, **kwargs)
 
 
@@ -93,7 +107,7 @@ def pose_stack_from_atom37_and_topology(
     atom37_coords: torch.Tensor,
     biotite_structure: biotite.structure.AtomArray | biotite.structure.AtomArrayStack,
     context: PoseBuildContext,
-    no_optH: bool = True,
+    no_optH: bool = False,
     **kwargs,
 ) -> PoseStack | tuple[PoseStack, dict] | tuple[PoseStack, PoseBuildContext]:
     """Build a differentiable PoseStack from atom37 coordinates and a topology.
@@ -141,10 +155,10 @@ def pose_stack_from_atom37_and_topology(
     context : PoseBuildContext
         Structure-independent context from :func:`build_context_from_atom_array`.
     no_optH : bool
-        Preserve finite input hydrogens and leave newly built hydrogens at ideal
-        positions when True (default). Pass False to run TMol's hydrogen
-        optimization pipeline, and also ``optH_minimize=True`` to minimize the
-        optimized proton chis.
+        Leave newly built hydrogens at their ideal positions when True. By
+        default (False) they are optimized, without ASN/GLN/HIS flips; finite
+        input hydrogens keep their coordinates either way. Pass
+        ``optH_minimize=True`` to also minimize the optimized proton chis.
     **kwargs
         Additional arguments forwarded to ``pose_stack_from_atom_array``.
 
@@ -338,6 +352,18 @@ def _packed_block_types_for_atomworks(device: torch.device) -> PackedBlockTypes:
     restype_set = _restype_set_for_atomworks()
     return PackedBlockTypes.from_restype_list(
         restype_set.chem_db, restype_set, restype_set.residue_types, device
+    )
+
+
+@toolz.functoolz.memoize
+def _build_context_for_atomworks(device: torch.device) -> PoseBuildContext:
+    """The construction context of the atomworks protein subset, which
+    caches the score function hydrogen optimization uses."""
+    return PoseBuildContext(
+        canonical_ordering=_canonical_ordering_for_atomworks(),
+        packed_block_types=_packed_block_types_for_atomworks(device),
+        parameter_database=_paramdb_for_atomworks(),
+        restype_set=_restype_set_for_atomworks(),
     )
 
 

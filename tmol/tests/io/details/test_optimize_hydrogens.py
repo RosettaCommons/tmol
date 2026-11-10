@@ -1,5 +1,6 @@
 import copy
 
+import numpy
 import torch
 
 from tmol import beta2016_score_function, pose_stack_from_atom_array
@@ -106,12 +107,14 @@ def test_optimized_hydrogens_match_packing_and_carry_gradients(
         no_optH=False,
         has_missing_atoms=False,
         seed=0,
+        flip_NHQ=False,
     )
 
     coords = pose.coords.detach().clone().requires_grad_(True)
     pose = copy.copy(pose)
     pose.coords = coords
-    optimized = _optimize_hydrogens(pose, sfxn, seed=0)
+    optimized, layout = _optimize_hydrogens(pose, sfxn, seed=0)
+    assert layout is None
 
     real = optimized.real_atoms
     torch.testing.assert_close(
@@ -134,6 +137,122 @@ def test_optimized_hydrogens_match_packing_and_carry_gradients(
     )
     assert torch.count_nonzero(grad[0, hg[turned]]) == 0
     assert torch.all(grad[0, og[turned]].abs().sum(-1) > 0)
+
+
+def _his68_as_his_d(biotite_1ubq):
+    """1UBQ with His68 given as the other tautomer, which optH turns back."""
+    structure = biotite_1ubq.copy()
+    his = structure.res_name == "HIS"
+
+    def at(name):
+        return structure.coord[his & (structure.atom_name == name)][0]
+
+    # HE2 becomes HD1, on ND1 and pointing out of the ring
+    nd1 = at("ND1")
+    out = (nd1 - at("CG")) + (nd1 - at("CE1"))
+    he2 = his & (structure.atom_name == "HE2")
+    structure.atom_name[he2] = "HD1"
+    structure.coord[he2] = nd1 + 1.01 * out / numpy.linalg.norm(out)
+    return structure
+
+
+def test_optimized_flips_match_packing_and_carry_gradients(biotite_1ubq, torch_device):
+    pose = pose_stack_from_atom_array(
+        _his68_as_his_d(biotite_1ubq),
+        torch_device,
+        no_optH=True,
+    )
+    sfxn = beta2016_score_function(torch_device)
+    packed = _build_missing_sidechains(
+        pose,
+        sfxn,
+        None,
+        torch.zeros_like(pose.block_type_ind64, dtype=torch.bool),
+        has_missing_atoms=False,
+        seed=0,
+        flip_NHQ=True,
+    )
+
+    coords = pose.coords.detach().clone().requires_grad_(True)
+    given = copy.copy(pose)
+    given.coords = coords
+    optimized, new_for_old = _optimize_hydrogens(given, sfxn, seed=0, flip_NHQ=True)
+
+    # His68 changed tautomer, so the layout is the packed pose's
+    torch.testing.assert_close(optimized.block_type_ind, packed.block_type_ind)
+    assert not torch.equal(optimized.block_type_ind, pose.block_type_ind)
+    real = optimized.real_atoms
+    torch.testing.assert_close(
+        optimized.coords[real], packed.coords[real], atol=1e-3, rtol=0
+    )
+
+    # a flipped amide oxygen follows the atoms it is built from
+    old_od1 = _atoms_named(pose, "ASN", "OD1")[3]
+    old_cg = _atoms_named(pose, "ASN", "CG")[3]
+    od1, cg = new_for_old[0, old_od1], new_for_old[0, old_cg]
+    torch.testing.assert_close(
+        optimized.coords[0, cg], coords.detach()[0, old_cg], rtol=0, atol=0
+    )
+    flipped = (optimized.coords[0, od1] - coords[0, old_od1]).norm(dim=-1) > 0.5
+    assert torch.any(flipped)
+    (grad,) = torch.autograd.grad(optimized.coords[0, od1[flipped]].sum(), coords)
+    assert torch.count_nonzero(grad[0, old_od1[flipped]]) == 0
+    assert torch.all(grad[0, old_cg[flipped]].abs().sum(-1) > 0)
+
+
+def test_construction_flips_only_on_request(biotite_1ubq, torch_device):
+    from tmol.io import build_context_from_atom_array, canonical_form_from_biotite
+    from tmol.io._pose_stack_construction import _pose_stack_from_canonical_form
+
+    structure = _his68_as_his_d(biotite_1ubq)
+    context = build_context_from_atom_array(structure, torch_device)
+    cf = canonical_form_from_biotite(
+        structure, torch_device, co=context.canonical_ordering
+    )
+
+    def build(**kwargs):
+        return _pose_stack_from_canonical_form(
+            context.canonical_ordering,
+            context.packed_block_types,
+            *cf,
+            return_atom_mapping=True,
+            packer_seed=0,
+            **kwargs,
+        )
+
+    def his68(pose):
+        bt = pose.packed_block_types.active_block_types[int(pose.block_type_ind[0, 67])]
+        return bt.name
+
+    given, _ = build()
+    assert his68(given) == "HIS_D"
+    for flip in (False, True):
+        pose, details = build(
+            opth_score_function=context._opth_score_function, opth_flip_NHQ=flip
+        )
+        assert his68(pose) == ("HIS" if flip else "HIS_D")
+
+        # the mapping points each input atom at the pose atom it became: every
+        # heavy atom outside a flippable side chain is where the input put it
+        can, ps = details["can_atom_mapping"], details["ps_atom_mapping"]
+        source = cf.coords[can[:, 0], can[:, 1], can[:, 2]]
+        types = pose.block_type_ind64[ps[:, 0], can[:, 1]]
+        atom = ps[:, 1] - pose.block_coord_offset64[ps[:, 0], can[:, 1]]
+        pbt = pose.packed_block_types
+        heavy = pbt.atom_is_hydrogen[types, atom] == 0
+        nhq = torch.tensor(
+            [
+                bt.base_name.split("_")[0] in ("ASN", "GLN", "HIS")
+                for bt in pbt.active_block_types
+            ],
+            device=torch_device,
+        )[types]
+        target = pose.coords[ps[:, 0], ps[:, 1]]
+        kept = heavy & ~nhq & torch.isfinite(source).all(-1)
+        torch.testing.assert_close(target[kept], source[kept], rtol=0, atol=0)
+        moved = (target - source).norm(dim=-1) > 0.5
+        # without flips no heavy atom moves; with them amides and rings turn
+        assert bool(torch.any(heavy & moved)) == flip
 
 
 def test_construction_optimizes_hydrogens_differentiably(biotite_1ubq, torch_device):
@@ -177,8 +296,8 @@ def test_minimized_hydrogens_lower_the_energy_and_keep_gradients(
     pose = copy.copy(pose)
     pose.coords = coords
 
-    sampled = _optimize_hydrogens(pose, sfxn, seed=0)
-    minimized = _optimize_hydrogens(pose, sfxn, seed=0, minimize=True)
+    sampled, _ = _optimize_hydrogens(pose, sfxn, seed=0)
+    minimized, _ = _optimize_hydrogens(pose, sfxn, seed=0, minimize=True)
 
     def energy(p):
         return sfxn.render_whole_pose_scoring_module(p)(p.coords.detach()).sum()
@@ -199,17 +318,10 @@ def test_minimized_hydrogens_lower_the_energy_and_keep_gradients(
 
 
 def test_loader_minimizes_optimized_hydrogens_on_request(biotite_1ubq, torch_device):
-    # the input's hydrogens would otherwise be kept as given
     sfxn = beta2016_score_function(torch_device)
-    sampled = pose_stack_from_atom_array(
-        biotite_1ubq, torch_device, packer_seed=0, rebuild_hydrogens=True
-    )
+    sampled = pose_stack_from_atom_array(biotite_1ubq, torch_device, packer_seed=0)
     minimized = pose_stack_from_atom_array(
-        biotite_1ubq,
-        torch_device,
-        packer_seed=0,
-        rebuild_hydrogens=True,
-        optH_minimize=True,
+        biotite_1ubq, torch_device, packer_seed=0, optH_minimize=True
     )
     for p in (sampled, minimized):
         assert torch.isfinite(p.coords[p.real_atoms]).all()
@@ -218,43 +330,32 @@ def test_loader_minimizes_optimized_hydrogens_on_request(biotite_1ubq, torch_dev
     )
 
 
-def test_input_hydrogens_are_kept_unless_rebuilt(biotite_1ubq, torch_device):
-    # the 1ubq fixture gives ideal hydrogens, proton-chi ones included; shift
-    # them off ideal so keeping and rebuilding them differ
-    structure = biotite_1ubq.copy()
-    hydrogens = structure.element == "H"
-    assert hydrogens.sum() > 0
-    structure.coord[hydrogens] += [0.1, 0.0, 0.0]
+def test_loader_optimizes_input_hydrogens_as_master(biotite_1ubq, torch_device):
+    # 1UBQ comes with its hydrogens; optH moves them, and flips, as on master,
+    # where it packed every residue after construction
     sfxn = beta2016_score_function(torch_device)
+    given = pose_stack_from_atom_array(biotite_1ubq, torch_device, no_optH=True)
+    packed = _build_missing_sidechains(
+        given,
+        sfxn,
+        None,
+        torch.zeros_like(given.block_type_ind64, dtype=torch.bool),
+        has_missing_atoms=False,
+        seed=0,
+    )
+    loaded = pose_stack_from_atom_array(biotite_1ubq, torch_device, packer_seed=0)
 
-    def load(**kwargs):
-        return pose_stack_from_atom_array(
-            structure, torch_device, packer_seed=0, **kwargs
-        )
+    torch.testing.assert_close(loaded.block_type_ind, packed.block_type_ind)
+    real = loaded.real_atoms
+    torch.testing.assert_close(
+        loaded.coords[real], packed.coords[real], atol=1e-3, rtol=0
+    )
+    is_h = _is_hydrogen(given)
+    shift = (loaded.coords[real] - given.coords[real]).norm(dim=-1)
+    assert torch.any(shift[is_h] > 0.1)
+    assert torch.any(shift[~is_h] > 0.5)
 
     def energy(p):
         return sfxn.render_whole_pose_scoring_module(p)(p.coords).sum()
 
-    given = load(no_optH=True)
-    kept = load()
-    torch.testing.assert_close(kept.block_type_ind, given.block_type_ind)
-    torch.testing.assert_close(kept.coords, given.coords, rtol=0, atol=0)
-
-    # rebuilt from ideal geometry: heavy atoms stay, hydrogens move
-    ideal = load(no_optH=True, rebuild_hydrogens=True)
-    torch.testing.assert_close(ideal.block_type_ind, given.block_type_ind)
-    real = given.real_atoms
-    is_h = _is_hydrogen(given)
-    torch.testing.assert_close(
-        ideal.coords[real][~is_h], given.coords[real][~is_h], rtol=0, atol=0
-    )
-    assert torch.any(
-        (ideal.coords[real][is_h] - given.coords[real][is_h]).norm(dim=-1) > 0.05
-    )
-
-    # and then optimized
-    optimized = load(rebuild_hydrogens=True)
-    assert energy(optimized) < energy(ideal)
-    torch.testing.assert_close(
-        optimized.coords[real][~is_h], given.coords[real][~is_h], rtol=0, atol=0
-    )
+    assert energy(loaded) < energy(given)
