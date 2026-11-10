@@ -3,15 +3,24 @@
 
 name: CI
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [master]
+  workflow_dispatch:
+    inputs:
+      gpu:
+        description: Run CUDA tests and benchmarks on the self-hosted runner
+        type: boolean
+        default: true
   pull_request:
     # Validate intermediate stack branches as well as changes targeting master.
     types: [opened, synchronize, reopened, closed]
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -46,7 +55,7 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip pytest packaging build scikit-build-core pyyaml 'cmake>=3.24,<4' ninja
       - name: Test index installs, ABI constraints, hashes and source metadata
-        run: python -m pytest -o addopts= scripts/test_release_artifacts.py scripts/test_release_matrix.py scripts/test_native_packages.py scripts/test_pypi_sdist.py scripts/test_cuda13_arm64_metadata.py scripts/test_release_source.py scripts/test_publish_scheduling.py scripts/test_compare_benchmark.py .github/scripts/test_colab_release_config.py -v
+        run: python -m pytest -o addopts= scripts/test_release_artifacts.py scripts/test_release_matrix.py scripts/test_native_packages.py scripts/test_ci_workflows.py scripts/test_pypi_sdist.py scripts/test_cuda13_arm64_metadata.py scripts/test_release_source.py scripts/test_publish_scheduling.py scripts/test_compare_benchmark.py .github/scripts/test_colab_release_config.py -v
 
   cpu:
     name: pytest (cpu, ${{ matrix.platform }})
@@ -146,7 +155,8 @@ jobs:
 
   gpu:
     name: pytest (cuda)
-    if: github.event.action != 'closed'
+    # GitHub restricts workflow dispatch to users with repository write access.
+    if: github.event_name == 'workflow_dispatch' && inputs.gpu
     runs-on: [self-hosted, gpu]
     timeout-minutes: 720
     needs: lint
@@ -210,6 +220,7 @@ jobs:
           name: test-results-cpu-linux-x86_64
           path: reports/cpu
       - uses: actions/download-artifact@v4
+        if: needs.gpu.result == 'success' || needs.gpu.result == 'failure'
         with:
           name: test-results-cuda
           path: reports/cuda
@@ -231,7 +242,7 @@ jobs:
 
   # Coverage uploads have their own visible status. Service/network failures
   # can be retried without rerunning successful CPU and GPU test suites.
-  # The historical ci check still requires every runtime and packaging lane.
+  # The ci check requires GPU success only when a maintainer requests that lane.
   ci:
     name: ci
     runs-on: ubuntu-latest
@@ -243,4 +254,8 @@ jobs:
           test "${{ needs.lint.result }}" = success
           test "${{ needs.packaging.result }}" = success
           test "${{ needs.cpu.result }}" = success
-          test "${{ needs.gpu.result }}" = success
+          if [ "${{ github.event_name }}" = workflow_dispatch ] && [ "${{ inputs.gpu }}" = true ]; then
+            test "${{ needs.gpu.result }}" = success
+          else
+            test "${{ needs.gpu.result }}" = skipped
+          fi

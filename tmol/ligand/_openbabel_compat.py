@@ -7,7 +7,7 @@ can ingest. The result is an ``rdkit.Chem.Mol`` indistinguishable from
 one produced by a successful RDKit parse, so downstream code (atom
 typing, residue building, scoring) needs no further changes.
 
-OpenBabel is installed with TMol. Its native bindings are loaded lazily
+OpenBabel is provided by the ``tmol[ligand]`` extra. Its bindings load lazily
 when a helper needs them.
 """
 
@@ -110,7 +110,7 @@ def _import_openbabel() -> tuple:
     except ImportError as exc:
         raise OpenBabelUnavailableError(
             "OpenBabel fallback was requested but the 'openbabel' Python "
-            "package is not installed. Install with `pip install openbabel-wheel`."
+            'package is not installed. Install with `pip install "tmol[ligand]"`.'
         ) from exc
     return openbabel, pybel
 

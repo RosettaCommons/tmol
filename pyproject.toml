@@ -21,7 +21,7 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
-version = "0.2.0"
+version = "0.3.0"
 
 dependencies = [
     # Core ML framework.
@@ -31,45 +31,41 @@ dependencies = [
     "scipy>=1.13.1",
     # Data structures & serialization
     "attrs>=21.0",
-    "attrs_strict>=1.0,<2",
     "cattrs>=22.0",
     "frozendict>=2.4",
-    "pandas>=2.2,<4",
-    "pyarrow>=23.0.1",
+    "pandas>=2.2",
     "pyyaml>=6.0",
     # Graphs & algorithms
     "networkx>=3.0",
     # Utilities
-    "toolz>=0.12.0,<2",
+    "toolz>=0.12.0",
     # decorator floor kept low (>=4.0) for Google Colab, which ships an old version
     "decorator>=4.0",
-    "typing_extensions>=4.0,<5",
     "typing_inspect>=0.9",
-    "pint>=0.23,<1",
-    "requests>=2.33,<3",
-    # Sparse arrays (requires SPARSE_AUTO_DENSIFY=1 for sparse>0.3.1)
-    "sparse>=0.13",
-    # numba/llvmlite
+    "pint>=0.23",
+    "requests>=2.33",
+    # Numba selects its compatible llvmlite version.
     "numba>=0.56",
-    "llvmlite>=0.39",
     # AST manipulation for runtime call-argument validation
     "astor>=0.8",
     # Structure I/O
     "biotite==1.6.0",
-    # AtomWorks 3 uses Biotite 1.6.0.
-    "atomworks>=3.0.0,<4",
-    # Ligand preparation
+    # Released AtomWorks requires exactly Biotite 1.6.0 at import time.
+    # Upgrade this pair together after validating structure/ligand I/O.
+    "atomworks>=3.0.0",
+    # Structure and ligand chemistry
     "rdkit>=2024.3.5",
-    "openbabel-wheel>=3.1.1.23,<4",
 ]
 
 [project.optional-dependencies]
-cu12 = ["tmol-ops-cu12==0.2.0"]
-cu13 = ["tmol-ops-cu13==0.2.0"]
+cu12 = ["tmol-ops-cu12==0.3.0"]
+cu13 = ["tmol-ops-cu13==0.3.0"]
+ligand = ["openbabel-wheel>=3.1.1.23"]
 dev = [
+    "tmol[ligand]",
     # Linters & formatters
     # Keep formatter and linter pins in sync with .pre-commit-config.yaml.
-    "black==26.10.0",
+    "black==26.10.1",
     "flake8==7.4.1",
     "pre-commit>=4.0",
     "clang-format==23.1.2",
@@ -99,6 +95,7 @@ cuda = [
     "nvidia-cuda-cccl>=13",
 ]
 docs = [
+    "tmol[ligand]",  # Ligand preparation in tutorials.
     "sphinx>=8.0,<10",
     "pydata-sphinx-theme>=0.16,<1",
     "myst-parser>=4.0,<6",

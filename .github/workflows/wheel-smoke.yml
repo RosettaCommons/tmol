@@ -105,5 +105,7 @@ jobs:
       default-torch: true
 
   test-gpu:
+    # GPU execution is opt-in; ordinary PR wheel checks stay on hosted runners.
+    if: github.event_name == 'workflow_dispatch'
     needs: build
     uses: ./.github/workflows/_test_gpu_wheel.yml
