@@ -39,7 +39,7 @@
   <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
 <link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
 
-    <script src="_static/documentation_options.js?v=938c9ccc"></script>
+    <script src="_static/documentation_options.js?v=e259d695"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script>let toggleHintShow = 'show code';</script>
@@ -61,7 +61,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="color-scheme" content="light dark"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="0.2.0" />
+  <meta name="docsearch:version" content="0.3.0" />
   
     
     <script src="_static/searchtools.js"></script>
@@ -470,6 +470,10 @@ backend matching your PyTorch installation:</p>
 <code class="docutils literal notranslate"><span class="pre">tmol-ops-cu12</span></code> or <code class="docutils literal notranslate"><span class="pre">tmol-ops-cu13</span></code> at the <strong>same version</strong> as the base package.
 GPU installations also support CPU execution. You do not need a separate TMol
 wheel for each PyTorch minor version or CUDA minor version.</p>
+<p>For ligand preparation, noncanonical residue parameterization, and OpenBabel
+format fallbacks, install <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-m</span> <span class="pre">pip</span> <span class="pre">install</span> <span class="pre">&quot;tmol[ligand]&quot;</span></code>. Combine extras
+for CUDA, for example <code class="docutils literal notranslate"><span class="pre">&quot;tmol[cu13,ligand]&quot;</span></code>. Standard polymer scoring, packing,
+and relaxation do not need OpenBabel. The <code class="docutils literal notranslate"><span class="pre">dev</span></code> and <code class="docutils literal notranslate"><span class="pre">docs</span></code> extras include it.</p>
 <section id="requirements">
 <h2>Requirements<a class="headerlink" href="#requirements" title="Link to this heading">#</a></h2>
 <ul class="simple">

@@ -39,7 +39,7 @@
   <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
 <link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
 
-    <script src="../_static/documentation_options.js?v=938c9ccc"></script>
+    <script src="../_static/documentation_options.js?v=e259d695"></script>
     <script src="../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script>let toggleHintShow = 'show code';</script>
@@ -61,7 +61,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="color-scheme" content="light dark"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="0.2.0" />
+  <meta name="docsearch:version" content="0.3.0" />
   
     
     <script src="../_static/searchtools.js"></script>
@@ -611,9 +611,15 @@ apptainer<span class="w"> </span>run<span class="w"> </span>--nv<span class="w">
 <section id="ci">
 <h2>CI<a class="headerlink" href="#ci" title="Link to this heading">#</a></h2>
 <p>GitHub Actions runs linting, the Linux x86-64, Linux aarch64, and Apple Silicon
-CPU suites, and CPU documentation builds on hosted runners. CUDA tests,
-benchmarks, and the CUDA-only tutorial smoke tests use the self-hosted DIGS
-runner. PR docs builds upload rendered HTML artifacts; same-repository PRs also
+CPU suites, and CPU documentation builds on hosted runners for every PR and
+master push. Maintainers with repository write access can request CUDA tests,
+benchmarks, and tutorial smoke tests on the self-hosted DIGS runner from
+Actions → CI → Run workflow, selecting the branch to validate and enabling
+<code class="docutils literal notranslate"><span class="pre">gpu</span></code>, or with <code class="docutils literal notranslate"><span class="pre">gh</span> <span class="pre">workflow</span> <span class="pre">run</span> <span class="pre">ci.yml</span> <span class="pre">--ref</span> <span class="pre">&lt;branch&gt;</span> <span class="pre">-f</span> <span class="pre">gpu=true</span></code>. Ordinary
+CI does not wait for a GPU allocation; a manually requested GPU run must pass
+its CUDA lane. The Wheel smoke test workflow also exercises installed CUDA
+wheels when dispatched manually. Release publication always requires CUDA
+wheel scoring. PR docs builds upload rendered HTML artifacts; same-repository PRs also
 publish previews under the Pages site.</p>
 </section>
 <section id="native-interface">
