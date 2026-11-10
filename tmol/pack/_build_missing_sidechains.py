@@ -19,7 +19,7 @@ def _build_missing_sidechains(
     na_sampler: NaChiRotamerSampler = None,
     has_missing_atoms: bool | None = None,
     seed: int | None = None,
-    fixed_blocks: Tensor[torch.bool][:, :] | None = None,
+    flip_NHQ: bool = True,
 ) -> PoseStack:
     """Build missing sidechains and place hydrogens using per-block sampler assignment.
 
@@ -29,9 +29,9 @@ def _build_missing_sidechains(
       FixedAAChiSampler for amino acids, NaChiRotamerSampler for nucleotides.
       The input conformation is not included as a rotamer because the sidechain
       is incomplete.
-    - Complete blocks supported by OptHSampler: keep heavy atoms fixed while
-      sampling proton chi angles. ASN/GLN/HIS are not flipped and histidine
-      keeps its tautomer.
+    - Complete blocks supported by OptHSampler: sample proton chi angles, and
+      with flip_NHQ also flip ASN/GLN/HIS and choose the histidine tautomer.
+      Otherwise heavy atoms and histidine tautomers stay as they are.
       The two sets are disjoint: NaChiRotamerSampler expands the RNA 2'-OH
       itself, exactly as DunbrackChiSampler expands protein proton chis, so a
       block must never be given both.
@@ -43,6 +43,7 @@ def _build_missing_sidechains(
 
     Note: IncludeCurrentSampler is intentionally not used.  For Dunbrack
     blocks the native conformation is broken and must not appear as a rotamer.
+    For OptH blocks, OptH includes native as rotamer-0 for NHQ residues.
 
     Args:
         pose_stack: The pose stack to process.
@@ -56,8 +57,7 @@ def _build_missing_sidechains(
         has_missing_atoms: Cached value of ``block_has_missing_atoms.any()``.
             Supplying it avoids a device synchronization in repeated builds.
         seed: Packer seed, as for :func:`~tmol.pack_rotamers`.
-        fixed_blocks: Complete blocks to leave unpacked, e.g. those whose
-            input hydrogens are to be kept.
+        flip_NHQ: Let OptHSampler flip ASN/GLN/HIS.
 
     Returns:
         PoseStack with missing sidechains built and (by default) hydrogens
@@ -75,7 +75,7 @@ def _build_missing_sidechains(
     task.restrict_to_repacking()
 
     fixed_sampler = FixedAAChiSampler()
-    opth_sampler = None if no_optH else OptHSampler(flip_NHQ=False)
+    opth_sampler = None if no_optH else OptHSampler(flip_NHQ=flip_NHQ)
 
     if has_missing_atoms:
         task.add_conformer_sampler_by_block_mask(
@@ -108,9 +108,5 @@ def _build_missing_sidechains(
         task.disable_packing_by_block_mask(complete_blocks & ~opth_blocks)
     else:
         task.disable_packing_by_block_mask(block_does_not_have_missing_atoms)
-    if fixed_blocks is not None:
-        task.disable_packing_by_block_mask(
-            fixed_blocks & block_does_not_have_missing_atoms
-        )
 
     return pack_rotamers(pose_stack, sfxn, task, verbose=False, seed=seed)

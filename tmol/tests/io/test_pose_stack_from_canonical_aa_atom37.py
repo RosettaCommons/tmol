@@ -47,6 +47,44 @@ def test_pose_stack_from_canonical_aa_atom37_basic(ubq_atomworks, torch_device):
     assert ps.coords.device == torch_device
 
 
+def test_canonical_aa_atom37_optimizes_hydrogens_by_default(
+    ubq_atomworks, torch_device
+):
+    coords = ubq_atomworks["coords"].clone().requires_grad_(True)
+    residue_type = ubq_atomworks["residue_type"]
+    chain_iid = ubq_atomworks["chain_iid"]
+
+    ideal = pose_stack_from_canonical_aa_atom37(
+        coords, residue_type, chain_iid, no_optH=True
+    )
+    optimized = pose_stack_from_canonical_aa_atom37(
+        coords, residue_type, chain_iid, packer_seed=0
+    )
+
+    # no flips: block types and heavy atoms are the input's
+    torch.testing.assert_close(optimized.block_type_ind, ideal.block_type_ind)
+    pbt = optimized.packed_block_types
+    is_h = torch.zeros_like(optimized.real_atoms)
+    for b, t in enumerate(optimized.block_type_ind[0].tolist()):
+        if t >= 0:
+            start = int(optimized.block_coord_offset[0, b])
+            n = int(pbt.n_atoms[t])
+            is_h[0, start : start + n] = pbt.atom_is_hydrogen[t, :n].bool()
+    heavy = optimized.real_atoms & ~is_h
+    torch.testing.assert_close(
+        optimized.coords[heavy], ideal.coords[heavy], rtol=0, atol=0
+    )
+    hydrogens = optimized.real_atoms & is_h
+    moved = (optimized.coords[hydrogens] - ideal.coords[hydrogens]).norm(dim=-1)
+    assert torch.any(moved > 0.1)
+
+    # the optimized hydrogens follow the atom37 coordinates
+    (grad,) = torch.autograd.grad(
+        optimized.coords[hydrogens][moved > 0.1].sum(), coords
+    )
+    assert torch.isfinite(grad).all() and torch.count_nonzero(grad) > 0
+
+
 def test_canonical_form_from_atomworks(ubq_atomworks, torch_device):
     """Test that canonical form has correct shapes and non-NaN backbone coords."""
     coords = ubq_atomworks["coords"]

@@ -109,6 +109,7 @@ def test_tensor_path_matches_the_atom_array_path(source, torch_device):
         cyclic_bonds=canonical_form.cyclic_bonds,
         covalent_bonds=canonical_form.covalent_bonds,
         res_not_connected=canonical_form.res_not_connected,
+        no_optH=True,
     )
 
     assert pose.n_poses == reference.n_poses

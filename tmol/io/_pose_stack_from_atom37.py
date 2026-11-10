@@ -212,7 +212,7 @@ def pose_stack_from_atom37(
     cyclic_bonds: Optional[torch.Tensor] = None,
     covalent_bonds: Optional[torch.Tensor] = None,
     res_not_connected: Optional[torch.Tensor] = None,
-    no_optH: bool = True,
+    no_optH: bool = False,
     **kwargs: object,
 ) -> PoseStack:
     """Build a differentiable PoseStack from Atom37 tensors alone.
@@ -235,8 +235,10 @@ def pose_stack_from_atom37(
       cyclic_bonds: Explicit head-to-tail closures.
       covalent_bonds: Explicit ``(pose, res1, atom1, res2, atom2)`` links.
       res_not_connected: Suppressed polymer connections.
-      no_optH: Preserve finite input hydrogens rather than optimizing them.
-        Pass ``optH_minimize=True`` to also minimize the optimized proton chis.
+      no_optH: Leave missing hydrogens at their ideal positions. By default
+        they are optimized (no ASN/GLN/HIS flips); input hydrogens keep their
+        coordinates either way. Pass ``optH_minimize=True`` to also minimize
+        the optimized proton chis.
 
     Returns:
       A pose whose coordinates carry gradients back to ``atom37_coords``.
