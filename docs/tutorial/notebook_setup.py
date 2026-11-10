@@ -67,7 +67,7 @@ TUTORIAL_REF = "master"
 RAW_BASE = f"https://raw.githubusercontent.com/RosettaCommons/tmol/{TUTORIAL_REF}"
 # Advance only after the release wheels have been published and exercised.
 # The source project's next version may not have downloadable wheels yet.
-TMOL_RELEASE = "0.2.0"
+TMOL_RELEASE = "0.3.0"
 
 SEED = 0
 
@@ -158,7 +158,7 @@ def setup_colab(fixtures: list[str] | None = None) -> None:
             "py3Dmol>=2.4,<3",
         ]
         _pip_install(
-            [f"tmol[cu{cuda_major}]=={TMOL_RELEASE}", *runtime_packages],
+            [f"tmol[cu{cuda_major},ligand]=={TMOL_RELEASE}", *runtime_packages],
             torch.__version__,
         )
         _colab_ready = True
