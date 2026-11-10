@@ -132,9 +132,15 @@ apptainer run --nv --bind "$(pwd):/tmol_host" tmol-dev.sif
 ## CI
 
 GitHub Actions runs linting, the Linux x86-64, Linux aarch64, and Apple Silicon
-CPU suites, and CPU documentation builds on hosted runners. CUDA tests,
-benchmarks, and the CUDA-only tutorial smoke tests use the self-hosted DIGS
-runner. PR docs builds upload rendered HTML artifacts; same-repository PRs also
+CPU suites, and CPU documentation builds on hosted runners for every PR and
+master push. Maintainers with repository write access can request CUDA tests,
+benchmarks, and tutorial smoke tests on the self-hosted DIGS runner from
+Actions → CI → Run workflow, selecting the branch to validate and enabling
+`gpu`, or with `gh workflow run ci.yml --ref <branch> -f gpu=true`. Ordinary
+CI does not wait for a GPU allocation; a manually requested GPU run must pass
+its CUDA lane. The Wheel smoke test workflow also exercises installed CUDA
+wheels when dispatched manually. Release publication always requires CUDA
+wheel scoring. PR docs builds upload rendered HTML artifacts; same-repository PRs also
 publish previews under the Pages site.
 
 ## Native interface

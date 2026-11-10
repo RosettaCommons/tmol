@@ -23,3 +23,26 @@ def test_native_package_metadata():
                 Requirement(r) for r in dependencies if Requirement(r).name == "torch"
             )
             assert str(torch.specifier) == ">=2.11"
+
+
+def test_core_dependencies_leave_optional_and_transitive_packages_to_their_owners():
+    root = Path(__file__).resolve().parents[1]
+    project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
+    core = {Requirement(r).name for r in project["dependencies"]}
+    assert core.isdisjoint(
+        {
+            "openbabel-wheel",
+            "attrs_strict",
+            "pyarrow",
+            "sparse",
+            "typing_extensions",
+            "llvmlite",
+        }
+    )
+    extras = project["optional-dependencies"]
+    assert any(Requirement(r).name == "openbabel-wheel" for r in extras["ligand"])
+    for extra in ("dev", "docs"):
+        assert any(
+            Requirement(r).name == "tmol" and "ligand" in Requirement(r).extras
+            for r in extras[extra]
+        )

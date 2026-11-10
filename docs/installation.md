@@ -14,6 +14,11 @@ backend matching your PyTorch installation:
 GPU installations also support CPU execution. You do not need a separate TMol
 wheel for each PyTorch minor version or CUDA minor version.
 
+For ligand preparation, noncanonical residue parameterization, and OpenBabel
+format fallbacks, install `python -m pip install "tmol[ligand]"`. Combine extras
+for CUDA, for example `"tmol[cu13,ligand]"`. Standard polymer scoring, packing,
+and relaxation do not need OpenBabel. The `dev` and `docs` extras include it.
+
 ## Requirements
 
 - Python 3.11–3.14 and PyTorch 2.11 or newer.
