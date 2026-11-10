@@ -2482,7 +2482,11 @@ def _with_input_hydrogens(biotite_structure, ph, co, chemdb, find_metal_coordina
     aliases = {a.name3: a.read_as for a in chemdb.name3_aliases}
     names = None
     if co is not None:
-        names = set(co.restype_io_equiv_classes)
+        # Custom residue parameters already define their hydrogen chemistry.
+        # A same-named CCD entry may describe an entirely different ligand.
+        names = set(co.restype_io_equiv_classes) & set(
+            _canonical_ordering_for_biotite().restype_io_equiv_classes
+        )
         names |= {alias for alias, name in aliases.items() if name in names}
     template = _template_array(biotite_structure)
     forms = _database_forms(chemdb)
