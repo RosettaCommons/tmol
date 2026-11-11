@@ -109,15 +109,8 @@ class _PreparedAtom37PoseTopology:
             real_atoms=pose_stack.real_atoms,
         )
 
-    def pose_from_canonical(
-        self, canonical_coords: torch.Tensor
-    ) -> tuple[PoseStack, torch.Tensor]:
-        """Rebind coordinates and rebuild leaf atoms in the prepared pose layout.
-
-        Also returns the ``[pose, residue, atom]`` mask of the hydrogens the
-        input gives, which keep their coordinates through hydrogen
-        optimization.
-        """
+    def pose_from_canonical(self, canonical_coords: torch.Tensor) -> PoseStack:
+        """Rebind coordinates and rebuild leaf atoms in the prepared pose layout."""
         mapping = self.canonical_atom_mapping
         pose_mapping = self.pose_atom_mapping
         source_coords = canonical_coords[mapping[:, 0], mapping[:, 1], mapping[:, 2]]
@@ -142,13 +135,6 @@ class _PreparedAtom37PoseTopology:
             _apply_h_geometric_completion,
             _build_coords_from_icoors,
         )
-        from tmol.io.details._optimize_hydrogens import _block_atoms
-
-        types = self.pose_stack.block_type_ind64
-        p, b, a = _block_atoms(self.pose_stack)
-        is_hydrogen = torch.zeros_like(block_leaf_atom_is_missing)
-        is_hydrogen[p, b, a] = pbt.atom_is_hydrogen[types[p, b], a] != 0
-        given_hydrogens = is_hydrogen & ~block_leaf_atom_is_missing
 
         coords = _build_coords_from_icoors(
             pbt,
@@ -169,7 +155,7 @@ class _PreparedAtom37PoseTopology:
         )
         pose_stack = _clone_pose_topology(self.pose_stack)
         pose_stack.coords = coords
-        return pose_stack, given_hydrogens
+        return pose_stack
 
     def has_missing_nonleaf(self, canonical_coords: torch.Tensor) -> bool:
         """Return whether replay would require sidechain packing."""
@@ -298,7 +284,7 @@ class PreparedAtom37PoseBuilder:
                     fragment_mapping=self.fragment_mapping,
                 )
         # a new topology replays too, so every call places hydrogens the same way
-        pose_stack, given_hydrogens = topology.pose_from_canonical(canonical_coords)
+        pose_stack = topology.pose_from_canonical(canonical_coords)
         if len(self._pose_topologies) >= _MAX_PREPARED_BATCH_SIZES:
             self._pose_topologies.pop(next(iter(self._pose_topologies)))
         self._pose_topologies[n_poses] = topology
@@ -306,14 +292,17 @@ class PreparedAtom37PoseBuilder:
         if opt_h:
             from tmol.io.details._optimize_hydrogens import _optimize_hydrogens
 
-            # no NHQ flips, so the cached topology and atom layout still hold;
-            # input hydrogens keep their coordinates, as the atom37 restore of
-            # finite input coordinates does elsewhere
+            # no NHQ flips, so the cached topology and atom layout still hold
             pose_stack, _ = _optimize_hydrogens(
                 pose_stack,
                 self.context._opth_score_function,
                 minimize=opt_h_minimize,
-                given_hydrogens=given_hydrogens,
+            )
+            pose_stack = _restore_canonical_input_coords(
+                pose_stack,
+                canonical_coords,
+                topology.canonical_atom_mapping,
+                topology.pose_atom_mapping,
             )
         # Pose construction validates the initial topology. Check the initial
         # packed result too, but do not force a CUDA-to-host synchronization on
@@ -893,7 +882,11 @@ def _pose_stack_from_canonical_form_and_context(
       cf: Canonical-form tensors describing residue identity and coordinates.
       context: Structure-independent chemistry resolved once.
       no_optH: Preserve finite input hydrogens instead of optimizing them.
-        Optimization flips ASN/GLN/HIS unless ``atom37_coords`` is given.
+        Otherwise optH runs after construction. It is differentiable with
+        respect to ``cf.coords`` unless a block is missing heavy atoms, in
+        which case it shares one packing run with the side chains built for
+        them. It flips ASN/GLN/HIS unless ``atom37_coords`` is given, in which
+        case finite input coordinates, hydrogens included, are kept.
       optH_minimize: Minimize the optimized proton chis after packing them.
       atom37_coords: When supplied, the autograd-tracked source of ``cf``'s
         coordinates; retained so gradients survive hydrogen rebuilding.
@@ -941,26 +934,12 @@ def _pose_stack_from_canonical_form_and_context(
     return_block_has_missing_atoms = bool(
         kwargs.pop("return_block_has_missing_atoms", False)
     )
-    # Construction optimizes hydrogens differentiably, unless ligand fragments
-    # have yet to be joined; missing heavy atoms leave it to the packer below.
-    opth_in_construction = not no_optH and fragment_mapping is None
-    # An NHQ flip moves heavy atoms and may retype a histidine; atom37 inputs
-    # keep their heavy atoms, block types and atom layout as given, and their
-    # finite input coordinates, hydrogens included.
-    flip_NHQ = atom37_coords is None
     result = _pose_stack_from_canonical_form(
         context.canonical_ordering,
         context.packed_block_types,
         *cf,
         return_block_has_missing_atoms=True,
         packer_atoms=packer_atoms,
-        opth_score_function=(
-            context._opth_score_function if opth_in_construction else None
-        ),
-        opth_minimize=optH_minimize,
-        opth_flip_NHQ=flip_NHQ,
-        opth_keep_input_hydrogens=atom37_coords is not None,
-        packer_seed=packer_seed,
         **kwargs,
     )
 
@@ -978,9 +957,29 @@ def _pose_stack_from_canonical_form_and_context(
     if has_missing_atoms:
         _assert_no_ligand_with_missing_atoms(pose_stack, block_has_missing_atoms)
 
-    needs_packing = block_has_missing_atoms is not None and (
-        has_missing_atoms or not (no_optH or opth_in_construction)
+    # An NHQ flip moves heavy atoms and may retype a histidine; atom37 inputs
+    # keep their heavy atoms, block types and atom layout as given.
+    flip_NHQ = atom37_coords is None
+    # With every heavy atom in place, optH runs differentiably: it packs
+    # without gradients, then rebuilds what it moved from the input atoms.
+    # Missing heavy atoms are packed together with optH below, as one run.
+    optimized = block_has_missing_atoms is not None and not (
+        no_optH or has_missing_atoms
     )
+    if optimized:
+        from tmol.io.details._optimize_hydrogens import _optimize_hydrogens
+
+        pose_stack, new_for_old = _optimize_hydrogens(
+            pose_stack,
+            context._opth_score_function,
+            packer_seed,
+            minimize=optH_minimize,
+            flip_NHQ=flip_NHQ,
+        )
+        if new_for_old is not None and "ps_atom_mapping" in opt_return_vals:
+            _remap_atom_mapping(opt_return_vals, new_for_old)
+
+    needs_packing = block_has_missing_atoms is not None and has_missing_atoms
     if needs_packing:
         sfxn = (
             context._packing_score_function
@@ -1011,7 +1010,8 @@ def _pose_stack_from_canonical_form_and_context(
 
             pose_stack = _minimize_proton_chis(pose_stack, context._opth_score_function)
 
-    if atom37_coords is not None and needs_packing:
+    # finite atom37 inputs, hydrogens included, keep their coordinates
+    if atom37_coords is not None and (needs_packing or optimized):
         pose_stack = _restore_canonical_input_coords(
             pose_stack,
             cf.coords,
@@ -1034,6 +1034,19 @@ def _pose_stack_from_canonical_form_and_context(
     if len(opt_return_vals) > (0 if return_block_has_missing_atoms else 1):
         return pose_stack, opt_return_vals
     return pose_stack
+
+
+def _remap_atom_mapping(opt_return_vals: dict, new_for_old: torch.Tensor) -> None:
+    """Point the atom mapping at the atoms' new indices after optH retyped a
+    histidine; an atom the new tautomer lacks maps nowhere and is dropped."""
+    can = opt_return_vals["can_atom_mapping"]
+    ps = opt_return_vals["ps_atom_mapping"]
+    new = new_for_old[ps[:, 0].long(), ps[:, 1].long()]
+    kept = new >= 0
+    opt_return_vals["can_atom_mapping"] = can[kept]
+    opt_return_vals["ps_atom_mapping"] = torch.stack(
+        (ps[kept, 0], new[kept].to(ps.dtype)), dim=1
+    )
 
 
 def _restore_canonical_input_coords(

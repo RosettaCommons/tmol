@@ -42,11 +42,6 @@ def _pose_stack_from_canonical_form(  # noqa: C901
     return_atom_mapping: bool = False,
     return_block_has_missing_atoms: bool = False,
     packer_atoms=None,
-    opth_score_function=None,
-    opth_minimize: bool = False,
-    opth_flip_NHQ: bool = True,
-    opth_keep_input_hydrogens: bool = False,
-    packer_seed: Optional[int] = None,
 ):
     """Build a pose stack from tensors in canonical atom ordering.
 
@@ -102,20 +97,6 @@ def _pose_stack_from_canonical_form(  # noqa: C901
             blocks missing non-leaf input atoms instead of rejecting them.
         packer_atoms: Given a block type, the atoms rotamer packing will place;
             missing ones are left for the packer instead of built here.
-        opth_score_function: When given, optimize hydrogen placement with
-            this score function. Coordinates stay differentiable with respect
-            to ``coords``. Skipped when a block is missing heavy atoms: the
-            packer that builds them places hydrogens.
-        opth_minimize: After packing, minimize the proton chis optH sampled
-            with the same score function.
-        opth_flip_NHQ: Let hydrogen optimization also flip ASN/GLN amides and
-            HIS rings and choose the histidine tautomer. A flip moves heavy
-            atoms and may change a block type; the atom mapping follows.
-        opth_keep_input_hydrogens: Hydrogens the input gives keep their
-            coordinates. Optimization still runs with them free; only the
-            missing hydrogens take its placement. Otherwise every hydrogen
-            optimization moves takes its placement.
-        packer_seed: Seed of the packer hydrogen optimization runs.
 
     Returns:
         The pose stack. If any return flag is set, returns ``(pose_stack,
@@ -180,7 +161,7 @@ def _pose_stack_from_canonical_form(  # noqa: C901
     #         now-assigned block types, discarding/ignoring
     #         any others that may have been provided
     # step 7: if any atoms missing, build them
-    # step 8: construct PoseStack object, then optimize its hydrogens
+    # step 8: construct PoseStack object
     # step 9: construct the forward/reverse atom mapping indices if required
 
     # 1: look for NaNs in the input coordinates tensor
@@ -446,27 +427,6 @@ def _pose_stack_from_canonical_form(  # noqa: C901
         device=pbt.device,
     )
 
-    # 8a: optimize hydrogens; a histidine that optH retypes changes the layout
-    new_for_old = None
-    if opth_score_function is not None and not bool(torch.any(block_has_missing_atoms)):
-        from tmol.io.details._optimize_hydrogens import _optimize_hydrogens
-
-        given_hydrogens = None
-        if opth_keep_input_hydrogens:
-            given_hydrogens = (
-                (pbt.atom_is_hydrogen[block_types64.clamp_min(0)] != 0)
-                & real_atoms
-                & ~missing_atoms
-            )
-        ps, new_for_old = _optimize_hydrogens(
-            ps,
-            opth_score_function,
-            packer_seed,
-            minimize=opth_minimize,
-            given_hydrogens=given_hydrogens,
-            flip_NHQ=opth_flip_NHQ,
-        )
-
     # 9
     if return_atom_mapping:
         (
@@ -478,14 +438,6 @@ def _pose_stack_from_canonical_form(  # noqa: C901
             block_coord_offset64[nz_block_layout_pose_ind, nz_block_layout_block_ind]
             + nz_block_at_ind
         )
-        if new_for_old is not None:
-            # a histidine optH retyped may have lost an atom; it maps nowhere
-            pose_atom_ind = new_for_old[nz_block_layout_pose_ind, pose_atom_ind]
-            kept = pose_atom_ind >= 0
-            nz_block_layout_pose_ind = nz_block_layout_pose_ind[kept]
-            nz_block_layout_block_ind = nz_block_layout_block_ind[kept]
-            real_canonical_atom_inds = real_canonical_atom_inds[kept]
-            pose_atom_ind = pose_atom_ind[kept]
 
         def _u1(x):
             return x.unsqueeze(1)

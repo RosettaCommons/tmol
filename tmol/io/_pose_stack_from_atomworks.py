@@ -39,6 +39,8 @@ def pose_stack_from_canonical_aa_atom37(
     residue_type: torch.Tensor,
     chain_iid: torch.Tensor,
     no_optH: bool = False,
+    optH_minimize: bool = False,
+    packer_seed: int | None = None,
     **kwargs,
 ) -> PoseStack:
     """Build a PoseStack from atomworks UNIFIED_ATOM37_ENCODING tensors.
@@ -69,8 +71,11 @@ def pose_stack_from_canonical_aa_atom37(
     no_optH : bool
         Leave built hydrogens at their ideal positions when True. By default
         (False) they are optimized, differentiably and without ASN/GLN/HIS
-        flips. Pass ``opth_minimize=True`` to also minimize the optimized
-        proton chis, and ``packer_seed`` to seed the optimization.
+        flips, after construction.
+    optH_minimize : bool
+        Also minimize the optimized proton chis.
+    packer_seed : int, optional
+        Seed of the packer that optimizes hydrogens.
     **kwargs
         Additional arguments passed to ``_pose_stack_from_canonical_form``.
 
@@ -91,15 +96,39 @@ def pose_stack_from_canonical_aa_atom37(
     co = _canonical_ordering_for_atomworks()
     pbt = _packed_block_types_for_atomworks(cf.coords.device)
 
-    if not no_optH:
-        kwargs.setdefault(
-            "opth_score_function",
+    if no_optH:
+        return _pose_stack_from_canonical_form(co, pbt, *cf, **kwargs)
+
+    from tmol.io._pose_stack_from_biotite import _restore_canonical_input_coords
+    from tmol.io.details._optimize_hydrogens import _optimize_hydrogens
+
+    caller_requested_atom_mapping = bool(kwargs.get("return_atom_mapping", False))
+    kwargs["return_atom_mapping"] = True
+    pose_stack, opt_return_vals = _pose_stack_from_canonical_form(
+        co, pbt, *cf, **kwargs
+    )
+    missing = opt_return_vals.get("block_has_missing_atoms")
+    if missing is None or not bool(torch.any(missing)):
+        # no NHQ flips, so heavy atoms, block types and the atom layout stay
+        # the input's; finite inputs then keep their coordinates
+        pose_stack, _ = _optimize_hydrogens(
+            pose_stack,
             _build_context_for_atomworks(cf.coords.device)._opth_score_function,
+            packer_seed,
+            minimize=optH_minimize,
         )
-    # atom37 inputs keep their heavy atoms, block types and input hydrogens
-    kwargs.setdefault("opth_flip_NHQ", False)
-    kwargs.setdefault("opth_keep_input_hydrogens", True)
-    return _pose_stack_from_canonical_form(co, pbt, *cf, **kwargs)
+        pose_stack = _restore_canonical_input_coords(
+            pose_stack,
+            cf.coords,
+            opt_return_vals["can_atom_mapping"],
+            opt_return_vals["ps_atom_mapping"],
+        )
+    if not caller_requested_atom_mapping:
+        del opt_return_vals["can_atom_mapping"]
+        del opt_return_vals["ps_atom_mapping"]
+    if opt_return_vals:
+        return pose_stack, opt_return_vals
+    return pose_stack
 
 
 @_validate_args

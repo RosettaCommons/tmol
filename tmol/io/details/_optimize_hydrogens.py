@@ -16,7 +16,6 @@ def _optimize_hydrogens(
     sfxn,
     seed: int | None = None,
     minimize: bool = False,
-    given_hydrogens=None,
     flip_NHQ: bool = False,
 ):
     """Place hydrogens where optH puts them, differentiably in the input atoms.
@@ -35,10 +34,6 @@ def _optimize_hydrogens(
     from; every other atom keeps its input coordinate. Without flip_NHQ, heavy
     atoms, block types and the atom layout are unchanged. With it, a histidine
     may change tautomer, so block types are the packed pose's.
-
-    given_hydrogens, ``[n_poses, max_n_blocks, max_n_atoms]`` in the input's
-    block layout, marks hydrogens to keep at their input coordinates. optH
-    still runs with them free; only the other hydrogens take its placement.
 
     Returns:
         The pose and, when a block type changed, the index in it of each
@@ -85,12 +80,6 @@ def _optimize_hydrogens(
         )
         > _MOVED_TOLERANCE
     )
-    if given_hydrogens is not None:
-        # a given hydrogen stays where the input put it
-        source_atom = (
-            source - pose_stack.block_coord_offset64[pose, block] if retyped else atom
-        )
-        moved &= ~(has_source & given_hydrogens[pose, block, source_atom.clamp_min(0)])
     if not flip_NHQ:
         # only hydrogens can have moved; refolding jitters nothing past this
         moved &= pbt.atom_is_hydrogen[types, atom] != 0

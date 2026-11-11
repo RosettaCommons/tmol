@@ -200,9 +200,11 @@ def test_optimized_flips_match_packing_and_carry_gradients(biotite_1ubq, torch_d
     assert torch.all(grad[0, old_cg[flipped]].abs().sum(-1) > 0)
 
 
-def test_construction_flips_only_on_request(biotite_1ubq, torch_device):
+def test_build_flips_and_maps_atoms(biotite_1ubq, torch_device):
     from tmol.io import build_context_from_atom_array, canonical_form_from_biotite
-    from tmol.io._pose_stack_construction import _pose_stack_from_canonical_form
+    from tmol.io._pose_stack_from_biotite import (
+        _pose_stack_from_canonical_form_and_context,
+    )
 
     structure = _his68_as_his_d(biotite_1ubq)
     context = build_context_from_atom_array(structure, torch_device)
@@ -210,27 +212,26 @@ def test_construction_flips_only_on_request(biotite_1ubq, torch_device):
         structure, torch_device, co=context.canonical_ordering
     )
 
-    def build(**kwargs):
-        return _pose_stack_from_canonical_form(
-            context.canonical_ordering,
-            context.packed_block_types,
-            *cf,
+    def build(no_optH):
+        return _pose_stack_from_canonical_form_and_context(
+            cf,
+            context,
+            no_optH=no_optH,
+            atom37_coords=None,
             return_atom_mapping=True,
             packer_seed=0,
-            **kwargs,
         )
 
     def his68(pose):
         bt = pose.packed_block_types.active_block_types[int(pose.block_type_ind[0, 67])]
         return bt.name
 
-    given, _ = build()
+    given, _ = build(no_optH=True)
     assert his68(given) == "HIS_D"
-    for flip in (False, True):
-        pose, details = build(
-            opth_score_function=context._opth_score_function, opth_flip_NHQ=flip
-        )
-        assert his68(pose) == ("HIS" if flip else "HIS_D")
+    for optimize in (False, True):
+        pose, details = build(no_optH=not optimize)
+        # optH turns His68 back to the other tautomer
+        assert his68(pose) == ("HIS" if optimize else "HIS_D")
 
         # the mapping points each input atom at the pose atom it became: every
         # heavy atom outside a flippable side chain is where the input put it
@@ -251,13 +252,15 @@ def test_construction_flips_only_on_request(biotite_1ubq, torch_device):
         kept = heavy & ~nhq & torch.isfinite(source).all(-1)
         torch.testing.assert_close(target[kept], source[kept], rtol=0, atol=0)
         moved = (target - source).norm(dim=-1) > 0.5
-        # without flips no heavy atom moves; with them amides and rings turn
-        assert bool(torch.any(heavy & moved)) == flip
+        # without optH no heavy atom moves; with it amides and rings flip
+        assert bool(torch.any(heavy & moved)) == optimize
 
 
-def test_construction_optimizes_hydrogens_differentiably(biotite_1ubq, torch_device):
+def test_build_optimizes_hydrogens_differentiably(biotite_1ubq, torch_device):
     from tmol.io import build_context_from_atom_array, canonical_form_from_biotite
-    from tmol.io._pose_stack_construction import _pose_stack_from_canonical_form
+    from tmol.io._pose_stack_from_biotite import (
+        _pose_stack_from_canonical_form_and_context,
+    )
 
     context = build_context_from_atom_array(biotite_1ubq, torch_device)
     cf = canonical_form_from_biotite(
@@ -266,12 +269,12 @@ def test_construction_optimizes_hydrogens_differentiably(biotite_1ubq, torch_dev
     coords = cf.coords.clone().requires_grad_(True)
     cf.coords = coords
 
-    pose, details = _pose_stack_from_canonical_form(
-        context.canonical_ordering,
-        context.packed_block_types,
-        *cf,
+    pose, details = _pose_stack_from_canonical_form_and_context(
+        cf,
+        context,
+        no_optH=False,
+        atom37_coords=None,
         return_atom_mapping=True,
-        opth_score_function=context._opth_score_function,
         packer_seed=0,
     )
     assert torch.isfinite(pose.coords[pose.real_atoms]).all()
