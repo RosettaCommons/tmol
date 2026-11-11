@@ -504,6 +504,46 @@ def test_atom37_opth_keeps_input_hydrogens(biotite_1ubq, torch_device):
     )
 
 
+def test_atom37_missing_heavy_atoms_need_backprop_compatible_rebuild_off(
+    biotite_1ubq, torch_device
+):
+    structure, atom37 = _atomized_atom37(_first_residues(biotite_1ubq, 3), torch_device)
+    # Gln2's CD: a non-leaf side-chain atom only the packer can build
+    cd = int(np.flatnonzero((structure.res_id == 2) & (structure.atom_name == "CD"))[0])
+    atom37[:, cd] = torch.nan
+    atom37.requires_grad_(True)
+    context = build_context_from_atom_array(structure, torch_device)
+    builder = prepare_atom37_pose_builder(structure, context)
+
+    # by default the caller wants gradients, which a packed side chain lacks
+    for build in (
+        lambda: pose_stack_from_atom37_and_topology(atom37, structure, context),
+        lambda: builder(atom37),
+        lambda: builder(atom37, opt_h=False),
+    ):
+        with pytest.raises(ValueError, match=r"(?s)missing heavy atoms.*bt=GLN"):
+            build()
+
+    # without it the side chain is packed; given atoms keep their gradients
+    for pose in (
+        pose_stack_from_atom37_and_topology(
+            atom37, structure, context, backprop_compatible_rebuild=False
+        ),
+        builder(atom37, backprop_compatible_rebuild=False),
+    ):
+        assert torch.isfinite(pose.coords[pose.real_atoms]).all()
+        bt = pose.packed_block_types.active_block_types[int(pose.block_type_ind[0, 1])]
+        start = int(pose.block_coord_offset[0, 1])
+        built = pose.coords[0, start + bt.atom_to_idx["CD"]]
+        given = pose.coords[0, start + bt.atom_to_idx["CA"]]
+        (from_built,) = torch.autograd.grad(
+            built.sum(), atom37, retain_graph=True, allow_unused=True
+        )
+        assert from_built is None or torch.count_nonzero(from_built) == 0
+        (from_given,) = torch.autograd.grad(given.sum(), atom37)
+        assert torch.count_nonzero(from_given) > 0
+
+
 def test_prepared_atom37_builder_replays_variable_leaf_presence(
     biotite_1ubq, torch_device
 ):
