@@ -39,7 +39,7 @@
   <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
 <link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
 
-    <script src="../_static/documentation_options.js?v=e259d695"></script>
+    <script src="../_static/documentation_options.js?v=8d563738"></script>
     <script src="../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script>let toggleHintShow = 'show code';</script>
@@ -61,7 +61,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="color-scheme" content="light dark"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="0.3.0" />
+  <meta name="docsearch:version" content="1.0.0" />
   
     
     <script src="../_static/searchtools.js"></script>
@@ -468,7 +468,7 @@ must be rebuilt when changing that runtime.</p>
 It does not use TorchConfig.cmake or the unstable Torch C++ ABI for production.</p>
 <p>Requirements:</p>
 <ul class="simple">
-<li><p>Python 3.11 or newer.</p></li>
+<li><p>Python 3.12 or newer.</p></li>
 <li><p>PyTorch 2.14+ build headers; PyTorch 2.11+ runtime.</p></li>
 <li><p>A C++17 compiler (C++20 for test/JIT extensions with recent PyTorch).</p></li>
 <li><p>CMake 3.24 or newer.</p></li>
@@ -648,8 +648,8 @@ can differ from releases before this refactor.</p>
 <h2>Releasing<a class="headerlink" href="#releasing" title="Link to this heading">#</a></h2>
 <p>Versioned wheel and sdist publication happens from <code class="docutils literal notranslate"><span class="pre">v*</span></code> tags. The tag version
 must match <code class="docutils literal notranslate"><span class="pre">[project].version</span></code> in <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>.</p>
-<p><code class="docutils literal notranslate"><span class="pre">scripts/release_matrix.py</span></code> defines 28 wheels: 12 CPU/API wheels and 16 CUDA
-operator wheels across Python 3.11–3.14 and supported platforms. CUDA builds
+<p><code class="docutils literal notranslate"><span class="pre">scripts/release_matrix.py</span></code> defines 21 wheels: 9 CPU/API wheels and 12 CUDA
+operator wheels across Python 3.12–3.14 and supported platforms. CUDA builds
 use a toolkit floor of 12.8 or 13.0, independent of the build-time Torch minor.
 All three project versions and the extras/dependencies must agree.</p>
 <p>CI audits each wheel for unstable PyTorch C++ imports and tests the <strong>same

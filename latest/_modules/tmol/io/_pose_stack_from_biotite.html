@@ -38,7 +38,7 @@
   <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
 <link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
 
-    <script src="../../../_static/documentation_options.js?v=e259d695"></script>
+    <script src="../../../_static/documentation_options.js?v=8d563738"></script>
     <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script>let toggleHintShow = 'show code';</script>
@@ -58,7 +58,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="color-scheme" content="light dark"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="0.3.0" />
+  <meta name="docsearch:version" content="1.0.0" />
   
     
     <script src="../../../_static/searchtools.js"></script>
@@ -2544,8 +2544,8 @@
     <span class="c1"># Author chain labels can be shared by a polymer and separate ligand</span>
     <span class="c1"># entities. That must not hide the polymer's terminal boundary.</span>
     <span class="n">keys</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"chain_id"</span><span class="p">]</span>
-    <span class="k">if</span> <span class="s2">"label_entity_id"</span> <span class="ow">in</span> <span class="n">biotite_structure</span><span class="o">.</span><span class="n">get_annotation_categories</span><span class="p">():</span>
-        <span class="n">keys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"label_entity_id"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s2">"entity_id"</span> <span class="ow">in</span> <span class="n">biotite_structure</span><span class="o">.</span><span class="n">get_annotation_categories</span><span class="p">():</span>
+        <span class="n">keys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"entity_id"</span><span class="p">)</span>
     <span class="k">if</span> <span class="s2">"sym_id"</span> <span class="ow">in</span> <span class="n">biotite_structure</span><span class="o">.</span><span class="n">get_annotation_categories</span><span class="p">():</span>
         <span class="n">keys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"sym_id"</span><span class="p">)</span>
     <span class="n">boundaries</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">biotite_residue_starts</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
@@ -2921,7 +2921,11 @@
     <span class="n">aliases</span> <span class="o">=</span> <span class="p">{</span><span class="n">a</span><span class="o">.</span><span class="n">name3</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">read_as</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">chemdb</span><span class="o">.</span><span class="n">name3_aliases</span><span class="p">}</span>
     <span class="n">names</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="n">co</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">names</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">co</span><span class="o">.</span><span class="n">restype_io_equiv_classes</span><span class="p">)</span>
+        <span class="c1"># Custom residue parameters already define their hydrogen chemistry.</span>
+        <span class="c1"># A same-named CCD entry may describe an entirely different ligand.</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">co</span><span class="o">.</span><span class="n">restype_io_equiv_classes</span><span class="p">)</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span>
+            <span class="n">_canonical_ordering_for_biotite</span><span class="p">()</span><span class="o">.</span><span class="n">restype_io_equiv_classes</span>
+        <span class="p">)</span>
         <span class="n">names</span> <span class="o">|=</span> <span class="p">{</span><span class="n">alias</span> <span class="k">for</span> <span class="n">alias</span><span class="p">,</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">aliases</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">}</span>
     <span class="n">template</span> <span class="o">=</span> <span class="n">_template_array</span><span class="p">(</span><span class="n">biotite_structure</span><span class="p">)</span>
     <span class="n">forms</span> <span class="o">=</span> <span class="n">_database_forms</span><span class="p">(</span><span class="n">chemdb</span><span class="p">)</span>

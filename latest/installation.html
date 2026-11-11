@@ -39,7 +39,7 @@
   <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
 <link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
 
-    <script src="_static/documentation_options.js?v=e259d695"></script>
+    <script src="_static/documentation_options.js?v=8d563738"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script>let toggleHintShow = 'show code';</script>
@@ -61,7 +61,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="color-scheme" content="light dark"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="0.3.0" />
+  <meta name="docsearch:version" content="1.0.0" />
   
     
     <script src="_static/searchtools.js"></script>
@@ -477,7 +477,8 @@ and relaxation do not need OpenBabel. The <code class="docutils literal notransl
 <section id="requirements">
 <h2>Requirements<a class="headerlink" href="#requirements" title="Link to this heading">#</a></h2>
 <ul class="simple">
-<li><p>Python 3.11–3.14 and PyTorch 2.11 or newer.</p></li>
+<li><p>Python 3.12–3.14 and PyTorch 2.11 or newer.</p></li>
+<li><p>AtomWorks 3.1 or newer with Biotite 2.0.0 and NumPy 2.1 or newer.</p></li>
 <li><p>Linux <code class="docutils literal notranslate"><span class="pre">x86_64</span></code> or <code class="docutils literal notranslate"><span class="pre">aarch64</span></code> with glibc 2.28 or newer, or Apple Silicon with
 macOS 14 or newer. Native Windows and Intel Mac wheels are not provided;
 Windows users can use Linux through WSL2.</p></li>
@@ -485,6 +486,8 @@ Windows users can use Linux through WSL2.</p></li>
 CUDA-enabled PyTorch, and a compatible NVIDIA driver. See
 <a class="reference internal" href="#cuda-driver-errors"><span class="std std-ref">driver compatibility</span></a>.</p></li>
 </ul>
+<p>TMol 1.0 requires Python 3.12+ for AtomWorks 3.1. TMol 0.3.0
+remains available for Python 3.11 with AtomWorks 3.0 and Biotite 1.6.</p>
 <p>Pip selects the wheel for your Python version and platform. Wheel installation
 needs no compiler or local CUDA toolkit (<code class="docutils literal notranslate"><span class="pre">nvcc</span></code>). Add <code class="docutils literal notranslate"><span class="pre">--only-binary=:all:</span></code> to
 an install command if you want it to fail rather than build any dependency
@@ -570,12 +573,13 @@ when GPU execution is required.</p>
 <section id="google-colab-and-notebooks">
 <h2>Google Colab and notebooks<a class="headerlink" href="#google-colab-and-notebooks" title="Link to this heading">#</a></h2>
 <p>Select a GPU runtime in Colab, then run the tutorial’s setup cell. The shared
-bootstrap installs a tested TMol release with the matching <code class="docutils literal notranslate"><span class="pre">cu12</span></code> or <code class="docutils literal notranslate"><span class="pre">cu13</span></code>
+bootstrap installs TMol 1.0.0 with the matching <code class="docutils literal notranslate"><span class="pre">cu12</span></code> or <code class="docutils literal notranslate"><span class="pre">cu13</span></code>
 extra and preserves Colab’s installed PyTorch. The requirements above still
 apply. No Python- or PyTorch-specific wheel URL is needed.</p>
 <p>For local tutorials, use an editable <a class="reference internal" href="user_guide/development.html"><span class="doc">development installation</span></a> with the <code class="docutils literal notranslate"><span class="pre">docs</span></code> extra (<code class="docutils literal notranslate"><span class="pre">-e</span> <span class="pre">&quot;.[docs]&quot;</span></code>) for notebook
 dependencies and viewers. This also makes the checkout’s fixtures available;
-release wheels omit test data. Colab setup downloads the fixtures automatically.</p>
+release wheels omit test data. Colab setup downloads the matching release
+fixtures automatically.</p>
 <p><span id="from-source"></span></p>
 </section>
 <section id="build-from-source">
@@ -636,6 +640,15 @@ another option; follow the build instructions above. JIT development also needs
 a source checkout and build tools; setting an environment variable alone does
 not repair an installed wheel.</p>
 </section>
+</section>
+<section id="known-structure-input-limitation">
+<h2>Known structure-input limitation<a class="headerlink" href="#known-structure-input-limitation" title="Link to this heading">#</a></h2>
+<p>With AtomWorks 3.1.0, legacy LCC nucleotide inputs using mixed phosphate atom
+names can fail coordinate completion. A changed dictionary leaving-oxygen
+designation can also affect linked LCC chemistry. These upstream fixes are
+pending; the corresponding regression is tracked as an expected failure.
+For affected structures, supply validated component parameters through
+<code class="docutils literal notranslate"><span class="pre">params_files</span></code> rather than renaming or deleting atoms to force preparation.</p>
 </section>
 </section>
 
@@ -700,6 +713,7 @@ not repair an installed wheel.</p>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#c-runtime-errors">C++ runtime errors</a></li>
 </ul>
 </li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#known-structure-input-limitation">Known structure-input limitation</a></li>
 </ul>
   </nav></div>
 

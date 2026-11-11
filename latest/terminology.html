@@ -39,7 +39,7 @@
   <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
 <link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
 
-    <script src="_static/documentation_options.js?v=e259d695"></script>
+    <script src="_static/documentation_options.js?v=8d563738"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script>let toggleHintShow = 'show code';</script>
@@ -61,7 +61,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="color-scheme" content="light dark"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="0.3.0" />
+  <meta name="docsearch:version" content="1.0.0" />
   
     
     <script src="_static/searchtools.js"></script>
@@ -459,8 +459,8 @@
 <h1>Glossary<a class="headerlink" href="#glossary" title="Link to this heading">#</a></h1>
 <p>Terms used in the <a class="reference internal" href="quickstart.html"><span class="doc">Quickstart</span></a> and API. The diagrams show how scores
 and coordinate changes relate; the <a class="reference internal" href="playground.html"><span class="doc">Protein score playground</span></a> gives a working example.</p>
-<section id="score-function-and-score-terms">
-<span id="glossary-score-function"></span><h2>Score function and score terms<a class="headerlink" href="#score-function-and-score-terms" title="Link to this heading">#</a></h2>
+<section id="glossary-score-function">
+<span id="score-function-and-score-terms"></span><h2>Score function and score terms<a class="headerlink" href="#glossary-score-function" title="Link to this heading">#</a></h2>
 <p>A score function combines weighted contributions from atomic interactions and
 molecular geometry. Lower totals are favored during minimization and packing.
 Individual terms show which interactions contribute to a change.</p>
@@ -483,8 +483,8 @@ order. <code class="docutils literal notranslate"><span class="pre">apply_weight
 See <a class="reference internal" href="api/score_terms.html"><span class="doc">score terms</span></a> for individual definitions.</p>
 <p><span id="posestack-pose-block-and-atom"></span></p>
 </section>
-<section id="pose-block-and-posestack">
-<span id="glossary-posestack"></span><h2>Pose, block, and PoseStack<a class="headerlink" href="#pose-block-and-posestack" title="Link to this heading">#</a></h2>
+<section id="glossary-posestack">
+<span id="pose-block-and-posestack"></span><h2>Pose, block, and PoseStack<a class="headerlink" href="#glossary-posestack" title="Link to this heading">#</a></h2>
 <p>A <strong>pose</strong> is one molecular system. A <strong>block</strong> is a typed chemical unit, such
 as an amino acid, nucleotide, or ligand fragment. A <strong>PoseStack</strong> batches poses
 as padded tensors on a single PyTorch device.</p>
@@ -496,8 +496,8 @@ as padded tensors on a single PyTorch device.</p>
 <p>Use atom and block masks to distinguish real entries from padding. Group
 similarly sized poses to limit padding; see <a class="reference internal" href="datatypes.html"><span class="doc">tensor layouts</span></a>.</p>
 </section>
-<section id="torsions-rotamers-and-repacking">
-<span id="glossary-repacking"></span><h2>Torsions, rotamers, and repacking<a class="headerlink" href="#torsions-rotamers-and-repacking" title="Link to this heading">#</a></h2>
+<section id="glossary-repacking">
+<span id="torsions-rotamers-and-repacking"></span><h2>Torsions, rotamers, and repacking<a class="headerlink" href="#glossary-repacking" title="Link to this heading">#</a></h2>
 <p>A <strong>torsion</strong> is a rotation around a bond, described by four atoms. Protein
 backbone angles include φ and ψ; side-chain angles are called χ1, χ2, and so on.
 A <strong>rotamer</strong> is a candidate side-chain conformation.</p>
@@ -518,8 +518,8 @@ Repacking searches discrete candidates; minimization can refine their geometry.<
 changes selected internal coordinates and rigid-body jumps. The allowed moves
 come from a coordinate mask or a <code class="docutils literal notranslate"><span class="pre">MoveMap</span></code>, respectively.</p>
 </section>
-<section id="fold-tree-fold-forest-and-jumps">
-<span id="glossary-foldforest"></span><h2>Fold tree, fold forest, and jumps<a class="headerlink" href="#fold-tree-fold-forest-and-jumps" title="Link to this heading">#</a></h2>
+<section id="glossary-foldforest">
+<span id="fold-tree-fold-forest-and-jumps"></span><h2>Fold tree, fold forest, and jumps<a class="headerlink" href="#glossary-foldforest" title="Link to this heading">#</a></h2>
 <p>A <strong>fold tree</strong> is a rooted, acyclic description of how coordinates are built
 for one pose. A <strong>fold forest</strong> stores these trees across a batch. A <strong>jump</strong>
 defines a rigid-body connection in that coordinate model; it is not a chemical
@@ -574,8 +574,8 @@ It affects optimization only when attached to the pose and given a nonzero
 score-function weight. A frozen degree of freedom cannot move; a restrained
 one may move at a scoring cost.</p>
 </section>
-<section id="fastrelax">
-<span id="glossary-fastrelax"></span><h2>FastRelax<a class="headerlink" href="#fastrelax" title="Link to this heading">#</a></h2>
+<section id="glossary-fastrelax">
+<span id="fastrelax"></span><h2>FastRelax<a class="headerlink" href="#glossary-fastrelax" title="Link to this heading">#</a></h2>
 <p>FastRelax alternates repacking with minimization. Early stages soften steric
 repulsion so side chains can rearrange; later stages restore its full weight.
 The protocol retains the best conformation for each pose under the acceptance
@@ -665,13 +665,13 @@ connectivity, or batch layout, including after packing.</p>
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#score-function-and-score-terms">Score function and score terms</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pose-block-and-posestack">Pose, block, and PoseStack</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#torsions-rotamers-and-repacking">Torsions, rotamers, and repacking</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#glossary-score-function">Score function and score terms</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#glossary-posestack">Pose, block, and PoseStack</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#glossary-repacking">Torsions, rotamers, and repacking</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gradients-and-minimization">Gradients and minimization</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#fold-tree-fold-forest-and-jumps">Fold tree, fold forest, and jumps</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#glossary-foldforest">Fold tree, fold forest, and jumps</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#movemap-and-constraints">MoveMap and constraints</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#fastrelax">FastRelax</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#glossary-fastrelax">FastRelax</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#parameters-and-prepared-chemistry">Parameters and prepared chemistry</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#rendered-scorer">Rendered scorer</a></li>
 </ul>

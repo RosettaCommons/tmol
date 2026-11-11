@@ -38,7 +38,7 @@
   <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
 <link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
 
-    <script src="../../../_static/documentation_options.js?v=e259d695"></script>
+    <script src="../../../_static/documentation_options.js?v=8d563738"></script>
     <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script>let toggleHintShow = 'show code';</script>
@@ -58,7 +58,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="color-scheme" content="light dark"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="0.3.0" />
+  <meta name="docsearch:version" content="1.0.0" />
   
     
     <script src="../../../_static/searchtools.js"></script>
@@ -439,7 +439,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">biotite.structure</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">struc</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">atomworks.io.utils.io_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">CIFWriteConfig</span><span class="p">,</span> <span class="n">to_cif_string</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">atomworks.io.files</span><span class="w"> </span><span class="kn">import</span> <span class="n">CIFWriteConfig</span><span class="p">,</span> <span class="n">atom_array_to_file</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">atomworks.io.utils.link_chemistry</span><span class="w"> </span><span class="kn">import</span> <span class="n">DEFAULT_VALENCE</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">biotite.structure.io.pdb</span><span class="w"> </span><span class="kn">import</span> <span class="n">PDBFile</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">biotite.structure.io.pdbx</span><span class="w"> </span><span class="kn">import</span> <span class="n">CIFCategory</span><span class="p">,</span> <span class="n">CIFFile</span>
@@ -621,20 +621,22 @@
         <span class="n">include_entity_categories</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="n">chem_comp_source</span><span class="o">=</span><span class="s2">"array"</span><span class="p">,</span>
         <span class="n">warn_on_ccd_without_registry</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">coord_decimals</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="c1"># an input's entity ids belong to its label chains, not the author chains</span>
     <span class="c1"># written here, so the writer assigns entities itself</span>
-    <span class="k">if</span> <span class="s2">"label_entity_id"</span> <span class="ow">in</span> <span class="n">atom_array</span><span class="o">.</span><span class="n">get_annotation_categories</span><span class="p">():</span>
+    <span class="k">if</span> <span class="s2">"entity_id"</span> <span class="ow">in</span> <span class="n">atom_array</span><span class="o">.</span><span class="n">get_annotation_categories</span><span class="p">():</span>
         <span class="n">atom_array</span> <span class="o">=</span> <span class="n">atom_array</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-        <span class="n">atom_array</span><span class="o">.</span><span class="n">del_annotation</span><span class="p">(</span><span class="s2">"label_entity_id"</span><span class="p">)</span>
+        <span class="n">atom_array</span><span class="o">.</span><span class="n">del_annotation</span><span class="p">(</span><span class="s2">"entity_id"</span><span class="p">)</span>
     <span class="c1"># the writer takes models as a list of AtomArrays</span>
     <span class="n">models</span> <span class="o">=</span> <span class="p">(</span>
         <span class="nb">list</span><span class="p">(</span><span class="n">atom_array</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">atom_array</span><span class="p">,</span> <span class="n">struc</span><span class="o">.</span><span class="n">AtomArrayStack</span><span class="p">)</span> <span class="k">else</span> <span class="n">atom_array</span>
     <span class="p">)</span>
-    <span class="n">cif</span> <span class="o">=</span> <span class="n">CIFFile</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">(</span><span class="n">to_cif_string</span><span class="p">(</span><span class="n">models</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">config</span><span class="p">)))</span>
+    <span class="n">cif</span> <span class="o">=</span> <span class="n">CIFFile</span><span class="o">.</span><span class="n">read</span><span class="p">(</span>
+        <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">(</span><span class="n">atom_array_to_file</span><span class="p">(</span><span class="n">models</span><span class="p">,</span> <span class="n">file_type</span><span class="o">=</span><span class="s2">"cif"</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">config</span><span class="p">))</span>
+    <span class="p">)</span>
     <span class="n">_number_label_seq_ids</span><span class="p">(</span><span class="n">cif</span><span class="o">.</span><span class="n">block</span><span class="p">)</span>
     <span class="n">_declare_links_without_valence</span><span class="p">(</span><span class="n">cif</span><span class="o">.</span><span class="n">block</span><span class="p">,</span> <span class="n">atom_array</span><span class="p">)</span>
-    <span class="n">_restore_coordinate_precision</span><span class="p">(</span><span class="n">cif</span><span class="o">.</span><span class="n">block</span><span class="p">,</span> <span class="n">atom_array</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span>
     <span class="n">cif</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
@@ -716,19 +718,6 @@
     <span class="n">block</span><span class="p">[</span><span class="s2">"struct_conn"</span><span class="p">]</span> <span class="o">=</span> <span class="n">CIFCategory</span><span class="p">(</span>
         <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">numpy</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">])</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">}</span>
     <span class="p">)</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_restore_coordinate_precision</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="n">atom_array</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""Overwrite the writer's three-decimal coordinates with the array's own.</span>
-
-<span class="sd">    TEMP until atomworks allows precision control.</span>
-<span class="sd">    """</span>
-    <span class="n">site</span> <span class="o">=</span> <span class="n">block</span><span class="p">[</span><span class="s2">"atom_site"</span><span class="p">]</span>
-    <span class="n">coord</span> <span class="o">=</span> <span class="n">atom_array</span><span class="o">.</span><span class="n">coord</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">site</span><span class="p">[</span><span class="s2">"Cartn_x"</span><span class="p">]</span><span class="o">.</span><span class="n">as_array</span><span class="p">(</span><span class="nb">str</span><span class="p">))</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">coord</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"CIF atom_site rows do not match the written atoms"</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">axis</span><span class="p">,</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">((</span><span class="s2">"Cartn_x"</span><span class="p">,</span> <span class="s2">"Cartn_y"</span><span class="p">,</span> <span class="s2">"Cartn_z"</span><span class="p">)):</span>
-        <span class="n">site</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">coord</span><span class="p">[:,</span> <span class="n">axis</span><span class="p">]</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_number_label_seq_ids</span><span class="p">(</span><span class="n">block</span><span class="p">):</span>
