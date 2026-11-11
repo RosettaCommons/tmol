@@ -208,6 +208,8 @@ def test_isolated_halogen_charge_provenance(
 
     path = _write_halogen_cif(tmp_path, source_charge)
     source = atom_array_from_file(path)
+    assert source.entity_id.tolist() == ["1"]
+    assert source.tmol_polymer_entity.tolist() == [False]
     expected_charge = 0 if source_charge == "0" else -1
     assert source.charge.tolist() == [expected_charge]
     assert source.tmol_source_formal_charge.tolist() == [source_charge]
@@ -909,3 +911,27 @@ def test_coordinate_only_pdb_keeps_its_caps_in_the_chain(torch_device):
     names = [types[i].name for i in pose.block_type_ind64[0].tolist() if i >= 0]
     assert names[:2] == ["ACE", "GLU"]
     assert names[-3:] == ["GLY", "NH2", "SO4"]
+
+
+def test_pdb_without_element_columns_preserves_atom_identities(ubq_pdb):
+    import io
+
+    lines = ubq_pdb.splitlines()
+    without_elements = "\n".join(
+        line[:76] if line.startswith(("ATOM  ", "HETATM")) else line for line in lines
+    )
+    expected = atom_array_from_file(io.StringIO(ubq_pdb), format="pdb")
+    actual = atom_array_from_file(io.StringIO(without_elements), format="pdb")
+    for annotation in (
+        "atom_name",
+        "res_name",
+        "res_id",
+        "chain_id",
+        "ins_code",
+        "element",
+    ):
+        np.testing.assert_array_equal(
+            actual.get_annotation(annotation), expected.get_annotation(annotation)
+        )
+    np.testing.assert_array_equal(actual.coord, expected.coord)
+    np.testing.assert_array_equal(actual.bonds.as_array(), expected.bonds.as_array())

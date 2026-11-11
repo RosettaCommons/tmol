@@ -251,7 +251,7 @@ def test_neutralized_mol2_protonation_workflow(
     smiles, expected_charge, torch_device, tmp_path
 ):
     import torch
-    from atomworks.io.utils.io_utils import to_cif_file
+    from atomworks.io.files import CIFWriteConfig, atom_array_to_file
     from tmol import pose_stack_from_atom_array
     from tmol.ligand import load_params_file
     from tmol.ligand import prepare_ligand_from_cif, prepare_ligand_from_mol2
@@ -269,7 +269,11 @@ def test_neutralized_mol2_protonation_workflow(
     assert sum(source.partial_charges.values()) == pytest.approx(0, abs=2e-4)
     heavy = source.atom_array[source.atom_array.element != "H"]
     cif_path = tmp_path / "neutralized.cif"
-    to_cif_file(source.atom_array, cif_path, ccd_entries={"L_1": source.atom_array})
+    atom_array_to_file(
+        source.atom_array,
+        cif_path,
+        config=CIFWriteConfig(ccd_entries={"L_1": source.atom_array}),
+    )
     cif_database, _ = prepare_ligand_from_cif(cif_path, res_name="L_1", seed=17)
 
     damaged = tmp_path / "untrusted_addH.mol2"
