@@ -19,6 +19,7 @@ nucleic acid term reads are the ones it was calibrated on.
 from __future__ import annotations
 
 from collections import defaultdict
+from importlib.metadata import version
 
 import biotite.structure.info as info
 import numpy as np
@@ -26,6 +27,7 @@ import pytest
 
 from tmol import ParameterDatabase
 from tmol.ligand import prepare_ligands
+from tmol.ligand._preparation import LigandPreparationError
 from tmol.ligand._polymer_profile import (
     _glycosidic_torsion_atoms,
     _na_backbone_kind,
@@ -436,6 +438,12 @@ def test_a_substituted_three_prime_oxygen_leaves_no_three_prime_port(
     assert names == ["RC:na5primephos", "CCC"]
 
 
+@pytest.mark.xfail(
+    version("atomworks") == "3.1.0",
+    raises=LigandPreparationError,
+    strict=True,
+    reason="AtomWorks 3.1.0 cannot complete legacy LCC names with the Biotite 2 CCD; upstream fix pending",
+)
 def test_the_component_definition_breaks_a_leaving_oxygen_tie(torch_device) -> None:
     """LCC's 5'-terminal copy is completed with the definition's O1P and OXT.
 

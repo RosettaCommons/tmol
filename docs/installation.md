@@ -30,7 +30,7 @@ and relaxation do not need OpenBabel. The `dev` and `docs` extras include it.
   CUDA-enabled PyTorch, and a compatible NVIDIA driver. See
   [driver compatibility](#cuda-driver-errors).
 
-The development version requires Python 3.12+ for AtomWorks 3.1. TMol 0.3.0
+TMol 1.0 requires Python 3.12+ for AtomWorks 3.1. TMol 0.3.0
 remains available for Python 3.11 with AtomWorks 3.0 and Biotite 1.6.
 
 Pip selects the wheel for your Python version and platform. Wheel installation
@@ -129,14 +129,15 @@ when GPU execution is required.
 ## Google Colab and notebooks
 
 Select a GPU runtime in Colab, then run the tutorial's setup cell. The shared
-bootstrap installs a tested TMol release with the matching `cu12` or `cu13`
+bootstrap installs TMol 1.0.0 with the matching `cu12` or `cu13`
 extra and preserves Colab's installed PyTorch. The requirements above still
 apply. No Python- or PyTorch-specific wheel URL is needed.
 
 For local tutorials, use an editable {doc}`development installation
 <user_guide/development>` with the `docs` extra (`-e ".[docs]"`) for notebook
 dependencies and viewers. This also makes the checkout’s fixtures available;
-release wheels omit test data. Colab setup downloads the fixtures automatically.
+release wheels omit test data. Colab setup downloads the matching release
+fixtures automatically.
 
 <span id="from-source"></span>
 
@@ -204,3 +205,12 @@ or a recent container image. A source build against your system libraries is
 another option; follow the build instructions above. JIT development also needs
 a source checkout and build tools; setting an environment variable alone does
 not repair an installed wheel.
+
+## Known structure-input limitation
+
+With AtomWorks 3.1.0, legacy LCC nucleotide inputs using mixed phosphate atom
+names can fail coordinate completion. A changed dictionary leaving-oxygen
+designation can also affect linked LCC chemistry. These upstream fixes are
+pending; the corresponding regression is tracked as an expected failure.
+For affected structures, supply validated component parameters through
+`params_files` rather than renaming or deleting atoms to force preparation.

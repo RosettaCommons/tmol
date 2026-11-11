@@ -20,7 +20,7 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
-version = "0.3.0"
+version = "1.0.0"
 
 dependencies = [
     # Core ML framework.
@@ -57,8 +57,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cu12 = ["tmol-ops-cu12==0.3.0"]
-cu13 = ["tmol-ops-cu13==0.3.0"]
+cu12 = ["tmol-ops-cu12==1.0.0"]
+cu13 = ["tmol-ops-cu13==1.0.0"]
 ligand = ["openbabel-wheel>=3.1.1.23"]
 dev = [
     "tmol[ligand]",

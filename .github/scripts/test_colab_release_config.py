@@ -35,7 +35,7 @@ def test_colab_uses_a_released_version_and_current_tutorials():
     module = _load_colab_setup()
     source = (ROOT / "docs/tutorial/notebook_setup.py").read_text(encoding="utf-8")
 
-    assert module.TUTORIAL_REF == "master"
+    assert module.TUTORIAL_REF == f"v{module.TMOL_RELEASE}"
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     # Colab needs published wheels; the source version can be unreleased.
     release = module.TMOL_RELEASE
@@ -54,7 +54,7 @@ def test_colab_uses_a_released_version_and_current_tutorials():
         notebook = notebook_path.read_text(encoding="utf-8")
         assert "install_tutorial_source" not in notebook
         assert (
-            f"/RosettaCommons/tmol/blob/master/docs/tutorial/{notebook_path.name}"
+            f"/RosettaCommons/tmol/blob/{module.TUTORIAL_REF}/docs/tutorial/{notebook_path.name}"
             in notebook
         )
         assert "kdidi/sphinx-docs-refactor" not in notebook
@@ -211,3 +211,13 @@ def test_docs_workflow_uses_hosted_cpu_and_gpu_ci_executes_gpu_cells():
     ]
     # Every tutorial must run on CUDA: CPU-only runs hide device-mismatch bugs.
     assert flagged == [path.name for path in _tutorial_notebooks()]
+
+
+def test_colab_rejects_old_python_before_install(monkeypatch):
+    module = _load_colab_setup()
+    monkeypatch.setattr(module.sys, "version_info", (3, 11))
+    monkeypatch.setattr(
+        module, "_pip_install", lambda *args: pytest.fail("must not install")
+    )
+    with pytest.raises(RuntimeError, match="Python 3.12"):
+        module.setup_colab([])

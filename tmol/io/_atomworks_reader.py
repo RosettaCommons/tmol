@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import biotite.structure as struc
 import biotite.structure.io.pdbx as pdbx
-from biotite.rust.structure.io.pdb import decode_hybrid36
+from biotite.rust.structure.io.pdb import PDBFile as RawPDBFile, decode_hybrid36
 import numpy as np
 from rdkit import Chem
 
@@ -55,7 +55,10 @@ def _pdb_declared_pairs(array, path, model):
     """CONECT/LINK endpoints present in the selected conformer, without inference."""
     serial = {int(value): i for i, value in enumerate(array.atom_id)}
     file = read_any(path)
-    authored = file.get_structure(model=model, altloc="all", extra_fields=["atom_id"])
+    # Read identities without the Python wrapper's unnecessary element inference.
+    authored = RawPDBFile.get_structure(
+        file, model=model, altloc="all", extra_fields=["atom_id"]
+    )
     keys = zip(
         authored.chain_id,
         authored.res_id.astype(str),
@@ -281,8 +284,8 @@ def _with_pdb_author_chains(array, path, model):
 
     The loader moves a chain's HETATM residues to a new chain (5EMA SEP as PDB).
     """
-    authored = read_any(path).get_structure(
-        model=model, altloc="first", extra_fields=["atom_id"]
+    authored = RawPDBFile.get_structure(
+        read_any(path), model=model, altloc="first", extra_fields=["atom_id"]
     )
     chain_of = dict(zip(authored.atom_id.tolist(), authored.chain_id.tolist()))
     array.set_annotation(

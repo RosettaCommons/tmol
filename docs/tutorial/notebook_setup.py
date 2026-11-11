@@ -63,11 +63,10 @@ warnings.filterwarnings(
     category=DeprecationWarning,
 )
 
-TUTORIAL_REF = "master"
+# Keep tutorial code and fixtures matched to the installed release.
+TMOL_RELEASE = "1.0.0"
+TUTORIAL_REF = f"v{TMOL_RELEASE}"
 RAW_BASE = f"https://raw.githubusercontent.com/RosettaCommons/tmol/{TUTORIAL_REF}"
-# Advance only after the release wheels have been published and exercised.
-# The source project's next version may not have downloadable wheels yet.
-TMOL_RELEASE = "0.3.0"
 
 SEED = 0
 
@@ -133,6 +132,10 @@ def setup_colab(fixtures: list[str] | None = None) -> None:
             directory. Defaults to the ``FIXTURES`` the tutorials read.
     """
     global _colab_ready
+    if sys.version_info < (3, 12):
+        raise RuntimeError(
+            "TMol 1.0 requires Python 3.12 or newer; choose a current Colab runtime."
+        )
     import torch
     from packaging.version import Version
 

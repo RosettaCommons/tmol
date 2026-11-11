@@ -26,7 +26,8 @@ CPU runs move their heaviest work onto the GPU automatically.
 
 ## Install
 
-Install from PyPI. For GPU use, first install [PyTorch](https://pytorch.org/get-started/locally/)
+TMol 1.0 requires Python 3.12+ and PyTorch 2.11+. Install from PyPI.
+For GPU use, first install [PyTorch](https://pytorch.org/get-started/locally/)
 with the matching CUDA major, then choose one command:
 
 ```bash
