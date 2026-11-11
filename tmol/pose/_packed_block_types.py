@@ -104,6 +104,19 @@ class PackedBlockTypes:
 
     device: torch.device
 
+    def to(self, device: torch.device) -> "PackedBlockTypes":
+        """This PackedBlockTypes on ``device``, repacked if it is not there already.
+
+        Repacking drops score-term annotations; terms re-attach their own on
+        first use.
+        """
+        device = resolve_device(device)
+        if device == self.device:
+            return self
+        return PackedBlockTypes.from_restype_list(
+            self.chem_db, self.restype_set, self.active_block_types, device
+        )
+
     @property
     def n_types(self):
         return len(self.active_block_types)
