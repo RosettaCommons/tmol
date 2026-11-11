@@ -1,6 +1,7 @@
 import copy
 
 import numpy
+import pytest
 import torch
 
 from tmol import beta2016_score_function, pose_stack_from_atom_array
@@ -218,6 +219,7 @@ def test_build_flips_and_maps_atoms(biotite_1ubq, torch_device):
             context,
             no_optH=no_optH,
             atom37_coords=None,
+            backprop_compatible_rebuild=True,
             return_atom_mapping=True,
             packer_seed=0,
         )
@@ -274,6 +276,7 @@ def test_build_optimizes_hydrogens_differentiably(biotite_1ubq, torch_device):
         context,
         no_optH=False,
         atom37_coords=None,
+        backprop_compatible_rebuild=True,
         return_atom_mapping=True,
         packer_seed=0,
     )
@@ -362,3 +365,23 @@ def test_loader_optimizes_input_hydrogens_as_master(biotite_1ubq, torch_device):
         return sfxn.render_whole_pose_scoring_module(p)(p.coords).sum()
 
     assert energy(loaded) < energy(given)
+
+
+def test_file_load_raises_on_missing_heavy_atoms_only_for_backprop(
+    biotite_1ubq, torch_device
+):
+    # Gln2's CD and everything past it: only the packer can build them
+    structure = biotite_1ubq[
+        ~(
+            (biotite_1ubq.res_id == 2)
+            & numpy.isin(biotite_1ubq.atom_name, ["CD", "OE1", "NE2"])
+        )
+    ]
+    # file loads pack by default, as on master
+    pose = pose_stack_from_atom_array(structure, torch_device, packer_seed=0)
+    assert torch.isfinite(pose.coords[pose.real_atoms]).all()
+
+    with pytest.raises(ValueError, match=r"(?s)missing heavy atoms.*bt=GLN"):
+        pose_stack_from_atom_array(
+            structure, torch_device, backprop_compatible_rebuild=True
+        )

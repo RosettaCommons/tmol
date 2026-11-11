@@ -139,8 +139,9 @@ diffusion or search,
 reuse both `pose_builder` and the scoring module for every compatible topology
 and batch shape. By default (`opt_h=True`) the builder keeps finite supplied
 hydrogens where they are, builds missing atoms, and optimizes the placement of
-the hydrogens it built; ASN/GLN/HIS are never flipped. Pass `opt_h=False` to
-leave built hydrogens at their ideal positions. For one-off conversion,
+the hydrogens it built; ASN/GLN/HIS are never flipped. `opt_h=False` keeps
+input hydrogens at their input positions and builds missing ones from ideal
+geometry. For one-off conversion,
 `pose_stack_from_atom37_and_topology(atom37_coords, atom_array, context)` remains
 available.
 

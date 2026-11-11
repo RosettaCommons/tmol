@@ -213,6 +213,7 @@ def pose_stack_from_atom37(
     covalent_bonds: Optional[torch.Tensor] = None,
     res_not_connected: Optional[torch.Tensor] = None,
     no_optH: bool = False,
+    backprop_compatible_rebuild: bool = True,
     **kwargs: object,
 ) -> PoseStack:
     """Build a differentiable PoseStack from Atom37 tensors alone.
@@ -235,10 +236,16 @@ def pose_stack_from_atom37(
       cyclic_bonds: Explicit head-to-tail closures.
       covalent_bonds: Explicit ``(pose, res1, atom1, res2, atom2)`` links.
       res_not_connected: Suppressed polymer connections.
-      no_optH: Leave missing hydrogens at their ideal positions. By default
-        they are optimized (no ASN/GLN/HIS flips); input hydrogens keep their
+      no_optH: True keeps input hydrogens at their input positions and builds
+        missing ones from ideal geometry. By default the missing ones are then
+        optimized (no ASN/GLN/HIS flips); input hydrogens keep their
         coordinates either way. Pass ``optH_minimize=True`` to also minimize
         the optimized proton chis.
+      backprop_compatible_rebuild: Optimize hydrogens differentiably, and
+        raise ``ValueError`` if a residue is missing heavy atoms, which only
+        the packer can build, without gradients (default). False packs
+        instead, without gradients for the atoms it places, and builds
+        missing heavy atoms.
 
     Returns:
       A pose whose coordinates carry gradients back to ``atom37_coords``.
@@ -270,6 +277,7 @@ def pose_stack_from_atom37(
         canonical_form,
         context,
         no_optH=no_optH,
+        backprop_compatible_rebuild=backprop_compatible_rebuild,
         atom37_coords=atom37_coords,
         **kwargs,
     )

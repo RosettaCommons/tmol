@@ -39,6 +39,7 @@ def pose_stack_from_canonical_aa_atom37(
     residue_type: torch.Tensor,
     chain_iid: torch.Tensor,
     no_optH: bool = False,
+    backprop_compatible_rebuild: bool = True,
     **kwargs,
 ) -> PoseStack:
     """Build a PoseStack from atomworks UNIFIED_ATOM37_ENCODING tensors.
@@ -67,9 +68,15 @@ def pose_stack_from_canonical_aa_atom37(
     chain_iid : Tensor[int64], shape [batch, n_res]
         Chain identifiers (integer IDs, not string labels).
     no_optH : bool
-        Leave built hydrogens at their ideal positions when True. By default
-        (False) they are optimized, differentiably and without ASN/GLN/HIS
-        flips. Finite input coordinates are kept either way.
+        True keeps input hydrogens at their input positions and builds missing
+        ones from ideal geometry. By default (False) the missing ones are then
+        optimized, differentiably and without ASN/GLN/HIS flips; finite input
+        coordinates are kept either way.
+    backprop_compatible_rebuild : bool
+        Optimize hydrogens differentiably, and raise ``ValueError`` if a
+        residue is missing heavy atoms, which only the packer can build,
+        without gradients (default). False packs instead, without gradients
+        for the atoms it places, and builds missing heavy atoms.
     **kwargs
         Additional arguments passed to
         ``_pose_stack_from_canonical_form_and_context``, such as
@@ -97,6 +104,7 @@ def pose_stack_from_canonical_aa_atom37(
         cf,
         _build_context_for_atomworks(cf.coords.device),
         no_optH=no_optH,
+        backprop_compatible_rebuild=backprop_compatible_rebuild,
         atom37_coords=coords,
         **kwargs,
     )
@@ -108,6 +116,7 @@ def pose_stack_from_atom37_and_topology(
     biotite_structure: biotite.structure.AtomArray | biotite.structure.AtomArrayStack,
     context: PoseBuildContext,
     no_optH: bool = False,
+    backprop_compatible_rebuild: bool = True,
     **kwargs,
 ) -> PoseStack | tuple[PoseStack, dict] | tuple[PoseStack, PoseBuildContext]:
     """Build a differentiable PoseStack from atom37 coordinates and a topology.
@@ -155,10 +164,16 @@ def pose_stack_from_atom37_and_topology(
     context : PoseBuildContext
         Structure-independent context from :func:`build_context_from_atom_array`.
     no_optH : bool
-        Leave newly built hydrogens at their ideal positions when True. By
-        default (False) they are optimized, without ASN/GLN/HIS flips; finite
-        input hydrogens keep their coordinates either way. Pass
-        ``optH_minimize=True`` to also minimize the optimized proton chis.
+        True keeps input hydrogens at their input positions and builds missing
+        ones from ideal geometry. By default (False) the missing ones are then
+        optimized, without ASN/GLN/HIS flips; finite input hydrogens keep
+        their coordinates either way. Pass ``optH_minimize=True`` to also
+        minimize the optimized proton chis.
+    backprop_compatible_rebuild : bool
+        Optimize hydrogens differentiably, and raise ``ValueError`` if a
+        residue is missing heavy atoms, which only the packer can build,
+        without gradients (default). False packs instead, without gradients
+        for the atoms it places, and builds missing heavy atoms.
     **kwargs
         Additional arguments forwarded to ``pose_stack_from_atom_array``.
 
@@ -176,6 +191,7 @@ def pose_stack_from_atom37_and_topology(
         missing_density_distance_threshold=0.0,
         atom37_coords=atom37_coords,
         no_optH=no_optH,
+        backprop_compatible_rebuild=backprop_compatible_rebuild,
         **kwargs,
     )
 
