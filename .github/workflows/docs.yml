@@ -40,6 +40,8 @@ jobs:
           python-version: "3.12"
 
       - name: install compiler cache
+        # The build script falls back to direct compilation without ccache.
+        continue-on-error: true
         run: |
           sudo apt-get update
           sudo apt-get install --yes ccache
