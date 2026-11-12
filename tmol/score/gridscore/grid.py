@@ -1,4 +1,4 @@
-"""CPU construction and serialization of rigid-receptor energy grids.
+"""Construction and serialization of rigid-receptor energy grids.
 
 The serialized representation is a ``torch.save`` dictionary containing only
 tensors and primitive Python values.  It is intended to be loaded by later GPU
@@ -344,15 +344,17 @@ def compute_grid_geometry(
     voxel_spacing: float = DEFAULT_VOXEL_SPACING,
     bbox_padding: float = DEFAULT_BBOX_PADDING,
 ) -> GridGeometry:
-    """Compute the exact M2 ligand-centered cubic grid geometry."""
-    if ligand_coords.device.type != "cpu":
-        raise ValueError("grid geometry must be computed on CPU")
+    """Compute the exact M2 ligand-centered cubic grid geometry.
+
+    The geometry is a handful of scalars, so it is derived on the CPU whatever
+    device the ligand coordinates are on.
+    """
     if ligand_coords.shape[0] == 0:
         raise ValueError("at least one ligand atom is required")
     if not ligand_coords.dtype.is_floating_point:
         raise TypeError("ligand_coords must have a floating-point dtype")
 
-    ligand_coords = ligand_coords.detach().to(dtype=torch.float64)
+    ligand_coords = ligand_coords.detach().to(device="cpu", dtype=torch.float64)
     ligand_com = torch.mean(ligand_coords, dim=0)
     measured_radius = torch.linalg.vector_norm(ligand_coords - ligand_com, dim=1).max()
     max_radius = max(float(measured_radius), 1.5 * bbox_padding)
@@ -389,7 +391,8 @@ def probe_atom_types_from_name3(
 def _setup_scoring_parameters(
     pose_stack: PoseStack, param_db: ParameterDatabase
 ) -> tuple[LJLKEnergyTerm, ElecEnergyTerm]:
-    device = torch.device("cpu")
+    # The terms annotate the pose's PackedBlockTypes, so they share its device.
+    device = pose_stack.device
     ljlk_term = LJLKEnergyTerm(param_db, device)
     elec_term = ElecEnergyTerm(param_db, device)
     for block_type in pose_stack.packed_block_types.active_block_types:
@@ -457,42 +460,62 @@ def _extract_ligand_and_receptor_atoms(
     excluded_receptor_blocks: tuple[int, ...] = (),
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
     pbt = pose_stack.packed_block_types
-    ligand_coords = []
-    receptor_coords = []
-    receptor_atom_types = []
-    receptor_charges = []
-    receptor_waters = []
+    device = pose_stack.device
+    block_types = pose_stack.block_type_ind64[0]
+    block_is_real = block_types >= 0
+    safe_types = block_types.clamp(min=0)
 
-    for block_index in range(pose_stack.max_n_blocks):
-        block_type_index = int(pose_stack.block_type_ind[0, block_index])
-        if block_type_index < 0:
-            continue
-        block_type = pbt.active_block_types[block_type_index]
-        n_atoms = int(pbt.n_atoms[block_type_index])
-        offset = int(pose_stack.block_coord_offset64[0, block_index])
-        coords = pose_stack.coords[0, offset : offset + n_atoms]
-        if block_type.name3 == ligand_name3:
-            ligand_coords.append(coords)
-        elif block_index in excluded_receptor_blocks:
-            continue
-        else:
-            receptor_coords.append(coords)
-            receptor_atom_types.append(pbt.atom_types[block_type_index, :n_atoms])
-            receptor_charges.append(pbt.elec_partial_charge[block_type_index, :n_atoms])
-            if reference_waters is not None:
-                receptor_waters.append(reference_waters[offset : offset + n_atoms])
+    # Atom selection in block-major, then atom order: the order the per-block
+    # loop this replaces produced, which the grids' fp64 equivalence depends on.
+    n_atoms = torch.zeros_like(block_types)
+    n_atoms[block_is_real] = pbt.n_atoms[safe_types[block_is_real]].to(torch.int64)
+    atom_index = torch.arange(pbt.max_n_atoms, dtype=torch.int64, device=device)
+    atom_is_real = atom_index[None, :] < n_atoms[:, None]
 
-    if not ligand_coords:
+    is_ligand_type = torch.tensor(
+        [bt.name3 == ligand_name3 for bt in pbt.active_block_types],
+        dtype=torch.bool,
+        device=device,
+    )
+    block_is_ligand = block_is_real & is_ligand_type[safe_types]
+    block_is_excluded = torch.zeros_like(block_is_real)
+    if excluded_receptor_blocks:
+        block_is_excluded[list(excluded_receptor_blocks)] = True
+    # A ligand block stays ligand even when also excluded.
+    block_is_receptor = block_is_real & ~block_is_ligand & ~block_is_excluded
+
+    offsets = pose_stack.block_coord_offset64[0]
+    coords = pose_stack.coords[0]
+
+    ligand_blocks, ligand_atoms = (atom_is_real & block_is_ligand[:, None]).nonzero(
+        as_tuple=True
+    )
+    if ligand_blocks.numel() == 0:
         raise ValueError(f"no ligand block with name3={ligand_name3!r} in pose")
-    if not receptor_coords:
+    receptor_blocks, receptor_atoms = (
+        atom_is_real & block_is_receptor[:, None]
+    ).nonzero(as_tuple=True)
+    if receptor_blocks.numel() == 0:
         raise ValueError("pose contains no receptor atoms")
+
+    receptor_types = safe_types[receptor_blocks]
+    receptor_slots = offsets[receptor_blocks] + receptor_atoms
     return (
-        torch.cat(ligand_coords).detach().to(dtype=torch.float64).contiguous(),
-        torch.cat(receptor_coords).detach().to(dtype=torch.float64).contiguous(),
-        torch.cat(receptor_atom_types).to(dtype=torch.int64).contiguous(),
-        torch.cat(receptor_charges).detach().to(dtype=torch.float64).contiguous(),
+        coords[offsets[ligand_blocks] + ligand_atoms]
+        .detach()
+        .to(dtype=torch.float64)
+        .contiguous(),
+        coords[receptor_slots].detach().to(dtype=torch.float64).contiguous(),
+        pbt.atom_types[receptor_types, receptor_atoms].to(torch.int64).contiguous(),
+        pbt.elec_partial_charge[receptor_types, receptor_atoms]
+        .detach()
+        .to(dtype=torch.float64)
+        .contiguous(),
         (
-            torch.cat(receptor_waters).detach().to(dtype=torch.float64).contiguous()
+            reference_waters[receptor_slots]
+            .detach()
+            .to(dtype=torch.float64)
+            .contiguous()
             if reference_waters is not None
             else None
         ),
@@ -536,6 +559,9 @@ def compute_receptor_grids(
     if lk_ball_weights is None:
         lk_ball_weights = torch.zeros(4, dtype=torch.float64)
     on = lambda t: t.contiguous().to(device)  # noqa: E731
+    # The op dereferences these on the host to fill by-value parameter structs,
+    # so they must stay on the CPU whatever device the grids are built on.
+    host = lambda t: t.cpu().contiguous()  # noqa: E731
     grids = build_grid_op(
         on(receptor_coords),
         on(receptor_types),
@@ -543,9 +569,9 @@ def compute_receptor_grids(
         on(receptor_waters),
         on(probe_types),
         on(ljlk_type_params),
-        ljlk_global_params.contiguous(),
-        elec_global_params.contiguous(),
-        lk_ball_weights.contiguous(),
+        host(ljlk_global_params),
+        host(elec_global_params),
+        host(lk_ball_weights),
         on(cell_offsets),
         on(cell_indices),
         on(cell_origin),
@@ -582,8 +608,6 @@ def build_grid(
     """
     if pose_stack.n_poses != 1:
         raise ValueError("M2b grid construction supports exactly one pose")
-    if pose_stack.device.type != "cpu" or pose_stack.coords.device.type != "cpu":
-        raise ValueError("M2b grid construction is CPU-only")
     if len(set(excluded_receptor_blocks)) != len(excluded_receptor_blocks):
         raise ValueError("excluded_receptor_blocks must not contain duplicates")
     if any(
@@ -608,7 +632,7 @@ def build_grid(
 
     receptor_waters = None
     if build_lk_ball:
-        lk_ball_term = LKBallEnergyTerm(param_db, torch.device("cpu"))
+        lk_ball_term = LKBallEnergyTerm(param_db, pose_stack.device)
         for block_type in pose_stack.packed_block_types.active_block_types:
             lk_ball_term.setup_block_type(block_type)
         lk_ball_term.setup_packed_block_types(pose_stack.packed_block_types)

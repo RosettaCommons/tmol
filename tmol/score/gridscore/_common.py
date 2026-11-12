@@ -14,7 +14,10 @@ def cell_grid(
     """Return the cell-grid origin and dimensions covering ``points``."""
 
     if points.shape[0] == 0:
-        return torch.zeros(3, dtype=torch.float64), torch.ones(3, dtype=torch.int64)
+        return (
+            torch.zeros(3, dtype=torch.float64, device=points.device),
+            torch.ones(3, dtype=torch.int64, device=points.device),
+        )
     origin = torch.floor(points.min(dim=0).values / cell_width) * cell_width
     cells = torch.floor((points - origin) / cell_width).to(torch.int64)
     return origin, cells.max(dim=0).values + 1
@@ -37,8 +40,8 @@ def build_cell_list(
     n_cells = int(torch.prod(dims))
     if anchors.shape[0] == 0:
         return (
-            torch.zeros(n_cells + 1, dtype=torch.int64),
-            torch.empty(0, dtype=torch.int64),
+            torch.zeros(n_cells + 1, dtype=torch.int64, device=anchors.device),
+            torch.empty(0, dtype=torch.int64, device=anchors.device),
         )
     cells = torch.floor((anchors - origin) / cell_width).to(torch.int64)
     if bool(torch.any(cells < 0) or torch.any(cells >= dims)):
@@ -46,7 +49,9 @@ def build_cell_list(
     linear = (cells[:, 0] * dims[1] + cells[:, 1]) * dims[2] + cells[:, 2]
     order = torch.argsort(linear, stable=True)
     counts = torch.bincount(linear, minlength=n_cells)
-    offsets = torch.cat((torch.zeros(1, dtype=torch.int64), counts.cumsum(0)))
+    offsets = torch.cat(
+        (torch.zeros(1, dtype=torch.int64, device=counts.device), counts.cumsum(0))
+    )
     if source_indices is not None:
         order = source_indices[order]
     return offsets.contiguous(), order.to(torch.int64).contiguous()

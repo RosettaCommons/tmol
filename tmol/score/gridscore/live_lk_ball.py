@@ -215,17 +215,22 @@ def _ligand_water_topology(
                 dtype=torch.float64,
             )
             rings[polar_site, slot] = int(hybridization == 3)
-    return polar, atom_to_polar, kinds, atoms, params, rings
+    # The slot assignment above is scalar bookkeeping over numpy tile tables,
+    # so it stays on the host; only its result reaches the pose's device.
+    device = pose_stack.device
+    return tuple(
+        t.to(device) for t in (polar, atom_to_polar, kinds, atoms, params, rings)
+    )
 
 
 def _polar_atom_mask(pbt, block_types: torch.Tensor) -> torch.Tensor:
     """``[block type, atom]`` mask of hbond donor heavy atoms and acceptors."""
-    mask = torch.zeros(pbt.atom_types.shape, dtype=torch.bool)
+    mask = torch.zeros(pbt.atom_types.shape, dtype=torch.bool, device="cpu")
     for index in block_types.unique().tolist():
         hb = pbt.active_block_types[index].hbbt_params
         mask[index, torch.as_tensor(hb.don_hvy_inds, dtype=torch.int64)] = True
         mask[index, torch.as_tensor(hb.acc_inds, dtype=torch.int64)] = True
-    return mask
+    return mask.to(block_types.device)
 
 
 def build_live_lk_ball_data(
@@ -242,17 +247,19 @@ def build_live_lk_ball_data(
     default; required with ``sidechain_blocks``).
     """
 
-    if pose_stack.n_poses != 1 or pose_stack.device.type != "cpu":
-        raise ValueError("live LK-ball construction requires one CPU pose")
+    if pose_stack.n_poses != 1:
+        raise ValueError("live LK-ball construction requires one pose")
     if sidechain_blocks and movable_atoms is None:
         raise ValueError("sidechain_blocks require the compact movable_atoms")
+    device = pose_stack.device
     moving = movable_atoms_of(pose_stack, ligand_block, sidechain_blocks)
-    is_query = torch.ones(moving.n_atoms, dtype=torch.bool)
+    is_query = torch.ones(moving.n_atoms, dtype=torch.bool, device=device)
     if movable_atoms is not None:
-        is_query = torch.zeros(moving.n_atoms, dtype=torch.bool)
-        is_query[torch.as_tensor(list(movable_atoms), dtype=torch.int64)] = True
+        is_query = torch.zeros(moving.n_atoms, dtype=torch.bool, device=device)
+        chosen = torch.as_tensor(list(movable_atoms), dtype=torch.int64, device=device)
+        is_query[chosen] = True
 
-    term = LKBallEnergyTerm(param_db, torch.device("cpu"))
+    term = LKBallEnergyTerm(param_db, device)
     for block_type in pose_stack.packed_block_types.active_block_types:
         term.setup_block_type(block_type)
     term.setup_packed_block_types(pose_stack.packed_block_types)
@@ -284,8 +291,12 @@ def build_live_lk_ball_data(
         rings.append(block_rings)
     ligand_atom_types = torch.cat(atom_types)
     ligand_polar_atoms = torch.cat(polar).contiguous()
-    ligand_atom_to_polar = torch.full((moving.n_atoms,), -1, dtype=torch.int64)
-    ligand_atom_to_polar[ligand_polar_atoms] = torch.arange(ligand_polar_atoms.shape[0])
+    ligand_atom_to_polar = torch.full(
+        (moving.n_atoms,), -1, dtype=torch.int64, device=device
+    )
+    ligand_atom_to_polar[ligand_polar_atoms] = torch.arange(
+        ligand_polar_atoms.shape[0], device=device
+    )
     ligand_heavy_atoms = torch.nonzero(is_query & ~torch.cat(hydrogens)).squeeze(1)
 
     # Fixed receptor heavy atoms, with their reference waters and polar flag.

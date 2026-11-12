@@ -670,8 +670,6 @@ class GridBackend(ScoringBackend):
 
         if reference_pose_stack.n_poses != 1:
             raise ValueError("grid construction requires one reference pose")
-        if reference_pose_stack.device.type != "cpu":
-            raise ValueError("grid construction requires a CPU reference pose")
         ligand_block = resolve_ligand_block(reference_pose_stack, ligand)
         pbt = reference_pose_stack.packed_block_types
         block_type_index = int(reference_pose_stack.block_type_ind64[0, ligand_block])

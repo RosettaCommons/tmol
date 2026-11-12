@@ -63,11 +63,12 @@ def _hbond_sites(pose_stack: PoseStack, derived: torch.Tensor):
     blocks = torch.nonzero(block_types >= 0).squeeze(1)
     types = block_types[blocks]
     offsets = pose_stack.block_coord_offset64[0, blocks]
+    device = block_types.device
 
     def sites(n_per_tile, atom_inds, site_types):
         n_tiles, width = atom_inds.shape[1:]
-        tiles = torch.arange(n_tiles) * HBondEnergyTerm.tile_size
-        chosen = torch.arange(width) < n_per_tile[types].unsqueeze(-1)
+        tiles = torch.arange(n_tiles, device=device) * HBondEnergyTerm.tile_size
+        chosen = torch.arange(width, device=device) < n_per_tile[types].unsqueeze(-1)
         atoms = offsets[:, None, None] + tiles[None, :, None] + atom_inds[types]
         return atoms[chosen].to(torch.int64), site_types[types][chosen].to(torch.int64)
 
@@ -101,18 +102,20 @@ def build_live_hbond_data(
     default; required with ``sidechain_blocks``).
     """
 
-    if pose_stack.n_poses != 1 or pose_stack.device.type != "cpu":
-        raise ValueError("live hbond construction requires one CPU pose")
+    if pose_stack.n_poses != 1:
+        raise ValueError("live hbond construction requires one pose")
     if sidechain_blocks and movable_atoms is None:
         raise ValueError("sidechain_blocks require the compact movable_atoms")
+    device = pose_stack.device
     moving = movable_atoms_of(pose_stack, ligand_block, sidechain_blocks)
     atom_map = moving.atom_map
-    is_query = torch.ones(moving.n_atoms, dtype=torch.bool)
+    is_query = torch.ones(moving.n_atoms, dtype=torch.bool, device=device)
     if movable_atoms is not None:
-        is_query = torch.zeros(moving.n_atoms, dtype=torch.bool)
-        is_query[torch.as_tensor(list(movable_atoms), dtype=torch.int64)] = True
+        is_query = torch.zeros(moving.n_atoms, dtype=torch.bool, device=device)
+        chosen = torch.as_tensor(list(movable_atoms), dtype=torch.int64, device=device)
+        is_query[chosen] = True
 
-    term = HBondEnergyTerm(param_db, torch.device("cpu"))
+    term = HBondEnergyTerm(param_db, device)
     for block_type in pose_stack.packed_block_types.active_block_types:
         term.setup_block_type(block_type)
     term.setup_packed_block_types(pose_stack.packed_block_types)

@@ -63,7 +63,7 @@ def resolve_ligand_block(pose_stack: PoseStack, ligand) -> int:
         present = 0 <= ligand < block_types.numel() and block_types[ligand] >= 0
         blocks = [ligand] if present else []
     else:
-        mask = torch.as_tensor(ligand, dtype=torch.bool)
+        mask = torch.as_tensor(ligand, dtype=torch.bool, device=pose_stack.device)
         if mask.shape != pose_stack.coords.shape[1:2]:
             raise ValueError(
                 f"a ligand mask needs one entry per atom "
@@ -278,14 +278,19 @@ def movable_atoms(
         pose_stack, ligand_block, sidechain_blocks
     )
     compact = movable_pose_stack(pose_stack, ligand_block, sidechain_blocks)
-    atom_map = torch.full((pose_stack.coords.shape[1],), -1, dtype=torch.int64)
+    device = pose_stack.device
+    atom_map = torch.full(
+        (pose_stack.coords.shape[1],), -1, dtype=torch.int64, device=device
+    )
     n_block_atoms = pose_stack.packed_block_types.n_atoms.to(torch.int64)
     offsets = []
     for compact_block, block in enumerate(source_blocks):
         offset = int(compact.block_coord_offset64[0, compact_block])
         n_atoms = int(n_block_atoms[pose_stack.block_type_ind64[0, block]])
         start = int(pose_stack.block_coord_offset64[0, block])
-        atom_map[start : start + n_atoms] = torch.arange(n_atoms) + offset
+        atom_map[start : start + n_atoms] = (
+            torch.arange(n_atoms, device=device) + offset
+        )
         offsets.append(offset)
     return MovableAtoms(
         source_blocks, tuple(offsets), atom_map, compact.max_n_pose_atoms
@@ -300,6 +305,8 @@ def pose_atom_table(pose_stack: PoseStack) -> tuple[torch.Tensor, ...]:
     counts = pose_stack.packed_block_types.n_atoms.to(torch.int64)[block_types[blocks]]
     block = blocks.repeat_interleave(counts)
     first = torch.cumsum(counts, 0) - counts
-    local = torch.arange(int(counts.sum())) - first.repeat_interleave(counts)
+    local = torch.arange(
+        int(counts.sum()), device=counts.device
+    ) - first.repeat_interleave(counts)
     atom = pose_stack.block_coord_offset64[0, block] + local
     return atom, block, block_types[block], local

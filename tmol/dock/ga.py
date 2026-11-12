@@ -1175,6 +1175,29 @@ def _initial_genes_for(
     )
 
 
+def _warn_if_search_device_is_slower(
+    pose_stack: PoseStack, backend: ScoringBackend
+) -> None:
+    """Log when the grids sit on an accelerator the search will not use.
+
+    The GA runs on the pose's device, so a CPU pose searches on the CPU however
+    the backend's grids were built.
+    """
+    grids = getattr(backend, "grids", None)
+    if grids is None or pose_stack.device.type != "cpu":
+        return
+    grid_device = grids.fa_atr.device
+    if grid_device.type == "cpu":
+        return
+    logger.warning(
+        "grids are on %s but pose_stack is on cpu, so the genetic algorithm "
+        "will run on the cpu; pass pose_stack.to('%s') to search on %s",
+        grid_device,
+        grid_device.type,
+        grid_device,
+    )
+
+
 def run_docking(
     pose_stack: PoseStack,
     backend: ScoringBackend,
@@ -1217,6 +1240,7 @@ def run_docking(
 
     if pose_stack.n_poses != 1:
         raise ValueError("pose_stack must contain one reference pose")
+    _warn_if_search_device_is_slower(pose_stack, backend)
     if initialization == "aligner" and not isinstance(backend, GridBackend):
         raise ValueError("aligner initialization requires a GridBackend")
     reference = pose_stack

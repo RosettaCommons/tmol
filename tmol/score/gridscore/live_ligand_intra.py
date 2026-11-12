@@ -245,8 +245,6 @@ def build_live_ligand_intra_data(
 
     if reference_pose_stack.n_poses != 1:
         raise ValueError("live ligand-intra construction requires one reference pose")
-    if reference_pose_stack.device.type != "cpu":
-        raise ValueError("live ligand-intra construction requires a CPU reference pose")
 
     ligand_pose_stack = movable_pose_stack(
         reference_pose_stack, ligand_block, sidechain_blocks
@@ -257,7 +255,9 @@ def build_live_ligand_intra_data(
             reference_pose_stack, ligand_block, sidechain_blocks
         )
     ligand_pose_stack = _ligand_pose_to(
-        ligand_pose_stack, torch.device("cpu"), reference_pose_stack.coords.dtype
+        ligand_pose_stack,
+        reference_pose_stack.device,
+        reference_pose_stack.coords.dtype,
     )
     include_cart_bonded = any(
         any(ligand_pose_stack.block_type(0, block).bond_to_ringness.values())
@@ -265,7 +265,7 @@ def build_live_ligand_intra_data(
     )
     score_function = _intra_score_function(
         param_db,
-        torch.device("cpu"),
+        reference_pose_stack.device,
         weight_profile,
         include_cart_bonded,
         whole_movable=ligand_pose_stack.max_n_blocks > 1,
