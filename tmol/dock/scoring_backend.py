@@ -529,6 +529,7 @@ class GridBackend(ScoringBackend):
         live_ligand_intra: Optional[LiveLigandIntraData] = None,
         live_lk_ball: Optional[LiveLKBallData] = None,
         lk_ball_grid: bool = False,
+        score_function: Optional[ScoreFunction] = None,
         sidechain_blocks: tuple[int, ...] = (),
         context_blocks: tuple[int, ...] = (),
         grid_atom_indices: Optional[torch.Tensor] = None,
@@ -545,6 +546,7 @@ class GridBackend(ScoringBackend):
         self.live_ligand_intra = live_ligand_intra
         self.live_lk_ball = live_lk_ball
         self.lk_ball_grid = lk_ball_grid
+        self.score_function = score_function
         self.sidechain_blocks = tuple(sidechain_blocks)
         self.context_blocks = tuple(context_blocks)
         self.grid_atom_indices = grid_atom_indices
@@ -594,6 +596,7 @@ class GridBackend(ScoringBackend):
         voxel_spacing: float = 0.25,
         bbox_padding: float = 4.0,
         lk_ball_grid: bool = True,
+        score_function: Optional[ScoreFunction] = None,
     ) -> GridSet:
         """Receptor grids of the box around ``ligand``, to share across ligands.
 
@@ -621,6 +624,7 @@ class GridBackend(ScoringBackend):
             voxel_spacing=voxel_spacing,
             bbox_padding=bbox_padding,
             build_lk_ball=lk_ball_grid,
+            score_function=score_function,
             excluded_receptor_blocks=flexible
             + sidechain_context_blocks(pose_stack, block, flexible),
             device=device,
@@ -643,6 +647,7 @@ class GridBackend(ScoringBackend):
         include_ligand_intra: bool = True,
         cuda_graph: bool = True,
         ligand_intra_weight_profile: str = "search",
+        score_function: Optional[ScoreFunction] = None,
     ) -> "GridBackend":
         """Build the receptor grid and live terms for one ligand of a complex.
 
@@ -738,6 +743,7 @@ class GridBackend(ScoringBackend):
                 voxel_spacing=voxel_spacing,
                 bbox_padding=bbox_padding,
                 lk_ball_grid=lk_ball_grid,
+                score_function=score_function,
             )
         else:
             # Reused grids may have been built with a different palette.
@@ -787,6 +793,7 @@ class GridBackend(ScoringBackend):
             live_ligand_intra=live_ligand_intra,
             live_lk_ball=live_lk_ball,
             lk_ball_grid=lk_ball_grid,
+            score_function=score_function,
             sidechain_blocks=sidechain_blocks,
             context_blocks=context_blocks,
             grid_atom_indices=grid_atom_indices,
@@ -804,8 +811,8 @@ class GridBackend(ScoringBackend):
                 self.ligand_charges,
                 device=device,
                 dtype=dtype,
-                # Only the term weights are read: the memoized default has them.
-                score_function=beta2016_score_function(torch.device(device)),
+                score_function=self.score_function
+                or beta2016_score_function(torch.device(device)),
                 live_hbond=self.live_hbond,
                 live_lk_ball=self.live_lk_ball,
                 live_ligand_intra=self.live_ligand_intra,

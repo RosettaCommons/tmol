@@ -165,6 +165,17 @@ class GridScorer:
         self._hbond_weight = weights((ScoreType.hbond,))[0]
         self._lk_ball_weights = weights(LK_BALL_SCORE_TYPES)
 
+        # Gridded LK-ball folds these weights into the grid, so they cannot be
+        # reweighted at scoring time.
+        if lk_ball_grid and self.grids.lk_ball_weights is not None:
+            if not torch.allclose(
+                self.grids.lk_ball_weights.to(device=device, dtype=dtype),
+                self._lk_ball_weights,
+            ):
+                raise ValueError(
+                    "lk_ball weights must match those used in grid construction"
+                )
+
         if lk_ball_grid:
             polar = self.live_lk_ball.ligand_polar_atoms
             if self._grid_atoms is None:

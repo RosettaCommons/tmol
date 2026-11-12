@@ -155,6 +155,9 @@ class GridSet:
     lk_bridge: torch.Tensor | None = None
     lk_ball_enabled: bool = False
     lk_bridge_enabled: bool = False
+    # The LK-ball weights folded into the gridded aggregate, in
+    # LK_BALL_SCORE_TYPES order; scoring must use these same weights.
+    lk_ball_weights: torch.Tensor | None = None
     fa_atr_coeffs: torch.Tensor | None = None
     fa_rep_coeffs: torch.Tensor | None = None
     fa_sol_coeffs: torch.Tensor | None = None
@@ -226,6 +229,7 @@ class GridSet:
             "lk_bridge": self.lk_bridge,
             "lk_ball_enabled": self.lk_ball_enabled,
             "lk_bridge_enabled": self.lk_bridge_enabled,
+            "lk_ball_weights": self.lk_ball_weights,
             "lk_ball_coeffs": self.lk_ball_coeffs,
             "lk_ball_water_coeffs": self.lk_ball_water_coeffs,
             "lk_bridge_coeffs": self.lk_bridge_coeffs,
@@ -265,6 +269,7 @@ class GridSet:
             lk_bridge=state["lk_bridge"],
             lk_ball_enabled=bool(state.get("lk_ball_enabled", False)),
             lk_bridge_enabled=bool(state.get("lk_bridge_enabled", False)),
+            lk_ball_weights=state.get("lk_ball_weights"),
             lk_ball_coeffs=state.get("lk_ball_coeffs"),
             lk_ball_water_coeffs=state.get("lk_ball_water_coeffs"),
             lk_bridge_coeffs=state.get("lk_bridge_coeffs"),
@@ -317,6 +322,7 @@ class GridSet:
             lk_bridge=move(self.lk_bridge),
             lk_ball_enabled=self.lk_ball_enabled,
             lk_bridge_enabled=self.lk_bridge_enabled,
+            lk_ball_weights=move(self.lk_ball_weights),
             lk_ball_coeffs=move(self.lk_ball_coeffs),
             lk_ball_water_coeffs=move(self.lk_ball_water_coeffs),
             lk_bridge_coeffs=move(self.lk_bridge_coeffs),
@@ -709,4 +715,5 @@ def build_grid(
         lk_bridge=lk_bridge,
         lk_ball_enabled=lk_ball_enabled,
         lk_bridge_enabled=lk_bridge_enabled,
+        lk_ball_weights=on(lk_ball_weights) if build_lk_ball else None,
     )
