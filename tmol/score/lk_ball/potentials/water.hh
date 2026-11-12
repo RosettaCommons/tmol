@@ -85,6 +85,41 @@ struct build_don_water {
   }
 };
 
+// Acceptor water from acceptor A and its bases B and B0. A ring acceptor
+// builds from the B-B0 midpoint, so B's share of the gradient splits evenly
+// between B and B0.
+template <typename Real>
+struct build_acc_water {
+  typedef Vec<Real, 3> Real3;
+  typedef tmol::portable::Mat<Real, 3, 3> RealMat;
+
+  struct dV_t {
+    RealMat dA;
+    RealMat dB;
+    RealMat dB0;
+  };
+
+  static def
+  V(Real3 A, Real3 B, Real3 B0, Real dist, Real angle, Real torsion, bool ring)
+      -> Real3 {
+    if (ring) B = (B + B0) / Real(2);
+    return common::build_coordinate<Real>::V(A, B, B0, dist, angle, torsion);
+  }
+
+  static def
+  dV(Real3 A, Real3 B, Real3 B0, Real dist, Real angle, Real torsion, bool ring)
+      -> dV_t {
+    if (ring) B = (B + B0) / Real(2);
+    auto d = common::build_coordinate<Real>::dV(A, B, B0, dist, angle, torsion);
+    dV_t r{d.dp, d.dgp, d.dggp};
+    if (ring) {
+      r.dB *= Real(0.5);
+      r.dB0 += r.dB;
+    }
+    return r;
+  }
+};
+
 #undef def
 
 template <typename Real>
@@ -541,13 +576,14 @@ void TMOL_DEVICE_FUNC build_water_for_acc(
   Real3 B0xyz =
       load_coord<TILE_SIZE>(acc_bases.B0, res_dat, context_dat, tile_start);
 
-  if (hyb == hbond::AcceptorHybridization::ring) {
-    // take the bisector of the line between B and B0 to build from
-    Bxyz = (Bxyz + B0xyz) / 2;
-  }
-
-  auto Wxyz = common::build_coordinate<Real>::V(
-      Axyz, Bxyz, B0xyz, context_dat.global_params.lkb_water_dist, ang, tor);
+  auto Wxyz = build_acc_water<Real>::V(
+      Axyz,
+      Bxyz,
+      B0xyz,
+      context_dat.global_params.lkb_water_dist,
+      ang,
+      tor,
+      hyb == hbond::AcceptorHybridization::ring);
 
   // Now record the coordinates to global memory:
   // offset the water by the number of polar hydrogens on
@@ -681,13 +717,14 @@ void TMOL_DEVICE_FUNC d_build_water_for_acc(
   Real3 B0xyz =
       load_coord<TILE_SIZE>(acc_bases.B0, res_dat, context_dat, tile_start);
 
-  if (hyb == hbond::AcceptorHybridization::ring) {
-    // take the bisector of the line between B and B0 to build from
-    Bxyz = (Bxyz + B0xyz) / 2;
-  }
-
-  auto dW = common::build_coordinate<Real>::dV(
-      Axyz, Bxyz, B0xyz, context_dat.global_params.lkb_water_dist, ang, tor);
+  auto dW = build_acc_water<Real>::dV(
+      Axyz,
+      Bxyz,
+      B0xyz,
+      context_dat.global_params.lkb_water_dist,
+      ang,
+      tor,
+      hyb == hbond::AcceptorHybridization::ring);
 
   // Now record the coordinates to global memory:
   // offset the water by the number of polar hydrogens on
@@ -709,21 +746,11 @@ void TMOL_DEVICE_FUNC d_build_water_for_acc(
   Real3 dE_dW = dE_dWxyz[A_atom_pose_ind][water_ind + water_offset];
 
   common::accumulate<Dev, Vec<Real, 3>>::add(
-      dE_d_pose_coords[A_atom_pose_ind], dW.dp * dE_dW);
-  if (hyb == hbond::AcceptorHybridization::ring) {
-    // Since the Bxyz coordinate for ring acceptors is the
-    // bisector of the B and B0 atoms, apply half of the
-    // derivative to B and half to B0
-    common::accumulate<Dev, Vec<Real, 3>>::add(
-        dE_d_pose_coords[B_atom_pose_ind], 0.5 * dW.dgp * dE_dW);
-    common::accumulate<Dev, Vec<Real, 3>>::add(
-        dE_d_pose_coords[B0_atom_pose_ind], 0.5 * dW.dgp * dE_dW);
-  } else {
-    common::accumulate<Dev, Vec<Real, 3>>::add(
-        dE_d_pose_coords[B_atom_pose_ind], dW.dgp * dE_dW);
-  }
+      dE_d_pose_coords[A_atom_pose_ind], dW.dA * dE_dW);
   common::accumulate<Dev, Vec<Real, 3>>::add(
-      dE_d_pose_coords[B0_atom_pose_ind], dW.dggp * dE_dW);
+      dE_d_pose_coords[B_atom_pose_ind], dW.dB * dE_dW);
+  common::accumulate<Dev, Vec<Real, 3>>::add(
+      dE_d_pose_coords[B0_atom_pose_ind], dW.dB0 * dE_dW);
 }
 
 }  // namespace potentials

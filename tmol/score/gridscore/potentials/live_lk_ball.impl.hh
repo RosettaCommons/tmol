@@ -44,6 +44,7 @@ auto LiveLKBallDispatch<DeviceOps, D, Real, Int>::forward(
     TView<lk_ball::potentials::LKBallGlobalParams<Real>, 1, D> global_params,
     bool use_cell_list)
     -> std::tuple<TPack<Real, 2, D>, TPack<LKBVec<Real, 3>, 3, D>> {
+  using lk_ball::potentials::build_acc_water;
   using lk_ball::potentials::build_don_water;
   using lk_ball::potentials::lk_ball_score;
   using lk_ball::potentials::LKBallTypeParams;
@@ -104,10 +105,14 @@ auto LiveLKBallDispatch<DeviceOps, D, Real, Int>::forward(
         }
         Real3 const xyz2 =
             ligand_coords[pose][ligand_water_atoms[polar_site][water][2]];
-        if (ligand_water_is_ring[polar_site][water])
-          xyz1 = (xyz1 + xyz2) / Real(2);
-        tmol::portable::row_ref(WL, water) = common::build_coordinate<Real>::V(
-            xyz0, xyz1, xyz2, parameters[0], parameters[1], parameters[2]);
+        tmol::portable::row_ref(WL, water) = build_acc_water<Real>::V(
+            xyz0,
+            xyz1,
+            xyz2,
+            parameters[0],
+            parameters[1],
+            parameters[2],
+            ligand_water_is_ring[polar_site][water] != 0);
       }
     }
     auto add_water_gradient = [&] TMOL_DEVICE_FUNC(
@@ -128,18 +133,17 @@ auto LiveLKBallDispatch<DeviceOps, D, Real, Int>::forward(
       }
       Int const atom2 = ligand_water_atoms[polar_site][water][2];
       Real3 const xyz2 = ligand_coords[pose][atom2];
-      bool const ring = ligand_water_is_ring[polar_site][water] != 0;
-      if (ring) xyz1 = (xyz1 + xyz2) / Real(2);
-      auto const dwater = common::build_coordinate<Real>::dV(
-          xyz0, xyz1, xyz2, parameters[0], parameters[1], parameters[2]);
-      add_gradient(channel, atom0, dwater.dp * dE_dW);
-      if (ring) {
-        add_gradient(channel, atom1, Real(0.5) * dwater.dgp * dE_dW);
-        add_gradient(channel, atom2, Real(0.5) * dwater.dgp * dE_dW);
-      } else {
-        add_gradient(channel, atom1, dwater.dgp * dE_dW);
-      }
-      add_gradient(channel, atom2, dwater.dggp * dE_dW);
+      auto const dwater = build_acc_water<Real>::dV(
+          xyz0,
+          xyz1,
+          xyz2,
+          parameters[0],
+          parameters[1],
+          parameters[2],
+          ligand_water_is_ring[polar_site][water] != 0);
+      add_gradient(channel, atom0, dwater.dA * dE_dW);
+      add_gradient(channel, atom1, dwater.dB * dE_dW);
+      add_gradient(channel, atom2, dwater.dB0 * dE_dW);
     };
 
     // Pair contributions are summed locally; the chain rule through the waters
