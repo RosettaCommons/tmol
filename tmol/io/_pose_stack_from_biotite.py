@@ -21,7 +21,6 @@ from tmol.io._atomworks_reader import (
     INFERRED_POLYMER_BOND,
     _renumbered_decreasing_chains,
 )
-from tmol.io._input_geometry import _rebuild_coincident_hydrogens
 from tmol.io.details._select_from_canonical import _validate_ligand_hydrogens
 from tmol.io._input_termini import (
     EXPLICIT_TERMINI,
@@ -150,6 +149,7 @@ class _PreparedAtom37PoseTopology:
             pbt.build_missing_leaf_atom_icoor_ann.geom,
             pbt.build_missing_leaf_atom_icoor_ann.anc_uaids_backup,
             pbt.build_missing_leaf_atom_icoor_ann.geom_backup,
+            coords.new_empty((0, 0)),  # no dihedral overrides
         )
         coords = _apply_h_geometric_completion(
             pbt,
@@ -217,15 +217,26 @@ class PreparedAtom37PoseBuilder:
         self,
         atom37_coords: torch.Tensor,
         *,
-        opt_h: bool = False,
+        opt_h: bool = True,
+        opt_h_minimize: bool = False,
+        backprop_compatible_rebuild: bool = True,
     ) -> PoseStack:
         """Build a differentiable pose batch.
 
         Args:
             atom37_coords: Float32 coordinates shaped
                 ``[n_poses, n_tokens, 37, 3]`` on the context's device.
-            opt_h: Optimize hydrogen positions after construction. Disabled by
-                default so finite input coordinates are preserved.
+            opt_h: Optimize the placement of hydrogens the input lacks
+                (default), without flipping ASN/GLN/HIS. False keeps input
+                hydrogens at their input positions and builds missing ones
+                from ideal geometry.
+            opt_h_minimize: With ``opt_h``, also minimize the optimized proton
+                chis after packing them.
+            backprop_compatible_rebuild: Optimize hydrogens differentiably,
+                and raise ``ValueError`` if a block is missing heavy atoms,
+                which only the packer can build, without gradients (default).
+                False packs instead, without gradients for the atoms it
+                places, and builds missing heavy atoms.
 
         Returns:
             A pose whose coordinates remain differentiable with respect to
@@ -237,6 +248,8 @@ class PreparedAtom37PoseBuilder:
                 self._canonical_form(canonical_coords),
                 self.context,
                 no_optH=not opt_h,
+                optH_minimize=opt_h_minimize,
+                backprop_compatible_rebuild=backprop_compatible_rebuild,
                 atom37_coords=atom37_coords,
                 fragment_mapping=self.fragment_mapping,
             )
@@ -249,6 +262,7 @@ class PreparedAtom37PoseBuilder:
                 cf,
                 self.context,
                 no_optH=True,
+                backprop_compatible_rebuild=backprop_compatible_rebuild,
                 atom37_coords=atom37_coords,
                 fragment_mapping=self.fragment_mapping,
                 return_atom_mapping=True,
@@ -260,7 +274,9 @@ class PreparedAtom37PoseBuilder:
                 return _pose_stack_from_canonical_form_and_context(
                     cf,
                     self.context,
-                    no_optH=False,
+                    no_optH=not opt_h,
+                    optH_minimize=opt_h_minimize,
+                    backprop_compatible_rebuild=backprop_compatible_rebuild,
                     atom37_coords=atom37_coords,
                     fragment_mapping=self.fragment_mapping,
                 )
@@ -278,25 +294,48 @@ class PreparedAtom37PoseBuilder:
                     self._canonical_form(canonical_coords),
                     self.context,
                     no_optH=not opt_h,
+                    optH_minimize=opt_h_minimize,
+                    backprop_compatible_rebuild=backprop_compatible_rebuild,
                     atom37_coords=atom37_coords,
                     fragment_mapping=self.fragment_mapping,
                 )
-            pose_stack = topology.pose_from_canonical(canonical_coords)
+        # a new topology replays too, so every call places hydrogens the same way
+        pose_stack = topology.pose_from_canonical(canonical_coords)
         if len(self._pose_topologies) >= _MAX_PREPARED_BATCH_SIZES:
             self._pose_topologies.pop(next(iter(self._pose_topologies)))
         self._pose_topologies[n_poses] = topology
 
         if opt_h:
-            from tmol.pack._build_missing_sidechains import _build_missing_sidechains
-
-            pose_stack = _build_missing_sidechains(
-                pose_stack,
-                self.context._opth_score_function,
-                self.context._dunbrack_sampler,
-                topology.block_has_missing_atoms,
-                no_optH=False,
-                has_missing_atoms=False,
+            from tmol.io.details._optimize_hydrogens import (
+                _minimize_proton_chis,
+                _optimize_hydrogens,
             )
+
+            # no NHQ flips, so the cached topology and atom layout still hold
+            if backprop_compatible_rebuild:
+                pose_stack, _ = _optimize_hydrogens(
+                    pose_stack,
+                    self.context._opth_score_function,
+                    minimize=opt_h_minimize,
+                )
+            else:
+                from tmol.pack._build_missing_sidechains import (
+                    _build_missing_sidechains,
+                )
+
+                pose_stack = _build_missing_sidechains(
+                    pose_stack,
+                    self.context._opth_score_function,
+                    self.context._dunbrack_sampler,
+                    topology.block_has_missing_atoms,
+                    no_optH=False,
+                    has_missing_atoms=False,
+                    flip_NHQ=False,
+                )
+                if opt_h_minimize:
+                    pose_stack = _minimize_proton_chis(
+                        pose_stack, self.context._opth_score_function
+                    )
             pose_stack = _restore_canonical_input_coords(
                 pose_stack,
                 canonical_coords,
@@ -629,6 +668,8 @@ def pose_stack_from_atom_array(  # noqa: C901
     param_db: ParameterDatabase | None = None,
     missing_density_distance_threshold: float = 2.4,
     no_optH: bool = False,
+    optH_minimize: bool = False,
+    backprop_compatible_rebuild: bool | None = None,
     prepare_ligands: bool = False,
     ligand_ph: float = 7.4,
     strict_atom_types: bool = False,
@@ -676,14 +717,25 @@ def pose_stack_from_atom_array(  # noqa: C901
         no_optH: Residues the input gives no hydrogens take AtomWorks'
             protonation state: database residues then get hydrogens built by
             tmol, other residues those AtomWorks places. When True,
-            preserve finite input hydrogen coordinates, except coincident
-            hydrogen-parent pairs, which are rebuilt with a warning,
-            and build only missing hydrogens and heavy-atom sidechains. When
-            False (default), residues with complete heavy atoms are packed with
-            OptHSampler to optimize hydrogen positions and NHQ flips, while
-            residues with missing heavy atoms are rebuilt with
-            DunbrackChiSampler. Generated ligand hydrogens follow
-            ``ligand_hydrogens`` instead.
+            preserve finite input hydrogen coordinates and build only missing
+            hydrogens and heavy-atom sidechains. When False (default),
+            residues with complete heavy atoms are packed with OptHSampler to
+            optimize hydrogen positions and NHQ flips, while residues with
+            missing heavy atoms are rebuilt with DunbrackChiSampler. With
+            ``atom37_coords``, nothing is flipped and input hydrogens keep
+            their coordinates; only missing ones are optimized. Generated
+            ligand hydrogens follow ``ligand_hydrogens`` instead.
+        optH_minimize: Unless ``no_optH``, minimize the proton chis in torsion
+            space after packing them, rather than leaving them at the sampled
+            values.
+        backprop_compatible_rebuild: Set when gradients through construction
+            will be used. Hydrogen optimization then rebuilds the atoms it
+            moves differentiably from the input atoms, and a residue missing
+            heavy atoms raises ``ValueError``, since only the packer can build
+            them and its coordinates carry no gradient. When False, hydrogen
+            optimization and any missing heavy atoms are packed together
+            without gradients. Defaults to True with ``atom37_coords`` and
+            False otherwise.
         prepare_ligands: If True, detect and prepare non-standard residues
             (see ``build_context_from_atom_array`` for details).
         ligand_ph: pH AtomWorks protonates residues lacking hydrogens at
@@ -834,6 +886,8 @@ def pose_stack_from_atom_array(  # noqa: C901
         cf,
         context,
         no_optH=no_optH,
+        optH_minimize=optH_minimize,
+        backprop_compatible_rebuild=backprop_compatible_rebuild,
         atom37_coords=atom37_coords,
         fragment_mapping=fragment_mapping,
         return_context=return_context,
@@ -849,6 +903,8 @@ def _pose_stack_from_canonical_form_and_context(
     *,
     no_optH: bool,
     atom37_coords: torch.Tensor | None,
+    optH_minimize: bool = False,
+    backprop_compatible_rebuild: bool | None = None,
     fragment_mapping=None,
     return_context: bool = False,
     packer_seed: int | None = None,
@@ -875,21 +931,27 @@ def _pose_stack_from_canonical_form_and_context(
       cf: Canonical-form tensors describing residue identity and coordinates.
       context: Structure-independent chemistry resolved once.
       no_optH: Preserve finite input hydrogens instead of optimizing them.
+        Otherwise optH runs after construction, flipping ASN/GLN/HIS unless
+        ``atom37_coords`` is given, in which case finite input coordinates,
+        hydrogens included, are kept.
+      optH_minimize: Minimize the optimized proton chis after packing them.
+      backprop_compatible_rebuild: The caller will use gradients through
+        construction. optH then rebuilds the atoms it moves differentiably
+        from the input atoms, and a block missing heavy atoms raises a
+        ``ValueError``: the packer that would build them gives its atoms no
+        gradient. When False, optH and any missing heavy atoms are packed
+        together without gradients, as before. ``None`` (default) means True
+        with ``atom37_coords`` and False otherwise.
       atom37_coords: When supplied, the autograd-tracked source of ``cf``'s
         coordinates; retained so gradients survive hydrogen rebuilding.
       fragment_mapping: Mapping produced when fragmented ligands were expanded.
       return_context: Also return the context used.
       packer_seed: Seed of the packer, as for ``pose_stack_from_atom_array``.
 
-    For ordinary structure inputs, coincident bonded heavy atoms raise before
-    packing; hydrogens coincident with their parent are rebuilt without changing
-    protonation. Differentiable ``atom37_coords`` retain their supplied geometry.
-
     Returns:
       The constructed pose, optionally with atom mappings or the context.
     """
     from tmol.io._pose_stack_construction import _pose_stack_from_canonical_form
-    from tmol.pack._build_missing_sidechains import _build_missing_sidechains
     from tmol.pack import FixedAAChiSampler
     from tmol.pack.rotamer._bfs_sidechain import _bfs_sidechain_atoms
     from tmol.pack.rotamer._single_residue_kinforest import (
@@ -935,8 +997,6 @@ def _pose_stack_from_canonical_form_and_context(
     )
 
     pose_stack, opt_return_vals = result
-    if atom37_coords is None:
-        pose_stack = _rebuild_coincident_hydrogens(pose_stack)
     if fragment_mapping is not None:
         from tmol.ligand._fragmentation import _apply_fragment_connections
 
@@ -950,35 +1010,51 @@ def _pose_stack_from_canonical_form_and_context(
     if has_missing_atoms:
         _assert_no_ligand_with_missing_atoms(pose_stack, block_has_missing_atoms)
 
-    needs_packing = block_has_missing_atoms is not None and (
-        has_missing_atoms or not no_optH
+    if backprop_compatible_rebuild is None:
+        backprop_compatible_rebuild = atom37_coords is not None
+    if backprop_compatible_rebuild and has_missing_atoms:
+        _raise_missing_heavy_atoms_for_backprop(pose_stack, block_has_missing_atoms)
+
+    # An NHQ flip moves heavy atoms and may retype a histidine; atom37 inputs
+    # keep their heavy atoms, block types and atom layout as given.
+    flip_NHQ = atom37_coords is None
+    # Differentiably: optH packs without gradients, then rebuilds what it
+    # moved from the input atoms.
+    optimized = backprop_compatible_rebuild and not no_optH
+    if optimized:
+        from tmol.io.details._optimize_hydrogens import _optimize_hydrogens
+
+        pose_stack, new_for_old = _optimize_hydrogens(
+            pose_stack,
+            context._opth_score_function,
+            packer_seed,
+            minimize=optH_minimize,
+            flip_NHQ=flip_NHQ,
+        )
+        if new_for_old is not None and "ps_atom_mapping" in opt_return_vals:
+            _remap_atom_mapping(opt_return_vals, new_for_old)
+
+    # Otherwise, as on master: one packing run, without gradients, for optH and
+    # any missing heavy atoms.
+    needs_packing = (
+        not backprop_compatible_rebuild
+        and block_has_missing_atoms is not None
+        and (has_missing_atoms or not no_optH)
     )
     if needs_packing:
-        sfxn = (
-            context._packing_score_function
-            if has_missing_atoms
-            else context._opth_score_function
-        )
-        dunbrack_sampler = context._dunbrack_sampler
-        na_sampler = context._na_sampler if has_missing_atoms else None
-
-        if has_missing_atoms:
-            logger.info(
-                "%i blocks with missing heavy atoms",
-                torch.count_nonzero(block_has_missing_atoms),
-            )
-        pose_stack = _build_missing_sidechains(
+        pose_stack = _pack_after_construction(
             pose_stack,
-            sfxn,
-            dunbrack_sampler,
+            context,
             block_has_missing_atoms,
+            has_missing_atoms,
             no_optH=no_optH,
-            na_sampler=na_sampler,
-            has_missing_atoms=has_missing_atoms,
-            seed=packer_seed,
+            optH_minimize=optH_minimize,
+            packer_seed=packer_seed,
+            flip_NHQ=flip_NHQ,
         )
 
-    if atom37_coords is not None and needs_packing:
+    # finite atom37 inputs, hydrogens included, keep their coordinates
+    if atom37_coords is not None and (needs_packing or optimized):
         pose_stack = _restore_canonical_input_coords(
             pose_stack,
             cf.coords,
@@ -1001,6 +1077,63 @@ def _pose_stack_from_canonical_form_and_context(
     if len(opt_return_vals) > (0 if return_block_has_missing_atoms else 1):
         return pose_stack, opt_return_vals
     return pose_stack
+
+
+def _pack_after_construction(
+    pose_stack: PoseStack,
+    context: PoseBuildContext,
+    block_has_missing_atoms: torch.Tensor,
+    has_missing_atoms: bool,
+    *,
+    no_optH: bool,
+    optH_minimize: bool,
+    packer_seed: int | None,
+    flip_NHQ: bool,
+) -> PoseStack:
+    """Master's packing run, without gradients: build missing heavy atoms and,
+    unless no_optH, optimize hydrogens on the complete residues."""
+    from tmol.pack._build_missing_sidechains import _build_missing_sidechains
+
+    sfxn = (
+        context._packing_score_function
+        if has_missing_atoms
+        else context._opth_score_function
+    )
+    na_sampler = context._na_sampler if has_missing_atoms else None
+    if has_missing_atoms:
+        logger.info(
+            "%i blocks with missing heavy atoms",
+            torch.count_nonzero(block_has_missing_atoms),
+        )
+    pose_stack = _build_missing_sidechains(
+        pose_stack,
+        sfxn,
+        context._dunbrack_sampler,
+        block_has_missing_atoms,
+        no_optH=no_optH,
+        na_sampler=na_sampler,
+        has_missing_atoms=has_missing_atoms,
+        seed=packer_seed,
+        flip_NHQ=flip_NHQ,
+    )
+    if optH_minimize and not no_optH:
+        from tmol.io.details._optimize_hydrogens import _minimize_proton_chis
+
+        pose_stack = _minimize_proton_chis(pose_stack, context._opth_score_function)
+    return pose_stack
+
+
+def _remap_atom_mapping(opt_return_vals: dict, new_for_old: torch.Tensor) -> None:
+    """Point the atom mapping at the atoms' new indices after optH retyped a
+    histidine; an atom the new tautomer lacks maps nowhere and is dropped."""
+    can = opt_return_vals["can_atom_mapping"]
+    ps = opt_return_vals["ps_atom_mapping"]
+    new = new_for_old[ps[:, 0].long(), ps[:, 1].long()]
+    kept = new >= 0
+    opt_return_vals["can_atom_mapping"] = can[kept]
+    opt_return_vals["ps_atom_mapping"] = torch.stack(
+        (ps[kept, 0], new[kept].to(ps.dtype)), dim=1
+    )
 
 
 def _restore_canonical_input_coords(
@@ -1086,6 +1219,40 @@ def _assert_no_ligand_with_missing_atoms(
             "Provide enough resolved anchors or a complete ligand structure "
             "before calling pose_stack_from_atom_array:\n  " + "\n  ".join(bad)
         )
+
+
+def _raise_missing_heavy_atoms_for_backprop(
+    pose_stack: PoseStack, block_has_missing_atoms: torch.Tensor
+) -> None:
+    """Reject missing heavy atoms when the caller needs gradients: only the
+    packer can build them, and its coordinates carry no gradient."""
+    pbt = pose_stack.packed_block_types
+    pdb_info = getattr(pose_stack, "pdb_info", None)
+    bad = []
+    for pi, bi in torch.nonzero(block_has_missing_atoms).cpu().tolist():
+        bt_ind = int(pose_stack.block_type_ind[pi, bi])
+        if bt_ind < 0:
+            continue
+        bt = pbt.active_block_types[bt_ind]
+        start = int(pose_stack.block_coord_offset[pi, bi])
+        missing = torch.isnan(pose_stack.coords[pi, start : start + len(bt.atoms)]).any(
+            dim=-1
+        )
+        names = [bt.atoms[a].name for a in torch.nonzero(missing).flatten().tolist()]
+        label = ""
+        if pdb_info is not None and pdb_info.residue_labels is not None:
+            label = (
+                f" chain={pdb_info.chain_labels[pi, bi]}"
+                f" resid={pdb_info.residue_labels[pi, bi]}"
+            )
+        bad.append(f"pose={pi} block={bi} bt={bt.name}{label} missing_atoms={names}")
+    raise ValueError(
+        "backprop_compatible_rebuild=True, but block(s) are missing heavy atoms. "
+        "Only rotamer packing can build them, and packed coordinates carry no "
+        "gradient. Supply the missing atoms, or pass "
+        "backprop_compatible_rebuild=False to build them without gradients:\n  "
+        + "\n  ".join(bad[:20])
+    )
 
 
 def _assert_no_nan_coords(

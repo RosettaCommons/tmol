@@ -26,6 +26,7 @@ def test_build_missing_sidechains_jagged_pose_stack(ubq_pdb, torch_device, dun_s
         dunbrack_sampler=dun_sampler,
         no_optH=False,
         block_has_missing_atoms=block_has_missing_atoms,
+        flip_NHQ=False,
     )
 
 
@@ -112,10 +113,11 @@ def test_build_missing_sidechains_freezes_complete_non_opth_blocks(
         dunbrack_sampler=dun_sampler,
         no_optH=False,
         block_has_missing_atoms=missing,
+        flip_NHQ=False,
     )
 
     real = pose_stack.block_type_ind64 >= 0
-    supported = real & OptHSampler().defines_rotamers_for_bts(
+    supported = real & OptHSampler(flip_NHQ=False).defines_rotamers_for_bts(
         pose_stack.packed_block_types,
         pose_stack.block_type_ind64.clamp_min(0),
     )
