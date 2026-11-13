@@ -159,6 +159,13 @@ def _optimize_hydrogens(
     return result, new_for_old
 
 
+# Stop after two consecutive steps that each improve the score by less than
+# 0.05 (the defaults are five steps and 0.01). On 50 PDB structures this cut
+# minimization time from 58 to 32 ms per structure on GPU, and raised the
+# median total score by 0.03 (at most 0.14) relative to the defaults.
+_PROTON_CHI_MIN_OPTIONS = {"atol": 0.05, "patience": 2}
+
+
 def _minimize_proton_chis(pose_stack: PoseStack, sfxn) -> PoseStack:
     """Minimize the proton chis in torsion space, all other DOFs held fixed."""
     from tmol.kinematics._fold_forest import FoldForest
@@ -176,7 +183,11 @@ def _minimize_proton_chis(pose_stack: PoseStack, sfxn) -> PoseStack:
     # the minimizer differentiates the score, even if the caller turned grad off
     with torch.enable_grad():
         minimized = run_kin_min(
-            pose_stack, sfxn, FoldForest.reasonable_fold_forest(pose_stack), move_map
+            pose_stack,
+            sfxn,
+            FoldForest.reasonable_fold_forest(pose_stack),
+            move_map,
+            optimizer_kwargs=_PROTON_CHI_MIN_OPTIONS,
         )
     minimized.coords = minimized.coords.detach()
     return minimized
