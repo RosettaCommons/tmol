@@ -46,7 +46,7 @@ def test_supplied_polymer_bond_is_not_silently_cut(tmp_path, torch_device, sourc
         atoms.res_id = 2 * atoms.res_id + 8
     if source == "struct_conn":
         file = CIFFile()
-        set_structure(file, atoms, include_bonds=True)
+        set_structure(file, atoms)
         # Standard peptide links are omitted by the writer; declare this one.
         file.block["struct_conn"] = CIFCategory(
             {
@@ -71,7 +71,7 @@ def test_supplied_polymer_bond_is_not_silently_cut(tmp_path, torch_device, sourc
         file = PDBFile()
         file.set_structure(atoms)
         if source == "CONECT":
-            file.lines.append(f"CONECT{carbon + 1:5d}{nitrogen + 1:5d}")
+            lines = [*file.lines, f"CONECT{carbon + 1:5d}{nitrogen + 1:5d}"]
         else:
             link = list(" " * 80)
             link[:6] = "LINK  "
@@ -80,9 +80,9 @@ def test_supplied_polymer_bond_is_not_silently_cut(tmp_path, torch_device, sourc
                 link[offset + 5 : offset + 8] = atoms.res_name[atom]
                 link[offset + 9] = atoms.chain_id[atom]
                 link[offset + 10 : offset + 14] = f"{atoms.res_id[atom]:4d}"
-            file.lines.append("".join(link))
+            lines = [*file.lines, "".join(link)]
         path = tmp_path / "explicit.pdb"
-        file.write(path)
+        path.write_text("\n".join(lines) + "\n")
         atoms = atom_array_from_file(path)
 
     coordinates, bonds = atoms.coord.copy(), atoms.bonds.as_array().copy()

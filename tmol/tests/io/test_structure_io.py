@@ -90,6 +90,9 @@ def test_written_pose_reads_back(fmt, ubq_pdb, pertuzumab_pdb, tmp_path):
         numpy.testing.assert_array_equal(from_text.coord, from_path.coord)
         ps2 = pose_stack_from_file(path, device, no_optH=True)
 
+        torch.testing.assert_close(
+            ps.inter_residue_connections, ps2.inter_residue_connections
+        )
         # PDB keeps three decimals
         torch.testing.assert_close(ps.coords, ps2.coords, atol=1e-3, rtol=0)
         numpy.testing.assert_equal(ps.pdb_info.chain_labels, ps2.pdb_info.chain_labels)
@@ -155,3 +158,24 @@ def test_input_ligand_hydrogens_are_kept_only_on_their_parents():
     assert not numpy.allclose(displaced[moved_name], moved.coord[h], atol=1e-3)
     for name in shared[1:]:
         numpy.testing.assert_allclose(displaced[name], supplied[name], atol=1e-3)
+
+
+def test_cif_writer_preserves_unrounded_coordinates_and_bonds(ubq_pdb):
+    from biotite.structure.io.pdbx import CIFFile
+
+    atoms = atom_array_from_file(ubq_pdb)
+    atoms.coord += numpy.array([0.000123, -0.000234, 0.000345])
+    before = atoms.copy()
+    text = file_from_atom_array(atoms, format="cif")
+    site = CIFFile.read(io.StringIO(text)).block["atom_site"]
+    written = numpy.column_stack(
+        [site[name].as_array(float) for name in ("Cartn_x", "Cartn_y", "Cartn_z")]
+    ).astype(atoms.coord.dtype)
+    numpy.testing.assert_array_equal(written, before.coord)
+    numpy.testing.assert_array_equal(atoms.coord, before.coord)
+    reread = atom_array_from_file(text, "cif")
+    numpy.testing.assert_array_equal(reread.atom_name, atoms.atom_name)
+    numpy.testing.assert_array_equal(reread.coord, before.coord)
+    assert {tuple(row) for row in reread.bonds.as_array()} == {
+        tuple(row) for row in before.bonds.as_array()
+    }

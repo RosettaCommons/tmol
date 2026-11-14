@@ -1051,9 +1051,7 @@ def test_a_retinal_conformer_keeps_its_trans_double_bonds(monkeypatch):
 )
 def test_random_cif_completion_and_relax(fixture, blocks, missing, torch_device):
     from tmol.io import build_context_from_atom_array
-    from tmol import CartesianMoveMap, FoldForest
     from tmol import run_cart_min
-    from tmol import PackerPalette
     from tmol import fast_relax
 
     array = atom_array_from_file(DATA / f"{fixture}.cif")
@@ -1113,14 +1111,11 @@ def test_random_cif_completion_and_relax(fixture, blocks, missing, torch_device)
     relaxed = fast_relax(
         pose,
         score,
-        PackerPalette(),
-        CartesianMoveMap(),
-        FoldForest.reasonable_fold_forest(pose),
-        num_repeats=1,
-        schedule=[1.0],
-        min_fn=lambda current, sfxn, **kw: run_cart_min(
+        minimizer=lambda current, sfxn, **kw: run_cart_min(
             current, sfxn, optimizer_kwargs={"max_iter": 100}
         ),
+        num_repeats=1,
+        schedule=[1.0],
     )
     assert torch.equal(
         relaxed.inter_residue_connections, pose.inter_residue_connections

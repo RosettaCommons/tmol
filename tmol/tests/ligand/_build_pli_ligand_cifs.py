@@ -287,7 +287,7 @@ def _write_ligand_cif(
         ValueError: On an unsupported bond type or an atom missing coordinates
             or a reference charge.
     """
-    from atomworks.io.utils.io_utils import to_cif_file
+    from atomworks.io.files import CIFWriteConfig, atom_array_to_file
 
     restype = prep.residue_type
     aromatic_atoms = _aromatic_atom_set(restype)
@@ -335,15 +335,17 @@ def _write_ligand_cif(
         bonds.append((index[str(a)], index[str(b)], order))
     ligand.bonds = struc.BondList(len(names), np.array(bonds))
     _with_lewis_structure(ligand)
-    to_cif_file(
+    atom_array_to_file(
         ligand,
         path,
-        id="structure",
-        author="tmol",
-        date="2026-09-30",
-        time="00:00:00",
-        extra_fields=["partial_charge", "tmol_aromatic", "tmol_source_subtype"],
-        ccd_entries={LIGAND_RES_NAME: ligand},
+        config=CIFWriteConfig(
+            id="structure",
+            author="tmol",
+            date="2026-09-30",
+            time="00:00:00",
+            extra_fields=["partial_charge", "tmol_aromatic", "tmol_source_subtype"],
+            ccd_entries={LIGAND_RES_NAME: ligand},
+        ),
     )
 
 

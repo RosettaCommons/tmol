@@ -354,7 +354,7 @@ def _with_polymer_entity_flag(atom_array, block):
                 "tmol_polymer_entity", atom_array.is_polymer.copy()
             )
         return atom_array
-    if "label_entity_id" not in categories or "entity" not in block:
+    if "entity_id" not in categories or "entity" not in block:
         return atom_array
     entity = block["entity"]
     if "id" not in entity or "type" not in entity:
@@ -366,7 +366,7 @@ def _with_polymer_entity_flag(atom_array, block):
         )
         if str(t).strip() == "polymer"
     }
-    ids = np.char.strip(atom_array.get_annotation("label_entity_id").astype(str))
+    ids = np.char.strip(atom_array.get_annotation("entity_id").astype(str))
     atom_array.set_annotation("tmol_polymer_entity", np.isin(ids, sorted(polymer)))
     return atom_array
 

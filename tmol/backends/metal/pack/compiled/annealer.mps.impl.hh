@@ -51,7 +51,6 @@ using AnnealerCtx =
 // 170 ms but grows a tail -- 198.8 on that pose -- which is the thing a
 // packer cannot afford.
 struct MpsAnnealSchedule {
-  int hitemp_traj = 128;
   int lotemp_expansions = 10;
   float round1_cut = 0.25f;
   float round2_cut = 0.25f;
@@ -169,7 +168,8 @@ inline std::tuple<tmol::native::Tensor, tmol::native::Tensor> anneal_mps(
     tmol::native::Tensor neighbor_chunk_offset_offsets,
     tmol::native::Tensor chunk_offsets,
     tmol::native::Tensor energy1b,
-    tmol::native::Tensor energy2b) {
+    tmol::native::Tensor energy2b,
+    int64_t n_hitemp_traj) {
   namespace nat = tmol::native;
   constexpr auto Dev = tmol::Device::MPS;
   constexpr auto Cpu = tmol::Device::CPU;
@@ -181,7 +181,7 @@ inline std::tuple<tmol::native::Tensor, tmol::native::Tensor> anneal_mps(
   int const max_n_rotamers = int(max_n_rotamers_per_pose);
 
   MpsAnnealSchedule const sched;
-  int const n_hitemp = sched.hitemp_traj;
+  int const n_hitemp = int(n_hitemp_traj);
   int const n_lotemp =
       int(n_hitemp * sched.round1_cut) * sched.lotemp_expansions;
   int const n_quench = int(n_lotemp * sched.round2_cut);

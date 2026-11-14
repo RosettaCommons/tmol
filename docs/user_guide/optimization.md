@@ -94,23 +94,36 @@ Use Cartesian masks to select atoms; use a `MoveMap` to select torsions and jump
 ## Relax
 
 `fast_relax()` combines repacking and minimization over a schedule of
-score-function weights:
+score-function weights. By default it minimizes every atom coordinate:
 
 ```python
-from tmol import CartesianMoveMap, FoldForest, PackerPalette, fast_relax
+from tmol import fast_relax
 
-palette = PackerPalette()
-move_map = CartesianMoveMap()  # coord_mask=None allows all atom coordinates
-fold_forest = FoldForest.reasonable_fold_forest(pose_stack)
+relaxed_pose_stack = fast_relax(pose_stack, sfxn)
+```
 
-relaxed_pose_stack = fast_relax(
-    pose_stack,
-    sfxn,
-    palette,
-    move_map,
-    fold_forest,
+The `minimizer` argument chooses the minimization mode and carries its
+settings. `CartesianRelaxMinimizer` minimizes atom coordinates, optionally
+restricted by a `CartesianMoveMap`. `KinematicRelaxMinimizer` minimizes
+torsions and jumps along a `FoldForest` (by default
+`FoldForest.reasonable_fold_forest` of the pose). Without a `MoveMap` it frees
+every mainchain and sidechain torsion and every jump; pass one to restrict it:
+
+```python
+from tmol import KinematicRelaxMinimizer, MoveMap
+
+torsion_relaxed = fast_relax(pose_stack, sfxn, minimizer=KinematicRelaxMinimizer())
+
+move_map = MoveMap.from_pose_stack(pose_stack)  # nothing moves until enabled
+move_map.move_all_named_torsions = True
+torsions_only = fast_relax(
+    pose_stack, sfxn, minimizer=KinematicRelaxMinimizer(move_map)
 )
 ```
+
+Each minimizer checks its move map type: a `CartesianMoveMap` cannot be given
+to the kinematic minimizer, nor a `MoveMap` to the Cartesian one. Any callable
+following the `tmol.relax.RelaxMinimizer` protocol can also be passed.
 
 Default repacking uses the score function's parameter database, including
 nucleic-acid chi sampling and joint conformers for covalently attached groups.
@@ -118,24 +131,14 @@ Free ligands retain their current conformation during packing and can move in
 Cartesian minimization. Custom `task_operations` replace this sampler setup.
 Supplemental Dunbrack chi products obey the sampling budget before enumeration;
 required library states are retained. Frozen chi keep their input angles for
-repacking, or generated ideal angles for a new chemical identity.
+repacking, or generated ideal angles for a new chemical identity. The packer
+uses `PackerPalette()` unless `packer_palette` is given.
 
-The default minimizer is Cartesian and reads
-`CartesianMoveMap.coord_mask`; the fold forest is accepted by the common
-protocol but is not used by that minimizer. To minimize kinematic degrees of
-freedom, pass a configured `MoveMap`, a `FoldForest`, and a compatible
-kinematic `min_fn`.
-
-On CUDA, `fast_relax()` automatically uses graph replay for poses containing
-DNA or RNA, where repeated kernel-launch overhead is significant. Protein-only
-and protein–ligand poses remain eager by default because graph capture does
-not consistently recover its setup cost in a single relaxation. For repeated
-protein workloads, pass `cuda_graph=True` to favor steady-state throughput;
-pass `cuda_graph=False` to force eager execution.
-
-Graph replay reduces launch overhead and retains working tensors; measure both
-runtime and memory. Custom minimizers cannot use `cuda_graph=True`. CPU
-execution remains eager.
+On CUDA, both minimizers capture each stage's forward/backward scoring path as
+a CUDA graph and replay it, which removes repeated kernel-launch overhead. Pass
+`cuda_graph=False` to the minimizer to force eager execution. Graph replay
+retains working tensors while a stage minimizes; measure memory for very large
+batches. CPU execution remains eager.
 
 ## Examples and reference
 

@@ -38,9 +38,11 @@ except PackageNotFoundError:
 __all__ = [
     "CanonicalOrdering",
     "CartesianMoveMap",
+    "CartesianRelaxMinimizer",
     "ConstraintSet",
     "EdgeType",
     "FoldForest",
+    "KinematicRelaxMinimizer",
     "LigandFragmentDefinition",
     "MoveMap",
     "PDBInfo",
@@ -145,7 +147,10 @@ for _module, _names in (
             "get_torsion_names",
         ),
     ),
-    ("tmol.relax._fast_relax", ("fast_relax",)),
+    (
+        "tmol.relax._fast_relax",
+        ("CartesianRelaxMinimizer", "KinematicRelaxMinimizer", "fast_relax"),
+    ),
     ("tmol.score", ("beta2016_score_function",)),
     ("tmol.score._fragment_interactions", ("calculate_fragment_interactions",)),
     ("tmol.score._score_function", ("ScoreFunction",)),

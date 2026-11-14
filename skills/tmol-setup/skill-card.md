@@ -11,7 +11,7 @@ TMol maintainers. BSD-3-Clause; see the repository `LICENSE`.
 
 ## Requirements
 
-Python 3.11+, PyTorch 2.5+, and a matching supported platform. Source/JIT builds
+Python 3.12+, PyTorch 2.5+, and a matching supported platform. Source/JIT builds
 need CMake, Ninja, and a C++ compiler; CUDA source/JIT builds additionally need
 `nvcc`. No credentials are required for public releases.
 

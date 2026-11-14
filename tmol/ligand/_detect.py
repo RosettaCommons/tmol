@@ -707,7 +707,7 @@ def _nonstandard_residue_info_from_mol2_mol(
         ],
         dtype=np.int32,
     )
-    atom_array.bonds = struc.BondList(n_atoms, bond_array)
+    atom_array.bonds = struc.BondList(n_atoms, bond_array.reshape(-1, 3))
 
     complete = Chem.Mol(mol)
     for atom in complete.GetAtoms():
@@ -1071,7 +1071,7 @@ def _with_resolved_coordinates(atom_array, res_name: str):
     if np.count_nonzero(anchors) < 3:
         return None
     try:
-        _, transform = struc.superimpose(atom_array.coord[anchors], ideal[anchors])
+        transform = struc.superimpose(atom_array.coord[anchors], ideal[anchors])
         ideal = transform.apply(ideal)
     except ValueError:
         return None

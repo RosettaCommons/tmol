@@ -331,7 +331,8 @@ std::vector<Tensor> anneal(
     Tensor neighbor_chunk_offset_offsets,
     Tensor chunk_offsets,
     Tensor energy1b,
-    Tensor energy2b) {
+    Tensor energy2b,
+    int64_t n_hitemp_traj) {
   nvtx_range_push("pack_anneal");
   tmol::native::Tensor scores;
   tmol::native::Tensor rotamer_assignments;
@@ -356,7 +357,8 @@ std::vector<Tensor> anneal(
         neighbor_chunk_offset_offsets,
         chunk_offsets,
         energy1b,
-        energy2b);
+        energy2b,
+        n_hitemp_traj);
     return {std::get<0>(result), std::get<1>(result)};
   }
 #endif
@@ -379,7 +381,8 @@ std::vector<Tensor> anneal(
                                       TCAST(neighbor_chunk_offset_offsets),
                                       TCAST(chunk_offsets),
                                       TCAST(energy1b),
-                                      TCAST(energy2b));
+                                      TCAST(energy2b),
+                                      int(n_hitemp_traj));
                                   scores = std::get<0>(result).tensor;
                                   rotamer_assignments =
                                       std::get<1>(result).tensor;

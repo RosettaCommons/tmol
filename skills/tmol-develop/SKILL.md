@@ -15,7 +15,7 @@ Make the smallest production change supported by correctness tests and matched
 measurements. Preserve unrelated work in a dirty checkout; use a clean worktree
 from the target base for integration or final A/B validation.
 
-This workflow requires a TMol source checkout, Python 3.11+, CMake, Ninja, and a
+This workflow requires a TMol source checkout, Python 3.12+, CMake, Ninja, and a
 C++ compiler. CUDA development additionally requires `nvcc` and a supported GPU.
 
 ## Build for the task

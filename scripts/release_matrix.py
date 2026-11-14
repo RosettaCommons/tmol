@@ -4,7 +4,7 @@
 import argparse
 import json
 
-PYTHON_VERSIONS = ("3.11", "3.12", "3.13", "3.14")
+PYTHON_VERSIONS = ("3.12", "3.13", "3.14")
 LINUX_ARCHES = ("x86_64", "aarch64")
 RELEASE_PLATFORMS = {
     "manylinux_2_28_x86_64",

@@ -59,21 +59,22 @@ appears inactive.
 ## FastRelax
 
 ```python
-from tmol import CartesianMoveMap, FoldForest, PackerPalette, fast_relax
+from tmol import KinematicRelaxMinimizer, fast_relax
 
-relaxed = fast_relax(
-    pose,
-    sfxn,
-    PackerPalette(),
-    CartesianMoveMap(),
-    FoldForest.reasonable_fold_forest(pose),
-)
+relaxed = fast_relax(pose, sfxn)  # Cartesian, every atom free
+# torsion space, every mainchain/sidechain torsion and jump free
+torsion_relaxed = fast_relax(pose, sfxn, minimizer=KinematicRelaxMinimizer())
 ```
 
-On CUDA, the default uses graph replay for DNA/RNA poses and eager execution for
-protein and protein-ligand poses. Override with `cuda_graph=True` or `False`
-only when the fixed-shape/repetition tradeoff is known. Custom minimizers manage
-their own execution mode.
+The `minimizer` carries the mode and its settings:
+`CartesianRelaxMinimizer(cartesian_move_map)` or
+`KinematicRelaxMinimizer(move_map, fold_forest)`; each rejects the other's move
+map type. Without a move map the kinematic minimizer frees every torsion and
+jump; a `MoveMap` built with `from_pose_stack` frees nothing until enabled. The
+fold forest defaults to `FoldForest.reasonable_fold_forest`. On
+CUDA both use graph replay; CPU runs eagerly. Pass `cuda_graph=False` to the
+minimizer to force eager execution. Custom minimizers follow
+`tmol.relax.RelaxMinimizer` and manage their own execution mode.
 
 ## Large batches and memory
 

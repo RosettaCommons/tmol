@@ -518,23 +518,23 @@ MGPU_DEVICE float warp_wide_sim_annealing(
 
 template <tmol::Device D, class IG, int ChunkSize>
 struct Annealer {
-  static auto run_simulated_annealing(ContextManager& mgr, IG ig)
+  static auto run_simulated_annealing(
+      ContextManager& mgr, IG ig, int const n_hitemp_simA_traj)
       -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D>> {
     int const n_poses = ig.n_poses_cpu();
     int const max_n_res = ig.max_n_res_cpu();
     int const max_n_rotamers = ig.max_n_rotamers_per_pose_cpu();
 
     // SA hyperparameters
-    int const n_hitemp_simA_traj = 500;
-    double const inner_iter_mult_hitemp = 1.5;
-    double const inner_iter_mult_lotemp = 0.5;
+    double const inner_iter_mult_hitemp = 0.4;
+    double const inner_iter_mult_lotemp = 0.15;
     // Temperature schedule
     float const high_temp_initial = 30.0f;
     float const low_temp_initial = 0.3f;
     float const high_temp_later = 0.2f;
     float const low_temp_later = 0.1f;
-    int const n_outer_iterations_hitemp = 10;
-    int const n_outer_iterations_lotemp = 10;
+    int const n_outer_iterations_hitemp = 5;
+    int const n_outer_iterations_lotemp = 5;
 
     int const n_hitemp_simA_threads = 32 * n_poses * n_hitemp_simA_traj;
     // Each top hitemp trajectory seeds n_lotemp_expansions lotemp trajectories
@@ -678,7 +678,8 @@ struct Annealer {
       // Full SA run with geometric cooling
       // Match the CPU annealer's per-pose work: a large neighbor in a jagged
       // batch must not inflate this pose's trajectory length.
-      int const pose_inner_iterations = n_rotamers + n_rotamers / 2;
+      int const pose_inner_iterations =
+          int(n_rotamers * inner_iter_mult_hitemp);
       warp_wide_sim_annealing<
           ChunkSize,
           false,
@@ -767,7 +768,8 @@ struct Annealer {
       }
 
       // Low-temperature cooling trajectory
-      int const pose_inner_iterations = n_rotamers / 2;
+      int const pose_inner_iterations =
+          int(n_rotamers * inner_iter_mult_lotemp);
       warp_wide_sim_annealing<
           ChunkSize,
           false,
@@ -983,8 +985,8 @@ auto AnnealerDispatch<D>::forward(
     TView<int64_t, 1, D> neighbor_chunk_offset_offsets,
     TView<int64_t, 1, D> chunk_offsets,
     TView<float, 1, D> energy1b,
-    TView<float, 1, D> energy2b)
-    -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D>> {
+    TView<float, 1, D> energy2b,
+    int n_hitemp_traj) -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D>> {
   int const n_poses_cpu = pose_n_res.size(0);
   int const max_n_res_cpu = n_rotamers_for_res.size(1);
 
@@ -1030,15 +1032,15 @@ auto AnnealerDispatch<D>::forward(
   switch (chunk_size) {
     case 16:
       result = Annealer<D, InteractionGraph<D, int, float>, 16>::
-          run_simulated_annealing(mgr, ig);
+          run_simulated_annealing(mgr, ig, n_hitemp_traj);
       break;
     case 32:
       result = Annealer<D, InteractionGraph<D, int, float>, 32>::
-          run_simulated_annealing(mgr, ig);
+          run_simulated_annealing(mgr, ig, n_hitemp_traj);
       break;
     default:
       result = Annealer<D, InteractionGraph<D, int, float>, 0>::
-          run_simulated_annealing(mgr, ig);
+          run_simulated_annealing(mgr, ig, n_hitemp_traj);
   }
 
   return result;

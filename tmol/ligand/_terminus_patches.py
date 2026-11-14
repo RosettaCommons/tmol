@@ -517,11 +517,15 @@ def _mmff94_charges(mol, n_atoms):
     The EEM fallback the free-ligand path allows is not taken here: it is a
     different model, and a polymer residue that needs it should say so.
     """
-    from openbabel import openbabel, pybel
     from rdkit import Chem
     from rdkit.Chem import AllChem
 
-    from tmol.ligand._openbabel_compat import _OPENBABEL_FORCEFIELD_LOCK
+    from tmol.ligand._openbabel_compat import (
+        _OPENBABEL_FORCEFIELD_LOCK,
+        _import_openbabel,
+    )
+
+    openbabel, pybel = _import_openbabel()
 
     try:
         block = Chem.Mol(mol)

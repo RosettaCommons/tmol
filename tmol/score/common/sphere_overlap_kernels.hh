@@ -52,7 +52,7 @@ TMOL_HOST_DEVICE_FUNC void compute_block_spheres_body(
   // the thread-local accumulators are reached through pointers captured by
   // value. Each thread has its own copy of the enclosing frame.
   TMOL_THREAD_PTR(tmol::portable::Vec<Real, 3>) local_coords_p = &local_coords;
-  auto per_thread_com = ([=] TMOL_DEVICE_FUNC(int tid) {
+  auto per_thread_com = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
     for (int i = tid; i < n_atoms; i += nt) {
       auto ci = ctx.rot_coords[coord_offset + i];
       for (int j = 0; j < 3; ++j) {
@@ -74,7 +74,7 @@ TMOL_HOST_DEVICE_FUNC void compute_block_spheres_body(
   Real d2max(0);
   TMOL_THREAD_PTR(Real) dmax_p = &dmax;
   TMOL_THREAD_PTR(Real) d2max_p = &d2max;
-  auto per_thread_dist_to_com = ([=] TMOL_DEVICE_FUNC(int tid) {
+  auto per_thread_dist_to_com = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
     for (int i = tid; i < n_atoms; i += nt) {
       auto ci = ctx.rot_coords[coord_offset + i];
       Real d2 =
@@ -104,14 +104,15 @@ TMOL_HOST_DEVICE_FUNC void compute_block_spheres_body(
     dmax = tmol::portable::math::sqrt(d2max);
   }
 
-  auto thread0_write_out_result = ([=] TMOL_DEVICE_FUNC(int tid) {
-    if (tid == 0) {
-      ctx.block_spheres[pose_ind][block_ind][0] = com[0];
-      ctx.block_spheres[pose_ind][block_ind][1] = com[1];
-      ctx.block_spheres[pose_ind][block_ind][2] = com[2];
-      ctx.block_spheres[pose_ind][block_ind][3] = dmax;
-    }
-  });
+  auto thread0_write_out_result =
+      ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
+        if (tid == 0) {
+          ctx.block_spheres[pose_ind][block_ind][0] = com[0];
+          ctx.block_spheres[pose_ind][block_ind][1] = com[1];
+          ctx.block_spheres[pose_ind][block_ind][2] = com[2];
+          ctx.block_spheres[pose_ind][block_ind][3] = dmax;
+        }
+      });
   DeviceDispatch<D>::template for_each_in_workgroup<nt>(
       thread0_write_out_result, lane);
 }
@@ -207,7 +208,7 @@ TMOL_HOST_DEVICE_FUNC void compute_rot_spheres_body(
   // See compute_block_spheres_body: by-reference capture is illegal in an
   // extended __device__ lambda, so the accumulator is reached by pointer.
   TMOL_THREAD_PTR(tmol::portable::Vec<Real, 3>) local_coords_p = &local_coords;
-  auto per_thread_com = ([=] TMOL_DEVICE_FUNC(int tid) {
+  auto per_thread_com = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
     for (int i = tid; i < n_atoms; i += nt) {
       auto ci = ctx.rot_coords[coord_offset + i];
       for (int j = 0; j < 3; ++j) {
@@ -229,7 +230,7 @@ TMOL_HOST_DEVICE_FUNC void compute_rot_spheres_body(
   Real d2max(0);
   TMOL_THREAD_PTR(Real) dmax_p = &dmax;
   TMOL_THREAD_PTR(Real) d2max_p = &d2max;
-  auto per_thread_dist_to_com = ([=] TMOL_DEVICE_FUNC(int tid) {
+  auto per_thread_dist_to_com = ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
     for (int i = tid; i < n_atoms; i += nt) {
       auto ci = ctx.rot_coords[coord_offset + i];
       Real d2 =
@@ -258,14 +259,15 @@ TMOL_HOST_DEVICE_FUNC void compute_rot_spheres_body(
     dmax = tmol::portable::math::sqrt(d2max);
   }
 
-  auto thread0_write_out_result = ([=] TMOL_DEVICE_FUNC(int tid) {
-    if (tid == 0) {
-      ctx.rot_spheres[rot_ind][0] = com[0];
-      ctx.rot_spheres[rot_ind][1] = com[1];
-      ctx.rot_spheres[rot_ind][2] = com[2];
-      ctx.rot_spheres[rot_ind][3] = dmax;
-    }
-  });
+  auto thread0_write_out_result =
+      ([TMOL_CAPTURE_CTX] TMOL_DEVICE_FUNC(int tid) {
+        if (tid == 0) {
+          ctx.rot_spheres[rot_ind][0] = com[0];
+          ctx.rot_spheres[rot_ind][1] = com[1];
+          ctx.rot_spheres[rot_ind][2] = com[2];
+          ctx.rot_spheres[rot_ind][3] = dmax;
+        }
+      });
   DeviceDispatch<D>::template for_each_in_workgroup<nt>(
       thread0_write_out_result, lane);
 }

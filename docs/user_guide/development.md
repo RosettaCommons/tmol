@@ -21,7 +21,7 @@ It does not use TorchConfig.cmake or the unstable Torch C++ ABI for production.
 
 Requirements:
 
-- Python 3.11 or newer.
+- Python 3.12 or newer.
 - PyTorch 2.14+ build headers; PyTorch 2.11+ runtime.
 - A C++17 compiler (C++20 for test/JIT extensions with recent PyTorch).
 - CMake 3.24 or newer.
@@ -132,9 +132,15 @@ apptainer run --nv --bind "$(pwd):/tmol_host" tmol-dev.sif
 ## CI
 
 GitHub Actions runs linting, the Linux x86-64, Linux aarch64, and Apple Silicon
-CPU suites, and CPU documentation builds on hosted runners. CUDA tests,
-benchmarks, and the CUDA-only tutorial smoke tests use the self-hosted DIGS
-runner. PR docs builds upload rendered HTML artifacts; same-repository PRs also
+CPU suites, and CPU documentation builds on hosted runners for every PR and
+master push. Maintainers with repository write access can request CUDA tests,
+benchmarks, and tutorial smoke tests on the self-hosted DIGS runner from
+Actions → CI → Run workflow, selecting the branch to validate and enabling
+`gpu`, or with `gh workflow run ci.yml --ref <branch> -f gpu=true`. Ordinary
+CI does not wait for a GPU allocation; a manually requested GPU run must pass
+its CUDA lane. The Wheel smoke test workflow also exercises installed CUDA
+wheels when dispatched manually. Release publication always requires CUDA
+wheel scoring. PR docs builds upload rendered HTML artifacts; same-repository PRs also
 publish previews under the Pages site.
 
 ## Native interface
@@ -164,8 +170,8 @@ can differ from releases before this refactor.
 Versioned wheel and sdist publication happens from `v*` tags. The tag version
 must match `[project].version` in `pyproject.toml`.
 
-`scripts/release_matrix.py` defines 28 wheels: 12 CPU/API wheels and 16 CUDA
-operator wheels across Python 3.11–3.14 and supported platforms. CUDA builds
+`scripts/release_matrix.py` defines 21 wheels: 9 CPU/API wheels and 12 CUDA
+operator wheels across Python 3.12–3.14 and supported platforms. CUDA builds
 use a toolkit floor of 12.8 or 13.0, independent of the build-time Torch minor.
 All three project versions and the extras/dependencies must agree.
 
