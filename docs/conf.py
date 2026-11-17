@@ -137,13 +137,14 @@ html_baseurl = os.environ.get(
 )
 html_static_path = ["_static"]
 templates_path = ["_templates"]
-html_css_files = ["custom.css"]
+html_css_files = ["custom.css", "page_feedback.css"]
 html_js_files = [
     "tmol-explorers.js",
     (
         "https://scripts.simpleanalyticscdn.com/latest.js",
         {"async": "async", "defer": "defer"},
     ),
+    "page_feedback.js",
 ]
 html_title = "TMol"
 html_logo = "_static/brand/tmol-logo-light.svg"

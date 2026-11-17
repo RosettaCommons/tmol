@@ -163,3 +163,6 @@ tmol/tests/data/protein_ligand_test/*.pipeline.nomin.cif
 tmol/tests/data/protein_ligand_test/*.packmin.cif
 
 .devcontainer
+
+# macOS Finder metadata
+.DS_Store
