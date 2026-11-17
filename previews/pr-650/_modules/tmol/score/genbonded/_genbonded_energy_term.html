@@ -554,6 +554,10 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">class_name</span><span class="p">(</span><span class="bp">cls</span><span class="p">):</span>
         <span class="k">return</span> <span class="s2">"GenBonded"</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">takes_movable_blocks</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""This term's pose-score kernel takes a movable-block mask."""</span>
+        <span class="k">return</span> <span class="kc">True</span>
+
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">score_types</span><span class="p">(</span><span class="bp">cls</span><span class="p">):</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">tmol.score.terms._genbonded_creator</span>
