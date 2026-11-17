@@ -785,6 +785,7 @@ class ScoreFunction:
             )
             for t in self.all_terms()
         ]
+        _declare_movable_blocks(term_modules, pose_stack, None)
         return BlockPairScoringModule(self.weights_tensor(), term_modules)
 
     def render_rotamer_scoring_module(
@@ -1294,7 +1295,8 @@ def _declare_movable_blocks(term_modules, pose_stack, mask) -> None:
             module.term_parameters.append(parameter)
         else:
             module.term_parameters[slot] = parameter
-        module._build_static_tails(False)
+        # Rebuilding must preserve the module's own block-pair output flag.
+        module._build_static_tails(bool(module._static_tail_f32[-1]))
 
 
 def _normalized_movable_blocks(
