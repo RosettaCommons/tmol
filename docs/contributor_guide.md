@@ -21,6 +21,9 @@ Rendered HTML is written to `docs/_build/html`.
 nbsphinx does not execute notebooks during the Sphinx phase; the smoke command
 above executes them first and writes the plots, tables, and viewer HTML that
 Sphinx consumes. CI performs the same two-step notebook-and-Sphinx build.
+The smoke command modifies notebook files locally. Do not commit its generated
+outputs, execution counts, or execution metadata; clear them before committing.
+CI checks that published tutorial notebooks contain only authored content.
 
 ### Adding a tutorial notebook
 

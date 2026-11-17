@@ -1,5 +1,5 @@
 #include <tmol/score/bonded_atom.hh>
-#include <tmol/score/common/device_operations.cuda.impl.cuh>
+#include <tmol/backends/cuda/score/common/device_operations.cuda.impl.cuh>
 
 #include <tmol/tests/score/bonded_atom/test.impl.hh>
 

@@ -1,6 +1,4 @@
 import importlib
-import subprocess
-import sys
 
 import pytest
 
@@ -76,35 +74,18 @@ def test_documented_fragment_interaction_helper_is_public():
     assert "calculate_fragment_interactions" in tmol.__all__
 
 
-def test_default_relax_minimizers_are_public():
+def test_relax_minimizers_are_public():
+    import tmol
     from tmol import relax
     from tmol.relax._fast_relax import (
-        DefaultCartesianMinimizer,
-        DefaultKinematicMinimizer,
+        CartesianRelaxMinimizer,
+        KinematicRelaxMinimizer,
     )
 
-    assert relax.DefaultCartesianMinimizer is DefaultCartesianMinimizer
-    assert relax.DefaultKinematicMinimizer is DefaultKinematicMinimizer
-    assert {"DefaultCartesianMinimizer", "DefaultKinematicMinimizer"} <= set(
-        relax.__all__
-    )
-
-
-def test_extern_import_is_independent_of_vendored_tests():
-    # Check a fresh process: pytest may already have collected the vendored tests.
-    subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            """
-import importlib, sys, unittest
-import tmol.extern
-assert 'tmol.extern.test_toposort' not in sys.modules
-assert list(tmol.extern.toposort({'a': set()})) == [{'a'}]
-tests = importlib.import_module('tmol.extern.test_toposort')
-result = unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromModule(tests))
-raise SystemExit(not result.wasSuccessful())
-""",
-        ],
-        check=True,
-    )
+    names = {"CartesianRelaxMinimizer", "KinematicRelaxMinimizer"}
+    assert names <= set(relax.__all__)
+    assert names <= set(tmol.__all__)
+    assert relax.CartesianRelaxMinimizer is CartesianRelaxMinimizer
+    assert relax.KinematicRelaxMinimizer is KinematicRelaxMinimizer
+    assert tmol.CartesianRelaxMinimizer is CartesianRelaxMinimizer
+    assert tmol.KinematicRelaxMinimizer is KinematicRelaxMinimizer

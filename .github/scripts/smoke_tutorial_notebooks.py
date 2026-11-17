@@ -13,7 +13,7 @@ import nbformat
 from nbclient import NotebookClient
 
 TUTORIAL_DIR = Path("docs/tutorial")
-TUTORIAL_REF = "master"
+TUTORIAL_REF = "v1.0.0"
 KERNEL_STARTUP_TIMEOUT = 180
 CPU_CUDA_RUNTIME_NOISE = re.compile(
     r"^W\d{4} .* torch/utils/cpp_extension\.py:\d+\] "

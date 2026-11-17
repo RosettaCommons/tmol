@@ -1,6 +1,6 @@
 
 #include <tmol/pack/rotamer/dunbrack/dispatch.impl.hh>
-#include <tmol/score/common/device_operations.cpu.impl.hh>
+#include <tmol/backends/cpu/score/common/device_operations.cpu.impl.hh>
 #include "test.impl.hh"
 
 namespace tmol {

@@ -17,7 +17,8 @@
 
 TMol provides all-atom scoring, packing, minimization, and
 FastRelax in PyTorch. It batches proteins, nucleic acids, ligands, and complexes
-on CPU or CUDA, with gradients through coordinate scoring.
+on CPU or CUDA, with gradients through coordinate scoring. On Apple silicon,
+CPU runs move their heaviest work onto the GPU automatically.
 
 [Documentation](https://rosettacommons.github.io/tmol/) ·
 [Tutorials](https://rosettacommons.github.io/tmol/latest/examples_index.html) ·
@@ -25,7 +26,8 @@ on CPU or CUDA, with gradients through coordinate scoring.
 
 ## Install
 
-Install from PyPI. For GPU use, first install [PyTorch](https://pytorch.org/get-started/locally/)
+TMol 1.0 requires Python 3.12+ and PyTorch 2.11+. Install from PyPI.
+For GPU use, first install [PyTorch](https://pytorch.org/get-started/locally/)
 with the matching CUDA major, then choose one command:
 
 ```bash
@@ -90,9 +92,13 @@ for reusable coding-agent instructions.
 
 If you use TMol in your work, please cite:
 
-> Andrew Leaver-Fay, Jeff Flatten, Alex Ford, Joseph Kleinhenz, Henry Solberg,
-> David Baker, Andrew M. Watkins, Brian Kuhlman, Frank DiMaio, *tmol: a
-> GPU-accelerated, PyTorch implementation of Rosetta's relax protocol*
+> Andrew Leaver-Fay\*, Kieran Didi\*, Jeff Flatten\*, Alex Ford, Guangfeng Zhou,
+> Nathaniel Corley, Hahnbeom Park, Maxwell W. Kazman, Rafael I. Brent,
+> Joseph Kleinhenz, Henry Solberg, Andrew M. Watkins, Brian Kuhlman, David Baker,
+> Frank DiMaio, *tmol: a GPU-accelerated implementation of the Rosetta energy
+> function for machine learning*
 > (manuscript in preparation).
+
+\* Core contributor.
 
 TMol is available under the terms in [LICENSE](https://github.com/RosettaCommons/tmol/blob/master/LICENSE).

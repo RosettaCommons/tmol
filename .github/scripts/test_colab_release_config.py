@@ -35,7 +35,7 @@ def test_colab_uses_a_released_version_and_current_tutorials():
     module = _load_colab_setup()
     source = (ROOT / "docs/tutorial/notebook_setup.py").read_text(encoding="utf-8")
 
-    assert module.TUTORIAL_REF == "master"
+    assert module.TUTORIAL_REF == f"v{module.TMOL_RELEASE}"
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     # Colab needs published wheels; the source version can be unreleased.
     release = module.TMOL_RELEASE
@@ -54,7 +54,7 @@ def test_colab_uses_a_released_version_and_current_tutorials():
         notebook = notebook_path.read_text(encoding="utf-8")
         assert "install_tutorial_source" not in notebook
         assert (
-            f"/RosettaCommons/tmol/blob/master/docs/tutorial/{notebook_path.name}"
+            f"/RosettaCommons/tmol/blob/{module.TUTORIAL_REF}/docs/tutorial/{notebook_path.name}"
             in notebook
         )
         assert "kdidi/sphinx-docs-refactor" not in notebook
@@ -99,7 +99,7 @@ def test_colab_selects_cuda_major_and_preserves_torch(
     )
     module.setup_colab([])
     assert len(calls) == 1
-    assert calls[0][0][0] == f"tmol[{extra}]=={module.TMOL_RELEASE}"
+    assert calls[0][0][0] == f"tmol[{extra},ligand]=={module.TMOL_RELEASE}"
     assert calls[0][1] == torch_version
 
 
@@ -128,6 +128,17 @@ def _tutorial_notebooks() -> list[Path]:
     notebooks = sorted((ROOT / "docs/tutorial").glob("[0-9][0-9]_*.ipynb"))
     assert notebooks, "no tutorial notebooks found in docs/tutorial"
     return notebooks
+
+
+def test_tutorial_notebooks_do_not_commit_execution_artifacts():
+    for path in _tutorial_notebooks():
+        notebook = json.loads(path.read_text(encoding="utf-8"))
+        for cell in notebook["cells"]:
+            if cell["cell_type"] != "code":
+                continue
+            assert cell["outputs"] == [], (path.name, cell.get("id"))
+            assert cell["execution_count"] is None, (path.name, cell.get("id"))
+            assert "execution" not in cell["metadata"], (path.name, cell.get("id"))
 
 
 def _notebook_code(path: Path) -> str:
@@ -200,3 +211,13 @@ def test_docs_workflow_uses_hosted_cpu_and_gpu_ci_executes_gpu_cells():
     ]
     # Every tutorial must run on CUDA: CPU-only runs hide device-mismatch bugs.
     assert flagged == [path.name for path in _tutorial_notebooks()]
+
+
+def test_colab_rejects_old_python_before_install(monkeypatch):
+    module = _load_colab_setup()
+    monkeypatch.setattr(module.sys, "version_info", (3, 11))
+    monkeypatch.setattr(
+        module, "_pip_install", lambda *args: pytest.fail("must not install")
+    )
+    with pytest.raises(RuntimeError, match="Python 3.12"):
+        module.setup_colab([])

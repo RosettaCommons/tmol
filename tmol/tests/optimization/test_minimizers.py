@@ -119,7 +119,11 @@ def test_cartesian_minimizer_reuses_compatible_network(
     jagged_stack_of_465_res_ubqs: PoseStack,
     torch_device,
 ):
-    pose_stack = jagged_stack_of_465_res_ubqs
+    # Isolate state reuse from float32 CUDA accumulation-order roundoff.
+    pose_stack = attrs.evolve(
+        jagged_stack_of_465_res_ubqs,
+        coords=jagged_stack_of_465_res_ubqs.coords.double(),
+    )
     sfxn = beta2016_score_function(torch_device)
     minimizer = CartesianMinimizer(cuda_graph=torch_device.type == "cuda")
     kwargs = {"max_iter": 3, "gradtol": 0.0, "atol": 0.0, "rtol": 0.0}

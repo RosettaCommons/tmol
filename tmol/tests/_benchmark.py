@@ -80,7 +80,7 @@ def make_fixture(
         **extra_info: Extra kwargs stored as extra_info entries.
     """
 
-    node = types.SimpleNamespace(name=name, _nodeid=name)
+    node = types.SimpleNamespace(name=name, nodeid=name, _nodeid=name)
 
     benchmark = _new_benchmark_fixture(
         node=node,
@@ -121,7 +121,9 @@ def make_subfixture(
         Initialized subfixture.
     """
     node = types.SimpleNamespace(
-        name=parent.name + name_suffix, _nodeid=parent.fullname + name_suffix
+        name=parent.name + name_suffix,
+        nodeid=parent.fullname + name_suffix,
+        _nodeid=parent.fullname + name_suffix,
     )
 
     benchmark = _new_benchmark_fixture(

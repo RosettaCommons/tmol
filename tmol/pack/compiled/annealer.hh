@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Eigen/Core>
-
 #include <tmol/utility/tensor/TensorAccessor.h>
 #include <tmol/utility/tensor/TensorPack.h>
 #include <tmol/utility/tensor/context_manager.hh>
@@ -30,6 +28,7 @@ struct InteractionGraphBuilder {
       TView<int32_t, 1, D> block_ind_for_rot,
       TView<int32_t, 2, D> sparse_inds,
       TView<Real, 1, D> sparse_energies,
+      int64_t const n_unique_entries,
       int const verbose)
       -> std::tuple<
           TPack<
@@ -71,8 +70,8 @@ struct AnnealerDispatch {
       TView<int64_t, 1, D> neighbor_chunk_offset_offsets,
       TView<int64_t, 1, D> chunk_offsets,
       TView<float, 1, D> energy1b,
-      TView<float, 1, D> energy2b)
-      -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D> >;
+      TView<float, 1, D> energy2b,
+      int n_hitemp_traj) -> std::tuple<TPack<float, 2, D>, TPack<int, 3, D> >;
 };
 
 }  // namespace compiled

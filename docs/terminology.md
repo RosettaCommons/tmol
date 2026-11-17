@@ -134,7 +134,9 @@ remains. Choose the tree and allowed moves together; see the
 
 A **MoveMap** selects torsions and jumps for kinematic movement. Creating one
 does not enable movement: set its flags or masks explicitly. A
-**CartesianMoveMap** selects atom coordinates for Cartesian FastRelax.
+**CartesianMoveMap** selects atom coordinates for Cartesian minimization.
+FastRelax takes one of them inside its minimizer: `CartesianRelaxMinimizer`
+for a CartesianMoveMap, `KinematicRelaxMinimizer` for a MoveMap.
 
 A **constraint** adds a score penalty, such as a restraint to a target position.
 It affects optimization only when attached to the pose and given a nonzero

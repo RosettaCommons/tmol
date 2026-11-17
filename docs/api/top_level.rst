@@ -17,9 +17,11 @@ Core objects
 
    CanonicalOrdering
    CartesianMoveMap
+   CartesianRelaxMinimizer
    ConstraintSet
    EdgeType
    FoldForest
+   KinematicRelaxMinimizer
    LigandFragmentDefinition
    MoveMap
    PDBInfo

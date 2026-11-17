@@ -166,3 +166,11 @@ tmol/tests/data/protein_ligand_test/*.packmin.cif
 
 # macOS Finder metadata
 .DS_Store
+# MPS backend build artifacts: the Metal shaders are generated from the
+# .metal.in sources by cmake/TmolMetalShader.cmake at build time.
+/generated/
+*.raw.metal
+*.flat.metal
+*.metal.d
+
+.devcontainer

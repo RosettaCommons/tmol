@@ -99,22 +99,17 @@ fixed residues, mutation scans, and residue-level results.
 ramping steric repulsion back to its full weight.
 
 ```python
-from tmol import CartesianMoveMap, FoldForest, fast_relax
+from tmol import fast_relax
 
-relaxed = fast_relax(
-    pose,
-    sfxn,
-    PackerPalette(),
-    CartesianMoveMap(),
-    FoldForest.reasonable_fold_forest(pose),
-)
+relaxed = fast_relax(pose, sfxn)
 relaxed_scorer = sfxn.render_whole_pose_scoring_module(relaxed)
 print(relaxed_scorer(relaxed.coords).tolist())
 file_from_pose_stack(relaxed, "relaxed.pdb")
 ```
 
 This uses Cartesian minimization with all atom coordinates free. For torsion
-or jump control, use a configured `MoveMap` and kinematic minimizer as shown in
+or jump control, pass `minimizer=KinematicRelaxMinimizer()`, which frees every
+torsion and jump, or give it a configured `MoveMap`; see
 {doc}`kinematic optimization <user_guide/optimization>`.
 
 ## Score a batch

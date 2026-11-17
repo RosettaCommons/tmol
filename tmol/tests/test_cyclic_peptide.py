@@ -18,7 +18,7 @@ from tmol import (
     pose_stack_from_file,
     PackerPalette,
     PackerTask,
-    FoldForest,
+    KinematicRelaxMinimizer,
     MoveMap,
     fast_relax,
 )
@@ -163,9 +163,7 @@ def test_relax_maintains_backbone_bonds(default_database, dun_sampler, torch_dev
     relaxed = fast_relax(
         pose_stack,
         sfxn,
-        PackerPalette(),
-        move_map,
-        FoldForest.reasonable_fold_forest(pose_stack),
+        minimizer=KinematicRelaxMinimizer(move_map),
         task_operations=[task_op],
         num_repeats=1,
     )

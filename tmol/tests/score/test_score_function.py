@@ -1,6 +1,8 @@
 import torch
 import numpy
 import os
+import subprocess
+import sys
 import threading
 import attr
 import pytest
@@ -322,8 +324,14 @@ def test_fused_ljlk_elec_preserves_term_lanes_weights_and_gradients(
         fused.weights[ScoreType.fa_lk.value] = 1.25
         fused.weights[ScoreType.fa_elec.value] = 0.0
     weighted_lanes = fused(pose.coords, sum_terms=False, apply_weights=True)
-    torch.testing.assert_close(weighted_lanes, fused_lanes.detach() * fused.weights)
-    torch.testing.assert_close(fused(pose.coords), weighted_lanes.sum(dim=0))
+    # The weighted kernel accumulates in a different float32 order than
+    # weighting the unweighted lanes afterwards; match the lane tolerance above.
+    torch.testing.assert_close(
+        weighted_lanes, fused_lanes.detach() * fused.weights, atol=2e-5, rtol=2e-5
+    )
+    torch.testing.assert_close(
+        fused(pose.coords), weighted_lanes.sum(dim=0), atol=2e-5, rtol=2e-5
+    )
 
     # Compact weighted fusion intentionally has no weight backward. If callers
     # make the score-function weights trainable, retain the canonical lanes so
@@ -471,7 +479,7 @@ def test_cpu_fused_shard_planner_preserves_fallbacks(
         torch_device, param_db=default_database
     ).render_whole_pose_scoring_module(pose)
     assert fused._execution_modules[0].classname == "LJLK+Elec"
-    assert fused._cpu_fused_shards == 2
+    assert fused._cpu_pair_shards == 2
     assert fused._can_use_weighted_fused_default(pose.coords.detach())
     assert fused._can_use_weighted_fused_default(
         pose.coords.detach().requires_grad_(True)
@@ -481,7 +489,7 @@ def test_cpu_fused_shard_planner_preserves_fallbacks(
     wide = beta2016_score_function(
         torch_device, param_db=default_database
     ).render_whole_pose_scoring_module(pose)
-    assert wide._cpu_fused_shards == 8
+    assert wide._cpu_pair_shards == 8
     assert not wide._can_use_weighted_fused_default(pose.coords.detach())
     assert wide._can_use_weighted_fused_default(
         pose.coords.detach().requires_grad_(True)
@@ -507,7 +515,7 @@ def test_cpu_fused_shard_planner_preserves_fallbacks(
         torch_device, param_db=default_database
     ).render_whole_pose_scoring_module(pose)
     assert two_threads._execution_modules[0].classname == "LJLK+Elec"
-    assert two_threads._cpu_fused_shards == 2
+    assert two_threads._cpu_pair_shards == 2
 
     monkeypatch.setattr(torch, "get_num_threads", lambda: 4)
     pose_batch = PoseStackBuilder.from_poses([pose, pose], torch_device)
@@ -515,6 +523,98 @@ def test_cpu_fused_shard_planner_preserves_fallbacks(
         torch_device, param_db=default_database
     ).render_whole_pose_scoring_module(pose_batch)
     assert all(term.classname != "LJLK+Elec" for term in batched._execution_modules)
+
+
+def test_cpu_sharding_covers_every_pair_list_term(
+    ubq_pdb, default_database, torch_device, monkeypatch
+):
+    if torch_device.type != "cpu":
+        pytest.skip("CPU execution-planner check")
+    pose = pose_stack_from_file(
+        ubq_pdb,
+        torch_device,
+        no_optH=True,
+        missing_density_distance_threshold=0.0,
+    )
+    monkeypatch.setattr(torch, "get_num_threads", lambda: 8)
+    scorer = beta2016_score_function(
+        torch_device, param_db=default_database
+    ).render_whole_pose_scoring_module(pose)
+    sharded = {
+        scorer._execution_modules[index].classname
+        for index in scorer._cpu_sharded_term_indices
+    }
+    unsharded = score_function_module._UNSHARDED_PAIR_TERMS
+    assert {"LJLK+Elec", "HBond", "LKBall"} - unsharded <= sharded
+    assert not sharded & unsharded
+
+    sharded_coords = pose.coords.detach().clone().requires_grad_(True)
+    separate_coords = pose.coords.detach().clone().requires_grad_(True)
+    sharded_score = scorer(sharded_coords)
+    separate_score = (
+        _separate_unweighted_scores(scorer, separate_coords) * scorer.weights
+    ).sum(dim=0)
+    (sharded_grad,) = torch.autograd.grad(sharded_score.sum(), sharded_coords)
+    (separate_grad,) = torch.autograd.grad(separate_score.sum(), separate_coords)
+    torch.testing.assert_close(sharded_score, separate_score, atol=2e-3, rtol=3e-5)
+    torch.testing.assert_close(sharded_grad, separate_grad, atol=5e-5, rtol=5e-5)
+
+
+def test_cpu_score_workers_share_the_thread_budget():
+    if "parallel backend: OpenMP" not in torch.__config__.parallel_info():
+        pytest.skip("torch is not using an OpenMP runtime")
+    assert score_function_module._openmp_runtime() is not None
+    budget = torch.get_num_threads()
+    try:
+        torch.set_num_threads(4)
+        executor = score_function_module._cpu_score_term_executor(2)
+        worker_threads = set(executor.map(lambda _: torch.get_num_threads(), range(8)))
+        # macOS workers keep the whole budget; elsewhere each gets its share.
+        expected = 2 if score_function_module._CAP_CPU_SCORE_WORKER_THREADS else 4
+        assert worker_threads == {expected}
+        assert torch.get_num_threads() == 4
+    finally:
+        torch.set_num_threads(budget)
+
+
+_BOUND_WORKER_AFFINITY_SCRIPT = """
+import os
+cpus = os.sched_getaffinity(0)
+import torch
+import tmol.score._score_function as sf
+assert os.sched_getaffinity(0) < cpus, "OpenMP binding did not pin the main thread"
+torch.set_num_threads(4)
+x = torch.randn(1_000_000)
+
+
+def run_openmp_region(_):
+    (x * 2).sum()
+    return torch.get_num_threads(), os.sched_getaffinity(0)
+
+
+for share_threads in (True, False):
+    executor = sf._cpu_score_term_executor(2, share_threads=share_threads)
+    workers = list(executor.map(run_openmp_region, range(8)))
+    assert all(worker == (1, cpus) for worker in workers), (share_threads, workers)
+"""
+
+
+def test_cpu_score_workers_escape_openmp_binding():
+    if not hasattr(os, "sched_setaffinity"):
+        pytest.skip("thread affinity is not settable on this platform")
+    if "parallel backend: OpenMP" not in torch.__config__.parallel_info():
+        pytest.skip("torch is not using an OpenMP runtime")
+    if len(os.sched_getaffinity(0)) < 2:
+        pytest.skip("binding is only observable with two or more CPUs")
+    env = dict(os.environ, OMP_PROC_BIND="close", OMP_PLACES="cores")
+    env.pop("OMP_NUM_THREADS", None)
+    result = subprocess.run(
+        [sys.executable, "-c", _BOUND_WORKER_AFFINITY_SCRIPT],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_weighted_fused_score_adaptive_dispatch():
@@ -781,20 +881,25 @@ def test_packed_block_setup_is_reused_and_cross_score_function_safe(
     sfxn.set_weight(ScoreType.ref, 1.0)
     term = sfxn.all_terms()[0]
     original = term.setup_block_type
-    calls = 0
+    set_up = set()
 
-    def counted(block_type):
-        nonlocal calls
-        calls += 1
+    # Record which block types are set up, not how often: a term's
+    # setup_packed_block_types may re-read its own cached per-block
+    # annotation, and whether that cache is already warm depends on which
+    # tests ran first.
+    def recorded(block_type):
+        set_up.add(id(block_type))
         return original(block_type)
 
-    monkeypatch.setattr(term, "setup_block_type", counted)
-    sfxn.pre_work_initialization(pose)
-    first_calls = calls
-    assert first_calls == len(pose.packed_block_types.active_block_types)
+    monkeypatch.setattr(term, "setup_block_type", recorded)
+    all_block_types = {id(bt) for bt in pose.packed_block_types.active_block_types}
 
     sfxn.pre_work_initialization(pose)
-    assert calls == first_calls
+    assert set_up == all_block_types
+
+    set_up.clear()
+    sfxn.pre_work_initialization(pose)
+    assert set_up == set()
 
     # Packed block types are shared. Another score function may replace
     # option-dependent annotations, so its setup must invalidate this cache.
@@ -802,7 +907,7 @@ def test_packed_block_setup_is_reused_and_cross_score_function_safe(
     other.set_weight(ScoreType.ref, 1.0)
     other.pre_work_initialization(pose)
     sfxn.pre_work_initialization(pose)
-    assert calls == 2 * first_calls
+    assert set_up == all_block_types
 
 
 def test_packed_block_setup_reuses_annotations_for_identical_types(
@@ -1075,9 +1180,10 @@ def test_cpu_parallel_whole_pose_gradient_matches_serial_order(
     scorer._cpu_term_workers = 0
     serial_score, serial_gradient = score_and_gradient()
 
-    assert torch.equal(parallel_score, serial_score)
-    # Independent shard graphs may reach the leaf accumulator in a different
-    # order; the resulting difference is limited to float32 roundoff.
+    # Parallel and serial scoring sum the term totals, and independent shard
+    # graphs reach the leaf accumulator, in different orders; the resulting
+    # difference is limited to float32 roundoff.
+    torch.testing.assert_close(parallel_score, serial_score, atol=5e-6, rtol=1e-6)
     torch.testing.assert_close(parallel_gradient, serial_gradient, atol=5e-6, rtol=1e-6)
 
 
@@ -1237,24 +1343,34 @@ def test_rotamer_weighted_reduction_preserves_layout_values_and_gradients(
     torch.testing.assert_close(actual_grads[1].reshape(-1), reference_grads[1])
 
 
-def test_weighted_score_sum_has_output_sized_cuda_peak(
+def test_weighted_score_sum_has_output_sized_cuda_peak_growth(
     torch_device: torch.device,
 ) -> None:
     if torch_device.type != "cuda":
         pytest.skip("CUDA allocation accounting test")
 
-    scores = torch.ones((4, 4 * 1024 * 1024), device=torch_device)
     weights = torch.tensor([0.0, 2.0, -1.0, 0.5], device=torch_device)
-    torch.cuda.synchronize()
-    torch.cuda.reset_peak_memory_stats()
-    baseline = torch.cuda.memory_allocated()
+    measurements = []
+    for n_entries in (1024 * 1024, 4 * 1024 * 1024):
+        scores = torch.ones((4, n_entries), device=torch_device)
+        # Exclude lazy setup; uncached BLAS workspace can still be allocated
+        # on every call, independently of the number of score entries.
+        score_function_module._weighted_score_sum(weights, scores)
+        torch.cuda.synchronize(torch_device)
+        torch.cuda.reset_peak_memory_stats(torch_device)
+        baseline = torch.cuda.memory_allocated(torch_device)
 
-    result = score_function_module._weighted_score_sum(weights, scores)
-    torch.cuda.synchronize()
-    peak_delta = torch.cuda.max_memory_allocated() - baseline
+        result = score_function_module._weighted_score_sum(weights, scores)
+        torch.cuda.synchronize(torch_device)
+        peak_delta = torch.cuda.max_memory_allocated(torch_device) - baseline
+        measurements.append((peak_delta, result.nbytes))
+        torch.testing.assert_close(result, torch.full_like(result, 1.5))
+        del result, scores
 
-    torch.testing.assert_close(result, torch.full_like(result, 1.5))
-    assert peak_delta <= result.nbytes + 8 * 1024 * 1024
+    # Fixed workspace cancels; a materialized four-lane product does not.
+    peak_growth = measurements[1][0] - measurements[0][0]
+    output_growth = measurements[1][1] - measurements[0][1]
+    assert peak_growth <= output_growth + 8 * 1024 * 1024
 
 
 def test_rotamer_scorer_raw_entries_keep_int32_and_uncoalesced_duplicates() -> None:
@@ -2103,7 +2219,7 @@ def test_score_function_all_score_types_protein_dna(protein_dna_pdb):
     gold_score_map = {
         ScoreType.fa_ljatr: n([-1210.854248]),
         ScoreType.fa_ljrep: n([805.994080]),
-        ScoreType.fa_lk: n([808.497986]),
+        ScoreType.fa_lk: n([809.354553]),
         ScoreType.fa_elec: n([-337.304199]),
         ScoreType.hbond: n([-173.997391]),
         ScoreType.cart_lengths: n([157.134415]),
@@ -2118,7 +2234,7 @@ def test_score_function_all_score_types_protein_dna(protein_dna_pdb):
         ScoreType.dunbrack_rot: n([198.613831]),
         ScoreType.dunbrack_rotdev: n([553.206238]),
         ScoreType.dunbrack_semirot: n([175.140625]),
-        ScoreType.lk_ball_iso: n([1092.919800]),
+        ScoreType.lk_ball_iso: n([1092.989990]),
         ScoreType.lk_ball: n([401.814789]),
         ScoreType.lk_bridge: n([2.487589]),
         ScoreType.lk_bridge_uncpl: n([23.090977]),

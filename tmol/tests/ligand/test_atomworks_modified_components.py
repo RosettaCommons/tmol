@@ -587,9 +587,7 @@ def test_plp_enzyme_completion_preserves_residues_and_terminal_chemistry(
     )
     _score_and_minimize(pose, context)
 
-    from tmol import CartesianMoveMap, FoldForest
     from tmol import run_cart_min
-    from tmol import PackerPalette
     import tmol.pack._pack_rotamers as packing
     from tmol import fast_relax
     from tmol import beta2016_score_function
@@ -619,12 +617,9 @@ def test_plp_enzyme_completion_preserves_residues_and_terminal_chemistry(
     relaxed = fast_relax(
         pose,
         score,
-        PackerPalette(),
-        CartesianMoveMap(),
-        FoldForest.reasonable_fold_forest(pose),
+        minimizer=minimize,
         num_repeats=1,
         schedule=[1.0],
-        min_fn=minimize,
     )
     assert counts
     assert torch.equal(
