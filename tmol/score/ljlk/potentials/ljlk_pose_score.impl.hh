@@ -541,6 +541,7 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::
         TView<Int, 1, D> pose_ind_for_rot,
         TView<Int, 1, D> block_type_ind_for_rot,
         TView<Int, 1, D> block_type_n_atoms,
+        TView<Int, 2, D> movable_blocks,
         Real reach) -> TPack<Int, 1, D> {
   int const n_poses = first_rot_for_block.size(0);
   int const max_n_blocks = first_rot_for_block.size(1);
@@ -573,6 +574,7 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::
             first_rot_for_block,
             block_spheres_t.view,
             neighbor_indices_t.view,
+            movable_blocks,
             reach);
     return neighbor_indices_t;
   } else if constexpr (D == Device::MPS) {
@@ -597,7 +599,11 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::
             block_spheres_t.view);
     std::vector<Int> retained;
     if (score::common::sphere_overlap::try_cpu_spatial_compact_block_neighbors(
-            first_rot_for_block, block_spheres_t.view, reach, retained)) {
+            first_rot_for_block,
+            block_spheres_t.view,
+            movable_blocks,
+            reach,
+            retained)) {
       auto neighbor_indices_t =
           TPack<Int, 1, D>::empty({int64_t(retained.size()) + 1});
       neighbor_indices_t.view[0] = static_cast<Int>(retained.size());
@@ -617,6 +623,7 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::
             first_rot_for_block,
             block_spheres_t.view,
             neighbor_indices_t.view,
+            movable_blocks,
             reach);
     return neighbor_indices_t;
   }

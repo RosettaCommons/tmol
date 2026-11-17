@@ -84,6 +84,7 @@ class BackboneTorsionPoseScoreDispatch {
       // Omega (backbone-dependent) potential parameters
       TView<Real, 4, Dev> omega_tables,
       TView<RamaTableParams<Real>, 1, Dev> omega_table_params,
+      TView<Int, 2, Dev> movable_blocks,
       bool output_block_pair_energies,
       bool compute_derivs)
       -> std::tuple<TPack<Real, 4, Dev>, TPack<Vec<Real, 3>, 2, Dev>>;
@@ -144,6 +145,7 @@ class BackboneTorsionPoseScoreDispatch {
       // Omega (backbone-dependent) potential parameters
       TView<Real, 4, Dev> omega_tables,
       TView<RamaTableParams<Real>, 1, Dev> omega_table_params,
+      TView<Int, 2, Dev> movable_blocks,
       TView<Real, 4, Dev> dTdV  // nterms x nposes x (1|len) x (1|len)
       ) -> TPack<Vec<Real, 3>, 2, Dev>;
 };

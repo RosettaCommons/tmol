@@ -456,9 +456,12 @@ template <typename Real, typename Int>
 bool try_cpu_spatial_compact_block_neighbors(
     TView<Int, 2, tmol::Device::CPU> pose_stack_block_type,
     TView<Real, 3, tmol::Device::CPU> block_spheres,
+    TView<Int, 2, tmol::Device::CPU> movable_blocks,
     Real reach,
     std::vector<Int>& retained) {
   retained.clear();
+  // An empty movable view means every block moves, so no pair is filtered.
+  bool const filter_frozen = movable_blocks.size(0) != 0;
   int const n_poses = pose_stack_block_type.size(0);
   int const max_n_blocks = pose_stack_block_type.size(1);
   constexpr int min_spatial_sweep_blocks = 150;
@@ -548,6 +551,13 @@ bool try_cpu_spatial_compact_block_neighbors(
       Real const threshold = left_radius + block_spheres[0][right][3] + reach;
       if (d2 >= threshold * threshold) continue;
 
+      // Two frozen blocks interact identically at every call, so the pair is a
+      // constant the caller accounts for once instead of re-evaluating.
+      if (filter_frozen && movable_blocks[0][left] == 0
+          && movable_blocks[0][right] == 0) {
+        continue;
+      }
+
       Int const block1 = std::min(left, right);
       Int const block2 = std::max(left, right);
       int64_t const candidate =
@@ -571,8 +581,11 @@ struct detect_compact_block_neighbors {
       TView<Int, 2, D> pose_stack_block_type,
       TView<Real, 3, D> block_spheres,
       TView<Int, 1, D> neighbor_indices,
+      TView<Int, 2, D> movable_blocks,
       Real reach) {
     LAUNCH_BOX_32;
+    // An empty movable view means every block moves, so no pair is filtered.
+    bool const filter_frozen = movable_blocks.size(0) != 0;
 
     int const n_poses = pose_stack_block_type.size(0);
     int const max_n_blocks = pose_stack_block_type.size(1);
@@ -590,7 +603,11 @@ struct detect_compact_block_neighbors {
       // by the quadratic path, so downstream accumulation is unchanged.
       std::vector<Int> retained;
       if (try_cpu_spatial_compact_block_neighbors(
-              pose_stack_block_type, block_spheres, reach, retained)) {
+              pose_stack_block_type,
+              block_spheres,
+              movable_blocks,
+              reach,
+              retained)) {
         neighbor_indices[0] = static_cast<Int>(retained.size());
         if (!retained.empty()) {
           std::memcpy(
@@ -612,6 +629,10 @@ struct detect_compact_block_neighbors {
             if (block_type1 < 0) return;
             int const block_type2 = pose_stack_block_type[pose_ind][block_ind2];
             if (block_type2 < 0) return;
+            if (filter_frozen && movable_blocks[pose_ind][block_ind1] == 0
+                && movable_blocks[pose_ind][block_ind2] == 0) {
+              return;
+            }
 
             Vec<Real, 4> sphere1{0, 0, 0, 0};
             Vec<Real, 4> sphere2{0, 0, 0, 0};
@@ -672,6 +693,10 @@ struct detect_compact_block_neighbors {
         if (block_type1 < 0) return;
         int const block_type2 = pose_stack_block_type[pose_ind][block_ind2];
         if (block_type2 < 0) return;
+        if (filter_frozen && movable_blocks[pose_ind][block_ind1] == 0
+            && movable_blocks[pose_ind][block_ind2] == 0) {
+          return;
+        }
 
         Vec<Real, 4> sphere1{0, 0, 0, 0};
         Vec<Real, 4> sphere2{0, 0, 0, 0};

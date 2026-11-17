@@ -95,6 +95,7 @@ auto DunbrackPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
     TView<Int, 1, D> block_rotamer_index_to_table_index,
     TView<Int, 1, D> block_semirotameric_tableset_offset,
     TView<Int, 1, D> block_is_mirrored,
+    TView<Int, 2, D> movable_blocks,
     bool output_block_pair_energies,
 
     bool compute_derivs
@@ -217,6 +218,21 @@ auto DunbrackPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
       // in non-rotamer scoring (both whole-pose and block-pair scoring)
       // we will launch n_poses * max_n_blocks_per_pose threads
       // with some threads being launched for blocks with -1 block type.
+      return;
+    }
+    // Dihedral UAIDs resolve one connection hop from this block, so the work
+    // item can read any bonded neighbour. Skip only when the whole local
+    // region is frozen; that energy is constant and accounted for once.
+    auto region_is_frozen = ([=] TMOL_DEVICE_FUNC(int p, int b) {
+      if (movable_blocks.size(0) == 0) return false;
+      if (movable_blocks[p][b] != 0) return false;
+      for (int c = 0; c < max_n_conns; ++c) {
+        int const nb = pose_stack_inter_block_connections[p][b][c][0];
+        if (nb >= 0 && movable_blocks[p][nb] != 0) return false;
+      }
+      return true;
+    });
+    if (region_is_frozen(pose_index, block_index)) {
       return;
     }
 
@@ -524,6 +540,7 @@ auto DunbrackPoseScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
     TView<Int, 1, D> block_semirotameric_tableset_offset,
     TView<Int, 1, D> block_is_mirrored,
 
+    TView<Int, 2, D> movable_blocks,
     TView<Real, 4, D> dTdV  // n_terms x n_poses x max_n_blocks x max_n_blocks
     ) -> TPack<Vec<Real, 3>, 2, D> {
   int const n_atoms = rot_coords.size(0);
@@ -620,6 +637,21 @@ auto DunbrackPoseScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
       // in non-rotamer scoring (both whole-pose and block-pair scoring)
       // we will launch n_poses * max_n_blocks_per_pose threads
       // with some threads being launched for blocks with -1 block type.
+      return;
+    }
+    // Dihedral UAIDs resolve one connection hop from this block, so the work
+    // item can read any bonded neighbour. Skip only when the whole local
+    // region is frozen; that energy is constant and accounted for once.
+    auto region_is_frozen = ([=] TMOL_DEVICE_FUNC(int p, int b) {
+      if (movable_blocks.size(0) == 0) return false;
+      if (movable_blocks[p][b] != 0) return false;
+      for (int c = 0; c < max_n_conns; ++c) {
+        int const nb = pose_stack_inter_block_connections[p][b][c][0];
+        if (nb >= 0 && movable_blocks[p][nb] != 0) return false;
+      }
+      return true;
+    });
+    if (region_is_frozen(pose_index, block_index)) {
       return;
     }
 

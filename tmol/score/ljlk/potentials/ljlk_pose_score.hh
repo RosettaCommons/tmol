@@ -38,6 +38,7 @@ struct LJLKPoseScoreDispatch {
       TView<Int, 1, D> pose_ind_for_rot,
       TView<Int, 1, D> block_type_ind_for_rot,
       TView<Int, 1, D> block_type_n_atoms,
+      TView<Int, 2, D> movable_blocks,
       Real reach) -> TPack<Int, 1, D>;
 
   static auto forward(

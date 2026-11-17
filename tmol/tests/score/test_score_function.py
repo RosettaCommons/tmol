@@ -668,6 +668,7 @@ def test_compact_block_neighbor_capacity_checks(shape, message):
             empty_int,
             empty_int,
             empty_int,
+            torch.empty((0, 0), dtype=torch.int32),
             6.0,
         )
 

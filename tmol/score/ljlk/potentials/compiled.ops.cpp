@@ -952,7 +952,12 @@ std::vector<Tensor> build_compact_block_neighbors_op(
     Tensor pose_ind_for_rot,
     Tensor block_type_ind_for_rot,
     Tensor block_type_n_atoms,
+    Tensor movable_blocks,
     double reach) {
+  TORCH_CHECK(
+      movable_blocks.dim() == 2,
+      "movable_blocks must have shape [n_poses, max_n_blocks], or [0, 0] to "
+      "treat every block as movable");
   TORCH_CHECK(
       first_rot_block_type.dim() == 2,
       "first_rot_block_type must have shape [n_poses, max_n_blocks]");
@@ -995,6 +1000,7 @@ std::vector<Tensor> build_compact_block_neighbors_op(
                     TCAST(pose_ind_for_rot),
                     TCAST(block_type_ind_for_rot),
                     TCAST(block_type_n_atoms),
+                    TCAST(movable_blocks),
                     (Real)reach)
                     .tensor;
       }));

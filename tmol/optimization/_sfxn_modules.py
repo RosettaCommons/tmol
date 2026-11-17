@@ -30,8 +30,10 @@ class CartesianSfxnNetwork(torch.nn.Module):
     ):
         super(CartesianSfxnNetwork, self).__init__()
 
+        # A caller-supplied mask names the only atoms that can move, so blocks
+        # it leaves out are frozen and their mutual interactions are constant.
         wpsm = score_function.render_whole_pose_scoring_module(
-            pose_stack, cuda_graph=cuda_graph
+            pose_stack, cuda_graph=cuda_graph, movable_blocks=coord_mask
         )
         self.whole_pose_scoring_module = wpsm
         self._score_function = score_function
@@ -251,6 +253,7 @@ class KinForestSfxnNetwork(torch.nn.Module):
         cuda_graph: bool | str = False,
         fold_forest: FoldForest | None = None,
         move_map: MoveMap | None = None,
+        movable_blocks=None,
     ):
         super(KinForestSfxnNetwork, self).__init__()
 
@@ -258,7 +261,12 @@ class KinForestSfxnNetwork(torch.nn.Module):
         self.pose_stack = pose_stack
         # The kinematic graph captures scoring itself; a separate
         # coordinate-input scoring graph would only retain more memory.
-        wpsm = score_function.render_whole_pose_scoring_module(pose_stack)
+        # A move map constrains DOFs, not blocks, and the atoms a free DOF
+        # moves are its whole kinematic downstream, so the movable blocks are
+        # declared by the caller rather than derived here.
+        wpsm = score_function.render_whole_pose_scoring_module(
+            pose_stack, movable_blocks=movable_blocks
+        )
         kmd = kin_module.kmd
         self.ff_copy = None if fold_forest is None else deepcopy(fold_forest)
         self.mm_copy = None if move_map is None else deepcopy(move_map)

@@ -106,6 +106,7 @@ struct GenBondedPoseScoreDispatch {
       TView<Vec<Int, 5>, 1, D> gen_inter_improper_hash_keys,
       TView<Vec<Real, 5>, 1, D> gen_inter_improper_hash_values,
 
+      TView<Int, 2, D> movable_blocks,
       bool output_block_pair_energies,
       bool compute_derivs)
       -> std::tuple<
@@ -145,6 +146,7 @@ struct GenBondedPoseScoreDispatch {
       TView<Vec<Int, 5>, 1, D> gen_inter_improper_hash_keys,
       TView<Vec<Real, 5>, 1, D> gen_inter_improper_hash_values,
 
+      TView<Int, 2, D> movable_blocks,
       TView<Real, 4, D> dTdV) -> TPack<Vec<Real, 3>, 2, D>;
 };
 

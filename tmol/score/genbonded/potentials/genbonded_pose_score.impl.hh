@@ -404,6 +404,7 @@ auto GenBondedPoseScoreDispatch<DeviceOps, D, Real, Int>::forward(
     TView<Vec<Int, 5>, 1, D> gen_inter_improper_hash_keys,
     TView<Vec<Real, 5>, 1, D> gen_inter_improper_hash_values,
 
+    TView<Int, 2, D> movable_blocks,
     bool output_block_pair_energies,
     bool compute_derivs)
     -> std::tuple<TPack<Real, 4, D>, TPack<Vec<Real, 3>, 2, D>> {
@@ -447,6 +448,21 @@ auto GenBondedPoseScoreDispatch<DeviceOps, D, Real, Int>::forward(
     int const block_type1 = first_rot_block_type[pose_ind][block_ind1];
 
     if (block_type1 == -1) return;
+    // Work items resolve at most one connection hop from this block, so skip
+    // only when the block and every bonded neighbour are frozen; that energy
+    // is constant and the caller accounts for it once.
+    auto region_is_frozen = ([=] TMOL_DEVICE_FUNC(int p, int b) {
+      if (movable_blocks.size(0) == 0) return false;
+      if (movable_blocks[p][b] != 0) return false;
+      for (int c = 0; c < max_n_conns; ++c) {
+        int const nb = pose_stack_inter_block_connections[p][b][c][0];
+        if (nb >= 0 && movable_blocks[p][nb] != 0) return false;
+      }
+      return true;
+    });
+    if (region_is_frozen(pose_ind, block_ind1)) {
+      return;
+    }
 
     int const rot_ind1 = first_rot_for_block[pose_ind][block_ind1];
     int const rot_coord_offset1 = rot_coord_offset[rot_ind1];
@@ -727,6 +743,7 @@ auto GenBondedPoseScoreDispatch<DeviceOps, D, Real, Int>::backward(
     TView<Vec<Int, 5>, 1, D> gen_inter_improper_hash_keys,
     TView<Vec<Real, 5>, 1, D> gen_inter_improper_hash_values,
 
+    TView<Int, 2, D> movable_blocks,
     TView<Real, 4, D> dTdV) -> TPack<Vec<Real, 3>, 2, D> {
   int const n_atoms = rot_coords.size(0);
   int const n_poses = first_rot_for_block.size(0);
@@ -753,6 +770,21 @@ auto GenBondedPoseScoreDispatch<DeviceOps, D, Real, Int>::backward(
     int const block_type1 = first_rot_block_type[pose_ind][block_ind1];
 
     if (block_type1 == -1) return;
+    // Work items resolve at most one connection hop from this block, so skip
+    // only when the block and every bonded neighbour are frozen; that energy
+    // is constant and the caller accounts for it once.
+    auto region_is_frozen = ([=] TMOL_DEVICE_FUNC(int p, int b) {
+      if (movable_blocks.size(0) == 0) return false;
+      if (movable_blocks[p][b] != 0) return false;
+      for (int c = 0; c < max_n_conns; ++c) {
+        int const nb = pose_stack_inter_block_connections[p][b][c][0];
+        if (nb >= 0 && movable_blocks[p][nb] != 0) return false;
+      }
+      return true;
+    });
+    if (region_is_frozen(pose_ind, block_ind1)) {
+      return;
+    }
 
     int const rot_ind1 = first_rot_for_block[pose_ind][block_ind1];
     int const rot_coord_offset1 = rot_coord_offset[rot_ind1];

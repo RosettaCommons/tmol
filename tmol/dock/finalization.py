@@ -14,7 +14,11 @@ from tmol.dock.ga import (
     _place_ligand_in_reference,
 )
 from tmol.dock.ligand_dofs import build_ligand_docking_dofs
-from tmol.optimization._minimizers import run_cart_min, run_kin_min
+from tmol.optimization._minimizers import (
+    CartesianMinimizer,
+    KinematicMinimizer,
+    run_cart_min,
+)
 from tmol.pose._constraint_set import ConstraintSet
 
 from tmol.pose._pose_stack import PoseStack
@@ -92,12 +96,20 @@ def _soft_hard_refine(
         )
         for rep_mult, tol, max_iter in schedule
     ]
+    # The refined topology never changes, so render the exact scorer once and
+    # feed it coordinates; rendering per cycle is pure setup.
+    exact_scorer = exact_sfxn.render_whole_pose_scoring_module(promoted)
+
+    def exact_energy(pose):
+        with torch.no_grad():
+            return exact_scorer(pose.coords)
+
     best_coords = promoted.coords.clone()
     # A non-finite pre-refine score (e.g. a severe clash scoring to +/-inf/NaN)
     # must not block accept-to-best: seed it to +inf so any finite refined-cycle
     # energy is accepted. A candidate that stays non-finite ranks last (dH/dG=inf)
     # rather than poisoning the sort with NaN.
-    best_energy = _score_pose_stack(promoted, exact_sfxn)
+    best_energy = exact_energy(promoted)
     best_energy = torch.where(
         torch.isfinite(best_energy),
         best_energy,
@@ -107,7 +119,7 @@ def _soft_hard_refine(
     for _ in range(cycles):
         for step_sfxn, tol, max_iter in step_sfxns:
             current = minimize(current, step_sfxn, tol, max_iter)
-        energy = _score_pose_stack(current, exact_sfxn)
+        energy = exact_energy(current)
         improved = torch.isfinite(energy) & (energy < best_energy)
         best_coords = torch.where(improved[:, None, None], current.coords, best_coords)
         best_energy = torch.where(improved, energy, best_energy)
@@ -116,14 +128,19 @@ def _soft_hard_refine(
 
 
 def _ligand_cartmin(
-    pose_stack, exact_sfxn, ligand_coord_mask, *, max_iter=50, rtol=1e-4
+    pose_stack, exact_sfxn, ligand_coord_mask, *, max_iter=50, rtol=1e-4, minimizer=None
 ):
     """Ligand-only Cartesian minimization at exact hard weights."""
+    kwargs = {"max_iter": max_iter, "rtol": rtol}
+    if minimizer is not None:
+        return minimizer(
+            pose_stack, exact_sfxn, ligand_coord_mask, optimizer_kwargs=kwargs
+        )
     return run_cart_min(
         pose_stack,
         exact_sfxn,
         coord_mask=ligand_coord_mask,
-        optimizer_kwargs={"max_iter": max_iter, "rtol": rtol},
+        optimizer_kwargs=kwargs,
     )
 
 
@@ -377,22 +394,33 @@ def _refine_rigid(
     ligand_mask,
     refine_schedule,
     refine_cycles,
+    movable_blocks=None,
 ):
     """Torsion-space soft-to-hard refinement bracketed by ligand Cartesian min."""
-    promoted = _ligand_cartmin(promoted, exact_sfxn, ligand_mask)
+    # One minimizer per distinct score function, reused across refine cycles:
+    # the rendered network and its topology tensors are setup, not numerics.
+    cartesian = CartesianMinimizer()
+    torsion_minimizers: dict[int, KinematicMinimizer] = {}
+
+    promoted = _ligand_cartmin(promoted, exact_sfxn, ligand_mask, minimizer=cartesian)
     ldofs = build_ligand_docking_dofs(promoted, ligand_block, sidechain_blocks=())
 
     def torsion_step(pose, step_sfxn, tol, max_iter):
         # Fixed-hydrogen harness: no whole-pose optH, ramp steps minimize only.
         # rtol maps Rosetta's fractional-energy tolerance (in float32 1e-5 is
         # below the dtype floor, so the hard step stops on gradient/atol/max_iter).
-        return run_kin_min(
+        minimizer = torsion_minimizers.get(id(step_sfxn))
+        if minimizer is None:
+            minimizer = KinematicMinimizer(
+                kin_dtype=pose.coords.dtype, movable_blocks=movable_blocks
+            )
+            torsion_minimizers[id(step_sfxn)] = minimizer
+        return minimizer(
             pose,
             step_sfxn,
             ldofs.fold_forest,
             ldofs.move_map,
             optimizer_kwargs={"max_iter": max_iter, "rtol": tol},
-            kin_dtype=pose.coords.dtype,
         )
 
     promoted, _ = _soft_hard_refine(
@@ -404,7 +432,7 @@ def _refine_rigid(
         schedule=refine_schedule,
         cycles=refine_cycles,
     )
-    refined = _ligand_cartmin(promoted, exact_sfxn, ligand_mask)
+    refined = _ligand_cartmin(promoted, exact_sfxn, ligand_mask, minimizer=cartesian)
     # run_kin_min refolds the whole pose and float32 kinematics leave ~1e-3 A
     # noise on the nominally fixed receptor; restore every non-ligand atom.
     refined = attr.evolve(
@@ -533,6 +561,7 @@ def finalize_ga_docking(
             coord_mask,
             refine_schedule,
             refine_cycles,
+            movable_blocks=coord_mask,
         )
     free_ligand_energy, free_receptor_energy = _free_state_energies(
         refined,

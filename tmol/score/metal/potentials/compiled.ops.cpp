@@ -63,6 +63,7 @@ class MetalCoordinationPoseScoreOp
       Tensor bridge_internal_metal,
       Tensor bridge_internal_d0,
       Tensor bridge_params,
+      Tensor movable_blocks,
 
       bool output_block_pair_energies) {
     tmol::native::Tensor score;
@@ -108,6 +109,7 @@ class MetalCoordinationPoseScoreOp
                   TCAST(bridge_internal_metal),
                   TCAST(bridge_internal_d0),
                   TCAST(bridge_params),
+                  TCAST(movable_blocks),
                   output_block_pair_energies,
                   rot_coords.requires_grad());
 
@@ -144,7 +146,8 @@ class MetalCoordinationPoseScoreOp
            fan_params,
            bridge_internal_metal,
            bridge_internal_d0,
-           bridge_params});
+           bridge_params,
+           movable_blocks});
     } else {
       score = score.reshape({score.size(0), score.size(1)});
       ctx->save_for_backward({dscore_dcoords});
@@ -206,6 +209,7 @@ class MetalCoordinationPoseScoreOp
       auto bridge_internal_metal = saved[i++];
       auto bridge_internal_d0 = saved[i++];
       auto bridge_params = saved[i++];
+      auto movable_blocks = saved[i++];
 
       using Int = int32_t;
 
@@ -249,6 +253,7 @@ class MetalCoordinationPoseScoreOp
                     TCAST(bridge_internal_metal),
                     TCAST(bridge_internal_d0),
                     TCAST(bridge_params),
+                    TCAST(movable_blocks),
                     TCAST(dTdV));
 
             dV_d_pose_coords = result.tensor;
@@ -286,6 +291,7 @@ class MetalCoordinationPoseScoreOp
         tmol::native::Tensor(),
         tmol::native::Tensor(),
 
+        tmol::native::Tensor(),
         tmol::native::Tensor()};
   }
 };
@@ -595,6 +601,7 @@ std::vector<Tensor> metal_coordination_pose_scores_op(
     Tensor bridge_internal_metal,
     Tensor bridge_internal_d0,
     Tensor bridge_params,
+    Tensor movable_blocks,
 
     bool output_block_pair_energies) {
   return MetalCoordinationPoseScoreOp<DispatchMethod>::apply(
@@ -627,6 +634,7 @@ std::vector<Tensor> metal_coordination_pose_scores_op(
       bridge_internal_metal,
       bridge_internal_d0,
       bridge_params,
+      movable_blocks,
 
       output_block_pair_energies);
 }

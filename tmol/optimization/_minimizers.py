@@ -30,6 +30,7 @@ def _build_kinforest_network(
     verbose: bool = False,
     cuda_graph: bool | str = False,
     kin_dtype: torch.dtype = torch.float32,
+    movable_blocks=None,
 ) -> KinForestSfxnNetwork:
     """Build a differentiable kinematic scoring network for a pose stack.
 
@@ -42,6 +43,8 @@ def _build_kinforest_network(
         cuda_graph: Capture the fixed-shape CUDA DOF-to-score path; see
             :class:`KinForestSfxnNetwork`.
         kin_dtype: Floating-point dtype for kinematic degrees of freedom.
+        movable_blocks: Blocks the move map can move, so that pairs of frozen
+            blocks are skipped. None scores every pair.
 
     Returns:
         A network mapping movable kinematic degrees of freedom to pose energies.
@@ -72,6 +75,7 @@ def _build_kinforest_network(
         cuda_graph=cuda_graph,
         fold_forest=ff,
         move_map=mm,
+        movable_blocks=movable_blocks,
     )
     if verbose:
         _synchronize_device(pose_stack.device)
@@ -184,6 +188,7 @@ def run_kin_min(
     verbose: bool = False,
     cuda_graph: bool = False,
     kin_dtype: torch.dtype = torch.float32,
+    movable_blocks=None,
 ) -> PoseStack:
     """Run minimization on a PoseStack in internal DOF space.
 
@@ -204,7 +209,9 @@ def run_kin_min(
     Returns:
         A new pose stack containing the minimized coordinates.
     """
-    return KinematicMinimizer(cuda_graph=cuda_graph, kin_dtype=kin_dtype)(
+    return KinematicMinimizer(
+        cuda_graph=cuda_graph, kin_dtype=kin_dtype, movable_blocks=movable_blocks
+    )(
         pose_stack,
         sfxn,
         ff,
@@ -235,10 +242,14 @@ class KinematicMinimizer:
     """
 
     def __init__(
-        self, cuda_graph: bool | str = False, kin_dtype: torch.dtype = torch.float32
+        self,
+        cuda_graph: bool | str = False,
+        kin_dtype: torch.dtype = torch.float32,
+        movable_blocks=None,
     ):
         self.cuda_graph = cuda_graph
         self.kin_dtype = kin_dtype
+        self.movable_blocks = movable_blocks
         self.network: KinForestSfxnNetwork | None = None
         self.optimizer: LBFGS_Armijo | None = None
         self.last_optimizer_reused = False
@@ -282,6 +293,7 @@ class KinematicMinimizer:
                 verbose=verbose,
                 cuda_graph="forward_backward" if self.cuda_graph else False,
                 kin_dtype=self.kin_dtype,
+                movable_blocks=self.movable_blocks,
             )
 
         selected_optimizer = (
