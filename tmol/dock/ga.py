@@ -32,7 +32,9 @@ from tmol.dock.ligand_dofs import (
     GeneIndex,
     LigandDockingDOFs,
     _inverse_dofs,
+    _local_torsion_atoms,
     _sidechain_coordinate_metadata,
+    _sidechain_end_local_atoms,
     _sidechain_logical_torsions_from_coords,
     _wrap_angle,
     build_ligand_docking_dofs,
@@ -303,6 +305,20 @@ def _block_heavy_coords(
     return pose_stack.coords[pose_indices[:, None], atom_indices]
 
 
+def _has_ring_closed_chi(block_type) -> bool:
+    """True if any sidechain chi's central bond lies in a ring.
+
+    Rotating such a chi would move atoms outside the sidechain, so the torsion
+    has no controller the docking kinematics can expose.
+    """
+    cpu = torch.device("cpu")
+    for torsion_index in block_type.sc_torsions:
+        atoms = _local_torsion_atoms(block_type, int(torsion_index))
+        if _sidechain_end_local_atoms(block_type, atoms, cpu).numel() == 0:
+            return True
+    return False
+
+
 def select_pocket_residues(
     pose_stack: PoseStack,
     ligand,
@@ -317,7 +333,9 @@ def select_pocket_residues(
     flexible-sidechain kinematics cannot preserve that bond; passing such a
     residue explicitly is rejected downstream by ``validated_sidechain_blocks``.
     Chi-less residues (e.g. ALA, GLY) are excluded as well: they have nothing to
-    move, so the returned set is directly usable as flexible ``sidechain_blocks``.
+    move, and so are residues whose sidechain closes a ring onto the backbone
+    (e.g. PRO), whose chis no controller can rotate independently. The returned
+    set is directly usable as flexible ``sidechain_blocks``.
     """
     ligand_block = resolve_ligand_block(pose_stack, ligand)
     cutoff = float(cutoff)
@@ -340,6 +358,8 @@ def select_pocket_residues(
         if has_nonpolymer_connection(pose_stack, block, int(block_type_indices[0])):
             continue
         if int(block_type.n_sc_torsions) == 0:
+            continue
+        if _has_ring_closed_chi(block_type):
             continue
         receptor_heavy = _block_heavy_coords(pose_stack, block)
         if bool(torch.any(torch.cdist(receptor_heavy, ligand_heavy) <= cutoff)):
