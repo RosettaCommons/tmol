@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import torch
+
 from tmol.chemical import RefinedResidueType
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
@@ -154,6 +156,26 @@ class EnergyTerm:
         """
         return self.n_bodies() == 1
 
+    def takes_movable_blocks(self) -> bool:
+        """Whether this term's pose-score kernel takes a movable-block mask.
+
+        The kernel argument is not optional, so a term that declares it must
+        always be given one.  An empty mask means every block scores, which is
+        what a module rendered outside a ScoreFunction wants.
+        """
+        return False
+
+    def _score_term_attributes_with_movable_blocks(self, pose_stack: PoseStack):
+        """Term attributes, plus the empty movable-block mask when required."""
+        attributes = list(self.get_score_term_attributes(pose_stack))
+        if not self.takes_movable_blocks():
+            return attributes, None
+        slot = len(attributes)
+        attributes.append(
+            torch.empty((0, 0), dtype=torch.int32, device=pose_stack.device)
+        )
+        return attributes, slot
+
     def render_whole_pose_scoring_module(self, pose_stack: PoseStack):
         if self.pose_score_term_is_invariant_zero(pose_stack):
             return ZeroTermPoseScoringModule(
@@ -163,9 +185,11 @@ class EnergyTerm:
                 pose_stack.device,
             )
         f = self.get_pose_score_term_function()
-        term_attributes = self.get_score_term_attributes(pose_stack)
+        term_attributes, movable_slot = self._score_term_attributes_with_movable_blocks(
+            pose_stack
+        )
 
-        return TermWholePoseScoringModule(
+        module = TermWholePoseScoringModule(
             self.class_name(),
             pose_stack,
             term_attributes,
@@ -173,6 +197,9 @@ class EnergyTerm:
             self.get_block_neighbor_cutoff(),
             score_only_in_no_grad=self.score_only_in_no_grad,
         )
+        if movable_slot is not None:
+            module._movable_blocks_slot = movable_slot
+        return module
 
     def render_block_pair_scoring_module(
         self, pose_stack: PoseStack, *, interaction_only: bool = False
@@ -189,13 +216,19 @@ class EnergyTerm:
                 pose_stack.max_n_blocks,
             )
         f = self.get_pose_score_term_function()
-        return TermBlockPairScoringModule(
+        term_attributes, movable_slot = self._score_term_attributes_with_movable_blocks(
+            pose_stack
+        )
+        module = TermBlockPairScoringModule(
             self.class_name(),
             pose_stack,
-            self.get_score_term_attributes(pose_stack),
+            term_attributes,
             f,
             self.get_block_neighbor_cutoff(),
         )
+        if movable_slot is not None:
+            module._movable_blocks_slot = movable_slot
+        return module
 
     def render_rotamer_scoring_module(
         self, pose_stack: PoseStack, rotamer_set: RotamerSet

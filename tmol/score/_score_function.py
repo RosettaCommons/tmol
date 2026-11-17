@@ -717,6 +717,7 @@ class ScoreFunction:
             term_modules.append(module)
         if plan is not None:
             weights = self.weights_tensor()
+            _declare_movable_blocks(term_modules, pose_stack, None)
             host = (
                 WholePoseScoringModule(weights[plan.host_lanes], term_modules)
                 if term_modules
@@ -733,6 +734,7 @@ class ScoreFunction:
                     module = term.render_whole_pose_scoring_module(pose_stack)
                     module.n_score_types = len(term.score_types())
                     modules.append(module)
+                _declare_movable_blocks(modules, pose_stack, None)
                 return WholePoseScoringModule(weights[plan.gpu_lanes], modules)
 
             return OffloadedWholePoseScoringModule(
