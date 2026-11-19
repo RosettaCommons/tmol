@@ -83,8 +83,8 @@ class DockingPerturbation:
 class GASchedule:
     """Single-stage VSX schedule for the continuous backend."""
 
-    generations: int = 5
-    npool: int = 400
+    generations: int = 10
+    npool: int = 800
     rmsdthreshold: float = 2.0
     pmut: float = 0.2
     maxiter: int = 50
