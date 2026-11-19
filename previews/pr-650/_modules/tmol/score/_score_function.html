@@ -1175,6 +1175,11 @@
             <span class="k">if</span> <span class="n">cuda_graph</span>
             <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mps_offload_plan</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">_MPS_WHOLE_POSE_SCORE_TYPES</span><span class="p">)</span>
         <span class="p">)</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">movable_blocks</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="n">_normalized_movable_blocks</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">movable_blocks</span><span class="p">)</span>
+        <span class="p">)</span>
         <span class="n">term_modules</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">plan</span><span class="o">.</span><span class="n">host_terms</span> <span class="k">if</span> <span class="n">plan</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">all_terms</span><span class="p">():</span>
             <span class="n">module</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">render_whole_pose_scoring_module</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">)</span>
@@ -1184,15 +1189,19 @@
             <span class="n">module</span><span class="o">.</span><span class="n">n_score_types</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">score_types</span><span class="p">())</span>
             <span class="n">term_modules</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">plan</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Each half masks its own terms, so frozen pairs are skipped on</span>
+            <span class="c1"># both sides of the split.</span>
             <span class="n">weights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">weights_tensor</span><span class="p">()</span>
-            <span class="n">_declare_movable_blocks</span><span class="p">(</span><span class="n">term_modules</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
             <span class="n">host</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="n">WholePoseScoringModule</span><span class="p">(</span><span class="n">weights</span><span class="p">[</span><span class="n">plan</span><span class="o">.</span><span class="n">host_lanes</span><span class="p">],</span> <span class="n">term_modules</span><span class="p">)</span>
+                <span class="n">_whole_pose_module</span><span class="p">(</span>
+                    <span class="n">weights</span><span class="p">[</span><span class="n">plan</span><span class="o">.</span><span class="n">host_lanes</span><span class="p">],</span> <span class="n">term_modules</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="n">mask</span>
+                <span class="p">)</span>
                 <span class="k">if</span> <span class="n">term_modules</span>
                 <span class="k">else</span> <span class="kc">None</span>
             <span class="p">)</span>
             <span class="n">gpu</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mps_twin</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span><span class="o">.</span><span class="n">render_whole_pose_scoring_module</span><span class="p">(</span>
-                <span class="n">to_mps</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">)</span>
+                <span class="n">to_mps</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">),</span>
+                <span class="n">movable_blocks</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">mask</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">to_mps</span><span class="p">(</span><span class="n">mask</span><span class="p">),</span>
             <span class="p">)</span>
 
             <span class="k">def</span><span class="w"> </span><span class="nf">render_host_twin</span><span class="p">():</span>
@@ -1202,34 +1211,16 @@
                     <span class="n">module</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">render_whole_pose_scoring_module</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">)</span>
                     <span class="n">module</span><span class="o">.</span><span class="n">n_score_types</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">score_types</span><span class="p">())</span>
                     <span class="n">modules</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
-                <span class="n">_declare_movable_blocks</span><span class="p">(</span><span class="n">modules</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-                <span class="k">return</span> <span class="n">WholePoseScoringModule</span><span class="p">(</span><span class="n">weights</span><span class="p">[</span><span class="n">plan</span><span class="o">.</span><span class="n">gpu_lanes</span><span class="p">],</span> <span class="n">modules</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">_whole_pose_module</span><span class="p">(</span>
+                    <span class="n">weights</span><span class="p">[</span><span class="n">plan</span><span class="o">.</span><span class="n">gpu_lanes</span><span class="p">],</span> <span class="n">modules</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="n">mask</span>
+                <span class="p">)</span>
 
             <span class="k">return</span> <span class="n">OffloadedWholePoseScoringModule</span><span class="p">(</span>
                 <span class="n">plan</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">host</span><span class="p">,</span> <span class="n">gpu</span><span class="p">,</span> <span class="n">render_host_twin</span>
             <span class="p">)</span>
-        <span class="k">if</span> <span class="n">movable_blocks</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">mask</span> <span class="o">=</span> <span class="n">_normalized_movable_blocks</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">movable_blocks</span><span class="p">)</span>
-            <span class="c1"># Measure the whole-pose score before anything is masked; the</span>
-            <span class="c1"># difference afterwards is the frozen energy to restore. The term</span>
-            <span class="c1"># modules are shared, so the order matters.</span>
-            <span class="n">_declare_movable_blocks</span><span class="p">(</span><span class="n">term_modules</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-            <span class="n">unmasked</span> <span class="o">=</span> <span class="n">WholePoseScoringModule</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">weights_tensor</span><span class="p">(),</span> <span class="n">term_modules</span><span class="p">)</span>
-            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-                <span class="n">coords</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
-                <span class="n">reference</span> <span class="o">=</span> <span class="n">unmasked</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span>
-            <span class="n">_declare_movable_blocks</span><span class="p">(</span><span class="n">term_modules</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="n">mask</span><span class="p">)</span>
-            <span class="n">masked</span> <span class="o">=</span> <span class="n">WholePoseScoringModule</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">weights_tensor</span><span class="p">(),</span> <span class="n">term_modules</span><span class="p">,</span> <span class="n">movable_blocks</span><span class="o">=</span><span class="n">mask</span>
-            <span class="p">)</span>
-            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-                <span class="n">offset</span> <span class="o">=</span> <span class="n">reference</span> <span class="o">-</span> <span class="n">masked</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">cuda_graph</span><span class="p">:</span>
-                <span class="n">mode</span> <span class="o">=</span> <span class="s2">"both"</span> <span class="k">if</span> <span class="n">cuda_graph</span> <span class="ow">is</span> <span class="kc">True</span> <span class="k">else</span> <span class="n">cuda_graph</span>
-                <span class="n">masked</span><span class="o">.</span><span class="n">enable_cuda_graphs</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n">mode</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">FrozenContextScoringModule</span><span class="p">(</span><span class="n">masked</span><span class="p">,</span> <span class="n">offset</span><span class="p">)</span>
-        <span class="n">_declare_movable_blocks</span><span class="p">(</span><span class="n">term_modules</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="n">scoring_module</span> <span class="o">=</span> <span class="n">WholePoseScoringModule</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">weights_tensor</span><span class="p">(),</span> <span class="n">term_modules</span><span class="p">)</span>
+        <span class="n">scoring_module</span> <span class="o">=</span> <span class="n">_whole_pose_module</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">weights_tensor</span><span class="p">(),</span> <span class="n">term_modules</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="n">mask</span>
+        <span class="p">)</span>
         <span class="k">if</span> <span class="n">cuda_graph</span><span class="p">:</span>
             <span class="n">mode</span> <span class="o">=</span> <span class="s2">"both"</span> <span class="k">if</span> <span class="n">cuda_graph</span> <span class="ow">is</span> <span class="kc">True</span> <span class="k">else</span> <span class="n">cuda_graph</span>
             <span class="n">scoring_module</span><span class="o">.</span><span class="n">enable_cuda_graphs</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n">mode</span><span class="p">)</span>
@@ -1807,6 +1798,29 @@
             <span class="n">module</span><span class="o">.</span><span class="n">term_parameters</span><span class="p">[</span><span class="n">slot</span><span class="p">]</span> <span class="o">=</span> <span class="n">parameter</span>
         <span class="c1"># Rebuilding must preserve the module's own block-pair output flag.</span>
         <span class="n">module</span><span class="o">.</span><span class="n">_build_static_tails</span><span class="p">(</span><span class="nb">bool</span><span class="p">(</span><span class="n">module</span><span class="o">.</span><span class="n">_static_tail_f32</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_whole_pose_module</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">term_modules</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="n">mask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""A whole-pose scorer over ``term_modules``, masked when ``mask`` is given.</span>
+
+<span class="sd">    A masked scorer skips pairs of two frozen blocks and is wrapped to restore</span>
+<span class="sd">    their constant energy, so it reports the same scores as an unmasked one.</span>
+<span class="sd">    """</span>
+    <span class="n">_declare_movable_blocks</span><span class="p">(</span><span class="n">term_modules</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">mask</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">WholePoseScoringModule</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">term_modules</span><span class="p">)</span>
+    <span class="c1"># Measure the whole-pose score before anything is masked; the difference</span>
+    <span class="c1"># afterwards is the frozen energy to restore. The term modules are shared,</span>
+    <span class="c1"># so the order matters.</span>
+    <span class="n">unmasked</span> <span class="o">=</span> <span class="n">WholePoseScoringModule</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">term_modules</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+        <span class="n">coords</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+        <span class="n">reference</span> <span class="o">=</span> <span class="n">unmasked</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span>
+    <span class="n">_declare_movable_blocks</span><span class="p">(</span><span class="n">term_modules</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="n">mask</span><span class="p">)</span>
+    <span class="n">masked</span> <span class="o">=</span> <span class="n">WholePoseScoringModule</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">term_modules</span><span class="p">,</span> <span class="n">movable_blocks</span><span class="o">=</span><span class="n">mask</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="n">reference</span> <span class="o">-</span> <span class="n">masked</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">FrozenContextScoringModule</span><span class="p">(</span><span class="n">masked</span><span class="p">,</span> <span class="n">offset</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_normalized_movable_blocks</span><span class="p">(</span>
