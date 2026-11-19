@@ -19,6 +19,7 @@
 #include <tmol/score/common/diamond_macros.hh>
 #include <tmol/score/common/geom.hh>
 #include <tmol/score/common/launch_box_macros.hh>
+#include <tmol/score/common/pose_total_reduce.hh>
 #include <tmol/score/common/sphere_overlap.impl.hh>
 #include <tmol/score/common/tile_atom_pair_evaluation.hh>
 #include <tmol/score/common/tuple.hh>
@@ -714,7 +715,22 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
       output_block_pair_energies
           ? TPack<Real, 4, D>::zeros({3, n_poses, max_n_blocks, max_n_blocks})
           : TPack<Real, 4, D>::zeros({3, n_poses, 1, 1});
-  auto output = output_t.view;
+
+  // Metal accumulates whole-pose totals into per-block-pair cells and reduces
+  // them afterwards; see the same comment in elec_pose_score.impl.hh for why.
+  // In short: one atomic per threadgroup lands in a varying order, float
+  // addition is not associative, and a line search that finite-differences
+  // the energy cannot tolerate a non-reproducible total. Writing a cell per
+  // threadgroup removes the atomic; summing the cells is fixed-order. The CPU
+  // path below already avoids this with a serial double accumulator.
+  bool const mps_cell_reduction =
+      D == tmol::Device::MPS && !output_block_pair_energies;
+  TPack<Real, 4, D> cells_t;
+  if (mps_cell_reduction) {
+    cells_t =
+        TPack<Real, 4, D>::zeros({3, n_poses, max_n_blocks, max_n_blocks});
+  }
+  auto output = mps_cell_reduction ? cells_t.view : output_t.view;
 
   // CPU workgroups execute serially. Accumulate their totals in double so
   // thousands of small block-pair terms are not rounded away in a large
@@ -779,7 +795,9 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
   ctx.dV_dcoords = dV_dcoords;
   ctx.max_n_blocks = max_n_blocks;
   ctx.max_n_upper_triangle_inds = max_n_upper_triangle_inds;
-  ctx.output_block_pair_energies = output_block_pair_energies;
+  // The store writes cells whenever the output view is cell-shaped.
+  ctx.output_block_pair_energies =
+      output_block_pair_energies || mps_cell_reduction;
   ctx.require_gradient = require_gradient;
   ctx.max_dis = max_dis;
 
@@ -801,7 +819,23 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
 
   // Whole-pose calls with gradients accumulate derivatives as they go; every
   // other call, including all block-pair output, uses the energy-only body.
-  if (require_gradient && !output_block_pair_energies) {
+  if (D == tmol::Device::MPS) {
+    // Metal cannot launch a device lambda, so the same bodies are reached
+    // through named entries that walk the same neighbor list.
+    score::common::sphere_overlap::mps_launch_block_neighbors<D>(
+        TMOL_MPS_SOURCE(kLJLKMetalShaderSource),
+        require_gradient && !output_block_pair_energies
+            ? "ljlk_eval_energies_f32"
+            : "ljlk_eval_energies_by_block_f32",
+        ctx,
+        block_neighbors);
+    if (mps_cell_reduction) {
+      // Compensated, fixed-order reduction rather than torch's tree sum; see
+      // pose_total_reduce_kernels.hh.
+      score::common::pose_total_reduce<DeviceOperations, D, Real>::f(
+          mgr, cells_t.view, output_t.view);
+    }
+  } else if (require_gradient && !output_block_pair_energies) {
     score::common::sphere_overlap::launch_precomputed_block_neighbors<
         DeviceOperations,
         D,

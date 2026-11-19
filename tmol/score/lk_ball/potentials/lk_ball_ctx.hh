@@ -49,6 +49,10 @@ struct LKBallCtxT {
   // Rotamer-pair dispatch list, [3, n_pairs]; bound only by the rotamer
   // entry point, which walks it instead of the block-pair upper triangle.
   View<Int, 2> dispatch_indices;
+  // Whole-pose Metal entries only: the compact block-neighbor list
+  // ([count, candidate...]) they walk. The other backends launch over it
+  // directly.
+  View<Int, 1> block_neighbors;
 
   // Chemical properties of each block type
   View<Int, 1> block_type_n_atoms;
@@ -89,6 +93,7 @@ struct LKBallCtxT {
     f(pose_stack_near_blocks);
     f(pose_stack_inter_block_bondsep);
     f(dispatch_indices);
+    f(block_neighbors);
     f(block_type_n_atoms);
     f(block_type_n_interblock_bonds);
     f(block_type_atoms_forming_chemical_bonds);
@@ -104,7 +109,7 @@ struct LKBallCtxT {
     f(dV_d_water_coords);
   }
 
-  enum { n_views = 23 };
+  enum { n_views = 24 };
 
   // Launch scalars in the order the host writes and the shader reads.
   template <typename F>

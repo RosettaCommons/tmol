@@ -18,6 +18,7 @@
 #include <tmol/score/common/diamond_macros.hh>
 #include <tmol/score/common/geom.hh>
 #include <tmol/score/common/launch_box_macros.hh>
+#include <tmol/score/common/pose_total_reduce.hh>
 #include <tmol/score/common/sphere_overlap.impl.hh>
 #include <tmol/score/common/tile_atom_pair_evaluation.hh>
 #include <tmol/score/common/tuple.hh>
@@ -175,7 +176,27 @@ auto ElecPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
       output_block_pair_energies
           ? TPack<Real, 4, D>::zeros({1, n_poses, max_n_blocks, max_n_blocks})
           : TPack<Real, 4, D>::zeros({1, n_poses, 1, 1});
-  auto output = output_t.view;
+
+  // Metal accumulates whole-pose totals into per-block-pair cells and reduces
+  // them afterwards, rather than atomically adding into one cell.
+  //
+  // One atomic per threadgroup is still thousands of them per pose arriving
+  // in an order the GPU is free to vary, and float addition is not
+  // associative. The resulting jitter is about one float32 ULP of the pose
+  // total: small, but not zero, and a line search that validates its analytic
+  // derivative against a finite difference cannot tolerate a
+  // non-reproducible energy. Writing each threadgroup's partial to its own
+  // cell removes the atomic entirely, and summing those cells is a
+  // fixed-order reduction. The cells are the ones block-pair scoring already
+  // writes, so this reuses that store. The CPU and CUDA paths are unchanged.
+  bool const mps_cell_reduction =
+      D == tmol::Device::MPS && !output_block_pair_energies;
+  TPack<Real, 4, D> cells_t;
+  if (mps_cell_reduction) {
+    cells_t =
+        TPack<Real, 4, D>::zeros({1, n_poses, max_n_blocks, max_n_blocks});
+  }
+  auto output = mps_cell_reduction ? cells_t.view : output_t.view;
   // This atom-pair kernel benefits from a 64-register budget on modern GPUs,
   // which leaves enough resident warps to hide its dependency latency.
   LAUNCH_BOX_32_OCC(32);
@@ -216,7 +237,12 @@ auto ElecPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
   ctx.dV_dcoords = dV_dcoords;
   ctx.max_n_blocks = max_n_blocks;
   ctx.max_n_upper_triangle_inds = max_n_upper_triangle_inds;
-  ctx.output_block_pair_energies = output_block_pair_energies;
+  // The store writes cells whenever the output view is cell-shaped: what the
+  // caller asked for in block-pair mode, and what the Metal whole-pose path
+  // arranges for itself above.
+  ctx.output_block_pair_energies =
+      output_block_pair_energies || mps_cell_reduction;
+  ctx.block_neighbors = block_neighbors;
   auto eval_energies_by_block = ([=] TMOL_DEVICE_FUNC(int cta) {
     typedef ElecSharedMem<Real, TILE_SIZE, MAX_N_CONN, launch_t>
         shared_mem_union;
@@ -233,7 +259,23 @@ auto ElecPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
   });
   // Whole-pose calls with derivatives accumulate them as they go; every other
   // call, including all block-pair output, uses the energy-only body.
-  if (compute_derivs && !output_block_pair_energies) {
+  if (D == tmol::Device::MPS) {
+    // Metal cannot launch a device lambda, so the same bodies are reached
+    // through named entries that walk the same neighbor list.
+    score::common::sphere_overlap::mps_launch_block_neighbors<D>(
+        TMOL_MPS_SOURCE(kElecMetalShaderSource),
+        compute_derivs && !output_block_pair_energies
+            ? "elec_eval_energies_f32"
+            : "elec_eval_energies_by_block_2_f32",
+        ctx,
+        block_neighbors);
+    if (mps_cell_reduction) {
+      // Compensated, fixed-order reduction rather than torch's tree sum; see
+      // pose_total_reduce_kernels.hh.
+      score::common::pose_total_reduce<DeviceDispatch, D, Real>::f(
+          mgr, cells_t.view, output_t.view);
+    }
+  } else if (compute_derivs && !output_block_pair_energies) {
     score::common::sphere_overlap::
         launch_precomputed_block_neighbors<DeviceDispatch, D, launch_t, Int>(
             mgr, block_neighbors, n_poses, max_n_blocks, eval_energies);

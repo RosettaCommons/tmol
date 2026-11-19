@@ -614,8 +614,10 @@ void launch_precomputed_block_neighbors(
     int max_n_blocks,
     Eval eval) {
   if constexpr (D == tmol::Device::MPS) {
+    // Metal cannot launch a device lambda. Terms with a Metal path launch a
+    // named entry through mps_launch_block_neighbors instead of calling this.
     throw std::runtime_error(
-        "block-neighbor dispatch is not implemented for Metal yet");
+        "tmol: this block-neighbor kernel has no Metal entry point");
   }
   int const n_candidates = neighbor_indices.size(0) - 1;
   if (n_candidates <= 0) return;
@@ -676,6 +678,20 @@ void launch_precomputed_block_neighbors(
         mgr, n_neighbors, eval_compact);
   }
 #endif
+}
+
+// Metal counterpart of launch_precomputed_block_neighbors: one threadgroup per
+// slot of the list. The count lives on the device, so the grid covers the
+// list's capacity and the entry drops slots at or past neighbor_indices[0];
+// see TMOL_MPS_BLOCK_NEIGHBOR_CANDIDATE.
+template <tmol::Device D, typename Int, typename Ctx>
+void mps_launch_block_neighbors(
+    char const* source,
+    char const* kernel,
+    Ctx& ctx,
+    TView<Int, 1, D> neighbor_indices) {
+  tmol::score::common::mps_launch_if<D>(
+      source, kernel, ctx, int64_t(neighbor_indices.size(0)) - 1, true);
 }
 
 template <
@@ -1086,9 +1102,39 @@ struct build_block_neighbor_indices {
     } else if constexpr (D == Device::MPS) {
       // The CPU branch below cannot be instantiated here: its spatial-sweep
       // helper reads host memory, and an MPS tensor's data pointer is an
-      // MTLBuffer.
-      throw std::runtime_error(
-          "block-neighbor indices are not implemented for Metal yet");
+      // MTLBuffer. Metal builds the list as CUDA does, by atomic append.
+      auto neighbor_indices_t =
+          TPack<Int, 1, D>::zeros({int64_t(n_candidates) + 1});
+      score::common::sphere_overlap::
+          compute_block_spheres<DeviceOperations, D, Real, Int>::f(
+              mgr,
+              rot_coords,
+              rot_coord_offset,
+              block_ind_for_rot,
+              pose_ind_for_rot,
+              block_type_ind_for_rot,
+              block_type_n_atoms,
+              block_spheres_t.view);
+      BlockNeighborListCtxT<
+          tmol::score::common::TViewBinder<D>::template View,
+          Real,
+          Int>
+          ctx;
+      ctx.pose_stack_block_type = pose_stack_block_type;
+      ctx.block_spheres = block_spheres_t.view;
+      ctx.movable_blocks = movable_blocks;
+      ctx.neighbor_indices = neighbor_indices_t.view;
+      ctx.max_n_blocks = max_n_blocks;
+      ctx.n_pairs = n_pairs;
+      ctx.n_candidates = n_candidates;
+      ctx.reach = reach;
+      tmol::score::common::mps_launch_if<D>(
+          TMOL_MPS_SOURCE(kSphereOverlapMetalShaderSource),
+          "detect_block_neighbor_list_f32",
+          ctx,
+          n_candidates,
+          false);
+      return neighbor_indices_t;
     } else {
       score::common::sphere_overlap::
           compute_block_spheres<DeviceOperations, D, Real, Int>::f(

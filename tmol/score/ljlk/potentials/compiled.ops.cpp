@@ -985,7 +985,7 @@ std::vector<Tensor> build_compact_block_neighbors_op(
       " blocks per pose");
   Tensor neighbor_indices;
   using Int = int32_t;
-  TMOL_DISPATCH_FLOATING_DEVICE(
+  TMOL_DISPATCH_FLOATING_DEVICE_MPS(
       rot_coords.options(), "build_compact_block_neighbors", ([&] {
         using Real = scalar_t;
         constexpr tmol::Device Dev = device_t;

@@ -548,6 +548,8 @@ class LKBallPoseScoreDispatch {
     ctx.max_n_blocks = max_n_blocks;
     ctx.n_block_pairs = n_block_pairs;
     ctx.output_block_pair_energies = output_block_pair_energies;
+    // Read only by the Metal entry; the other backends launch over the list.
+    ctx.block_neighbors = block_neighbors;
 
     typedef LKBallSharedMem<Real, TILE_SIZE, MAX_N_WATER, MAX_N_CONN, launch_t>
         shared_mem_union;
@@ -593,13 +595,22 @@ class LKBallPoseScoreDispatch {
         eval_energies_by_block,
         !output_block_pair_energies);
 #else
-    score::common::sphere_overlap::
-        launch_precomputed_block_neighbors<DeviceDispatch, Dev, launch_t, Int>(
-            mgr,
-            block_neighbors,
-            n_poses,
-            max_n_blocks,
-            eval_energies_by_block);
+    if (Dev == tmol::Device::MPS) {
+      // Metal cannot launch a device lambda, so the same body is reached
+      // through a named entry that walks the same neighbor list.
+      score::common::sphere_overlap::mps_launch_block_neighbors<Dev>(
+          TMOL_MPS_SOURCE(kLKBallMetalShaderSource),
+          "lk_ball_eval_energies_by_block_f32",
+          ctx,
+          block_neighbors);
+    } else {
+      score::common::sphere_overlap::launch_precomputed_block_neighbors<
+          DeviceDispatch,
+          Dev,
+          launch_t,
+          Int>(
+          mgr, block_neighbors, n_poses, max_n_blocks, eval_energies_by_block);
+    }
 #endif
 
     return {output_t, shared_compact_block_neighbors};
@@ -688,6 +699,48 @@ class LKBallPoseScoreDispatch {
     auto dV_d_water_coords_t =
         TPack<Vec<Real, 3>, 2, Dev>::zeros({n_atoms, MAX_N_WATER});
     auto dV_d_water_coords = dV_d_water_coords_t.view;
+
+    if (Dev == tmol::Device::MPS) {
+      // Metal has nowhere for a closure to live, so the body the lambda below
+      // inlines is reached through a named entry point that walks the same
+      // neighbor list.
+      LKBallCtx<Real, Int, Dev, 4> ctx;
+      ctx.rot_coords = rot_coords;
+      ctx.water_coords = water_coords;
+      ctx.rot_coord_offset = rot_coord_offset;
+      ctx.rot_offset_for_block = rot_offset_for_block;
+      ctx.block_type_ind_for_rot = block_type_ind_for_rot;
+      ctx.block_ind_for_rot = block_ind_for_rot;
+      ctx.pose_stack_inter_residue_connections =
+          pose_stack_inter_residue_connections;
+      ctx.pose_stack_near_blocks = pose_stack_near_blocks;
+      ctx.pose_stack_inter_block_bondsep = pose_stack_inter_block_bondsep;
+      ctx.block_neighbors = block_neighbors;
+      ctx.block_type_n_atoms = block_type_n_atoms;
+      ctx.block_type_n_interblock_bonds = block_type_n_interblock_bonds;
+      ctx.block_type_atoms_forming_chemical_bonds =
+          block_type_atoms_forming_chemical_bonds;
+      ctx.block_type_path_distance = block_type_path_distance;
+      ctx.block_type_tile_n_polar_atoms = block_type_tile_n_polar_atoms;
+      ctx.block_type_tile_n_occluder_atoms = block_type_tile_n_occluder_atoms;
+      ctx.block_type_tile_pol_occ_inds = block_type_tile_pol_occ_inds;
+      ctx.block_type_tile_lk_ball_params = block_type_tile_lk_ball_params;
+      ctx.global_params = global_params;
+      ctx.dTdV = dTdV;
+      ctx.dV_d_pose_coords = dV_d_pose_coords;
+      ctx.dV_d_water_coords = dV_d_water_coords;
+      ctx.max_n_blocks = max_n_blocks;
+      ctx.n_block_pairs = n_block_pairs;
+      ctx.block_pair_scoring = block_pair_scoring;
+      // The derivative kernel neither reads nor writes energies.
+      ctx.output_block_pair_energies = false;
+      score::common::sphere_overlap::mps_launch_block_neighbors<Dev>(
+          TMOL_MPS_SOURCE(kLKBallMetalShaderSource),
+          "lk_ball_eval_derivs_f32",
+          ctx,
+          block_neighbors);
+      return {dV_d_pose_coords_t, dV_d_water_coords_t};
+    }
 
     // This derivative kernel is latency- and register-bound. Requiring more
     // resident warps gives the compiler a register budget that exposes enough

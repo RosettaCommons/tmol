@@ -517,12 +517,23 @@ def test_cpu_fused_shard_planner_preserves_fallbacks(
     assert two_threads._execution_modules[0].classname == "LJLK+Elec"
     assert two_threads._cpu_pair_shards == 2
 
+    # Multithreaded batches fuse too, and score as the separate terms do.
     monkeypatch.setattr(torch, "get_num_threads", lambda: 4)
     pose_batch = PoseStackBuilder.from_poses([pose, pose], torch_device)
     batched = beta2016_score_function(
         torch_device, param_db=default_database
     ).render_whole_pose_scoring_module(pose_batch)
-    assert all(term.classname != "LJLK+Elec" for term in batched._execution_modules)
+    assert batched._execution_modules[0].classname == "LJLK+Elec"
+    batched_coords = pose_batch.coords.detach().clone().requires_grad_(True)
+    separate_coords = pose_batch.coords.detach().clone().requires_grad_(True)
+    batched_score = batched(batched_coords)
+    separate_score = (
+        _separate_unweighted_scores(batched, separate_coords) * batched.weights
+    ).sum(dim=0)
+    (batched_grad,) = torch.autograd.grad(batched_score.sum(), batched_coords)
+    (separate_grad,) = torch.autograd.grad(separate_score.sum(), separate_coords)
+    torch.testing.assert_close(batched_score, separate_score, atol=2e-3, rtol=3e-5)
+    torch.testing.assert_close(batched_grad, separate_grad, atol=5e-5, rtol=5e-5)
 
 
 def test_cpu_sharding_covers_every_pair_list_term(

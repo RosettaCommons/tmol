@@ -64,6 +64,10 @@ struct ElecCtxT {
 
   // Work-item mapping used by the block-pair and derivative kernels
   View<Int, 2> dispatch_indices;
+  // Whole-pose Metal entries only: the compact block-neighbor list
+  // ([count, candidate...]) they walk. The other backends launch over it
+  // directly.
+  View<Int, 1> block_neighbors;
 
   // Outputs
   View<Real, OutRank> output;
@@ -101,6 +105,7 @@ struct ElecCtxT {
     f(block_type_all_atoms_ligand_typed);
     f(global_params);
     f(dispatch_indices);
+    f(block_neighbors);
     f(output);
     f(dTdV);
     f(dV_dcoords);
@@ -110,7 +115,7 @@ struct ElecCtxT {
   // bindings in the Metal entry points so that adding a field without adding
   // it to visit_views is caught at build time rather than silently left
   // unbound.
-  enum { n_views = 19 };
+  enum { n_views = 20 };
 
   // Launch scalars in the order the host writes and the shader reads.
   template <typename F>

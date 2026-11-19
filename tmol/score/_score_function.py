@@ -96,6 +96,10 @@ def _use_weighted_fused_score(
     """Select weighted native reduction without latency or stability regressions."""
     if force_for_cuda_graph:
         return True
+    if coords.device.type == "mps":
+        # No Metal kernel for the weighted reduction; see
+        # _FusedLJLKAndElecWholePoseModule.forward.
+        return False
     if coords.device.type == "cpu":
         if needs_gradient is None:
             needs_gradient = torch.is_grad_enabled() and coords.requires_grad
@@ -1129,6 +1133,15 @@ class _FusedLJLKAndElecWholePoseModule(torch.nn.Module):
             return torch.cat(
                 (self.ljlk_module(coords), self.elec_module(coords)), dim=0
             )
+        if coords.device.type == "mps":
+            # Metal has no fused kernel; the two terms share the list instead.
+            return torch.cat(
+                (
+                    self.ljlk_module(coords, shared_block_neighbors),
+                    self.elec_module(coords, shared_block_neighbors),
+                ),
+                dim=0,
+            )
         from tmol.score.ljlk.potentials._compiled import _ljlk_elec_pose_scores
 
         # Preserve the normal term wrapper's lazy float64 support.  The
@@ -1156,7 +1169,7 @@ class _FusedLJLKAndElecWholePoseModule(torch.nn.Module):
         return scores
 
 
-def _whole_pose_execution_modules(term_modules, device):
+def _whole_pose_execution_modules(term_modules):
     """Build conservative built-in execution groups without changing lanes."""
     grouped = []
     index = 0
@@ -1184,11 +1197,6 @@ def _whole_pose_execution_modules(term_modules, device):
                     parameter.requires_grad
                     for term in (first, second)
                     for parameter in term.parameters()
-                )
-                and not (
-                    device.type == "cpu"
-                    and torch.get_num_threads() > 1
-                    and getattr(first, "n_poses", None) != 1
                 )
             ):
                 grouped.append(_FusedLJLKAndElecWholePoseModule(first, second))
@@ -1410,9 +1418,7 @@ class WholePoseScoringModule:
         self.term_modules = tuple(term_modules)
         self.movable_blocks = movable_blocks
         self.frozen_pair_energy = None
-        self._execution_modules = _whole_pose_execution_modules(
-            self.term_modules, weights.device
-        )
+        self._execution_modules = _whole_pose_execution_modules(self.term_modules)
         from tmol._cpp_lib import _native
 
         self._native_score_capture = getattr(_native, "_ScoreCapture", None)
@@ -1496,17 +1502,14 @@ class WholePoseScoringModule:
     def _shares_block_neighbors(self, coords: torch.Tensor) -> bool:
         """Whether this call will build and share one compact neighbor list.
 
-        The shared list is a CUDA-oriented optimization for sparse poses, and
-        its builder has no Metal kernel, so MPS opts out.
+        Built whenever at least two terms take one, on every device.
 
         Also decides which module list runs, which is why it is a predicate
         rather than inline: the fused LJLK/elec module lives in
         ``_execution_modules`` only, and its index means nothing against the
         fallback list.
         """
-        if len(self._shared_neighbor_term_indices) < 2:
-            return False
-        return coords.device.type != "mps"
+        return len(self._shared_neighbor_term_indices) >= 2
 
     def _build_shared_block_neighbors(
         self, coords: torch.Tensor
@@ -2063,8 +2066,7 @@ class _DefaultWholePoseScoringModule(torch.nn.Module):
 
     def forward(self, coords):
         shared_block_neighbors = None
-        # See _build_shared_block_neighbors for why MPS opts out.
-        if len(self._shared_neighbor_terms) >= 2 and coords.device.type != "mps":
+        if len(self._shared_neighbor_terms) >= 2:
             builder = self._shared_neighbor_terms[0]
             shared_block_neighbors = builder.build_compact_block_neighbors(
                 coords, self._shared_neighbor_cutoff
@@ -2191,10 +2193,11 @@ class BlockPairScoringModule:
     ) -> torch.Tensor | None:
         """One compact neighbor list for every term that takes one.
 
-        Pairs of two frozen blocks are dropped. MPS has no builder kernel, and
-        one term alone would not amortize the build.
+        Pairs of two frozen blocks are dropped. One term alone would not
+        amortize the build. Unlike whole-pose scoring, every term here takes
+        the list itself, with no fused module, so MPS shares it too.
         """
-        if len(self._shared_neighbor_terms) < 2 or coords.device.type == "mps":
+        if len(self._shared_neighbor_terms) < 2:
             return None
         return self._shared_neighbor_terms[0].build_compact_block_neighbors(
             coords, self._shared_neighbor_cutoff, self.movable_blocks

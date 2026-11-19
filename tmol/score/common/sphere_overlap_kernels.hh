@@ -117,6 +117,40 @@ TMOL_HOST_DEVICE_FUNC void compute_block_spheres_body(
       thread0_write_out_result, lane);
 }
 
+// Whether candidate (pose, upper-triangle block pair) belongs in the compact
+// block-neighbor list: both blocks present, not both frozen, and bounding
+// spheres within reach. Same test as detect_compact_block_neighbors.
+template <tmol::Device D, typename Real, typename Int, typename Ctx>
+TMOL_HOST_DEVICE_FUNC bool block_pair_is_neighbor(
+    TMOL_THREAD Ctx const& ctx, int candidate) {
+  int const pose_ind = candidate / ctx.n_pairs;
+  auto pair = common::upper_triangle_inds_from_linear_index(
+      candidate % ctx.n_pairs, ctx.max_n_blocks + 1);
+  int const block_ind1 = common::get<0>(pair);
+  int const block_ind2 = common::get<1>(pair) - 1;
+
+  if (ctx.pose_stack_block_type[pose_ind][block_ind1] < 0) return false;
+  if (ctx.pose_stack_block_type[pose_ind][block_ind2] < 0) return false;
+  if (ctx.movable_blocks.size(0) != 0
+      && ctx.movable_blocks[pose_ind][block_ind1] == 0
+      && ctx.movable_blocks[pose_ind][block_ind2] == 0) {
+    return false;
+  }
+
+  Real sphere1[4];
+  Real sphere2[4];
+  for (int i = 0; i < 4; ++i) {
+    sphere1[i] = ctx.block_spheres[pose_ind][block_ind1][i];
+    sphere2[i] = ctx.block_spheres[pose_ind][block_ind2][i];
+  }
+  Real const d2 =
+      ((sphere1[0] - sphere2[0]) * (sphere1[0] - sphere2[0])
+       + (sphere1[1] - sphere2[1]) * (sphere1[1] - sphere2[1])
+       + (sphere1[2] - sphere2[2]) * (sphere1[2] - sphere2[2]));
+  Real const threshold = sphere1[3] + sphere2[3] + ctx.reach;
+  return d2 < threshold * threshold;
+}
+
 // ---------------------------------------------------------------------------
 // Rotamer-pair dispatch.
 //

@@ -27,6 +27,7 @@ LAUNCH_BOX_32
 
 typedef WorkgroupLane<tmol::Device::MPS> Lane;
 typedef BlockSpheresCtxT<tmol::portable::MetalView, float, int32_t> SpheresCtx;
+typedef BlockNeighborListCtxT<tmol::portable::MetalView, float, int32_t> NeighborListCtx;
 typedef RotSpheresCtxT<tmol::portable::MetalView, float, int32_t> RotSpheresCtx;
 typedef BlockSpheresFromRotCtxT<tmol::portable::MetalView, float, int32_t> BlockFromRotCtx;
 typedef RotPairListCtxT<tmol::portable::MetalView, float, int32_t> RotPairCtx;
@@ -55,7 +56,31 @@ kernel void compute_block_spheres_f32(
       launch_t>(ctx, int(cta), lane);
 }
 
+// One thread per candidate (pose, block pair). Retained candidates claim a
+// slot with an atomic on the count in element 0, so the list order varies
+// from call to call; its consumers do not depend on it.
+kernel void detect_block_neighbor_list_f32(
+    device const int64_t* meta [[buffer(0)]],
+      TMOL_MPS_BIND_4,
+    uint index [[thread_position_in_grid]]) {
+  static_assert(
+      NeighborListCtx::n_views == 4,
+      "buffer bindings here must cover every view visit_views enumerates");
+  device void* ptrs[4] = {TMOL_MPS_PTRS_4};
+  NeighborListCtx ctx = tmol::score::common::mps_build_ctx<NeighborListCtx>(ptrs, meta);
 
+  // The grid is rounded up to whole threadgroups; drop the tail.
+  if (int(index) >= ctx.n_candidates) return;
+  if (!block_pair_is_neighbor<tmol::Device::MPS, float, int32_t>(
+          ctx, int(index))) {
+    return;
+  }
+  int32_t const slot = metal::atomic_fetch_add_explicit(
+      reinterpret_cast<device metal::atomic_int*>(&ctx.neighbor_indices[0]),
+      1,
+      metal::memory_order_relaxed);
+  ctx.neighbor_indices[slot + 1] = int32_t(index);
+}
 
 // ---------------------------------------------------------------------------
 // Rotamer-pair dispatch: the list of rotamer pairs the packer has to score.

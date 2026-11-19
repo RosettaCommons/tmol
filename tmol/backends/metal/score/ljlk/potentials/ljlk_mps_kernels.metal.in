@@ -27,12 +27,18 @@ using namespace tmol::score::ljlk::potentials;
 LAUNCH_BOX_32
 
 typedef WorkgroupLane<tmol::Device::MPS> Lane;
+// Whole-pose scoring: output is [term, pose, block, block].
+typedef LJLKCtxT<tmol::portable::MetalView, float, int32_t, 4> PoseCtx;
+// Rotamer scoring: output is [term, block_pair].
 typedef LJLKCtxT<tmol::portable::MetalView, float, int32_t, 2> RotCtx;
 typedef LJLKSharedMem<float, TILE_SIZE, MAX_N_CONN, launch_t> LJLKShared;
 
 #define TMOL_N_SIMDS ((launch_t::sm_ptx::nt + 31) / 32)
 
-#define TMOL_LJLK_ENTRY(ENTRY_NAME, BODY, CTX_T)                             \
+// PREAMBLE runs once the context is built and WORK is the index the body
+// decodes: the threadgroup itself for rotamer pairs, the candidate read from
+// the block-neighbor list for whole poses.
+#define TMOL_LJLK_ENTRY_AT(ENTRY_NAME, BODY, CTX_T, PREAMBLE, WORK)          \
   kernel void ENTRY_NAME(                                                    \
       device const int64_t* meta [[buffer(0)]],                              \
       TMOL_MPS_BIND_22, \
@@ -46,13 +52,30 @@ typedef LJLKSharedMem<float, TILE_SIZE, MAX_N_CONN, launch_t> LJLKShared;
     threadgroup LJLKShared shared;                                           \
     threadgroup float reduce_scratch[TMOL_N_SIMDS];                          \
     CTX_T ctx = tmol::score::common::mps_build_ctx<CTX_T>(ptrs, meta);                     \
+    PREAMBLE;                                                                \
     Lane lane(tid, n_threads, reduce_scratch);                               \
     /* The CPU-only per-pose accumulator has no counterpart here; an int      \
        keeps the parameter dependent so `if constexpr` discards its branch */ \
     BODY<DeviceOperations, tmol::Device::MPS, float, int32_t, launch_t>(      \
-        ctx, shared, int(cta), 0, lane);                                     \
+        ctx, shared, WORK, 0, lane);                                         \
   }
 
+#define TMOL_LJLK_ENTRY(ENTRY_NAME, BODY, CTX_T) \
+  TMOL_LJLK_ENTRY_AT(ENTRY_NAME, BODY, CTX_T, (void)0, int(cta))
+
+// Whole-pose entries walk the compact block-neighbor list.
+#define TMOL_LJLK_POSE_ENTRY(ENTRY_NAME, BODY)                         \
+  TMOL_LJLK_ENTRY_AT(                                                   \
+      ENTRY_NAME,                                                       \
+      BODY,                                                             \
+      PoseCtx,                                                          \
+      TMOL_MPS_BLOCK_NEIGHBOR_CANDIDATE(                                \
+          candidate, ctx.shared_compact_block_neighbors, cta),          \
+      candidate)
+
+TMOL_LJLK_POSE_ENTRY(
+    ljlk_eval_energies_by_block_f32, ljlk_eval_energies_by_block)
+TMOL_LJLK_POSE_ENTRY(ljlk_eval_energies_f32, ljlk_eval_energies)
 TMOL_LJLK_ENTRY(
     ljlk_eval_rotamer_energies_by_block_f32,
     ljlk_eval_rotamer_energies_by_block,

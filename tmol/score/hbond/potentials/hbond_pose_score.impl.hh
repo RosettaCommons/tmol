@@ -18,6 +18,7 @@
 #include <tmol/score/common/diamond_macros.hh>
 #include <tmol/score/common/geom.hh>
 #include <tmol/score/common/launch_box_macros.hh>
+#include <tmol/score/common/pose_total_reduce.hh>
 #include <tmol/score/common/sphere_overlap.impl.hh>
 #include <tmol/score/common/tile_atom_pair_evaluation.hh>
 #include <tmol/score/common/tuple.hh>
@@ -243,7 +244,19 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
       output_block_pair_energies
           ? TPack<Real, 4, Dev>::zeros({1, n_poses, max_n_blocks, max_n_blocks})
           : TPack<Real, 4, Dev>::zeros({1, n_poses, 1, 1});
-  auto output = output_t.view;
+
+  // Metal accumulates whole-pose totals into per-block-pair cells and reduces
+  // them afterwards, rather than atomically adding into one cell, so that the
+  // pose total is reproducible from call to call. See elec_pose_score.impl.hh,
+  // which solved this first. The CPU and CUDA paths are unchanged.
+  bool const mps_cell_reduction =
+      Dev == tmol::Device::MPS && !output_block_pair_energies;
+  TPack<Real, 4, Dev> cells_t;
+  if (mps_cell_reduction) {
+    cells_t =
+        TPack<Real, 4, Dev>::zeros({1, n_poses, max_n_blocks, max_n_blocks});
+  }
+  auto output = mps_cell_reduction ? cells_t.view : output_t.view;
 
   /*for(int i = 0; i < dispatch_indices.size(1); i++){
     printf("DISPATCH %i, %i %i %i", i,
@@ -266,7 +279,7 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
   // the tile machinery in hbond_kernels.hh reads this struct instead. One
   // context serves both kernel families: whole-pose scoring writes
   // [term, pose, block, block] and rotamer scoring [term, rot_pair].
-  HBondCtx<Real, Int, Dev, 4, 3, 2> ctx;
+  HBondCtx<Real, Int, Dev, 4, 1, 2> ctx;
   ctx.rot_coords = rot_coords;
   ctx.rot_coord_offset = rot_coord_offset;
   ctx.block_ind_for_rot = block_ind_for_rot;
@@ -291,9 +304,13 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
   ctx.global_params = global_params;
   ctx.derived_coords = derived_coords;
   ctx.derived_atom_inds = derived_atom_inds;
+  // Read only by the Metal entries; the other backends launch over the list.
+  ctx.dispatch_indices = block_neighbors;
   ctx.dV_dcoords = dV_dcoords;
   ctx.max_n_blocks = max_n_blocks;
-  ctx.output_block_pair_energies = output_block_pair_energies;
+  // The store writes cells whenever the output view is cell-shaped.
+  ctx.output_block_pair_energies =
+      output_block_pair_energies || mps_cell_reduction;
   ctx.accumulate_derivs = accumulate_derivs;
   ctx.output = output;
   ctx.dTdV = output;
@@ -332,13 +349,34 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
 
 #ifdef __NVCC__
   auto launch_energies = [&](auto eval_energies) {
-#endif
     score::common::sphere_overlap::
         launch_precomputed_block_neighbors<DeviceDispatch, Dev, launch_t, Int>(
             mgr, block_neighbors, n_poses, max_n_blocks, eval_energies);
+  };
+#else
+  if (Dev == tmol::Device::MPS) {
+    // Metal cannot launch a device lambda, so the same body is reached
+    // through a named entry that walks the same neighbor list.
+    score::common::sphere_overlap::mps_launch_block_neighbors<Dev>(
+        TMOL_MPS_SOURCE(kHBondMetalShaderSource),
+        accumulate_derivs ? "hbond_pose_eval_energies_derivs_f32"
+                          : "hbond_pose_eval_energies_f32",
+        ctx,
+        block_neighbors);
+    if (mps_cell_reduction) {
+      // Fixed-order reduction over the cells, so the pose total is
+      // bit-reproducible across calls with the same shape.
+      score::common::pose_total_reduce<DeviceDispatch, Dev, Real>::f(
+          mgr, cells_t.view, output_t.view);
+    }
+  } else {
+    score::common::sphere_overlap::
+        launch_precomputed_block_neighbors<DeviceDispatch, Dev, launch_t, Int>(
+            mgr, block_neighbors, n_poses, max_n_blocks, eval_energies);
+  }
+#endif
 
 #ifdef __NVCC__
-  };
   // Split derivative evaluation only when the stack is large enough to
   // amortize the second pass. Both passes preserve the original candidate IDs.
   bool const split_pairs = allow_split_pairs && !output_block_pair_energies
@@ -502,7 +540,7 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
   // implicitly by [=]; see the forward pass. The last context parameter is
   // the derivative rank: a backward pass accumulates into a rank-1 tensor
   // where a forward pass writes the rank-2 one.
-  HBondCtx<Real, Int, Dev, 4, 3, 1> ctx;
+  HBondCtx<Real, Int, Dev, 4, 1, 1> ctx;
   ctx.rot_coords = rot_coords;
   ctx.rot_coord_offset = rot_coord_offset;
   ctx.block_ind_for_rot = block_ind_for_rot;
@@ -527,6 +565,8 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
   ctx.global_params = global_params;
   ctx.derived_coords = derived_coords;
   ctx.derived_atom_inds = derived_atom_inds;
+  // Read only by the Metal entry; the other backends launch over the list.
+  ctx.dispatch_indices = block_neighbors;
   ctx.output = dTdV;
   ctx.dTdV = dTdV;
   ctx.dV_dcoords = dV_dcoords;
@@ -546,9 +586,23 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
         ctx, shared, cta);
   });
 
-  score::common::sphere_overlap::
-      launch_precomputed_block_neighbors<DeviceDispatch, Dev, launch_t, Int>(
-          mgr, block_neighbors, n_poses, max_n_blocks, eval_derivs);
+  if (Dev == tmol::Device::MPS) {
+    // As in the forward pass: Metal has nowhere for a closure to live, so the
+    // identical body is reached through a named entry point instead.
+    //
+    // Derivative accumulation here is order-independent by construction --
+    // accumulate_grad snaps each contribution to a 2^-13 grid before adding,
+    // so the atomics commute. See accumulate.hh.
+    score::common::sphere_overlap::mps_launch_block_neighbors<Dev>(
+        TMOL_MPS_SOURCE(kHBondMetalShaderSource),
+        "hbond_pose_eval_derivs_f32",
+        ctx,
+        block_neighbors);
+  } else {
+    score::common::sphere_overlap::
+        launch_precomputed_block_neighbors<DeviceDispatch, Dev, launch_t, Int>(
+            mgr, block_neighbors, n_poses, max_n_blocks, eval_derivs);
+  }
 
   return dV_dcoords_t;
 }
