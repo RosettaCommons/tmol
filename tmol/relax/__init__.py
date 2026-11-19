@@ -5,6 +5,7 @@ from ._fast_relax import (  # noqa: F401
     CartesianRelaxMinimizer,
     KinematicRelaxMinimizer,
     RelaxMinimizer,
+    fast_relax,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "CartesianRelaxMinimizer",
     "KinematicRelaxMinimizer",
     "RelaxMinimizer",
+    "fast_relax",
 ]

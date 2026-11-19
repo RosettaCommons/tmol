@@ -169,7 +169,11 @@ class LiveLigandIntraData:
     include_cart_bonded: bool
     context_block_indices: tuple[int, ...] = ()
     _context_indices: torch.Tensor = field(init=False, compare=False, repr=False)
+    _rep_scale: torch.Tensor = field(init=False, compare=False, repr=False)
     _scorer_cache: dict[int, tuple[PoseStack, object]] = field(
+        default_factory=dict, compare=False, repr=False
+    )
+    _weight_cache: dict[tuple, tuple] = field(
         default_factory=dict, compare=False, repr=False
     )
 
@@ -200,10 +204,19 @@ class LiveLigandIntraData:
                 self.context_block_indices, dtype=torch.int64, device=pose_stack.device
             ),
         )
+        object.__setattr__(
+            self,
+            "_rep_scale",
+            torch.ones((), dtype=torch.float64, device=pose_stack.device),
+        )
 
     @property
     def n_ligand_atoms(self) -> int:
         return self.ligand_pose_stack.max_n_pose_atoms
+
+    def set_rep_scale(self, scale: float) -> None:
+        """Scale the repulsive weight of every movable interaction."""
+        self._rep_scale.fill_(float(scale))
 
     def to(
         self, device: torch.device | str, dtype: torch.dtype
@@ -288,12 +301,29 @@ def _validate_ligand_coords(
     )
 
 
+def _movable_block_mask(
+    data: LiveLigandIntraData, pose_stack: PoseStack
+) -> torch.Tensor | None:
+    """Blocks whose coordinates move; context blocks are frozen."""
+    if not data.context_block_indices:
+        return None
+    mask = torch.ones(
+        (pose_stack.n_poses, pose_stack.max_n_blocks),
+        dtype=torch.bool,
+        device=pose_stack.device,
+    )
+    mask[:, data._context_indices] = False
+    return mask
+
+
 def _scorer_for(data: LiveLigandIntraData, n_poses: int):
     cached = data._scorer_cache.get(n_poses)
     if cached is None:
         pose_stack = repeat_pose_stack(data.ligand_pose_stack, n_poses)
         if data.ligand_pose_stack.max_n_blocks > 1:
-            scorer = data.score_function.render_block_pair_scoring_module(pose_stack)
+            scorer = data.score_function.render_block_pair_scoring_module(
+                pose_stack, movable_blocks=_movable_block_mask(data, pose_stack)
+            )
         else:
             scorer = data.score_function.render_whole_pose_scoring_module(pose_stack)
         cached = (pose_stack, scorer)
@@ -301,51 +331,79 @@ def _scorer_for(data: LiveLigandIntraData, n_poses: int):
     return cached[1]
 
 
-def _weighted_movable_block_pairs(
+def _pair_weight_vectors(
+    data: LiveLigandIntraData, device: torch.device, dtype: torch.dtype
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Per-term weights for off-diagonal and diagonal block pairs.
+
+    Everything but the repulsive ramp is fixed for the life of the data, so it
+    is built once per device and dtype.
+    """
+
+    key = (device, dtype)
+    cached = data._weight_cache.get(key)
+    if cached is None:
+        base = data.score_function.weights_tensor().to(device=device, dtype=dtype)
+        order = tuple(data.score_function.all_score_types())
+        rep_index = (
+            order.index(ScoreType.fa_ljrep) if ScoreType.fa_ljrep in order else None
+        )
+        diagonal_base = None
+        if data.weight_profile == "search":
+            diagonal_base = base.clone()
+            softened = {
+                ScoreType.fa_ljrep: 0.01,
+                ScoreType.gen_torsions: 0.1,
+                **{score_type: 0.1 for score_type in _CART_SCORE_TYPES},
+            }
+            for score_type, weight in softened.items():
+                if score_type in order:
+                    diagonal_base[order.index(score_type)] = weight
+        cached = (base, diagonal_base, rep_index)
+        data._weight_cache[key] = cached
+
+    base, diagonal_base, rep_index = cached
+    full_weights = base
+    if rep_index is not None:
+        full_weights = base.clone()
+        full_weights[rep_index] = base[rep_index] * data._rep_scale.to(dtype)
+    diagonal_weights = diagonal_base if diagonal_base is not None else full_weights
+    return full_weights, diagonal_weights
+
+
+def _movable_block_pair_energy(
     data: LiveLigandIntraData, ligand_coords: torch.Tensor
 ) -> torch.Tensor:
-    """Return weighted ``[term, pose, block, block]`` movable energies."""
+    """Weighted movable block-pair energy of every pose.
+
+    A pair's weight depends only on its term and on whether it is a block with
+    itself, so the block axes are reduced before weighting rather than after:
+    the full ``[term, pose, block, block]`` product is never materialized.
+    """
 
     scorer = _scorer_for(data, ligand_coords.shape[0])
     unweighted = scorer(
         ligand_coords.contiguous(), sum_terms=False, apply_weights=False
     )
-    full_weights = data.score_function.weights_tensor().to(
-        device=ligand_coords.device, dtype=ligand_coords.dtype
+    full_weights, diagonal_weights = _pair_weight_vectors(
+        data, ligand_coords.device, ligand_coords.dtype
     )
-    diagonal_weights = full_weights
-    if data.weight_profile == "search":
-        diagonal_weights = full_weights.clone()
-        score_types = tuple(data.score_function.all_score_types())
-        softened = {
-            ScoreType.fa_ljrep: 0.01,
-            ScoreType.gen_torsions: 0.1,
-            **{score_type: 0.1 for score_type in _CART_SCORE_TYPES},
-        }
-        for score_type, weight in softened.items():
-            if score_type in score_types:
-                diagonal_weights[score_types.index(score_type)].fill_(weight)
 
-    n_blocks = unweighted.shape[2]
-    diagonal = torch.eye(n_blocks, dtype=torch.bool, device=ligand_coords.device)[
-        None, None, :, :
-    ]
-    pair_weights = torch.where(
-        diagonal,
-        diagonal_weights[:, None, None, None],
-        full_weights[:, None, None, None],
-    )
-    weighted = unweighted * pair_weights
+    diagonal = torch.diagonal(unweighted, dim1=2, dim2=3)
+    diagonal_sum = diagonal.sum(dim=2)
+    off_diagonal_sum = unweighted.sum(dim=(2, 3)) - diagonal_sum
+    # Context blocks are frozen, so the scorer skips them and every pair of
+    # two of them is both constant and incomplete here.
     if data.context_block_indices:
         context = data._context_indices
-        context_diagonal = torch.zeros(
-            (n_blocks, n_blocks), dtype=torch.bool, device=ligand_coords.device
-        )
-        context_diagonal.diagonal().index_fill_(0, context, True)
-        weighted = torch.where(
-            context_diagonal[None, None], torch.zeros_like(weighted), weighted
-        )
-    return weighted
+        context_diagonal_sum = diagonal[:, :, context].sum(dim=2)
+        context_pair_sum = unweighted[:, :, context][:, :, :, context].sum(dim=(2, 3))
+        diagonal_sum = diagonal_sum - context_diagonal_sum
+        off_diagonal_sum = off_diagonal_sum - (context_pair_sum - context_diagonal_sum)
+    return (
+        full_weights[:, None] * off_diagonal_sum
+        + diagonal_weights[:, None] * diagonal_sum
+    ).sum(dim=0)
 
 
 def score_ligand_intra(
@@ -356,7 +414,7 @@ def score_ligand_intra(
     _validate_ligand_coords(data, ligand_coords)
     scorer = _scorer_for(data, ligand_coords.shape[0])
     if data.ligand_pose_stack.max_n_blocks > 1:
-        energies = _weighted_movable_block_pairs(data, ligand_coords).sum(dim=(0, 2, 3))
+        energies = _movable_block_pair_energy(data, ligand_coords)
     else:
         energies = scorer(ligand_coords.contiguous())
     expected_shape = (ligand_coords.shape[0],)

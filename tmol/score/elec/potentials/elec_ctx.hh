@@ -50,7 +50,6 @@ struct ElecCtxT {
   // Inter-block proximity and bond separation
   View<Int, 4> pose_stack_near_blocks;
   View<int8_t, 5> pose_stack_inter_block_bondsep;
-  View<Int, 3> scratch_rot_neighbors;
 
   // Chemical properties of each block type
   View<Int, 1> block_type_n_atoms;
@@ -93,7 +92,6 @@ struct ElecCtxT {
     f(rot_offset_for_block);
     f(pose_stack_near_blocks);
     f(pose_stack_inter_block_bondsep);
-    f(scratch_rot_neighbors);
     f(block_type_n_atoms);
     f(block_type_partial_charge);
     f(block_type_n_interblock_bonds);
@@ -112,7 +110,7 @@ struct ElecCtxT {
   // bindings in the Metal entry points so that adding a field without adding
   // it to visit_views is caught at build time rather than silently left
   // unbound.
-  enum { n_views = 20 };
+  enum { n_views = 19 };
 
   // Launch scalars in the order the host writes and the shader reads.
   template <typename F>
@@ -120,14 +118,12 @@ struct ElecCtxT {
     f(max_n_blocks);
     f(max_n_upper_triangle_inds);
     f(output_block_pair_energies);
-    f(use_shared_compact_block_neighbors);
   }
 
   // Launch-shape constants
   int max_n_blocks = {};
   int max_n_upper_triangle_inds = {};
   bool output_block_pair_energies = {};
-  bool use_shared_compact_block_neighbors = {};
 };
 
 }  // namespace potentials

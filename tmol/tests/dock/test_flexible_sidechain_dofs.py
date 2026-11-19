@@ -165,3 +165,31 @@ def test_ga_operators_handle_appended_sidechain_chis(cdk2_pose_and_db):
             operator_name,
             sidechain_error.tolist(),
         )
+
+
+def test_grouped_operators_keep_rotamers_intact():
+    """A residue's chis mutate and cross over as one unit."""
+    # Two ligand chis, then two residues of two chis each.
+    groups = torch.tensor([0, 1, 2, 2, 3, 3])
+    parent1 = torch.zeros((64, 12))
+    parent2 = torch.ones((64, 12))
+    generator = torch.Generator().manual_seed(17)
+
+    crossed = crossover(
+        parent1, parent2, generator=generator, groups=groups, n_ligand_groups=2
+    )
+    for first, second in ((8, 9), (10, 11)):
+        assert torch.equal(crossed[:, first], crossed[:, second])
+
+    mutated = mutate(
+        parent1,
+        generator=generator,
+        rtmutation_rate=0.0,
+        torsmutation_rate=1.0,
+        groups=groups,
+        n_ligand_groups=2,
+        mutable_groups=2,
+    )
+    # Sidechain groups beyond the mutable bound never move.
+    assert torch.all(mutated[:, 8:] == 0.0)
+    assert torch.any(mutated[:, 6:8] != 0.0)

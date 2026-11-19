@@ -1,3 +1,4 @@
+import attr
 import numpy
 import torch
 
@@ -827,6 +828,11 @@ def build_rotamers(
 
     # Step 1
     samplers = tuple(task.conformer_samplers)
+    # Rotamer dofs and coordinates are built in float32 throughout; a pose of
+    # another precision is read in float32 and returned to the caller as given.
+    orig_poses = poses
+    if poses.coords.dtype != torch.float32:
+        poses = attr.evolve(poses, coords=poses.coords.to(torch.float32))
     pbt = poses.packed_block_types
 
     # Step 2
@@ -1006,7 +1012,7 @@ def build_rotamers(
         rotamer_coords[destination] = poses.coords[pose, source]
 
     return (
-        poses,
+        orig_poses,
         RotamerSet(
             max_n_rots_per_pose=torch.max(n_rots_for_pose).item(),
             n_rots_for_pose=n_rots_for_pose,

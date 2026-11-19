@@ -162,6 +162,7 @@ class GridScorer:
             )
 
         self._weights = weights(GRID_SCORE_TYPES)
+        self._base_weights = self._weights.clone()
         self._hbond_weight = weights((ScoreType.hbond,))[0]
         self._lk_ball_weights = weights(LK_BALL_SCORE_TYPES)
 
@@ -198,6 +199,17 @@ class GridScorer:
     @property
     def device(self) -> torch.device:
         return self._grid_index.device
+
+    def set_rep_scale(self, scale: float) -> None:
+        """Scale the repulsive weight, as Rosetta's packing ramp does.
+
+        Weights are written in place so a captured CUDA graph keeps reading
+        the tensor it was captured with.
+        """
+        self._weights.copy_(self._base_weights)
+        self._weights[GRID_SCORE_TYPES.index(ScoreType.fa_ljrep)] *= scale
+        if self.live_ligand_intra is not None:
+            self.live_ligand_intra.set_rep_scale(scale)
 
     def _grid_channels(self, grid_coords: torch.Tensor):
         """Per-atom ``fa_atr, fa_rep, fa_sol, fa_elec`` values and gradients.

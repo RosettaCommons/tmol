@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 import copy
 from dataclasses import dataclass, replace
 from typing import Optional, Sequence
@@ -552,6 +553,7 @@ class GridBackend(ScoringBackend):
         self.grid_atom_indices = grid_atom_indices
         self.movable_n_atoms = movable_n_atoms or len(ligand_atom_types)
         self.cuda_graph = cuda_graph
+        self._rep_scale = 1.0
         self._minimizers: dict = {}  # shared with ``for_ligand_block`` views
         self._scorers: dict[tuple[torch.device, torch.dtype], GridScorer] = {}
         self._atom_index_cache: dict = {}
@@ -805,7 +807,7 @@ class GridBackend(ScoringBackend):
         """The grid scorer for one device and precision, built on first use."""
         key = (torch.device(device), dtype)
         if key not in self._scorers:
-            self._scorers[key] = GridScorer(
+            scorer = GridScorer(
                 self.grids,
                 self.ligand_atom_types,
                 self.ligand_charges,
@@ -819,7 +821,27 @@ class GridBackend(ScoringBackend):
                 lk_ball_grid=self.lk_ball_grid,
                 grid_atoms=self.grid_atom_indices,
             )
+            scorer.set_rep_scale(self._rep_scale)
+            self._scorers[key] = scorer
         return self._scorers[key]
+
+    @contextmanager
+    def rep_scale(self, scale: float):
+        """Scale fa_rep for the duration of the block, as Rosetta packing does.
+
+        Rosetta packs each ramp step at a softened repulsive weight and then
+        minimizes at the full one (``GridScorer::optimize``).
+        """
+        previous = self._rep_scale
+        self._rep_scale = float(scale)
+        for scorer in self._scorers.values():
+            scorer.set_rep_scale(self._rep_scale)
+        try:
+            yield
+        finally:
+            self._rep_scale = previous
+            for scorer in self._scorers.values():
+                scorer.set_rep_scale(previous)
 
     def _ligand_atom_indices(
         self, pose_stack: PoseStack, ligand_block: int

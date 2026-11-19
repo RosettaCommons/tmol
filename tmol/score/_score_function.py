@@ -768,7 +768,11 @@ class ScoreFunction:
         return scoring_module
 
     def render_block_pair_scoring_module(
-        self, pose_stack: PoseStack, *, interaction_only: bool = False
+        self,
+        pose_stack: PoseStack,
+        *,
+        interaction_only: bool = False,
+        movable_blocks: torch.Tensor | None = None,
     ) -> "BlockPairScoringModule":
         """Render a callable that retains scores for every residue-block pair.
 
@@ -779,6 +783,10 @@ class ScoreFunction:
         pairs will be consumed. Terms whose block-pair scores are known to be
         diagonal-only are then omitted. Diagonal entries in the returned
         matrix are incomplete in this mode.
+
+        ``movable_blocks`` marks the blocks whose coordinates can change; the
+        per-block terms then skip the blocks it leaves out, whose energies are
+        constant. Entries for those blocks are incomplete in the result.
         """
         self.pre_work_initialization(pose_stack)
         term_modules = [
@@ -787,8 +795,13 @@ class ScoreFunction:
             )
             for t in self.all_terms()
         ]
-        _declare_movable_blocks(term_modules, pose_stack, None)
-        return BlockPairScoringModule(self.weights_tensor(), term_modules)
+        mask = (
+            None
+            if movable_blocks is None
+            else _normalized_movable_blocks(pose_stack, movable_blocks)
+        )
+        _declare_movable_blocks(term_modules, pose_stack, mask)
+        return BlockPairScoringModule(self.weights_tensor(), term_modules, mask)
 
     def render_rotamer_scoring_module(
         self,
@@ -1484,10 +1497,7 @@ class WholePoseScoringModule:
         """Whether this call will build and share one compact neighbor list.
 
         The shared list is a CUDA-oriented optimization for sparse poses, and
-        its builder (build_compact_block_neighbors) has no Metal kernel. The
-        ported MPS kernels read the dense scratch_rot_neighbors grid instead,
-        which sphere_overlap produces on the device, so MPS opts out and keeps
-        everything on the GPU rather than failing.
+        its builder has no Metal kernel, so MPS opts out.
 
         Also decides which module list runs, which is why it is a predicate
         rather than inline: the fused LJLK/elec module lives in
@@ -2146,11 +2156,22 @@ class BlockPairScoringModule:
         self,
         weights: Tensor[torch.float32][:],
         term_modules: Sequence[torch.nn.Module],
+        movable_blocks: torch.Tensor | None = None,
     ):
         self.weights = torch.nn.Parameter(
             weights.unsqueeze(1).unsqueeze(1).unsqueeze(1), requires_grad=False
         )
         self.term_modules = tuple(term_modules)
+        self.movable_blocks = movable_blocks
+        self._shared_neighbor_terms = tuple(
+            term
+            for term in term_modules
+            if getattr(term, "block_neighbor_cutoff", None) is not None
+        )
+        self._shared_neighbor_cutoff = max(
+            (term.block_neighbor_cutoff for term in self._shared_neighbor_terms),
+            default=None,
+        )
         self._active_term_modules = tuple(
             term
             for term in self.term_modules
@@ -2165,8 +2186,30 @@ class BlockPairScoringModule:
             len(self.term_modules), weights.device
         )
 
-    def _parallel_forward_scores(
+    def _build_shared_block_neighbors(
         self, coords: torch.Tensor
+    ) -> torch.Tensor | None:
+        """One compact neighbor list for every term that takes one.
+
+        Pairs of two frozen blocks are dropped. MPS has no builder kernel, and
+        one term alone would not amortize the build.
+        """
+        if len(self._shared_neighbor_terms) < 2 or coords.device.type == "mps":
+            return None
+        return self._shared_neighbor_terms[0].build_compact_block_neighbors(
+            coords, self._shared_neighbor_cutoff, self.movable_blocks
+        )
+
+    def _term_score(self, term, coords, shared_block_neighbors):
+        if (
+            shared_block_neighbors is not None
+            and getattr(term, "block_neighbor_cutoff", None) is not None
+        ):
+            return term(coords, shared_block_neighbors)
+        return term(coords)
+
+    def _parallel_forward_scores(
+        self, coords: torch.Tensor, shared_block_neighbors: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, ...] | None:
         """Evaluate active CPU terms concurrently for a forward-only call."""
         cpu_workers = self._cpu_term_workers
@@ -2185,7 +2228,17 @@ class BlockPairScoringModule:
             torch.is_autocast_cache_enabled(),
         )
         futures = [
-            executor.submit(_score_call_in_thread, term, coords, *context)
+            executor.submit(
+                _score_call_in_thread,
+                term,
+                coords,
+                *context,
+                (
+                    shared_block_neighbors
+                    if getattr(term, "block_neighbor_cutoff", None) is not None
+                    else None
+                ),
+            )
             for term in self._active_term_modules
         ]
         return tuple(future.result() for future in futures)
@@ -2198,8 +2251,11 @@ class BlockPairScoringModule:
     ) -> torch.Tensor:
         if not torch.is_grad_enabled() and coords.requires_grad:
             coords = coords.detach()
+        shared_block_neighbors = self._build_shared_block_neighbors(coords)
         if sum_terms and apply_weights:
-            parallel_scores = self._parallel_forward_scores(coords)
+            parallel_scores = self._parallel_forward_scores(
+                coords, shared_block_neighbors
+            )
             active_results = (
                 iter(parallel_scores) if parallel_scores is not None else None
             )
@@ -2212,7 +2268,9 @@ class BlockPairScoringModule:
                     weight_offset += term.shape[0]
                     continue
                 scores = (
-                    term(coords) if active_results is None else next(active_results)
+                    self._term_score(term, coords, shared_block_neighbors)
+                    if active_results is None
+                    else next(active_results)
                 )
                 next_offset = weight_offset + scores.shape[0]
                 active_scores.append(scores)
@@ -2222,7 +2280,7 @@ class BlockPairScoringModule:
                 unweighted = torch.cat(active_scores, dim=0)
                 weights = torch.cat(active_weights, dim=0)
                 return unweighted.mul_(weights).sum(dim=0)
-        unweighted = self.unweighted_scores(coords)
+        unweighted = self.unweighted_scores(coords, shared_block_neighbors)
         weighted = unweighted.mul_(self.weights) if apply_weights else unweighted
         summed = torch.sum(weighted, dim=0) if sum_terms else weighted
 
@@ -2263,10 +2321,18 @@ class BlockPairScoringModule:
         pair_dimension = 1 if sum_terms else 2
         return scores[..., block_i, block_j].sum(dim=pair_dimension)
 
-    def unweighted_scores(self, coords: torch.Tensor) -> torch.Tensor:
-        parallel_scores = self._parallel_forward_scores(coords)
+    def unweighted_scores(
+        self, coords: torch.Tensor, shared_block_neighbors: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        parallel_scores = self._parallel_forward_scores(coords, shared_block_neighbors)
         if parallel_scores is None:
-            return torch.cat([term(coords) for term in self.term_modules], dim=0)
+            return torch.cat(
+                [
+                    self._term_score(term, coords, shared_block_neighbors)
+                    for term in self.term_modules
+                ],
+                dim=0,
+            )
 
         active_results = iter(parallel_scores)
         return torch.cat(

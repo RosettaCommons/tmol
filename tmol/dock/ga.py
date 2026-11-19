@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import math
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -26,6 +27,7 @@ import numpy
 import torch
 
 from tmol.dock.conformer_seed import generate_conformer_library
+from tmol.dock.rotamers import RotamerGeneLibrary, build_rotamer_gene_library
 from tmol.dock._diversity import ligand_heavy_atom_rms, select_diverse_low_energy
 from tmol.dock.ligand_aligner import LigandAligner
 from tmol.dock.ligand_dofs import (
@@ -54,6 +56,8 @@ from tmol.score.gridscore._movable import (
 )
 
 if TYPE_CHECKING:
+    from tmol.dock.finalization import RefineProtocol
+
     from tmol.dock.finalization import DockingFinalization
 
 
@@ -85,6 +89,20 @@ class GASchedule:
     pmut: float = 0.2
     maxiter: int = 50
     initial_perturbation: DockingPerturbation = DockingPerturbation()
+    #: How flexible sidechains are searched. ``jitter`` perturbs their chis
+    #: with the ligand's operator; ``rotamer`` mutates them to whole Dunbrack
+    #: rotamers; ``packer`` leaves them to an annealed rotamer search before
+    #: each minimization, as Rosetta does; ``minimize`` never samples them
+    #: genetically, so they adapt only through the continuous minimizer and
+    #: the final refinement's repack.
+    sidechain_sampling: Literal["jitter", "rotamer", "packer", "minimize"] = "rotamer"
+    #: Annealing passes per ramp step, for ``packer``.
+    pack_steps: int = 50
+    #: Contact distance biasing which residue a packing pass proposes; None
+    #: draws residues uniformly.
+    pack_contact_cutoff: float | None = None
+    #: Repulsive-weight ramp; each entry packs at that weight, then minimizes.
+    ramp: tuple[float, ...] = (0.1, 1.0)
 
 
 @dataclass(frozen=True)
@@ -125,6 +143,27 @@ class LigandGeneLayout:
     sidechain_nodes: torch.Tensor
     sidechain_atom_indices: torch.Tensor
     sidechain_atom_influence: torch.Tensor
+
+    @property
+    def n_ligand_torsions(self) -> int:
+        return len(self.docking_dofs.torsions)
+
+    @property
+    def torsion_groups(self) -> torch.Tensor:
+        """Gene-column groups: each ligand chi alone, a residue's chis together.
+
+        The genetic operators act on groups, so a sidechain is inherited or
+        resampled as a whole rotamer rather than one chi at a time.
+        """
+        groups = list(range(self.n_ligand_torsions))
+        next_group = self.n_ligand_torsions
+        block_group: dict[int, int] = {}
+        for dof in self.docking_dofs.sidechain_torsions:
+            group = block_group.setdefault(dof.block, next_group)
+            if group == next_group:
+                next_group += 1
+            groups.append(group)
+        return torch.tensor(groups, dtype=torch.int64, device=self.template.device)
 
     @classmethod
     def from_pose_stack(
@@ -322,7 +361,7 @@ def _has_ring_closed_chi(block_type) -> bool:
 def select_pocket_residues(
     pose_stack: PoseStack,
     ligand,
-    cutoff: float = 6.0,
+    cutoff: float = 4.0,
 ) -> torch.Tensor:
     """Return sorted polymer residues (block indices) contacting ligand heavy atoms.
 
@@ -618,6 +657,17 @@ def _apply_rosetta_rotation_mutation(
     return _rotation_matrix_to_zyx(composed_rotation.transpose(-1, -2))
 
 
+def _torsion_group_index(
+    groups: torch.Tensor | None, n_torsions: int, device: torch.device
+) -> tuple[torch.Tensor, int]:
+    """Column-to-group map and group count; one group per column by default."""
+    if groups is None:
+        return torch.arange(n_torsions, dtype=torch.int64, device=device), n_torsions
+    if tuple(groups.shape) != (n_torsions,):
+        raise ValueError("torsion groups must label every torsion gene column")
+    return groups.to(device=device, dtype=torch.int64), int(groups.max()) + 1
+
+
 def mutate(
     genes: torch.Tensor,
     *,
@@ -627,6 +677,10 @@ def mutate(
     translation_width: float = 2.0,
     rotation_width: float = math.radians(60.0),
     torsion_width: float = math.radians(120.0),
+    groups: torch.Tensor | None = None,
+    n_ligand_groups: int | None = None,
+    mutable_groups: int | None = None,
+    rotamers: "RotamerGeneLibrary | None" = None,
 ) -> torch.Tensor:
     """Mutate a gene batch with Rosetta's rigid-body-or-chi semantics.
 
@@ -637,6 +691,13 @@ def mutate(
     parameter about a random axis and left-composes the perturbation with the
     parent rotation. The composed orientation is written back as raw ZYX
     delta-Euler DOFs for forward kinematics.
+
+    ``groups`` labels each torsion column with the unit it mutates in, so a
+    flexible sidechain moves as one rotamer; ``n_ligand_groups`` keeps the
+    forced-mutation fallback on a ligand chi. ``mutable_groups`` bounds which
+    groups may mutate at all, leaving flexible sidechains to the packer as
+    Rosetta does. With ``rotamers``, a selected sidechain group takes a whole
+    Dunbrack rotamer instead of the uniform chi jitter.
     """
     n_genes, n_dof = genes.shape
     device, dtype = genes.device, genes.dtype
@@ -686,17 +747,24 @@ def mutate(
 
     n_torsions = n_dof - 6
     if n_torsions:
-        mutate_torsion = (
-            torch.rand((n_genes, n_torsions), device=device, generator=generator)
+        column_group, n_groups = _torsion_group_index(groups, n_torsions, device)
+        mutate_group = (
+            torch.rand((n_genes, n_groups), device=device, generator=generator)
             < torsmutation_rate
         ) & ~randomize_rt[:, None]
-        force = ~randomize_rt & ~torch.any(mutate_torsion, dim=1)
-        forced_index = torch.randint(
-            n_torsions, (n_genes, 1), device=device, generator=generator
-        )
-        forced = torch.zeros_like(mutate_torsion)
-        forced.scatter_(1, forced_index, force[:, None])
-        mutate_torsion |= forced
+        if mutable_groups is not None:
+            mutate_group[:, mutable_groups:] = False
+        force = ~randomize_rt & ~torch.any(mutate_group, dim=1)
+        # Rosetta forces a ligand chi, never a sidechain, when nothing mutated.
+        n_forced = n_groups if n_ligand_groups is None else n_ligand_groups
+        if n_forced:
+            forced_index = torch.randint(
+                n_forced, (n_genes, 1), device=device, generator=generator
+            )
+            forced = torch.zeros_like(mutate_group)
+            forced.scatter_(1, forced_index, force[:, None])
+            mutate_group |= forced
+        mutate_torsion = mutate_group[:, column_group]
 
         if torsion_width > math.pi:
             mutated_torsions = (
@@ -721,6 +789,11 @@ def mutate(
                 )
             )
             mutated_torsions = genes[:, 6:] + delta
+        if rotamers is not None and rotamers.n_sidechain_columns:
+            mutated_torsions = mutated_torsions.clone()
+            mutated_torsions[:, -rotamers.n_sidechain_columns :] = rotamers.draw(
+                n_genes, generator=generator, dtype=dtype
+            )
         result[:, 6:] = torch.where(mutate_torsion, mutated_torsions, genes[:, 6:])
     return _canonicalize_genes(result)
 
@@ -730,12 +803,16 @@ def crossover(
     parent2: torch.Tensor,
     *,
     generator: torch.Generator,
+    groups: torch.Tensor | None = None,
+    n_ligand_groups: int | None = None,
 ) -> torch.Tensor:
     """Uniform crossover with rigid body inherited as one indivisible unit.
 
     Rosetta selects the complete rigid body from one parent, then each chi
     independently, forcing one partner-2 chi when all independent choices took
-    parent 1 (``LigandConformer.cc:862-897``).
+    parent 1 (``LigandConformer.cc:862-897``). ``groups`` makes a flexible
+    sidechain's chis inherit together, so an offspring never mixes two parents'
+    rotamers within one residue.
     """
     if parent1.shape[1] < 6:
         raise ValueError("crossover genes need a six-value rigid body")
@@ -748,24 +825,30 @@ def crossover(
 
     n_torsions = n_dof - 6
     if n_torsions:
-        take_chi_1 = (
+        column_group, n_groups = _torsion_group_index(
+            groups, n_torsions, parent1.device
+        )
+        take_group_1 = (
             torch.rand(
-                (n_genes, n_torsions),
+                (n_genes, n_groups),
                 device=parent1.device,
                 generator=generator,
             )
             < 0.5
         )
-        force_partner2 = torch.all(take_chi_1, dim=1)
-        forced_index = torch.randint(
-            n_torsions,
-            (n_genes, 1),
-            device=parent1.device,
-            generator=generator,
-        )
-        forced_partner2 = torch.zeros_like(take_chi_1)
-        forced_partner2.scatter_(1, forced_index, force_partner2[:, None])
-        take_chi_1 &= ~forced_partner2
+        force_partner2 = torch.all(take_group_1, dim=1)
+        n_forced = n_groups if n_ligand_groups is None else n_ligand_groups
+        if n_forced:
+            forced_index = torch.randint(
+                n_forced,
+                (n_genes, 1),
+                device=parent1.device,
+                generator=generator,
+            )
+            forced_partner2 = torch.zeros_like(take_group_1)
+            forced_partner2.scatter_(1, forced_index, force_partner2[:, None])
+            take_group_1 &= ~forced_partner2
+        take_chi_1 = take_group_1[:, column_group]
         result[:, 6:] = torch.where(take_chi_1, parent1[:, 6:], parent2[:, 6:])
     return _canonicalize_genes(result)
 
@@ -776,6 +859,10 @@ def next_generation(
     pmut: float,
     *,
     generator: torch.Generator,
+    groups: torch.Tensor | None = None,
+    n_ligand_groups: int | None = None,
+    mutable_groups: int | None = None,
+    rotamers: "RotamerGeneLibrary | None" = None,
 ) -> torch.Tensor:
     """Create offspring by cyclic parent assignment and mutation/crossover.
 
@@ -803,9 +890,123 @@ def next_generation(
         )
         partner_indices += (partner_indices >= parent_indices).to(torch.int64)
         partners = genes[partner_indices]
-    mutated = mutate(parents, generator=generator)
-    crossed = crossover(parents, partners, generator=generator)
+    mutated = mutate(
+        parents,
+        generator=generator,
+        groups=groups,
+        n_ligand_groups=n_ligand_groups,
+        mutable_groups=mutable_groups,
+        rotamers=rotamers,
+    )
+    crossed = crossover(
+        parents,
+        partners,
+        generator=generator,
+        groups=groups,
+        n_ligand_groups=n_ligand_groups,
+    )
     return torch.where(mutate_choice[:, None], mutated, crossed)
+
+
+def _rep_scale_of(backend: ScoringBackend, scale: float):
+    """Scale the backend's repulsive weight if it supports a packing ramp."""
+    setter = getattr(backend, "rep_scale", None)
+    return nullcontext() if setter is None else setter(scale)
+
+
+def _ligand_contact_weights(
+    pose_stack: PoseStack, layout: LigandGeneLayout, cutoff: float
+) -> torch.Tensor:
+    """Per-pose weight of each flexible residue, by heavy-atom ligand contact.
+
+    A uniformly chosen residue is usually one the ligand never touches, so its
+    rotamer makes no difference and the packing pass is spent for nothing.
+    Weighting by contact puts the passes where the ligand actually is.
+    """
+
+    dofs = layout.docking_dofs
+    ligand = _block_heavy_coords(
+        pose_stack, dofs.ligand_block, layout.heavy_local_atoms
+    )
+    counts = [
+        torch.count_nonzero(
+            torch.cdist(_block_heavy_coords(pose_stack, block), ligand) <= cutoff,
+            dim=(1, 2),
+        )
+        for block in dofs.sidechain_blocks
+    ]
+    weights = torch.stack(counts, dim=1).to(ligand.dtype)
+    # A residue out of contact in every candidate still needs some weight, or
+    # multinomial has nothing to draw from.
+    return weights + 1.0e-3
+
+
+def anneal_rotamers(
+    genes: torch.Tensor,
+    layout: LigandGeneLayout,
+    backend: ScoringBackend,
+    rotamers: "RotamerGeneLibrary",
+    *,
+    generator: torch.Generator,
+    steps: int,
+    hot: float = 10.0,
+    cold: float = 1.0,
+    contact_cutoff: float | None = None,
+) -> torch.Tensor:
+    """Re-choose flexible sidechain rotamers for a whole population.
+
+    This is Rosetta's ``packer_loop`` step: discrete whole-rotamer moves
+    accepted by Metropolis on a 10-to-1 temperature ramp, recovering the best
+    assignment seen. One pass proposes a move for every candidate at once and
+    costs one population scoring, so the search is batched rather than run
+    candidate by candidate.
+    """
+
+    if steps <= 0 or rotamers.n_groups == 0:
+        return genes
+    current = genes
+    current_energy = backend.score(layout.pose_stack_from_genes(current))
+    best, best_energy = current, current_energy
+    start_energy = current_energy
+    n_accepted = 0
+    contact_weights = (
+        None
+        if contact_cutoff is None
+        else _ligand_contact_weights(
+            layout.pose_stack_from_genes(current), layout, contact_cutoff
+        )
+    )
+    decay = (cold / hot) ** (1.0 / max(steps - 1, 1))
+    temperature = hot
+    for _ in range(steps):
+        group, rotamer_index = rotamers.random_moves(
+            genes.shape[0], generator=generator, weights=contact_weights
+        )
+        proposal = rotamers.substitute(current, group, rotamer_index)
+        energy = backend.score(layout.pose_stack_from_genes(proposal))
+        delta = torch.clamp((current_energy - energy) / temperature, -20.0, 20.0)
+        accept = torch.rand(
+            delta.shape, device=delta.device, generator=generator
+        ) < torch.exp(delta)
+        current = torch.where(accept[:, None], proposal, current)
+        current_energy = torch.where(accept, energy, current_energy)
+        improved = current_energy < best_energy
+        best = torch.where(improved[:, None], current, best)
+        best_energy = torch.where(improved, current_energy, best_energy)
+        temperature *= decay
+        if logger.isEnabledFor(logging.DEBUG):
+            n_accepted += int(torch.count_nonzero(accept))
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "rotamer anneal: %d residues, %d passes, accepted %.1f%%, "
+            "mean energy %.2f -> %.2f",
+            rotamers.n_groups,
+            steps,
+            100.0 * n_accepted / (steps * genes.shape[0]),
+            float(start_energy.mean()),
+            float(best_energy.mean()),
+        )
+    return best
 
 
 def optimize_generation(
@@ -814,13 +1015,40 @@ def optimize_generation(
     backend: ScoringBackend,
     *,
     maxiter: int,
+    rotamers: "RotamerGeneLibrary | None" = None,
+    pack_steps: int = 0,
+    pack_contact_cutoff: float | None = None,
+    ramp: tuple[float, ...] = (1.0,),
+    generator: torch.Generator | None = None,
 ) -> GAPool:
     """Score and locally minimize one whole population as a batch.
 
     This mirrors the score-then-optimize operation at
     ``GAOptimizer.cc:195-208`` while delegating the batched objective to the
-    Phase 2 backend.
+    Phase 2 backend. With a rotamer library, each ``ramp`` entry packs the
+    flexible sidechains at that repulsive weight and then minimizes at the
+    full one, as ``GridScorer::optimize`` does.
     """
+
+    packing = rotamers is not None and pack_steps > 0
+    if packing:
+        if generator is None:
+            raise ValueError("rotamer packing needs a random generator")
+        for rep_scale in ramp:
+            with _rep_scale_of(backend, rep_scale):
+                genes = anneal_rotamers(
+                    genes,
+                    layout,
+                    backend,
+                    rotamers,
+                    generator=generator,
+                    steps=pack_steps,
+                    contact_cutoff=pack_contact_cutoff,
+                )
+            if rep_scale != ramp[-1]:
+                genes = optimize_generation(
+                    genes, layout, backend, maxiter=maxiter
+                ).genes
 
     proposed = layout.pose_stack_from_genes(genes)
     proposed_raw_dofs = layout.raw_dofs_from_genes(genes)
@@ -882,15 +1110,12 @@ def update_pool(
 
     genes = torch.cat((offspring.genes, parents.genes), dim=0)
     energies = torch.cat((offspring.energies, parents.energies), dim=0)
-    # RMS niching is defined by the genes themselves. Rebuild both populations
-    # with forward kinematics so no coordinate-to-gene inversion participates
-    # in the distance calculation.
-    offspring_from_genes = layout.pose_stack_from_genes(offspring.genes)
-    parents_from_genes = layout.pose_stack_from_genes(parents.genes)
+    # Each pool carries the pose its genes produced, so RMS niching reads those
+    # coordinates rather than refolding both populations.
     coords = torch.cat(
         (
-            layout.ligand_heavy_coords(offspring_from_genes),
-            layout.ligand_heavy_coords(parents_from_genes),
+            layout.ligand_heavy_coords(offspring.pose_stack),
+            layout.ligand_heavy_coords(parents.pose_stack),
         ),
         dim=0,
     )
@@ -1015,12 +1240,13 @@ def _random_initial_genes(
     result[:, 3:6] = _rotation_matrix_to_zyx(
         _quaternion_rotation_matrix(quaternion).transpose(-1, -2)
     )
-    if result.shape[1] > 6:
-        result[:, 6:] = (
+    n_random = result.shape[1] - 6
+    if n_random:
+        result[:, 6 : 6 + n_random] = (
             2
             * math.pi
             * torch.rand(
-                (npool, result.shape[1] - 6),
+                (npool, n_random),
                 dtype=dtype,
                 device=device,
                 generator=generator,
@@ -1233,8 +1459,8 @@ def run_docking(
     energy_window: float = 20.0,
     cluster_rmsd: float = 0.5,
     ligand_aligner: LigandAligner = LigandAligner(),
-    finalize: bool = False,
-    top_k: int = 1,
+    finalize: bool | "RefineProtocol" = False,
+    top_k: int | None = None,
 ) -> DockingResult:
     """Dock the backend's ligand into the complex ``pose_stack``.
 
@@ -1248,8 +1474,13 @@ def run_docking(
     the input pose (refinement), ``"conformer"`` seeds torsions from a
     conformer library of ``ligand_mol2``, ``"aligner"`` uses ``ligand_aligner``.
 
+    ``finalize=True`` uses the refinement protocol matching the backend's mode
+    (``FLEX_REFINE`` when it declares flexible sidechains, else
+    ``RIGID_REFINE``); pass a ``RefineProtocol`` to override it, and ``top_k``
+    to override that protocol's candidate count.
+
     Without ``finalize`` the result holds the grid-ranked pool. With
-    ``finalize=True`` the ``top_k`` candidates are promoted to full complexes,
+    ``finalize`` set the top candidates are promoted to full complexes,
     exact-refined, and ranked by exact complex energy. ``best_pose_stack``
     follows that ranking; the returned energies are the corresponding ``dG``
     estimates in the same order. ``best_genes`` /
@@ -1296,7 +1527,28 @@ def run_docking(
         # Keep the reference as the first flexible candidate, making the
         # flexible search monotone w.r.t. the supplied ligand/sidechain state.
         genes[0] = layout.genes_from_pose_stack(layout.template)[0]
-    pool = optimize_generation(genes, layout, search_backend, maxiter=schedule.maxiter)
+    rotamers = (
+        build_rotamer_gene_library(
+            search_pose,
+            docking_dofs,
+            layout.genes_from_pose_stack(layout.template)[
+                0, 6 + layout.n_ligand_torsions :
+            ],
+        )
+        if compact_sidechains
+        else None
+    )
+    groups = layout.torsion_groups
+    packing = schedule.sidechain_sampling == "packer"
+    generation_kwargs = dict(
+        maxiter=schedule.maxiter,
+        rotamers=rotamers if packing else None,
+        pack_steps=schedule.pack_steps,
+        pack_contact_cutoff=schedule.pack_contact_cutoff,
+        ramp=schedule.ramp,
+        generator=generator,
+    )
+    pool = optimize_generation(genes, layout, search_backend, **generation_kwargs)
     best_history = [torch.min(pool.energies)]
     diverse_history: list[int] = []
 
@@ -1304,11 +1556,24 @@ def run_docking(
     for _ in range(schedule.generations):
         offspring = optimize_generation(
             next_generation(
-                pool.genes, schedule.npool, schedule.pmut, generator=generator
+                pool.genes,
+                schedule.npool,
+                schedule.pmut,
+                generator=generator,
+                groups=groups,
+                n_ligand_groups=layout.n_ligand_torsions,
+                mutable_groups=(
+                    layout.n_ligand_torsions
+                    if schedule.sidechain_sampling in ("packer", "minimize")
+                    else None
+                ),
+                rotamers=(
+                    rotamers if schedule.sidechain_sampling == "rotamer" else None
+                ),
             ),
             layout,
             search_backend,
-            maxiter=schedule.maxiter,
+            **generation_kwargs,
         )
         pool = update_pool(
             pool,
@@ -1356,7 +1621,13 @@ def run_docking(
 
     from tmol.dock.finalization import finalize_ga_docking
 
-    finalization = finalize_ga_docking(reference, backend, ga_result, top_k=top_k)
+    finalization = finalize_ga_docking(
+        reference,
+        backend,
+        ga_result,
+        refine=None if finalize is True else finalize,
+        top_k=top_k,
+    )
     return DockingResult(
         best_pose_stack=attr.evolve(
             reference, coords=finalization.pose_stack.coords[:1].detach().clone()

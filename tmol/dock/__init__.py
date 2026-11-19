@@ -27,12 +27,16 @@ from .ga import (
     run_docking,
     select_pocket_residues,
 )
+from .finalization import FLEX_REFINE, RIGID_REFINE, RefineProtocol
 from .ligand_aligner import LigandAligner
 from .scoring_backend import ContinuousBackend, GridBackend
 
 __all__ = [
     "ContinuousBackend",
     "DockingResult",
+    "FLEX_REFINE",
+    "RIGID_REFINE",
+    "RefineProtocol",
     "GASchedule",
     "GridBackend",
     "LigandAligner",

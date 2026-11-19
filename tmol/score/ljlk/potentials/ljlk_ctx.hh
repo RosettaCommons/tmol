@@ -46,7 +46,6 @@ struct LJLKCtxT {
   // Inter-block proximity and bond separation
   View<Int, 4> pose_stack_near_blocks;
   View<int8_t, 5> pose_stack_inter_block_bondsep;
-  View<Int, 3> scratch_rot_neighbors;
   // Rotamer-pair dispatch list, [3, n_pairs]; bound only by the rotamer
   // entry points, which walk it instead of the block-pair upper triangle.
   View<Int, 2> dispatch_indices;
@@ -72,7 +71,6 @@ struct LJLKCtxT {
   int max_n_blocks = {};
   int max_n_upper_triangle_inds = {};
   bool output_block_pair_energies = {};
-  bool use_shared_compact_block_neighbors = {};
   bool require_gradient = {};
   Real max_dis = {};
 
@@ -93,7 +91,6 @@ struct LJLKCtxT {
     f(rot_offset_for_block);
     f(pose_stack_near_blocks);
     f(pose_stack_inter_block_bondsep);
-    f(scratch_rot_neighbors);
     f(dispatch_indices);
     f(shared_compact_block_neighbors);
     f(block_type_n_atoms);
@@ -109,7 +106,7 @@ struct LJLKCtxT {
     f(dV_dcoords);
   }
 
-  enum { n_views = 23 };
+  enum { n_views = 22 };
 
   // Launch scalars in the order the host writes and the shader reads.
   template <typename F>
@@ -117,7 +114,6 @@ struct LJLKCtxT {
     f(max_n_blocks);
     f(max_n_upper_triangle_inds);
     f(output_block_pair_energies);
-    f(use_shared_compact_block_neighbors);
     f(require_gradient);
     f(max_dis);
   }

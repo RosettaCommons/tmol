@@ -27,7 +27,6 @@ LAUNCH_BOX_32
 
 typedef WorkgroupLane<tmol::Device::MPS> Lane;
 typedef BlockSpheresCtxT<tmol::portable::MetalView, float, int32_t> SpheresCtx;
-typedef BlockNeighborsCtxT<tmol::portable::MetalView, float, int32_t> NeighborsCtx;
 typedef RotSpheresCtxT<tmol::portable::MetalView, float, int32_t> RotSpheresCtx;
 typedef BlockSpheresFromRotCtxT<tmol::portable::MetalView, float, int32_t> BlockFromRotCtx;
 typedef RotPairListCtxT<tmol::portable::MetalView, float, int32_t> RotPairCtx;
@@ -56,27 +55,6 @@ kernel void compute_block_spheres_f32(
       launch_t>(ctx, int(cta), lane);
 }
 
-// One thread per candidate block pair.
-kernel void detect_block_neighbors_f32(
-    device const int64_t* meta [[buffer(0)]],
-      TMOL_MPS_BIND_3,
-    uint index [[thread_position_in_grid]]) {
-  static_assert(
-      NeighborsCtx::n_views == 3,
-      "buffer bindings here must cover every view visit_views enumerates");
-  device void* ptrs[3] = {TMOL_MPS_PTRS_3};
-  NeighborsCtx ctx = tmol::score::common::mps_build_ctx<NeighborsCtx>(ptrs, meta);
-
-
-  // The grid is rounded up to a whole number of threadgroups, so the tail
-  // threads have no pair to test.
-  int const n_pairs =
-      int(ctx.block_neighbors.size(0)) * ctx.block_pairs_per_pose;
-  if (int(index) >= n_pairs) return;
-
-  detect_block_neighbors_body<tmol::Device::MPS, float, int32_t>(
-      ctx, int(index));
-}
 
 
 // ---------------------------------------------------------------------------

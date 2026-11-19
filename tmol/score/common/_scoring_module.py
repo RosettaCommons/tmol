@@ -143,6 +143,38 @@ class TermPoseScoringModule(TermScoringModule):
         )
         self.n_poses = pose_stack.first_rot_for_block.shape[0]
         self.max_n_blocks = pose_stack.first_rot_for_block.shape[1]
+        self._neighbor_block_type_n_atoms = pose_stack.packed_block_types.n_atoms
+        self.register_buffer(
+            "_empty_block_neighbors",
+            torch.empty((0,), dtype=torch.int32, device=pose_stack.device),
+        )
+        self.register_buffer(
+            "_empty_movable_blocks",
+            torch.empty((0, 0), dtype=torch.int32, device=pose_stack.device),
+        )
+
+    def build_compact_block_neighbors(self, coords, reach, movable_blocks=None):
+        """Build a common compact list of conservative block-neighbor pairs.
+
+        ``movable_blocks`` is an int [n_poses, max_n_blocks] mask; pairs of two
+        frozen blocks are omitted. ``None`` keeps every pair.
+        """
+        from tmol.score.ljlk.potentials._compiled import _build_compact_block_neighbors
+
+        flat = coords.detach().flatten(start_dim=0, end_dim=-2)
+        if movable_blocks is None:
+            movable_blocks = self._empty_movable_blocks
+        return _build_compact_block_neighbors(
+            flat,
+            self.common_parameters[0],
+            self.common_parameters[3],
+            self.common_parameters[4],
+            self.common_parameters[5],
+            self.common_parameters[6],
+            self._neighbor_block_type_n_atoms,
+            movable_blocks,
+            reach,
+        )[0]
 
 
 class TermWholePoseScoringModule(TermPoseScoringModule):
@@ -160,15 +192,6 @@ class TermWholePoseScoringModule(TermPoseScoringModule):
         )
         self.block_neighbor_cutoff = block_neighbor_cutoff
         self.score_only_in_no_grad = score_only_in_no_grad
-        self._neighbor_block_type_n_atoms = pose_stack.packed_block_types.n_atoms
-        self.register_buffer(
-            "_empty_block_neighbors",
-            torch.empty((0,), dtype=torch.int32, device=pose_stack.device),
-        )
-        self.register_buffer(
-            "_empty_movable_blocks",
-            torch.empty((0, 0), dtype=torch.int32, device=pose_stack.device),
-        )
         self._build_static_tails(False)
 
     def forward(
@@ -203,29 +226,6 @@ class TermWholePoseScoringModule(TermPoseScoringModule):
         scores, _ = self.term_score_poses(flat, *tail)
         return scores
 
-    def build_compact_block_neighbors(self, coords, reach, movable_blocks=None):
-        """Build a common compact list of conservative block-neighbor pairs.
-
-        ``movable_blocks`` is an int [n_poses, max_n_blocks] mask; pairs of two
-        frozen blocks are omitted. ``None`` keeps every pair.
-        """
-        from tmol.score.ljlk.potentials._compiled import _build_compact_block_neighbors
-
-        flat = coords.detach().flatten(start_dim=0, end_dim=-2)
-        if movable_blocks is None:
-            movable_blocks = self._empty_movable_blocks
-        return _build_compact_block_neighbors(
-            flat,
-            self.common_parameters[0],
-            self.common_parameters[3],
-            self.common_parameters[4],
-            self.common_parameters[5],
-            self.common_parameters[6],
-            self._neighbor_block_type_n_atoms,
-            movable_blocks,
-            reach,
-        )[0]
-
 
 class TermBlockPairScoringModule(TermPoseScoringModule):
     def __init__(
@@ -240,23 +240,22 @@ class TermBlockPairScoringModule(TermPoseScoringModule):
             classname, pose_stack, term_parameters, term_score_poses
         )
         self.block_neighbor_cutoff = block_neighbor_cutoff
-        self.register_buffer(
-            "_empty_block_neighbors",
-            torch.empty((0,), dtype=torch.int32, device=pose_stack.device),
-        )
         self._build_static_tails(True)
 
     def forward(
         self,
         coords,
+        shared_block_neighbors=None,
     ):
         flat = coords.flatten(start_dim=0, end_dim=-2)
         tail = self._static_tail_for_coords(coords)
         if self.block_neighbor_cutoff is not None:
+            if shared_block_neighbors is None:
+                shared_block_neighbors = self._empty_block_neighbors
             scores, _ = self.term_score_poses(
                 flat,
                 *tail,
-                self._empty_block_neighbors,
+                shared_block_neighbors,
             )
             return scores
         scores, _ = self.term_score_poses(flat, *tail)

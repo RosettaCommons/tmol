@@ -117,58 +117,6 @@ TMOL_HOST_DEVICE_FUNC void compute_block_spheres_body(
       thread0_write_out_result, lane);
 }
 
-// Whether two blocks are close enough that any of their atom pairs can
-// contribute. One thread per candidate pair.
-template <tmol::Device D, typename Real, typename Int, typename Ctx>
-TMOL_HOST_DEVICE_FUNC void detect_block_neighbors_body(
-    TMOL_THREAD Ctx const& ctx, int index) {
-  int const pose_ind = index / ctx.block_pairs_per_pose;
-  int const pair = index % ctx.block_pairs_per_pose;
-  int const block_ind1 = pair / ctx.max_n_blocks;
-  int const block_ind2 = pair % ctx.max_n_blocks;
-
-  // The CPU backend keeps zero-initialized scratch and writes only the cells
-  // that are neighbors; the parallel backends allocate uninitialized scratch
-  // and write every cell, which saves a separate fill.
-  bool const writes_every_cell = D != tmol::Device::CPU;
-
-  if (block_ind1 > block_ind2) {
-    if (writes_every_cell) {
-      ctx.block_neighbors[pose_ind][block_ind1][block_ind2] = 0;
-    }
-    return;
-  }
-
-  int const block_type1 = ctx.pose_stack_block_type[pose_ind][block_ind1];
-  int const block_type2 =
-      block_type1 < 0 ? -1 : ctx.pose_stack_block_type[pose_ind][block_ind2];
-  if (block_type1 < 0 || block_type2 < 0) {
-    if (writes_every_cell) {
-      ctx.block_neighbors[pose_ind][block_ind1][block_ind2] = 0;
-    }
-    return;
-  }
-
-  Real sphere1[4];
-  Real sphere2[4];
-  for (int i = 0; i < 4; ++i) {
-    sphere1[i] = ctx.block_spheres[pose_ind][block_ind1][i];
-    sphere2[i] = ctx.block_spheres[pose_ind][block_ind2][i];
-  }
-
-  Real const d2 =
-      ((sphere1[0] - sphere2[0]) * (sphere1[0] - sphere2[0])
-       + (sphere1[1] - sphere2[1]) * (sphere1[1] - sphere2[1])
-       + (sphere1[2] - sphere2[2]) * (sphere1[2] - sphere2[2]));
-  Real const d_threshold = sphere1[3] + sphere2[3] + ctx.reach;
-
-  if (d2 < d_threshold * d_threshold) {
-    ctx.block_neighbors[pose_ind][block_ind1][block_ind2] = 1;
-  } else if (writes_every_cell) {
-    ctx.block_neighbors[pose_ind][block_ind1][block_ind2] = 0;
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Rotamer-pair dispatch.
 //

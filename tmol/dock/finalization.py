@@ -19,6 +19,12 @@ from tmol.optimization._minimizers import (
     KinematicMinimizer,
     run_cart_min,
 )
+from tmol.kinematics._move_map import CartesianMoveMap
+from tmol.relax._fast_relax import (
+    CartesianRelaxMinimizer,
+    default_relax_task_operation,
+    fast_relax,
+)
 from tmol.pose._constraint_set import ConstraintSet
 
 from tmol.pose._pose_stack import PoseStack
@@ -33,10 +39,67 @@ from tmol.score.gridscore._movable import (
     sidechain_context_blocks,
 )
 
-# Rosetta dockflex "bbsc1" final refinement: one hard-rep Cartesian minimization
-# (fa_rep multiplier 1.0, MinMover tolerance 1e-5, up to 200 iterations). Used for
-# the flexible branch; the rigid branch uses the torsion-space soft->hard schedule.
-_DOCKFLEX_SCHEDULE = ((1.0, 1e-5, 200),)
+
+@dataclass(frozen=True)
+class RefineProtocol:
+    """Exact-stage refinement, in the vocabulary of Rosetta's relax scripts.
+
+    ``steps`` are ``fast_relax`` schedule entries: each repacks the movable
+    sidechains at ``fa_rep_pack_frac`` and minimizes at ``fa_rep_min_frac``,
+    one entry per Rosetta ``ramp_repack_min`` line. ``cycles`` is its
+    ``repeat``, and the best-scoring state across cycles is kept.
+
+    ``sidechains`` chooses what moves: ``"backend"`` takes the set the backend
+    declared, ``()`` holds the receptor rigid, and an explicit sequence of
+    block indices overrides both -- the relax stage need not use the same
+    freedom the search did.
+    """
+
+    steps: tuple[dict[str, float], ...]
+    cycles: int = 1
+    max_iter: int = 50
+    top_k: int = 20
+    space: str = "cartesian"
+    opt_h: bool = False
+    backbone_neighbors: int = 0
+    sidechains: str | tuple[int, ...] = "backend"
+    #: Rebuild the movable sidechains from the rotamer library at each step;
+    #: off leaves them at the conformation the search produced.
+    repack: bool = False
+
+    def ramp(self) -> tuple[tuple[float, float, int], ...]:
+        """(fa_rep multiplier, tolerance, iterations) per step."""
+        return tuple(
+            (
+                float(step["fa_rep_min_frac"]),
+                float(step.get("min_rtol", 1e-5)),
+                self.max_iter,
+            )
+            for step in self.steps
+        )
+
+
+# Rosetta dockrigid: the default FastRelax script, torsion space, no receptor
+# sidechain repacking because its movemap frees none.
+RIGID_REFINE = RefineProtocol(
+    steps=(
+        {"fa_rep_pack_frac": 0.02, "fa_rep_min_frac": 0.02, "min_rtol": 0.01},
+        {"fa_rep_pack_frac": 1.0, "fa_rep_min_frac": 1.0, "min_rtol": 1e-5},
+    ),
+    cycles=3,
+    max_iter=50,
+    space="torsion",
+    sidechains=(),
+)
+
+# Rosetta dockflex "bbsc1": one cartesian ramp_repack_min at full fa_rep.
+FLEX_REFINE = RefineProtocol(
+    steps=({"fa_rep_pack_frac": 1.0, "fa_rep_min_frac": 1.0, "min_rtol": 1e-5},),
+    cycles=1,
+    max_iter=200,
+    backbone_neighbors=1,
+    repack=True,
+)
 
 
 @dataclass(frozen=True)
@@ -358,31 +421,63 @@ def count_non_proton_ligand_chis(pose_stack: PoseStack, ligand_block: int) -> in
     return nchi
 
 
-def _refine_flexible(promoted, exact_sfxn, param_db, coord_mask):
-    """Rosetta dockflex "bbsc1": one hard-rep Cartesian minimization.
+def _refine_flexible(promoted, exact_sfxn, param_db, coord_mask, protocol, pack_blocks):
+    """Rosetta dockflex: cartesian ramp_repack_min over ligand and sidechains.
 
-    Ligand and flexible-sidechain atoms move in Cartesian space with
-    accept-to-best (L-BFGS, not Rosetta torsion-space linmin; no preliminary
-    cycle or optH), NOT a soft->hard ramp.
+    Runs tmol's own FastRelax so the repack at each ramp step, and the
+    accept-to-best across cycles, are the shared implementation rather than a
+    second one. ``pack_blocks`` selects the sidechains the packer may rebuild;
+    empty leaves the receptor fixed and the stage is minimization only.
+    """
+    minimizer = CartesianRelaxMinimizer(
+        CartesianMoveMap(coord_mask), max_iter=protocol.max_iter
+    )
+    operations = refine_task_operations(
+        promoted, exact_sfxn, pack_blocks, protocol.repack
+    )
+    refined = fast_relax(
+        promoted,
+        exact_sfxn,
+        minimizer=minimizer,
+        num_repeats=protocol.cycles,
+        schedule=list(protocol.steps),
+        task_operations=operations or None,
+    )
+    return refined, _score_pose_stack(refined, exact_sfxn)
+
+
+def refine_task_operations(pose_stack, sfxn, pack_blocks, repack):
+    """Packer task operations for the refinement stage.
+
+    Without ``repack`` the only sampler is the fallback one, whose single
+    rotamer is the input conformation, so the packer cannot move a sidechain.
+    """
+    operations = []
+    if pack_blocks is not None:
+        if repack:
+            operations.append(default_relax_task_operation(pose_stack, sfxn))
+        operations.append(_repack_only_blocks(pose_stack, pack_blocks))
+    return operations
+
+
+def _repack_only_blocks(pose_stack, blocks):
+    """Task operation restricting repacking to ``blocks``.
+
+    Composed after the relax default, whose samplers it keeps.
     """
 
-    def cartesian_step(pose, step_sfxn, tol, max_iter):
-        return run_cart_min(
-            pose,
-            step_sfxn,
-            coord_mask=coord_mask,
-            optimizer_kwargs={"max_iter": max_iter, "rtol": tol},
+    def operation(task):
+        mask = torch.zeros(
+            (pose_stack.n_poses, pose_stack.max_n_blocks),
+            dtype=torch.bool,
+            device=pose_stack.device,
         )
+        if len(blocks):
+            mask[:, torch.as_tensor(list(blocks), device=pose_stack.device)] = True
+        task.restrict_to_repacking()
+        task.disable_packing_by_block_mask(~mask)
 
-    return _soft_hard_refine(
-        promoted,
-        cartesian_step,
-        param_db=param_db,
-        device=promoted.device,
-        exact_sfxn=exact_sfxn,
-        schedule=_DOCKFLEX_SCHEDULE,
-        cycles=1,
-    )
+    return operation
 
 
 def _refine_rigid(
@@ -492,19 +587,16 @@ def finalize_ga_docking(
     backend,
     ga_result: GAResult,
     *,
-    top_k: int = 1,
-    refine_schedule: tuple[tuple[float, float, int], ...] = (
-        (0.02, 0.01, 50),
-        (1.0, 1e-5, 50),
-    ),
-    refine_cycles: int = 3,
+    refine: RefineProtocol | None = None,
+    top_k: int | None = None,
     top_pose_metric: str = "score",
 ) -> DockingFinalization:
-    """Soft-to-hard refine candidates and rank by dG or exact complex score.
+    """Refine the top candidates and rank them by dG or exact complex score.
 
-    ``refine_schedule`` contains (rep multiplier, relative energy tolerance,
-    max iterations) steps repeated ``refine_cycles`` times. ``top_pose_metric``
-    selects ``"dG"`` (``dH + 0.4*nchi``) or ``"score"`` (exact complex energy).
+    ``refine`` defaults to the protocol matching the backend's mode:
+    :data:`FLEX_REFINE` when it declares flexible sidechains, else
+    :data:`RIGID_REFINE`. ``top_k`` overrides the protocol's own count.
+    ``top_pose_metric`` selects ``"dG"`` (``dH + 0.4*nchi``) or ``"score"``.
     """
 
     if reference_pose_stack.n_poses != 1:
@@ -517,6 +609,14 @@ def finalize_ga_docking(
     if not hasattr(backend, "param_db"):
         raise TypeError("finalization requires a backend with a parameter database")
     ligand_block = backend.ligand_block
+    if refine is None:
+        refine = (
+            FLEX_REFINE
+            if tuple(getattr(backend, "sidechain_blocks", ()))
+            else RIGID_REFINE
+        )
+    if top_k is None:
+        top_k = refine.top_k
 
     (
         sidechain_blocks,
@@ -548,8 +648,13 @@ def finalize_ga_docking(
     coord_mask.scatter_(1, _ligand_atom_indices(promoted, ligand_block), True)
     if sidechain_blocks:
         coord_mask.scatter_(1, _mapped_atom_indices(promoted, block_local_atoms), True)
+        pack_blocks = (
+            compact_sidechain_blocks
+            if refine.sidechains == "backend"
+            else tuple(refine.sidechains)
+        )
         refined, complex_energy = _refine_flexible(
-            promoted, exact_sfxn, backend.param_db, coord_mask
+            promoted, exact_sfxn, backend.param_db, coord_mask, refine, pack_blocks
         )
     else:
         refined, complex_energy = _refine_rigid(
@@ -559,8 +664,8 @@ def finalize_ga_docking(
             backend.param_db,
             ligand_block,
             coord_mask,
-            refine_schedule,
-            refine_cycles,
+            refine.ramp(),
+            refine.cycles,
             movable_blocks=coord_mask,
         )
     free_ligand_energy, free_receptor_energy = _free_state_energies(

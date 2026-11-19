@@ -496,6 +496,8 @@ def _write_group_members(new_pose_stack, rotamer_set, collapse, assignment):
             n = int(pbt.n_atoms[int(new_pose_stack.block_type_ind[pose, block])])
             start = int(new_pose_stack.block_coord_offset[pose, block])
             src = int(rotamer_set.coord_offset_for_rot[off + chosen])
-            coords[pose, start : start + n] = rotamer_set.coords[src : src + n]
+            coords[pose, start : start + n] = rotamer_set.coords[src : src + n].to(
+                coords.dtype
+            )
 
     return attr.evolve(new_pose_stack, coords=coords)

@@ -14,8 +14,12 @@ from tmol.dock import GASchedule, GridBackend, run_docking, select_pocket_residu
 from tmol.dock.finalization import count_non_proton_ligand_chis
 from tmol.dock.ga import GAPool, GAResult, LigandGeneLayout
 from tmol.dock.ligand_dofs import build_ligand_docking_dofs
+from tmol.pack._packer_task import PackerPalette, PackerTask
+from tmol.pack.rotamer.dunbrack._dunbrack_chi_sampler import DunbrackChiSampler
+from tmol.score import ScoreFunction
 from tmol.dock.finalization import (
     _flexible_sidechain_mapping,
+    refine_task_operations,
     _ligand_atom_indices,
     _mapped_atom_indices,
     _promote_top_candidates,
@@ -592,3 +596,33 @@ def test_free_state_constraints_do_not_modify_exact_weights(
         torch.testing.assert_close(ligand_energy, expected)
     finally:
         exact.set_weight(ScoreType.constraint, original_weight)
+
+
+def test_refine_repack_offers_rotamers(cdk2_pose_and_db):
+    """A repacking refinement must give the movable blocks real rotamer choices.
+
+    The block restriction alone leaves only the fallback sampler, whose single
+    rotamer is the input conformation, so the packer cannot move a sidechain.
+    """
+    pose_stack, param_db = cdk2_pose_and_db
+    sfxn = ScoreFunction(param_db, pose_stack.device)
+    blocks = (3, 4)
+
+    def build(repack):
+        task = PackerTask(pose_stack, PackerPalette())
+        for operation in refine_task_operations(pose_stack, sfxn, blocks, repack):
+            operation(task)
+        return task
+
+    assert not any(
+        isinstance(s, DunbrackChiSampler)
+        for s in build(repack=False).conformer_samplers
+    )
+
+    task = build(repack=True)
+    assert any(isinstance(s, DunbrackChiSampler) for s in task.conformer_samplers)
+    packable = task.per_block_is_block_type_allowed.any(dim=-1)
+    assert packable[0, list(blocks)].all()
+    assert int(packable[0].sum()) == len(blocks)
+
+    assert refine_task_operations(pose_stack, sfxn, None, True) == []

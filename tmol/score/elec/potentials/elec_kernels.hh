@@ -495,13 +495,6 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_energies_by_block_2(
   //   return;
   // }
 
-  // But we still kill everything that involves non-neighboring blocks
-  // and that can be a lot!
-  if (!ctx.use_shared_compact_block_neighbors
-      && ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0) {
-    return;
-  }
-
   int const rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
   int const rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
 
@@ -649,13 +642,6 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_energies(
   //   return;
   // }
 
-  // But we still kill everything that involves non-neighboring blocks
-  // and that can be a lot!
-  if (!ctx.use_shared_compact_block_neighbors
-      && ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0) {
-    return;
-  }
-
   int const rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
   int const rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
 
@@ -800,10 +786,6 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_derivs_2(
 
   int const rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
   int const rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
-
-  if (ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0) {
-    return;
-  }
 
   if (ctx.dTdV[0][pose_ind][block_ind1][block_ind2] == 0) {
     return;

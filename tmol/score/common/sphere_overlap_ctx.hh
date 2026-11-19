@@ -52,36 +52,6 @@ struct BlockSpheresCtxT {
   enum { n_views = 7 };
 };
 
-// Pairwise neighbor detection: one thread per candidate block pair.
-template <template <typename, int> class View, typename Real, typename Int>
-struct BlockNeighborsCtxT {
-  View<Int, 2> pose_stack_block_type;
-  View<Real, 3> block_spheres;
-  View<Int, 3> block_neighbors;
-
-  // Launch shape and the reach cutoff, carried in the metadata buffer.
-  int max_n_blocks = {};
-  int block_pairs_per_pose = {};
-  Real reach = {};
-
-  template <typename F>
-  TMOL_HOST_DEVICE_FUNC void visit_views(F f) {
-    f(pose_stack_block_type);
-    f(block_spheres);
-    f(block_neighbors);
-  }
-
-  enum { n_views = 3 };
-
-  // Launch scalars in the order the host writes and the shader reads.
-  template <typename F>
-  TMOL_HOST_DEVICE_FUNC void visit_scalars(F f) {
-    f(max_n_blocks);
-    f(block_pairs_per_pose);
-    f(reach);
-  }
-};
-
 // ---------------------------------------------------------------------------
 // Rotamer-pair dispatch. The packer scores every pair of rotamers whose
 // bounding spheres overlap, and the list of those pairs is built by the four

@@ -33,7 +33,7 @@ struct LJLKPoseScoreDispatch {
       ContextManager& mgr,
       TView<Vec<Real, 3>, 1, D> rot_coords,
       TView<Int, 1, D> rot_coord_offset,
-      TView<Int, 2, D> first_rot_for_block,
+      TView<Int, 2, D> pose_stack_block_type,
       TView<Int, 1, D> block_ind_for_rot,
       TView<Int, 1, D> pose_ind_for_rot,
       TView<Int, 1, D> block_type_ind_for_rot,
@@ -99,7 +99,7 @@ struct LJLKPoseScoreDispatch {
 
       // Optional shared compact superset. An empty tensor requests local
       // construction, preserving standalone and block-pair scoring APIs.
-      TView<Int, 1, D> shared_compact_block_neighbors,
+      TPack<Int, 1, D> shared_compact_block_neighbors,
 
       // should the output be per-pose (npose x nterms x 1 x 1)
       //   or per block-pair (npose x nterms x len x len)
@@ -107,7 +107,7 @@ struct LJLKPoseScoreDispatch {
 
       // do we need to compute gradients?
       bool require_gradient) -> std::
-      tuple<TPack<Real, 4, D>, TPack<Vec<Real, 3>, 2, D>, TPack<Int, 3, D> >;
+      tuple<TPack<Real, 4, D>, TPack<Vec<Real, 3>, 2, D>, TPack<Int, 1, D> >;
 
   static auto backward(
       ContextManager& mgr,
@@ -162,7 +162,7 @@ struct LJLKPoseScoreDispatch {
       TView<LJLKTypeParams<Real>, 1, D> type_params,
       TView<LJGlobalParams<Real>, 1, D> global_params,
 
-      TView<Int, 3, D> block_neighbors,  // from forward pass
+      TView<Int, 1, D> block_neighbors,  // from forward pass
       TView<Real, 4, D> dTdV             // nterms x nposes x (1|len) x (1|len)
       ) -> TPack<Vec<Real, 3>, 1, D>;
 };
