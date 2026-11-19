@@ -40,6 +40,8 @@ jobs:
           python-version: "3.12"
 
       - name: install compiler cache
+        # The build script falls back to direct compilation without ccache.
+        continue-on-error: true
         run: |
           sudo apt-get update
           sudo apt-get install --yes ccache
@@ -69,7 +71,10 @@ jobs:
       - name: Check interactive documentation
         run: |
           npm install --prefix "$RUNNER_TEMP/tmol-docs-browser" --no-audit --no-fund playwright@1.62.1
-          "$RUNNER_TEMP/tmol-docs-browser/node_modules/.bin/playwright" install --with-deps chromium
+          if ! "$RUNNER_TEMP/tmol-docs-browser/node_modules/.bin/playwright" install --with-deps chromium; then
+            echo "::warning::System dependency installation failed; trying the runner's existing libraries."
+            "$RUNNER_TEMP/tmol-docs-browser/node_modules/.bin/playwright" install chromium
+          fi
           NODE_PATH="$RUNNER_TEMP/tmol-docs-browser/node_modules" node .github/scripts/check_docs_explorers.cjs docs/_build/html
 
       - name: Upload rendered docs

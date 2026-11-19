@@ -94,6 +94,8 @@ jobs:
           python-version: "3.12"
 
       - name: install compiler cache
+        # Caching is optional; package-server outages must not block testing.
+        continue-on-error: true
         run: |
           if [ "$RUNNER_OS" = macOS ]; then
             brew install ccache
@@ -132,7 +134,10 @@ jobs:
 
       - name: report compiler cache
         if: always()
-        run: ccache --show-stats
+        run: |
+          if command -v ccache >/dev/null; then
+            ccache --show-stats
+          fi
 
       - name: test
         env:
