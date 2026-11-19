@@ -529,6 +529,10 @@
 <span class="w">    </span><span class="sd">"""Select weighted native reduction without latency or stability regressions."""</span>
     <span class="k">if</span> <span class="n">force_for_cuda_graph</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">if</span> <span class="n">coords</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">"mps"</span><span class="p">:</span>
+        <span class="c1"># No Metal kernel for the weighted reduction; see</span>
+        <span class="c1"># _FusedLJLKAndElecWholePoseModule.forward.</span>
+        <span class="k">return</span> <span class="kc">False</span>
     <span class="k">if</span> <span class="n">coords</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">"cpu"</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">needs_gradient</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">needs_gradient</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_grad_enabled</span><span class="p">()</span> <span class="ow">and</span> <span class="n">coords</span><span class="o">.</span><span class="n">requires_grad</span>
@@ -1616,6 +1620,15 @@
             <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span>
                 <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ljlk_module</span><span class="p">(</span><span class="n">coords</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">elec_module</span><span class="p">(</span><span class="n">coords</span><span class="p">)),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span>
             <span class="p">)</span>
+        <span class="k">if</span> <span class="n">coords</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">"mps"</span><span class="p">:</span>
+            <span class="c1"># Metal has no fused kernel; the two terms share the list instead.</span>
+            <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">ljlk_module</span><span class="p">(</span><span class="n">coords</span><span class="p">,</span> <span class="n">shared_block_neighbors</span><span class="p">),</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">elec_module</span><span class="p">(</span><span class="n">coords</span><span class="p">,</span> <span class="n">shared_block_neighbors</span><span class="p">),</span>
+                <span class="p">),</span>
+                <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="p">)</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score.ljlk.potentials._compiled</span><span class="w"> </span><span class="kn">import</span> <span class="n">_ljlk_elec_pose_scores</span>
 
         <span class="c1"># Preserve the normal term wrapper's lazy float64 support.  The</span>
@@ -1643,7 +1656,7 @@
         <span class="k">return</span> <span class="n">scores</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_whole_pose_execution_modules</span><span class="p">(</span><span class="n">term_modules</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_whole_pose_execution_modules</span><span class="p">(</span><span class="n">term_modules</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Build conservative built-in execution groups without changing lanes."""</span>
     <span class="n">grouped</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">index</span> <span class="o">=</span> <span class="mi">0</span>
@@ -1671,11 +1684,6 @@
                     <span class="n">parameter</span><span class="o">.</span><span class="n">requires_grad</span>
                     <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="p">(</span><span class="n">first</span><span class="p">,</span> <span class="n">second</span><span class="p">)</span>
                     <span class="k">for</span> <span class="n">parameter</span> <span class="ow">in</span> <span class="n">term</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span>
-                <span class="p">)</span>
-                <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span>
-                    <span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">"cpu"</span>
-                    <span class="ow">and</span> <span class="n">torch</span><span class="o">.</span><span class="n">get_num_threads</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">1</span>
-                    <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">first</span><span class="p">,</span> <span class="s2">"n_poses"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span>
                 <span class="p">)</span>
             <span class="p">):</span>
                 <span class="n">grouped</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_FusedLJLKAndElecWholePoseModule</span><span class="p">(</span><span class="n">first</span><span class="p">,</span> <span class="n">second</span><span class="p">))</span>
@@ -1897,9 +1905,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">term_modules</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">term_modules</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">movable_blocks</span> <span class="o">=</span> <span class="n">movable_blocks</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">frozen_pair_energy</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_execution_modules</span> <span class="o">=</span> <span class="n">_whole_pose_execution_modules</span><span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">term_modules</span><span class="p">,</span> <span class="n">weights</span><span class="o">.</span><span class="n">device</span>
-        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_execution_modules</span> <span class="o">=</span> <span class="n">_whole_pose_execution_modules</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">term_modules</span><span class="p">)</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">tmol._cpp_lib</span><span class="w"> </span><span class="kn">import</span> <span class="n">_native</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_native_score_capture</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">_native</span><span class="p">,</span> <span class="s2">"_ScoreCapture"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
@@ -1983,17 +1989,14 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_shares_block_neighbors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">coords</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Whether this call will build and share one compact neighbor list.</span>
 
-<span class="sd">        The shared list is a CUDA-oriented optimization for sparse poses, and</span>
-<span class="sd">        its builder has no Metal kernel, so MPS opts out.</span>
+<span class="sd">        Built whenever at least two terms take one, on every device.</span>
 
 <span class="sd">        Also decides which module list runs, which is why it is a predicate</span>
 <span class="sd">        rather than inline: the fused LJLK/elec module lives in</span>
 <span class="sd">        ``_execution_modules`` only, and its index means nothing against the</span>
 <span class="sd">        fallback list.</span>
 <span class="sd">        """</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_shared_neighbor_term_indices</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
-            <span class="k">return</span> <span class="kc">False</span>
-        <span class="k">return</span> <span class="n">coords</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">"mps"</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_shared_neighbor_term_indices</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_build_shared_block_neighbors</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">coords</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
@@ -2550,8 +2553,7 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">coords</span><span class="p">):</span>
         <span class="n">shared_block_neighbors</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="c1"># See _build_shared_block_neighbors for why MPS opts out.</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_shared_neighbor_terms</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">coords</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">"mps"</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_shared_neighbor_terms</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
             <span class="n">builder</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_shared_neighbor_terms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
             <span class="n">shared_block_neighbors</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">build_compact_block_neighbors</span><span class="p">(</span>
                 <span class="n">coords</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_shared_neighbor_cutoff</span>
@@ -2678,10 +2680,11 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""One compact neighbor list for every term that takes one.</span>
 
-<span class="sd">        Pairs of two frozen blocks are dropped. MPS has no builder kernel, and</span>
-<span class="sd">        one term alone would not amortize the build.</span>
+<span class="sd">        Pairs of two frozen blocks are dropped. One term alone would not</span>
+<span class="sd">        amortize the build. Unlike whole-pose scoring, every term here takes</span>
+<span class="sd">        the list itself, with no fused module, so MPS shares it too.</span>
 <span class="sd">        """</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_shared_neighbor_terms</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">coords</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">"mps"</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_shared_neighbor_terms</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_shared_neighbor_terms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">build_compact_block_neighbors</span><span class="p">(</span>
             <span class="n">coords</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_shared_neighbor_cutoff</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">movable_blocks</span>
