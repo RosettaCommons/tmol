@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>tmol.dock.finalization &#8212; TMol</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=adb9cd23" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/page_feedback.css?v=d37b03bb" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../../../_static/scripts/fontawesome.js?digest=75c7c72ae941e8b558d8"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
+
+    <script src="../../../_static/documentation_options.js?v=8d563738"></script>
+    <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script>let toggleHintShow = 'show code';</script>
+    <script>let toggleHintHide = 'hide code';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '#Setup .nbinput, .nbinput.collapse-code';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/tmol/dock/finalization';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+    <script src="../../../_static/tmol-explorers.js?v=089c5f52"></script>
+    <script async="async" defer="defer" src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+    <script src="../../../_static/page_feedback.js?v=8b09ebf1"></script>
+    <link rel="canonical" href="https://rosettacommons.github.io/tmol/latest/_modules/tmol/dock/finalization.html" />
+    <link rel="icon" href="../../../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="color-scheme" content="light dark"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="1.0.0" />
+  
+    
+    <script src="../../../_static/searchtools.js"></script>
+    <script src="../../../_static/language_data.js"></script>
+    <script src="../../../searchindex.js"></script>
+  
+  
+  <link rel="icon" type="image/svg+xml" sizes="any" href="../../../_static/brand/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="../../../_static/brand/apple-touch-icon.png">
+
+  </head>
+  <body data-default-mode="">
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button type="button" class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation" aria-expanded="false" aria-controls="pst-primary-sidebar-modal">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../../_static/tmol-logo-light.svg" class="logo__image only-light" alt="TMol documentation — Home"/>
+    <img src="../../../_static/tmol-logo-dark.svg" class="logo__image only-dark pst-js-only" alt="TMol documentation — Home"/>
+  
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../installation.html">
+    Installation
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../quickstart.html">
+    Quickstart
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../terminology.html">
+    Glossary
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../examples_index.html">
+    Tutorials
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../api_reference.html">
+    API reference
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../contributor_guide.html">
+    Contributing
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button type="button" class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button type="button" class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
+      
+      <dialog id="pst-primary-sidebar-modal" tabindex="-1"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar hide-on-wide">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../installation.html">
+    Installation
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../quickstart.html">
+    Quickstart
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../terminology.html">
+    Glossary
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../examples_index.html">
+    Tutorials
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../api_reference.html">
+    API reference
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../contributor_guide.html">
+    Contributing
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../../../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-house"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="../../index.html" class="nav-link">Module code</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">tmol.dock.finalization</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+  
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <h1>Source code for tmol.dock.finalization</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""RosettaVS-style exact refinement and binding-score finalization."""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">attr</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.dock.ga</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">GAResult</span><span class="p">,</span>
+    <span class="n">LigandGeneLayout</span><span class="p">,</span>
+    <span class="n">_place_ligand_in_reference</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.dock.ligand_dofs</span><span class="w"> </span><span class="kn">import</span> <span class="n">build_ligand_docking_dofs</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.optimization._minimizers</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">CartesianMinimizer</span><span class="p">,</span>
+    <span class="n">KinematicMinimizer</span><span class="p">,</span>
+    <span class="n">run_cart_min</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.kinematics._move_map</span><span class="w"> </span><span class="kn">import</span> <span class="n">CartesianMoveMap</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.relax._fast_relax</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">CartesianRelaxMinimizer</span><span class="p">,</span>
+    <span class="n">default_relax_task_operation</span><span class="p">,</span>
+    <span class="n">fast_relax</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose._constraint_set</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConstraintSet</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose._pose_stack</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStack</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose</span><span class="w"> </span><span class="kn">import</span> <span class="n">repeat_pose_stack</span><span class="p">,</span> <span class="n">select_blocks</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">ParameterDatabase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score</span><span class="w"> </span><span class="kn">import</span> <span class="n">beta2016_score_function</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score.constraint._constraint_energy_term</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConstraintEnergyTerm</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score._score_types</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScoreType</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score.gridscore._movable</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">movable_block_mapping</span><span class="p">,</span>
+    <span class="n">movable_pose_stack</span><span class="p">,</span>
+    <span class="n">sidechain_context_blocks</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="RefineProtocol">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.RefineProtocol">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">RefineProtocol</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Exact-stage refinement, in the vocabulary of Rosetta's relax scripts.</span>
+
+<span class="sd">    ``steps`` are ``fast_relax`` schedule entries: each repacks the movable</span>
+<span class="sd">    sidechains at ``fa_rep_pack_frac`` and minimizes at ``fa_rep_min_frac``,</span>
+<span class="sd">    one entry per Rosetta ``ramp_repack_min`` line. ``cycles`` is its</span>
+<span class="sd">    ``repeat``, and the best-scoring state across cycles is kept.</span>
+
+<span class="sd">    ``sidechains`` chooses what moves: ``"backend"`` takes the set the backend</span>
+<span class="sd">    declared, ``()`` holds the receptor rigid, and an explicit sequence of</span>
+<span class="sd">    block indices overrides both -- the relax stage need not use the same</span>
+<span class="sd">    freedom the search did.</span>
+<span class="sd">    """</span>
+
+    <span class="n">steps</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">cycles</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">max_iter</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span>
+    <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span>
+    <span class="n">space</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"cartesian"</span>
+    <span class="n">opt_h</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">backbone_neighbors</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">sidechains</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"backend"</span>
+    <span class="c1">#: Rebuild the movable sidechains from the rotamer library at each step;</span>
+    <span class="c1">#: off leaves them at the conformation the search produced.</span>
+    <span class="n">repack</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+
+<div class="viewcode-block" id="RefineProtocol.ramp">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.RefineProtocol.ramp">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ramp</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""(fa_rep multiplier, tolerance, iterations) per step."""</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="nb">float</span><span class="p">(</span><span class="n">step</span><span class="p">[</span><span class="s2">"fa_rep_min_frac"</span><span class="p">]),</span>
+                <span class="nb">float</span><span class="p">(</span><span class="n">step</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"min_rtol"</span><span class="p">,</span> <span class="mf">1e-5</span><span class="p">)),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">max_iter</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">steps</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<span class="c1"># Rosetta dockrigid: the default FastRelax script, torsion space, no receptor</span>
+<span class="c1"># sidechain repacking because its movemap frees none.</span>
+<span class="n">RIGID_REFINE</span> <span class="o">=</span> <span class="n">RefineProtocol</span><span class="p">(</span>
+    <span class="n">steps</span><span class="o">=</span><span class="p">(</span>
+        <span class="p">{</span><span class="s2">"fa_rep_pack_frac"</span><span class="p">:</span> <span class="mf">0.02</span><span class="p">,</span> <span class="s2">"fa_rep_min_frac"</span><span class="p">:</span> <span class="mf">0.02</span><span class="p">,</span> <span class="s2">"min_rtol"</span><span class="p">:</span> <span class="mf">0.01</span><span class="p">},</span>
+        <span class="p">{</span><span class="s2">"fa_rep_pack_frac"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">"fa_rep_min_frac"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">"min_rtol"</span><span class="p">:</span> <span class="mf">1e-5</span><span class="p">},</span>
+    <span class="p">),</span>
+    <span class="n">cycles</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+    <span class="n">max_iter</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
+    <span class="n">space</span><span class="o">=</span><span class="s2">"torsion"</span><span class="p">,</span>
+    <span class="n">sidechains</span><span class="o">=</span><span class="p">(),</span>
+<span class="p">)</span>
+
+<span class="c1"># Rosetta dockflex "bbsc1": one cartesian ramp_repack_min at full fa_rep.</span>
+<span class="n">FLEX_REFINE</span> <span class="o">=</span> <span class="n">RefineProtocol</span><span class="p">(</span>
+    <span class="n">steps</span><span class="o">=</span><span class="p">({</span><span class="s2">"fa_rep_pack_frac"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">"fa_rep_min_frac"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">"min_rtol"</span><span class="p">:</span> <span class="mf">1e-5</span><span class="p">},),</span>
+    <span class="n">cycles</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+    <span class="n">max_iter</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span>
+    <span class="n">backbone_neighbors</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+    <span class="n">repack</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DockingFinalization</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Exact-refined candidates and their RosettaVS ranking components.</span>
+
+<span class="sd">    Candidate tensors have shape ``[1, top_k]`` and are sorted by the selected</span>
+<span class="sd">    metric (exact complex energy by default, Rosetta's ``top_pose_metric="score"``)</span>
+<span class="sd">    for the single input ligand. ``pose_stack`` uses</span>
+<span class="sd">    the same candidate order.</span>
+<span class="sd">    """</span>
+
+    <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span>
+    <span class="n">genes</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="n">pre_refine_energies</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="n">complex_energies</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="n">free_ligand_energies</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="n">free_receptor_energies</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="n">nchi</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="n">dH</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="n">TdS</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="n">dG</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_score_pose_stack</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="n">scorer</span> <span class="o">=</span> <span class="n">sfxn</span><span class="o">.</span><span class="n">render_whole_pose_scoring_module</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">scorer</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_refine_fa_rep_scaled</span><span class="p">(</span><span class="n">base_fa_ljrep</span><span class="p">,</span> <span class="n">param_db</span><span class="p">,</span> <span class="n">device</span><span class="p">,</span> <span class="n">rep_mult</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Fresh beta2016 with scaled fa_ljrep and all other weights identical."""</span>
+    <span class="n">sfxn</span> <span class="o">=</span> <span class="n">beta2016_score_function</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">param_db</span><span class="o">=</span><span class="n">param_db</span><span class="p">)</span>
+    <span class="n">sfxn</span><span class="o">.</span><span class="n">set_weight</span><span class="p">(</span><span class="n">ScoreType</span><span class="o">.</span><span class="n">fa_ljrep</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">base_fa_ljrep</span><span class="p">)</span> <span class="o">*</span> <span class="nb">float</span><span class="p">(</span><span class="n">rep_mult</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">sfxn</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_soft_hard_refine</span><span class="p">(</span>
+    <span class="n">promoted</span><span class="p">,</span> <span class="n">minimize</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">param_db</span><span class="p">,</span> <span class="n">device</span><span class="p">,</span> <span class="n">exact_sfxn</span><span class="p">,</span> <span class="n">schedule</span><span class="p">,</span> <span class="n">cycles</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Run soft-to-hard cycles, accepting each pose's best exact-energy state.</span>
+
+<span class="sd">    ``minimize(pose_stack, step_sfxn, tol, max_iter)`` runs one ramp step.</span>
+<span class="sd">    """</span>
+    <span class="c1"># beta2016_score_function MEMOIZES when param_db is None, so a None db would</span>
+    <span class="c1"># make the soft/hard/exact score functions ALIAS one object (set_weight on</span>
+    <span class="c1"># "hard" would clobber "soft"). Resolve an explicit database so every stage</span>
+    <span class="c1"># is an independent, freshly built score function.</span>
+    <span class="k">if</span> <span class="n">param_db</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">param_db</span> <span class="o">=</span> <span class="n">ParameterDatabase</span><span class="o">.</span><span class="n">get_default</span><span class="p">()</span>
+    <span class="n">base_fa_ljrep</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">exact_sfxn</span><span class="o">.</span><span class="n">get_weight</span><span class="p">(</span><span class="n">ScoreType</span><span class="o">.</span><span class="n">fa_ljrep</span><span class="p">))</span>
+    <span class="n">step_sfxns</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">(</span>
+            <span class="n">_refine_fa_rep_scaled</span><span class="p">(</span><span class="n">base_fa_ljrep</span><span class="p">,</span> <span class="n">param_db</span><span class="p">,</span> <span class="n">device</span><span class="p">,</span> <span class="n">rep_mult</span><span class="p">),</span>
+            <span class="n">tol</span><span class="p">,</span>
+            <span class="n">max_iter</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">rep_mult</span><span class="p">,</span> <span class="n">tol</span><span class="p">,</span> <span class="n">max_iter</span> <span class="ow">in</span> <span class="n">schedule</span>
+    <span class="p">]</span>
+    <span class="c1"># The refined topology never changes, so render the exact scorer once and</span>
+    <span class="c1"># feed it coordinates; rendering per cycle is pure setup.</span>
+    <span class="n">exact_scorer</span> <span class="o">=</span> <span class="n">exact_sfxn</span><span class="o">.</span><span class="n">render_whole_pose_scoring_module</span><span class="p">(</span><span class="n">promoted</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">exact_energy</span><span class="p">(</span><span class="n">pose</span><span class="p">):</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="k">return</span> <span class="n">exact_scorer</span><span class="p">(</span><span class="n">pose</span><span class="o">.</span><span class="n">coords</span><span class="p">)</span>
+
+    <span class="n">best_coords</span> <span class="o">=</span> <span class="n">promoted</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+    <span class="c1"># A non-finite pre-refine score (e.g. a severe clash scoring to +/-inf/NaN)</span>
+    <span class="c1"># must not block accept-to-best: seed it to +inf so any finite refined-cycle</span>
+    <span class="c1"># energy is accepted. A candidate that stays non-finite ranks last (dH/dG=inf)</span>
+    <span class="c1"># rather than poisoning the sort with NaN.</span>
+    <span class="n">best_energy</span> <span class="o">=</span> <span class="n">exact_energy</span><span class="p">(</span><span class="n">promoted</span><span class="p">)</span>
+    <span class="n">best_energy</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">best_energy</span><span class="p">),</span>
+        <span class="n">best_energy</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">full_like</span><span class="p">(</span><span class="n">best_energy</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s2">"inf"</span><span class="p">)),</span>
+    <span class="p">)</span>
+    <span class="n">current</span> <span class="o">=</span> <span class="n">promoted</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">cycles</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">step_sfxn</span><span class="p">,</span> <span class="n">tol</span><span class="p">,</span> <span class="n">max_iter</span> <span class="ow">in</span> <span class="n">step_sfxns</span><span class="p">:</span>
+            <span class="n">current</span> <span class="o">=</span> <span class="n">minimize</span><span class="p">(</span><span class="n">current</span><span class="p">,</span> <span class="n">step_sfxn</span><span class="p">,</span> <span class="n">tol</span><span class="p">,</span> <span class="n">max_iter</span><span class="p">)</span>
+        <span class="n">energy</span> <span class="o">=</span> <span class="n">exact_energy</span><span class="p">(</span><span class="n">current</span><span class="p">)</span>
+        <span class="n">improved</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">energy</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">energy</span> <span class="o">&lt;</span> <span class="n">best_energy</span><span class="p">)</span>
+        <span class="n">best_coords</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">improved</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">current</span><span class="o">.</span><span class="n">coords</span><span class="p">,</span> <span class="n">best_coords</span><span class="p">)</span>
+        <span class="n">best_energy</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">improved</span><span class="p">,</span> <span class="n">energy</span><span class="p">,</span> <span class="n">best_energy</span><span class="p">)</span>
+        <span class="n">current</span> <span class="o">=</span> <span class="n">attr</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span><span class="n">current</span><span class="p">,</span> <span class="n">coords</span><span class="o">=</span><span class="n">best_coords</span><span class="o">.</span><span class="n">clone</span><span class="p">())</span>
+    <span class="k">return</span> <span class="n">attr</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span><span class="n">promoted</span><span class="p">,</span> <span class="n">coords</span><span class="o">=</span><span class="n">best_coords</span><span class="p">),</span> <span class="n">best_energy</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_ligand_cartmin</span><span class="p">(</span>
+    <span class="n">pose_stack</span><span class="p">,</span> <span class="n">exact_sfxn</span><span class="p">,</span> <span class="n">ligand_coord_mask</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">max_iter</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">,</span> <span class="n">minimizer</span><span class="o">=</span><span class="kc">None</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Ligand-only Cartesian minimization at exact hard weights."""</span>
+    <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"max_iter"</span><span class="p">:</span> <span class="n">max_iter</span><span class="p">,</span> <span class="s2">"rtol"</span><span class="p">:</span> <span class="n">rtol</span><span class="p">}</span>
+    <span class="k">if</span> <span class="n">minimizer</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">minimizer</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="p">,</span> <span class="n">exact_sfxn</span><span class="p">,</span> <span class="n">ligand_coord_mask</span><span class="p">,</span> <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="n">kwargs</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">run_cart_min</span><span class="p">(</span>
+        <span class="n">pose_stack</span><span class="p">,</span>
+        <span class="n">exact_sfxn</span><span class="p">,</span>
+        <span class="n">coord_mask</span><span class="o">=</span><span class="n">ligand_coord_mask</span><span class="p">,</span>
+        <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_ligand_atom_indices</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="n">block_type_indices</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[:,</span> <span class="n">ligand_block</span><span class="p">]</span>
+    <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">block_type_indices</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"ligand block is absent from at least one pose"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">block_type_indices</span> <span class="o">==</span> <span class="n">block_type_indices</span><span class="p">[</span><span class="mi">0</span><span class="p">])):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"finalization requires one homogeneous ligand type"</span><span class="p">)</span>
+    <span class="n">block_type</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span><span class="o">.</span><span class="n">active_block_types</span><span class="p">[</span>
+        <span class="nb">int</span><span class="p">(</span><span class="n">block_type_indices</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="p">]</span>
+    <span class="n">local_atoms</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span>
+        <span class="n">block_type</span><span class="o">.</span><span class="n">n_atoms</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">[:,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">+</span> <span class="n">local_atoms</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_promote_top_candidates</span><span class="p">(</span>
+    <span class="n">reference_pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+    <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">ga_result</span><span class="p">:</span> <span class="n">GAResult</span><span class="p">,</span>
+    <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">sidechain_blocks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
+    <span class="n">compact_sidechain_blocks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
+    <span class="n">sidechain_atom_indices</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">PoseStack</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Copy the top grid/GA movable coordinates into full complexes."""</span>
+
+    <span class="k">if</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">n_poses</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"finalization requires one reference pose"</span><span class="p">)</span>
+    <span class="n">flat</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">ga_result</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">energies</span><span class="p">)[:</span><span class="n">top_k</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">sidechain_blocks</span><span class="p">:</span>
+        <span class="n">promoted</span> <span class="o">=</span> <span class="n">repeat_pose_stack</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">top_k</span><span class="p">)</span>
+        <span class="n">selected_compact</span> <span class="o">=</span> <span class="n">attr</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span>
+            <span class="n">repeat_pose_stack</span><span class="p">(</span><span class="n">ga_result</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="n">promoted</span><span class="o">.</span><span class="n">n_poses</span><span class="p">),</span>
+            <span class="n">coords</span><span class="o">=</span><span class="n">ga_result</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="n">flat</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">(),</span>
+        <span class="p">)</span>
+        <span class="n">promoted</span> <span class="o">=</span> <span class="n">_place_ligand_in_reference</span><span class="p">(</span>
+            <span class="n">promoted</span><span class="p">,</span>
+            <span class="n">ligand_block</span><span class="p">,</span>
+            <span class="n">selected_compact</span><span class="p">,</span>
+            <span class="n">sidechain_blocks</span><span class="o">=</span><span class="n">sidechain_blocks</span><span class="p">,</span>
+            <span class="n">compact_sidechain_blocks</span><span class="o">=</span><span class="n">compact_sidechain_blocks</span><span class="p">,</span>
+            <span class="n">sidechain_atom_indices</span><span class="o">=</span><span class="n">sidechain_atom_indices</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">genes</span> <span class="o">=</span> <span class="n">ga_result</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">genes</span><span class="p">[</span><span class="n">flat</span><span class="p">]</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">promoted</span><span class="p">,</span> <span class="n">genes</span>
+
+    <span class="n">pool_ligand_block</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="mi">0</span> <span class="k">if</span> <span class="n">ga_result</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">max_n_blocks</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">ligand_block</span>
+    <span class="p">)</span>
+    <span class="n">source_indices</span> <span class="o">=</span> <span class="n">_ligand_atom_indices</span><span class="p">(</span><span class="n">ga_result</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">pool_ligand_block</span><span class="p">)[</span>
+        <span class="n">flat</span>
+    <span class="p">]</span>
+    <span class="n">local_atoms</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span>
+        <span class="n">source_indices</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">device</span>
+    <span class="p">)</span>
+    <span class="n">promoted</span> <span class="o">=</span> <span class="n">repeat_pose_stack</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">top_k</span><span class="p">)</span>
+    <span class="n">target_indices</span> <span class="o">=</span> <span class="n">promoted</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">[:,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">+</span> <span class="n">local_atoms</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">promoted</span><span class="o">.</span><span class="n">n_poses</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">promoted</span><span class="o">.</span><span class="n">device</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span>
+    <span class="n">coords</span> <span class="o">=</span> <span class="n">promoted</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+    <span class="n">coords</span><span class="p">[</span><span class="n">rows</span><span class="p">,</span> <span class="n">target_indices</span><span class="p">]</span> <span class="o">=</span> <span class="n">ga_result</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span>
+        <span class="n">flat</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">source_indices</span>
+    <span class="p">]</span>
+    <span class="n">genes</span> <span class="o">=</span> <span class="n">ga_result</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">genes</span><span class="p">[</span><span class="n">flat</span><span class="p">]</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">attr</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span><span class="n">promoted</span><span class="p">,</span> <span class="n">coords</span><span class="o">=</span><span class="n">coords</span><span class="p">),</span> <span class="n">genes</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_flexible_sidechain_mapping</span><span class="p">(</span>
+    <span class="n">reference_pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+    <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">backend</span><span class="p">,</span>
+    <span class="n">compact_pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span>
+    <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+    <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="o">...</span><span class="p">],</span>
+<span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Rebuild compact and full moving-sidechain coordinate mappings."""</span>
+
+    <span class="n">sidechain_blocks</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">"sidechain_blocks"</span><span class="p">,</span> <span class="p">()))</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">sidechain_blocks</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(),</span> <span class="p">(),</span> <span class="kc">None</span><span class="p">,</span> <span class="p">()</span>
+    <span class="c1"># The compact topology (block types, offsets, sidechain atom indices) is</span>
+    <span class="c1"># identical across every pool pose, so rebuild the mapping metadata from a</span>
+    <span class="c1"># single-pose slice instead of running inverse kinematics + fp64 torsion</span>
+    <span class="c1"># response checks over all npool sampled conformations.</span>
+    <span class="n">compact_pose_stack</span> <span class="o">=</span> <span class="n">compact_pose_stack</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">"ligand_block"</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">)</span> <span class="o">!=</span> <span class="n">ligand_block</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"finalization backend ligand block does not match reference"</span><span class="p">)</span>
+    <span class="n">context_blocks</span> <span class="o">=</span> <span class="n">sidechain_context_blocks</span><span class="p">(</span>
+        <span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="n">sidechain_blocks</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">"context_blocks"</span><span class="p">,</span> <span class="p">()))</span> <span class="o">!=</span> <span class="n">context_blocks</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"finalization peptide context does not match backend"</span><span class="p">)</span>
+    <span class="n">source_blocks</span><span class="p">,</span> <span class="n">compact_sidechain_blocks</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">movable_block_mapping</span><span class="p">(</span>
+        <span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="n">sidechain_blocks</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">compact_pose_stack</span><span class="o">.</span><span class="n">max_n_blocks</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">source_blocks</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"GA pool compact topology does not match flexible backend"</span><span class="p">)</span>
+
+    <span class="n">docking_dofs</span> <span class="o">=</span> <span class="n">build_ligand_docking_dofs</span><span class="p">(</span>
+        <span class="n">compact_pose_stack</span><span class="p">,</span>
+        <span class="mi">0</span><span class="p">,</span>
+        <span class="n">sidechain_blocks</span><span class="o">=</span><span class="n">compact_sidechain_blocks</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">layout</span> <span class="o">=</span> <span class="n">LigandGeneLayout</span><span class="o">.</span><span class="n">from_pose_stack</span><span class="p">(</span><span class="n">compact_pose_stack</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="p">)</span>
+    <span class="n">compact_atoms</span> <span class="o">=</span> <span class="n">layout</span><span class="o">.</span><span class="n">sidechain_atom_indices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">layout</span><span class="o">.</span><span class="n">sidechain_atom_indices</span> <span class="o">==</span> <span class="n">compact_atoms</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:])):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"finalization requires identical sidechain atom mappings"</span><span class="p">)</span>
+
+    <span class="n">block_local_atoms</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">compact_block</span><span class="p">,</span> <span class="n">source_block</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">compact_sidechain_blocks</span><span class="p">,</span> <span class="n">sidechain_blocks</span><span class="p">):</span>
+        <span class="n">compact_start</span> <span class="o">=</span> <span class="n">compact_pose_stack</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">compact_block</span><span class="p">]</span>
+        <span class="n">compact_end</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">compact_start</span> <span class="o">+</span> <span class="n">compact_pose_stack</span><span class="o">.</span><span class="n">block_type</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">compact_block</span><span class="p">)</span><span class="o">.</span><span class="n">n_atoms</span>
+        <span class="p">)</span>
+        <span class="n">selected</span> <span class="o">=</span> <span class="n">compact_atoms</span><span class="p">[</span>
+            <span class="p">(</span><span class="n">compact_atoms</span> <span class="o">&gt;=</span> <span class="n">compact_start</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">compact_atoms</span> <span class="o">&lt;</span> <span class="n">compact_end</span><span class="p">)</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="n">selected</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">block_local_atoms</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">source_block</span><span class="p">,</span> <span class="n">selected</span> <span class="o">-</span> <span class="n">compact_start</span><span class="p">))</span>
+    <span class="k">if</span> <span class="nb">sum</span><span class="p">(</span><span class="n">local_atoms</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">local_atoms</span> <span class="ow">in</span> <span class="n">block_local_atoms</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">int</span><span class="p">(</span>
+        <span class="n">compact_atoms</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span>
+    <span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"sidechain atom mapping is incomplete"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">sidechain_blocks</span><span class="p">,</span>
+        <span class="n">compact_sidechain_blocks</span><span class="p">,</span>
+        <span class="n">compact_atoms</span><span class="p">,</span>
+        <span class="nb">tuple</span><span class="p">(</span><span class="n">block_local_atoms</span><span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_mapped_atom_indices</span><span class="p">(</span>
+    <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+    <span class="n">block_local_atoms</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="o">...</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return per-pose absolute atom indices for block-local atom selections."""</span>
+
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span>
+        <span class="p">[</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">[:,</span> <span class="n">block</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
+            <span class="o">+</span> <span class="n">local_atoms</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span>
+            <span class="k">for</span> <span class="n">block</span><span class="p">,</span> <span class="n">local_atoms</span> <span class="ow">in</span> <span class="n">block_local_atoms</span>
+        <span class="p">],</span>
+        <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_receptor_only_pose_stack</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Delete one disconnected ligand block while preserving receptor topology."""</span>
+
+    <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">inter_residue_connections64</span><span class="p">[:,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"the finalized ligand must be disconnected from the receptor"</span><span class="p">)</span>
+    <span class="n">real_blocks</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">select_blocks</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="p">[</span><span class="n">b</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">real_blocks</span> <span class="k">if</span> <span class="n">b</span> <span class="o">!=</span> <span class="n">ligand_block</span><span class="p">])</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_with_coordinate_constraints</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Constrain every ligand atom to its current coordinate with sigma 1 A."""</span>
+
+    <span class="n">n_poses</span><span class="p">,</span> <span class="n">n_atoms</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span>
+    <span class="n">pose</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_poses</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_atoms</span><span class="p">)</span>
+    <span class="n">atom</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_atoms</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">n_poses</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">block</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">atom</span><span class="p">)</span>
+    <span class="n">constraint_atoms</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">pose</span><span class="p">,</span> <span class="n">block</span><span class="p">,</span> <span class="n">atom</span><span class="p">),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">params</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+        <span class="p">(</span><span class="n">n_poses</span> <span class="o">*</span> <span class="n">n_atoms</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span>
+    <span class="p">)</span>
+    <span class="n">params</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+    <span class="n">params</span><span class="p">[:,</span> <span class="mi">4</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span>
+    <span class="n">constraints</span> <span class="o">=</span> <span class="n">ConstraintSet</span><span class="o">.</span><span class="n">create_empty</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">n_poses</span><span class="p">)</span>
+    <span class="n">constraints</span> <span class="o">=</span> <span class="n">constraints</span><span class="o">.</span><span class="n">add_constraints</span><span class="p">(</span>
+        <span class="n">ConstraintEnergyTerm</span><span class="o">.</span><span class="n">harmonic_coordinate</span><span class="p">,</span> <span class="n">constraint_atoms</span><span class="p">,</span> <span class="n">params</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">attr</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">constraint_set</span><span class="o">=</span><span class="n">constraints</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">count_non_proton_ligand_chis</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Count named ligand chis whose outer atoms are not polar hydrogens.</span>
+
+<span class="sd">    Rosetta params encode proton chis as a named chi ending at the rotating</span>
+<span class="sd">    OH/SH/NH hydrogen. Checking both outer atoms also handles an equivalent</span>
+<span class="sd">    reversed torsion declaration.</span>
+<span class="sd">    """</span>
+
+    <span class="n">block_type_index</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">])</span>
+    <span class="n">block_type</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span><span class="o">.</span><span class="n">active_block_types</span><span class="p">[</span><span class="n">block_type_index</span><span class="p">]</span>
+    <span class="n">atom_is_hydrogen</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span><span class="o">.</span><span class="n">atom_is_hydrogen</span><span class="p">[</span><span class="n">block_type_index</span><span class="p">]</span>
+        <span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
+        <span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+        <span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+        <span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+    <span class="p">)</span>
+    <span class="n">nchi</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">torsion_index</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_type</span><span class="o">.</span><span class="n">n_torsions</span><span class="p">):</span>
+        <span class="n">atoms</span> <span class="o">=</span> <span class="n">block_type</span><span class="o">.</span><span class="n">ordered_torsions</span><span class="p">[</span><span class="n">torsion_index</span><span class="p">,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">numpy</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">atoms</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"ligand chi atoms must be local to the ligand block"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">atom_is_hydrogen</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">atoms</span><span class="p">[</span><span class="mi">0</span><span class="p">])])</span> <span class="ow">or</span> <span class="nb">bool</span><span class="p">(</span>
+            <span class="n">atom_is_hydrogen</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">atoms</span><span class="p">[</span><span class="mi">3</span><span class="p">])]</span>
+        <span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">nchi</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">nchi</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_refine_flexible</span><span class="p">(</span><span class="n">promoted</span><span class="p">,</span> <span class="n">exact_sfxn</span><span class="p">,</span> <span class="n">param_db</span><span class="p">,</span> <span class="n">coord_mask</span><span class="p">,</span> <span class="n">protocol</span><span class="p">,</span> <span class="n">pack_blocks</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Rosetta dockflex: cartesian ramp_repack_min over ligand and sidechains.</span>
+
+<span class="sd">    Runs tmol's own FastRelax so the repack at each ramp step, and the</span>
+<span class="sd">    accept-to-best across cycles, are the shared implementation rather than a</span>
+<span class="sd">    second one. ``pack_blocks`` selects the sidechains the packer may rebuild;</span>
+<span class="sd">    empty leaves the receptor fixed and the stage is minimization only.</span>
+<span class="sd">    """</span>
+    <span class="n">minimizer</span> <span class="o">=</span> <span class="n">CartesianRelaxMinimizer</span><span class="p">(</span>
+        <span class="n">CartesianMoveMap</span><span class="p">(</span><span class="n">coord_mask</span><span class="p">),</span> <span class="n">max_iter</span><span class="o">=</span><span class="n">protocol</span><span class="o">.</span><span class="n">max_iter</span>
+    <span class="p">)</span>
+    <span class="n">operations</span> <span class="o">=</span> <span class="n">refine_task_operations</span><span class="p">(</span>
+        <span class="n">promoted</span><span class="p">,</span> <span class="n">exact_sfxn</span><span class="p">,</span> <span class="n">pack_blocks</span><span class="p">,</span> <span class="n">protocol</span><span class="o">.</span><span class="n">repack</span>
+    <span class="p">)</span>
+    <span class="n">refined</span> <span class="o">=</span> <span class="n">fast_relax</span><span class="p">(</span>
+        <span class="n">promoted</span><span class="p">,</span>
+        <span class="n">exact_sfxn</span><span class="p">,</span>
+        <span class="n">minimizer</span><span class="o">=</span><span class="n">minimizer</span><span class="p">,</span>
+        <span class="n">num_repeats</span><span class="o">=</span><span class="n">protocol</span><span class="o">.</span><span class="n">cycles</span><span class="p">,</span>
+        <span class="n">schedule</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">protocol</span><span class="o">.</span><span class="n">steps</span><span class="p">),</span>
+        <span class="n">task_operations</span><span class="o">=</span><span class="n">operations</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">refined</span><span class="p">,</span> <span class="n">_score_pose_stack</span><span class="p">(</span><span class="n">refined</span><span class="p">,</span> <span class="n">exact_sfxn</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">refine_task_operations</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">,</span> <span class="n">pack_blocks</span><span class="p">,</span> <span class="n">repack</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Packer task operations for the refinement stage.</span>
+
+<span class="sd">    Without ``repack`` the only sampler is the fallback one, whose single</span>
+<span class="sd">    rotamer is the input conformation, so the packer cannot move a sidechain.</span>
+<span class="sd">    """</span>
+    <span class="n">operations</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">pack_blocks</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">repack</span><span class="p">:</span>
+            <span class="n">operations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">default_relax_task_operation</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">))</span>
+        <span class="n">operations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_repack_only_blocks</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">pack_blocks</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">operations</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_repack_only_blocks</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">blocks</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Task operation restricting repacking to ``blocks``.</span>
+
+<span class="sd">    Composed after the relax default, whose samplers it keeps.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">operation</span><span class="p">(</span><span class="n">task</span><span class="p">):</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">,</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">max_n_blocks</span><span class="p">),</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">blocks</span><span class="p">):</span>
+            <span class="n">mask</span><span class="p">[:,</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">blocks</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)]</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">task</span><span class="o">.</span><span class="n">restrict_to_repacking</span><span class="p">()</span>
+        <span class="n">task</span><span class="o">.</span><span class="n">disable_packing_by_block_mask</span><span class="p">(</span><span class="o">~</span><span class="n">mask</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">operation</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_refine_rigid</span><span class="p">(</span>
+    <span class="n">promoted</span><span class="p">,</span>
+    <span class="n">reference</span><span class="p">,</span>
+    <span class="n">exact_sfxn</span><span class="p">,</span>
+    <span class="n">param_db</span><span class="p">,</span>
+    <span class="n">ligand_block</span><span class="p">,</span>
+    <span class="n">ligand_mask</span><span class="p">,</span>
+    <span class="n">refine_schedule</span><span class="p">,</span>
+    <span class="n">refine_cycles</span><span class="p">,</span>
+    <span class="n">movable_blocks</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Torsion-space soft-to-hard refinement bracketed by ligand Cartesian min."""</span>
+    <span class="c1"># One minimizer per distinct score function, reused across refine cycles:</span>
+    <span class="c1"># the rendered network and its topology tensors are setup, not numerics.</span>
+    <span class="n">cartesian</span> <span class="o">=</span> <span class="n">CartesianMinimizer</span><span class="p">()</span>
+    <span class="n">torsion_minimizers</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">KinematicMinimizer</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="n">promoted</span> <span class="o">=</span> <span class="n">_ligand_cartmin</span><span class="p">(</span><span class="n">promoted</span><span class="p">,</span> <span class="n">exact_sfxn</span><span class="p">,</span> <span class="n">ligand_mask</span><span class="p">,</span> <span class="n">minimizer</span><span class="o">=</span><span class="n">cartesian</span><span class="p">)</span>
+    <span class="n">ldofs</span> <span class="o">=</span> <span class="n">build_ligand_docking_dofs</span><span class="p">(</span><span class="n">promoted</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="n">sidechain_blocks</span><span class="o">=</span><span class="p">())</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">torsion_step</span><span class="p">(</span><span class="n">pose</span><span class="p">,</span> <span class="n">step_sfxn</span><span class="p">,</span> <span class="n">tol</span><span class="p">,</span> <span class="n">max_iter</span><span class="p">):</span>
+        <span class="c1"># Fixed-hydrogen harness: no whole-pose optH, ramp steps minimize only.</span>
+        <span class="c1"># rtol maps Rosetta's fractional-energy tolerance (in float32 1e-5 is</span>
+        <span class="c1"># below the dtype floor, so the hard step stops on gradient/atol/max_iter).</span>
+        <span class="n">minimizer</span> <span class="o">=</span> <span class="n">torsion_minimizers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">id</span><span class="p">(</span><span class="n">step_sfxn</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">minimizer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">minimizer</span> <span class="o">=</span> <span class="n">KinematicMinimizer</span><span class="p">(</span>
+                <span class="n">kin_dtype</span><span class="o">=</span><span class="n">pose</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">movable_blocks</span><span class="o">=</span><span class="n">movable_blocks</span>
+            <span class="p">)</span>
+            <span class="n">torsion_minimizers</span><span class="p">[</span><span class="nb">id</span><span class="p">(</span><span class="n">step_sfxn</span><span class="p">)]</span> <span class="o">=</span> <span class="n">minimizer</span>
+        <span class="k">return</span> <span class="n">minimizer</span><span class="p">(</span>
+            <span class="n">pose</span><span class="p">,</span>
+            <span class="n">step_sfxn</span><span class="p">,</span>
+            <span class="n">ldofs</span><span class="o">.</span><span class="n">fold_forest</span><span class="p">,</span>
+            <span class="n">ldofs</span><span class="o">.</span><span class="n">move_map</span><span class="p">,</span>
+            <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"max_iter"</span><span class="p">:</span> <span class="n">max_iter</span><span class="p">,</span> <span class="s2">"rtol"</span><span class="p">:</span> <span class="n">tol</span><span class="p">},</span>
+        <span class="p">)</span>
+
+    <span class="n">promoted</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_soft_hard_refine</span><span class="p">(</span>
+        <span class="n">promoted</span><span class="p">,</span>
+        <span class="n">torsion_step</span><span class="p">,</span>
+        <span class="n">param_db</span><span class="o">=</span><span class="n">param_db</span><span class="p">,</span>
+        <span class="n">device</span><span class="o">=</span><span class="n">promoted</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+        <span class="n">exact_sfxn</span><span class="o">=</span><span class="n">exact_sfxn</span><span class="p">,</span>
+        <span class="n">schedule</span><span class="o">=</span><span class="n">refine_schedule</span><span class="p">,</span>
+        <span class="n">cycles</span><span class="o">=</span><span class="n">refine_cycles</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">refined</span> <span class="o">=</span> <span class="n">_ligand_cartmin</span><span class="p">(</span><span class="n">promoted</span><span class="p">,</span> <span class="n">exact_sfxn</span><span class="p">,</span> <span class="n">ligand_mask</span><span class="p">,</span> <span class="n">minimizer</span><span class="o">=</span><span class="n">cartesian</span><span class="p">)</span>
+    <span class="c1"># run_kin_min refolds the whole pose and float32 kinematics leave ~1e-3 A</span>
+    <span class="c1"># noise on the nominally fixed receptor; restore every non-ligand atom.</span>
+    <span class="n">refined</span> <span class="o">=</span> <span class="n">attr</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span>
+        <span class="n">refined</span><span class="p">,</span>
+        <span class="n">coords</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+            <span class="n">ligand_mask</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+            <span class="n">refined</span><span class="o">.</span><span class="n">coords</span><span class="p">,</span>
+            <span class="n">reference</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">refined</span><span class="o">.</span><span class="n">n_poses</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">refined</span><span class="p">,</span> <span class="n">_score_pose_stack</span><span class="p">(</span><span class="n">refined</span><span class="p">,</span> <span class="n">exact_sfxn</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_free_state_energies</span><span class="p">(</span>
+    <span class="n">refined</span><span class="p">,</span> <span class="n">reference</span><span class="p">,</span> <span class="n">exact_sfxn</span><span class="p">,</span> <span class="n">param_db</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="n">block_local_atoms</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Energies of the relaxed free ligand and of the (flex-relaxed) receptor."""</span>
+    <span class="c1"># Constraint weights belong to the minimizer, not the memoized exact scorer.</span>
+    <span class="k">if</span> <span class="n">param_db</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">param_db</span> <span class="o">=</span> <span class="n">ParameterDatabase</span><span class="o">.</span><span class="n">get_default</span><span class="p">()</span>
+    <span class="n">constrained_sfxn</span> <span class="o">=</span> <span class="n">beta2016_score_function</span><span class="p">(</span><span class="n">refined</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">param_db</span><span class="o">=</span><span class="n">param_db</span><span class="p">)</span>
+    <span class="n">constrained_sfxn</span><span class="o">.</span><span class="n">set_weight</span><span class="p">(</span><span class="n">ScoreType</span><span class="o">.</span><span class="n">constraint</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+    <span class="n">relaxed_ligand</span> <span class="o">=</span> <span class="n">run_cart_min</span><span class="p">(</span>
+        <span class="n">_with_coordinate_constraints</span><span class="p">(</span><span class="n">movable_pose_stack</span><span class="p">(</span><span class="n">refined</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">)),</span>
+        <span class="n">constrained_sfxn</span><span class="p">,</span>
+        <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"max_iter"</span><span class="p">:</span> <span class="mi">30</span><span class="p">},</span>
+    <span class="p">)</span>
+    <span class="n">free_ligand_energy</span> <span class="o">=</span> <span class="n">_score_pose_stack</span><span class="p">(</span><span class="n">relaxed_ligand</span><span class="p">,</span> <span class="n">exact_sfxn</span><span class="p">)</span>
+
+    <span class="n">receptor</span> <span class="o">=</span> <span class="n">_receptor_only_pose_stack</span><span class="p">(</span><span class="n">reference</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">block_local_atoms</span><span class="p">:</span>
+        <span class="n">kept</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">reference</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="n">kept</span> <span class="o">=</span> <span class="p">[</span><span class="n">block</span> <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">kept</span> <span class="k">if</span> <span class="n">block</span> <span class="o">!=</span> <span class="n">ligand_block</span><span class="p">]</span>
+        <span class="n">receptor_block</span> <span class="o">=</span> <span class="p">{</span><span class="n">source</span><span class="p">:</span> <span class="n">index</span> <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">source</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">kept</span><span class="p">)}</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+            <span class="n">receptor</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">receptor</span><span class="o">.</span><span class="n">device</span>
+        <span class="p">)</span>
+        <span class="n">mask</span><span class="o">.</span><span class="n">scatter_</span><span class="p">(</span>
+            <span class="mi">1</span><span class="p">,</span>
+            <span class="n">_mapped_atom_indices</span><span class="p">(</span>
+                <span class="n">receptor</span><span class="p">,</span>
+                <span class="nb">tuple</span><span class="p">((</span><span class="n">receptor_block</span><span class="p">[</span><span class="n">b</span><span class="p">],</span> <span class="n">atoms</span><span class="p">)</span> <span class="k">for</span> <span class="n">b</span><span class="p">,</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">block_local_atoms</span><span class="p">),</span>
+            <span class="p">),</span>
+            <span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">receptor</span> <span class="o">=</span> <span class="n">run_cart_min</span><span class="p">(</span>
+            <span class="n">receptor</span><span class="p">,</span>
+            <span class="n">exact_sfxn</span><span class="p">,</span>
+            <span class="n">coord_mask</span><span class="o">=</span><span class="n">mask</span><span class="p">,</span>
+            <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"max_iter"</span><span class="p">:</span> <span class="mi">50</span><span class="p">},</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">free_ligand_energy</span><span class="p">,</span> <span class="n">_score_pose_stack</span><span class="p">(</span><span class="n">receptor</span><span class="p">,</span> <span class="n">exact_sfxn</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">finalize_ga_docking</span><span class="p">(</span>
+    <span class="n">reference_pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+    <span class="n">backend</span><span class="p">,</span>
+    <span class="n">ga_result</span><span class="p">:</span> <span class="n">GAResult</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">refine</span><span class="p">:</span> <span class="n">RefineProtocol</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">top_pose_metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"score"</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DockingFinalization</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Refine the top candidates and rank them by dG or exact complex score.</span>
+
+<span class="sd">    ``refine`` defaults to the protocol matching the backend's mode:</span>
+<span class="sd">    :data:`FLEX_REFINE` when it declares flexible sidechains, else</span>
+<span class="sd">    :data:`RIGID_REFINE`. ``top_k`` overrides the protocol's own count.</span>
+<span class="sd">    ``top_pose_metric`` selects ``"dG"`` (``dH + 0.4*nchi``) or ``"score"``.</span>
+<span class="sd">    """</span>
+
+    <span class="k">if</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">n_poses</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"finalization requires one reference pose"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">top_pose_metric</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"dG"</span><span class="p">,</span> <span class="s2">"score"</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s1">'top_pose_metric must be "dG" or "score"'</span><span class="p">)</span>
+    <span class="n">npool</span> <span class="o">=</span> <span class="n">ga_result</span><span class="o">.</span><span class="n">ranked_energies</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">top_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">top_k</span> <span class="o">&gt;</span> <span class="n">npool</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"top_k (</span><span class="si">{</span><span class="n">top_k</span><span class="si">}</span><span class="s2">) cannot exceed GA pool size (</span><span class="si">{</span><span class="n">npool</span><span class="si">}</span><span class="s2">)"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">"param_db"</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">"finalization requires a backend with a parameter database"</span><span class="p">)</span>
+    <span class="n">ligand_block</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">ligand_block</span>
+    <span class="k">if</span> <span class="n">refine</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">refine</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">FLEX_REFINE</span>
+            <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">"sidechain_blocks"</span><span class="p">,</span> <span class="p">()))</span>
+            <span class="k">else</span> <span class="n">RIGID_REFINE</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">top_k</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># The protocol's count is a default, not a demand on the pool size.</span>
+        <span class="n">top_k</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">refine</span><span class="o">.</span><span class="n">top_k</span><span class="p">,</span> <span class="n">npool</span><span class="p">)</span>
+
+    <span class="p">(</span>
+        <span class="n">sidechain_blocks</span><span class="p">,</span>
+        <span class="n">compact_sidechain_blocks</span><span class="p">,</span>
+        <span class="n">compact_sidechain_atoms</span><span class="p">,</span>
+        <span class="n">block_local_atoms</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">=</span> <span class="n">_flexible_sidechain_mapping</span><span class="p">(</span>
+        <span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="n">backend</span><span class="p">,</span> <span class="n">ga_result</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">pose_stack</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">sidechain_blocks</span><span class="p">:</span>
+        <span class="n">promoted</span><span class="p">,</span> <span class="n">genes</span> <span class="o">=</span> <span class="n">_promote_top_candidates</span><span class="p">(</span>
+            <span class="n">reference_pose_stack</span><span class="p">,</span>
+            <span class="n">ligand_block</span><span class="p">,</span>
+            <span class="n">ga_result</span><span class="p">,</span>
+            <span class="n">top_k</span><span class="p">,</span>
+            <span class="n">sidechain_blocks</span><span class="o">=</span><span class="n">sidechain_blocks</span><span class="p">,</span>
+            <span class="n">compact_sidechain_blocks</span><span class="o">=</span><span class="n">compact_sidechain_blocks</span><span class="p">,</span>
+            <span class="n">sidechain_atom_indices</span><span class="o">=</span><span class="n">compact_sidechain_atoms</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">promoted</span><span class="p">,</span> <span class="n">genes</span> <span class="o">=</span> <span class="n">_promote_top_candidates</span><span class="p">(</span>
+            <span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="n">ga_result</span><span class="p">,</span> <span class="n">top_k</span>
+        <span class="p">)</span>
+    <span class="n">exact_sfxn</span> <span class="o">=</span> <span class="n">beta2016_score_function</span><span class="p">(</span><span class="n">promoted</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">param_db</span><span class="o">=</span><span class="n">backend</span><span class="o">.</span><span class="n">param_db</span><span class="p">)</span>
+    <span class="n">pre_refine</span> <span class="o">=</span> <span class="n">_score_pose_stack</span><span class="p">(</span><span class="n">promoted</span><span class="p">,</span> <span class="n">exact_sfxn</span><span class="p">)</span>
+    <span class="n">coord_mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+        <span class="n">promoted</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">promoted</span><span class="o">.</span><span class="n">device</span>
+    <span class="p">)</span>
+    <span class="n">coord_mask</span><span class="o">.</span><span class="n">scatter_</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">_ligand_atom_indices</span><span class="p">(</span><span class="n">promoted</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">),</span> <span class="kc">True</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">sidechain_blocks</span><span class="p">:</span>
+        <span class="n">coord_mask</span><span class="o">.</span><span class="n">scatter_</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">_mapped_atom_indices</span><span class="p">(</span><span class="n">promoted</span><span class="p">,</span> <span class="n">block_local_atoms</span><span class="p">),</span> <span class="kc">True</span><span class="p">)</span>
+        <span class="n">pack_blocks</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">compact_sidechain_blocks</span>
+            <span class="k">if</span> <span class="n">refine</span><span class="o">.</span><span class="n">sidechains</span> <span class="o">==</span> <span class="s2">"backend"</span>
+            <span class="k">else</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">refine</span><span class="o">.</span><span class="n">sidechains</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">refined</span><span class="p">,</span> <span class="n">complex_energy</span> <span class="o">=</span> <span class="n">_refine_flexible</span><span class="p">(</span>
+            <span class="n">promoted</span><span class="p">,</span> <span class="n">exact_sfxn</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">param_db</span><span class="p">,</span> <span class="n">coord_mask</span><span class="p">,</span> <span class="n">refine</span><span class="p">,</span> <span class="n">pack_blocks</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">refined</span><span class="p">,</span> <span class="n">complex_energy</span> <span class="o">=</span> <span class="n">_refine_rigid</span><span class="p">(</span>
+            <span class="n">promoted</span><span class="p">,</span>
+            <span class="n">reference_pose_stack</span><span class="p">,</span>
+            <span class="n">exact_sfxn</span><span class="p">,</span>
+            <span class="n">backend</span><span class="o">.</span><span class="n">param_db</span><span class="p">,</span>
+            <span class="n">ligand_block</span><span class="p">,</span>
+            <span class="n">coord_mask</span><span class="p">,</span>
+            <span class="n">refine</span><span class="o">.</span><span class="n">ramp</span><span class="p">(),</span>
+            <span class="n">refine</span><span class="o">.</span><span class="n">cycles</span><span class="p">,</span>
+            <span class="n">movable_blocks</span><span class="o">=</span><span class="n">coord_mask</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="n">free_ligand_energy</span><span class="p">,</span> <span class="n">free_receptor_energy</span> <span class="o">=</span> <span class="n">_free_state_energies</span><span class="p">(</span>
+        <span class="n">refined</span><span class="p">,</span>
+        <span class="n">reference_pose_stack</span><span class="p">,</span>
+        <span class="n">exact_sfxn</span><span class="p">,</span>
+        <span class="n">backend</span><span class="o">.</span><span class="n">param_db</span><span class="p">,</span>
+        <span class="n">ligand_block</span><span class="p">,</span>
+        <span class="n">sidechain_blocks</span> <span class="ow">and</span> <span class="n">block_local_atoms</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">free_receptor_energies</span> <span class="o">=</span> <span class="n">free_receptor_energy</span><span class="o">.</span><span class="n">expand_as</span><span class="p">(</span><span class="n">complex_energy</span><span class="p">)</span>
+
+    <span class="n">nchi_value</span> <span class="o">=</span> <span class="n">count_non_proton_ligand_chis</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">)</span>
+    <span class="n">nchi</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">(</span>
+        <span class="n">complex_energy</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span>
+        <span class="n">nchi_value</span><span class="p">,</span>
+        <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span>
+        <span class="n">device</span><span class="o">=</span><span class="n">promoted</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">TdS</span> <span class="o">=</span> <span class="mf">0.4</span> <span class="o">*</span> <span class="n">nchi</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">complex_energy</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+    <span class="n">dH</span> <span class="o">=</span> <span class="n">complex_energy</span> <span class="o">-</span> <span class="n">free_ligand_energy</span> <span class="o">-</span> <span class="n">free_receptor_energies</span>
+    <span class="n">dG</span> <span class="o">=</span> <span class="n">dH</span> <span class="o">+</span> <span class="n">TdS</span>
+
+    <span class="n">sort_key</span> <span class="o">=</span> <span class="n">dG</span> <span class="k">if</span> <span class="n">top_pose_metric</span> <span class="o">==</span> <span class="s2">"dG"</span> <span class="k">else</span> <span class="n">complex_energy</span>
+    <span class="n">sort_order</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">sort_key</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">top_k</span><span class="p">),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">rank</span><span class="p">(</span><span class="n">values</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="n">matrix</span> <span class="o">=</span> <span class="n">values</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">top_k</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">matrix</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">sort_order</span><span class="p">)</span>
+
+    <span class="n">ranked_genes</span> <span class="o">=</span> <span class="n">genes</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span>
+        <span class="mi">1</span><span class="p">,</span> <span class="n">sort_order</span><span class="p">[:,</span> <span class="p">:,</span> <span class="kc">None</span><span class="p">]</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">genes</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+    <span class="p">)</span>
+    <span class="n">ranked_flat</span> <span class="o">=</span> <span class="n">sort_order</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">ranked_pose_stack</span> <span class="o">=</span> <span class="n">attr</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span>
+        <span class="n">refined</span><span class="p">,</span> <span class="n">coords</span><span class="o">=</span><span class="n">refined</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="n">ranked_flat</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">DockingFinalization</span><span class="p">(</span>
+        <span class="n">pose_stack</span><span class="o">=</span><span class="n">ranked_pose_stack</span><span class="p">,</span>
+        <span class="n">genes</span><span class="o">=</span><span class="n">ranked_genes</span><span class="p">,</span>
+        <span class="n">pre_refine_energies</span><span class="o">=</span><span class="n">rank</span><span class="p">(</span><span class="n">pre_refine</span><span class="p">),</span>
+        <span class="n">complex_energies</span><span class="o">=</span><span class="n">rank</span><span class="p">(</span><span class="n">complex_energy</span><span class="p">),</span>
+        <span class="n">free_ligand_energies</span><span class="o">=</span><span class="n">rank</span><span class="p">(</span><span class="n">free_ligand_energy</span><span class="p">),</span>
+        <span class="n">free_receptor_energies</span><span class="o">=</span><span class="n">rank</span><span class="p">(</span><span class="n">free_receptor_energies</span><span class="p">),</span>
+        <span class="n">nchi</span><span class="o">=</span><span class="n">rank</span><span class="p">(</span><span class="n">nchi</span><span class="p">),</span>
+        <span class="n">dH</span><span class="o">=</span><span class="n">rank</span><span class="p">(</span><span class="n">dH</span><span class="p">),</span>
+        <span class="n">TdS</span><span class="o">=</span><span class="n">rank</span><span class="p">(</span><span class="n">TdS</span><span class="p">),</span>
+        <span class="n">dG</span><span class="o">=</span><span class="n">rank</span><span class="p">(</span><span class="n">dG</span><span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">"DockingFinalization"</span><span class="p">,</span>
+    <span class="s2">"count_non_proton_ligand_chis"</span><span class="p">,</span>
+    <span class="s2">"finalize_ga_docking"</span><span class="p">,</span>
+<span class="p">]</span>
+</pre></div>
+
+                </article>
+              
+  <div class="page-feedback d-print-none" data-source="inline">
+    
+  <p class="page-feedback-question">Was this page helpful?</p>
+  <div class="page-feedback-buttons">
+    <button type="button" class="page-feedback-button" data-helpful="yes" aria-label="Yes" title="Yes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+    </button>
+    <button type="button" class="page-feedback-button" data-helpful="no" aria-label="No" title="No">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+    </button>
+  </div>
+  <form class="page-feedback-comment" hidden>
+    <fieldset class="page-feedback-reasons">
+      <legend>Sorry about that. What went wrong? (optional)</legend>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="It's unclear or hard to follow"> It's unclear or hard to follow</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="It's outdated or incorrect"> It's outdated or incorrect</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="An example or command didn't work"> An example or command didn't work</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="I didn't find what I needed"> I didn't find what I needed</label>
+      
+    </fieldset>
+    <label for="page-feedback-comment-inline">Tell us more (optional)</label>
+    <textarea id="page-feedback-comment-inline" rows="3" maxlength="1000"></textarea>
+    <p class="page-feedback-privacy">Please don't include personal information such as your name or email.</p>
+    <div class="page-feedback-comment-actions">
+      <button type="submit" class="page-feedback-send">Send</button>
+      <button type="button" class="page-feedback-skip">Skip</button>
+    </div>
+  </form>
+  <p class="page-feedback-thanks" role="status" hidden>Thanks for your feedback!</p>
+
+  </div>
+  <dialog class="page-feedback-popup" data-source="popup" aria-label="Page feedback">
+    <div class="page-feedback-popup-body">
+      <button type="button" class="page-feedback-popup-close" aria-label="Close" title="Close">&times;</button>
+      
+  <p class="page-feedback-question">Was this page helpful?</p>
+  <div class="page-feedback-buttons">
+    <button type="button" class="page-feedback-button" data-helpful="yes" aria-label="Yes" title="Yes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+    </button>
+    <button type="button" class="page-feedback-button" data-helpful="no" aria-label="No" title="No">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+    </button>
+  </div>
+  <form class="page-feedback-comment" hidden>
+    <fieldset class="page-feedback-reasons">
+      <legend>Sorry about that. What went wrong? (optional)</legend>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="It's unclear or hard to follow"> It's unclear or hard to follow</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="It's outdated or incorrect"> It's outdated or incorrect</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="An example or command didn't work"> An example or command didn't work</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="I didn't find what I needed"> I didn't find what I needed</label>
+      
+    </fieldset>
+    <label for="page-feedback-comment-popup">Tell us more (optional)</label>
+    <textarea id="page-feedback-comment-popup" rows="3" maxlength="1000"></textarea>
+    <p class="page-feedback-privacy">Please don't include personal information such as your name or email.</p>
+    <div class="page-feedback-comment-actions">
+      <button type="submit" class="page-feedback-send">Send</button>
+      <button type="button" class="page-feedback-skip">Skip</button>
+    </div>
+  </form>
+  <p class="page-feedback-thanks" role="status" hidden>Thanks for your feedback!</p>
+
+    </div>
+  </dialog>
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../../_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8"></script>
+<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2018-2026, Institute for Protein Design.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.1.
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  <!-- # L10n: Setting the PST URL as an argument as this does not need to be localized -->
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.24.0.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  </body>
+</html>

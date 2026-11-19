@@ -1,0 +1,1635 @@
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>tmol.dock.scoring_backend &#8212; TMol</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=adb9cd23" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/page_feedback.css?v=d37b03bb" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../../../_static/scripts/fontawesome.js?digest=75c7c72ae941e8b558d8"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
+
+    <script src="../../../_static/documentation_options.js?v=8d563738"></script>
+    <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script>let toggleHintShow = 'show code';</script>
+    <script>let toggleHintHide = 'hide code';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../../_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '#Setup .nbinput, .nbinput.collapse-code';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/tmol/dock/scoring_backend';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+    <script src="../../../_static/tmol-explorers.js?v=089c5f52"></script>
+    <script async="async" defer="defer" src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+    <script src="../../../_static/page_feedback.js?v=8b09ebf1"></script>
+    <link rel="canonical" href="https://rosettacommons.github.io/tmol/latest/_modules/tmol/dock/scoring_backend.html" />
+    <link rel="icon" href="../../../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="color-scheme" content="light dark"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="1.0.0" />
+  
+    
+    <script src="../../../_static/searchtools.js"></script>
+    <script src="../../../_static/language_data.js"></script>
+    <script src="../../../searchindex.js"></script>
+  
+  
+  <link rel="icon" type="image/svg+xml" sizes="any" href="../../../_static/brand/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="../../../_static/brand/apple-touch-icon.png">
+
+  </head>
+  <body data-default-mode="">
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button type="button" class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation" aria-expanded="false" aria-controls="pst-primary-sidebar-modal">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../../_static/tmol-logo-light.svg" class="logo__image only-light" alt="TMol documentation — Home"/>
+    <img src="../../../_static/tmol-logo-dark.svg" class="logo__image only-dark pst-js-only" alt="TMol documentation — Home"/>
+  
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../installation.html">
+    Installation
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../quickstart.html">
+    Quickstart
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../terminology.html">
+    Glossary
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../examples_index.html">
+    Tutorials
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../api_reference.html">
+    API reference
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../contributor_guide.html">
+    Contributing
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button type="button" class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button type="button" class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
+      
+      <dialog id="pst-primary-sidebar-modal" tabindex="-1"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar hide-on-wide">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../installation.html">
+    Installation
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../quickstart.html">
+    Quickstart
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../terminology.html">
+    Glossary
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../examples_index.html">
+    Tutorials
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../api_reference.html">
+    API reference
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../../contributor_guide.html">
+    Contributing
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../../../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-house"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="../../index.html" class="nav-link">Module code</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">tmol.dock.scoring_backend</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+  
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <h1>Source code for tmol.dock.scoring_backend</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Pluggable scoring and local-minimization backends for docking."""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">contextlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">contextmanager</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">replace</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">attrs</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">ParameterDatabase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.dock._batched_lbfgs</span><span class="w"> </span><span class="kn">import</span> <span class="n">BatchedLBFGS</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.dock.ligand_dofs</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">GeneIndex</span><span class="p">,</span>
+    <span class="n">LigandDockingDOFs</span><span class="p">,</span>
+    <span class="n">_block_kinforest_nodes</span><span class="p">,</span>
+    <span class="n">_ligand_kinforest_nodes</span><span class="p">,</span>
+    <span class="n">_sidechain_coordinate_indices</span><span class="p">,</span>
+    <span class="n">build_ligand_docking_dofs</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.kinematics._datatypes</span><span class="w"> </span><span class="kn">import</span> <span class="n">KinForest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.kinematics.compiled._compiled_ops</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">_forward_only_op</span><span class="p">,</span>
+    <span class="n">_forward_with_ht_op</span><span class="p">,</span>
+    <span class="n">_inverse_kin</span><span class="p">,</span>
+    <span class="n">_kin_deriv_op</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.kinematics._move_map</span><span class="w"> </span><span class="kn">import</span> <span class="n">MinimizerMap</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.kinematics</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStackKinematicsModule</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.optimization._minimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">_build_kinforest_network</span><span class="p">,</span> <span class="n">_run_min</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose._pose_stack</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoseStack</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pose</span><span class="w"> </span><span class="kn">import</span> <span class="n">repeat_pose_stack</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score</span><span class="w"> </span><span class="kn">import</span> <span class="n">beta2016_score_function</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score.gridscore</span><span class="w"> </span><span class="kn">import</span> <span class="n">GridScorer</span><span class="p">,</span> <span class="n">GridSet</span><span class="p">,</span> <span class="n">build_grid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score.gridscore.grid</span><span class="w"> </span><span class="kn">import</span> <span class="n">_setup_scoring_parameters</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score.gridscore.live_hbond</span><span class="w"> </span><span class="kn">import</span> <span class="n">LiveHBondData</span><span class="p">,</span> <span class="n">build_live_hbond_data</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score.gridscore.live_ligand_intra</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">LiveLigandIntraData</span><span class="p">,</span>
+    <span class="n">build_live_ligand_intra_data</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score.gridscore.live_lk_ball</span><span class="w"> </span><span class="kn">import</span> <span class="n">LiveLKBallData</span><span class="p">,</span> <span class="n">build_live_lk_ball_data</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScoreFunction</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score.gridscore._movable</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">movable_block_mapping</span><span class="p">,</span>
+    <span class="n">movable_atoms</span><span class="p">,</span>
+    <span class="n">movable_pose_stack</span><span class="p">,</span>
+    <span class="n">resolve_ligand_block</span><span class="p">,</span>
+    <span class="n">sidechain_context_blocks</span><span class="p">,</span>
+    <span class="n">validated_sidechain_blocks</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MinimizationResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""A minimized pose and its optimizer-authored freed-DOF gene.</span>
+
+<span class="sd">    ``genes`` is ``None`` only for backends that do not participate in the GA.</span>
+<span class="sd">    Continuous minimization always returns the fixed-order jump, ligand-chi,</span>
+<span class="sd">    and selected-sidechain-chi tensor directly from its final kinematic DOFs.</span>
+<span class="sd">    """</span>
+
+    <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span>
+    <span class="n">genes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
+    <span class="n">masked_dofs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># Final objective values, when the optimizer already has them (else the GA</span>
+    <span class="c1"># rescores ``pose_stack``).</span>
+    <span class="n">energies</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_genes_from_kinforest_dofs</span><span class="p">(</span>
+    <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+    <span class="n">docking_dofs</span><span class="p">:</span> <span class="n">LigandDockingDOFs</span><span class="p">,</span>
+    <span class="n">kf_network</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Map final optimizer DOFs to six jump DOFs plus logical torsions."""</span>
+
+    <span class="n">kmd</span> <span class="o">=</span> <span class="n">kf_network</span><span class="o">.</span><span class="n">kin_module</span><span class="o">.</span><span class="n">kmd</span>
+    <span class="n">raw_dofs</span> <span class="o">=</span> <span class="n">kf_network</span><span class="o">.</span><span class="n">full_dofs</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+    <span class="n">raw_dofs</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="n">kf_network</span><span class="o">.</span><span class="n">_dof_flat_idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">kf_network</span><span class="o">.</span><span class="n">masked_dofs</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">_genes_from_raw_kinforest_dofs</span><span class="p">(</span>
+        <span class="n">pose_stack</span><span class="p">,</span>
+        <span class="n">docking_dofs</span><span class="p">,</span>
+        <span class="n">kmd</span><span class="o">.</span><span class="n">forest</span><span class="p">,</span>
+        <span class="n">kf_network</span><span class="o">.</span><span class="n">dof_mask</span><span class="p">,</span>
+        <span class="n">raw_dofs</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_genes_from_raw_kinforest_dofs</span><span class="p">(</span>
+    <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+    <span class="n">docking_dofs</span><span class="p">:</span> <span class="n">LigandDockingDOFs</span><span class="p">,</span>
+    <span class="n">forest</span><span class="p">:</span> <span class="n">KinForest</span><span class="p">,</span>
+    <span class="n">dof_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">raw_dofs</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">ligand_nodes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Map raw kinematic DOFs directly to the docking gene layout."""</span>
+
+    <span class="n">index</span> <span class="o">=</span> <span class="n">GeneIndex</span><span class="o">.</span><span class="n">build</span><span class="p">(</span>
+        <span class="n">pose_stack</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="p">,</span> <span class="n">forest</span><span class="p">,</span> <span class="n">dof_mask</span><span class="p">,</span> <span class="n">raw_dofs</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">ligand_nodes</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">index</span><span class="o">.</span><span class="n">genes_from_raw_dofs</span><span class="p">(</span><span class="n">raw_dofs</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">ScoringBackend</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""The scoring contract used by the docking loop.</span>
+
+<span class="sd">    ``score`` returns one search-objective energy per pose, with shape</span>
+<span class="sd">    ``[n_poses]``. ``minimize`` performs one batched local minimization over</span>
+<span class="sd">    exactly the freedoms described by ``docking_dofs`` and returns a</span>
+<span class="sd">    :class:`MinimizationResult`. A grid implementation may use a different</span>
+<span class="sd">    internal objective and gradient representation, but it must preserve these</span>
+<span class="sd">    input and output semantics so the population loop does not depend on the</span>
+<span class="sd">    backend.</span>
+
+<span class="sd">    A backend is built for one ligand: ``ligand_block`` is its block index in</span>
+<span class="sd">    the reference complex, and ``sidechain_blocks`` the receptor residues</span>
+<span class="sd">    (block indices) whose sidechains move with it.</span>
+<span class="sd">    """</span>
+
+    <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">sidechain_blocks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">search_view</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">PoseStack</span><span class="p">,</span> <span class="s2">"ScoringBackend"</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""The pose, backend and flexible blocks the GA actually searches over."""</span>
+        <span class="k">return</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="p">()</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return the total energy of each pose as a ``[n_poses]`` tensor."""</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">minimize</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+        <span class="n">docking_dofs</span><span class="p">:</span> <span class="n">LigandDockingDOFs</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">maxiter</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">initial_raw_dofs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MinimizationResult</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Minimize and return coordinates plus the final freed-DOF gene."""</span>
+
+
+<div class="viewcode-block" id="ContinuousBackend">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.ContinuousBackend">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ContinuousBackend</span><span class="p">(</span><span class="n">ScoringBackend</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Full continuous beta2016 scoring and kinematic minimization.</span>
+
+<span class="sd">    ``param_db`` should be the ligand-extended parameter database returned by</span>
+<span class="sd">    ligand preparation. If it is omitted, tmol's memoized default beta2016</span>
+<span class="sd">    score function is used. A score function is cached per device, while the</span>
+<span class="sd">    whole-pose scoring module is rendered for each input PoseStack.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        ligand_block: Block index of the ligand in the complex to be docked.</span>
+<span class="sd">        param_db: Optional ligand-extended scoring parameter database.</span>
+<span class="sd">        kin_dtype: Internal-coordinate dtype for minimization. By default the</span>
+<span class="sd">            input coordinate dtype is used.</span>
+<span class="sd">        value_only_line_search: Evaluate Armijo trials without gradients and</span>
+<span class="sd">            refresh the gradient at the accepted point (default: False).</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">param_db</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ParameterDatabase</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">kin_dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">value_only_line_search</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">kin_dtype</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">float64</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"kin_dtype must be torch.float32 or torch.float64"</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ligand_block</span> <span class="o">=</span> <span class="n">ligand_block</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">param_db</span> <span class="o">=</span> <span class="n">param_db</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kin_dtype</span> <span class="o">=</span> <span class="n">kin_dtype</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">value_only_line_search</span> <span class="o">=</span> <span class="n">value_only_line_search</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">ScoreFunction</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score_function</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ScoreFunction</span><span class="p">:</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">device</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="p">[</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="n">beta2016_score_function</span><span class="p">(</span>
+                <span class="n">device</span><span class="p">,</span> <span class="n">param_db</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">param_db</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="p">[</span><span class="n">device</span><span class="p">]</span>
+
+<div class="viewcode-block" id="ContinuousBackend.score">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.ContinuousBackend.score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Score a PoseStack with the weighted continuous beta2016 function."""</span>
+
+        <span class="n">sfxn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_function</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">scorer</span> <span class="o">=</span> <span class="n">sfxn</span><span class="o">.</span><span class="n">render_whole_pose_scoring_module</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="n">energies</span> <span class="o">=</span> <span class="n">scorer</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="p">)</span>
+        <span class="n">expected_shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">,)</span>
+        <span class="k">if</span> <span class="n">energies</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected_shape</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">"continuous whole-pose scorer returned shape "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">energies</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">; expected </span><span class="si">{</span><span class="n">expected_shape</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">energies</span></div>
+
+
+<div class="viewcode-block" id="ContinuousBackend.minimize">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.ContinuousBackend.minimize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">minimize</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+        <span class="n">docking_dofs</span><span class="p">:</span> <span class="n">LigandDockingDOFs</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">maxiter</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">initial_raw_dofs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MinimizationResult</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Run docking-DOF minimization and return optimizer-authored genes."""</span>
+        <span class="n">kin_dtype</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">kin_dtype</span> <span class="ow">or</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">dtype</span>
+        <span class="n">kf_network</span> <span class="o">=</span> <span class="n">_build_kinforest_network</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_score_function</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">),</span>
+            <span class="n">docking_dofs</span><span class="o">.</span><span class="n">fold_forest</span><span class="p">,</span>
+            <span class="n">docking_dofs</span><span class="o">.</span><span class="n">move_map</span><span class="p">,</span>
+            <span class="n">kin_dtype</span><span class="o">=</span><span class="n">kin_dtype</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">initial_raw_dofs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">base_dofs</span> <span class="o">=</span> <span class="n">kf_network</span><span class="o">.</span><span class="n">_kinematic_scoring</span><span class="o">.</span><span class="n">base_dofs</span>
+            <span class="k">if</span> <span class="n">initial_raw_dofs</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">base_dofs</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">"initial raw DOF shape does not match the minimizer: "</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">initial_raw_dofs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> != </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">base_dofs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+                <span class="p">)</span>
+            <span class="n">initial</span> <span class="o">=</span> <span class="n">initial_raw_dofs</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">kin_dtype</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+                <span class="n">base_dofs</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">initial</span><span class="p">)</span>
+                <span class="n">kf_network</span><span class="o">.</span><span class="n">masked_dofs</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">initial</span><span class="p">[</span><span class="n">kf_network</span><span class="o">.</span><span class="n">dof_mask</span><span class="p">])</span>
+        <span class="n">optimizer_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"value_only_line_search"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">value_only_line_search</span><span class="p">}</span>
+        <span class="k">if</span> <span class="n">maxiter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">optimizer_kwargs</span><span class="p">[</span><span class="s2">"max_iter"</span><span class="p">]</span> <span class="o">=</span> <span class="n">maxiter</span>
+        <span class="n">minimized</span> <span class="o">=</span> <span class="n">_run_min</span><span class="p">(</span>
+            <span class="n">kf_network</span><span class="p">,</span>
+            <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="n">optimizer_kwargs</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">minimized</span><span class="o">.</span><span class="n">coords</span> <span class="o">=</span> <span class="n">minimized</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+        <span class="n">genes</span> <span class="o">=</span> <span class="n">_genes_from_kinforest_dofs</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="p">,</span> <span class="n">kf_network</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">MinimizationResult</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="o">=</span><span class="n">minimized</span><span class="p">,</span>
+            <span class="n">genes</span><span class="o">=</span><span class="n">genes</span><span class="p">,</span>
+            <span class="n">masked_dofs</span><span class="o">=</span><span class="n">kf_network</span><span class="o">.</span><span class="n">masked_dofs</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">(),</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_LightweightGridObjective</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Ligand-grid energy and analytic docking-DOF gradient of a population."""</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">backend</span><span class="p">:</span> <span class="s2">"GridBackend"</span><span class="p">,</span>
+        <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+        <span class="n">docking_dofs</span><span class="p">:</span> <span class="n">LigandDockingDOFs</span><span class="p">,</span>
+        <span class="n">kin_dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+        <span class="n">initial_raw_dofs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">backend</span> <span class="o">=</span> <span class="n">backend</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pose_stack</span> <span class="o">=</span> <span class="n">pose_stack</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">docking_dofs</span> <span class="o">=</span> <span class="n">docking_dofs</span>
+        <span class="n">kin_module</span> <span class="o">=</span> <span class="n">PoseStackKinematicsModule</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="o">.</span><span class="n">fold_forest</span><span class="p">)</span>
+        <span class="n">full_kmd</span> <span class="o">=</span> <span class="n">kin_module</span><span class="o">.</span><span class="n">kmd</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">forest</span> <span class="o">=</span> <span class="n">full_kmd</span><span class="o">.</span><span class="n">forest</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dof_mask</span> <span class="o">=</span> <span class="n">MinimizerMap</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="p">,</span> <span class="n">full_kmd</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="o">.</span><span class="n">move_map</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">dof_mask</span>
+
+        <span class="k">if</span> <span class="n">initial_raw_dofs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">expected_shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">full_kmd</span><span class="o">.</span><span class="n">forest</span><span class="o">.</span><span class="n">id</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">9</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">initial_raw_dofs</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected_shape</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">"initial raw DOF shape does not match the minimizer: "</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">initial_raw_dofs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> != </span><span class="si">{</span><span class="n">expected_shape</span><span class="si">}</span><span class="s2">"</span>
+                <span class="p">)</span>
+            <span class="n">full_dofs</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">kin_coords</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">full_kmd</span><span class="o">.</span><span class="n">forest</span><span class="o">.</span><span class="n">id</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">3</span><span class="p">),</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="n">kin_dtype</span><span class="p">,</span>
+                <span class="n">device</span><span class="o">=</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">kin_coords</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)[</span>
+                <span class="n">full_kmd</span><span class="o">.</span><span class="n">forest</span><span class="o">.</span><span class="n">id</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+            <span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">kin_dtype</span><span class="p">)</span>
+            <span class="n">full_dofs</span> <span class="o">=</span> <span class="n">_inverse_kin</span><span class="p">(</span>
+                <span class="n">kin_coords</span><span class="p">,</span>
+                <span class="n">full_kmd</span><span class="o">.</span><span class="n">forest</span><span class="o">.</span><span class="n">parent</span><span class="p">,</span>
+                <span class="n">full_kmd</span><span class="o">.</span><span class="n">forest</span><span class="o">.</span><span class="n">frame_x</span><span class="p">,</span>
+                <span class="n">full_kmd</span><span class="o">.</span><span class="n">forest</span><span class="o">.</span><span class="n">frame_y</span><span class="p">,</span>
+                <span class="n">full_kmd</span><span class="o">.</span><span class="n">forest</span><span class="o">.</span><span class="n">frame_z</span><span class="p">,</span>
+                <span class="n">full_kmd</span><span class="o">.</span><span class="n">forest</span><span class="o">.</span><span class="n">doftype</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="n">ligand_block_type</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">block_type</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ligand_nodes</span> <span class="o">=</span> <span class="n">_ligand_kinforest_nodes</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="p">,</span>
+            <span class="n">docking_dofs</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">,</span>
+            <span class="n">ligand_block_type</span><span class="o">.</span><span class="n">n_atoms</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">forest</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="c1"># Reuse the already-validated full-pose ordering. All compiled operations</span>
+        <span class="c1"># run under no_grad, so retaining fixed receptor nodes costs forward</span>
+        <span class="c1"># buffers but does not retain an autograd graph across L-BFGS iterations.</span>
+        <span class="c1"># The full ordering is retained so ligand and selected sidechain</span>
+        <span class="c1"># coordinate gradients can both be propagated to their freed DOFs.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nodes_f</span> <span class="o">=</span> <span class="n">kin_module</span><span class="o">.</span><span class="n">nodes_f</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scans_f</span> <span class="o">=</span> <span class="n">kin_module</span><span class="o">.</span><span class="n">scans_f</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gens_f</span> <span class="o">=</span> <span class="n">kin_module</span><span class="o">.</span><span class="n">gens_f</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nodes_b</span> <span class="o">=</span> <span class="n">kin_module</span><span class="o">.</span><span class="n">nodes_b</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scans_b</span> <span class="o">=</span> <span class="n">kin_module</span><span class="o">.</span><span class="n">scans_b</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gens_b</span> <span class="o">=</span> <span class="n">kin_module</span><span class="o">.</span><span class="n">gens_b</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kintree</span> <span class="o">=</span> <span class="n">kin_module</span><span class="o">.</span><span class="n">kinforest</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">dof_flat_idx</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">dof_mask</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">as_tuple</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">initial_raw_dofs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">full_dofs</span> <span class="o">=</span> <span class="n">full_dofs</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">full_dofs</span> <span class="o">=</span> <span class="n">initial_raw_dofs</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">kin_dtype</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">initial_masked_dofs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">full_dofs</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="bp">self</span><span class="o">.</span><span class="n">dof_flat_idx</span><span class="p">]</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">ligand_atom_indices</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_ligand_atom_indices</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="o">.</span><span class="n">ligand_block</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sidechain_nodes</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sidechain_atom_indices</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">_sidechain_coordinate_indices</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">forest</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">sidechain_blocks</span><span class="p">:</span>
+            <span class="n">movable_node_parts</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">max_n_blocks</span><span class="p">):</span>
+                <span class="n">block_type</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">block_type</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">block</span><span class="p">)</span>
+                <span class="n">movable_node_parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">_block_kinforest_nodes</span><span class="p">(</span>
+                        <span class="n">pose_stack</span><span class="p">,</span>
+                        <span class="n">block</span><span class="p">,</span>
+                        <span class="n">block_type</span><span class="o">.</span><span class="n">n_atoms</span><span class="p">,</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">forest</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">movable_nodes</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span><span class="n">movable_node_parts</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">movable_nodes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ligand_nodes</span>
+
+        <span class="n">pose_for_node</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">div</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">forest</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">max_n_pose_atoms</span><span class="p">,</span>
+            <span class="n">rounding_mode</span><span class="o">=</span><span class="s2">"floor"</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">pose_for_dof</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">pose_for_node</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">full_dofs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">segment_ids</span> <span class="o">=</span> <span class="n">pose_for_dof</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">dof_flat_idx</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">segment_ids</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"root node DOFs cannot be minimized"</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_set_masked_dofs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">masked_dofs</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">masked_dofs</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_masked_dofs</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">"masked DOFs have shape "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">masked_dofs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">; expected "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">initial_masked_dofs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">full_dofs</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span>
+            <span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dof_flat_idx</span><span class="p">,</span> <span class="n">masked_dofs</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_forward_only</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">masked_dofs</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_masked_dofs</span><span class="p">(</span><span class="n">masked_dofs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_forward_only_op</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">full_dofs</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">nodes_f</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">scans_f</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">gens_f</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">kintree</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">energy_and_gradient</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">masked_dofs</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_masked_dofs</span><span class="p">(</span><span class="n">masked_dofs</span><span class="p">)</span>
+            <span class="n">kin_coords</span><span class="p">,</span> <span class="n">hts</span> <span class="o">=</span> <span class="n">_forward_with_ht_op</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">full_dofs</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">nodes_f</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">scans_f</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">gens_f</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">kintree</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">movable_coords</span> <span class="o">=</span> <span class="n">kin_coords</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">movable_nodes</span><span class="p">]</span>
+            <span class="n">energies</span><span class="p">,</span> <span class="n">movable_gradients</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">backend</span><span class="o">.</span><span class="n">_score_ligand_coordinates_with_gradients</span><span class="p">(</span><span class="n">movable_coords</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">coordinate_gradients</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">kin_coords</span><span class="p">)</span>
+            <span class="n">coordinate_gradients</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">movable_nodes</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">movable_gradients</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">dof_gradients</span> <span class="o">=</span> <span class="n">_kin_deriv_op</span><span class="p">(</span>
+                <span class="n">coordinate_gradients</span><span class="p">,</span>
+                <span class="n">hts</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">full_dofs</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">nodes_b</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">scans_b</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">gens_b</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">kintree</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">masked_gradients</span> <span class="o">=</span> <span class="n">dof_gradients</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="bp">self</span><span class="o">.</span><span class="n">dof_flat_idx</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">energies</span><span class="p">,</span> <span class="n">masked_gradients</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">final_result</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">masked_dofs</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MinimizationResult</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Build output coordinates and gene directly from final raw DOFs."""</span>
+
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="n">kin_coords</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_forward_only</span><span class="p">(</span><span class="n">masked_dofs</span><span class="p">)</span>
+            <span class="n">full_coords</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+            <span class="n">pose_indices</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">,</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span>
+                <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">full_coords</span><span class="p">[</span><span class="n">pose_indices</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">ligand_atom_indices</span><span class="p">]</span> <span class="o">=</span> <span class="n">kin_coords</span><span class="p">[</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ligand_nodes</span>
+            <span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">full_coords</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">sidechain_nodes</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+                <span class="n">full_coords</span><span class="p">[</span><span class="n">pose_indices</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">sidechain_atom_indices</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">kin_coords</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">sidechain_nodes</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">full_coords</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+                <span class="p">)</span>
+            <span class="n">minimized_pose</span> <span class="o">=</span> <span class="n">attrs</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">coords</span><span class="o">=</span><span class="n">full_coords</span><span class="p">)</span>
+            <span class="n">genes</span> <span class="o">=</span> <span class="n">_genes_from_raw_kinforest_dofs</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">pose_stack</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">docking_dofs</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">forest</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">dof_mask</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">full_dofs</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ligand_nodes</span><span class="p">,</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">MinimizationResult</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="o">=</span><span class="n">minimized_pose</span><span class="p">,</span>
+            <span class="n">genes</span><span class="o">=</span><span class="n">genes</span><span class="p">,</span>
+            <span class="n">masked_dofs</span><span class="o">=</span><span class="n">masked_dofs</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">(),</span>
+        <span class="p">)</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_PopulationMinimizer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Batched L-BFGS over ``n_trials`` line-search candidates of every pose.</span>
+
+<span class="sd">    One candidate objective holds ``n_trials`` copies of the population, so a</span>
+<span class="sd">    single (graph) evaluation scores every trial step of every pose.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">backend</span><span class="p">:</span> <span class="s2">"GridBackend"</span><span class="p">,</span>
+        <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+        <span class="n">docking_dofs</span><span class="p">:</span> <span class="n">LigandDockingDOFs</span><span class="p">,</span>
+        <span class="n">kin_dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">cuda</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">"cuda"</span>
+        <span class="n">n_trials</span><span class="p">,</span> <span class="n">n_poses</span> <span class="o">=</span> <span class="p">(</span><span class="mi">4</span> <span class="k">if</span> <span class="n">cuda</span> <span class="k">else</span> <span class="mi">2</span><span class="p">),</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">n_poses</span>
+        <span class="n">candidates</span> <span class="o">=</span> <span class="n">repeat_pose_stack</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="n">n_trials</span> <span class="o">*</span> <span class="n">n_poses</span><span class="p">)</span>
+        <span class="n">candidate_dofs</span> <span class="o">=</span> <span class="n">build_ligand_docking_dofs</span><span class="p">(</span>
+            <span class="n">candidates</span><span class="p">,</span>
+            <span class="n">docking_dofs</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">,</span>
+            <span class="n">sidechain_blocks</span><span class="o">=</span><span class="n">docking_dofs</span><span class="o">.</span><span class="n">sidechain_blocks</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">objective</span> <span class="o">=</span> <span class="n">_LightweightGridObjective</span><span class="p">(</span>
+            <span class="n">backend</span><span class="p">,</span> <span class="n">candidates</span><span class="p">,</span> <span class="n">candidate_dofs</span><span class="p">,</span> <span class="n">kin_dtype</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_trials</span> <span class="o">=</span> <span class="n">n_trials</span>
+        <span class="n">shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">n_trials</span><span class="p">,</span> <span class="n">n_poses</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+            <span class="n">energy</span><span class="p">,</span> <span class="n">gradient</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">energy_and_gradient</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">energy</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">n_trials</span><span class="p">,</span> <span class="n">n_poses</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span> <span class="n">gradient</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span>
+                <span class="n">shape</span>
+            <span class="p">)</span>
+
+        <span class="n">x0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">initial_masked_dofs</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">n_trials</span><span class="p">,</span> <span class="n">n_poses</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lbfgs</span> <span class="o">=</span> <span class="n">BatchedLBFGS</span><span class="p">(</span>
+            <span class="n">evaluate</span><span class="p">,</span>
+            <span class="n">x0</span><span class="o">.</span><span class="n">clone</span><span class="p">(),</span>
+            <span class="n">n_trials</span><span class="o">=</span><span class="n">n_trials</span><span class="p">,</span>
+            <span class="n">graph</span><span class="o">=</span><span class="n">backend</span><span class="o">.</span><span class="n">cuda_graph</span> <span class="ow">and</span> <span class="n">cuda</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">minimize</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">fixed_dofs</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">x0</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">max_iter</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Minimize ``x0`` (freed DOFs); ``fixed_dofs`` are the population's raw DOFs.</span>
+
+<span class="sd">        Returns the final freed DOFs and the objective values there.</span>
+<span class="sd">        """</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">full_dofs</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">fixed_dofs</span><span class="p">[:</span><span class="mi">1</span><span class="p">],</span> <span class="n">fixed_dofs</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_trials</span><span class="p">,</span> <span class="mi">1</span><span class="p">)))</span>
+        <span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lbfgs</span><span class="o">.</span><span class="n">minimize</span><span class="p">(</span><span class="n">x0</span><span class="p">,</span> <span class="n">max_iter</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lbfgs</span><span class="o">.</span><span class="n">f</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="GridBackend">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.GridBackend">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GridBackend</span><span class="p">(</span><span class="n">ScoringBackend</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Rigid-receptor grid plus live hbond, intra, and LK-ball scoring.</span>
+
+<span class="sd">    One :class:`GridSet` is retained by the backend and shared by every pose.</span>
+<span class="sd">    Device/dtype copies are cached once and do not scale with population size.</span>
+<span class="sd">    The grid contains fa_atr, fa_rep, fa_sol, and fa_elec, plus three weighted</span>
+<span class="sd">    LK-ball grid families when ``lk_ball_grid`` is true. One receptor hbond</span>
+<span class="sd">    structure, ligand-intra topology, and ligand-water topology are shared by</span>
+<span class="sd">    every ligand pose; ``lk_ball_grid=False`` retains the exact live LK-ball</span>
+<span class="sd">    implementation. Ligand-intra search weights match Rosetta GridScorer's</span>
+<span class="sd">    softened ``oneb_wtd_`` objective.</span>
+
+<span class="sd">    Minimization is a batched L-BFGS whose line search evaluates ``n_trials``</span>
+<span class="sd">    step sizes of every pose at once; with ``cuda_graph`` each iteration is one</span>
+<span class="sd">    CUDA-graph replay.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">grids</span><span class="p">:</span> <span class="n">GridSet</span><span class="p">,</span>
+        <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">ligand_atom_types</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+        <span class="n">ligand_charges</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">param_db</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ParameterDatabase</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">kin_dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">live_hbond</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">LiveHBondData</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">live_ligand_intra</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">LiveLigandIntraData</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">live_lk_ball</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">LiveLKBallData</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">lk_ball_grid</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">score_function</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ScoreFunction</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">sidechain_blocks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
+        <span class="n">context_blocks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
+        <span class="n">grid_atom_indices</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">movable_n_atoms</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">cuda_graph</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">grids</span> <span class="o">=</span> <span class="n">grids</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ligand_block</span> <span class="o">=</span> <span class="n">ligand_block</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ligand_atom_types</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">ligand_atom_types</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ligand_charges</span> <span class="o">=</span> <span class="n">ligand_charges</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="s2">"cpu"</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">param_db</span> <span class="o">=</span> <span class="n">param_db</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kin_dtype</span> <span class="o">=</span> <span class="n">kin_dtype</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">live_hbond</span> <span class="o">=</span> <span class="n">live_hbond</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">live_ligand_intra</span> <span class="o">=</span> <span class="n">live_ligand_intra</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">live_lk_ball</span> <span class="o">=</span> <span class="n">live_lk_ball</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lk_ball_grid</span> <span class="o">=</span> <span class="n">lk_ball_grid</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">score_function</span> <span class="o">=</span> <span class="n">score_function</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sidechain_blocks</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">sidechain_blocks</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">context_blocks</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">context_blocks</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">grid_atom_indices</span> <span class="o">=</span> <span class="n">grid_atom_indices</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">movable_n_atoms</span> <span class="o">=</span> <span class="n">movable_n_atoms</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">ligand_atom_types</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cuda_graph</span> <span class="o">=</span> <span class="n">cuda_graph</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_rep_scale</span> <span class="o">=</span> <span class="mf">1.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_minimizers</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># shared with ``for_ligand_block`` views</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_scorers</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">],</span> <span class="n">GridScorer</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_atom_index_cache</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
+
+<div class="viewcode-block" id="GridBackend.search_view">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.GridBackend.search_view">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">search_view</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">PoseStack</span><span class="p">,</span> <span class="s2">"GridBackend"</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Compact ligand(+flexible sidechain) pose the GA searches over."""</span>
+        <span class="n">compact_sidechains</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">sidechain_blocks</span><span class="p">:</span>
+            <span class="n">_</span><span class="p">,</span> <span class="n">compact_sidechains</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">movable_block_mapping</span><span class="p">(</span>
+                <span class="n">pose_stack</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sidechain_blocks</span>
+            <span class="p">)</span>
+        <span class="n">compact</span> <span class="o">=</span> <span class="n">movable_pose_stack</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sidechain_blocks</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">compact</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">for_ligand_block</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="n">compact_sidechains</span></div>
+
+
+<div class="viewcode-block" id="GridBackend.for_ligand_block">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.GridBackend.for_ligand_block">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">for_ligand_block</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"GridBackend"</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return a lightweight view targeting another ligand block index.</span>
+
+<span class="sd">        Grid construction fixes the ligand chemistry, not its block position in</span>
+<span class="sd">        a scoring PoseStack. The ligand-only docking representation places the</span>
+<span class="sd">        same block type at index zero. A shallow copy preserves the single grid</span>
+<span class="sd">        and its device/dtype caches while allowing that representation to use</span>
+<span class="sd">        the ordinary backend contract, whose ``score`` method has no block</span>
+<span class="sd">        argument.</span>
+<span class="sd">        """</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="n">result</span><span class="o">.</span><span class="n">ligand_block</span> <span class="o">=</span> <span class="n">ligand_block</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="GridBackend.pocket_grids">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.GridBackend.pocket_grids">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">pocket_grids</span><span class="p">(</span>
+        <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+        <span class="n">ligand</span><span class="p">,</span>
+        <span class="n">param_db</span><span class="p">:</span> <span class="n">ParameterDatabase</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">atom_types</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">flexible_residues</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">voxel_spacing</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.25</span><span class="p">,</span>
+        <span class="n">bbox_padding</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">4.0</span><span class="p">,</span>
+        <span class="n">lk_ball_grid</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">score_function</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ScoreFunction</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GridSet</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Receptor grids of the box around ``ligand``, to share across ligands.</span>
+
+<span class="sd">        The grids depend on the receptor, the box and the probe atom types, not</span>
+<span class="sd">        on the ligand: build them once for the union of the ligands' atom types</span>
+<span class="sd">        and pass them to every :meth:`from_pose_stack` of a screen</span>
+<span class="sd">        (``atom_types`` defaults to the ligand's own types).</span>
+<span class="sd">        """</span>
+        <span class="n">block</span> <span class="o">=</span> <span class="n">resolve_ligand_block</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">ligand</span><span class="p">)</span>
+        <span class="n">flexible</span> <span class="o">=</span> <span class="n">validated_sidechain_blocks</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="p">,</span> <span class="n">block</span><span class="p">,</span> <span class="p">()</span> <span class="k">if</span> <span class="n">flexible_residues</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">flexible_residues</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">atom_types</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">block_type</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">block_type</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">block</span><span class="p">)</span>
+            <span class="n">atom_types</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">atom</span><span class="o">.</span><span class="n">atom_type</span> <span class="k">for</span> <span class="n">atom</span> <span class="ow">in</span> <span class="n">block_type</span><span class="o">.</span><span class="n">atoms</span><span class="p">[:</span> <span class="n">block_type</span><span class="o">.</span><span class="n">n_atoms</span><span class="p">]</span>
+            <span class="p">]</span>
+        <span class="k">if</span> <span class="n">device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">device</span> <span class="o">=</span> <span class="s2">"cuda"</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">"cpu"</span>
+        <span class="k">return</span> <span class="n">build_grid</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="p">,</span>
+            <span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">atom_types</span><span class="p">))),</span>
+            <span class="n">param_db</span><span class="p">,</span>
+            <span class="n">ligand_name3</span><span class="o">=</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">block_type</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">block</span><span class="p">)</span><span class="o">.</span><span class="n">name3</span><span class="p">,</span>
+            <span class="n">voxel_spacing</span><span class="o">=</span><span class="n">voxel_spacing</span><span class="p">,</span>
+            <span class="n">bbox_padding</span><span class="o">=</span><span class="n">bbox_padding</span><span class="p">,</span>
+            <span class="n">build_lk_ball</span><span class="o">=</span><span class="n">lk_ball_grid</span><span class="p">,</span>
+            <span class="n">score_function</span><span class="o">=</span><span class="n">score_function</span><span class="p">,</span>
+            <span class="n">excluded_receptor_blocks</span><span class="o">=</span><span class="n">flexible</span>
+            <span class="o">+</span> <span class="n">sidechain_context_blocks</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">block</span><span class="p">,</span> <span class="n">flexible</span><span class="p">),</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GridBackend.from_pose_stack">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.GridBackend.from_pose_stack">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_pose_stack</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">reference_pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+        <span class="n">ligand</span><span class="p">,</span>
+        <span class="n">param_db</span><span class="p">:</span> <span class="n">ParameterDatabase</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">flexible_residues</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">grids</span><span class="p">:</span> <span class="n">GridSet</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">grid_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">voxel_spacing</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.25</span><span class="p">,</span>
+        <span class="n">bbox_padding</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">4.0</span><span class="p">,</span>
+        <span class="n">kin_dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">lk_ball_grid</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">include_ligand_intra</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">cuda_graph</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">ligand_intra_weight_profile</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"search"</span><span class="p">,</span>
+        <span class="n">score_function</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ScoreFunction</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"GridBackend"</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Build the receptor grid and live terms for one ligand of a complex.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            reference_pose_stack: One pose holding the receptor and the ligand</span>
+<span class="sd">                (in any placement; the search starts from random poses).</span>
+<span class="sd">            ligand: The ligand: residue name (``"ATP"``), block index, or a</span>
+<span class="sd">                boolean atom mask selecting exactly its atoms.</span>
+<span class="sd">            param_db: Scoring database including the ligand's parameters.</span>
+<span class="sd">            flexible_residues: Receptor residues (block indices, e.g. from</span>
+<span class="sd">                :func:`select_pocket_residues`) whose sidechains move.</span>
+<span class="sd">            grids: Receptor grids to reuse instead of building them, e.g. one</span>
+<span class="sd">                set shared by every ligand of a screen (see</span>
+<span class="sd">                :meth:`pocket_grids`); must cover this ligand's atom types and</span>
+<span class="sd">                have been built for the same flexible residues.</span>
+<span class="sd">            grid_device: Device the grids are built on (default: CUDA if</span>
+<span class="sd">                available, else CPU).</span>
+
+<span class="sd">        ``lk_ball_grid=True`` selects Rosetta's weighted gridded approximation;</span>
+<span class="sd">        ``False`` retains the exact live LK-ball path. Ligand-intra scoring is</span>
+<span class="sd">        enabled by default with Rosetta's softened search profile.</span>
+<span class="sd">        ``cuda_graph`` captures each optimizer iteration as one CUDA graph</span>
+<span class="sd">        (ignored on CPU).</span>
+<span class="sd">        """</span>
+
+        <span class="k">if</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">n_poses</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"grid construction requires one reference pose"</span><span class="p">)</span>
+        <span class="n">ligand_block</span> <span class="o">=</span> <span class="n">resolve_ligand_block</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">ligand</span><span class="p">)</span>
+        <span class="n">pbt</span> <span class="o">=</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span>
+        <span class="n">block_type_index</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">])</span>
+        <span class="n">block_type</span> <span class="o">=</span> <span class="n">pbt</span><span class="o">.</span><span class="n">active_block_types</span><span class="p">[</span><span class="n">block_type_index</span><span class="p">]</span>
+        <span class="n">sidechain_blocks</span> <span class="o">=</span> <span class="n">validated_sidechain_blocks</span><span class="p">(</span>
+            <span class="n">reference_pose_stack</span><span class="p">,</span>
+            <span class="n">ligand_block</span><span class="p">,</span>
+            <span class="p">()</span> <span class="k">if</span> <span class="n">flexible_residues</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">flexible_residues</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">context_blocks</span> <span class="o">=</span> <span class="n">sidechain_context_blocks</span><span class="p">(</span>
+            <span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="n">sidechain_blocks</span>
+        <span class="p">)</span>
+        <span class="n">moving</span> <span class="o">=</span> <span class="n">movable_atoms</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="n">sidechain_blocks</span><span class="p">)</span>
+
+        <span class="c1"># Compact-pose atoms the GA moves: the ligand, plus flexible chi atoms.</span>
+        <span class="n">grid_atom_indices</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">sidechain_blocks</span><span class="p">:</span>
+            <span class="n">movable_pose</span> <span class="o">=</span> <span class="n">movable_pose_stack</span><span class="p">(</span>
+                <span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="n">sidechain_blocks</span>
+            <span class="p">)</span>
+            <span class="n">_</span><span class="p">,</span> <span class="n">compact_sidechains</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">movable_block_mapping</span><span class="p">(</span>
+                <span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="n">sidechain_blocks</span>
+            <span class="p">)</span>
+            <span class="n">movable_dofs</span> <span class="o">=</span> <span class="n">build_ligand_docking_dofs</span><span class="p">(</span>
+                <span class="n">movable_pose</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">sidechain_blocks</span><span class="o">=</span><span class="n">compact_sidechains</span>
+            <span class="p">)</span>
+            <span class="n">_</span><span class="p">,</span> <span class="n">sidechain_atom_indices</span> <span class="o">=</span> <span class="n">_sidechain_coordinate_indices</span><span class="p">(</span>
+                <span class="n">movable_pose</span><span class="p">,</span>
+                <span class="n">movable_dofs</span><span class="p">,</span>
+                <span class="n">PoseStackKinematicsModule</span><span class="p">(</span>
+                    <span class="n">movable_pose</span><span class="p">,</span> <span class="n">movable_dofs</span><span class="o">.</span><span class="n">fold_forest</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">kmd</span><span class="o">.</span><span class="n">forest</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">grid_atom_indices</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">block_type</span><span class="o">.</span><span class="n">n_atoms</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">),</span>
+                    <span class="n">sidechain_atom_indices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="s2">"cpu"</span><span class="p">),</span>
+                <span class="p">)</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">block_type</span><span class="o">.</span><span class="n">n_atoms</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">grid_atom_indices</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="n">grid_atom_indices</span>
+        <span class="p">)</span>
+        <span class="n">source_types</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="nb">int</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">block</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">moving</span><span class="o">.</span><span class="n">source_blocks</span>
+        <span class="p">]</span>
+        <span class="n">atom_types</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">atom</span><span class="o">.</span><span class="n">atom_type</span>
+            <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="n">source_types</span>
+            <span class="k">for</span> <span class="n">atom</span> <span class="ow">in</span> <span class="n">pbt</span><span class="o">.</span><span class="n">active_block_types</span><span class="p">[</span><span class="n">index</span><span class="p">]</span><span class="o">.</span><span class="n">atoms</span><span class="p">[</span>
+                <span class="p">:</span> <span class="n">pbt</span><span class="o">.</span><span class="n">active_block_types</span><span class="p">[</span><span class="n">index</span><span class="p">]</span><span class="o">.</span><span class="n">n_atoms</span>
+            <span class="p">]</span>
+        <span class="p">]</span>
+        <span class="n">ligand_atom_types</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">atom_types</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">query</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+
+        <span class="k">if</span> <span class="n">grids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">grids</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">pocket_grids</span><span class="p">(</span>
+                <span class="n">reference_pose_stack</span><span class="p">,</span>
+                <span class="n">ligand_block</span><span class="p">,</span>
+                <span class="n">param_db</span><span class="p">,</span>
+                <span class="n">atom_types</span><span class="o">=</span><span class="n">ligand_atom_types</span><span class="p">,</span>
+                <span class="n">flexible_residues</span><span class="o">=</span><span class="n">sidechain_blocks</span><span class="p">,</span>
+                <span class="n">device</span><span class="o">=</span><span class="n">grid_device</span><span class="p">,</span>
+                <span class="n">voxel_spacing</span><span class="o">=</span><span class="n">voxel_spacing</span><span class="p">,</span>
+                <span class="n">bbox_padding</span><span class="o">=</span><span class="n">bbox_padding</span><span class="p">,</span>
+                <span class="n">lk_ball_grid</span><span class="o">=</span><span class="n">lk_ball_grid</span><span class="p">,</span>
+                <span class="n">score_function</span><span class="o">=</span><span class="n">score_function</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Reused grids may have been built with a different palette.</span>
+            <span class="n">_setup_scoring_parameters</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">param_db</span><span class="p">)</span>
+        <span class="n">missing</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">ligand_atom_types</span><span class="p">)</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">grids</span><span class="o">.</span><span class="n">atom_type_names</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"grids lack the ligand atom types </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">missing</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">ligand_charges</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span>
+            <span class="p">[</span>
+                <span class="n">pbt</span><span class="o">.</span><span class="n">elec_partial_charge</span><span class="p">[</span><span class="n">index</span><span class="p">,</span> <span class="p">:</span> <span class="n">pbt</span><span class="o">.</span><span class="n">active_block_types</span><span class="p">[</span><span class="n">index</span><span class="p">]</span><span class="o">.</span><span class="n">n_atoms</span><span class="p">]</span>
+                <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="n">source_types</span>
+            <span class="p">]</span>
+        <span class="p">)[</span><span class="n">query</span><span class="p">]</span>
+        <span class="n">live_hbond</span> <span class="o">=</span> <span class="n">build_live_hbond_data</span><span class="p">(</span>
+            <span class="n">reference_pose_stack</span><span class="p">,</span>
+            <span class="n">ligand_block</span><span class="p">,</span>
+            <span class="n">param_db</span><span class="p">,</span>
+            <span class="n">sidechain_blocks</span><span class="o">=</span><span class="n">sidechain_blocks</span><span class="p">,</span>
+            <span class="n">movable_atoms</span><span class="o">=</span><span class="n">grid_atom_indices</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">live_ligand_intra</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">build_live_ligand_intra_data</span><span class="p">(</span>
+                <span class="n">reference_pose_stack</span><span class="p">,</span>
+                <span class="n">ligand_block</span><span class="p">,</span>
+                <span class="n">param_db</span><span class="p">,</span>
+                <span class="n">weight_profile</span><span class="o">=</span><span class="n">ligand_intra_weight_profile</span><span class="p">,</span>
+                <span class="n">sidechain_blocks</span><span class="o">=</span><span class="n">sidechain_blocks</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">include_ligand_intra</span>
+            <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+        <span class="n">live_lk_ball</span> <span class="o">=</span> <span class="n">build_live_lk_ball_data</span><span class="p">(</span>
+            <span class="n">reference_pose_stack</span><span class="p">,</span>
+            <span class="n">ligand_block</span><span class="p">,</span>
+            <span class="n">param_db</span><span class="p">,</span>
+            <span class="n">sidechain_blocks</span><span class="o">=</span><span class="n">sidechain_blocks</span><span class="p">,</span>
+            <span class="n">movable_atoms</span><span class="o">=</span><span class="n">grid_atom_indices</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">grids</span><span class="p">,</span>
+            <span class="n">ligand_block</span><span class="p">,</span>
+            <span class="n">ligand_atom_types</span><span class="p">,</span>
+            <span class="n">ligand_charges</span><span class="p">,</span>
+            <span class="n">param_db</span><span class="p">,</span>
+            <span class="n">kin_dtype</span><span class="o">=</span><span class="n">kin_dtype</span><span class="p">,</span>
+            <span class="n">live_hbond</span><span class="o">=</span><span class="n">live_hbond</span><span class="p">,</span>
+            <span class="n">live_ligand_intra</span><span class="o">=</span><span class="n">live_ligand_intra</span><span class="p">,</span>
+            <span class="n">live_lk_ball</span><span class="o">=</span><span class="n">live_lk_ball</span><span class="p">,</span>
+            <span class="n">lk_ball_grid</span><span class="o">=</span><span class="n">lk_ball_grid</span><span class="p">,</span>
+            <span class="n">score_function</span><span class="o">=</span><span class="n">score_function</span><span class="p">,</span>
+            <span class="n">sidechain_blocks</span><span class="o">=</span><span class="n">sidechain_blocks</span><span class="p">,</span>
+            <span class="n">context_blocks</span><span class="o">=</span><span class="n">context_blocks</span><span class="p">,</span>
+            <span class="n">grid_atom_indices</span><span class="o">=</span><span class="n">grid_atom_indices</span><span class="p">,</span>
+            <span class="n">movable_n_atoms</span><span class="o">=</span><span class="n">moving</span><span class="o">.</span><span class="n">n_atoms</span><span class="p">,</span>
+            <span class="n">cuda_graph</span><span class="o">=</span><span class="n">cuda_graph</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_scorer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GridScorer</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""The grid scorer for one device and precision, built on first use."""</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">device</span><span class="p">),</span> <span class="n">dtype</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scorers</span><span class="p">:</span>
+            <span class="n">scorer</span> <span class="o">=</span> <span class="n">GridScorer</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">grids</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ligand_atom_types</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ligand_charges</span><span class="p">,</span>
+                <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
+                <span class="n">score_function</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">score_function</span>
+                <span class="ow">or</span> <span class="n">beta2016_score_function</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">device</span><span class="p">)),</span>
+                <span class="n">live_hbond</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">live_hbond</span><span class="p">,</span>
+                <span class="n">live_lk_ball</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">live_lk_ball</span><span class="p">,</span>
+                <span class="n">live_ligand_intra</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">live_ligand_intra</span><span class="p">,</span>
+                <span class="n">lk_ball_grid</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">lk_ball_grid</span><span class="p">,</span>
+                <span class="n">grid_atoms</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">grid_atom_indices</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">scorer</span><span class="o">.</span><span class="n">set_rep_scale</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_rep_scale</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_scorers</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">scorer</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scorers</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+
+<div class="viewcode-block" id="GridBackend.rep_scale">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.GridBackend.rep_scale">[docs]</a>
+    <span class="nd">@contextmanager</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rep_scale</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Scale fa_rep for the duration of the block, as Rosetta packing does.</span>
+
+<span class="sd">        Rosetta packs each ramp step at a softened repulsive weight and then</span>
+<span class="sd">        minimizes at the full one (``GridScorer::optimize``).</span>
+<span class="sd">        """</span>
+        <span class="n">previous</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rep_scale</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_rep_scale</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">scale</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">scorer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scorers</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="n">scorer</span><span class="o">.</span><span class="n">set_rep_scale</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_rep_scale</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">yield</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_rep_scale</span> <span class="o">=</span> <span class="n">previous</span>
+            <span class="k">for</span> <span class="n">scorer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scorers</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+                <span class="n">scorer</span><span class="o">.</span><span class="n">set_rep_scale</span><span class="p">(</span><span class="n">previous</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_ligand_atom_indices</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">ligand_block</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"backend was built for ligand block </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">ligand_block</span><span class="si">}</span><span class="s2">, "</span>
+                <span class="sa">f</span><span class="s2">"not </span><span class="si">{</span><span class="n">ligand_block</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">)</span>
+        <span class="n">cache_key</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">),</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">,</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">max_n_pose_atoms</span><span class="p">,</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">max_n_blocks</span><span class="p">,</span>
+            <span class="n">ligand_block</span><span class="p">,</span>
+            <span class="nb">id</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">layout</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span><span class="p">,</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">,</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="c1"># Retain and check the actual layout owners, including in-place edits.</span>
+        <span class="c1"># Inference tensors have no mutation counter and are not cached.</span>
+        <span class="n">versions</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="kc">None</span>
+            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">is_inference</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">layout</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+            <span class="k">else</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">_version</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">layout</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+        <span class="p">)</span>
+        <span class="n">cached</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_atom_index_cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">versions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">cached</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="n">a</span> <span class="ow">is</span> <span class="n">b</span> <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">layout</span><span class="p">,</span> <span class="n">cached</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+            <span class="ow">and</span> <span class="n">versions</span> <span class="o">==</span> <span class="n">cached</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="p">):</span>
+            <span class="k">return</span> <span class="n">cached</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+
+        <span class="n">block_types</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[:,</span> <span class="n">ligand_block</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">block_types</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"ligand block is absent from at least one pose"</span><span class="p">)</span>
+        <span class="n">first_type</span> <span class="o">=</span> <span class="n">block_types</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">block_types</span> <span class="o">==</span> <span class="n">first_type</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"GridBackend requires one homogeneous ligand type"</span><span class="p">)</span>
+        <span class="n">block_type</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span><span class="o">.</span><span class="n">active_block_types</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">first_type</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">sidechain_blocks</span> <span class="ow">and</span> <span class="n">block_type</span><span class="o">.</span><span class="n">n_atoms</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ligand_atom_types</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"pose ligand atom count does not match the grid backend"</span><span class="p">)</span>
+        <span class="n">offsets</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">[:,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="n">local_atoms</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span>
+            <span class="n">block_type</span><span class="o">.</span><span class="n">n_atoms</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span>
+        <span class="p">)</span>
+        <span class="n">atom_indices</span> <span class="o">=</span> <span class="n">offsets</span> <span class="o">+</span> <span class="n">local_atoms</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="k">if</span> <span class="n">versions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_atom_index_cache</span><span class="p">[</span><span class="n">cache_key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">layout</span><span class="p">,</span> <span class="n">versions</span><span class="p">,</span> <span class="n">atom_indices</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">atom_indices</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_movable_atom_indices</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return compact whole-movable coordinate indices for every pose."""</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">sidechain_blocks</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ligand_atom_indices</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">)</span>
+        <span class="n">expected_blocks</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sidechain_blocks</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">context_blocks</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ligand_block</span> <span class="o">!=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">max_n_blocks</span> <span class="o">!=</span> <span class="n">expected_blocks</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">"flexible GridBackend requires a compact ligand-plus-sidechains pose"</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">max_n_pose_atoms</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">movable_n_atoms</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">"movable pose atom count does not match the grid backend topology"</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">movable_n_atoms</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+        <span class="p">)[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score_ligand_coordinates</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">ligand_coordinates</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="n">scorer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scorer</span><span class="p">(</span><span class="n">ligand_coordinates</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">ligand_coordinates</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">scorer</span><span class="p">(</span><span class="n">ligand_coordinates</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score_ligand_coordinates_with_gradients</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">ligand_coordinates</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+        <span class="n">scorer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scorer</span><span class="p">(</span><span class="n">ligand_coordinates</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">ligand_coordinates</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">scorer</span><span class="o">.</span><span class="n">value_and_grad</span><span class="p">(</span><span class="n">ligand_coordinates</span><span class="p">)</span>
+
+<div class="viewcode-block" id="GridBackend.score">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.GridBackend.score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return one grid GA objective energy per pose.</span>
+
+<span class="sd">        This is the grid ligand-receptor terms (grid LJ/LK/elec + live hbond +</span>
+<span class="sd">        live LK-ball) plus, by default, the live ligand-intramolecular energy --</span>
+<span class="sd">        NOT a pure interface energy. Disable the intra contribution by building</span>
+<span class="sd">        the backend with ``include_ligand_intra=False``.</span>
+<span class="sd">        """</span>
+
+        <span class="n">atom_indices</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_movable_atom_indices</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">)</span>
+        <span class="n">pose_indices</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span>
+        <span class="p">)</span>
+        <span class="n">ligand_coordinates</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="n">pose_indices</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">atom_indices</span><span class="p">]</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="n">energies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_ligand_coordinates</span><span class="p">(</span><span class="n">ligand_coordinates</span><span class="p">)</span>
+        <span class="n">expected_shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">,)</span>
+        <span class="k">if</span> <span class="n">energies</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected_shape</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"grid scorer returned </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">energies</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">; "</span>
+                <span class="sa">f</span><span class="s2">"expected </span><span class="si">{</span><span class="n">expected_shape</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">energies</span></div>
+
+
+<div class="viewcode-block" id="GridBackend.minimize">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.GridBackend.minimize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">minimize</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+        <span class="n">docking_dofs</span><span class="p">:</span> <span class="n">LigandDockingDOFs</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">maxiter</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">initial_raw_dofs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MinimizationResult</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Minimize with direct analytic grid and kinematic derivatives.</span>
+
+<span class="sd">        The optimizer holds only freed docking DOFs and a bounded L-BFGS</span>
+<span class="sd">        history. Each closure uses the valid full-pose KinForest ordering,</span>
+<span class="sd">        short-lived compiled kinematic/grid-gradient buffers, and explicitly</span>
+<span class="sd">        assigned gradients. Ligand-intra kernels use a local autograd graph</span>
+<span class="sd">        internally and return detached values; no graph reaches the optimizer.</span>
+<span class="sd">        Selected receptor-sidechain DOFs receive grid, live-interface, and</span>
+<span class="sd">        whole-movable gradients; all other receptor DOFs remain fixed.</span>
+<span class="sd">        """</span>
+
+        <span class="k">if</span> <span class="n">docking_dofs</span><span class="o">.</span><span class="n">ligand_block</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"docking DOFs target a different ligand block"</span><span class="p">)</span>
+        <span class="n">kin_dtype</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">kin_dtype</span> <span class="ow">or</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">dtype</span>
+        <span class="n">objective</span> <span class="o">=</span> <span class="n">_LightweightGridObjective</span><span class="p">(</span>
+            <span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="p">,</span> <span class="n">kin_dtype</span><span class="p">,</span> <span class="n">initial_raw_dofs</span>
+        <span class="p">)</span>
+        <span class="n">minimizer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_minimizer_for</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="p">,</span> <span class="n">kin_dtype</span><span class="p">)</span>
+        <span class="n">x0</span> <span class="o">=</span> <span class="n">objective</span><span class="o">.</span><span class="n">initial_masked_dofs</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">max_iterations</span> <span class="o">=</span> <span class="mi">200</span> <span class="k">if</span> <span class="n">maxiter</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">maxiter</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">energies</span> <span class="o">=</span> <span class="n">minimizer</span><span class="o">.</span><span class="n">minimize</span><span class="p">(</span><span class="n">objective</span><span class="o">.</span><span class="n">full_dofs</span><span class="p">,</span> <span class="n">x0</span><span class="p">,</span> <span class="n">max_iterations</span><span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">objective</span><span class="o">.</span><span class="n">final_result</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">replace</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">energies</span><span class="o">=</span><span class="n">energies</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">dtype</span><span class="p">))</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_minimizer_for</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+        <span class="n">docking_dofs</span><span class="p">:</span> <span class="n">LigandDockingDOFs</span><span class="p">,</span>
+        <span class="n">kin_dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"_PopulationMinimizer"</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""The (cached) candidate-batched minimizer of this population layout."""</span>
+        <span class="c1"># Poses of one backend share a topology, so the candidate objective (and</span>
+        <span class="c1"># its captured graph) depends only on the layout, not on the coordinates.</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">docking_dofs</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">,</span>
+            <span class="n">docking_dofs</span><span class="o">.</span><span class="n">sidechain_blocks</span><span class="p">,</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">,</span>
+            <span class="n">kin_dtype</span><span class="p">,</span>
+            <span class="nb">id</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">layout</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">,</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">,</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">inter_residue_connections64</span><span class="p">,</span>
+            <span class="n">pose_stack</span><span class="o">.</span><span class="n">chain_id64</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">is_inference</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">layout</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">_PopulationMinimizer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="p">,</span> <span class="n">kin_dtype</span><span class="p">)</span>
+        <span class="c1"># Captured kinematics must follow this layout. Tensor keys retain their</span>
+        <span class="c1"># owners; mutation counters invalidate an edited layout without a sync.</span>
+        <span class="n">key</span> <span class="o">+=</span> <span class="nb">tuple</span><span class="p">((</span><span class="n">t</span><span class="p">,</span> <span class="n">t</span><span class="o">.</span><span class="n">_version</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">layout</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_minimizers</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_minimizers</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_minimizers</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">_PopulationMinimizer</span><span class="p">(</span>
+                <span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="p">,</span> <span class="n">kin_dtype</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_minimizers</span><span class="p">[</span><span class="n">key</span><span class="p">]</span></div>
+
+</pre></div>
+
+                </article>
+              
+  <div class="page-feedback d-print-none" data-source="inline">
+    
+  <p class="page-feedback-question">Was this page helpful?</p>
+  <div class="page-feedback-buttons">
+    <button type="button" class="page-feedback-button" data-helpful="yes" aria-label="Yes" title="Yes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+    </button>
+    <button type="button" class="page-feedback-button" data-helpful="no" aria-label="No" title="No">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+    </button>
+  </div>
+  <form class="page-feedback-comment" hidden>
+    <fieldset class="page-feedback-reasons">
+      <legend>Sorry about that. What went wrong? (optional)</legend>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="It's unclear or hard to follow"> It's unclear or hard to follow</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="It's outdated or incorrect"> It's outdated or incorrect</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="An example or command didn't work"> An example or command didn't work</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="I didn't find what I needed"> I didn't find what I needed</label>
+      
+    </fieldset>
+    <label for="page-feedback-comment-inline">Tell us more (optional)</label>
+    <textarea id="page-feedback-comment-inline" rows="3" maxlength="1000"></textarea>
+    <p class="page-feedback-privacy">Please don't include personal information such as your name or email.</p>
+    <div class="page-feedback-comment-actions">
+      <button type="submit" class="page-feedback-send">Send</button>
+      <button type="button" class="page-feedback-skip">Skip</button>
+    </div>
+  </form>
+  <p class="page-feedback-thanks" role="status" hidden>Thanks for your feedback!</p>
+
+  </div>
+  <dialog class="page-feedback-popup" data-source="popup" aria-label="Page feedback">
+    <div class="page-feedback-popup-body">
+      <button type="button" class="page-feedback-popup-close" aria-label="Close" title="Close">&times;</button>
+      
+  <p class="page-feedback-question">Was this page helpful?</p>
+  <div class="page-feedback-buttons">
+    <button type="button" class="page-feedback-button" data-helpful="yes" aria-label="Yes" title="Yes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+    </button>
+    <button type="button" class="page-feedback-button" data-helpful="no" aria-label="No" title="No">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+    </button>
+  </div>
+  <form class="page-feedback-comment" hidden>
+    <fieldset class="page-feedback-reasons">
+      <legend>Sorry about that. What went wrong? (optional)</legend>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="It's unclear or hard to follow"> It's unclear or hard to follow</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="It's outdated or incorrect"> It's outdated or incorrect</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="An example or command didn't work"> An example or command didn't work</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="I didn't find what I needed"> I didn't find what I needed</label>
+      
+    </fieldset>
+    <label for="page-feedback-comment-popup">Tell us more (optional)</label>
+    <textarea id="page-feedback-comment-popup" rows="3" maxlength="1000"></textarea>
+    <p class="page-feedback-privacy">Please don't include personal information such as your name or email.</p>
+    <div class="page-feedback-comment-actions">
+      <button type="submit" class="page-feedback-send">Send</button>
+      <button type="button" class="page-feedback-skip">Skip</button>
+    </div>
+  </form>
+  <p class="page-feedback-thanks" role="status" hidden>Thanks for your feedback!</p>
+
+    </div>
+  </dialog>
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../../_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8"></script>
+<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2018-2026, Institute for Protein Design.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.1.
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  <!-- # L10n: Setting the PST URL as an argument as this does not need to be localized -->
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.24.0.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  </body>
+</html>
