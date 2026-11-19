@@ -151,6 +151,8 @@ print(complex_scorer(complex_pose.coords).tolist())
 
 Continue with the {ref}`ligands notebook </tutorial/01_tmol_tutorial.ipynb#4.-ligands-and-ncaas>` or
 {ref}`metals and nucleic acids notebook </tutorial/01_tmol_tutorial.ipynb#3.-metals-and-nucleic-acids>` for those systems.
+To search for a ligand's placement rather than score a known one, see
+{doc}`Ligand docking <workflows/ligand_docking>`.
 
 ## Further workflows
 

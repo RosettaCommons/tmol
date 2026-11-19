@@ -10,6 +10,7 @@ data model and :doc:`api/score_terms` for score-type definitions.
    api/top_level
    api/chemical
    api/database
+   api/dock
    api/io
    api/kinematics
    api/ligand

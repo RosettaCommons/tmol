@@ -654,8 +654,8 @@ class GridBackend(ScoringBackend):
         """Build the receptor grid and live terms for one ligand of a complex.
 
         Args:
-            reference_pose_stack: One CPU pose holding the receptor and the
-                ligand (in any placement; the search starts from random poses).
+            reference_pose_stack: One pose holding the receptor and the ligand
+                (in any placement; the search starts from random poses).
             ligand: The ligand: residue name (``"ATP"``), block index, or a
                 boolean atom mask selecting exactly its atoms.
             param_db: Scoring database including the ligand's parameters.
