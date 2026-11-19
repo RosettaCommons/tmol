@@ -10,7 +10,7 @@ import torch
 from tmol.database import ParameterDatabase
 from tmol.pose._packed_block_types import PackedBlockTypes
 from tmol.pose._pose_stack import PoseStack
-from tmol.pose import repeat_pose_stack
+from tmol.pose import repeat_pose_stack, select_blocks
 from tmol.score import beta2016_score_function
 from tmol.score import ScoreFunction
 from tmol.score._score_types import ScoreType
@@ -170,7 +170,7 @@ class LiveLigandIntraData:
     context_block_indices: tuple[int, ...] = ()
     _context_indices: torch.Tensor = field(init=False, compare=False, repr=False)
     _rep_scale: torch.Tensor = field(init=False, compare=False, repr=False)
-    _scorer_cache: dict[int, tuple[PoseStack, object]] = field(
+    _scorer_cache: dict[object, object] = field(
         default_factory=dict, compare=False, repr=False
     )
     _weight_cache: dict[tuple, tuple] = field(
@@ -331,6 +331,146 @@ def _scorer_for(data: LiveLigandIntraData, n_poses: int):
     return cached[1]
 
 
+_SEARCH_DIAGONAL_WEIGHTS = {
+    ScoreType.fa_ljrep: 0.01,
+    ScoreType.gen_torsions: 0.1,
+    **{score_type: 0.1 for score_type in _CART_SCORE_TYPES},
+}
+
+
+class _WholeMovableScorer:
+    """The movable block-pair energy, evaluated as whole-pose scores.
+
+    Equal to :func:`_movable_block_pair_energy` while the context blocks and
+    the movable residues' backbones hold their reference coordinates, as they
+    do throughout docking, but without block-pair autograd: the whole-pose
+    scorer accumulates coordinate derivatives in its forward pass. The
+    energy splits as
+
+        masked whole-pose beta2016 (fa_ljrep scaled by the repulsive ramp)
+        + sum over softened terms of (diagonal - full weight) times the
+          energy of each movable block scored alone
+        - a constant: the frozen context's own energy, which the block-pair
+          form omits.
+
+    A block scored alone has exactly its block-pair diagonal for the
+    softened terms (pairwise and bonded terms within one block); the
+    backbone-dependent one-body terms that differ are not softened.
+    """
+
+    def __init__(self, data: LiveLigandIntraData, n_poses: int) -> None:
+        reference = data.ligand_pose_stack
+        device, dtype = reference.device, reference.coords.dtype
+        self._data = data
+        # A rendered scorer's weights alias its score function's, and the
+        # repulsive ramp rewrites them in place; data.score_function may be
+        # the memoized beta2016 every other scorer shares, so score with a
+        # private copy.
+        sfxn = ScoreFunction(data.param_db, device)
+        for score_type in data.score_function.all_score_types():
+            sfxn.set_weight(
+                score_type, float(data.score_function.get_weight(score_type))
+            )
+        pose_stack = repeat_pose_stack(reference, n_poses)
+        self._whole = sfxn.render_whole_pose_scoring_module(
+            pose_stack, movable_blocks=_movable_block_mask(data, pose_stack)
+        )
+        order = tuple(sfxn.all_score_types())
+        self._base_weights = (
+            sfxn.weights_tensor().to(device=device, dtype=dtype).clone()
+        )
+        self._rep_index = (
+            order.index(ScoreType.fa_ljrep) if ScoreType.fa_ljrep in order else None
+        )
+
+        # Only the search profile softens the diagonal; otherwise there is no
+        # correction to add.
+        self._singles = []
+        if data.weight_profile == "search":
+            softened = {
+                score_type: weight
+                for score_type, weight in _SEARCH_DIAGONAL_WEIGHTS.items()
+                if score_type in order
+            }
+            correction = ScoreFunction(data.param_db, device)
+            for score_type in softened:
+                correction.set_weight(score_type, 1.0)
+            correction_order = tuple(correction.all_score_types())
+            self._correction_base = torch.tensor(
+                [
+                    (
+                        softened[score_type] - float(sfxn.get_weight(score_type))
+                        if score_type in softened
+                        else 0.0
+                    )
+                    for score_type in correction_order
+                ],
+                dtype=dtype,
+                device=device,
+            )
+            self._correction_rep_index = (
+                correction_order.index(ScoreType.fa_ljrep)
+                if ScoreType.fa_ljrep in softened
+                else None
+            )
+            context = set(data.context_block_indices)
+            for block in range(reference.max_n_blocks):
+                if block in context:
+                    continue
+                single = repeat_pose_stack(select_blocks(reference, [block]), n_poses)
+                begin = int(reference.block_coord_offset64[0, block])
+                n_atoms = reference.block_type(0, block).n_atoms
+                self._singles.append(
+                    (
+                        correction.render_whole_pose_scoring_module(single),
+                        slice(begin, begin + n_atoms),
+                    )
+                )
+
+        self._constant = torch.zeros((), dtype=dtype, device=device)
+        coords = reference.coords.expand(n_poses, -1, -1).contiguous()
+        with torch.no_grad():
+            expected = _movable_block_pair_energy(data, reference.coords)[0]
+            self._constant = (self(coords)[0] - expected).detach()
+
+    def _set_weights(self) -> None:
+        # Tensor ops and in-place copies only, so a captured CUDA graph keeps
+        # following the repulsive ramp.
+        scale = self._data._rep_scale.to(self._base_weights.dtype)
+        weights = self._base_weights.clone()
+        if self._rep_index is not None:
+            weights[self._rep_index] = weights[self._rep_index] * scale
+        with torch.no_grad():
+            self._whole.weights.copy_(weights.unsqueeze(1))
+        if not self._singles:
+            return
+        correction = self._correction_base.clone()
+        if self._correction_rep_index is not None and self._rep_index is not None:
+            full_rep = self._base_weights[self._rep_index] * scale
+            correction[self._correction_rep_index] = (
+                _SEARCH_DIAGONAL_WEIGHTS[ScoreType.fa_ljrep] - full_rep
+            )
+        for scorer, _ in self._singles:
+            with torch.no_grad():
+                scorer.weights.copy_(correction.unsqueeze(1))
+
+    def __call__(self, coords: torch.Tensor) -> torch.Tensor:
+        self._set_weights()
+        energies = self._whole(coords)
+        for scorer, atoms in self._singles:
+            energies = energies + scorer(coords[:, atoms].contiguous())
+        return energies - self._constant
+
+
+def _whole_movable_scorer_for(data: LiveLigandIntraData, n_poses: int):
+    key = ("whole", n_poses)
+    scorer = data._scorer_cache.get(key)
+    if scorer is None:
+        scorer = _WholeMovableScorer(data, n_poses)
+        data._scorer_cache[key] = scorer
+    return scorer
+
+
 def _pair_weight_vectors(
     data: LiveLigandIntraData, device: torch.device, dtype: torch.dtype
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -412,11 +552,11 @@ def score_ligand_intra(
     """Return weighted ligand-intramolecular energy for every ligand pose."""
 
     _validate_ligand_coords(data, ligand_coords)
-    scorer = _scorer_for(data, ligand_coords.shape[0])
     if data.ligand_pose_stack.max_n_blocks > 1:
-        energies = _movable_block_pair_energy(data, ligand_coords)
+        scorer = _whole_movable_scorer_for(data, ligand_coords.shape[0])
     else:
-        energies = scorer(ligand_coords.contiguous())
+        scorer = _scorer_for(data, ligand_coords.shape[0])
+    energies = scorer(ligand_coords.contiguous())
     expected_shape = (ligand_coords.shape[0],)
     if energies.shape != expected_shape:
         raise RuntimeError(

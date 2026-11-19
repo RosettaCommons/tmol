@@ -604,7 +604,7 @@ def finalize_ga_docking(
     if top_pose_metric not in ("dG", "score"):
         raise ValueError('top_pose_metric must be "dG" or "score"')
     npool = ga_result.ranked_energies.shape[1]
-    if top_k > npool:
+    if top_k is not None and top_k > npool:
         raise ValueError(f"top_k ({top_k}) cannot exceed GA pool size ({npool})")
     if not hasattr(backend, "param_db"):
         raise TypeError("finalization requires a backend with a parameter database")
@@ -616,7 +616,8 @@ def finalize_ga_docking(
             else RIGID_REFINE
         )
     if top_k is None:
-        top_k = refine.top_k
+        # The protocol's count is a default, not a demand on the pool size.
+        top_k = min(refine.top_k, npool)
 
     (
         sidechain_blocks,

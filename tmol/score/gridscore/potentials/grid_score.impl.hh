@@ -8,8 +8,15 @@
 #include <tmol/score/common/accumulate.hh>
 #include <tmol/score/common/gen_coord.hh>
 #include <tmol/score/common/launch_box_macros.hh>
+#include <tmol/score/common/tview_binder.hh>
 #include <tmol/score/gridscore/potentials/grid_interp_point.hh>
 #include <tmol/score/gridscore/potentials/grid_score.hh>
+#include <tmol/score/gridscore/potentials/grid_score_ctx.hh>
+#include <tmol/score/gridscore/potentials/grid_score_kernels.hh>
+#include <tmol/backends/metal/score/common/mps_launch.hh>
+#ifdef WITH_MPS
+#include <tmol/backends/metal/score/gridscore/potentials/grid_score_mps_kernels_source.h>
+#endif
 #include <tmol/score/lk_ball/potentials/water.hh>
 
 namespace tmol {
@@ -118,58 +125,48 @@ auto GridScoreDispatch<DeviceOps, D, Real, Int>::atoms(
   int const n_grid_atoms = grid_atoms.size(0);
   int const n_types = atr.size(0);
   bool const with_lk_ball = lk_ball.size(0) > 0;
-  int const dims[3] = {int(atr.size(1)), int(atr.size(2)), int(atr.size(3))};
   auto energy_t = TPack<Real, 2, D>::zeros({n_poses, n_grid_atoms});
   auto gradient_t = TPack<GridVec<Real, 3>, 2, D>::zeros({n_poses, n_atoms});
   auto energy = energy_t.view;
   auto gradient = gradient_t.view;
 
-  LAUNCH_BOX_32;
-  DeviceOps<D>::template forall_grouped<launch_t>(
-      mgr, n_poses, n_grid_atoms, [=] TMOL_DEVICE_FUNC(int work) {
-        int const pose = work / n_grid_atoms;
-        int const g = work % n_grid_atoms;
-        Real const scale = Real(1) / voxel_spacing;
-        Int const atom = grid_atoms[g];
-        Int const type = atom_types[g];
-        Real position[3];
-        for (int axis = 0; axis < 3; ++axis) {
-          position[axis] =
-              (coords[pose][atom][axis] - origin[axis]) / voxel_spacing;
-        }
-        auto const stencil =
-            make_grid_stencil<Real>(position, dims, out_of_bounds_penalty);
-        if (!stencil.valid || type < 0 || type >= n_types) {
-          energy[pose][g] = std::numeric_limits<Real>::quiet_NaN();
-          for (int axis = 0; axis < 3; ++axis) {
-            gradient[pose][atom][axis] = std::numeric_limits<Real>::quiet_NaN();
-          }
-          return;
-        }
-        Real v_atr, v_rep, v_sol, v_elec, v_lk = 0;
-        Real d_atr[3], d_rep[3], d_sol[3], d_elec[3], d_lk[3] = {0, 0, 0};
-        contract_grid<D, Real>(atr, type, stencil, v_atr, d_atr);
-        contract_grid<D, Real>(rep, type, stencil, v_rep, d_rep);
-        contract_grid<D, Real>(sol, type, stencil, v_sol, d_sol);
-        contract_grid<D, Real>(elec, 0, stencil, v_elec, d_elec);
-        if (with_lk_ball) {
-          contract_grid<D, Real>(lk_ball, type, stencil, v_lk, d_lk);
-        }
-        Real const charge = charges[g];
-        // fa_rep is stored transformed (rep^-4 - 1): chain rule through it.
-        Real const rep_slope = Real(-4) * std::pow(v_rep, Real(-5));
-        energy[pose][g] = weights[0] * v_atr
-                          + weights[1] * (std::pow(v_rep, Real(-4)) - Real(1))
-                          + weights[2] * v_sol + weights[3] * charge * v_elec
-                          + v_lk + stencil.penalty;
-        for (int axis = 0; axis < 3; ++axis) {
-          gradient[pose][atom][axis] =
-              scale
-              * (weights[0] * d_atr[axis] + weights[1] * rep_slope * d_rep[axis]
-                 + weights[2] * d_sol[axis] + weights[3] * charge * d_elec[axis]
-                 + d_lk[axis] + stencil.penalty_gradient[axis]);
-        }
-      });
+  GridScoreAtomsCtxT<common::TViewBinder<D>::template View, Real, Int> ctx;
+  ctx.coords = coords;
+  ctx.grid_atoms = grid_atoms;
+  ctx.atom_types = atom_types;
+  ctx.charges = charges;
+  ctx.atr = atr;
+  ctx.rep = rep;
+  ctx.sol = sol;
+  ctx.elec = elec;
+  ctx.lk_ball = lk_ball;
+  ctx.origin = origin;
+  ctx.weights = weights;
+  ctx.energy = energy;
+  ctx.gradient = gradient;
+  ctx.n_items = n_poses * n_grid_atoms;
+  ctx.n_grid_atoms = n_grid_atoms;
+  ctx.n_types = n_types;
+  ctx.with_lk_ball = with_lk_ball;
+  ctx.voxel_spacing = voxel_spacing;
+  ctx.out_of_bounds_penalty = out_of_bounds_penalty;
+
+  if (D == tmol::Device::MPS) {
+    // Metal cannot launch a device lambda; the same body is reached through
+    // a named entry, one thread per (pose, grid atom).
+    common::mps_launch_if<D>(
+        TMOL_MPS_SOURCE(kGridScoreMetalShaderSource),
+        "grid_score_atoms_f32",
+        ctx,
+        int64_t(n_poses) * n_grid_atoms,
+        false);
+  } else {
+    LAUNCH_BOX_32;
+    DeviceOps<D>::template forall_grouped<launch_t>(
+        mgr, n_poses, n_grid_atoms, [=] TMOL_DEVICE_FUNC(int work) {
+          grid_score_atom_body<D, Real, Int>(ctx, work);
+        });
+  }
   return {energy_t, gradient_t};
 }
 

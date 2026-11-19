@@ -1,12 +1,14 @@
 #pragma once
 
-#include <cmath>
-#include <limits>
+// Freestanding, so a Metal translation unit can include it: portable math
+// only, and coefficient grids reached through whatever view type the caller
+// holds (TView on the host and CUDA, MetalView in a shader).
 
+#include <tmol/utility/portable/device.hh>
+#include <tmol/utility/portable/math.hh>
 #include <tmol/utility/portable/matrix.hh>
 
 #include <tmol/score/common/diamond_macros.hh>
-#include <tmol/utility/tensor/TensorAccessor.h>
 
 namespace tmol {
 namespace score {
@@ -63,8 +65,9 @@ TMOL_HOST_DEVICE_FUNC GridStencil<Real> make_grid_stencil(
   Real const max_index = Real(1 << 30);
   stencil.valid = true;
   for (int axis = 0; axis < 3; ++axis) {
-    stencil.valid = stencil.valid && std::isfinite(position[axis])
-                    && std::abs(position[axis]) <= max_index;
+    stencil.valid = stencil.valid
+                    && tmol::portable::math::isfinite(position[axis])
+                    && tmol::portable::math::abs(position[axis]) <= max_index;
   }
   stencil.penalty = 0;
   if (!stencil.valid) return stencil;
@@ -83,7 +86,7 @@ TMOL_HOST_DEVICE_FUNC GridStencil<Real> make_grid_stencil(
     }
     stencil.penalty += out_of_bounds_penalty * offset * offset;
     stencil.penalty_gradient[axis] = Real(2) * out_of_bounds_penalty * offset;
-    Real const first = std::floor(index[axis] - Real(1));
+    Real const first = tmol::portable::math::floor(index[axis] - Real(1));
     cubic_bspline_weights_and_derivatives(
         index[axis] - first - Real(1),
         stencil.weight[axis],
@@ -97,13 +100,13 @@ TMOL_HOST_DEVICE_FUNC GridStencil<Real> make_grid_stencil(
 }
 
 // Value and index-space gradient of one coefficient grid at a stencil.
-template <tmol::Device D, typename Real>
+template <tmol::Device D, typename Real, typename Coefficients>
 TMOL_HOST_DEVICE_FUNC void contract_grid(
-    TView<Real, 4, D> const& coefficients,
+    TMOL_THREAD Coefficients const& coefficients,
     int grid,
-    GridStencil<Real> const& s,
-    Real& value,
-    Real gradient[3]) {
+    TMOL_THREAD GridStencil<Real> const& s,
+    TMOL_THREAD Real& value,
+    TMOL_THREAD Real* gradient) {
   value = 0;
   gradient[0] = gradient[1] = gradient[2] = 0;
   for (int i = 0; i < 4; ++i) {

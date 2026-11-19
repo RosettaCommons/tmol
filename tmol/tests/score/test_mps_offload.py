@@ -73,6 +73,36 @@ def test_whole_pose_scores_gradients_and_lanes_match_host(
     torch.testing.assert_close(l_off, l_host, rtol=1e-5, atol=1e-3)
 
 
+def test_masked_whole_pose_offloads_and_matches_host(
+    offload, default_database, ubq_stack
+):
+    # A movable-block mask must reach both halves of the split rather than
+    # being dropped, and the restored frozen energy must match the host's.
+    mask = torch.zeros(ubq_stack.block_type_ind.shape, dtype=torch.bool)
+    mask[0, 10:20] = True
+    mask[1, 40:45] = True
+    mask[2, :] = True
+    sfxn = beta2016_score_function(CPU, default_database)
+    host, offloaded = _host_and_offloaded(
+        lambda: sfxn.render_whole_pose_scoring_module(ubq_stack, movable_blocks=mask)
+    )
+    assert isinstance(offloaded, OffloadedWholePoseScoringModule)
+    assert offloaded.gpu.movable_blocks is not None
+    assert offloaded.host.movable_blocks is not None
+
+    results = []
+    for scorer in (host, offloaded):
+        coords = ubq_stack.coords.clone().requires_grad_(True)
+        energy = scorer(coords)
+        energy.sum().backward()
+        results.append((energy.detach(), coords.grad))
+    (e_host, g_host), (e_off, g_off) = results
+    torch.testing.assert_close(e_off, e_host, rtol=1e-5, atol=1e-3)
+    torch.testing.assert_close(g_off, g_host, rtol=1e-4, atol=1e-2)
+    unmasked = sfxn.render_whole_pose_scoring_module(ubq_stack)
+    torch.testing.assert_close(e_off, unmasked(ubq_stack.coords), rtol=1e-5, atol=1e-3)
+
+
 def test_in_place_weight_refresh_reaches_both_devices(
     offload, default_database, ubq_stack
 ):

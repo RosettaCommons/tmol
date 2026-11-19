@@ -711,6 +711,11 @@ class ScoreFunction:
             if cuda_graph
             else self._mps_offload_plan(pose_stack, _MPS_WHOLE_POSE_SCORE_TYPES)
         )
+        mask = (
+            None
+            if movable_blocks is None
+            else _normalized_movable_blocks(pose_stack, movable_blocks)
+        )
         term_modules = []
         for term in plan.host_terms if plan else self.all_terms():
             module = term.render_whole_pose_scoring_module(pose_stack)
@@ -720,15 +725,19 @@ class ScoreFunction:
             module.n_score_types = len(term.score_types())
             term_modules.append(module)
         if plan is not None:
+            # Each half masks its own terms, so frozen pairs are skipped on
+            # both sides of the split.
             weights = self.weights_tensor()
-            _declare_movable_blocks(term_modules, pose_stack, None)
             host = (
-                WholePoseScoringModule(weights[plan.host_lanes], term_modules)
+                _whole_pose_module(
+                    weights[plan.host_lanes], term_modules, pose_stack, mask
+                )
                 if term_modules
                 else None
             )
             gpu = self._mps_twin(plan).render_whole_pose_scoring_module(
-                to_mps(pose_stack)
+                to_mps(pose_stack),
+                movable_blocks=None if mask is None else to_mps(mask),
             )
 
             def render_host_twin():
@@ -738,34 +747,16 @@ class ScoreFunction:
                     module = term.render_whole_pose_scoring_module(pose_stack)
                     module.n_score_types = len(term.score_types())
                     modules.append(module)
-                _declare_movable_blocks(modules, pose_stack, None)
-                return WholePoseScoringModule(weights[plan.gpu_lanes], modules)
+                return _whole_pose_module(
+                    weights[plan.gpu_lanes], modules, pose_stack, mask
+                )
 
             return OffloadedWholePoseScoringModule(
                 plan, weights, host, gpu, render_host_twin
             )
-        if movable_blocks is not None:
-            mask = _normalized_movable_blocks(pose_stack, movable_blocks)
-            # Measure the whole-pose score before anything is masked; the
-            # difference afterwards is the frozen energy to restore. The term
-            # modules are shared, so the order matters.
-            _declare_movable_blocks(term_modules, pose_stack, None)
-            unmasked = WholePoseScoringModule(self.weights_tensor(), term_modules)
-            with torch.no_grad():
-                coords = pose_stack.coords.detach()
-                reference = unmasked(coords)
-            _declare_movable_blocks(term_modules, pose_stack, mask)
-            masked = WholePoseScoringModule(
-                self.weights_tensor(), term_modules, movable_blocks=mask
-            )
-            with torch.no_grad():
-                offset = reference - masked(coords)
-            if cuda_graph:
-                mode = "both" if cuda_graph is True else cuda_graph
-                masked.enable_cuda_graphs(pose_stack.coords, mode=mode)
-            return FrozenContextScoringModule(masked, offset)
-        _declare_movable_blocks(term_modules, pose_stack, None)
-        scoring_module = WholePoseScoringModule(self.weights_tensor(), term_modules)
+        scoring_module = _whole_pose_module(
+            self.weights_tensor(), term_modules, pose_stack, mask
+        )
         if cuda_graph:
             mode = "both" if cuda_graph is True else cuda_graph
             scoring_module.enable_cuda_graphs(pose_stack.coords, mode=mode)
@@ -1320,6 +1311,29 @@ def _declare_movable_blocks(term_modules, pose_stack, mask) -> None:
             module.term_parameters[slot] = parameter
         # Rebuilding must preserve the module's own block-pair output flag.
         module._build_static_tails(bool(module._static_tail_f32[-1]))
+
+
+def _whole_pose_module(weights, term_modules, pose_stack, mask):
+    """A whole-pose scorer over ``term_modules``, masked when ``mask`` is given.
+
+    A masked scorer skips pairs of two frozen blocks and is wrapped to restore
+    their constant energy, so it reports the same scores as an unmasked one.
+    """
+    _declare_movable_blocks(term_modules, pose_stack, None)
+    if mask is None:
+        return WholePoseScoringModule(weights, term_modules)
+    # Measure the whole-pose score before anything is masked; the difference
+    # afterwards is the frozen energy to restore. The term modules are shared,
+    # so the order matters.
+    unmasked = WholePoseScoringModule(weights, term_modules)
+    with torch.no_grad():
+        coords = pose_stack.coords.detach()
+        reference = unmasked(coords)
+    _declare_movable_blocks(term_modules, pose_stack, mask)
+    masked = WholePoseScoringModule(weights, term_modules, movable_blocks=mask)
+    with torch.no_grad():
+        offset = reference - masked(coords)
+    return FrozenContextScoringModule(masked, offset)
 
 
 def _normalized_movable_blocks(

@@ -572,7 +572,7 @@ std::tuple<Tensor, Tensor> grid_score_atoms(
     Tensor weights,
     double out_of_bounds_penalty) {
   Tensor energy, gradient;
-  TMOL_DISPATCH_FLOATING_DEVICE(
+  TMOL_DISPATCH_FLOATING_DEVICE_MPS(
       coords.options(), "grid_score_atoms", ([&] {
         using Real = scalar_t;
         constexpr tmol::Device Dev = device_t;

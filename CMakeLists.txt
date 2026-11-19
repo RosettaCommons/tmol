@@ -489,6 +489,7 @@ if(TMOL_ENABLE_MPS)
     "tmol/backends/metal/score/common/pose_total_reduce_mps_kernels|kPoseTotalReduceMetalShaderSource"
     "tmol/backends/metal/pack/compiled/annealer_mps_kernels|kAnnealerMetalShaderSource"
     "tmol/backends/metal/score/common/sphere_overlap_mps_kernels|kSphereOverlapMetalShaderSource"
+    "tmol/backends/metal/score/gridscore/potentials/grid_score_mps_kernels|kGridScoreMetalShaderSource"
   )
   foreach(_entry IN LISTS _TMOL_SHADERS)
     string(REPLACE "|" ";" _entry "${_entry}")
@@ -512,6 +513,7 @@ if(TMOL_ENABLE_MPS)
     tmol/backends/metal/score/lk_ball/potentials/gen_pose_waters.mps.cpp
     tmol/backends/metal/score/hbond/potentials/hbond_pose_score.mps.cpp
     tmol/backends/metal/score/hbond/potentials/gen_hbond_bases.mps.cpp
+    tmol/backends/metal/score/gridscore/potentials/grid_score.mps.cpp
   )
 endif()
 

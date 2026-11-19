@@ -8,6 +8,7 @@ import torch
 
 from tmol.score import beta2016_score_function
 from tmol.score.gridscore.live_ligand_intra import (
+    _movable_block_pair_energy,
     build_live_ligand_intra_data,
     score_ligand_intra,
     score_ligand_intra_with_gradients,
@@ -154,3 +155,58 @@ def test_full_live_ligand_intra_matches_exact_oracle_native_and_perturbed(target
         rtol=0.0,
         atol=1.0e-4,
     )
+
+
+def test_flexible_intra_whole_pose_matches_block_pair_definition():
+    """The whole-pose evaluation equals the block-pair one at every ramp step.
+
+    The block-pair energy weights intra-block (diagonal) pairs with the search
+    profile's softened weights; the whole-pose path reaches the same energy by
+    correcting each movable block alone. Only the ligand and the sidechain chi
+    atoms move, as in docking. Scoring must also leave the shared beta2016
+    weights untouched.
+    """
+    reference, param_db = _load_target_pose("cdk2")
+    ligand_block = _ligand_block(reference)
+    data = build_live_ligand_intra_data(
+        reference,
+        ligand_block,
+        param_db,
+        weight_profile="search",
+        sidechain_blocks=_flexible_sidechains(reference, ligand_block),
+    ).to("cpu", torch.float64)
+    pose = data.ligand_pose_stack
+    context = set(data.context_block_indices)
+    assert context
+    shared = beta2016_score_function(pose.device, param_db=param_db)
+    shared_before = shared.weights_tensor().clone()
+
+    # Move the ligand and every sidechain atom past CB; hold backbones and
+    # context fixed.
+    moving = torch.zeros(pose.max_n_pose_atoms, dtype=torch.bool)
+    for block in range(pose.max_n_blocks):
+        if block in context:
+            continue
+        block_type = pose.block_type(0, block)
+        start = int(pose.block_coord_offset64[0, block])
+        for atom, name in enumerate(a.name for a in block_type.atoms):
+            if block == 0 or name not in ("N", "CA", "C", "O", "H", "HA", "CB"):
+                moving[start + atom] = True
+    generator = torch.Generator().manual_seed(3)
+    coords = pose.coords.repeat(3, 1, 1)
+    coords = coords + 0.1 * torch.randn(
+        coords.shape, generator=generator, dtype=coords.dtype
+    ) * moving[None, :, None].to(coords.dtype)
+
+    for scale in (1.0, 0.1, 0.02):
+        data.set_rep_scale(scale)
+        with torch.enable_grad():
+            leaf = coords.detach().requires_grad_(True)
+            expected = _movable_block_pair_energy(data, leaf)
+            (expected_grad,) = torch.autograd.grad(expected.sum(), leaf)
+        energies, grad = score_ligand_intra_with_gradients(data, coords)
+        torch.testing.assert_close(energies, expected.detach(), atol=1e-6, rtol=1e-8)
+        torch.testing.assert_close(
+            grad[:, moving], expected_grad[:, moving], atol=1e-5, rtol=1e-6
+        )
+    torch.testing.assert_close(shared.weights_tensor(), shared_before)

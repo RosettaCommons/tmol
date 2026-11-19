@@ -11,7 +11,7 @@ import torch
 import tmol.dock.finalization as finalization_module
 from tmol.database import ParameterDatabase
 from tmol.dock import GASchedule, GridBackend, run_docking, select_pocket_residues
-from tmol.dock.finalization import count_non_proton_ligand_chis
+from tmol.dock.finalization import RefineProtocol, count_non_proton_ligand_chis
 from tmol.dock.ga import GAPool, GAResult, LigandGeneLayout
 from tmol.dock.ligand_dofs import build_ligand_docking_dofs
 from tmol.pack._packer_task import PackerPalette, PackerTask
@@ -626,3 +626,31 @@ def test_refine_repack_offers_rotamers(cdk2_pose_and_db):
     assert int(packable[0].sum()) == len(blocks)
 
     assert refine_task_operations(pose_stack, sfxn, None, True) == []
+
+
+def test_finalize_without_top_k_uses_protocol_count_capped_by_pool():
+    """``finalize`` with no ``top_k`` takes the protocol's count, at most the pool."""
+    reference, param_db = _load_cdk2_pose()
+    ligand_block = _ligand_block(reference)
+    backend = GridBackend.from_pose_stack(
+        reference, ligand_block, param_db, kin_dtype=torch.float64
+    )
+    cheap = RefineProtocol(
+        steps=({"fa_rep_pack_frac": 1.0, "fa_rep_min_frac": 1.0},),
+        max_iter=1,
+        space="torsion",
+        sidechains=(),
+    )
+    assert cheap.top_k > 2
+    result = run_docking(
+        reference,
+        backend,
+        schedule=GASchedule(
+            generations=0, npool=2, rmsdthreshold=0.0, pmut=0.0, maxiter=1
+        ),
+        seed=7,
+        initialization="jitter",
+        finalize=cheap,
+    )
+    assert result.finalization.pose_stack.n_poses == 2
+    assert torch.isfinite(result.finalization.dG).all()

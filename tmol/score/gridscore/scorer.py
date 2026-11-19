@@ -196,6 +196,37 @@ class GridScorer:
                 polar_grid_index = self._grid_index[position[polar]]
             self._polar_grid_index = polar_grid_index
 
+        self._mps = self._mps_grid_tensors()
+
+    def _mps_grid_tensors(self) -> dict | None:
+        """Metal copies of the per-atom grid kernel's inputs, or None.
+
+        A CPU scorer runs its per-atom grid kernel on the Apple GPU when the
+        Metal offload is enabled (see tmol.score._mps_offload); everything
+        else, and every result handed back, stays on the host. Metal has no
+        float64, so only float32 scorers offload.
+        """
+        from tmol.score._mps_offload import mps_offload_enabled
+
+        if self.device.type != "cpu" or self._charges.dtype != torch.float32:
+            return None
+        if not mps_offload_enabled():
+            return None
+        mps = torch.device("mps")
+        grids = self.grids
+        return {
+            "grid_atom_index": self._grid_atom_index.to(mps),
+            "grid_index": self._grid_index.to(mps),
+            "charges": self._charges.to(mps),
+            "atr": grids.fa_atr_coeffs.to(mps),
+            "rep": grids.fa_rep_coeffs.to(mps),
+            "sol": grids.fa_sol_coeffs.to(mps),
+            "elec": grids.fa_elec_coeffs[None].to(mps),
+            "lk": self._lk_heavy_coeffs.to(mps),
+            "origin": grids.geometry.origin.to(mps),
+            "weights": self._weights.to(mps),
+        }
+
     @property
     def device(self) -> torch.device:
         return self._grid_index.device
@@ -208,6 +239,8 @@ class GridScorer:
         """
         self._weights.copy_(self._base_weights)
         self._weights[GRID_SCORE_TYPES.index(ScoreType.fa_ljrep)] *= scale
+        if self._mps is not None:
+            self._mps["weights"].copy_(self._weights)
         if self.live_ligand_intra is not None:
             self.live_ligand_intra.set_rep_scale(scale)
 
@@ -274,21 +307,47 @@ class GridScorer:
         with torch.no_grad():
             coords = coords.detach().contiguous()
             grids = self.grids
-            atom_energies, grad = grid_score_atoms(
-                coords,
-                self._grid_atom_index,
-                self._grid_index,
-                self._charges,
-                grids.fa_atr_coeffs,
-                grids.fa_rep_coeffs,
-                grids.fa_sol_coeffs,
-                grids.fa_elec_coeffs[None],
-                self._lk_heavy_coeffs,
-                grids.geometry.origin,
-                grids.geometry.voxel_spacing,
-                self._weights,
-                OUT_OF_BOUNDS_PENALTY,
-            )
+            if self._mps is not None:
+                # Start the grid kernel on the GPU, score the live terms on the
+                # host while it runs, then collect it.
+                from tmol.score._mps_offload import _commit_mps
+
+                m = self._mps
+                pending = grid_score_atoms(
+                    coords.to(m["atr"].device),
+                    m["grid_atom_index"],
+                    m["grid_index"],
+                    m["charges"],
+                    m["atr"],
+                    m["rep"],
+                    m["sol"],
+                    m["elec"],
+                    m["lk"],
+                    m["origin"],
+                    grids.geometry.voxel_spacing,
+                    m["weights"],
+                    OUT_OF_BOUNDS_PENALTY,
+                )
+                _commit_mps()
+                live = self._live_terms(coords)
+                atom_energies, grad = (t.cpu() for t in pending)
+            else:
+                atom_energies, grad = grid_score_atoms(
+                    coords,
+                    self._grid_atom_index,
+                    self._grid_index,
+                    self._charges,
+                    grids.fa_atr_coeffs,
+                    grids.fa_rep_coeffs,
+                    grids.fa_sol_coeffs,
+                    grids.fa_elec_coeffs[None],
+                    self._lk_heavy_coeffs,
+                    grids.geometry.origin,
+                    grids.geometry.voxel_spacing,
+                    self._weights,
+                    OUT_OF_BOUNDS_PENALTY,
+                )
+                live = None
             energies = atom_energies.sum(dim=1)
             if (
                 self._lk_heavy_coeffs.shape[0]
@@ -314,19 +373,32 @@ class GridScorer:
                     grad,
                 )
 
-            if self.live_hbond is not None:
-                e, g = score_ligand_hbond_with_gradients(self.live_hbond, coords)
-                energies = energies + self._hbond_weight * e
-                grad = grad + self._hbond_weight * g
-            if not self.lk_ball_grid and self.live_lk_ball is not None:
-                e, g = score_ligand_lk_ball_with_gradients(self.live_lk_ball, coords)
-                weights = self._lk_ball_weights
-                energies = energies + (e * weights).sum(dim=1)
-                grad = grad + (g * weights[None, :, None, None]).sum(dim=1)
-            if self.live_ligand_intra is not None:
-                e, g = score_ligand_intra_with_gradients(self.live_ligand_intra, coords)
+            if live is None:
+                live = self._live_terms(coords)
+            for e, g in live:
                 energies, grad = energies + e, grad + g
         return energies, grad
+
+    def _live_terms(self, coords: torch.Tensor) -> list:
+        """Weighted (energy, gradient) of each live term, in a fixed order."""
+        terms = []
+        if self.live_hbond is not None:
+            e, g = score_ligand_hbond_with_gradients(self.live_hbond, coords)
+            terms.append((self._hbond_weight * e, self._hbond_weight * g))
+        if not self.lk_ball_grid and self.live_lk_ball is not None:
+            e, g = score_ligand_lk_ball_with_gradients(self.live_lk_ball, coords)
+            weights = self._lk_ball_weights
+            terms.append(
+                (
+                    (e * weights).sum(dim=1),
+                    (g * weights[None, :, None, None]).sum(dim=1),
+                )
+            )
+        if self.live_ligand_intra is not None:
+            terms.append(
+                score_ligand_intra_with_gradients(self.live_ligand_intra, coords)
+            )
+        return terms
 
     def __call__(self, coords: torch.Tensor) -> torch.Tensor:
         """Per-pose energy, differentiable with respect to ``coords``."""
