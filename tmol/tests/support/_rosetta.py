@@ -8,11 +8,12 @@ import pytest
 def pyrosetta():
     "Import and initialize pyrosetta."
     try:
-        from tmol.support.rosetta import pyrosetta
-
-        return pyrosetta
+        import pyrosetta
+        import tmol.support.rosetta._init  # noqa: F401  initializes with -beta
     except ImportError:
         return None
+
+    return pyrosetta
 
 
 @pytest.fixture(scope="session")
