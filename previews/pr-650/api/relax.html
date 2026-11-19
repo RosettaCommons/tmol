@@ -32,6 +32,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../_static/togglebutton.css?v=9c3e77be" />
     <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=adb9cd23" />
+    <link rel="stylesheet" type="text/css" href="../_static/page_feedback.css?v=d37b03bb" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../_static/scripts/fontawesome.js?digest=75c7c72ae941e8b558d8"></script>
@@ -51,6 +52,7 @@
     <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
     <script src="../_static/tmol-explorers.js?v=089c5f52"></script>
     <script async="async" defer="defer" src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+    <script src="../_static/page_feedback.js?v=8b09ebf1"></script>
     <link rel="canonical" href="https://rosettacommons.github.io/tmol/latest/api/relax.html" />
     <link rel="icon" href="../_static/favicon.ico"/>
     <link rel="index" title="Index" href="../genindex.html" />
@@ -458,6 +460,7 @@
 </div>
               
               
+  
               
                 
 <div id="searchbox"></div>
@@ -479,11 +482,132 @@ protocol for custom minimizers.</p>
 <p>Callable contract for a FastRelax minimization stage.</p>
 </dd></dl>
 
+<dl class="py function">
+<dt class="sig sig-object py" id="tmol.relax.fast_relax">
+<span class="sig-prename descclassname"><span class="pre">tmol.relax.</span></span><span class="sig-name descname"><span class="pre">fast_relax</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pose_stack</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="top_level.html#tmol.PoseStack" title="tmol.pose._pose_stack.PoseStack"><span class="pre">PoseStack</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">sfxn</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="top_level.html#tmol.ScoreFunction" title="tmol.score._score_function.ScoreFunction"><span class="pre">ScoreFunction</span></a></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">minimizer</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#tmol.relax.RelaxMinimizer" title="tmol.relax._fast_relax.RelaxMinimizer"><span class="pre">RelaxMinimizer</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">packer_palette</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="top_level.html#tmol.PackerPalette" title="tmol.pack._packer_task.PackerPalette"><span class="pre">PackerPalette</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_operations</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.15)"><span class="pre">Sequence</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable" title="(in Python v3.15)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="top_level.html#tmol.PackerTask" title="tmol.pack._packer_task.PackerTask"><span class="pre">PackerTask</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_repeats</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ramp_constraints</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">schedule</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.15)"><span class="pre">Sequence</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">release_between_stages</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="top_level.html#tmol.PoseStack" title="tmol.pose._pose_stack.PoseStack"><span class="pre">PoseStack</span></a></span></span><a class="reference internal" href="../_modules/tmol/relax/_fast_relax.html#fast_relax"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#tmol.relax.fast_relax" title="Link to this definition">#</a></dt>
+<dd><p>Relax poses through repeated side-chain packing and minimization.</p>
+<p>Each repeat applies the MonomerRelax2019 fa_rep ramp and retains the
+lowest-scoring conformation independently for every pose in the batch.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>pose_stack</strong> – Input poses to relax.</p></li>
+<li><p><strong>sfxn</strong> – Packing and minimization score function. Constraints are active
+only when its constraint weight is nonzero.</p></li>
+<li><p><strong>minimizer</strong> – The minimization mode and its settings: a
+<code class="docutils literal notranslate"><span class="pre">CartesianRelaxMinimizer</span></code> (atom coordinates) or a
+<code class="docutils literal notranslate"><span class="pre">KinematicRelaxMinimizer</span></code> (torsions and jumps along a fold
+forest), or any callable following <code class="docutils literal notranslate"><span class="pre">RelaxMinimizer</span></code>. If it
+provides <code class="docutils literal notranslate"><span class="pre">release_retained_state()</span></code>, FastRelax calls that hook
+after extracting each minimized pose so packing does not overlap
+retained scorer or optimizer storage. Defaults to a
+<code class="docutils literal notranslate"><span class="pre">CartesianRelaxMinimizer</span></code> with every atom free.</p></li>
+<li><p><strong>packer_palette</strong> – Residue types available to the packer. Defaults to
+<code class="docutils literal notranslate"><span class="pre">PackerPalette()</span></code>.</p></li>
+<li><p><strong>task_operations</strong> – In-place task configuration callbacks. By default,
+restrict to repacking with the scoring database’s Dunbrack, fixed-AA,
+current and nucleic-acid rotamers, sampling covalent groups jointly.</p></li>
+<li><p><strong>num_repeats</strong> – Number of complete pack-minimize ramps.</p></li>
+<li><p><strong>ramp_constraints</strong> – Ramp an active constraint weight to zero. Defaults
+to true; the input weight is restored after relaxation.</p></li>
+<li><p><strong>schedule</strong> – Numeric fa_rep fractions or dictionaries with separate pack,
+minimize, and optional constraint fractions and <code class="docutils literal notranslate"><span class="pre">min_rtol</span></code>.
+Defaults to <code class="docutils literal notranslate"><span class="pre">DEFAULT_RELAX_SCHEDULE</span></code>.</p></li>
+<li><p><strong>release_between_stages</strong> – Drop the rendered scorer, CUDA graph and L-BFGS
+history after each stage’s minimization. On by default: a large
+system is bound by that retained state through the next packing
+phase, which is why the release exists. Turn it off when the setup
+cost dominates instead – a small pose on the default four-stage
+schedule otherwise pays four network constructions, and four graph
+captures, where one would do.</p></li>
+<li><p><strong>verbose</strong> – Print timing information for each step.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Best-scoring relaxed poses across all repeats.</p>
+</dd>
+</dl>
+</dd></dl>
+
 </section>
 
 
                 </article>
               
+  <div class="page-feedback d-print-none" data-source="inline">
+    
+  <p class="page-feedback-question">Was this page helpful?</p>
+  <div class="page-feedback-buttons">
+    <button type="button" class="page-feedback-button" data-helpful="yes" aria-label="Yes" title="Yes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+    </button>
+    <button type="button" class="page-feedback-button" data-helpful="no" aria-label="No" title="No">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+    </button>
+  </div>
+  <form class="page-feedback-comment" hidden>
+    <fieldset class="page-feedback-reasons">
+      <legend>Sorry about that. What went wrong? (optional)</legend>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="It's unclear or hard to follow"> It's unclear or hard to follow</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="It's outdated or incorrect"> It's outdated or incorrect</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="An example or command didn't work"> An example or command didn't work</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="I didn't find what I needed"> I didn't find what I needed</label>
+      
+    </fieldset>
+    <label for="page-feedback-comment-inline">Tell us more (optional)</label>
+    <textarea id="page-feedback-comment-inline" rows="3" maxlength="1000"></textarea>
+    <p class="page-feedback-privacy">Please don't include personal information such as your name or email.</p>
+    <div class="page-feedback-comment-actions">
+      <button type="submit" class="page-feedback-send">Send</button>
+      <button type="button" class="page-feedback-skip">Skip</button>
+    </div>
+  </form>
+  <p class="page-feedback-thanks" role="status" hidden>Thanks for your feedback!</p>
+
+  </div>
+  <dialog class="page-feedback-popup" data-source="popup" aria-label="Page feedback">
+    <div class="page-feedback-popup-body">
+      <button type="button" class="page-feedback-popup-close" aria-label="Close" title="Close">&times;</button>
+      
+  <p class="page-feedback-question">Was this page helpful?</p>
+  <div class="page-feedback-buttons">
+    <button type="button" class="page-feedback-button" data-helpful="yes" aria-label="Yes" title="Yes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+    </button>
+    <button type="button" class="page-feedback-button" data-helpful="no" aria-label="No" title="No">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+    </button>
+  </div>
+  <form class="page-feedback-comment" hidden>
+    <fieldset class="page-feedback-reasons">
+      <legend>Sorry about that. What went wrong? (optional)</legend>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="It's unclear or hard to follow"> It's unclear or hard to follow</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="It's outdated or incorrect"> It's outdated or incorrect</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="An example or command didn't work"> An example or command didn't work</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="I didn't find what I needed"> I didn't find what I needed</label>
+      
+    </fieldset>
+    <label for="page-feedback-comment-popup">Tell us more (optional)</label>
+    <textarea id="page-feedback-comment-popup" rows="3" maxlength="1000"></textarea>
+    <p class="page-feedback-privacy">Please don't include personal information such as your name or email.</p>
+    <div class="page-feedback-comment-actions">
+      <button type="submit" class="page-feedback-send">Send</button>
+      <button type="button" class="page-feedback-skip">Skip</button>
+    </div>
+  </form>
+  <p class="page-feedback-thanks" role="status" hidden>Thanks for your feedback!</p>
+
+    </div>
+  </dialog>
+
               
               
               
@@ -529,6 +653,7 @@ protocol for custom minimizers.</p>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tmol.relax.RelaxMinimizer"><code class="docutils literal notranslate"><span class="pre">RelaxMinimizer</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tmol.relax.fast_relax"><code class="docutils literal notranslate"><span class="pre">fast_relax()</span></code></a></li>
 </ul>
   </nav></div>
 

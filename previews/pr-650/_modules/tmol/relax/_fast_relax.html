@@ -31,6 +31,7 @@
     <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css?v=9c3e77be" />
     <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=adb9cd23" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/page_feedback.css?v=d37b03bb" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../../../_static/scripts/fontawesome.js?digest=75c7c72ae941e8b558d8"></script>
@@ -50,6 +51,7 @@
     <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
     <script src="../../../_static/tmol-explorers.js?v=089c5f52"></script>
     <script async="async" defer="defer" src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+    <script src="../../../_static/page_feedback.js?v=8b09ebf1"></script>
     <link rel="canonical" href="https://rosettacommons.github.io/tmol/latest/_modules/tmol/relax/_fast_relax.html" />
     <link rel="icon" href="../../../_static/favicon.ico"/>
     <link rel="index" title="Index" href="../../../genindex.html" />
@@ -419,6 +421,7 @@
 </div>
               
               
+  
               
                 
 <div id="searchbox"></div>
@@ -594,6 +597,7 @@
         <span class="n">move_map</span><span class="p">:</span> <span class="n">CartesianMoveMap</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">cuda_graph</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">max_iter</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="k">if</span> <span class="n">move_map</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">move_map</span> <span class="o">=</span> <span class="n">CartesianMoveMap</span><span class="p">()</span>
@@ -604,6 +608,7 @@
             <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">move_map</span> <span class="o">=</span> <span class="n">move_map</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">cuda_graph</span> <span class="o">=</span> <span class="n">cuda_graph</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_iter</span> <span class="o">=</span> <span class="n">max_iter</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">minimizer</span> <span class="o">=</span> <span class="n">CartesianMinimizer</span><span class="p">()</span>
 
 <div class="viewcode-block" id="CartesianRelaxMinimizer.release_retained_state">
@@ -621,15 +626,20 @@
         <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">rtol</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
-        <span class="c1"># Cartesian relax keeps the LBFGS default convergence</span>
-        <span class="k">del</span> <span class="n">rtol</span>
+        <span class="c1"># The schedule's tolerance and this minimizer's iteration cap are</span>
+        <span class="c1"># optional; without them the LBFGS defaults stand, as before.</span>
+        <span class="n">optimizer_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"verbose"</span><span class="p">:</span> <span class="n">verbose</span><span class="p">}</span>
+        <span class="k">if</span> <span class="n">rtol</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">optimizer_kwargs</span><span class="p">[</span><span class="s2">"rtol"</span><span class="p">]</span> <span class="o">=</span> <span class="n">rtol</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_iter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">optimizer_kwargs</span><span class="p">[</span><span class="s2">"max_iter"</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_iter</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">minimizer</span><span class="o">.</span><span class="n">cuda_graph</span> <span class="o">=</span> <span class="n">_graph_mode</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cuda_graph</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">minimizer</span><span class="p">(</span>
             <span class="n">pose_stack</span><span class="p">,</span>
             <span class="n">sfxn</span><span class="p">,</span>
             <span class="n">coord_mask</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">move_map</span><span class="o">.</span><span class="n">coord_mask</span><span class="p">,</span>
             <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
-            <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"verbose"</span><span class="p">:</span> <span class="n">verbose</span><span class="p">},</span>
+            <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="n">optimizer_kwargs</span><span class="p">,</span>
         <span class="p">)</span></div>
 
 
@@ -705,6 +715,34 @@
             <span class="n">optimizer_kwargs</span><span class="o">=</span><span class="n">options</span><span class="p">,</span>
         <span class="p">)</span></div>
 
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">default_relax_task_operation</span><span class="p">(</span>
+    <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">:</span> <span class="n">ScoreFunction</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PackerTaskOperation</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""FastRelax's own repacking task: Dunbrack, fixed-AA, current and NA rotamers."""</span>
+    <span class="n">torch_device</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_dunbrack_sampler_from_database</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack.rotamer._conjugated_groups</span><span class="w"> </span><span class="kn">import</span> <span class="n">_add_conjugated_group_sampler</span>
+
+    <span class="n">samplers</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">create_dunbrack_sampler_from_database</span><span class="p">(</span><span class="n">sfxn</span><span class="o">.</span><span class="n">_param_db</span><span class="p">,</span> <span class="n">torch_device</span><span class="p">),</span>
+        <span class="n">FixedAAChiSampler</span><span class="p">(),</span>
+        <span class="n">IncludeCurrentSampler</span><span class="p">(),</span>
+    <span class="p">]</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span>
+        <span class="n">bt</span><span class="o">.</span><span class="n">properties</span><span class="o">.</span><span class="n">polymer</span><span class="o">.</span><span class="n">backbone_type</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"dna"</span><span class="p">,</span> <span class="s2">"rna"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">bt</span> <span class="ow">in</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span><span class="o">.</span><span class="n">active_block_types</span>
+    <span class="p">):</span>
+        <span class="n">samplers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">NaChiRotamerSampler</span><span class="o">.</span><span class="n">from_database</span><span class="p">(</span><span class="n">sfxn</span><span class="o">.</span><span class="n">_param_db</span><span class="p">,</span> <span class="n">torch_device</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">default_op</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="n">PackerTask</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">task</span><span class="o">.</span><span class="n">restrict_to_repacking</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">sampler</span> <span class="ow">in</span> <span class="n">samplers</span><span class="p">:</span>
+            <span class="n">task</span><span class="o">.</span><span class="n">add_conformer_sampler</span><span class="p">(</span><span class="n">sampler</span><span class="p">)</span>
+        <span class="n">_add_conjugated_group_sampler</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">default_op</span>
 
 
 <div class="viewcode-block" id="fast_relax">
@@ -789,30 +827,7 @@
         <span class="p">)</span>
 
     <span class="k">if</span> <span class="n">task_operations</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">torch_device</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_dunbrack_sampler_from_database</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack.rotamer._conjugated_groups</span><span class="w"> </span><span class="kn">import</span> <span class="n">_add_conjugated_group_sampler</span>
-
-        <span class="n">samplers</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">create_dunbrack_sampler_from_database</span><span class="p">(</span><span class="n">sfxn</span><span class="o">.</span><span class="n">_param_db</span><span class="p">,</span> <span class="n">torch_device</span><span class="p">),</span>
-            <span class="n">FixedAAChiSampler</span><span class="p">(),</span>
-            <span class="n">IncludeCurrentSampler</span><span class="p">(),</span>
-        <span class="p">]</span>
-        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span>
-            <span class="n">bt</span><span class="o">.</span><span class="n">properties</span><span class="o">.</span><span class="n">polymer</span><span class="o">.</span><span class="n">backbone_type</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"dna"</span><span class="p">,</span> <span class="s2">"rna"</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">bt</span> <span class="ow">in</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span><span class="o">.</span><span class="n">active_block_types</span>
-        <span class="p">):</span>
-            <span class="n">samplers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                <span class="n">NaChiRotamerSampler</span><span class="o">.</span><span class="n">from_database</span><span class="p">(</span><span class="n">sfxn</span><span class="o">.</span><span class="n">_param_db</span><span class="p">,</span> <span class="n">torch_device</span><span class="p">)</span>
-            <span class="p">)</span>
-
-        <span class="k">def</span><span class="w"> </span><span class="nf">default_op</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="n">PackerTask</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">task</span><span class="o">.</span><span class="n">restrict_to_repacking</span><span class="p">()</span>
-            <span class="k">for</span> <span class="n">sampler</span> <span class="ow">in</span> <span class="n">samplers</span><span class="p">:</span>
-                <span class="n">task</span><span class="o">.</span><span class="n">add_conformer_sampler</span><span class="p">(</span><span class="n">sampler</span><span class="p">)</span>
-            <span class="n">_add_conjugated_group_sampler</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">)</span>
-
-        <span class="n">task_operations</span> <span class="o">=</span> <span class="p">[</span><span class="n">default_op</span><span class="p">]</span>
+        <span class="n">task_operations</span> <span class="o">=</span> <span class="p">[</span><span class="n">default_relax_task_operation</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">)]</span>
 
     <span class="n">fa_rep_start</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sfxn</span><span class="o">.</span><span class="n">get_weight</span><span class="p">(</span><span class="n">ScoreType</span><span class="o">.</span><span class="n">fa_ljrep</span><span class="p">))</span>
 
@@ -1019,6 +1034,80 @@
 
                 </article>
               
+  <div class="page-feedback d-print-none" data-source="inline">
+    
+  <p class="page-feedback-question">Was this page helpful?</p>
+  <div class="page-feedback-buttons">
+    <button type="button" class="page-feedback-button" data-helpful="yes" aria-label="Yes" title="Yes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+    </button>
+    <button type="button" class="page-feedback-button" data-helpful="no" aria-label="No" title="No">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+    </button>
+  </div>
+  <form class="page-feedback-comment" hidden>
+    <fieldset class="page-feedback-reasons">
+      <legend>Sorry about that. What went wrong? (optional)</legend>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="It's unclear or hard to follow"> It's unclear or hard to follow</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="It's outdated or incorrect"> It's outdated or incorrect</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="An example or command didn't work"> An example or command didn't work</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="I didn't find what I needed"> I didn't find what I needed</label>
+      
+    </fieldset>
+    <label for="page-feedback-comment-inline">Tell us more (optional)</label>
+    <textarea id="page-feedback-comment-inline" rows="3" maxlength="1000"></textarea>
+    <p class="page-feedback-privacy">Please don't include personal information such as your name or email.</p>
+    <div class="page-feedback-comment-actions">
+      <button type="submit" class="page-feedback-send">Send</button>
+      <button type="button" class="page-feedback-skip">Skip</button>
+    </div>
+  </form>
+  <p class="page-feedback-thanks" role="status" hidden>Thanks for your feedback!</p>
+
+  </div>
+  <dialog class="page-feedback-popup" data-source="popup" aria-label="Page feedback">
+    <div class="page-feedback-popup-body">
+      <button type="button" class="page-feedback-popup-close" aria-label="Close" title="Close">&times;</button>
+      
+  <p class="page-feedback-question">Was this page helpful?</p>
+  <div class="page-feedback-buttons">
+    <button type="button" class="page-feedback-button" data-helpful="yes" aria-label="Yes" title="Yes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+    </button>
+    <button type="button" class="page-feedback-button" data-helpful="no" aria-label="No" title="No">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+    </button>
+  </div>
+  <form class="page-feedback-comment" hidden>
+    <fieldset class="page-feedback-reasons">
+      <legend>Sorry about that. What went wrong? (optional)</legend>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="It's unclear or hard to follow"> It's unclear or hard to follow</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="It's outdated or incorrect"> It's outdated or incorrect</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="An example or command didn't work"> An example or command didn't work</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="I didn't find what I needed"> I didn't find what I needed</label>
+      
+    </fieldset>
+    <label for="page-feedback-comment-popup">Tell us more (optional)</label>
+    <textarea id="page-feedback-comment-popup" rows="3" maxlength="1000"></textarea>
+    <p class="page-feedback-privacy">Please don't include personal information such as your name or email.</p>
+    <div class="page-feedback-comment-actions">
+      <button type="submit" class="page-feedback-send">Send</button>
+      <button type="button" class="page-feedback-skip">Skip</button>
+    </div>
+  </form>
+  <p class="page-feedback-thanks" role="status" hidden>Thanks for your feedback!</p>
+
+    </div>
+  </dialog>
+
               
               
               

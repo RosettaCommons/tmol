@@ -32,6 +32,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../_static/togglebutton.css?v=9c3e77be" />
     <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=adb9cd23" />
+    <link rel="stylesheet" type="text/css" href="../_static/page_feedback.css?v=d37b03bb" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../_static/scripts/fontawesome.js?digest=75c7c72ae941e8b558d8"></script>
@@ -51,6 +52,7 @@
     <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
     <script src="../_static/tmol-explorers.js?v=089c5f52"></script>
     <script async="async" defer="defer" src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+    <script src="../_static/page_feedback.js?v=8b09ebf1"></script>
     <link rel="canonical" href="https://rosettacommons.github.io/tmol/latest/api/top_level.html" />
     <link rel="icon" href="../_static/favicon.ico"/>
     <link rel="index" title="Index" href="../genindex.html" />
@@ -458,6 +460,7 @@
 </div>
               
               
+  
               
                 
 <div id="searchbox"></div>
@@ -750,7 +753,7 @@ atoms are free to move (the default behaviour of
 
 <dl class="py class">
 <dt class="sig sig-object py" id="tmol.CartesianRelaxMinimizer">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">tmol.</span></span><span class="sig-name descname"><span class="pre">CartesianRelaxMinimizer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">move_map</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#tmol.CartesianMoveMap" title="tmol.kinematics._move_map.CartesianMoveMap"><span class="pre">CartesianMoveMap</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">cuda_graph</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/tmol/relax/_fast_relax.html#CartesianRelaxMinimizer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#tmol.CartesianRelaxMinimizer" title="Link to this definition">#</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">tmol.</span></span><span class="sig-name descname"><span class="pre">CartesianRelaxMinimizer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">move_map</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#tmol.CartesianMoveMap" title="tmol.kinematics._move_map.CartesianMoveMap"><span class="pre">CartesianMoveMap</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">cuda_graph</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_iter</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/tmol/relax/_fast_relax.html#CartesianRelaxMinimizer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#tmol.CartesianRelaxMinimizer" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <p>FastRelax minimization of atom coordinates.</p>
 <p>Reuses the rendered scorer while the pose topology is unchanged.</p>
@@ -1723,7 +1726,7 @@ its output buffer; clone an output that must survive the next call.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="tmol.ScoreFunction.render_block_pair_scoring_module">
-<span class="sig-name descname"><span class="pre">render_block_pair_scoring_module</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pose_stack</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#tmol.PoseStack" title="tmol.pose._pose_stack.PoseStack"><span class="pre">PoseStack</span></a></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">interaction_only</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">BlockPairScoringModule</span></span></span><a class="reference internal" href="../_modules/tmol/score/_score_function.html#ScoreFunction.render_block_pair_scoring_module"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#tmol.ScoreFunction.render_block_pair_scoring_module" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">render_block_pair_scoring_module</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pose_stack</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#tmol.PoseStack" title="tmol.pose._pose_stack.PoseStack"><span class="pre">PoseStack</span></a></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">interaction_only</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">movable_blocks</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.pytorch.org/docs/2.14/tensors.html#torch.Tensor" title="(in PyTorch v2.14)"><span class="pre">Tensor</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">BlockPairScoringModule</span></span></span><a class="reference internal" href="../_modules/tmol/score/_score_function.html#ScoreFunction.render_block_pair_scoring_module"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#tmol.ScoreFunction.render_block_pair_scoring_module" title="Link to this definition">#</a></dt>
 <dd><p>Render a callable that retains scores for every residue-block pair.</p>
 <p>The default call returns weighted energies shaped
 <code class="docutils literal notranslate"><span class="pre">[n_poses,</span> <span class="pre">max_n_blocks,</span> <span class="pre">max_n_blocks]</span></code>.</p>
@@ -1731,6 +1734,9 @@ its output buffer; clone an output that must survive the next call.</p>
 pairs will be consumed. Terms whose block-pair scores are known to be
 diagonal-only are then omitted. Diagonal entries in the returned
 matrix are incomplete in this mode.</p>
+<p><code class="docutils literal notranslate"><span class="pre">movable_blocks</span></code> marks the blocks whose coordinates can change; the
+per-block terms then skip the blocks it leaves out, whose energies are
+constant. Entries for those blocks are incomplete in the result.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -2430,6 +2436,80 @@ as thicker sticks and spheres. The return value remains a real
 
                 </article>
               
+  <div class="page-feedback d-print-none" data-source="inline">
+    
+  <p class="page-feedback-question">Was this page helpful?</p>
+  <div class="page-feedback-buttons">
+    <button type="button" class="page-feedback-button" data-helpful="yes" aria-label="Yes" title="Yes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+    </button>
+    <button type="button" class="page-feedback-button" data-helpful="no" aria-label="No" title="No">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+    </button>
+  </div>
+  <form class="page-feedback-comment" hidden>
+    <fieldset class="page-feedback-reasons">
+      <legend>Sorry about that. What went wrong? (optional)</legend>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="It's unclear or hard to follow"> It's unclear or hard to follow</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="It's outdated or incorrect"> It's outdated or incorrect</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="An example or command didn't work"> An example or command didn't work</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="I didn't find what I needed"> I didn't find what I needed</label>
+      
+    </fieldset>
+    <label for="page-feedback-comment-inline">Tell us more (optional)</label>
+    <textarea id="page-feedback-comment-inline" rows="3" maxlength="1000"></textarea>
+    <p class="page-feedback-privacy">Please don't include personal information such as your name or email.</p>
+    <div class="page-feedback-comment-actions">
+      <button type="submit" class="page-feedback-send">Send</button>
+      <button type="button" class="page-feedback-skip">Skip</button>
+    </div>
+  </form>
+  <p class="page-feedback-thanks" role="status" hidden>Thanks for your feedback!</p>
+
+  </div>
+  <dialog class="page-feedback-popup" data-source="popup" aria-label="Page feedback">
+    <div class="page-feedback-popup-body">
+      <button type="button" class="page-feedback-popup-close" aria-label="Close" title="Close">&times;</button>
+      
+  <p class="page-feedback-question">Was this page helpful?</p>
+  <div class="page-feedback-buttons">
+    <button type="button" class="page-feedback-button" data-helpful="yes" aria-label="Yes" title="Yes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+    </button>
+    <button type="button" class="page-feedback-button" data-helpful="no" aria-label="No" title="No">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+    </button>
+  </div>
+  <form class="page-feedback-comment" hidden>
+    <fieldset class="page-feedback-reasons">
+      <legend>Sorry about that. What went wrong? (optional)</legend>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="It's unclear or hard to follow"> It's unclear or hard to follow</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="It's outdated or incorrect"> It's outdated or incorrect</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="An example or command didn't work"> An example or command didn't work</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="I didn't find what I needed"> I didn't find what I needed</label>
+      
+    </fieldset>
+    <label for="page-feedback-comment-popup">Tell us more (optional)</label>
+    <textarea id="page-feedback-comment-popup" rows="3" maxlength="1000"></textarea>
+    <p class="page-feedback-privacy">Please don't include personal information such as your name or email.</p>
+    <div class="page-feedback-comment-actions">
+      <button type="submit" class="page-feedback-send">Send</button>
+      <button type="button" class="page-feedback-skip">Skip</button>
+    </div>
+  </form>
+  <p class="page-feedback-thanks" role="status" hidden>Thanks for your feedback!</p>
+
+    </div>
+  </dialog>
+
               
               
               
