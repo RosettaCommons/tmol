@@ -307,7 +307,9 @@ class PoseStack:
             self.rot_coord_offset.view(self.n_poses, self.max_n_blocks, 1) + local_atom
         )
         atom_index.masked_fill_(~real, coords.shape[0])
-        return torch.nn.functional.pad(coords, (0, 0, 0, 1))[atom_index], real
+        coords = torch.nn.functional.pad(coords, (0, 0, 0, 1))
+        expanded = coords.index_select(0, atom_index.flatten())
+        return expanded.view(*real.shape, 3), real
 
     @property
     def n_res_per_pose(self) -> Tensor[torch.int64][:]:
