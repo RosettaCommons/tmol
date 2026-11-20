@@ -4422,6 +4422,7 @@ residues:
     - { name: HB22,  atom_type: Hapo }
     - { name: HB23,  atom_type: Hapo }
     atom_aliases:
+    - { name: O   , alt_name: O1 }
     - { name: HB11, alt_name: 1HB1 }
     - { name: HB12, alt_name: 2HB1 }
     - { name: HB13, alt_name: 3HB1 }
