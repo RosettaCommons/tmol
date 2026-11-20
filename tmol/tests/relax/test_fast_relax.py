@@ -691,3 +691,26 @@ def test_fast_relax_for_different_shapes(
     print(
         f"Three differently-shaped PDBs relaxed; Execution time: {elapsed_time:.6f} seconds"
     )
+
+
+def test_constraint_ramp_uses_original_weight(
+    ubq_pdb, default_database, torch_device, monkeypatch
+):
+    pose = pose_stack_from_file(ubq_pdb, torch_device, residue_end=5, no_optH=True)
+    sfxn = get_relax_sfxn(default_database, torch_device)
+    sfxn.set_weight(ScoreType.constraint, 2.0)
+    seen = []
+
+    def step(pose_stack, sfxn, cst_weight, **kwargs):
+        seen.append(cst_weight)
+        sfxn.set_weight(ScoreType.constraint, cst_weight)
+        return pose_stack
+
+    monkeypatch.setattr(fast_relax_module, "_relax_pack_min_step", step)
+    schedule = [
+        {"fa_rep_pack_frac": 1.0, "fa_rep_min_frac": 1.0, "cst_frac": frac}
+        for frac in (0.5, 0.25, 0.0)
+    ]
+    fast_relax(pose, sfxn, schedule=schedule, num_repeats=1)
+    assert seen == [1.0, 0.5, 0.0]
+    assert float(sfxn.get_weight(ScoreType.constraint)) == 2.0

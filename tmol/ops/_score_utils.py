@@ -42,8 +42,15 @@ def _sum_cross_block_scores(
     n_terms, n_poses = block_pair_scores.shape[:2]
 
     if not memory_efficient:
-        expanded_mask = cross_mask.unsqueeze(0).expand(n_terms, -1, -1, -1)
-        return block_pair_scores[expanded_mask].view(n_terms, n_poses, -1).sum(dim=2)
+        # Build pair indices once, independently of the number of score terms.
+        selected = block_pair_scores[:, cross_mask]
+        if n_poses > 1 and not (mask.stride(0) == 0 and other_mask.stride(0) == 0):
+            counts = cross_mask.sum(dim=(1, 2)).tolist()
+            if min(counts) != max(counts):
+                return torch.stack(
+                    [part.sum(dim=1) for part in selected.split(counts, dim=1)], dim=1
+                )
+        return selected.reshape(n_terms, n_poses, -1).sum(dim=2)
 
     # These reductions avoid the large term-expanded selection above and also
     # support batches in which poses select different numbers of pairs. Their

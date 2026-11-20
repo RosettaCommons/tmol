@@ -356,7 +356,7 @@ def fast_relax(  # noqa: C901
     if schedule is None:
         schedule = DEFAULT_RELAX_SCHEDULE
 
-    constraint_weight_start = sfxn.get_weight(ScoreType.constraint)
+    constraint_weight_start = float(sfxn.get_weight(ScoreType.constraint))
     use_constraints = constraint_weight_start != 0
     if not use_constraints and ramp_constraints:
         print(
@@ -530,28 +530,27 @@ def _accept_best(
     def select_better(tensor_name: str) -> torch.Tensor:
         tensor = getattr(best_pose_stack, tensor_name)
         candidate = getattr(candidate_pose_stack, tensor_name)
-        if tensor_name == "coords":
+        if tensor_name == "coords" and tensor.shape[1] != candidate.shape[1]:
             # A packed block type can change a pose's atom count.
             width = max(tensor.shape[1], candidate.shape[1])
             tensor = torch.nn.functional.pad(tensor, (0, 0, 0, width - tensor.shape[1]))
             candidate = torch.nn.functional.pad(
                 candidate, (0, 0, 0, width - candidate.shape[1])
             )
-        new_tensor = tensor.detach().clone()
-        new_tensor[better_mask] = candidate[better_mask]
-        return new_tensor
+        take_candidate = better_mask.view(-1, *([1] * (tensor.ndim - 1)))
+        return torch.where(take_candidate, candidate, tensor.detach())
 
     def select_better_atom_info(field_name: str, width: int) -> numpy.ndarray:
         """A per-atom pdb_info field, padded with zeros to the merged atom count."""
         best = getattr(best_pose_stack.pdb_info, field_name)
         candidate = getattr(candidate_pose_stack.pdb_info, field_name)
-        better = better_mask.cpu().numpy()
         merged = numpy.zeros((best.shape[0], width), dtype=best.dtype)
         merged[~better, : best.shape[1]] = best[~better]
         merged[better, : candidate.shape[1]] = candidate[better]
         return merged
 
-    if better_mask.any():
+    better = better_mask.detach().cpu().numpy()
+    if better.any():
         if verbose:
             print("accepting new best scores")
             print(f" old best score: {best_pose_score[better_mask]}")
@@ -578,7 +577,8 @@ def _accept_best(
             block_type_ind=new_block_type_ind,
             block_type_ind64=new_block_type_ind64,
         )
-        new_best_pose_score = best_pose_score.detach().clone()
-        new_best_pose_score[better_mask] = candidate_score[better_mask]
+        new_best_pose_score = torch.where(
+            better_mask, candidate_score, best_pose_score.detach()
+        )
         return new_best_pose_stack, new_best_pose_score
     return best_pose_stack, best_pose_score

@@ -123,8 +123,8 @@ def mutate_to_sequence(
         A new PoseStack with every differing position mutated to match.
     """
     pbt = pose_stack.packed_block_types
-    block_type_ind = pose_stack.block_type_ind64[pose_index]
-    real_blocks = torch.nonzero(block_type_ind >= 0).flatten().tolist()
+    block_type_ind = pose_stack.block_type_ind64[pose_index].tolist()
+    real_blocks = [block for block, index in enumerate(block_type_ind) if index >= 0]
     if len(sequence) != len(real_blocks):
         raise ValueError(
             f"sequence has {len(sequence)} residues but pose {pose_index} has "
@@ -136,7 +136,7 @@ def mutate_to_sequence(
         new_name3 = _one2three(letter)
         if new_name3 is None:
             raise ValueError(f"{letter!r} is not a valid one-letter amino acid code")
-        current_name3 = pbt.active_block_types[int(block_type_ind[block])].name3
+        current_name3 = pbt.active_block_types[block_type_ind[block]].name3
         if new_name3 != current_name3:
             name3_by_block[block] = new_name3
 

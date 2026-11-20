@@ -38,9 +38,11 @@ def test_sidechain_mask_treats_missing_mainchain_as_all_sidechain(torch_device):
     torch.testing.assert_close(actual, packed_block_types.atom_is_real)
 
 
-@pytest.mark.parametrize("einsum", [False, True])
-def test_memory_efficient_sum_handles_different_mask_sizes(
-    torch_device, monkeypatch, einsum
+@pytest.mark.parametrize(
+    "memory_efficient,einsum", [(False, False), (True, False), (True, True)]
+)
+def test_cross_block_sum_handles_different_mask_sizes(
+    torch_device, monkeypatch, memory_efficient, einsum
 ):
     """Each pose may select a different number of block pairs."""
     monkeypatch.setattr(score_utils, "_EINSUM_MIN_BYTES", 0 if einsum else float("inf"))
@@ -58,7 +60,7 @@ def test_memory_efficient_sum_handles_different_mask_sizes(
     )
 
     actual = score_utils._sum_cross_block_scores(
-        scores, mask, other, memory_efficient=True
+        scores, mask, other, memory_efficient=memory_efficient
     )
     expected = torch.empty_like(actual)
     expected[:, 0] = scores[:, 0, 0, 1] + scores[:, 0, 1, 0]
