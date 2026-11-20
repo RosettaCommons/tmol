@@ -184,13 +184,9 @@ class PoseStack:
     def n_ats_per_block(self) -> Tensor[torch.int64][:, :]:
         """Return the number of atoms in each block"""
 
-        n_ats_per_block = torch.zeros(
-            (self.n_poses, self.max_n_blocks), dtype=torch.int64, device=self.device
-        )
-        n_ats_per_block[self.block_type_ind != -1] = self.packed_block_types.n_atoms[
-            self.block_type_ind[self.block_type_ind != -1].to(torch.int64)
-        ].to(torch.int64)
-        return n_ats_per_block
+        # The padding block type (-1) indexes the final, zero-length entry.
+        lengths = torch.nn.functional.pad(self.packed_block_types.n_atoms, (0, 1))
+        return lengths.to(torch.int64)[self.block_type_ind]
 
     @property
     def real_atoms(self) -> Tensor[torch.bool][:, :]:

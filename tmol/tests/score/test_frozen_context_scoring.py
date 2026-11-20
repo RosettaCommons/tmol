@@ -135,6 +135,22 @@ def test_atom_mask_selects_the_same_blocks(pose, torch_device):
     torch.testing.assert_close(from_atoms.offset, from_blocks.offset, rtol=0, atol=1e-4)
 
 
+def test_atom_mask_ignores_padding_in_a_heterogeneous_batch(pose, torch_device):
+    from tmol import PoseStackBuilder
+    from tmol.pose import select_blocks
+    from tmol.score._score_function import _normalized_movable_blocks
+
+    short = select_blocks(pose, [0, 1, 2])
+    batch = PoseStackBuilder.from_poses([short, pose], torch_device)
+    atoms = ~batch.real_atoms
+    # Exercise both ends of a block and the boundary to the next block.
+    atoms[0, batch.block_coord_offset64[0, 2] - 1] = True
+    atoms[1, batch.block_coord_offset64[1, 7]] = True
+    expected = torch.zeros_like(batch.block_type_ind)
+    expected[0, 1] = expected[1, 7] = 1
+    torch.testing.assert_close(_normalized_movable_blocks(batch, atoms), expected)
+
+
 def test_frozen_scores_restore_term_lanes_after_reweighting(
     pose, torch_device, default_database
 ):
@@ -207,6 +223,7 @@ def test_masked_cuda_graph_agrees_with_eager(ubq_pdb):
     x = pose.coords.detach().requires_grad_(True)
     with torch.no_grad():
         torch.testing.assert_close(graph(x), eager(x), rtol=1e-5, atol=1e-3)
+    assert graph.enable_cuda_graphs(x) is graph
     expected, actual = eager(x), graph(x)
     torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-3)
     (actual_grad,) = torch.autograd.grad(actual.sum(), x)

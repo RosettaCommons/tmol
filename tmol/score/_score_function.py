@@ -1355,49 +1355,22 @@ def _normalized_movable_blocks(
     """
 
     mask = torch.as_tensor(movable_blocks, device=pose_stack.device)
-    n_poses, max_n_blocks = pose_stack.block_type_ind64.shape
-    if mask.shape == (n_poses, max_n_blocks):
+    if mask.shape == pose_stack.block_type_ind.shape:
         return mask.to(dtype=torch.int32, copy=True)
-    elif mask.shape == pose_stack.coords.shape[:2]:
-        block_types = pose_stack.block_type_ind64
-        real = block_types >= 0
-        n_atoms = torch.where(
-            real,
-            pose_stack.packed_block_types.n_atoms[block_types.clamp(min=0)].to(
-                torch.int64
-            ),
-            torch.zeros_like(block_types),
-        )
-        # Blocks hold contiguous atoms at increasing offsets, so marking each
-        # block's first atom and running a cumulative max labels every atom.
-        pose_of_block, index_of_block = torch.nonzero(real, as_tuple=True)
-        marker = torch.full(
-            pose_stack.coords.shape[:2], -1, dtype=torch.int64, device=mask.device
-        )
-        marker[pose_of_block, pose_stack.block_coord_offset64[real]] = index_of_block
-        block_of_atom = torch.cummax(marker, dim=1).values
-        # Trailing padding carries the last block's label; bound it by the real
-        # atom count so padded slots cannot mark a block movable.
-        n_real_atoms = n_atoms.sum(dim=1, keepdim=True)
-        atom_index = torch.arange(mask.shape[1], device=mask.device)[None, :]
-        valid = (block_of_atom >= 0) & (atom_index < n_real_atoms)
-        # scatter_reduce has no bool kernel on CUDA, so reduce over int32.
-        blocks = torch.zeros(
-            (n_poses, max_n_blocks), dtype=torch.int32, device=mask.device
-        )
-        blocks.scatter_reduce_(
-            1,
-            block_of_atom.clamp(min=0),
-            (mask.to(torch.bool) & valid).to(torch.int32),
-            reduce="amax",
-            include_self=True,
-        )
-    else:
+    if mask.shape != pose_stack.coords.shape[:2]:
         raise ValueError(
             "movable_blocks must be shaped [n_poses, max_n_blocks] or like the "
             f"pose's atoms; got {tuple(mask.shape)}"
         )
-    return blocks.to(torch.int32)
+
+    # A block moves if the count of movable atoms increases across its span.
+    # Padded blocks have zero length and therefore cannot move.
+    counts = torch.nn.functional.pad(
+        mask.bool().cumsum(dim=1, dtype=torch.int32), (1, 0)
+    )
+    start = pose_stack.block_coord_offset64.clamp(min=0)
+    end = start + pose_stack.n_ats_per_block
+    return (counts.gather(1, end) != counts.gather(1, start)).to(torch.int32)
 
 
 class FrozenContextScoringModule:
@@ -1432,6 +1405,11 @@ class FrozenContextScoringModule:
         if apply_weights:
             scores = scores * self.weights
         return scores.sum(dim=0) if sum_terms else scores
+
+    def enable_cuda_graphs(self, example_coords: torch.Tensor, mode: str = "both"):
+        """Enable replay while retaining the frozen energy correction."""
+        self._masked.enable_cuda_graphs(example_coords, mode=mode)
+        return self
 
     def _graph_capturable_module(self):
         return self._masked._graph_capturable_module(frozen_offset=self._term_offsets)
