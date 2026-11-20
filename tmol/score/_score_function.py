@@ -2361,18 +2361,22 @@ class BlockPairScoringModule:
         ):
             # Only materialize the omitted zero lanes for requested pairs.
             neighbors = self._build_shared_block_neighbors(coords)
-            scores = (
-                self._term_score(term, coords, neighbors)
-                for term in self._active_term_modules
-            )
+            terms = self._active_term_modules
             if torch.is_grad_enabled() and (
                 coords.requires_grad or self._has_trainable_term_parameters
             ):
                 # One gather shares the dense scatter in backward across terms.
-                entries = torch.cat(tuple(scores))[..., block_i, block_j]
+                entries = torch.cat(
+                    [self._term_score(term, coords, neighbors) for term in terms]
+                )[..., block_i, block_j]
             else:
                 # Release each dense term matrix as soon as its pairs are read.
-                entries = torch.cat([s[..., block_i, block_j] for s in scores])
+                entries = torch.cat(
+                    [
+                        self._term_score(term, coords, neighbors)[..., block_i, block_j]
+                        for term in terms
+                    ]
+                )
             selected = entries.new_zeros((self.weights.shape[0], *entries.shape[1:]))
             selected.index_copy_(0, self._interaction_lanes, entries)
             if apply_weights:
