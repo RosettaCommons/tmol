@@ -66,7 +66,8 @@ def test_real_atoms(ubq_40_60_pose_stack):
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_expand_coords(ubq_40_60_pose_stack, torch_device, dtype):
     poses = attrs.evolve(
-        ubq_40_60_pose_stack, coords=ubq_40_60_pose_stack.coords.to(dtype)
+        ubq_40_60_pose_stack,
+        coords=ubq_40_60_pose_stack.coords.to(dtype).detach().requires_grad_(),
     )
     expanded_coords_gold = torch.zeros(
         (2, poses.max_n_blocks, poses.max_n_block_atoms, 3),
@@ -98,12 +99,11 @@ def test_expand_coords(ubq_40_60_pose_stack, torch_device, dtype):
         pose_ids[:, None].expand_as(poses.coords[..., 0]),
     )
     expanded_coords, real_expanded_coords = poses.expand_coords()
-    numpy.testing.assert_equal(
-        expanded_coords_gold.cpu().numpy(), expanded_coords.cpu().numpy()
-    )
-    numpy.testing.assert_equal(
-        real_expanded_coords.cpu().numpy(), real_expanded_coords.cpu().numpy()
-    )
+    torch.testing.assert_close(expanded_coords, expanded_coords_gold, rtol=0, atol=0)
+    torch.testing.assert_close(real_expanded_coords, real_expanded_coords_gold)
+    (grad,) = torch.autograd.grad(expanded_coords.sum(), poses.coords)
+    expected_grad = poses.real_atoms.unsqueeze(-1).expand_as(grad).to(dtype)
+    torch.testing.assert_close(grad, expected_grad, rtol=0, atol=0)
 
 
 def test_round_trip_irregular_pose_stack_and_split(
