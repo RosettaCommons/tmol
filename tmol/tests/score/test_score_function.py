@@ -1805,6 +1805,23 @@ def test_interaction_only_block_pair_scoring_skips_diagonal_terms(
         ),
         full[..., off_diagonal].sum(dim=2),
     )
+    # Repeated pairs contribute repeatedly, and negative indices use the
+    # same indexing and gradient semantics as slicing the full matrix.
+    pairs = torch.tensor([[0, -1], [0, -1], [3, 1]], device=torch_device)
+    x = pose_stack.coords.detach().requires_grad_(True)
+    for weighted in (False, True):
+        actual = interaction_scorer.score_interactions(
+            x, pairs, sum_terms=False, apply_weights=weighted
+        )
+        matrix = interaction_scorer(x, sum_terms=False, apply_weights=weighted)
+        expected = matrix[..., pairs[:, 0], pairs[:, 1]].sum(dim=-1)
+        torch.testing.assert_close(actual, expected)
+        torch.testing.assert_close(
+            torch.autograd.grad(actual.sum(), x)[0],
+            torch.autograd.grad(expected.sum(), x)[0],
+            rtol=1e-4,
+            atol=1e-4,
+        )
     assert len(interaction_scorer._active_term_modules) < len(
         full_scorer._active_term_modules
     )
