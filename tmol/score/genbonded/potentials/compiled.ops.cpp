@@ -69,6 +69,7 @@ class GenBondedPoseScoreOp : public tmol::native::autograd::Function<
       Tensor gen_inter_torsion_hash_values,
       Tensor gen_inter_improper_hash_keys,
       Tensor gen_inter_improper_hash_values,
+      Tensor movable_blocks,
       bool output_block_pair_energies) {
     tmol::native::Tensor score;
     tmol::native::Tensor dscore_dcoords;
@@ -113,6 +114,7 @@ class GenBondedPoseScoreOp : public tmol::native::autograd::Function<
                       TCAST(gen_inter_torsion_hash_values),
                       TCAST(gen_inter_improper_hash_keys),
                       TCAST(gen_inter_improper_hash_values),
+                      TCAST(movable_blocks),
 
                       output_block_pair_energies,
                       rot_coords.requires_grad());
@@ -153,7 +155,8 @@ class GenBondedPoseScoreOp : public tmol::native::autograd::Function<
            gen_inter_torsion_hash_keys,
            gen_inter_torsion_hash_values,
            gen_inter_improper_hash_keys,
-           gen_inter_improper_hash_values});
+           gen_inter_improper_hash_values,
+           movable_blocks});
     } else {
       score = score.reshape({score.size(0), score.size(1)});
       ctx->save_for_backward({dscore_dcoords});
@@ -207,6 +210,7 @@ class GenBondedPoseScoreOp : public tmol::native::autograd::Function<
       auto gen_inter_torsion_hash_values = saved[i++];
       auto gen_inter_improper_hash_keys = saved[i++];
       auto gen_inter_improper_hash_values = saved[i++];
+      auto movable_blocks = saved[i++];
 
       TMOL_DISPATCH_FLOATING_DEVICE(
           rot_coords.options(), "genbonded_pose_score_backward_op", ([&] {
@@ -246,6 +250,7 @@ class GenBondedPoseScoreOp : public tmol::native::autograd::Function<
                         TCAST(gen_inter_torsion_hash_values),
                         TCAST(gen_inter_improper_hash_keys),
                         TCAST(gen_inter_improper_hash_values),
+                        TCAST(movable_blocks),
 
                         TCAST(grad_outputs[0]));
             dV_d_pose_coords = result.tensor;
@@ -292,6 +297,7 @@ class GenBondedPoseScoreOp : public tmol::native::autograd::Function<
         tmol::native::Tensor(),  // gen_inter_torsion_hash_values
         tmol::native::Tensor(),  // gen_inter_improper_hash_keys
         tmol::native::Tensor(),  // gen_inter_improper_hash_values
+        tmol::native::Tensor(),  // movable_blocks
         tmol::native::Tensor(),  // output_block_pair_energies (bool)
     };
   }
@@ -601,6 +607,7 @@ std::vector<Tensor> genbonded_pose_scores_op(
     Tensor gen_inter_torsion_hash_values,
     Tensor gen_inter_improper_hash_keys,
     Tensor gen_inter_improper_hash_values,
+    Tensor movable_blocks,
 
     bool output_block_pair_energies) {
   return GenBondedPoseScoreOp<DispatchMethod>::apply(
@@ -633,6 +640,7 @@ std::vector<Tensor> genbonded_pose_scores_op(
       gen_inter_torsion_hash_values,
       gen_inter_improper_hash_keys,
       gen_inter_improper_hash_values,
+      movable_blocks,
 
       output_block_pair_energies);
 }

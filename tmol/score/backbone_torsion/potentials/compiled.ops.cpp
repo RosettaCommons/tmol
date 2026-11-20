@@ -66,6 +66,7 @@ class BackboneTorsionPoseScoreOp
       Tensor rama_table_params,
       Tensor omega_tables,
       Tensor omega_table_params,
+      Tensor movable_blocks,
       bool output_block_pair_energies) {
     tmol::native::Tensor score;
     tmol::native::Tensor dscore_dcoords;
@@ -109,6 +110,7 @@ class BackboneTorsionPoseScoreOp
                       TCAST(rama_table_params),
                       TCAST(omega_tables),
                       TCAST(omega_table_params),
+                      TCAST(movable_blocks),
                       output_block_pair_energies,
                       rot_coords.requires_grad());
 
@@ -146,7 +148,8 @@ class BackboneTorsionPoseScoreOp
            rama_tables,
            rama_table_params,
            omega_tables,
-           omega_table_params});
+           omega_table_params,
+           movable_blocks});
     } else {
       score = score.reshape({score.size(0), score.size(1)});
       ctx->save_for_backward({dscore_dcoords});
@@ -212,6 +215,7 @@ class BackboneTorsionPoseScoreOp
       auto rama_table_params = saved[i++];
       auto omega_tables = saved[i++];
       auto omega_table_params = saved[i++];
+      auto movable_blocks = saved[i++];
 
       using Int = int32_t;
 
@@ -257,6 +261,7 @@ class BackboneTorsionPoseScoreOp
                     TCAST(rama_table_params),
                     TCAST(omega_tables),
                     TCAST(omega_table_params),
+                    TCAST(movable_blocks),
                     TCAST(dTdV));
 
             dV_d_rot_coords = result.tensor;
@@ -295,6 +300,7 @@ class BackboneTorsionPoseScoreOp
         tmol::native::Tensor(),
         tmol::native::Tensor(),
 
+        tmol::native::Tensor(),
         tmol::native::Tensor(),
         tmol::native::Tensor(),
         tmol::native::Tensor(),
@@ -624,6 +630,7 @@ std::vector<Tensor> backbone_torsion_pose_score_op(
     Tensor rama_table_params,
     Tensor omega_tables,
     Tensor omega_table_params,
+    Tensor movable_blocks,
     bool output_block_pair_energies) {
   return BackboneTorsionPoseScoreOp<DispatchMethod>::apply(
       // common params
@@ -654,6 +661,7 @@ std::vector<Tensor> backbone_torsion_pose_score_op(
       rama_table_params,
       omega_tables,
       omega_table_params,
+      movable_blocks,
       output_block_pair_energies);
 }
 

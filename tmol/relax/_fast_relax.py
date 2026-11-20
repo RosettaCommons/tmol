@@ -162,6 +162,7 @@ class CartesianRelaxMinimizer:
         move_map: CartesianMoveMap | None = None,
         *,
         cuda_graph: bool | None = None,
+        max_iter: int | None = None,
     ):
         if move_map is None:
             move_map = CartesianMoveMap()
@@ -172,6 +173,7 @@ class CartesianRelaxMinimizer:
             )
         self.move_map = move_map
         self.cuda_graph = cuda_graph
+        self.max_iter = max_iter
         self.minimizer = CartesianMinimizer()
 
     def release_retained_state(self) -> None:
@@ -186,15 +188,20 @@ class CartesianRelaxMinimizer:
         verbose: bool = False,
         rtol: float | None = None,
     ) -> PoseStack:
-        # Cartesian relax keeps the LBFGS default convergence
-        del rtol
+        # The schedule's tolerance and this minimizer's iteration cap are
+        # optional; without them the LBFGS defaults stand, as before.
+        optimizer_kwargs: dict[str, object] = {"verbose": verbose}
+        if rtol is not None:
+            optimizer_kwargs["rtol"] = rtol
+        if self.max_iter is not None:
+            optimizer_kwargs["max_iter"] = self.max_iter
         self.minimizer.cuda_graph = _graph_mode(self.cuda_graph, pose_stack)
         return self.minimizer(
             pose_stack,
             sfxn,
             coord_mask=self.move_map.coord_mask,
             verbose=verbose,
-            optimizer_kwargs={"verbose": verbose},
+            optimizer_kwargs=optimizer_kwargs,
         )
 
 
@@ -263,6 +270,34 @@ class KinematicRelaxMinimizer:
             verbose=verbose,
             optimizer_kwargs=options,
         )
+
+
+def default_relax_task_operation(
+    pose_stack: PoseStack, sfxn: ScoreFunction
+) -> PackerTaskOperation:
+    """FastRelax's own repacking task: Dunbrack, fixed-AA, current and NA rotamers."""
+    torch_device = pose_stack.device
+    from tmol.pack import create_dunbrack_sampler_from_database
+    from tmol.pack.rotamer._conjugated_groups import _add_conjugated_group_sampler
+
+    samplers = [
+        create_dunbrack_sampler_from_database(sfxn._param_db, torch_device),
+        FixedAAChiSampler(),
+        IncludeCurrentSampler(),
+    ]
+    if any(
+        bt.properties.polymer.backbone_type in ("dna", "rna")
+        for bt in pose_stack.packed_block_types.active_block_types
+    ):
+        samplers.append(NaChiRotamerSampler.from_database(sfxn._param_db, torch_device))
+
+    def default_op(task: PackerTask) -> None:
+        task.restrict_to_repacking()
+        for sampler in samplers:
+            task.add_conformer_sampler(sampler)
+        _add_conjugated_group_sampler(task, pose_stack)
+
+    return default_op
 
 
 def fast_relax(  # noqa: C901
@@ -345,30 +380,7 @@ def fast_relax(  # noqa: C901
         )
 
     if task_operations is None:
-        torch_device = pose_stack.device
-        from tmol.pack import create_dunbrack_sampler_from_database
-        from tmol.pack.rotamer._conjugated_groups import _add_conjugated_group_sampler
-
-        samplers = [
-            create_dunbrack_sampler_from_database(sfxn._param_db, torch_device),
-            FixedAAChiSampler(),
-            IncludeCurrentSampler(),
-        ]
-        if any(
-            bt.properties.polymer.backbone_type in ("dna", "rna")
-            for bt in pose_stack.packed_block_types.active_block_types
-        ):
-            samplers.append(
-                NaChiRotamerSampler.from_database(sfxn._param_db, torch_device)
-            )
-
-        def default_op(task: PackerTask) -> None:
-            task.restrict_to_repacking()
-            for sampler in samplers:
-                task.add_conformer_sampler(sampler)
-            _add_conjugated_group_sampler(task, pose_stack)
-
-        task_operations = [default_op]
+        task_operations = [default_relax_task_operation(pose_stack, sfxn)]
 
     fa_rep_start = float(sfxn.get_weight(ScoreType.fa_ljrep))
 

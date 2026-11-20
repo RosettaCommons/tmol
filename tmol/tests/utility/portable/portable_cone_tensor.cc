@@ -11,6 +11,11 @@
 #include <tmol/score/disulfide/potentials/potentials.hh>
 #include <tmol/score/dunbrack/potentials/potentials.hh>
 #include <tmol/score/elec/potentials/elec.hh>
+#include <tmol/score/gridscore/potentials/grid_interp_point.hh>
+#include <tmol/score/gridscore/potentials/grid_interp_pose_score.hh>
+#include <tmol/score/gridscore/potentials/grid_score.hh>
+#include <tmol/score/gridscore/potentials/live_hbond.hh>
+#include <tmol/score/gridscore/potentials/live_lk_ball.hh>
 #include <tmol/score/hbond/potentials/hbond.hh>
 #include <tmol/score/hbond/potentials/potentials.hh>
 #include <tmol/score/ljlk/potentials/lj.hh>

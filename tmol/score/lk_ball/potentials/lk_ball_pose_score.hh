@@ -86,9 +86,9 @@ struct LKBallPoseScoreDispatch {
       TView<LKBallGlobalParams<Real>, 1, Dev> global_params,
       Real max_dis,
       TView<Vec<Real, 3>, 2, Dev> water_coords,
-      TView<Int, 1, Dev> shared_compact_block_neighbors,
+      TPack<Int, 1, Dev> shared_compact_block_neighbors,
       bool output_block_pair_energies)
-      -> std::tuple<TPack<Real, 4, Dev>, TPack<Int, 3, Dev>>;
+      -> std::tuple<TPack<Real, 4, Dev>, TPack<Int, 1, Dev>>;
 
   static auto backward(
       ContextManager& mgr,
@@ -145,8 +145,7 @@ struct LKBallPoseScoreDispatch {
 
       // LKBall potential parameters
       TView<LKBallGlobalParams<Real>, 1, Dev> global_params,
-      TView<Int, 3, Dev> block_neighbors,  // from forward pass
-      TView<Int, 1, Dev> compact_block_neighbors,
+      TView<Int, 1, Dev> block_neighbors,  // from forward pass
       TView<Real, 4, Dev> dTdV,
       bool block_pair_scoring,
       bool allow_split_pairs = false)

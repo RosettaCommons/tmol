@@ -69,3 +69,13 @@
 #define TMOL_MPS_PTRS_28 TMOL_MPS_PTRS_27, b28
 #define TMOL_MPS_PTRS_29 TMOL_MPS_PTRS_28, b29
 #define TMOL_MPS_PTRS_30 TMOL_MPS_PTRS_29, b30
+
+// The block-pair candidate a list-walking entry scores, read from a compact
+// block-neighbor list ([count, candidate...]; see
+// sphere_overlap::mps_launch_block_neighbors). The grid covers the list's
+// capacity because the count lives on the device; a threadgroup past it
+// returns before touching shared memory or a barrier, so every thread of the
+// group leaves together.
+#define TMOL_MPS_BLOCK_NEIGHBOR_CANDIDATE(VAR, NEIGHBORS, CTA) \
+  if (int(CTA) >= int((NEIGHBORS)[0])) return;                 \
+  int const VAR = int((NEIGHBORS)[int(CTA) + 1])

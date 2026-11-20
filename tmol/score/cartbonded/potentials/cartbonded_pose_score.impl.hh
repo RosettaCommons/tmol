@@ -450,6 +450,10 @@ auto CartBondedPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
     // do the subgraphs for each of the three types begin?
     TView<Vec<Int, 3>, 1, D> cart_subgraph_type_offsets,
     TView<Int, 1, D> cart_subgraph_param_indices,
+    // Blocks whose atoms can move; an empty view means all of them do. A
+    // subgraph whose blocks are all frozen has a constant energy that the
+    // caller accounts for once, so this CTA can skip it.
+    TView<Int, 2, D> movable_blocks,
 
     // int max_subgraphs_per_block,
     bool output_block_pair_energies,
@@ -563,6 +567,10 @@ auto CartBondedPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
       return;
     }
 
+    auto block_is_movable = ([=] TMOL_DEVICE_FUNC(int p, int b) {
+      return movable_blocks.size(0) == 0 || movable_blocks[p][b] != 0;
+    });
+
     int const rot_ind1 = first_rot_for_block[pose_ind][block_ind1];
     int const rot_coord_offset1 = rot_coord_offset[rot_ind1];
 
@@ -665,6 +673,9 @@ auto CartBondedPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
     int block_ind2 = -1;
     if (conn_ind1 == max_n_conns) {
       // intra-residue!
+      if (!block_is_movable(pose_ind, block_ind1)) {
+        return;
+      }
       block_ind2 = block_ind1;
       // Threads in the CTA iterate across the subgraphs within the block
       int subgraph_offset = cart_subgraph_offsets[block_type1];
@@ -701,6 +712,10 @@ auto CartBondedPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
       if (block_ind1 > block_ind2) {
         // to avoid double counting, only have the lower-indexed block
         // handle the interaction
+        return;
+      }
+      if (!block_is_movable(pose_ind, block_ind1)
+          && !block_is_movable(pose_ind, block_ind2)) {
         return;
       }
       int const rot_ind2 = first_rot_for_block[pose_ind][block_ind2];
@@ -877,6 +892,7 @@ auto CartBondedPoseScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
     // do the subgraphs for each of the three types begin?
     TView<Vec<Int, 3>, 1, D> cart_subgraph_type_offsets,
     TView<Int, 1, D> cart_subgraph_param_indices,
+    TView<Int, 2, D> movable_blocks,
 
     TView<Real, 4, D> dTdV  // nterms x n-poses x max_n_blocks x max_n_blocks
     ) -> TPack<Vec<Real, 3>, 2, D> {
@@ -947,6 +963,10 @@ auto CartBondedPoseScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
     if (block_type1 == -1) {
       return;
     }
+
+    auto block_is_movable = ([=] TMOL_DEVICE_FUNC(int p, int b) {
+      return movable_blocks.size(0) == 0 || movable_blocks[p][b] != 0;
+    });
 
     int const rot_ind1 = first_rot_for_block[pose_ind][block_ind1];
     int const rot_coord_offset1 = rot_coord_offset[rot_ind1];
@@ -1034,6 +1054,9 @@ auto CartBondedPoseScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
 
     if (conn_ind1 == max_n_conns) {
       // intra-residue!
+      if (!block_is_movable(pose_ind, block_ind1)) {
+        return;
+      }
       int subgraph_offset = cart_subgraph_offsets[block_type1];
       int subgraph_offset_next = block_type1 + 1 == n_block_types
                                      ? n_subgraphs
@@ -1071,6 +1094,10 @@ auto CartBondedPoseScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
       if (block_ind1 > block_ind2) {
         // to avoid double counting, only have the lower-indexed block
         // handle the interaction
+        return;
+      }
+      if (!block_is_movable(pose_ind, block_ind1)
+          && !block_is_movable(pose_ind, block_ind2)) {
         return;
       }
       int const rot_ind2 = first_rot_for_block[pose_ind][block_ind2];

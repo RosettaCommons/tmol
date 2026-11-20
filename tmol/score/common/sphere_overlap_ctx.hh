@@ -52,32 +52,39 @@ struct BlockSpheresCtxT {
   enum { n_views = 7 };
 };
 
-// Pairwise neighbor detection: one thread per candidate block pair.
+// Compact block-neighbor list: one thread per candidate (pose, block pair) in
+// the upper triangle. neighbor_indices[0] is the live count and the retained
+// candidate IDs follow it, in whatever order the threads claim slots.
 template <template <typename, int> class View, typename Real, typename Int>
-struct BlockNeighborsCtxT {
+struct BlockNeighborListCtxT {
   View<Int, 2> pose_stack_block_type;
   View<Real, 3> block_spheres;
-  View<Int, 3> block_neighbors;
+  // [pose, block]; empty means every block moves.
+  View<Int, 2> movable_blocks;
+  View<Int, 1> neighbor_indices;
 
   // Launch shape and the reach cutoff, carried in the metadata buffer.
   int max_n_blocks = {};
-  int block_pairs_per_pose = {};
+  int n_pairs = {};
+  int n_candidates = {};
   Real reach = {};
 
   template <typename F>
   TMOL_HOST_DEVICE_FUNC void visit_views(F f) {
     f(pose_stack_block_type);
     f(block_spheres);
-    f(block_neighbors);
+    f(movable_blocks);
+    f(neighbor_indices);
   }
 
-  enum { n_views = 3 };
+  enum { n_views = 4 };
 
   // Launch scalars in the order the host writes and the shader reads.
   template <typename F>
   TMOL_HOST_DEVICE_FUNC void visit_scalars(F f) {
     f(max_n_blocks);
-    f(block_pairs_per_pose);
+    f(n_pairs);
+    f(n_candidates);
     f(reach);
   }
 };

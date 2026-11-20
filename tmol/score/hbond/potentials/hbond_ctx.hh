@@ -153,7 +153,6 @@ struct HBondCtxT {
     f(output_block_pair_energies);
     f(accumulate_derivs);
     f(max_n_upper_triangle_inds);
-    f(use_shared_compact_block_neighbors);
   }
 
   // Launch-shape constants
@@ -167,7 +166,6 @@ struct HBondCtxT {
   // in the block-pair upper triangle, and a precomputed neighbor list -- when
   // one was supplied -- replaces the per-pair neighbor test.
   int max_n_upper_triangle_inds = {};
-  bool use_shared_compact_block_neighbors = {};
 };
 
 }  // namespace potentials

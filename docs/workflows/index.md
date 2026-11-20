@@ -25,6 +25,7 @@ packing
 ../user_guide/optimization
 protein_interfaces
 ../user_guide/ligands
+ligand_docking
 nucleic_acids
 ```
 

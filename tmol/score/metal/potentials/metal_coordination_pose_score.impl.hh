@@ -227,6 +227,7 @@ auto MetalCoordinationPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
     TView<Int, 3, D> bridge_internal_metal,
     TView<Real, 3, D> bridge_internal_d0,
     TView<MetalBridgeParams<Real>, 1, D> bridge_params,
+    TView<Int, 2, D> movable_blocks,
     bool output_block_pair_energies,
     bool compute_derivs)
     -> std::tuple<TPack<Real, 4, D>, TPack<Vec<Real, 3>, 2, D>> {
@@ -260,6 +261,20 @@ auto MetalCoordinationPoseScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
     }
     int const block_type1 = first_rot_block_type[pose_ind][block_ind1];
     if (block_type1 < 0) {
+      return;
+    }
+    // Coordination partners are reached through this block's connections, so
+    // skip only when the block and every bonded neighbour are frozen.
+    auto region_is_frozen = ([=] TMOL_DEVICE_FUNC(int p, int b) {
+      if (movable_blocks.size(0) == 0) return false;
+      if (movable_blocks[p][b] != 0) return false;
+      for (int c = 0; c < max_n_conns; ++c) {
+        int const nb = pose_stack_inter_block_connections[p][b][c][0];
+        if (nb >= 0 && movable_blocks[p][nb] != 0) return false;
+      }
+      return true;
+    });
+    if (region_is_frozen(pose_ind, block_ind1)) {
       return;
     }
     int const offset1 = rot_coord_offset[rot_ind1];
@@ -398,6 +413,7 @@ auto MetalCoordinationPoseScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
     TView<Int, 3, D> bridge_internal_metal,
     TView<Real, 3, D> bridge_internal_d0,
     TView<MetalBridgeParams<Real>, 1, D> bridge_params,
+    TView<Int, 2, D> movable_blocks,
     TView<Real, 4, D> dTdV) -> TPack<Vec<Real, 3>, 2, D> {
   int const n_atoms = rot_coords.size(0);
   int const n_poses = first_rot_for_block.size(0);
@@ -425,6 +441,20 @@ auto MetalCoordinationPoseScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
     }
     int const block_type1 = first_rot_block_type[pose_ind][block_ind1];
     if (block_type1 < 0) {
+      return;
+    }
+    // Coordination partners are reached through this block's connections, so
+    // skip only when the block and every bonded neighbour are frozen.
+    auto region_is_frozen = ([=] TMOL_DEVICE_FUNC(int p, int b) {
+      if (movable_blocks.size(0) == 0) return false;
+      if (movable_blocks[p][b] != 0) return false;
+      for (int c = 0; c < max_n_conns; ++c) {
+        int const nb = pose_stack_inter_block_connections[p][b][c][0];
+        if (nb >= 0 && movable_blocks[p][nb] != 0) return false;
+      }
+      return true;
+    });
+    if (region_is_frozen(pose_ind, block_ind1)) {
       return;
     }
     int const offset1 = rot_coord_offset[rot_ind1];

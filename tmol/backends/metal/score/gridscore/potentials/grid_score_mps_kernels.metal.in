@@ -1,0 +1,34 @@
+// Metal entry point for per-atom receptor-grid scoring.
+//
+// Pre-expanded by the C preprocessor at build time and compiled at runtime;
+// see cmake/TmolMetalShader.cmake. The body lives in grid_score_kernels.hh
+// and is the same source the CPU and CUDA backends compile.
+//
+// The view buffers are declared positionally and collected into an array:
+// GridScoreAtomsCtxT::visit_views assigns them to fields in this order, and
+// the host binds them in that same order.
+
+#include <tmol/backends/metal/score/common/mps_entry.hh>
+#include <tmol/score/gridscore/potentials/grid_score_ctx.hh>
+#include <tmol/backends/metal/score/common/mps_ctx_builder.hh>
+#include <tmol/utility/portable/metal_view.hh>
+#include <tmol/score/gridscore/potentials/grid_score_kernels.hh>
+
+using namespace tmol::score::gridscore::potentials;
+
+typedef GridScoreAtomsCtxT<tmol::portable::MetalView, float, int64_t> AtomsCtx;
+
+// One thread per (pose, grid-scored atom).
+kernel void grid_score_atoms_f32(
+    device const int64_t* meta [[buffer(0)]],
+      TMOL_MPS_BIND_13,
+    uint index [[thread_position_in_grid]]) {
+  static_assert(
+      AtomsCtx::n_views == 13,
+      "buffer bindings here must cover every view visit_views enumerates");
+  device void* ptrs[13] = {TMOL_MPS_PTRS_13};
+  AtomsCtx ctx = tmol::score::common::mps_build_ctx<AtomsCtx>(ptrs, meta);
+  // The grid is rounded up to whole threadgroups; drop the tail.
+  if (int(index) >= ctx.n_items) return;
+  grid_score_atom_body<tmol::Device::MPS, float, int64_t>(ctx, int(index));
+}

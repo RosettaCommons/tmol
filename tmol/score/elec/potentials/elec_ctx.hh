@@ -50,7 +50,6 @@ struct ElecCtxT {
   // Inter-block proximity and bond separation
   View<Int, 4> pose_stack_near_blocks;
   View<int8_t, 5> pose_stack_inter_block_bondsep;
-  View<Int, 3> scratch_rot_neighbors;
 
   // Chemical properties of each block type
   View<Int, 1> block_type_n_atoms;
@@ -65,6 +64,10 @@ struct ElecCtxT {
 
   // Work-item mapping used by the block-pair and derivative kernels
   View<Int, 2> dispatch_indices;
+  // Whole-pose Metal entries only: the compact block-neighbor list
+  // ([count, candidate...]) they walk. The other backends launch over it
+  // directly.
+  View<Int, 1> block_neighbors;
 
   // Outputs
   View<Real, OutRank> output;
@@ -93,7 +96,6 @@ struct ElecCtxT {
     f(rot_offset_for_block);
     f(pose_stack_near_blocks);
     f(pose_stack_inter_block_bondsep);
-    f(scratch_rot_neighbors);
     f(block_type_n_atoms);
     f(block_type_partial_charge);
     f(block_type_n_interblock_bonds);
@@ -103,6 +105,7 @@ struct ElecCtxT {
     f(block_type_all_atoms_ligand_typed);
     f(global_params);
     f(dispatch_indices);
+    f(block_neighbors);
     f(output);
     f(dTdV);
     f(dV_dcoords);
@@ -120,14 +123,12 @@ struct ElecCtxT {
     f(max_n_blocks);
     f(max_n_upper_triangle_inds);
     f(output_block_pair_energies);
-    f(use_shared_compact_block_neighbors);
   }
 
   // Launch-shape constants
   int max_n_blocks = {};
   int max_n_upper_triangle_inds = {};
   bool output_block_pair_energies = {};
-  bool use_shared_compact_block_neighbors = {};
 };
 
 }  // namespace potentials

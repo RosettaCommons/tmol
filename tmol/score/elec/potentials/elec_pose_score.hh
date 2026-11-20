@@ -84,10 +84,10 @@ struct ElecPoseScoreDispatch {
       // LJ parameters
       TView<ElecGlobalParams<Real>, 1, D> global_params,
       Real max_dis,
-      TView<Int, 1, D> shared_compact_block_neighbors,
+      TPack<Int, 1, D> shared_compact_block_neighbors,
       bool output_block_pair_energies,
       bool compute_derivs) -> std::
-      tuple<TPack<Real, 4, D>, TPack<Vec<Real, 3>, 2, D>, TPack<Int, 3, D> >;
+      tuple<TPack<Real, 4, D>, TPack<Vec<Real, 3>, 2, D>, TPack<Int, 1, D> >;
 
   static auto backward(
       ContextManager& mgr,
@@ -145,7 +145,7 @@ struct ElecPoseScoreDispatch {
 
       // LJ parameters
       TView<ElecGlobalParams<Real>, 1, D> global_params,
-      TView<Int, 3, D> scratch_rot_neighbors,
+      TView<Int, 1, D> block_neighbors,  // from forward pass
       TView<Real, 4, D> dTdV  // nterms x n_poses x max_n_blocks x max_n_blocks
       ) -> TPack<Vec<Real, 3>, 2, D>;
 };

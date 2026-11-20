@@ -29,10 +29,11 @@ LAUNCH_BOX_32
 typedef WorkgroupLane<tmol::Device::MPS> Lane;
 
 // Whole-pose scoring: output is [term, pose, block, block], dispatch is the
-// block-neighbor table [pose, block, block]. The forward pass accumulates
-// derivatives into a rank-2 tensor, the backward into a rank-1 one.
-typedef HBondCtxMetal<float, int32_t, 4, 3, 2> PoseCtx;
-typedef HBondCtxMetal<float, int32_t, 4, 3, 1> PoseDerivCtx;
+// compact block-neighbor list [count, candidate...]. The forward pass
+// accumulates derivatives into a rank-2 tensor, the backward into a rank-1
+// one.
+typedef HBondCtxMetal<float, int32_t, 4, 1, 2> PoseCtx;
+typedef HBondCtxMetal<float, int32_t, 4, 1, 1> PoseDerivCtx;
 // Rotamer scoring: output is [term, rot_pair], dispatch is [3, rot_pair].
 typedef HBondCtxMetal<float, int32_t, 2, 2, 2> RotCtx;
 
@@ -50,7 +51,20 @@ typedef HBondSharedMem<float, TILE_SIZE, MAX_N_CONN, launch_t> HBondShared;
 //
 // BODY_CALL is spelled per entry because the whole-pose forward takes two
 // extra template arguments the other two do not.
-#define TMOL_HBOND_ENTRY(ENTRY_NAME, CTX_T, BODY_CALL)                       \
+#define TMOL_HBOND_ENTRY(ENTRY_NAME, CTX_T, BODY_CALL) \
+  TMOL_HBOND_ENTRY_AT(ENTRY_NAME, CTX_T, (void)0, BODY_CALL)
+
+// Whole-pose entries first read their block pair from the neighbor list; the
+// body call then names it `candidate`.
+#define TMOL_HBOND_POSE_ENTRY(ENTRY_NAME, CTX_T, BODY_CALL) \
+  TMOL_HBOND_ENTRY_AT(                                       \
+      ENTRY_NAME,                                            \
+      CTX_T,                                                 \
+      TMOL_MPS_BLOCK_NEIGHBOR_CANDIDATE(                     \
+          candidate, ctx.dispatch_indices, cta),             \
+      BODY_CALL)
+
+#define TMOL_HBOND_ENTRY_AT(ENTRY_NAME, CTX_T, PREAMBLE, BODY_CALL)          \
   kernel void ENTRY_NAME(                                                    \
       device const int64_t* meta [[buffer(0)]],                              \
       TMOL_MPS_BIND_27, \
@@ -64,13 +78,14 @@ typedef HBondSharedMem<float, TILE_SIZE, MAX_N_CONN, launch_t> HBondShared;
     threadgroup HBondShared shared;                                          \
     threadgroup float reduce_scratch[TMOL_N_SIMDS];                          \
     CTX_T ctx = tmol::score::common::mps_build_ctx<CTX_T>(ptrs, meta);                     \
+    PREAMBLE;                                                                \
     Lane lane(tid, n_threads, reduce_scratch);                               \
     BODY_CALL;                                                               \
   }
 
 // As with the rotamer entries: two instantiations of one body, so that
 // whichever is launched carries only the half of HBOND_ATOM_ENERGY it needs.
-TMOL_HBOND_ENTRY(
+TMOL_HBOND_POSE_ENTRY(
     hbond_pose_eval_energies_f32,
     PoseCtx,
     (hbond_pose_eval_energies<
@@ -80,9 +95,9 @@ TMOL_HBOND_ENTRY(
         int32_t,
         launch_t,
         TilePairMode::InterAndIntra>(
-        ctx, shared, int(cta), deriv_tag<false>{}, lane)))
+        ctx, shared, candidate, deriv_tag<false>{}, lane)))
 
-TMOL_HBOND_ENTRY(
+TMOL_HBOND_POSE_ENTRY(
     hbond_pose_eval_energies_derivs_f32,
     PoseCtx,
     (hbond_pose_eval_energies<
@@ -92,9 +107,9 @@ TMOL_HBOND_ENTRY(
         int32_t,
         launch_t,
         TilePairMode::InterAndIntra>(
-        ctx, shared, int(cta), deriv_tag<true>{}, lane)))
+        ctx, shared, candidate, deriv_tag<true>{}, lane)))
 
-TMOL_HBOND_ENTRY(
+TMOL_HBOND_POSE_ENTRY(
     hbond_pose_eval_derivs_f32,
     PoseDerivCtx,
     (hbond_pose_eval_derivs<
@@ -102,7 +117,7 @@ TMOL_HBOND_ENTRY(
         tmol::Device::MPS,
         float,
         int32_t,
-        launch_t>(ctx, shared, int(cta), lane)))
+        launch_t>(ctx, shared, candidate, lane)))
 
 // Two instantiations of one body. Packing never wants derivatives, and
 // dropping that branch is worth 17% of this entry's occupancy, so the common

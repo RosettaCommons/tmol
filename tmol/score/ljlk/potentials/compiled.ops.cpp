@@ -115,15 +115,15 @@ class LJLKPoseScoreOp
                   TCAST(type_params),
                   TCAST(global_params),
                   (Real)max_dis,
-                  TCAST(shared_compact_block_neighbors),
+                  TPack<Int, 1, Dev>(shared_compact_block_neighbors),
                   output_block_pair_energies,
                   rot_coords.requires_grad());
 
           score = std::get<0>(result).tensor;
           dscore_dcoords = std::get<1>(result).tensor;
-          block_neighbors = shared_compact_block_neighbors.numel() != 0
-                                ? shared_compact_block_neighbors
-                                : std::get<2>(result).tensor;
+          // The indices the forward walked, given or built; the backward reuses
+          // them.
+          block_neighbors = std::get<2>(result).tensor;
         }));
 
     if (output_block_pair_energies) {
@@ -952,7 +952,12 @@ std::vector<Tensor> build_compact_block_neighbors_op(
     Tensor pose_ind_for_rot,
     Tensor block_type_ind_for_rot,
     Tensor block_type_n_atoms,
+    Tensor movable_blocks,
     double reach) {
+  TORCH_CHECK(
+      movable_blocks.dim() == 2,
+      "movable_blocks must have shape [n_poses, max_n_blocks], or [0, 0] to "
+      "treat every block as movable");
   TORCH_CHECK(
       first_rot_block_type.dim() == 2,
       "first_rot_block_type must have shape [n_poses, max_n_blocks]");
@@ -980,7 +985,7 @@ std::vector<Tensor> build_compact_block_neighbors_op(
       " blocks per pose");
   Tensor neighbor_indices;
   using Int = int32_t;
-  TMOL_DISPATCH_FLOATING_DEVICE(
+  TMOL_DISPATCH_FLOATING_DEVICE_MPS(
       rot_coords.options(), "build_compact_block_neighbors", ([&] {
         using Real = scalar_t;
         constexpr tmol::Device Dev = device_t;
@@ -995,6 +1000,7 @@ std::vector<Tensor> build_compact_block_neighbors_op(
                     TCAST(pose_ind_for_rot),
                     TCAST(block_type_ind_for_rot),
                     TCAST(block_type_n_atoms),
+                    TCAST(movable_blocks),
                     (Real)reach)
                     .tensor;
       }));

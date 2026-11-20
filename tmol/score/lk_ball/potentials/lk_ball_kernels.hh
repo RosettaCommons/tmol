@@ -536,12 +536,6 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_energies_by_block(
     }
   }
 
-  // We still kill CTAs targetting non-neighboring block pairs, though,
-  // and that can be a lot
-  if (!ctx.use_shared_compact_block_neighbors
-      && ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0) {
-    return;
-  }
   int const rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
   int const rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
 
@@ -777,12 +771,6 @@ TMOL_HOST_DEVICE_FUNC void lk_ball_eval_derivs(
     }
   }
 
-  // We still kill CTAs targetting non-neighboring block pairs, though,
-  // and that can be a lot
-  if (!ctx.use_shared_compact_block_neighbors
-      && ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0) {
-    return;
-  }
   int const rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
   int const rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
 

@@ -356,45 +356,6 @@ struct TilePairModeTag : std::integral_constant<common::TilePairMode, Mode> {
 // interres_count_pair_separation and lk_ball_pose_pair_indices moved to
 // lk_ball_kernels.hh, which a Metal translation unit can include.
 
-template <
-    template <tmol::Device> class DeviceDispatch,
-    tmol::Device Dev,
-    typename Launch,
-    typename Eval>
-void launch_lk_ball_pose_pair_workgroups(
-    ContextManager& mgr, int n_poses, int max_n_blocks, Eval eval) {
-  int const n_pairs = score::common::checked_triangular_size(
-      max_n_blocks, true, "LK-ball block-pair dispatch");
-  int const n_candidate_pairs = score::common::checked_dispatch_product(
-      n_poses, n_pairs, "LK-ball block-pair dispatch");
-#ifdef __NVCC__
-  auto eval_all = ([=] TMOL_DEVICE_FUNC(int cta) {
-    eval(cta, TilePairModeTag<common::TilePairMode::InterAndIntra>{});
-  });
-  // The specialized kernels remove the cold intra/inter instruction path.
-  // Use them only once their throughput gain exceeds the extra launch cost.
-  constexpr int min_split_workgroups = 1 << 15;
-  if (max_n_blocks > 1 && n_candidate_pairs >= min_split_workgroups) {
-    auto eval_interres = ([=] TMOL_DEVICE_FUNC(int cta) {
-      eval(cta, TilePairModeTag<common::TilePairMode::Inter>{});
-    });
-    auto eval_intrares = ([=] TMOL_DEVICE_FUNC(int cta) {
-      eval(cta, TilePairModeTag<common::TilePairMode::Intra>{});
-    });
-    DeviceDispatch<Dev>::template foreach_pose_workgroup<Launch>(
-        mgr, n_poses, n_pairs - max_n_blocks, eval_interres);
-    DeviceDispatch<Dev>::template foreach_pose_workgroup<Launch>(
-        mgr, n_poses, max_n_blocks, eval_intrares);
-    return;
-  }
-  DeviceDispatch<Dev>::template foreach_pose_workgroup<Launch>(
-      mgr, n_poses, n_pairs, eval_all);
-#else
-  DeviceDispatch<Dev>::template foreach_pose_workgroup<Launch>(
-      mgr, n_poses, n_pairs, eval);
-#endif
-}
-
 #ifdef __NVCC__
 template <
     template <tmol::Device> class DeviceDispatch,
@@ -507,9 +468,9 @@ class LKBallPoseScoreDispatch {
       TView<LKBallGlobalParams<Real>, 1, Dev> global_params,
       Real max_dis,
       TView<Vec<Real, 3>, 2, Dev> water_coords,
-      TView<Int, 1, Dev> shared_compact_block_neighbors,
+      TPack<Int, 1, Dev> shared_compact_block_neighbors,
       bool output_block_pair_energies)
-      -> std::tuple<TPack<Real, 4, Dev>, TPack<Int, 3, Dev>> {
+      -> std::tuple<TPack<Real, 4, Dev>, TPack<Int, 1, Dev>> {
     using tmol::score::common::accumulate;
     using Real3 = Vec<Real, 3>;
 
@@ -526,25 +487,23 @@ class LKBallPoseScoreDispatch {
     int const n_block_pairs = score::common::checked_triangular_size(
         max_n_blocks, true, "LK-ball block-pair dispatch");
 
-    bool const use_shared_compact_block_neighbors =
-        shared_compact_block_neighbors.size(0) != 0;
-    TPack<Real, 3, Dev> scratch_rot_spheres_t;
-    auto scratch_rot_neighbors_t = TPack<Int, 3, Dev>::empty({0, 0, 0});
-    TView<Real, 3, Dev> scratch_rot_spheres;
-    TView<Int, 3, Dev> scratch_rot_neighbors;
-    if (!use_shared_compact_block_neighbors) {
-      scratch_rot_spheres_t =
-          Dev == Device::CPU
-              ? TPack<Real, 3, Dev>::zeros({n_poses, max_n_blocks, 4})
-              : TPack<Real, 3, Dev>::empty({n_poses, max_n_blocks, 4});
-      scratch_rot_neighbors_t =
-          Dev == Device::CPU
-              ? TPack<Int, 3, Dev>::zeros({n_poses, max_n_blocks, max_n_blocks})
-              : TPack<Int, 3, Dev>::empty(
-                    {n_poses, max_n_blocks, max_n_blocks});
-      scratch_rot_spheres = scratch_rot_spheres_t.view;
-      scratch_rot_neighbors = scratch_rot_neighbors_t.view;
+    // Every launch walks block-neighbor indices; build them here when the
+    // caller supplied none.
+    if (shared_compact_block_neighbors.view.size(0) == 0) {
+      shared_compact_block_neighbors = score::common::sphere_overlap::
+          build_block_neighbor_indices<DeviceDispatch, Dev, Real, Int>::f(
+              mgr,
+              rot_coords,
+              rot_coord_offset,
+              first_rot_block_type,
+              block_ind_for_rot,
+              pose_ind_for_rot,
+              block_type_ind_for_rot,
+              block_type_n_atoms,
+              TPack<Int, 2, Dev>::empty({0, 0}).view,
+              max_dis);
     }
+    auto block_neighbors = shared_compact_block_neighbors.view;
 
     TPack<Real, 4, Dev> output_t;
     if (output_block_pair_energies) {
@@ -575,7 +534,6 @@ class LKBallPoseScoreDispatch {
         pose_stack_inter_residue_connections;
     ctx.pose_stack_near_blocks = pose_stack_near_blocks;
     ctx.pose_stack_inter_block_bondsep = pose_stack_inter_block_bondsep;
-    ctx.scratch_rot_neighbors = scratch_rot_neighbors;
     ctx.block_type_n_atoms = block_type_n_atoms;
     ctx.block_type_n_interblock_bonds = block_type_n_interblock_bonds;
     ctx.block_type_atoms_forming_chemical_bonds =
@@ -590,7 +548,8 @@ class LKBallPoseScoreDispatch {
     ctx.max_n_blocks = max_n_blocks;
     ctx.n_block_pairs = n_block_pairs;
     ctx.output_block_pair_energies = output_block_pair_energies;
-    ctx.use_shared_compact_block_neighbors = use_shared_compact_block_neighbors;
+    // Read only by the Metal entry; the other backends launch over the list.
+    ctx.block_neighbors = block_neighbors;
 
     typedef LKBallSharedMem<Real, TILE_SIZE, MAX_N_WATER, MAX_N_CONN, launch_t>
         shared_mem_union;
@@ -622,90 +581,39 @@ class LKBallPoseScoreDispatch {
 #endif
     });
 
-    // Build block neighbors before dispatching LK-ball pair scoring.
-    if (!use_shared_compact_block_neighbors) {
-      score::common::sphere_overlap::
-          compute_block_spheres<DeviceDispatch, Dev, Real, Int>::f(
-              mgr,
-              rot_coords,
-              rot_coord_offset,
-              block_ind_for_rot,
-              pose_ind_for_rot,
-              block_type_ind_for_rot,
-              block_type_n_atoms,
-              scratch_rot_spheres);
-
-      score::common::sphere_overlap::
-          detect_block_neighbors<DeviceDispatch, Dev, Real, Int>::f(
-              mgr,
-              first_rot_block_type,
-              scratch_rot_spheres,
-              scratch_rot_neighbors,
-              max_dis);
-    }
 #ifdef __NVCC__
-    if (!output_block_pair_energies && use_shared_compact_block_neighbors) {
-      launch_lk_ball_compact_pose_pair_workgroups<
-          DeviceDispatch,
-          Dev,
-          launch_t,
-          Int>(
-          mgr,
-          shared_compact_block_neighbors,
-          n_poses,
-          max_n_blocks,
-          eval_energies_by_block);
-    } else if (
-        !output_block_pair_energies
-        && score::common::sphere_overlap::should_compact_block_neighbors(
-            n_poses, max_n_blocks, false)) {
-      auto eval_all = ([=] TMOL_DEVICE_FUNC(int cta) {
-        eval_energies_by_block(
-            cta, TilePairModeTag<common::TilePairMode::InterAndIntra>{});
-      });
-      score::common::sphere_overlap::
-          launch_compact_block_neighbors<DeviceDispatch, Dev, launch_t, Int>(
-              mgr, scratch_rot_neighbors, eval_all);
-    } else {
-      launch_lk_ball_pose_pair_workgroups<DeviceDispatch, Dev, launch_t>(
-          mgr, n_poses, max_n_blocks, eval_energies_by_block);
-    }
+    // Splitting into inter and intra passes pays only for whole-pose totals.
+    launch_lk_ball_compact_pose_pair_workgroups<
+        DeviceDispatch,
+        Dev,
+        launch_t,
+        Int>(
+        mgr,
+        block_neighbors,
+        n_poses,
+        max_n_blocks,
+        eval_energies_by_block,
+        !output_block_pair_energies);
 #else
     if (Dev == tmol::Device::MPS) {
-      // Metal cannot launch a device lambda -- there is nowhere for a closure
-      // to live, and entry points are compiled by a separate toolchain -- so
-      // the same kernel body is reached through a named entry rather than
-      // through eval_energies_by_block. The context that lambda closes over
-      // is the same object either way.
-      //
-      // This is tested ahead of the compact-block-neighbor path because that
-      // launches through DeviceDispatch, which on this backend would run the
-      // kernel on the CPU.
-      tmol::score::common::mps_launch_if<Dev>(
+      // Metal cannot launch a device lambda, so the same body is reached
+      // through a named entry that walks the same neighbor list.
+      score::common::sphere_overlap::mps_launch_block_neighbors<Dev>(
           TMOL_MPS_SOURCE(kLKBallMetalShaderSource),
           "lk_ball_eval_energies_by_block_f32",
           ctx,
-          int64_t(n_poses) * int64_t(n_block_pairs),
-          true);
-    } else if (
-        !output_block_pair_energies && use_shared_compact_block_neighbors) {
+          block_neighbors);
+    } else {
       score::common::sphere_overlap::launch_precomputed_block_neighbors<
           DeviceDispatch,
           Dev,
           launch_t,
           Int>(
-          mgr,
-          shared_compact_block_neighbors,
-          n_poses,
-          max_n_blocks,
-          eval_energies_by_block);
-    } else {
-      launch_lk_ball_pose_pair_workgroups<DeviceDispatch, Dev, launch_t>(
-          mgr, n_poses, max_n_blocks, eval_energies_by_block);
+          mgr, block_neighbors, n_poses, max_n_blocks, eval_energies_by_block);
     }
 #endif
 
-    return {output_t, scratch_rot_neighbors_t};
+    return {output_t, shared_compact_block_neighbors};
   }
 
   static auto backward(
@@ -763,8 +671,7 @@ class LKBallPoseScoreDispatch {
 
       // LKBall potential parameters
       TView<LKBallGlobalParams<Real>, 1, Dev> global_params,
-      TView<Int, 3, Dev> scratch_rot_neighbors,  // from forward pass
-      TView<Int, 1, Dev> compact_block_neighbors,
+      TView<Int, 1, Dev> block_neighbors,  // from forward pass
       TView<Real, 4, Dev> dTdV,
       bool block_pair_scoring,
       bool allow_split_pairs)
@@ -785,8 +692,6 @@ class LKBallPoseScoreDispatch {
     int const max_n_tiles = block_type_tile_pol_occ_inds.size(1);
     int const n_block_pairs = score::common::checked_triangular_size(
         max_n_blocks, true, "LK-ball derivative block-pair dispatch");
-    bool const use_compact_block_neighbors =
-        compact_block_neighbors.size(0) != 0;
 
     auto dV_d_pose_coords_t = TPack<Vec<Real, 3>, 1, Dev>::zeros({n_atoms});
     auto dV_d_pose_coords = dV_d_pose_coords_t.view;
@@ -794,6 +699,48 @@ class LKBallPoseScoreDispatch {
     auto dV_d_water_coords_t =
         TPack<Vec<Real, 3>, 2, Dev>::zeros({n_atoms, MAX_N_WATER});
     auto dV_d_water_coords = dV_d_water_coords_t.view;
+
+    if (Dev == tmol::Device::MPS) {
+      // Metal has nowhere for a closure to live, so the body the lambda below
+      // inlines is reached through a named entry point that walks the same
+      // neighbor list.
+      LKBallCtx<Real, Int, Dev, 4> ctx;
+      ctx.rot_coords = rot_coords;
+      ctx.water_coords = water_coords;
+      ctx.rot_coord_offset = rot_coord_offset;
+      ctx.rot_offset_for_block = rot_offset_for_block;
+      ctx.block_type_ind_for_rot = block_type_ind_for_rot;
+      ctx.block_ind_for_rot = block_ind_for_rot;
+      ctx.pose_stack_inter_residue_connections =
+          pose_stack_inter_residue_connections;
+      ctx.pose_stack_near_blocks = pose_stack_near_blocks;
+      ctx.pose_stack_inter_block_bondsep = pose_stack_inter_block_bondsep;
+      ctx.block_neighbors = block_neighbors;
+      ctx.block_type_n_atoms = block_type_n_atoms;
+      ctx.block_type_n_interblock_bonds = block_type_n_interblock_bonds;
+      ctx.block_type_atoms_forming_chemical_bonds =
+          block_type_atoms_forming_chemical_bonds;
+      ctx.block_type_path_distance = block_type_path_distance;
+      ctx.block_type_tile_n_polar_atoms = block_type_tile_n_polar_atoms;
+      ctx.block_type_tile_n_occluder_atoms = block_type_tile_n_occluder_atoms;
+      ctx.block_type_tile_pol_occ_inds = block_type_tile_pol_occ_inds;
+      ctx.block_type_tile_lk_ball_params = block_type_tile_lk_ball_params;
+      ctx.global_params = global_params;
+      ctx.dTdV = dTdV;
+      ctx.dV_d_pose_coords = dV_d_pose_coords;
+      ctx.dV_d_water_coords = dV_d_water_coords;
+      ctx.max_n_blocks = max_n_blocks;
+      ctx.n_block_pairs = n_block_pairs;
+      ctx.block_pair_scoring = block_pair_scoring;
+      // The derivative kernel neither reads nor writes energies.
+      ctx.output_block_pair_energies = false;
+      score::common::sphere_overlap::mps_launch_block_neighbors<Dev>(
+          TMOL_MPS_SOURCE(kLKBallMetalShaderSource),
+          "lk_ball_eval_derivs_f32",
+          ctx,
+          block_neighbors);
+      return {dV_d_pose_coords_t, dV_d_water_coords_t};
+    }
 
     // This derivative kernel is latency- and register-bound. Requiring more
     // resident warps gives the compiler a register budget that exposes enough
@@ -822,11 +769,6 @@ class LKBallPoseScoreDispatch {
         if (block_ind1 != block_ind2) return;
       }
 
-      // Reject empty work before setting up the derivative machinery below.
-      if (!use_compact_block_neighbors
-          && scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0) {
-        return;
-      }
       int const rot_ind1 = rot_offset_for_block[pose_ind][block_ind1];
       int const rot_ind2 = rot_offset_for_block[pose_ind][block_ind2];
       if (rot_ind1 < 0 || rot_ind2 < 0) {
@@ -1021,102 +963,22 @@ class LKBallPoseScoreDispatch {
           store_calculated_energies);
     });
 
-    if (Dev == tmol::Device::MPS) {
-      // Metal has nowhere for a closure to live, so the identical body is
-      // reached through a named entry point instead. Tested ahead of the
-      // compaction paths below, which launch through DeviceDispatch and would
-      // run the kernel on the CPU for this backend.
-      LKBallCtx<Real, Int, Dev, 4> ctx;
-      ctx.rot_coords = rot_coords;
-      ctx.water_coords = water_coords;
-      ctx.rot_coord_offset = rot_coord_offset;
-      ctx.rot_offset_for_block = rot_offset_for_block;
-      ctx.block_type_ind_for_rot = block_type_ind_for_rot;
-      ctx.block_ind_for_rot = block_ind_for_rot;
-      ctx.pose_stack_inter_residue_connections =
-          pose_stack_inter_residue_connections;
-      ctx.pose_stack_near_blocks = pose_stack_near_blocks;
-      ctx.pose_stack_inter_block_bondsep = pose_stack_inter_block_bondsep;
-      ctx.scratch_rot_neighbors = scratch_rot_neighbors;
-      ctx.block_type_n_atoms = block_type_n_atoms;
-      ctx.block_type_n_interblock_bonds = block_type_n_interblock_bonds;
-      ctx.block_type_atoms_forming_chemical_bonds =
-          block_type_atoms_forming_chemical_bonds;
-      ctx.block_type_path_distance = block_type_path_distance;
-      ctx.block_type_tile_n_polar_atoms = block_type_tile_n_polar_atoms;
-      ctx.block_type_tile_n_occluder_atoms = block_type_tile_n_occluder_atoms;
-      ctx.block_type_tile_pol_occ_inds = block_type_tile_pol_occ_inds;
-      ctx.block_type_tile_lk_ball_params = block_type_tile_lk_ball_params;
-      ctx.global_params = global_params;
-      ctx.dTdV = dTdV;
-      ctx.dV_d_pose_coords = dV_d_pose_coords;
-      ctx.dV_d_water_coords = dV_d_water_coords;
-      ctx.max_n_blocks = max_n_blocks;
-      ctx.n_block_pairs = n_block_pairs;
-      ctx.block_pair_scoring = block_pair_scoring;
-      // The derivative kernel neither reads nor writes energies.
-      ctx.output_block_pair_energies = false;
-      ctx.use_shared_compact_block_neighbors = false;
-      tmol::score::common::mps_launch_if<Dev>(
-          TMOL_MPS_SOURCE(kLKBallMetalShaderSource),
-          "lk_ball_eval_derivs_f32",
-          ctx,
-          int64_t(n_poses) * int64_t(n_block_pairs),
-          true);
-      return {dV_d_pose_coords_t, dV_d_water_coords_t};
-    }
-
-    // Large, spatially sparse pose stacks can contain far more candidate
-    // block pairs than neighboring pairs.  A CTA for every candidate then
-    // spends most of the launch scheduling budget only checking a zero in the
-    // neighbor matrix.  Keep a sufficiently large resident grid and let each
-    // warp stride over candidates instead.  Unlike compacting the matrix with
-    // a prefix scan, this has no device-to-host synchronization and is safe to
-    // capture in a CUDA graph.
 #ifdef __NVCC__
-    if (use_compact_block_neighbors) {
-      launch_lk_ball_compact_pose_pair_workgroups<
-          DeviceDispatch,
-          Dev,
-          launch_t,
-          Int>(
-          mgr,
-          compact_block_neighbors,
-          n_poses,
-          max_n_blocks,
-          eval_derivs,
-          allow_split_pairs);
-      return {dV_d_pose_coords_t, dV_d_water_coords_t};
-    }
-    int const n_pairs = score::common::checked_triangular_size(
-        max_n_blocks, true, "LK-ball derivative block-pair dispatch");
-    int const n_candidate_pairs = score::common::checked_dispatch_product(
-        n_poses, n_pairs, "LK-ball derivative block-pair dispatch");
-    constexpr int max_persistent_workgroups = 1 << 14;
-    int const n_workgroups = n_candidate_pairs < max_persistent_workgroups
-                                 ? n_candidate_pairs
-                                 : max_persistent_workgroups;
-    auto eval_derivs_strided = ([=] TMOL_DEVICE_FUNC(int cta) {
-      for (int workgroup = cta; workgroup < n_candidate_pairs;
-           workgroup += n_workgroups) {
-        eval_derivs(
-            workgroup, TilePairModeTag<common::TilePairMode::InterAndIntra>{});
-      }
-    });
-    DeviceDispatch<Dev>::template foreach_workgroup<launch_t>(
-        mgr, n_workgroups, eval_derivs_strided);
+    launch_lk_ball_compact_pose_pair_workgroups<
+        DeviceDispatch,
+        Dev,
+        launch_t,
+        Int>(
+        mgr,
+        block_neighbors,
+        n_poses,
+        max_n_blocks,
+        eval_derivs,
+        allow_split_pairs);
 #else
-    if (use_compact_block_neighbors) {
-      score::common::sphere_overlap::launch_precomputed_block_neighbors<
-          DeviceDispatch,
-          Dev,
-          launch_t,
-          Int>(
-          mgr, compact_block_neighbors, n_poses, max_n_blocks, eval_derivs);
-    } else {
-      launch_lk_ball_pose_pair_workgroups<DeviceDispatch, Dev, launch_t>(
-          mgr, n_poses, max_n_blocks, eval_derivs);
-    }
+    score::common::sphere_overlap::
+        launch_precomputed_block_neighbors<DeviceDispatch, Dev, launch_t, Int>(
+            mgr, block_neighbors, n_poses, max_n_blocks, eval_derivs);
 #endif
 
     return {dV_d_pose_coords_t, dV_d_water_coords_t};
@@ -1360,7 +1222,6 @@ class LKBallRotamerScoreDispatch {
     // than the block-pair upper triangle -- but the Metal launcher copies
     // every scalar slot, so none may be left uninitialized.
     ctx.n_block_pairs = 0;
-    ctx.use_shared_compact_block_neighbors = false;
 
     auto eval_energies_by_block = ([=] TMOL_DEVICE_FUNC(int cta) {
       typedef LKBallSharedMem<

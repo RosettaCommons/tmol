@@ -46,10 +46,13 @@ struct LKBallCtxT {
   View<Vec<Int, 2>, 3> pose_stack_inter_residue_connections;
   View<Int, 4> pose_stack_near_blocks;
   View<int8_t, 5> pose_stack_inter_block_bondsep;
-  View<Int, 3> scratch_rot_neighbors;
   // Rotamer-pair dispatch list, [3, n_pairs]; bound only by the rotamer
   // entry point, which walks it instead of the block-pair upper triangle.
   View<Int, 2> dispatch_indices;
+  // Whole-pose Metal entries only: the compact block-neighbor list
+  // ([count, candidate...]) they walk. The other backends launch over it
+  // directly.
+  View<Int, 1> block_neighbors;
 
   // Chemical properties of each block type
   View<Int, 1> block_type_n_atoms;
@@ -89,8 +92,8 @@ struct LKBallCtxT {
     f(pose_stack_inter_residue_connections);
     f(pose_stack_near_blocks);
     f(pose_stack_inter_block_bondsep);
-    f(scratch_rot_neighbors);
     f(dispatch_indices);
+    f(block_neighbors);
     f(block_type_n_atoms);
     f(block_type_n_interblock_bonds);
     f(block_type_atoms_forming_chemical_bonds);
@@ -114,7 +117,6 @@ struct LKBallCtxT {
     f(max_n_blocks);
     f(n_block_pairs);
     f(output_block_pair_energies);
-    f(use_shared_compact_block_neighbors);
     f(block_pair_scoring);
   }
 
@@ -122,7 +124,6 @@ struct LKBallCtxT {
   int max_n_blocks = {};
   int n_block_pairs = {};
   bool output_block_pair_energies = {};
-  bool use_shared_compact_block_neighbors = {};
   // Backward pass only: whether dTdV is indexed per block pair or per pose.
   bool block_pair_scoring = {};
 };

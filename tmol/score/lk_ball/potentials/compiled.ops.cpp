@@ -442,8 +442,7 @@ class LKBallPoseScoreOp
       bool output_block_pair_energies,
       Tensor shared_compact_block_neighbors,
       bool allow_split_backward) {
-    tmol::native::Tensor score;
-    tmol::native::Tensor block_neighbors;
+    tmol::native::Tensor score, block_neighbors;
 
     using Int = int32_t;
 
@@ -489,10 +488,12 @@ class LKBallPoseScoreOp
                   TCAST(global_params),
                   (Real)max_dis,
                   TCAST(water_coords),
-                  TCAST(shared_compact_block_neighbors),
+                  TPack<Int, 1, Dev>(shared_compact_block_neighbors),
                   output_block_pair_energies);
 
           score = std::get<0>(result).tensor;
+          // The indices the forward walked, given or built; the backward reuses
+          // them.
           block_neighbors = std::get<1>(result).tensor;
         }));
 
@@ -534,19 +535,15 @@ class LKBallPoseScoreOp
 
          global_params,
          water_coords,
-         block_neighbors,
-         shared_compact_block_neighbors});
+         block_neighbors});
 
     ctx->saved_data["block_pair_scoring"] = output_block_pair_energies;
     ctx->saved_data["allow_split_backward"] = allow_split_backward;
 
-    auto returned_neighbors = shared_compact_block_neighbors.numel() != 0
-                                  ? shared_compact_block_neighbors
-                                  : block_neighbors;
     // The integer neighbor output has no derivative. Do not allocate an
     // unused zero gradient for it when differentiating the score.
     ctx->set_materialize_grads(false);
-    return {score, returned_neighbors};
+    return {score, block_neighbors};
   }
 
   static tensor_list backward(AutogradContext* ctx, tensor_list grad_outputs) {
@@ -589,7 +586,6 @@ class LKBallPoseScoreOp
     auto global_params = saved[i++];
     auto water_coords = saved[i++];
     auto block_neighbors = saved[i++];
-    auto compact_block_neighbors = saved[i++];
 
     tmol::native::Tensor dV_d_pose_coords, dV_d_water_coords;
     using Int = int32_t;
@@ -650,7 +646,6 @@ class LKBallPoseScoreOp
 
                   TCAST(global_params),
                   TCAST(block_neighbors),
-                  TCAST(compact_block_neighbors),
                   TCAST(dTdV),
                   block_pair_scoring,
                   ctx->saved_data["allow_split_backward"].toBool());

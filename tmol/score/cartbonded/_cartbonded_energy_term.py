@@ -97,6 +97,10 @@ class CartBondedEnergyTerm(AtomTypeDependentTerm):
     def class_name(cls):
         return "CartBonded"
 
+    def takes_movable_blocks(self) -> bool:
+        """This term's pose-score kernel takes a movable-block mask."""
+        return True
+
     @classmethod
     def score_types(cls):
         import tmol.score.terms._cartbonded_creator

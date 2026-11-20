@@ -6,6 +6,7 @@
 #include <metal_math>
 #else
 #include <cmath>
+#include <limits>
 #endif
 
 namespace tmol {
@@ -131,6 +132,32 @@ TMOL_HOST_DEVICE_FUNC bool isnan(float x) {
 template <typename T>
 TMOL_HOST_DEVICE_FUNC bool isnan(T x) {
   return ::std::isnan(x);
+}
+#endif
+
+// isfinite, by bit pattern on Metal for the same reason as isnan: neither
+// infinity nor NaN may be assumed away.
+#if TMOL_PORTABLE_METAL
+TMOL_HOST_DEVICE_FUNC bool isfinite(float x) {
+  return (as_type<uint>(x) & 0x7f800000u) != 0x7f800000u;
+}
+#else
+template <typename T>
+TMOL_HOST_DEVICE_FUNC bool isfinite(T x) {
+  return ::std::isfinite(x);
+}
+#endif
+
+// A quiet NaN, which Metal has no numeric_limits to supply.
+#if TMOL_PORTABLE_METAL
+template <typename T>
+TMOL_HOST_DEVICE_FUNC T quiet_nan() {
+  return as_type<float>(0x7fc00000u);
+}
+#else
+template <typename T>
+TMOL_HOST_DEVICE_FUNC T quiet_nan() {
+  return ::std::numeric_limits<T>::quiet_NaN();
 }
 #endif
 

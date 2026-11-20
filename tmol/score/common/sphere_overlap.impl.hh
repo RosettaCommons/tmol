@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstring>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -32,29 +33,6 @@ namespace common {
 namespace sphere_overlap {
 
 using tmol::portable::Vec;
-
-inline bool should_compact_block_neighbors(
-    int n_poses, int max_n_blocks, bool computes_derivatives) {
-  // Compaction pays for one large inference pose or a wide batch of smaller
-  // poses. Derivative kernels carry more useful work per CTA, so require both
-  // a large pose and a genuinely wide workload.
-  constexpr int min_blocks_per_pose = 256;
-  constexpr int min_inference_candidates = 1 << 16;
-  constexpr int min_batched_blocks_for_derivatives = 1000;
-  int64_t const pairs_per_pose =
-      (int64_t(max_n_blocks) * (int64_t(max_n_blocks) + 1)) / 2;
-  bool const enough_inference_candidates =
-      n_poses > 0
-      && pairs_per_pose
-             >= (min_inference_candidates + int64_t(n_poses) - 1) / n_poses;
-  bool const large_inference_workload =
-      max_n_blocks >= min_blocks_per_pose || enough_inference_candidates;
-  if (!large_inference_workload) return false;
-  return !computes_derivatives
-         || (max_n_blocks >= min_blocks_per_pose
-             && int64_t(n_poses) * max_n_blocks
-                    >= min_batched_blocks_for_derivatives);
-}
 
 template <
     template <tmol::Device> class DeviceDispatch,
@@ -355,110 +333,16 @@ struct detect_rot_neighbors {
   }
 };
 
-template <
-    template <tmol::Device> class DeviceDispatch,
-    tmol::Device D,
-    typename Real,
-    typename Int>
-struct detect_block_neighbors {
-  static void f(
-      ContextManager& mgr,
-      TView<Int, 2, D> pose_stack_block_type,
-      TView<Real, 3, D> block_spheres,
-      TView<Int, 3, D> block_neighbors,
-      Real reach) {
-    LAUNCH_BOX_32;
-
-    int const n_poses = pose_stack_block_type.size(0);
-    int const max_n_blocks = pose_stack_block_type.size(1);
-    int const block_pairs_per_pose = common::checked_dispatch_product(
-        max_n_blocks, max_n_blocks, "block-neighbor candidates per pose");
-    int const n_block_pairs = common::checked_dispatch_product(
-        n_poses, block_pairs_per_pose, "block-neighbor candidates");
-    auto detect_neighbors = ([=] TMOL_DEVICE_FUNC(int index) {
-      int const pose_ind = index / block_pairs_per_pose;
-      int const pair = index % block_pairs_per_pose;
-      int const block_ind1 = pair / max_n_blocks;
-      int const block_ind2 = pair % max_n_blocks;
-
-      if (block_ind1 > block_ind2) {
-        if (D == Device::CUDA) {
-          block_neighbors[pose_ind][block_ind1][block_ind2] = 0;
-        }
-        return;
-      }
-
-      int const block_type1 = pose_stack_block_type[pose_ind][block_ind1];
-      if (block_type1 < 0) {
-        if (D == Device::CUDA) {
-          block_neighbors[pose_ind][block_ind1][block_ind2] = 0;
-        }
-        return;
-      }
-      int const block_type2 = pose_stack_block_type[pose_ind][block_ind2];
-      if (block_type2 < 0) {
-        if (D == Device::CUDA) {
-          block_neighbors[pose_ind][block_ind1][block_ind2] = 0;
-        }
-        return;
-      }
-
-      Vec<Real, 4> sphere1{0, 0, 0, 0};
-      Vec<Real, 4> sphere2{0, 0, 0, 0};
-
-      for (int i = 0; i < 4; ++i) {
-        sphere1[i] = block_spheres[pose_ind][block_ind1][i];
-        sphere2[i] = block_spheres[pose_ind][block_ind2][i];
-      }
-
-      Real d2 =
-          ((sphere1[0] - sphere2[0]) * (sphere1[0] - sphere2[0])
-           + (sphere1[1] - sphere2[1]) * (sphere1[1] - sphere2[1])
-           + (sphere1[2] - sphere2[2]) * (sphere1[2] - sphere2[2]));
-
-      Real d_threshold = sphere1[3] + sphere2[3] + reach;
-
-      // CUDA writes every cell so its caller can avoid a separate fill. CPU
-      // retains zero-initialized scratch because skipping non-neighbor stores
-      // is faster there.
-      if (d2 < d_threshold * d_threshold) {
-        block_neighbors[pose_ind][block_ind1][block_ind2] = 1;
-      } else if (D == Device::CUDA) {
-        block_neighbors[pose_ind][block_ind1][block_ind2] = 0;
-      }
-    });
-    if (D == tmol::Device::MPS) {
-      BlockNeighborsCtxT<
-          tmol::score::common::TViewBinder<D>::template View,
-          Real,
-          Int>
-          ctx;
-      ctx.pose_stack_block_type = pose_stack_block_type;
-      ctx.block_spheres = block_spheres;
-      ctx.block_neighbors = block_neighbors;
-      ctx.max_n_blocks = max_n_blocks;
-      ctx.block_pairs_per_pose = block_pairs_per_pose;
-      ctx.reach = reach;
-      tmol::score::common::mps_launch_if<D>(
-          TMOL_MPS_SOURCE(kSphereOverlapMetalShaderSource),
-          "detect_block_neighbors_f32",
-          ctx,
-          n_block_pairs,
-          false);
-    } else {
-      DeviceDispatch<D>::template forall_independent<launch_t>(
-          mgr, n_block_pairs, detect_neighbors);
-    }
-  }
-};
-
 template <typename Real, typename Int>
 bool try_cpu_spatial_compact_block_neighbors(
     TView<Int, 2, tmol::Device::CPU> pose_stack_block_type,
     TView<Real, 3, tmol::Device::CPU> block_spheres,
+    TView<Int, 2, tmol::Device::CPU> movable_blocks,
     Real reach,
     std::vector<Int>& retained) {
   retained.clear();
+  // An empty movable view means every block moves, so no pair is filtered.
+  bool const filter_frozen = movable_blocks.size(0) != 0;
   int const n_poses = pose_stack_block_type.size(0);
   int const max_n_blocks = pose_stack_block_type.size(1);
   constexpr int min_spatial_sweep_blocks = 150;
@@ -548,6 +432,13 @@ bool try_cpu_spatial_compact_block_neighbors(
       Real const threshold = left_radius + block_spheres[0][right][3] + reach;
       if (d2 >= threshold * threshold) continue;
 
+      // Two frozen blocks interact identically at every call, so the pair is a
+      // constant the caller accounts for once instead of re-evaluating.
+      if (filter_frozen && movable_blocks[0][left] == 0
+          && movable_blocks[0][right] == 0) {
+        continue;
+      }
+
       Int const block1 = std::min(left, right);
       Int const block2 = std::max(left, right);
       int64_t const candidate =
@@ -571,8 +462,11 @@ struct detect_compact_block_neighbors {
       TView<Int, 2, D> pose_stack_block_type,
       TView<Real, 3, D> block_spheres,
       TView<Int, 1, D> neighbor_indices,
+      TView<Int, 2, D> movable_blocks,
       Real reach) {
     LAUNCH_BOX_32;
+    // An empty movable view means every block moves, so no pair is filtered.
+    bool const filter_frozen = movable_blocks.size(0) != 0;
 
     int const n_poses = pose_stack_block_type.size(0);
     int const max_n_blocks = pose_stack_block_type.size(1);
@@ -590,7 +484,11 @@ struct detect_compact_block_neighbors {
       // by the quadratic path, so downstream accumulation is unchanged.
       std::vector<Int> retained;
       if (try_cpu_spatial_compact_block_neighbors(
-              pose_stack_block_type, block_spheres, reach, retained)) {
+              pose_stack_block_type,
+              block_spheres,
+              movable_blocks,
+              reach,
+              retained)) {
         neighbor_indices[0] = static_cast<Int>(retained.size());
         if (!retained.empty()) {
           std::memcpy(
@@ -612,6 +510,10 @@ struct detect_compact_block_neighbors {
             if (block_type1 < 0) return;
             int const block_type2 = pose_stack_block_type[pose_ind][block_ind2];
             if (block_type2 < 0) return;
+            if (filter_frozen && movable_blocks[pose_ind][block_ind1] == 0
+                && movable_blocks[pose_ind][block_ind2] == 0) {
+              return;
+            }
 
             Vec<Real, 4> sphere1{0, 0, 0, 0};
             Vec<Real, 4> sphere2{0, 0, 0, 0};
@@ -672,6 +574,10 @@ struct detect_compact_block_neighbors {
         if (block_type1 < 0) return;
         int const block_type2 = pose_stack_block_type[pose_ind][block_ind2];
         if (block_type2 < 0) return;
+        if (filter_frozen && movable_blocks[pose_ind][block_ind1] == 0
+            && movable_blocks[pose_ind][block_ind2] == 0) {
+          return;
+        }
 
         Vec<Real, 4> sphere1{0, 0, 0, 0};
         Vec<Real, 4> sphere2{0, 0, 0, 0};
@@ -698,112 +604,6 @@ struct detect_compact_block_neighbors {
 template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
-    typename Int>
-struct compact_block_neighbors {
-  static void f(
-      ContextManager& mgr,
-      TView<Int, 3, D> block_neighbors,
-      TView<Int, 1, D> neighbor_indices,
-      TView<Int, 1, D> n_neighbors) {
-    LAUNCH_BOX_32;
-
-    int const n_poses = block_neighbors.size(0);
-    int const max_n_blocks = block_neighbors.size(1);
-    int const n_pairs = common::checked_dispatch_size(
-        common::checked_count_product(
-            max_n_blocks,
-            int64_t(max_n_blocks) + 1,
-            "compact block-neighbor candidates per pose")
-            / 2,
-        "compact block-neighbor candidates per pose");
-    int const n_candidates = common::checked_dispatch_product(
-        n_poses, n_pairs, "compact block-neighbor candidates");
-    if constexpr (D == tmol::Device::CPU) {
-      auto compact = ([=] TMOL_DEVICE_FUNC(int candidate) {
-        neighbor_indices[candidate] = -1;
-        int const pose = candidate / n_pairs;
-        auto pair = common::upper_triangle_inds_from_linear_index(
-            candidate % n_pairs, max_n_blocks + 1);
-        int const block1 = common::get<0>(pair);
-        int const block2 = common::get<1>(pair) - 1;
-        if (block_neighbors[pose][block1][block2] == 0) return;
-        neighbor_indices[candidate] = candidate;
-      });
-      DeviceDispatch<D>::template forall_independent<launch_t>(
-          mgr, n_candidates, compact);
-      Int count = 0;
-      for (int candidate = 0; candidate < n_candidates; ++candidate) {
-        Int const value = neighbor_indices[candidate];
-        if (value >= 0) neighbor_indices[count++] = value;
-      }
-      n_neighbors[0] = count;
-    } else {
-      auto compact = ([=] TMOL_DEVICE_FUNC(int candidate) {
-        int const pose = candidate / n_pairs;
-        auto pair = common::upper_triangle_inds_from_linear_index(
-            candidate % n_pairs, max_n_blocks + 1);
-        int const block1 = common::get<0>(pair);
-        int const block2 = common::get<1>(pair) - 1;
-        if (block_neighbors[pose][block1][block2] == 0) return;
-        int const output = accumulate<D, Int>::add(n_neighbors[0], Int(1));
-        neighbor_indices[output] = candidate;
-      });
-      DeviceDispatch<D>::template forall_independent<launch_t>(
-          mgr, n_candidates, compact);
-    }
-  }
-};
-
-template <
-    template <tmol::Device> class DeviceDispatch,
-    tmol::Device D,
-    typename Launch,
-    typename Int,
-    typename Eval>
-void launch_compact_block_neighbors(
-    ContextManager& mgr, TView<Int, 3, D> block_neighbors, Eval eval) {
-  // Keep the compact count on device so this remains capture-safe. A bounded
-  // grid then strides over only neighboring pairs without a host sync.
-  int const n_poses = block_neighbors.size(0);
-  int const max_n_blocks = block_neighbors.size(1);
-  int const n_pairs = common::checked_dispatch_size(
-      common::checked_count_product(
-          max_n_blocks,
-          int64_t(max_n_blocks) + 1,
-          "compact block-neighbor candidates per pose")
-          / 2,
-      "compact block-neighbor candidates per pose");
-  int const n_candidates = common::checked_dispatch_product(
-      n_poses, n_pairs, "compact block-neighbor candidates");
-  if (n_candidates == 0) return;
-  auto neighbor_indices_t = TPack<Int, 1, D>::empty({n_candidates});
-  auto neighbor_indices = neighbor_indices_t.view;
-  auto n_neighbors_t = TPack<Int, 1, D>::zeros({1});
-  auto n_neighbors = n_neighbors_t.view;
-  compact_block_neighbors<DeviceDispatch, D, Int>::f(
-      mgr, block_neighbors, neighbor_indices, n_neighbors);
-
-  constexpr int wide_batch_candidates = 1 << 20;
-  constexpr int normal_workgroups = 1 << 14;
-  constexpr int wide_batch_workgroups = 1 << 15;
-  int const max_workgroups = n_candidates >= wide_batch_candidates
-                                 ? wide_batch_workgroups
-                                 : normal_workgroups;
-  int const n_workgroups =
-      n_candidates < max_workgroups ? n_candidates : max_workgroups;
-  auto eval_compact = ([=] TMOL_DEVICE_FUNC(int cta) {
-    for (int index = cta; index < n_candidates; index += n_workgroups) {
-      if (index >= n_neighbors[0]) return;
-      eval(neighbor_indices[index]);
-    }
-  });
-  DeviceDispatch<D>::template foreach_workgroup<Launch>(
-      mgr, n_workgroups, eval_compact);
-}
-
-template <
-    template <tmol::Device> class DeviceDispatch,
-    tmol::Device D,
     typename Launch,
     typename Int,
     typename Eval>
@@ -813,6 +613,12 @@ void launch_precomputed_block_neighbors(
     int n_poses,
     int max_n_blocks,
     Eval eval) {
+  if constexpr (D == tmol::Device::MPS) {
+    // Metal cannot launch a device lambda. Terms with a Metal path launch a
+    // named entry through mps_launch_block_neighbors instead of calling this.
+    throw std::runtime_error(
+        "tmol: this block-neighbor kernel has no Metal entry point");
+  }
   int const n_candidates = neighbor_indices.size(0) - 1;
   if (n_candidates <= 0) return;
 #ifdef __NVCC__
@@ -872,6 +678,20 @@ void launch_precomputed_block_neighbors(
         mgr, n_neighbors, eval_compact);
   }
 #endif
+}
+
+// Metal counterpart of launch_precomputed_block_neighbors: one threadgroup per
+// slot of the list. The count lives on the device, so the grid covers the
+// list's capacity and the entry drops slots at or past neighbor_indices[0];
+// see TMOL_MPS_BLOCK_NEIGHBOR_CANDIDATE.
+template <tmol::Device D, typename Int, typename Ctx>
+void mps_launch_block_neighbors(
+    char const* source,
+    char const* kernel,
+    Ctx& ctx,
+    TView<Int, 1, D> neighbor_indices) {
+  tmol::score::common::mps_launch_if<D>(
+      source, kernel, ctx, int64_t(neighbor_indices.size(0)) - 1, true);
 }
 
 template <
@@ -1223,6 +1043,140 @@ struct rot_neighbor_indices_from_block_neighbors {
     }
 
     return indices_t;
+  }
+};
+
+// Candidate (pose, block pair) indices whose bounding spheres lie within
+// `reach`, skipping pairs of two frozen blocks. Element 0 is the live count.
+template <
+    template <tmol::Device> class DeviceOperations,
+    tmol::Device D,
+    typename Real,
+    typename Int>
+struct build_block_neighbor_indices {
+  static auto f(
+      ContextManager& mgr,
+      TView<Vec<Real, 3>, 1, D> rot_coords,
+      TView<Int, 1, D> rot_coord_offset,
+      TView<Int, 2, D> pose_stack_block_type,
+      TView<Int, 1, D> block_ind_for_rot,
+      TView<Int, 1, D> pose_ind_for_rot,
+      TView<Int, 1, D> block_type_ind_for_rot,
+      TView<Int, 1, D> block_type_n_atoms,
+      TView<Int, 2, D> movable_blocks,
+      Real reach) -> TPack<Int, 1, D> {
+    int const n_poses = pose_stack_block_type.size(0);
+    int const max_n_blocks = pose_stack_block_type.size(1);
+    int const n_pairs = score::common::checked_triangular_size(
+        max_n_blocks, true, "block-neighbor candidates");
+    int const n_candidates = score::common::checked_dispatch_product(
+        n_poses, n_pairs, "block-neighbor candidates");
+    auto block_spheres_t =
+        D == Device::CPU ? TPack<Real, 3, D>::zeros({n_poses, max_n_blocks, 4})
+                         : TPack<Real, 3, D>::empty({n_poses, max_n_blocks, 4});
+    if constexpr (D == Device::CUDA) {
+      auto neighbor_indices_t =
+          rot_coord_offset.size(0) == 0
+              ? TPack<Int, 1, D>::zeros({int64_t(n_candidates) + 1})
+              : TPack<Int, 1, D>::empty({int64_t(n_candidates) + 1});
+      score::common::sphere_overlap::
+          compute_block_spheres<DeviceOperations, D, Real, Int, true>::f(
+              mgr,
+              rot_coords,
+              rot_coord_offset,
+              block_ind_for_rot,
+              pose_ind_for_rot,
+              block_type_ind_for_rot,
+              block_type_n_atoms,
+              block_spheres_t.view,
+              neighbor_indices_t.view.data());
+      score::common::sphere_overlap::
+          detect_compact_block_neighbors<DeviceOperations, D, Real, Int>::f(
+              mgr,
+              pose_stack_block_type,
+              block_spheres_t.view,
+              neighbor_indices_t.view,
+              movable_blocks,
+              reach);
+      return neighbor_indices_t;
+    } else if constexpr (D == Device::MPS) {
+      // The CPU branch below cannot be instantiated here: its spatial-sweep
+      // helper reads host memory, and an MPS tensor's data pointer is an
+      // MTLBuffer. Metal builds the list as CUDA does, by atomic append.
+      auto neighbor_indices_t =
+          TPack<Int, 1, D>::zeros({int64_t(n_candidates) + 1});
+      score::common::sphere_overlap::
+          compute_block_spheres<DeviceOperations, D, Real, Int>::f(
+              mgr,
+              rot_coords,
+              rot_coord_offset,
+              block_ind_for_rot,
+              pose_ind_for_rot,
+              block_type_ind_for_rot,
+              block_type_n_atoms,
+              block_spheres_t.view);
+      BlockNeighborListCtxT<
+          tmol::score::common::TViewBinder<D>::template View,
+          Real,
+          Int>
+          ctx;
+      ctx.pose_stack_block_type = pose_stack_block_type;
+      ctx.block_spheres = block_spheres_t.view;
+      ctx.movable_blocks = movable_blocks;
+      ctx.neighbor_indices = neighbor_indices_t.view;
+      ctx.max_n_blocks = max_n_blocks;
+      ctx.n_pairs = n_pairs;
+      ctx.n_candidates = n_candidates;
+      ctx.reach = reach;
+      tmol::score::common::mps_launch_if<D>(
+          TMOL_MPS_SOURCE(kSphereOverlapMetalShaderSource),
+          "detect_block_neighbor_list_f32",
+          ctx,
+          n_candidates,
+          false);
+      return neighbor_indices_t;
+    } else {
+      score::common::sphere_overlap::
+          compute_block_spheres<DeviceOperations, D, Real, Int>::f(
+              mgr,
+              rot_coords,
+              rot_coord_offset,
+              block_ind_for_rot,
+              pose_ind_for_rot,
+              block_type_ind_for_rot,
+              block_type_n_atoms,
+              block_spheres_t.view);
+      std::vector<Int> retained;
+      if (score::common::sphere_overlap::
+              try_cpu_spatial_compact_block_neighbors(
+                  pose_stack_block_type,
+                  block_spheres_t.view,
+                  movable_blocks,
+                  reach,
+                  retained)) {
+        auto neighbor_indices_t =
+            TPack<Int, 1, D>::empty({int64_t(retained.size()) + 1});
+        neighbor_indices_t.view[0] = static_cast<Int>(retained.size());
+        if (!retained.empty()) {
+          std::memcpy(
+              neighbor_indices_t.view.data() + 1,
+              retained.data(),
+              retained.size() * sizeof(Int));
+        }
+        return neighbor_indices_t;
+      }
+      auto neighbor_indices_t =
+          TPack<Int, 1, D>::zeros({int64_t(n_candidates) + 1});
+      score::common::sphere_overlap::
+          detect_compact_block_neighbors<DeviceOperations, D, Real, Int>::f(
+              mgr,
+              pose_stack_block_type,
+              block_spheres_t.view,
+              neighbor_indices_t.view,
+              movable_blocks,
+              reach);
+      return neighbor_indices_t;
+    }
   }
 };
 

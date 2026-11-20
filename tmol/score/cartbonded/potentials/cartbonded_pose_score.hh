@@ -71,6 +71,7 @@ struct CartBondedPoseScoreDispatch {
       // do the subgraphs for each of the three types begin?
       TView<Vec<Int, 3>, 1, D> cart_subgraph_type_offsets,
       TView<Int, 1, D> cart_subgraph_param_indices,
+      TView<Int, 2, D> movable_blocks,
 
       // int max_subgraphs_per_block,
       bool output_block_pair_energies,
@@ -126,6 +127,7 @@ struct CartBondedPoseScoreDispatch {
       // do the subgraphs for each of the three types begin?
       TView<Vec<Int, 3>, 1, D> cart_subgraph_type_offsets,
       TView<Int, 1, D> cart_subgraph_param_indices,
+      TView<Int, 2, D> movable_blocks,
 
       TView<Real, 4, D> dTdV  // nterms x n-dispatch
       ) -> TPack<Vec<Real, 3>, 2, D>;

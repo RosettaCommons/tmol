@@ -678,12 +678,14 @@ class LBFGS_Armijo(Optimizer):
                     state["grad_pad"] = torch.zeros(
                         hist_shape[1:], device=x.device, dtype=x.dtype
                     )
-            # Only ``history_count`` written slots are consumed. Non-dense
-            # segmented writes explicitly zero their own padding.
-            state["old_dirs_mat"] = torch.empty(
+            # Unwritten slots are consumed at full capacity and must read as
+            # absent (all-zero row and column), which keeps the two-loop shape
+            # fixed across iterations. Non-dense segmented writes explicitly
+            # zero their own padding.
+            state["old_dirs_mat"] = torch.zeros(
                 hist_shape, device=x.device, dtype=x.dtype
             )
-            state["old_stps_mat"] = torch.empty(
+            state["old_stps_mat"] = torch.zeros(
                 hist_shape, device=x.device, dtype=x.dtype
             )
             state["history_start"] = 0  # Circular buffer start index
@@ -771,6 +773,10 @@ class LBFGS_Armijo(Optimizer):
             # initialize
             d.copy_(flat_grad).neg_()
             ctx.history_count = 0
+            # The whole buffer is consumed, so a reused optimizer must not read
+            # the previous trajectory's rows as this one's history.
+            ctx.old_dirs_mat.zero_()
+            ctx.old_stps_mat.zero_()
         else:
             # do lbfgs update (update memory)
             y = flat_grad.sub(ctx.prev_flat_grad)
@@ -818,8 +824,12 @@ class LBFGS_Armijo(Optimizer):
                 # No history: use steepest descent direction
                 d.copy_(flat_grad).neg_()
             else:
-                old_dirs_view = ctx.old_dirs_mat[: ctx.history_count]
-                old_stps_view = ctx.old_stps_mat[: ctx.history_count]
+                # Absent slots are zero and contribute nothing. Passing the
+                # whole buffer holds the shape fixed, so the float64 scratch is
+                # reused; a view that grows by a row per iteration never refits
+                # the block the previous call freed.
+                old_dirs_view = ctx.old_dirs_mat
+                old_stps_view = ctx.old_stps_mat
 
                 # Dense gradients already have the layout consumed by the
                 # two-loop calculation; only scattered segments need a copy.
