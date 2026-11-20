@@ -39,6 +39,25 @@ analysis, render
 a block-pair scorer and add `matrix[i, j] + matrix[j, i]`; one orientation alone
 can miss an interaction.
 
+When the same disjoint pairs are scored repeatedly on a fixed topology, reuse
+a rendered scorer. For shared block indices across the batch, the following
+returns one weighted value per score term and pose.
+
+```python
+scorer = score_function.render_block_pair_scoring_module(
+    pose_stack, interaction_only=True
+)
+cross = (partner_a[0, :, None] & partner_b[0, None, :])
+pairs = (cross | cross.T).nonzero()
+interface_by_term = scorer.score_interactions(pose_stack.coords, pairs, sum_terms=False)
+```
+
+Render again when a mutation changes the residue types or atom layout. For
+different partner selections per pose, pass both batched masks to
+`calculate_block_pair_ddg`. If the same selection applies to every pose,
+pass each single-row mask as `mask.expand(pose_stack.n_poses, -1)`. The
+helper then selects the shared pairs once for the batch.
+
 ## Batch explicit mutations
 
 Construct one pose per requested site/state, then restrict task choices

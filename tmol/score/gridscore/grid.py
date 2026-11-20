@@ -68,6 +68,12 @@ def compute_cubic_bspline_coefficients(values: torch.Tensor) -> torch.Tensor:
     device of ``values`` (float64 internally, cast back) as three batched
     matrix products, and does not preserve autograd.
     """
+    return _spline_coefficients(values, {})
+
+
+def _spline_coefficients(
+    values: torch.Tensor, inverses: dict[tuple[int, torch.device], torch.Tensor]
+) -> torch.Tensor:
     if values.ndim < 3:
         raise ValueError("grid values must have at least three dimensions")
     if any(size <= 0 for size in values.shape[-3:]):
@@ -77,7 +83,10 @@ def compute_cubic_bspline_coefficients(values: torch.Tensor) -> torch.Tensor:
     for axis in range(coefficients.ndim - 3, coefficients.ndim):
         n = coefficients.shape[axis]
         if n > 1:
-            inverse = _mirror_spline_inverse(n).to(values.device)
+            key = (n, values.device)
+            if key not in inverses:
+                inverses[key] = _mirror_spline_inverse(n).to(values.device)
+            inverse = inverses[key]
             coefficients = (coefficients.movedim(axis, -1) @ inverse.T).movedim(
                 -1, axis
             )
@@ -170,11 +179,13 @@ class GridSet:
         if self.atom_type_indices.shape != (len(self.atom_type_names),):
             raise ValueError("atom_type_indices must have one entry per grid type")
 
+        inverses = {}
+
         def check_coefficients(grid_name: str, coefficient_name: str) -> None:
             grid = getattr(self, grid_name)
             coefficients = getattr(self, coefficient_name)
             if coefficients is None:
-                coefficients = compute_cubic_bspline_coefficients(grid)
+                coefficients = _spline_coefficients(grid, inverses)
                 object.__setattr__(self, coefficient_name, coefficients)
             if coefficients.dtype != grid.dtype or coefficients.device != grid.device:
                 raise ValueError(

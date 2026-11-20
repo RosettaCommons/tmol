@@ -772,6 +772,7 @@ class GridBackend(ScoringBackend):
                 ligand_block,
                 param_db,
                 weight_profile=ligand_intra_weight_profile,
+                score_function=score_function,
                 sidechain_blocks=sidechain_blocks,
             )
             if include_ligand_intra
@@ -813,8 +814,7 @@ class GridBackend(ScoringBackend):
                 self.ligand_charges,
                 device=device,
                 dtype=dtype,
-                score_function=self.score_function
-                or beta2016_score_function(torch.device(device)),
+                score_function=self.score_function,
                 live_hbond=self.live_hbond,
                 live_lk_ball=self.live_lk_ball,
                 live_ligand_intra=self.live_ligand_intra,

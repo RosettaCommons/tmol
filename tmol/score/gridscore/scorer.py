@@ -26,7 +26,7 @@ from .grid import (
     ixform_rep,
 )
 from .live_hbond import LiveHBondData, score_ligand_hbond_with_gradients
-from .live_ligand_intra import LiveLigandIntraData, score_ligand_intra_with_gradients
+from .live_ligand_intra import LiveLigandIntraData, _evaluate_ligand_intra
 from .live_lk_ball import LiveLKBallData, score_ligand_lk_ball_with_gradients
 from .potentials.compiled import (
     grid_score_atoms,
@@ -107,6 +107,8 @@ class GridScorer:
             sidechains); default all atoms.
     """
 
+    @torch.inference_mode(False)
+    @torch.no_grad()
     def __init__(
         self,
         grids: GridSet,
@@ -127,7 +129,7 @@ class GridScorer:
         self.live_hbond = live_hbond and live_hbond.to(device, dtype)
         self.live_lk_ball = live_lk_ball and live_lk_ball.to(device, dtype)
         self.live_ligand_intra = live_ligand_intra and live_ligand_intra.to(
-            device, dtype
+            device, dtype, score_function=score_function
         )
         self.lk_ball_grid = lk_ball_grid
         if lk_ball_grid and self.live_lk_ball is None:
@@ -168,6 +170,14 @@ class GridScorer:
 
         # Gridded LK-ball folds these weights into the grid, so they cannot be
         # reweighted at scoring time.
+        if (
+            lk_ball_grid
+            and (self.grids.lk_ball_enabled or self.grids.lk_bridge_enabled)
+            and self.grids.lk_ball_weights is None
+        ):
+            raise ValueError(
+                "Rebuild the LK-ball grid: its construction weights are missing"
+            )
         if lk_ball_grid and self.grids.lk_ball_weights is not None:
             if not torch.allclose(
                 self.grids.lk_ball_weights.to(device=device, dtype=dtype),
@@ -300,6 +310,9 @@ class GridScorer:
 
         ``coords`` are the movable ligand (and sidechain) atoms, ``[pose, atom, 3]``.
         """
+        return self._score(coords, need_gradient=True)
+
+    def _score(self, coords: torch.Tensor, *, need_gradient: bool):
         if coords.dtype != self._charges.dtype or coords.device != self.device:
             raise TypeError(
                 f"scorer works on {self.device} {self._charges.dtype} coordinates"
@@ -329,7 +342,7 @@ class GridScorer:
                     OUT_OF_BOUNDS_PENALTY,
                 )
                 _commit_mps()
-                live = self._live_terms(coords)
+                live = self._live_terms(coords, need_gradient)
                 atom_energies, grad = (t.cpu() for t in pending)
             else:
                 atom_energies, grad = grid_score_atoms(
@@ -374,29 +387,42 @@ class GridScorer:
                 )
 
             if live is None:
-                live = self._live_terms(coords)
+                live = self._live_terms(coords, need_gradient)
             for e, g in live:
-                energies, grad = energies + e, grad + g
+                energies = energies + e
+                if need_gradient:
+                    grad = grad + g
         return energies, grad
 
-    def _live_terms(self, coords: torch.Tensor) -> list:
+    def _live_terms(self, coords: torch.Tensor, need_gradient=True) -> list:
         """Weighted (energy, gradient) of each live term, in a fixed order."""
         terms = []
         if self.live_hbond is not None:
             e, g = score_ligand_hbond_with_gradients(self.live_hbond, coords)
-            terms.append((self._hbond_weight * e, self._hbond_weight * g))
+            terms.append(
+                (
+                    self._hbond_weight * e,
+                    self._hbond_weight * g if need_gradient else None,
+                )
+            )
         if not self.lk_ball_grid and self.live_lk_ball is not None:
             e, g = score_ligand_lk_ball_with_gradients(self.live_lk_ball, coords)
             weights = self._lk_ball_weights
             terms.append(
                 (
                     (e * weights).sum(dim=1),
-                    (g * weights[None, :, None, None]).sum(dim=1),
+                    (
+                        (g * weights[None, :, None, None]).sum(dim=1)
+                        if need_gradient
+                        else None
+                    ),
                 )
             )
         if self.live_ligand_intra is not None:
             terms.append(
-                score_ligand_intra_with_gradients(self.live_ligand_intra, coords)
+                _evaluate_ligand_intra(
+                    self.live_ligand_intra, coords, need_gradient=need_gradient
+                )
             )
         return terms
 
@@ -404,4 +430,4 @@ class GridScorer:
         """Per-pose energy, differentiable with respect to ``coords``."""
         if torch.is_grad_enabled() and coords.requires_grad:
             return _Score.apply(coords, self)
-        return self.value_and_grad(coords)[0]
+        return self._score(coords, need_gradient=False)[0]

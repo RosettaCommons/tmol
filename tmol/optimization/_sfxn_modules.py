@@ -18,6 +18,30 @@ from tmol.kinematics import (
 from tmol.kinematics.compiled._compiled_ops import _inverse_kin
 
 
+def _frozen_atom_indices(pose, mask):
+    if mask is None:
+        return None
+    mask = torch.as_tensor(mask, device=pose.device, dtype=torch.bool)
+    real = pose.real_atoms
+    if mask.shape == pose.block_type_ind.shape:
+        frozen = torch.zeros_like(real)
+        frozen[real] = (
+            (~mask).reshape(-1).repeat_interleave(pose.n_ats_per_block.reshape(-1))
+        )
+    else:
+        frozen = ~mask & real
+    return frozen.reshape(-1).nonzero().flatten()
+
+
+def _same_frozen_coords(indices, previous, current):
+    if indices is None or indices.numel() == 0:
+        return True
+    return torch.equal(
+        previous.reshape(-1, 3).index_select(0, indices),
+        current.reshape(-1, 3).index_select(0, indices),
+    )
+
+
 class CartesianSfxnNetwork(torch.nn.Module):
     """Differentiable score network over selected Cartesian coordinates."""
 
@@ -46,13 +70,16 @@ class CartesianSfxnNetwork(torch.nn.Module):
         # clone: forward() writes into full_coords in place, which would
         # otherwise overwrite the caller's coordinates
         self.full_coords = pose_stack.coords.clone().detach()
+        self._frozen_indices = _frozen_atom_indices(pose_stack, coord_mask)
         self._uses_default_coord_mask = coord_mask is None
         if coord_mask is None:
             # Padding coordinates never contribute to a pose's score. Excluding
             # them keeps heterogeneous batches from allocating and updating
             # meaningless optimizer degrees of freedom.
             coord_mask = pose_stack.real_atoms
-        self.coord_mask = coord_mask
+        self.coord_mask = (
+            coord_mask.clone() if not self._uses_default_coord_mask else coord_mask
+        )
 
         # Precompute flat integer indices for the boolean mask
         # Flat integer is faster than bool mask
@@ -104,11 +131,12 @@ class CartesianSfxnNetwork(torch.nn.Module):
         ):
             return False
 
-        if coord_mask is None:
-            if not self._uses_default_coord_mask:
-                return False
-        elif coord_mask is not self.coord_mask and not torch.equal(
-            coord_mask, self.coord_mask
+        if (coord_mask is None) != self._uses_default_coord_mask:
+            return False
+        if (
+            coord_mask is not None
+            and coord_mask is not self.coord_mask
+            and not torch.equal(coord_mask, self.coord_mask)
         ):
             return False
 
@@ -126,7 +154,11 @@ class CartesianSfxnNetwork(torch.nn.Module):
         self, score_function: ScoreFunction, pose_stack: PoseStack, coord_mask=None
     ) -> bool:
         """Reset for a compatible pose topology; report whether it was reused."""
-        if not self._reusable_for(score_function, pose_stack, coord_mask):
+        if not self._reusable_for(
+            score_function, pose_stack, coord_mask
+        ) or not _same_frozen_coords(
+            self._frozen_indices, self.full_coords, pose_stack.coords
+        ):
             return False
 
         self.pose_stack = pose_stack
@@ -268,6 +300,12 @@ class KinForestSfxnNetwork(torch.nn.Module):
             pose_stack, movable_blocks=movable_blocks
         )
         kmd = kin_module.kmd
+        self._movable_blocks = (
+            None
+            if movable_blocks is None
+            else torch.as_tensor(movable_blocks, device=pose_stack.device).clone()
+        )
+        self._frozen_indices = _frozen_atom_indices(pose_stack, movable_blocks)
         self.ff_copy = None if fold_forest is None else deepcopy(fold_forest)
         self.mm_copy = None if move_map is None else deepcopy(move_map)
         self.kin_module = kin_module
@@ -463,9 +501,22 @@ class KinForestSfxnNetwork(torch.nn.Module):
         pose_stack: PoseStack,
         fold_forest: FoldForest,
         move_map: MoveMap,
+        *,
+        movable_blocks=None,
     ) -> bool:
         """Reset for a compatible pose topology; report whether it was reused."""
-        if not self._reusable_for(score_function, pose_stack, fold_forest, move_map):
+        if (self._movable_blocks is None) != (movable_blocks is None):
+            return False
+        if self._movable_blocks is not None and not torch.equal(
+            self._movable_blocks,
+            torch.as_tensor(movable_blocks, device=pose_stack.device),
+        ):
+            return False
+        if not self._reusable_for(
+            score_function, pose_stack, fold_forest, move_map
+        ) or not _same_frozen_coords(
+            self._frozen_indices, self._kinematic_scoring.base_coords, pose_stack.coords
+        ):
             return False
 
         self.pose_stack = pose_stack

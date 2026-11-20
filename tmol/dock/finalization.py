@@ -37,6 +37,7 @@ from tmol.score.gridscore._movable import (
     movable_block_mapping,
     movable_pose_stack,
     sidechain_context_blocks,
+    validated_sidechain_blocks,
 )
 
 
@@ -60,12 +61,14 @@ class RefineProtocol:
     max_iter: int = 50
     top_k: int = 20
     space: str = "cartesian"
-    opt_h: bool = False
-    backbone_neighbors: int = 0
     sidechains: str | tuple[int, ...] = "backend"
     #: Rebuild the movable sidechains from the rotamer library at each step;
     #: off leaves them at the conformation the search produced.
     repack: bool = False
+
+    def __post_init__(self):
+        if self.space not in ("cartesian", "torsion"):
+            raise ValueError("refinement space must be 'cartesian' or 'torsion'")
 
     def ramp(self) -> tuple[tuple[float, float, int], ...]:
         """(fa_rep multiplier, tolerance, iterations) per step."""
@@ -97,7 +100,6 @@ FLEX_REFINE = RefineProtocol(
     steps=({"fa_rep_pack_frac": 1.0, "fa_rep_min_frac": 1.0, "min_rtol": 1e-5},),
     cycles=1,
     max_iter=200,
-    backbone_neighbors=1,
     repack=True,
 )
 
@@ -188,23 +190,6 @@ def _soft_hard_refine(
         best_energy = torch.where(improved, energy, best_energy)
         current = attr.evolve(current, coords=best_coords.clone())
     return attr.evolve(promoted, coords=best_coords), best_energy
-
-
-def _ligand_cartmin(
-    pose_stack, exact_sfxn, ligand_coord_mask, *, max_iter=50, rtol=1e-4, minimizer=None
-):
-    """Ligand-only Cartesian minimization at exact hard weights."""
-    kwargs = {"max_iter": max_iter, "rtol": rtol}
-    if minimizer is not None:
-        return minimizer(
-            pose_stack, exact_sfxn, ligand_coord_mask, optimizer_kwargs=kwargs
-        )
-    return run_cart_min(
-        pose_stack,
-        exact_sfxn,
-        coord_mask=ligand_coord_mask,
-        optimizer_kwargs=kwargs,
-    )
 
 
 def _ligand_atom_indices(pose_stack: PoseStack, ligand_block: int) -> torch.Tensor:
@@ -303,6 +288,14 @@ def _flexible_sidechain_mapping(
     )
     if tuple(getattr(backend, "context_blocks", ())) != context_blocks:
         raise ValueError("finalization peptide context does not match backend")
+    return _sidechain_mapping(
+        reference_pose_stack, ligand_block, sidechain_blocks, compact_pose_stack
+    )
+
+
+def _sidechain_mapping(
+    reference_pose_stack, ligand_block, sidechain_blocks, compact_pose_stack
+):
     source_blocks, compact_sidechain_blocks, _ = movable_block_mapping(
         reference_pose_stack, ligand_block, sidechain_blocks
     )
@@ -421,24 +414,52 @@ def count_non_proton_ligand_chis(pose_stack: PoseStack, ligand_block: int) -> in
     return nchi
 
 
-def _refine_flexible(promoted, exact_sfxn, param_db, coord_mask, protocol, pack_blocks):
-    """Rosetta dockflex: cartesian ramp_repack_min over ligand and sidechains.
+def _refine_fast_relax(
+    promoted, exact_sfxn, ligand_block, coord_mask, protocol, pack_blocks
+):
+    """Apply the protocol's pack/minimize schedule on the full promoted pose."""
+    dofs = None
+    if protocol.space == "torsion":
+        dofs = build_ligand_docking_dofs(
+            promoted, ligand_block, sidechain_blocks=pack_blocks
+        )
 
-    Runs tmol's own FastRelax so the repack at each ramp step, and the
-    accept-to-best across cycles, are the shared implementation rather than a
-    second one. ``pack_blocks`` selects the sidechains the packer may rebuild;
-    empty leaves the receptor fixed and the stage is minimization only.
-    """
-    minimizer = CartesianRelaxMinimizer(
-        CartesianMoveMap(coord_mask), max_iter=protocol.max_iter
-    )
+    def minimize_packed(pose, sfxn, *, verbose=False, rtol=None):
+        # Packing rebuilds a whole residue, including backbone atoms outside
+        # the move map. Restore those atoms before scoring or minimizing.
+        pose = attr.evolve(
+            pose,
+            coords=torch.where(coord_mask.unsqueeze(-1), pose.coords, promoted.coords),
+        )
+        if dofs is None:
+            return CartesianRelaxMinimizer(
+                CartesianMoveMap(coord_mask), max_iter=protocol.max_iter
+            )(pose, sfxn, verbose=verbose, rtol=rtol)
+        optimizer_kwargs = {"max_iter": protocol.max_iter}
+        if rtol is not None:
+            optimizer_kwargs["rtol"] = rtol
+        refined = KinematicMinimizer(
+            kin_dtype=pose.coords.dtype, movable_blocks=coord_mask
+        )(
+            pose,
+            sfxn,
+            dofs.fold_forest,
+            dofs.move_map,
+            optimizer_kwargs=optimizer_kwargs,
+            verbose=verbose,
+        )
+        return attr.evolve(
+            refined,
+            coords=torch.where(coord_mask.unsqueeze(-1), refined.coords, pose.coords),
+        )
+
     operations = refine_task_operations(
         promoted, exact_sfxn, pack_blocks, protocol.repack
     )
     refined = fast_relax(
         promoted,
         exact_sfxn,
-        minimizer=minimizer,
+        minimizer=minimize_packed,
         num_repeats=protocol.cycles,
         schedule=list(protocol.steps),
         task_operations=operations or None,
@@ -474,31 +495,39 @@ def _repack_only_blocks(pose_stack, blocks):
         )
         if len(blocks):
             mask[:, torch.as_tensor(list(blocks), device=pose_stack.device)] = True
-        task.restrict_to_repacking()
+        # The coordinate mask and kinematic tree use the promoted atom layout.
+        task.per_block_is_block_type_allowed &= (
+            task.per_block_considered_block_types_is_orig
+        )
         task.disable_packing_by_block_mask(~mask)
 
     return operation
 
 
-def _refine_rigid(
+def _refine_torsions(
     promoted,
-    reference,
     exact_sfxn,
     param_db,
     ligand_block,
-    ligand_mask,
+    coord_mask,
     refine_schedule,
     refine_cycles,
-    movable_blocks=None,
+    sidechain_blocks=(),
 ):
-    """Torsion-space soft-to-hard refinement bracketed by ligand Cartesian min."""
+    """Soft-to-hard torsion refinement bracketed by Cartesian minimization."""
     # One minimizer per distinct score function, reused across refine cycles:
     # the rendered network and its topology tensors are setup, not numerics.
     cartesian = CartesianMinimizer()
     torsion_minimizers: dict[int, KinematicMinimizer] = {}
 
-    promoted = _ligand_cartmin(promoted, exact_sfxn, ligand_mask, minimizer=cartesian)
-    ldofs = build_ligand_docking_dofs(promoted, ligand_block, sidechain_blocks=())
+    fixed_coords = promoted.coords
+    cart_options = {"max_iter": 50, "rtol": 1e-4}
+    promoted = cartesian(
+        promoted, exact_sfxn, coord_mask, optimizer_kwargs=cart_options
+    )
+    ldofs = build_ligand_docking_dofs(
+        promoted, ligand_block, sidechain_blocks=sidechain_blocks
+    )
 
     def torsion_step(pose, step_sfxn, tol, max_iter):
         # Fixed-hydrogen harness: no whole-pose optH, ramp steps minimize only.
@@ -507,7 +536,7 @@ def _refine_rigid(
         minimizer = torsion_minimizers.get(id(step_sfxn))
         if minimizer is None:
             minimizer = KinematicMinimizer(
-                kin_dtype=pose.coords.dtype, movable_blocks=movable_blocks
+                kin_dtype=pose.coords.dtype, movable_blocks=coord_mask
             )
             torsion_minimizers[id(step_sfxn)] = minimizer
         return minimizer(
@@ -527,15 +556,15 @@ def _refine_rigid(
         schedule=refine_schedule,
         cycles=refine_cycles,
     )
-    refined = _ligand_cartmin(promoted, exact_sfxn, ligand_mask, minimizer=cartesian)
+    refined = cartesian(promoted, exact_sfxn, coord_mask, optimizer_kwargs=cart_options)
     # run_kin_min refolds the whole pose and float32 kinematics leave ~1e-3 A
-    # noise on the nominally fixed receptor; restore every non-ligand atom.
+    # noise on nominally fixed atoms. Restore their promoted coordinates.
     refined = attr.evolve(
         refined,
         coords=torch.where(
-            ligand_mask.unsqueeze(-1),
+            coord_mask.unsqueeze(-1),
             refined.coords,
-            reference.coords.expand(refined.n_poses, -1, -1),
+            fixed_coords,
         ),
     )
     return refined, _score_pose_stack(refined, exact_sfxn)
@@ -627,47 +656,51 @@ def finalize_ga_docking(
     ) = _flexible_sidechain_mapping(
         reference_pose_stack, ligand_block, backend, ga_result.pool.pose_stack
     )
-    if sidechain_blocks:
-        promoted, genes = _promote_top_candidates(
-            reference_pose_stack,
-            ligand_block,
-            ga_result,
-            top_k,
-            sidechain_blocks=sidechain_blocks,
-            compact_sidechain_blocks=compact_sidechain_blocks,
-            sidechain_atom_indices=compact_sidechain_atoms,
-        )
-    else:
-        promoted, genes = _promote_top_candidates(
-            reference_pose_stack, ligand_block, ga_result, top_k
-        )
+    promoted, genes = _promote_top_candidates(
+        reference_pose_stack,
+        ligand_block,
+        ga_result,
+        top_k,
+        sidechain_blocks=sidechain_blocks,
+        compact_sidechain_blocks=compact_sidechain_blocks,
+        sidechain_atom_indices=compact_sidechain_atoms,
+    )
     exact_sfxn = beta2016_score_function(promoted.device, param_db=backend.param_db)
     pre_refine = _score_pose_stack(promoted, exact_sfxn)
     coord_mask = torch.zeros(
         promoted.coords.shape[:2], dtype=torch.bool, device=promoted.device
     )
     coord_mask.scatter_(1, _ligand_atom_indices(promoted, ligand_block), True)
-    if sidechain_blocks:
-        coord_mask.scatter_(1, _mapped_atom_indices(promoted, block_local_atoms), True)
-        pack_blocks = (
-            compact_sidechain_blocks
-            if refine.sidechains == "backend"
-            else tuple(refine.sidechains)
+    refine_blocks = sidechain_blocks
+    if refine.sidechains != "backend":
+        refine_blocks = validated_sidechain_blocks(
+            reference_pose_stack, ligand_block, refine.sidechains
         )
-        refined, complex_energy = _refine_flexible(
-            promoted, exact_sfxn, backend.param_db, coord_mask, refine, pack_blocks
+    if refine_blocks != sidechain_blocks:
+        block_local_atoms = ()
+        if refine_blocks:
+            compact = movable_pose_stack(
+                reference_pose_stack, ligand_block, refine_blocks
+            )
+            _, _, _, block_local_atoms = _sidechain_mapping(
+                reference_pose_stack, ligand_block, refine_blocks, compact
+            )
+    if block_local_atoms:
+        coord_mask.scatter_(1, _mapped_atom_indices(promoted, block_local_atoms), True)
+    if refine.space == "cartesian" or refine.repack:
+        refined, complex_energy = _refine_fast_relax(
+            promoted, exact_sfxn, ligand_block, coord_mask, refine, refine_blocks
         )
     else:
-        refined, complex_energy = _refine_rigid(
+        refined, complex_energy = _refine_torsions(
             promoted,
-            reference_pose_stack,
             exact_sfxn,
             backend.param_db,
             ligand_block,
             coord_mask,
             refine.ramp(),
             refine.cycles,
-            movable_blocks=coord_mask,
+            sidechain_blocks=refine_blocks,
         )
     free_ligand_energy, free_receptor_energy = _free_state_energies(
         refined,
@@ -675,7 +708,7 @@ def finalize_ga_docking(
         exact_sfxn,
         backend.param_db,
         ligand_block,
-        sidechain_blocks and block_local_atoms,
+        block_local_atoms,
     )
     free_receptor_energies = free_receptor_energy.expand_as(complex_energy)
 

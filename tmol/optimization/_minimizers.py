@@ -283,7 +283,7 @@ class KinematicMinimizer:
         """Minimize one pose stack, reusing compatible rendered state."""
 
         if self.network is None or not self.network._reset(
-            sfxn, pose_stack, fold_forest, move_map
+            sfxn, pose_stack, fold_forest, move_map, movable_blocks=self.movable_blocks
         ):
             self.network = _build_kinforest_network(
                 pose_stack,

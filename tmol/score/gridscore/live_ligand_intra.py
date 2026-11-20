@@ -41,6 +41,7 @@ def _intra_score_function(
     weight_profile: LigandIntraWeightProfile,
     include_cart_bonded: bool,
     whole_movable: bool = False,
+    score_function: ScoreFunction | None = None,
 ) -> ScoreFunction:
     """Build the tmol equivalent of Rosetta GridScorer's ``sf1b_``.
 
@@ -54,31 +55,27 @@ def _intra_score_function(
     Rosetta ``GridScorer.cc:338-343`` defines the full one-body terms. Its
     search setup at lines 297-313 replaces intra-repulsion with 0.01 and both
     generic/cartesian bonded weights with 0.1 (the ligand cartesian assignment
-    is also visible at line 370). The remaining intra weights stay at beta2016.
+    is also visible at line 370). The other weights come from the supplied
+    score function, which defaults to beta2016.
     """
 
     if weight_profile not in ("search", "full"):
         raise ValueError("weight_profile must be 'search' or 'full'")
 
-    beta = beta2016_score_function(device, param_db=param_db)
-    if whole_movable:
-        # Flexible scoring needs the full beta2016 term set. Search-only
-        # diagonal weights are applied after block-pair decomposition so that
-        # inter-block interactions retain their full beta2016 weights.
-        return beta
+    source = score_function or beta2016_score_function(device, param_db=param_db)
     result = ScoreFunction(param_db, device)
-    score_types = _LJLK_ELEC_SCORE_TYPES + (ScoreType.gen_torsions,)
-    if include_cart_bonded:
-        score_types += _CART_SCORE_TYPES
+    result.set_options(dict(source.term_options))
+    if whole_movable:
+        score_types = tuple(source.all_score_types())
+    else:
+        score_types = _LJLK_ELEC_SCORE_TYPES + (ScoreType.gen_torsions,)
+        if include_cart_bonded:
+            score_types += _CART_SCORE_TYPES
+    weights = dict(zip(source.all_score_types(), source.weights_tensor().tolist()))
     for score_type in score_types:
-        weight = float(beta.get_weight(score_type))
-        if weight_profile == "search":
-            if score_type == ScoreType.fa_ljrep:
-                weight = 0.01
-            elif (
-                score_type == ScoreType.gen_torsions or score_type in _CART_SCORE_TYPES
-            ):
-                weight = 0.1
+        weight = weights.get(score_type, 0.0)
+        if weight_profile == "search" and not whole_movable:
+            weight = _SEARCH_DIAGONAL_WEIGHTS.get(score_type, weight)
         result.set_weight(score_type, weight)
     return result
 
@@ -219,7 +216,11 @@ class LiveLigandIntraData:
         self._rep_scale.fill_(float(scale))
 
     def to(
-        self, device: torch.device | str, dtype: torch.dtype
+        self,
+        device: torch.device | str,
+        dtype: torch.dtype,
+        *,
+        score_function: ScoreFunction | None = None,
     ) -> "LiveLigandIntraData":
         """Return ligand topology and scoring machinery on a device/dtype."""
         device = torch.device(device)
@@ -230,6 +231,7 @@ class LiveLigandIntraData:
             self.weight_profile,
             self.include_cart_bonded,
             whole_movable=ligand_pose_stack.max_n_blocks > 1,
+            score_function=score_function or self.score_function,
         )
         return LiveLigandIntraData(
             ligand_pose_stack=ligand_pose_stack,
@@ -248,6 +250,7 @@ def build_live_ligand_intra_data(
     *,
     weight_profile: LigandIntraWeightProfile,
     sidechain_blocks: tuple[int, ...] = (),
+    score_function: ScoreFunction | None = None,
 ) -> LiveLigandIntraData:
     """Build CPU live scoring data for movable blocks and peptide context.
 
@@ -282,6 +285,7 @@ def build_live_ligand_intra_data(
         weight_profile,
         include_cart_bonded,
         whole_movable=ligand_pose_stack.max_n_blocks > 1,
+        score_function=score_function,
     )
     return LiveLigandIntraData(
         ligand_pose_stack=ligand_pose_stack,
@@ -367,13 +371,17 @@ class _WholeMovableScorer:
         # the memoized beta2016 every other scorer shares, so score with a
         # private copy.
         sfxn = ScoreFunction(data.param_db, device)
-        for score_type in data.score_function.all_score_types():
-            sfxn.set_weight(
-                score_type, float(data.score_function.get_weight(score_type))
-            )
+        sfxn.set_options(dict(data.score_function.term_options))
+        for score_type, weight in zip(
+            data.score_function.all_score_types(),
+            data.score_function.weights_tensor().tolist(),
+        ):
+            sfxn.set_weight(score_type, weight)
         pose_stack = repeat_pose_stack(reference, n_poses)
         self._whole = sfxn.render_whole_pose_scoring_module(
-            pose_stack, movable_blocks=_movable_block_mask(data, pose_stack)
+            pose_stack,
+            movable_blocks=_movable_block_mask(data, pose_stack),
+            include_frozen_energy=False,
         )
         order = tuple(sfxn.all_score_types())
         self._base_weights = (
@@ -386,13 +394,14 @@ class _WholeMovableScorer:
         # Only the search profile softens the diagonal; otherwise there is no
         # correction to add.
         self._singles = []
-        if data.weight_profile == "search":
-            softened = {
-                score_type: weight
-                for score_type, weight in _SEARCH_DIAGONAL_WEIGHTS.items()
-                if score_type in order
-            }
+        softened = {
+            score_type: weight
+            for score_type, weight in _SEARCH_DIAGONAL_WEIGHTS.items()
+            if data.weight_profile == "search" and score_type in order
+        }
+        if softened:
             correction = ScoreFunction(data.param_db, device)
+            correction.set_options(dict(sfxn.term_options))
             for score_type in softened:
                 correction.set_weight(score_type, 1.0)
             correction_order = tuple(correction.all_score_types())
@@ -491,12 +500,7 @@ def _pair_weight_vectors(
         diagonal_base = None
         if data.weight_profile == "search":
             diagonal_base = base.clone()
-            softened = {
-                ScoreType.fa_ljrep: 0.01,
-                ScoreType.gen_torsions: 0.1,
-                **{score_type: 0.1 for score_type in _CART_SCORE_TYPES},
-            }
-            for score_type, weight in softened.items():
+            for score_type, weight in _SEARCH_DIAGONAL_WEIGHTS.items():
                 if score_type in order:
                     diagonal_base[order.index(score_type)] = weight
         cached = (base, diagonal_base, rep_index)
@@ -552,6 +556,8 @@ def score_ligand_intra(
     """Return weighted ligand-intramolecular energy for every ligand pose."""
 
     _validate_ligand_coords(data, ligand_coords)
+    if not data.score_function.all_terms():
+        return ligand_coords[:, :0].sum(dim=(1, 2))
     if data.ligand_pose_stack.max_n_blocks > 1:
         scorer = _whole_movable_scorer_for(data, ligand_coords.shape[0])
     else:
@@ -571,9 +577,23 @@ def score_ligand_intra_with_gradients(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Return detached weighted energies and compiled-autograd gradients."""
 
-    _validate_ligand_coords(data, ligand_coords)
-    with torch.enable_grad():
-        coords_leaf = ligand_coords.detach().requires_grad_(True)
-        energies = score_ligand_intra(data, coords_leaf)
-        (gradients,) = torch.autograd.grad(energies.sum(), coords_leaf)
-    return energies.detach(), gradients.detach()
+    return _evaluate_ligand_intra(data, ligand_coords, need_gradient=True)
+
+
+def _evaluate_ligand_intra(
+    data: LiveLigandIntraData, ligand_coords: torch.Tensor, *, need_gradient: bool
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    # Both entry points use the differentiable forward's reduction order.
+    # Cached scorers must also support backward after an inference-mode call.
+    with torch.inference_mode(False), torch.enable_grad():
+        coords = ligand_coords.detach()
+        if coords.is_inference():
+            coords = coords.clone()
+        coords.requires_grad_(True)
+        energies = score_ligand_intra(data, coords)
+        gradients = (
+            torch.autograd.grad(energies.sum(), coords)[0].detach()
+            if need_gradient
+            else None
+        )
+    return energies.detach(), gradients

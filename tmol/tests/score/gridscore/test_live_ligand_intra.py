@@ -157,7 +157,8 @@ def test_full_live_ligand_intra_matches_exact_oracle_native_and_perturbed(target
     )
 
 
-def test_flexible_intra_whole_pose_matches_block_pair_definition():
+@pytest.mark.parametrize("soft_rep", [False, True])
+def test_flexible_intra_whole_pose_matches_block_pair_definition(soft_rep):
     """The whole-pose evaluation equals the block-pair one at every ramp step.
 
     The block-pair energy weights intra-block (diagonal) pairs with the search
@@ -168,11 +169,14 @@ def test_flexible_intra_whole_pose_matches_block_pair_definition():
     """
     reference, param_db = _load_target_pose("cdk2")
     ligand_block = _ligand_block(reference)
+    sfxn = beta2016_score_function(reference.device, param_db=param_db)
+    sfxn.set_option("soft_rep", soft_rep)
     data = build_live_ligand_intra_data(
         reference,
         ligand_block,
         param_db,
         weight_profile="search",
+        score_function=sfxn,
         sidechain_blocks=_flexible_sidechains(reference, ligand_block),
     ).to("cpu", torch.float64)
     pose = data.ligand_pose_stack

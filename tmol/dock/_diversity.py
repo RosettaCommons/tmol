@@ -51,9 +51,12 @@ def select_diverse_low_energy(
         raise ValueError("npool cannot exceed the number of candidates")
 
     order = torch.argsort(energies, stable=True)
+    if rmsdthreshold == 0 and torch.isfinite(coords).all():
+        selected = order[:npool]
+        return selected, energies.new_tensor(selected.numel(), dtype=torch.int64)
     flat = coords[order].reshape(n_candidates, -1)
     distance = torch.cdist(flat, flat, compute_mode="donot_use_mm_for_euclid_dist")
-    too_close = distance / math.sqrt(coords.shape[1]) < rmsdthreshold
+    too_close = ~(distance / math.sqrt(coords.shape[1]) >= rmsdthreshold)
     too_close.fill_diagonal_(False)
 
     kept = _greedy_diverse_mask(too_close)

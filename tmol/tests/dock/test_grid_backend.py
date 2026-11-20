@@ -638,3 +638,78 @@ def test_grid_backend_reuse_after_block_reordering(cpu_grid_case, torch_device):
         reused.pose_stack.coords, fresh.pose_stack.coords, rtol=0, atol=1e-10
     )
     torch.testing.assert_close(reused.energies, fresh.energies, rtol=0, atol=1e-10)
+
+
+def test_custom_weights_reach_live_intra_and_unversioned_lk_weights(tmp_path):
+    from tmol.score import ScoreFunction
+    from tmol.score.gridscore.grid import GridSet
+
+    pose, db = _load_cdk2_pose()
+    ligand = _ligand_block(pose)
+    backend = GridBackend.from_pose_stack(pose, ligand, db, voxel_spacing=0.6)
+    zero = ScoreFunction(db, pose.device)
+    custom = GridBackend.from_pose_stack(
+        pose,
+        ligand,
+        db,
+        grids=backend.grids,
+        score_function=zero,
+        ligand_intra_weight_profile="full",
+        lk_ball_grid=False,
+    )
+    assert custom.score(pose).item() == 0.0
+    scorer = custom._scorer(pose.device, pose.coords.dtype)
+    coords = scorer.live_ligand_intra.ligand_pose_stack.coords
+    assert torch.count_nonzero(scorer.value_and_grad(coords)[1]) == 0
+    filename = tmp_path / "legacy.pt"
+    backend.grids.save(filename)
+    state = torch.load(filename, weights_only=True)
+    assert state["lk_ball_enabled"]
+    del state["lk_ball_weights"]
+    torch.save(state, filename)
+    legacy = GridSet.load(filename)
+    reused = GridBackend.from_pose_stack(
+        pose, ligand, db, grids=legacy, lk_ball_grid=True
+    )
+    with pytest.raises(ValueError, match="construction weights are missing"):
+        reused.score(pose)
+
+
+def test_value_only_grid_score_skips_ligand_backward(monkeypatch):
+    pose, db = _load_cdk2_pose()
+    backend = GridBackend.from_pose_stack(
+        pose, _ligand_block(pose), db, voxel_spacing=0.6
+    )
+    scorer = backend._scorer(pose.device, pose.coords.dtype)
+    x = scorer.live_ligand_intra.ligand_pose_stack.coords.repeat(2, 1, 1)
+    expected, grad = scorer.value_and_grad(x)
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("value-only evaluation requested a ligand backward pass")
+
+    monkeypatch.setattr(torch.autograd, "grad", unexpected)
+    with torch.no_grad():
+        torch.testing.assert_close(scorer(x), expected, rtol=0, atol=0)
+    assert torch.isfinite(grad).all()
+
+
+@pytest.mark.parametrize("sidechains", [(), (7,)])
+def test_inference_first_grid_score_can_be_reused_for_gradients(sidechains):
+    pose, db = _load_cdk2_pose()
+    with torch.inference_mode():
+        backend = GridBackend.from_pose_stack(
+            pose,
+            _ligand_block(pose),
+            db,
+            flexible_residues=sidechains,
+            voxel_spacing=0.6,
+        )
+        scorer = backend._scorer(pose.device, pose.coords.dtype)
+        x = scorer.live_ligand_intra.ligand_pose_stack.coords.repeat(2, 1, 1)
+        energy = scorer(x)
+        expected, grad = scorer.value_and_grad(x)
+    leaf = x.clone().requires_grad_()
+    value = scorer(leaf)
+    torch.testing.assert_close(energy, expected, rtol=0, atol=0)
+    torch.testing.assert_close(value, expected, rtol=0, atol=0)
+    torch.testing.assert_close(torch.autograd.grad(value.sum(), leaf)[0], grad)

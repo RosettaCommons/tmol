@@ -38,9 +38,11 @@ def test_sidechain_mask_treats_missing_mainchain_as_all_sidechain(torch_device):
     torch.testing.assert_close(actual, packed_block_types.atom_is_real)
 
 
-@pytest.mark.parametrize("einsum", [False, True])
-def test_memory_efficient_sum_handles_different_mask_sizes(
-    torch_device, monkeypatch, einsum
+@pytest.mark.parametrize(
+    "memory_efficient,einsum", [(False, False), (True, False), (True, True)]
+)
+def test_cross_block_sum_handles_different_mask_sizes(
+    torch_device, monkeypatch, memory_efficient, einsum
 ):
     """Each pose may select a different number of block pairs."""
     monkeypatch.setattr(score_utils, "_EINSUM_MIN_BYTES", 0 if einsum else float("inf"))
@@ -58,7 +60,7 @@ def test_memory_efficient_sum_handles_different_mask_sizes(
     )
 
     actual = score_utils._sum_cross_block_scores(
-        scores, mask, other, memory_efficient=True
+        scores, mask, other, memory_efficient=memory_efficient
     )
     expected = torch.empty_like(actual)
     expected[:, 0] = scores[:, 0, 0, 1] + scores[:, 0, 1, 0]
@@ -77,13 +79,17 @@ def test_memory_efficient_sum_handles_different_mask_sizes(
     )
 
 
-def test_default_sum_is_bitwise_legacy_equivalent(torch_device):
+@pytest.mark.parametrize("broadcast", [False, True])
+def test_default_sum_is_bitwise_legacy_equivalent(torch_device, broadcast):
     """The default retains the legacy selection and sum order."""
     generator = torch.Generator(device=torch_device).manual_seed(17)
     scores = torch.randn(5, 3, 32, 32, generator=generator, device=torch_device)
     mask = torch.zeros(3, 32, dtype=torch.bool, device=torch_device)
     mask[:, :11] = True
     other = ~mask
+    if broadcast:
+        mask = mask[:1].expand_as(mask)
+        other = other[:1].expand_as(other)
     cross_mask = (mask.unsqueeze(2) & other.unsqueeze(1)) | (
         other.unsqueeze(2) & mask.unsqueeze(1)
     )
@@ -93,6 +99,34 @@ def test_default_sum_is_bitwise_legacy_equivalent(torch_device):
     actual = score_utils._sum_cross_block_scores(scores, mask, other)
 
     assert torch.equal(actual, expected)
+
+
+@pytest.mark.parametrize("partners", ["complement", "overlap", "empty"])
+def test_shared_interface_matches_independent_masks(ubq_40_60_pose_stack, partners):
+    pose = ubq_40_60_pose_stack
+    blocks = torch.arange(pose.max_n_blocks, device=pose.device)
+    mask = (blocks < 3).expand(pose.n_poses, -1)
+    other = None
+    if partners != "complement":
+        other = (blocks == (2 if partners == "overlap" else -1)).expand_as(mask)
+    kwargs = dict(minimize=False, sum_terms=False)
+    expected = score_utils.calculate_block_pair_ddg(
+        pose, mask.clone(), None if other is None else other.clone(), **kwargs
+    )
+    actual = score_utils.calculate_block_pair_ddg(pose, mask, other, **kwargs)
+    torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-5)
+
+
+def test_block_centroids_and_radii_with_padding(ubq_40_60_pose_stack):
+    pose = ubq_40_60_pose_stack
+    coords, real = pose.expand_coords()
+    n_atoms = real.sum(dim=2, keepdim=True)
+    centers = (coords * real.unsqueeze(-1)).sum(dim=2) / n_atoms
+    distances = (coords - centers.unsqueeze(2)).square().sum(dim=3).sqrt()
+    radii = (distances * real).amax(dim=2)
+    actual = score_utils.compute_block_centroids_and_furthest_dist(pose)
+    for value, reference in zip(actual, (centers, radii)):
+        torch.testing.assert_close(value, reference, rtol=0, atol=0, equal_nan=True)
 
 
 def test_single_block_indices_match_boolean_masks(torch_device):
@@ -257,6 +291,15 @@ def test_interacting_coord_mask_matches_per_pose_reference(
             poses, block_mask, max_workspace_bytes=1
         ),
     )
+    # Empty selections in the first and last rows must not pick up the
+    # middle pose's atoms when the selected coordinates are padded.
+    mixed = block_mask.clone()
+    mixed[[0, 2]] = False
+    mixed_result = score_utils.build_coord_mask_for_mask_and_interacting_atoms(
+        poses, mixed, max_workspace_bytes=1
+    )
+    assert not mixed_result[[0, 2]].any()
+    assert torch.equal(mixed_result[1], expected[1])
     assert not score_utils.build_coord_mask_for_mask_and_interacting_atoms(
         poses, torch.zeros_like(block_mask)
     ).any()

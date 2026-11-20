@@ -18,6 +18,11 @@ _EINSUM_MIN_BYTES = 512 * 1024 * 1024
 _DEFAULT_INTERACTION_DISTANCE_WORKSPACE_BYTES = 256 * 1024 * 1024
 
 
+def _cross_block_mask(mask, other_mask):
+    forward = mask.unsqueeze(-1) & other_mask.unsqueeze(-2)
+    return forward | forward.transpose(-1, -2)
+
+
 def _sum_cross_block_scores(
     block_pair_scores: Tensor[torch.float32][:, :, :, :],
     mask: Tensor[torch.bool][:, :],
@@ -36,14 +41,20 @@ def _sum_cross_block_scores(
     Returns:
         Per-term, per-pose sums shaped ``[n_terms, n_poses]``.
     """
-    cross_mask = (mask.unsqueeze(2) & other_mask.unsqueeze(1)) | (
-        other_mask.unsqueeze(2) & mask.unsqueeze(1)
-    )
+    cross_mask = _cross_block_mask(mask, other_mask)
     n_terms, n_poses = block_pair_scores.shape[:2]
 
     if not memory_efficient:
-        expanded_mask = cross_mask.unsqueeze(0).expand(n_terms, -1, -1, -1)
-        return block_pair_scores[expanded_mask].view(n_terms, n_poses, -1).sum(dim=2)
+        # Build pair indices once, independently of the number of score terms.
+        if cross_mask.shape[0] == 1:
+            return block_pair_scores[..., cross_mask[0]].sum(dim=-1)
+        selected = block_pair_scores[:, cross_mask]
+        counts = cross_mask.sum(dim=(1, 2)).tolist()
+        if min(counts) != max(counts):
+            return torch.stack(
+                [part.sum(dim=1) for part in selected.split(counts, dim=1)], dim=1
+            )
+        return selected.reshape(n_terms, n_poses, -1).sum(dim=2)
 
     # These reductions avoid the large term-expanded selection above and also
     # support batches in which poses select different numbers of pairs. Their
@@ -192,21 +203,37 @@ def calculate_block_pair_ddg(
         )
         pose_stack = run_cart_min(pose_stack, sfxn, coord_mask)
 
+    # Expanded masks describe one interface for every pose. Project those
+    # pairs directly so the scorer can omit inactive term matrices.
+    shared = (
+        not memory_efficient
+        and single_block_indices is None
+        and mask.stride(0) == 0
+        and (mask2 is None or mask2.stride(0) == 0)
+    )
+    if shared:
+        mask = mask[0]
+        if mask2 is not None:
+            mask2 = mask2[0]
     other_mask = mask2 if mask2 is not None else ~mask
     sets_are_disjoint = mask2 is None or not bool((mask & other_mask).any())
     scorer = sfxn.render_block_pair_scoring_module(
         pose_stack, interaction_only=sets_are_disjoint
     )
-    defer_weights = single_block_indices is not None
-    block_pair_scores = scorer(
-        pose_stack.coords, sum_terms=False, apply_weights=not defer_weights
-    )
-
-    if single_block_indices is None:
+    if shared:
+        pairs = _cross_block_mask(mask, other_mask).nonzero()
+        ddg_scores = scorer.score_interactions(
+            pose_stack.coords, pairs, sum_terms=False
+        )
+    elif single_block_indices is None:
+        block_pair_scores = scorer(pose_stack.coords, sum_terms=False)
         ddg_scores = _sum_cross_block_scores(
             block_pair_scores, mask, other_mask, memory_efficient=memory_efficient
         )
     else:
+        block_pair_scores = scorer(
+            pose_stack.coords, sum_terms=False, apply_weights=False
+        )
         ddg_scores = _sum_single_block_cross_scores(
             block_pair_scores,
             single_block_indices,
@@ -575,52 +602,16 @@ def compute_block_centroids_and_furthest_dist(
         Centroids shaped ``[n_poses, n_blocks, 3]`` and maximum distances
         shaped ``[n_poses, n_blocks]``. Padding blocks contain NaNs.
     """
-    # Expand coords to [n_poses, n_blocks, max_n_block_atoms, 3]
-    expanded_coords, real_expanded_pose_ats = pose_stack.expand_coords()
-
-    # Count real atoms per block: [n_poses, n_blocks, 1]
-    n_real_atoms = real_expanded_pose_ats.sum(dim=2, keepdim=True)
-
-    # Compute sum of coordinates for real atoms in each block
-    masked_coords = expanded_coords * real_expanded_pose_ats.unsqueeze(3).float()
-    coord_sum = masked_coords.sum(dim=2)  # [n_poses, n_blocks, 3]
-
-    # Average (centroid) for each block; avoid division by zero for padding blocks
-    has_atoms = n_real_atoms > 0  # [n_poses, n_blocks, 1]
-    block_centroids = torch.where(
-        has_atoms,
-        coord_sum / n_real_atoms.float(),
-        torch.tensor(float("nan"), device=pose_stack.device, dtype=torch.float32),
-    )
-
-    # Compute distances from each atom to its block centroid
-    center_coords = expanded_coords - block_centroids.unsqueeze(2)
-    atom_dists = torch.sqrt(
-        (center_coords**2).sum(dim=3)
-    )  # [n_poses, n_blocks, max_n_block_atoms]
-
-    # Max distance per block (zero out padding atoms first)
-    atom_dists_masked = atom_dists * real_expanded_pose_ats.float()
-    block_max_dist = atom_dists_masked.amax(dim=2)  # [n_poses, n_blocks]
-
-    # Set padding blocks to NaN
-    is_real_block = pose_stack.block_type_ind != -1  # [n_poses, n_blocks]
-    block_furthest_dist = torch.where(
-        is_real_block & has_atoms.squeeze(2),
-        block_max_dist,
-        torch.tensor(float("nan"), device=pose_stack.device, dtype=torch.float32),
-    )
-
-    # Also set centroids for padding blocks to NaN
-    block_centroids = torch.where(
-        is_real_block.unsqueeze(2),
-        block_centroids,
-        torch.tensor(float("nan"), device=pose_stack.device, dtype=torch.float32),
-    )
-
-    return block_centroids, block_furthest_dist
+    coords, real = pose_stack.expand_coords()
+    # Expanded padding is zero. An empty block yields 0/0 and hence the
+    # documented NaN for both its centroid and its radius.
+    dtype = torch.promote_types(coords.dtype, torch.float32)
+    centers = coords.sum(dim=2, dtype=dtype) / real.sum(dim=2, keepdim=True).float()
+    distances = (coords - centers.unsqueeze(2)).square().sum(dim=3).sqrt()
+    return centers, (distances * real).amax(dim=2)
 
 
+@torch.no_grad()
 def build_coord_mask_for_mask_and_interacting_atoms(
     pose_stack: PoseStack,
     mask: Tensor[torch.bool][:, :],
@@ -653,7 +644,6 @@ def build_coord_mask_for_mask_and_interacting_atoms(
     if interaction_distance < 0:
         return coord_mask
 
-    sidechain_mask = build_sidechain_coord_mask(pose_stack)
     n_masked_atoms = coord_mask.sum(dim=1)
     max_n_masked_atoms = int(n_masked_atoms.max().item())
     if max_n_masked_atoms == 0:
@@ -661,49 +651,32 @@ def build_coord_mask_for_mask_and_interacting_atoms(
 
     # Pack each pose's selected coordinates into a padded dense tensor so
     # mutants share distance kernels instead of launching once per pose.
-    n_poses, max_n_atoms, coordinate_dim = pose_stack.coords.shape
-    masked_coords = torch.zeros(
-        (n_poses, max_n_masked_atoms, coordinate_dim),
-        dtype=pose_stack.coords.dtype,
-        device=pose_stack.device,
-    )
-    masked_coords_are_real = torch.zeros(
-        (n_poses, max_n_masked_atoms), dtype=torch.bool, device=pose_stack.device
-    )
-    masked_pose, masked_atom = torch.nonzero(coord_mask, as_tuple=True)
-    first_masked_atom = torch.cumsum(n_masked_atoms, dim=0) - n_masked_atoms
-    masked_slot = torch.arange(masked_pose.shape[0], device=pose_stack.device)
-    masked_slot -= first_masked_atom[masked_pose]
-    masked_coords[masked_pose, masked_slot] = pose_stack.coords[
-        masked_pose, masked_atom
-    ]
-    masked_coords_are_real[masked_pose, masked_slot] = True
+    coords = pose_stack.coords
+    n_poses, max_n_atoms, coordinate_dim = coords.shape
+    selected = coords[coord_mask]
+    slots = torch.arange(max_n_masked_atoms, device=coords.device)
+    valid = slots < n_masked_atoms[:, None]
+    starts = n_masked_atoms.cumsum(0) - n_masked_atoms
+    # Padding may read the last selected atom. Its distance is masked below.
+    indices = (starts[:, None] + slots).clamp_max_(selected.shape[0] - 1)
+    masked_coords = selected[indices]
 
     # Bound the temporary [chunk, n_atoms, n_masked, 3] difference tensor.
     bytes_per_pose = (
-        max_n_atoms
-        * max_n_masked_atoms
-        * (coordinate_dim + 1)
-        * pose_stack.coords.element_size()
+        max_n_atoms * max_n_masked_atoms * (coordinate_dim + 1) * coords.element_size()
     )
     poses_per_chunk = max(1, max_workspace_bytes // bytes_per_pose)
     nearby_atoms = torch.empty_like(coord_mask)
+    cutoff_squared = interaction_distance * interaction_distance
     for first_pose in range(0, n_poses, poses_per_chunk):
-        last_pose = min(first_pose + poses_per_chunk, n_poses)
-        differences = (
-            pose_stack.coords[first_pose:last_pose, :, None, :]
-            - masked_coords[first_pose:last_pose, None, :, :]
+        batch = slice(first_pose, first_pose + poses_per_chunk)
+        squared_distances = (
+            (coords[batch, :, None] - masked_coords[batch, None]).square_().sum(dim=-1)
         )
-        differences.square_()
-        squared_distances = differences.sum(dim=3)
-        squared_distances.masked_fill_(
-            ~masked_coords_are_real[first_pose:last_pose, None, :], float("inf")
-        )
-        nearby_atoms[first_pose:last_pose] = squared_distances.amin(dim=2).le(
-            interaction_distance * interaction_distance
-        )
+        squared_distances.masked_fill_(~valid[batch, None], float("inf"))
+        nearby_atoms[batch] = squared_distances.amin(dim=-1) <= cutoff_squared
 
-    return coord_mask | (nearby_atoms & pose_stack.real_atoms & sidechain_mask)
+    return coord_mask | (nearby_atoms & build_sidechain_coord_mask(pose_stack))
 
 
 def _build_coord_mask_for_mask_and_nearby_blocks(
