@@ -91,6 +91,12 @@ def test_expand_coords(ubq_40_60_pose_stack, torch_device, dtype):
             ]
             real_expanded_coords_gold[i, j, :ij_nats] = True
 
+    # Every flattened coordinate slot belongs to its padded pose row.
+    pose_ids = torch.arange(poses.n_poses, device=torch_device, dtype=torch.int32)
+    torch.testing.assert_close(
+        poses.pose_ind_for_atom.reshape(poses.n_poses, -1),
+        pose_ids[:, None].expand_as(poses.coords[..., 0]),
+    )
     expanded_coords, real_expanded_coords = poses.expand_coords()
     numpy.testing.assert_equal(
         expanded_coords_gold.cpu().numpy(), expanded_coords.cpu().numpy()

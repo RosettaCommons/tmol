@@ -54,7 +54,9 @@ interface_by_term = scorer.score_interactions(pose_stack.coords, pairs, sum_term
 
 Render again when a mutation changes the residue types or atom layout. For
 different partner selections per pose, pass both batched masks to
-`calculate_block_pair_ddg`.
+`calculate_block_pair_ddg`. If the same selection applies to every pose,
+pass each single-row mask as `mask.expand(pose_stack.n_poses, -1)`. The
+helper then selects the shared pairs once for the batch.
 
 ## Batch explicit mutations
 

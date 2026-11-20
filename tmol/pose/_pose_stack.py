@@ -123,31 +123,20 @@ class PoseStack:
         self.first_rot_for_block = self.rot_offset_for_block
         self.first_rot_block_type = self.block_type_ind
 
-        self.n_rots_for_pose = torch.tensor(
-            [n_blocks], dtype=torch.int32, device=self.device
+        self.n_rots_for_pose = torch.full(
+            (1,), n_blocks, dtype=torch.int32, device=self.device
         ).expand(n_poses)
         self.rot_offset_for_pose = self.n_rots_for_pose * pose_inds
         coord_offset_for_pose = self.coords.size(1) * pose_inds
         self.n_rots_for_block = torch.full_like(self.block_coord_offset, 1)
 
         self.rot_coord_offset = (
-            self.block_coord_offset.flatten()
-            + torch.repeat_interleave(coord_offset_for_pose, n_blocks)
-        )
-
+            self.block_coord_offset + coord_offset_for_pose[:, None]
+        ).flatten()
         self.max_n_rots_per_pose = n_blocks
-
-        pose_atom_offsets = self.rot_coord_offset.index_select(
-            0, self.rot_offset_for_pose
-        )
-        atom_to_pose = torch.zeros(
-            self.coords.size(0) * self.coords.size(1),
-            dtype=torch.int32,
-            device=self.device,
-        )
-        atom_to_pose[pose_atom_offsets] = 1
-        atom_to_pose[0] = 0
-        self.pose_ind_for_atom = atom_to_pose.cumsum(0, dtype=torch.int32)
+        # Coordinates are padded to one width for every pose, including its
+        # unused atom slots. Flattening keeps each pose's row contiguous.
+        self.pose_ind_for_atom = pose_inds.repeat_interleave(self.max_n_pose_atoms)
 
     #################### PROPERTIES #####################
 
@@ -310,20 +299,15 @@ class PoseStack:
             corresponding real-atom mask shaped ``[pose, residue, residue_atom]``.
         """
 
-        # get the list of real atoms that we will be writing to in the 4D tensor
-        atom_inds = torch.arange(
-            self.max_n_block_atoms, dtype=torch.int64, device=self.device
+        local_atom = torch.arange(self.max_n_block_atoms, device=self.device)
+        real = local_atom < self.n_ats_per_block.unsqueeze(-1)
+        # Map padding to one zero coordinate, including for an empty batch.
+        coords = self.coords.reshape(-1, 3)
+        atom_index = (
+            self.rot_coord_offset.view(self.n_poses, self.max_n_blocks, 1) + local_atom
         )
-        real_expanded_pose_ats = atom_inds < self.n_ats_per_block.unsqueeze(2)
-
-        # now perform the actual copy
-        expanded_coords = torch.zeros(
-            (self.n_poses, self.max_n_blocks, self.max_n_block_atoms, 3),
-            dtype=self.coords.dtype,
-            device=self.device,
-        )
-        expanded_coords[real_expanded_pose_ats] = self.coords[self.real_atoms]
-        return expanded_coords, real_expanded_pose_ats
+        atom_index.masked_fill_(~real, coords.shape[0])
+        return torch.nn.functional.pad(coords, (0, 0, 0, 1))[atom_index], real
 
     @property
     def n_res_per_pose(self) -> Tensor[torch.int64][:]:
