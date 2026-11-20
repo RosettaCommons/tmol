@@ -291,6 +291,15 @@ def test_interacting_coord_mask_matches_per_pose_reference(
             poses, block_mask, max_workspace_bytes=1
         ),
     )
+    # Empty selections in the first and last rows must not pick up the
+    # middle pose's atoms when the selected coordinates are padded.
+    mixed = block_mask.clone()
+    mixed[[0, 2]] = False
+    mixed_result = score_utils.build_coord_mask_for_mask_and_interacting_atoms(
+        poses, mixed, max_workspace_bytes=1
+    )
+    assert not mixed_result[[0, 2]].any()
+    assert torch.equal(mixed_result[1], expected[1])
     assert not score_utils.build_coord_mask_for_mask_and_interacting_atoms(
         poses, torch.zeros_like(block_mask)
     ).any()

@@ -829,8 +829,8 @@ class ScoreFunction:
                 if not isinstance(owner, ZeroTermPoseScoringModule)
             ]
             if len(lanes) < module.weights.shape[0]:
-                module._interaction_lanes = torch.tensor(
-                    lanes, device=pose_stack.device
+                module._interaction_lanes = torch.tensor(lanes, device="cpu").to(
+                    pose_stack.device, non_blocking=True
                 )
         return module
 
@@ -2361,13 +2361,18 @@ class BlockPairScoringModule:
         ):
             # Only materialize the omitted zero lanes for requested pairs.
             neighbors = self._build_shared_block_neighbors(coords)
-            active = torch.cat(
-                [
-                    self._term_score(term, coords, neighbors)
-                    for term in self._active_term_modules
-                ]
+            scores = (
+                self._term_score(term, coords, neighbors)
+                for term in self._active_term_modules
             )
-            entries = active[..., block_i, block_j]
+            if torch.is_grad_enabled() and (
+                coords.requires_grad or self._has_trainable_term_parameters
+            ):
+                # One gather shares the dense scatter in backward across terms.
+                entries = torch.cat(tuple(scores))[..., block_i, block_j]
+            else:
+                # Release each dense term matrix as soon as its pairs are read.
+                entries = torch.cat([s[..., block_i, block_j] for s in scores])
             selected = entries.new_zeros((self.weights.shape[0], *entries.shape[1:]))
             selected.index_copy_(0, self._interaction_lanes, entries)
             if apply_weights:
@@ -2382,27 +2387,17 @@ class BlockPairScoringModule:
     ) -> torch.Tensor:
         if shared_block_neighbors is None:
             shared_block_neighbors = self._build_shared_block_neighbors(coords)
-        parallel_scores = self._parallel_forward_scores(coords, shared_block_neighbors)
-        if parallel_scores is None:
-            return torch.cat(
-                [
-                    self._term_score(term, coords, shared_block_neighbors)
-                    for term in self.term_modules
-                ],
-                dim=0,
-            )
-
-        active_results = iter(parallel_scores)
+        parallel = self._parallel_forward_scores(coords, shared_block_neighbors)
+        active = iter(parallel) if parallel is not None else None
         return torch.cat(
             [
                 (
-                    term(coords)
-                    if isinstance(term, ZeroTermPoseScoringModule)
-                    else next(active_results)
+                    self._term_score(term, coords, shared_block_neighbors)
+                    if active is None or isinstance(term, ZeroTermPoseScoringModule)
+                    else next(active)
                 )
                 for term in self.term_modules
-            ],
-            dim=0,
+            ]
         )
 
 

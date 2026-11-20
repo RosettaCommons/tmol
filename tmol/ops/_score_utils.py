@@ -611,6 +611,7 @@ def compute_block_centroids_and_furthest_dist(
     return centers, (distances * real).amax(dim=2)
 
 
+@torch.no_grad()
 def build_coord_mask_for_mask_and_interacting_atoms(
     pose_stack: PoseStack,
     mask: Tensor[torch.bool][:, :],
@@ -643,7 +644,6 @@ def build_coord_mask_for_mask_and_interacting_atoms(
     if interaction_distance < 0:
         return coord_mask
 
-    sidechain_mask = build_sidechain_coord_mask(pose_stack)
     n_masked_atoms = coord_mask.sum(dim=1)
     max_n_masked_atoms = int(n_masked_atoms.max().item())
     if max_n_masked_atoms == 0:
@@ -651,49 +651,32 @@ def build_coord_mask_for_mask_and_interacting_atoms(
 
     # Pack each pose's selected coordinates into a padded dense tensor so
     # mutants share distance kernels instead of launching once per pose.
-    n_poses, max_n_atoms, coordinate_dim = pose_stack.coords.shape
-    masked_coords = torch.zeros(
-        (n_poses, max_n_masked_atoms, coordinate_dim),
-        dtype=pose_stack.coords.dtype,
-        device=pose_stack.device,
-    )
-    masked_coords_are_real = torch.zeros(
-        (n_poses, max_n_masked_atoms), dtype=torch.bool, device=pose_stack.device
-    )
-    masked_pose, masked_atom = torch.nonzero(coord_mask, as_tuple=True)
-    first_masked_atom = torch.cumsum(n_masked_atoms, dim=0) - n_masked_atoms
-    masked_slot = torch.arange(masked_pose.shape[0], device=pose_stack.device)
-    masked_slot -= first_masked_atom[masked_pose]
-    masked_coords[masked_pose, masked_slot] = pose_stack.coords[
-        masked_pose, masked_atom
-    ]
-    masked_coords_are_real[masked_pose, masked_slot] = True
+    coords = pose_stack.coords
+    n_poses, max_n_atoms, coordinate_dim = coords.shape
+    selected = coords[coord_mask]
+    slots = torch.arange(max_n_masked_atoms, device=coords.device)
+    valid = slots < n_masked_atoms[:, None]
+    starts = n_masked_atoms.cumsum(0) - n_masked_atoms
+    # Padding may read the last selected atom. Its distance is masked below.
+    indices = (starts[:, None] + slots).clamp_max_(selected.shape[0] - 1)
+    masked_coords = selected[indices]
 
     # Bound the temporary [chunk, n_atoms, n_masked, 3] difference tensor.
     bytes_per_pose = (
-        max_n_atoms
-        * max_n_masked_atoms
-        * (coordinate_dim + 1)
-        * pose_stack.coords.element_size()
+        max_n_atoms * max_n_masked_atoms * (coordinate_dim + 1) * coords.element_size()
     )
     poses_per_chunk = max(1, max_workspace_bytes // bytes_per_pose)
     nearby_atoms = torch.empty_like(coord_mask)
+    cutoff_squared = interaction_distance * interaction_distance
     for first_pose in range(0, n_poses, poses_per_chunk):
-        last_pose = min(first_pose + poses_per_chunk, n_poses)
-        differences = (
-            pose_stack.coords[first_pose:last_pose, :, None, :]
-            - masked_coords[first_pose:last_pose, None, :, :]
+        batch = slice(first_pose, first_pose + poses_per_chunk)
+        squared_distances = (
+            (coords[batch, :, None] - masked_coords[batch, None]).square_().sum(dim=-1)
         )
-        differences.square_()
-        squared_distances = differences.sum(dim=3)
-        squared_distances.masked_fill_(
-            ~masked_coords_are_real[first_pose:last_pose, None, :], float("inf")
-        )
-        nearby_atoms[first_pose:last_pose] = squared_distances.amin(dim=2).le(
-            interaction_distance * interaction_distance
-        )
+        squared_distances.masked_fill_(~valid[batch, None], float("inf"))
+        nearby_atoms[batch] = squared_distances.amin(dim=-1) <= cutoff_squared
 
-    return coord_mask | (nearby_atoms & pose_stack.real_atoms & sidechain_mask)
+    return coord_mask | (nearby_atoms & build_sidechain_coord_mask(pose_stack))
 
 
 def _build_coord_mask_for_mask_and_nearby_blocks(
