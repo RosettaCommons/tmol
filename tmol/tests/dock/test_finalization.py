@@ -654,3 +654,51 @@ def test_finalize_without_top_k_uses_protocol_count_capped_by_pool():
     )
     assert result.finalization.pose_stack.n_poses == 2
     assert torch.isfinite(result.finalization.dG).all()
+
+
+@pytest.mark.parametrize("selection", ["backend", "none", "override", "rigid_search"])
+def test_refinement_uses_full_pose_sidechains(monkeypatch, cdk2_pose_and_db, selection):
+    from dataclasses import replace
+    from tmol.dock.finalization import FLEX_REFINE
+
+    pose, db = cdk2_pose_and_db
+    ligand = _ligand_block(pose)
+    first, second = _flexible_sidechains(pose, ligand, count=2)
+    searched = () if selection == "rigid_search" else (first,)
+    ga = _flexible_ga_result(pose, ligand, searched, npool=1)
+    backend = SimpleNamespace(
+        ligand_block=ligand,
+        sidechain_blocks=searched,
+        param_db=db,
+        context_blocks=sidechain_context_blocks(pose, ligand, searched),
+    )
+    requested = {
+        "backend": "backend",
+        "none": (),
+        "override": (second,),
+        "rigid_search": (second,),
+    }[selection]
+    expected = searched if requested == "backend" else requested
+
+    class Checked(Exception):
+        pass
+
+    def check(promoted, sfxn, ligand_block, mask, protocol, pack_blocks):
+        task = PackerTask(promoted, PackerPalette())
+        for op in refine_task_operations(promoted, sfxn, pack_blocks, protocol.repack):
+            op(task)
+        enabled = (
+            task.per_block_is_block_type_allowed.any(-1)[0].nonzero().flatten().tolist()
+        )
+        assert tuple(enabled) == expected
+        for block in (first, second):
+            begin = int(promoted.block_coord_offset64[0, block])
+            end = begin + promoted.block_type(0, block).n_atoms
+            assert bool(mask[0, begin:end].any()) == (block in expected)
+        raise Checked
+
+    monkeypatch.setattr(finalization_module, "_refine_fast_relax", check)
+    with pytest.raises(Checked):
+        finalize_ga_docking(
+            pose, backend, ga, refine=replace(FLEX_REFINE, sidechains=requested)
+        )

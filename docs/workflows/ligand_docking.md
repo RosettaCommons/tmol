@@ -95,7 +95,12 @@ function, and ranked by exact complex energy.
 
 The refinement protocol follows the backend's mode, `FLEX_REFINE` when it
 declares flexible sidechains and `RIGID_REFINE` otherwise. Pass a
-`RefineProtocol` to override it.
+`RefineProtocol` to override it. Its `sidechains` setting uses full-pose
+block indices. Select `"backend"` to keep the search selection, an empty
+tuple to freeze the receptor, or a tuple of residue blocks for a different
+refinement pocket. The same selection controls packing, minimization, and
+free-receptor relaxation. The `space` field selects Cartesian or torsional
+minimization (`"cartesian"` or `"torsion"`).
 
 `result.finalization` carries every refined candidate: `pose_stack` holds them
 all, ranked, alongside the interaction energy `dH`, the entropy estimate `TdS`,
