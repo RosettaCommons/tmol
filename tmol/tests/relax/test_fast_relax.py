@@ -699,18 +699,38 @@ def test_constraint_ramp_uses_original_weight(
     pose = pose_stack_from_file(ubq_pdb, torch_device, residue_end=5, no_optH=True)
     sfxn = get_relax_sfxn(default_database, torch_device)
     sfxn.set_weight(ScoreType.constraint, 2.0)
+    rep_start = float(sfxn.get_weight(ScoreType.fa_ljrep))
     seen = []
 
-    def step(pose_stack, sfxn, cst_weight, **kwargs):
+    def step(pose_stack, sfxn, cst_weight, fa_rep_min_weight, **kwargs):
         seen.append(cst_weight)
         sfxn.set_weight(ScoreType.constraint, cst_weight)
+        sfxn.set_weight(ScoreType.fa_ljrep, fa_rep_min_weight)
         return pose_stack
 
+    def accept(sfxn, best_pose, best_score, candidate, verbose):
+        assert float(sfxn.get_weight(ScoreType.constraint)) == 2.0
+        assert float(sfxn.get_weight(ScoreType.fa_ljrep)) == rep_start
+        return best_pose, best_score
+
+    monkeypatch.setattr(fast_relax_module, "_accept_best", accept)
     monkeypatch.setattr(fast_relax_module, "_relax_pack_min_step", step)
     schedule = [
-        {"fa_rep_pack_frac": 1.0, "fa_rep_min_frac": 1.0, "cst_frac": frac}
+        {"fa_rep_pack_frac": 0.5, "fa_rep_min_frac": 0.5, "cst_frac": frac}
         for frac in (0.5, 0.25, 0.0)
     ]
-    fast_relax(pose, sfxn, schedule=schedule, num_repeats=1)
+    with pytest.warns(UserWarning, match="Final schedule step"):
+        fast_relax(pose, sfxn, schedule=schedule, num_repeats=1)
     assert seen == [1.0, 0.5, 0.0]
+    assert float(sfxn.get_weight(ScoreType.constraint)) == 2.0
+
+    def fail(pose_stack, sfxn, **kwargs):
+        sfxn.set_weight(ScoreType.fa_ljrep, 0.25)
+        sfxn.set_weight(ScoreType.constraint, 0.25)
+        raise RuntimeError("interrupted minimization")
+
+    monkeypatch.setattr(fast_relax_module, "_relax_pack_min_step", fail)
+    with pytest.raises(RuntimeError, match="interrupted minimization"):
+        fast_relax(pose, sfxn, schedule=[1.0], num_repeats=1)
+    assert float(sfxn.get_weight(ScoreType.fa_ljrep)) == rep_start
     assert float(sfxn.get_weight(ScoreType.constraint)) == 2.0

@@ -316,7 +316,8 @@ def fast_relax(  # noqa: C901
     """Relax poses through repeated side-chain packing and minimization.
 
     Each repeat applies the MonomerRelax2019 fa_rep ramp and retains the
-    lowest-scoring conformation independently for every pose in the batch.
+    lowest-scoring conformation independently for every pose in the batch,
+    evaluated with the input score weights.
 
     Args:
         pose_stack: Input poses to relax.
@@ -396,26 +397,30 @@ def fast_relax(  # noqa: C901
 
     ps = pose_stack
     for _ in range(num_repeats):
-        for pack_frac, min_frac, cst_frac, min_rtol in steps:
-            ps = _relax_pack_min_step(
-                pose_stack=ps,
-                sfxn=sfxn,
-                packer_palette=packer_palette,
-                fa_rep_pack_weight=pack_frac * fa_rep_start,
-                fa_rep_min_weight=min_frac * fa_rep_start,
-                cst_weight=cst_frac * constraint_weight_start,
-                task_operations=task_operations,
-                minimizer=minimizer,
-                verbose=verbose,
-                release_between_stages=release_between_stages,
-                min_rtol=min_rtol,
-            )
+        try:
+            for pack_frac, min_frac, cst_frac, min_rtol in steps:
+                ps = _relax_pack_min_step(
+                    pose_stack=ps,
+                    sfxn=sfxn,
+                    packer_palette=packer_palette,
+                    fa_rep_pack_weight=pack_frac * fa_rep_start,
+                    fa_rep_min_weight=min_frac * fa_rep_start,
+                    cst_weight=cst_frac * constraint_weight_start,
+                    task_operations=task_operations,
+                    minimizer=minimizer,
+                    verbose=verbose,
+                    release_between_stages=release_between_stages,
+                    min_rtol=min_rtol,
+                )
+        finally:
+            # Best scores use the input objective. Also leave the caller's
+            # score function usable if packing or minimization raises.
+            sfxn.set_weight(ScoreType.fa_ljrep, fa_rep_start)
+            if use_constraints:
+                sfxn.set_weight(ScoreType.constraint, constraint_weight_start)
 
         best_ps, best_score = _accept_best(sfxn, best_ps, best_score, ps, verbose)
         ps = best_ps.clone_sharing_topology()
-    if use_constraints:
-        # Restore original constraint weight to the score function
-        sfxn.set_weight(ScoreType.constraint, constraint_weight_start)
     return ps
 
 
