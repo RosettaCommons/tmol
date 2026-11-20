@@ -401,6 +401,7 @@ class _WholeMovableScorer:
         }
         if softened:
             correction = ScoreFunction(data.param_db, device)
+            correction.set_options(dict(sfxn.term_options))
             for score_type in softened:
                 correction.set_weight(score_type, 1.0)
             correction_order = tuple(correction.all_score_types())
@@ -576,9 +577,23 @@ def score_ligand_intra_with_gradients(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Return detached weighted energies and compiled-autograd gradients."""
 
-    _validate_ligand_coords(data, ligand_coords)
-    with torch.enable_grad():
-        coords_leaf = ligand_coords.detach().requires_grad_(True)
-        energies = score_ligand_intra(data, coords_leaf)
-        (gradients,) = torch.autograd.grad(energies.sum(), coords_leaf)
-    return energies.detach(), gradients.detach()
+    return _evaluate_ligand_intra(data, ligand_coords, need_gradient=True)
+
+
+def _evaluate_ligand_intra(
+    data: LiveLigandIntraData, ligand_coords: torch.Tensor, *, need_gradient: bool
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    # Both entry points use the differentiable forward's reduction order.
+    # Cached scorers must also support backward after an inference-mode call.
+    with torch.inference_mode(False), torch.enable_grad():
+        coords = ligand_coords.detach()
+        if coords.is_inference():
+            coords = coords.clone()
+        coords.requires_grad_(True)
+        energies = score_ligand_intra(data, coords)
+        gradients = (
+            torch.autograd.grad(energies.sum(), coords)[0].detach()
+            if need_gradient
+            else None
+        )
+    return energies.detach(), gradients

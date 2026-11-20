@@ -676,8 +676,6 @@ def test_custom_weights_reach_live_intra_and_unversioned_lk_weights(tmp_path):
 
 
 def test_value_only_grid_score_skips_ligand_backward(monkeypatch):
-    from tmol.score.gridscore import scorer as gridscore_module
-
     pose, db = _load_cdk2_pose()
     backend = GridBackend.from_pose_stack(
         pose, _ligand_block(pose), db, voxel_spacing=0.6
@@ -686,12 +684,32 @@ def test_value_only_grid_score_skips_ligand_backward(monkeypatch):
     x = scorer.live_ligand_intra.ligand_pose_stack.coords.repeat(2, 1, 1)
     expected, grad = scorer.value_and_grad(x)
 
-    def unexpected(*args):
+    def unexpected(*args, **kwargs):
         raise AssertionError("value-only evaluation requested a ligand backward pass")
 
-    monkeypatch.setattr(
-        gridscore_module, "score_ligand_intra_with_gradients", unexpected
-    )
+    monkeypatch.setattr(torch.autograd, "grad", unexpected)
     with torch.no_grad():
         torch.testing.assert_close(scorer(x), expected, rtol=0, atol=0)
     assert torch.isfinite(grad).all()
+
+
+@pytest.mark.parametrize("sidechains", [(), (7,)])
+def test_inference_first_grid_score_can_be_reused_for_gradients(sidechains):
+    pose, db = _load_cdk2_pose()
+    with torch.inference_mode():
+        backend = GridBackend.from_pose_stack(
+            pose,
+            _ligand_block(pose),
+            db,
+            flexible_residues=sidechains,
+            voxel_spacing=0.6,
+        )
+        scorer = backend._scorer(pose.device, pose.coords.dtype)
+        x = scorer.live_ligand_intra.ligand_pose_stack.coords.repeat(2, 1, 1)
+        energy = scorer(x)
+        expected, grad = scorer.value_and_grad(x)
+    leaf = x.clone().requires_grad_()
+    value = scorer(leaf)
+    torch.testing.assert_close(energy, expected, rtol=0, atol=0)
+    torch.testing.assert_close(value, expected, rtol=0, atol=0)
+    torch.testing.assert_close(torch.autograd.grad(value.sum(), leaf)[0], grad)

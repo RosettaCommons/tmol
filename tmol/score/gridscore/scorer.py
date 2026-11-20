@@ -26,11 +26,7 @@ from .grid import (
     ixform_rep,
 )
 from .live_hbond import LiveHBondData, score_ligand_hbond_with_gradients
-from .live_ligand_intra import (
-    LiveLigandIntraData,
-    score_ligand_intra_with_gradients,
-    score_ligand_intra,
-)
+from .live_ligand_intra import LiveLigandIntraData, _evaluate_ligand_intra
 from .live_lk_ball import LiveLKBallData, score_ligand_lk_ball_with_gradients
 from .potentials.compiled import (
     grid_score_atoms,
@@ -111,6 +107,8 @@ class GridScorer:
             sidechains); default all atoms.
     """
 
+    @torch.inference_mode(False)
+    @torch.no_grad()
     def __init__(
         self,
         grids: GridSet,
@@ -314,7 +312,7 @@ class GridScorer:
         """
         return self._score(coords, need_gradient=True)
 
-    def _score(self, coords, *, need_gradient):
+    def _score(self, coords: torch.Tensor, *, need_gradient: bool):
         if coords.dtype != self._charges.dtype or coords.device != self.device:
             raise TypeError(
                 f"scorer works on {self.device} {self._charges.dtype} coordinates"
@@ -421,18 +419,11 @@ class GridScorer:
                 )
             )
         if self.live_ligand_intra is not None:
-            if need_gradient:
-                terms.append(
-                    score_ligand_intra_with_gradients(self.live_ligand_intra, coords)
+            terms.append(
+                _evaluate_ligand_intra(
+                    self.live_ligand_intra, coords, need_gradient=need_gradient
                 )
-            else:
-                # Match the differentiable forward's reduction order. Only the
-                # backward pass and collection of coordinate gradients are skipped.
-                with torch.enable_grad():
-                    energy = score_ligand_intra(
-                        self.live_ligand_intra, coords.detach().requires_grad_(True)
-                    )
-                terms.append((energy.detach(), None))
+            )
         return terms
 
     def __call__(self, coords: torch.Tensor) -> torch.Tensor:

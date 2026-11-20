@@ -656,20 +656,15 @@ def finalize_ga_docking(
     ) = _flexible_sidechain_mapping(
         reference_pose_stack, ligand_block, backend, ga_result.pool.pose_stack
     )
-    if sidechain_blocks:
-        promoted, genes = _promote_top_candidates(
-            reference_pose_stack,
-            ligand_block,
-            ga_result,
-            top_k,
-            sidechain_blocks=sidechain_blocks,
-            compact_sidechain_blocks=compact_sidechain_blocks,
-            sidechain_atom_indices=compact_sidechain_atoms,
-        )
-    else:
-        promoted, genes = _promote_top_candidates(
-            reference_pose_stack, ligand_block, ga_result, top_k
-        )
+    promoted, genes = _promote_top_candidates(
+        reference_pose_stack,
+        ligand_block,
+        ga_result,
+        top_k,
+        sidechain_blocks=sidechain_blocks,
+        compact_sidechain_blocks=compact_sidechain_blocks,
+        sidechain_atom_indices=compact_sidechain_atoms,
+    )
     exact_sfxn = beta2016_score_function(promoted.device, param_db=backend.param_db)
     pre_refine = _score_pose_stack(promoted, exact_sfxn)
     coord_mask = torch.zeros(
