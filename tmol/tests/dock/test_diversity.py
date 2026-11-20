@@ -28,7 +28,7 @@ def _sequential_selection(energies, coords, npool, rmsdthreshold):
 
 # 0.5 keeps nearly everything, 12.0 keeps almost nothing: the second exercises
 # the fill path, where fewer than npool candidates satisfy the cutoff.
-@pytest.mark.parametrize("rmsdthreshold", [0.5, 2.0, 6.0, 12.0])
+@pytest.mark.parametrize("rmsdthreshold", [0.0, 0.5, 2.0, 6.0, 12.0])
 @pytest.mark.parametrize("n_candidates,npool", [(400, 200), (257, 128)])
 def test_matches_sequential_selection(torch_device, rmsdthreshold, n_candidates, npool):
     torch.manual_seed(1)
@@ -53,3 +53,16 @@ def test_rejects_npool_above_candidate_count(torch_device):
     energies = torch.randn(4, dtype=torch.float32, device=torch_device)
     with pytest.raises(ValueError):
         select_diverse_low_energy(energies, coords, npool=5, rmsdthreshold=1.0)
+
+
+@pytest.mark.parametrize("threshold", [0.0, 0.5])
+def test_nonfinite_rms_matches_sequential_eligibility(threshold):
+    energies = torch.arange(3, dtype=torch.float32)
+    coords = torch.tensor(
+        [[[0.0, 0.0, 0.0]], [[float("nan"), 0.0, 0.0]], [[3.0, 0.0, 0.0]]]
+    )
+    selected, count = select_diverse_low_energy(
+        energies, coords, npool=2, rmsdthreshold=threshold
+    )
+    assert selected.tolist() == [0, 2]
+    assert count.item() == 2
