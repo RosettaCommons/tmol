@@ -112,10 +112,14 @@ def test_context_opth_score_function_omits_invariant_terms(biotite_1ubq, torch_d
     )
     missing = torch.zeros_like(pose.block_type_ind, dtype=torch.bool)
     expected = _build_missing_sidechains(
-        pose, context._packing_score_function, context._dunbrack_sampler, missing
+        pose,
+        context._packing_score_function,
+        context._dunbrack_sampler,
+        missing,
+        flip_NHQ=False,
     )
     actual = _build_missing_sidechains(
-        pose, score_function, context._dunbrack_sampler, missing
+        pose, score_function, context._dunbrack_sampler, missing, flip_NHQ=False
     )
     torch.testing.assert_close(actual.block_type_ind, expected.block_type_ind)
     torch.testing.assert_close(actual.coords, expected.coords)

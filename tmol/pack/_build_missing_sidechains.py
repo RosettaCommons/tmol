@@ -19,6 +19,7 @@ def _build_missing_sidechains(
     na_sampler: NaChiRotamerSampler = None,
     has_missing_atoms: bool | None = None,
     seed: int | None = None,
+    flip_NHQ: bool = True,
 ) -> PoseStack:
     """Build missing sidechains and place hydrogens using per-block sampler assignment.
 
@@ -28,8 +29,9 @@ def _build_missing_sidechains(
       FixedAAChiSampler for amino acids, NaChiRotamerSampler for nucleotides.
       The input conformation is not included as a rotamer because the sidechain
       is incomplete.
-    - Complete blocks supported by OptHSampler: keep heavy atoms fixed while
-      sampling proton chi angles and NHQ flips.
+    - Complete blocks supported by OptHSampler: sample proton chi angles, and
+      with flip_NHQ also flip ASN/GLN/HIS and choose the histidine tautomer.
+      Otherwise heavy atoms and histidine tautomers stay as they are.
       The two sets are disjoint: NaChiRotamerSampler expands the RNA 2'-OH
       itself, exactly as DunbrackChiSampler expands protein proton chis, so a
       block must never be given both.
@@ -55,6 +57,7 @@ def _build_missing_sidechains(
         has_missing_atoms: Cached value of ``block_has_missing_atoms.any()``.
             Supplying it avoids a device synchronization in repeated builds.
         seed: Packer seed, as for :func:`~tmol.pack_rotamers`.
+        flip_NHQ: Let OptHSampler flip ASN/GLN/HIS.
 
     Returns:
         PoseStack with missing sidechains built and (by default) hydrogens
@@ -72,7 +75,7 @@ def _build_missing_sidechains(
     task.restrict_to_repacking()
 
     fixed_sampler = FixedAAChiSampler()
-    opth_sampler = None if no_optH else OptHSampler()
+    opth_sampler = None if no_optH else OptHSampler(flip_NHQ=flip_NHQ)
 
     if has_missing_atoms:
         task.add_conformer_sampler_by_block_mask(

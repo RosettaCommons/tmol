@@ -2777,8 +2777,9 @@ residues:
     virtual: []
   chi_samples:
   - chi_dihedral: chi2
-    samples: [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 240, 260, 280,
-      300, 320, 340]
+    samples: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150,
+      160, 170, 180, 190, 200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310,
+      320, 330, 340, 350]
     expansions: []
   default_jump_connection_atom: CA
   reference_mirrored: true
@@ -2902,8 +2903,9 @@ residues:
     virtual: []
   chi_samples:
   - chi_dihedral: chi2
-    samples: [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 240, 260, 280,
-      300, 320, 340]
+    samples: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150,
+      160, 170, 180, 190, 200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310,
+      320, 330, 340, 350]
     expansions: []
   default_jump_connection_atom: CA
   reference_mirrored: true
@@ -3223,7 +3225,7 @@ residues:
   chi_samples:
   - chi_dihedral: chi3
     samples: [0, 180]
-    expansions: [20]
+    expansions: [10, 20]
   default_jump_connection_atom: CA
   reference_mirrored: true
 - name: DTYR_DEP

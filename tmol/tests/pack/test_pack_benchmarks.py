@@ -44,6 +44,7 @@ def test_build_missing_sidechains_benchmark(
             dunbrack_sampler=dun_sampler,
             no_optH=no_optH,
             block_has_missing_atoms=block_has_missing_atoms,
+            flip_NHQ=False,
         )
         if torch_device.type == "cuda":
             torch.cuda.synchronize(torch_device)

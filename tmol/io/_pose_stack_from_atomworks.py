@@ -38,6 +38,8 @@ def pose_stack_from_canonical_aa_atom37(
     coords: torch.Tensor,
     residue_type: torch.Tensor,
     chain_iid: torch.Tensor,
+    no_optH: bool = False,
+    backprop_compatible_rebuild: bool = True,
     **kwargs,
 ) -> PoseStack:
     """Build a PoseStack from atomworks UNIFIED_ATOM37_ENCODING tensors.
@@ -65,8 +67,20 @@ def pose_stack_from_canonical_aa_atom37(
         padding.
     chain_iid : Tensor[int64], shape [batch, n_res]
         Chain identifiers (integer IDs, not string labels).
+    no_optH : bool
+        True keeps input hydrogens at their input positions and builds missing
+        ones from ideal geometry. By default (False) the missing ones are then
+        optimized, differentiably and without ASN/GLN/HIS flips; finite input
+        coordinates are kept either way.
+    backprop_compatible_rebuild : bool
+        Optimize hydrogens differentiably, and raise ``ValueError`` if a
+        residue is missing heavy atoms, which only the packer can build,
+        without gradients (default). False packs instead, without gradients
+        for the atoms it places, and builds missing heavy atoms.
     **kwargs
-        Additional arguments passed to ``_pose_stack_from_canonical_form``.
+        Additional arguments passed to
+        ``_pose_stack_from_canonical_form_and_context``, such as
+        ``optH_minimize`` and ``packer_seed``.
 
     Returns
     -------
@@ -78,14 +92,22 @@ def pose_stack_from_canonical_aa_atom37(
         If any ``residue_type`` value is outside 1..20 (protein-only) and not
         0 (padding).
     """
-    from tmol.io._pose_stack_construction import _pose_stack_from_canonical_form
+    from tmol.io._pose_stack_from_biotite import (
+        _pose_stack_from_canonical_form_and_context,
+    )
 
     cf = _canonical_form_from_atomworks(coords, residue_type, chain_iid)
 
-    co = _canonical_ordering_for_atomworks()
-    pbt = _packed_block_types_for_atomworks(cf.coords.device)
-
-    return _pose_stack_from_canonical_form(co, pbt, *cf, **kwargs)
+    # the same construction path as the other atom37 entry points, with the
+    # context of the atomworks protein subset
+    return _pose_stack_from_canonical_form_and_context(
+        cf,
+        _build_context_for_atomworks(cf.coords.device),
+        no_optH=no_optH,
+        backprop_compatible_rebuild=backprop_compatible_rebuild,
+        atom37_coords=coords,
+        **kwargs,
+    )
 
 
 @_validate_args
@@ -93,7 +115,8 @@ def pose_stack_from_atom37_and_topology(
     atom37_coords: torch.Tensor,
     biotite_structure: biotite.structure.AtomArray | biotite.structure.AtomArrayStack,
     context: PoseBuildContext,
-    no_optH: bool = True,
+    no_optH: bool = False,
+    backprop_compatible_rebuild: bool = True,
     **kwargs,
 ) -> PoseStack | tuple[PoseStack, dict] | tuple[PoseStack, PoseBuildContext]:
     """Build a differentiable PoseStack from atom37 coordinates and a topology.
@@ -141,9 +164,16 @@ def pose_stack_from_atom37_and_topology(
     context : PoseBuildContext
         Structure-independent context from :func:`build_context_from_atom_array`.
     no_optH : bool
-        Preserve finite input hydrogens and leave newly built hydrogens at ideal
-        positions when True (default). Pass False to run TMol's hydrogen
-        optimization pipeline.
+        True keeps input hydrogens at their input positions and builds missing
+        ones from ideal geometry. By default (False) the missing ones are then
+        optimized, without ASN/GLN/HIS flips; finite input hydrogens keep
+        their coordinates either way. Pass ``optH_minimize=True`` to also
+        minimize the optimized proton chis.
+    backprop_compatible_rebuild : bool
+        Optimize hydrogens differentiably, and raise ``ValueError`` if a
+        residue is missing heavy atoms, which only the packer can build,
+        without gradients (default). False packs instead, without gradients
+        for the atoms it places, and builds missing heavy atoms.
     **kwargs
         Additional arguments forwarded to ``pose_stack_from_atom_array``.
 
@@ -161,6 +191,7 @@ def pose_stack_from_atom37_and_topology(
         missing_density_distance_threshold=0.0,
         atom37_coords=atom37_coords,
         no_optH=no_optH,
+        backprop_compatible_rebuild=backprop_compatible_rebuild,
         **kwargs,
     )
 
@@ -337,6 +368,18 @@ def _packed_block_types_for_atomworks(device: torch.device) -> PackedBlockTypes:
     restype_set = _restype_set_for_atomworks()
     return PackedBlockTypes.from_restype_list(
         restype_set.chem_db, restype_set, restype_set.residue_types, device
+    )
+
+
+@toolz.functoolz.memoize
+def _build_context_for_atomworks(device: torch.device) -> PoseBuildContext:
+    """The construction context of the atomworks protein subset, which
+    caches the score function hydrogen optimization uses."""
+    return PoseBuildContext(
+        canonical_ordering=_canonical_ordering_for_atomworks(),
+        packed_block_types=_packed_block_types_for_atomworks(device),
+        parameter_database=_paramdb_for_atomworks(),
+        restype_set=_restype_set_for_atomworks(),
     )
 
 
