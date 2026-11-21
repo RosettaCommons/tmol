@@ -451,7 +451,6 @@
     <span class="n">INFERRED_POLYMER_BOND</span><span class="p">,</span>
     <span class="n">_renumbered_decreasing_chains</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io._input_geometry</span><span class="w"> </span><span class="kn">import</span> <span class="n">_rebuild_coincident_hydrogens</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io.details._select_from_canonical</span><span class="w"> </span><span class="kn">import</span> <span class="n">_validate_ligand_hydrogens</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io._input_termini</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">EXPLICIT_TERMINI</span><span class="p">,</span>
@@ -580,6 +579,7 @@
             <span class="n">pbt</span><span class="o">.</span><span class="n">build_missing_leaf_atom_icoor_ann</span><span class="o">.</span><span class="n">geom</span><span class="p">,</span>
             <span class="n">pbt</span><span class="o">.</span><span class="n">build_missing_leaf_atom_icoor_ann</span><span class="o">.</span><span class="n">anc_uaids_backup</span><span class="p">,</span>
             <span class="n">pbt</span><span class="o">.</span><span class="n">build_missing_leaf_atom_icoor_ann</span><span class="o">.</span><span class="n">geom_backup</span><span class="p">,</span>
+            <span class="n">coords</span><span class="o">.</span><span class="n">new_empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)),</span>  <span class="c1"># no dihedral overrides</span>
         <span class="p">)</span>
         <span class="n">coords</span> <span class="o">=</span> <span class="n">_apply_h_geometric_completion</span><span class="p">(</span>
             <span class="n">pbt</span><span class="p">,</span>
@@ -647,15 +647,26 @@
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">atom37_coords</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
-        <span class="n">opt_h</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">opt_h</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">opt_h_minimize</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">backprop_compatible_rebuild</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Build a differentiable pose batch.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            atom37_coords: Float32 coordinates shaped</span>
 <span class="sd">                ``[n_poses, n_tokens, 37, 3]`` on the context's device.</span>
-<span class="sd">            opt_h: Optimize hydrogen positions after construction. Disabled by</span>
-<span class="sd">                default so finite input coordinates are preserved.</span>
+<span class="sd">            opt_h: Optimize the placement of hydrogens the input lacks</span>
+<span class="sd">                (default), without flipping ASN/GLN/HIS. False keeps input</span>
+<span class="sd">                hydrogens at their input positions and builds missing ones</span>
+<span class="sd">                from ideal geometry.</span>
+<span class="sd">            opt_h_minimize: With ``opt_h``, also minimize the optimized proton</span>
+<span class="sd">                chis after packing them.</span>
+<span class="sd">            backprop_compatible_rebuild: Optimize hydrogens differentiably,</span>
+<span class="sd">                and raise ``ValueError`` if a block is missing heavy atoms,</span>
+<span class="sd">                which only the packer can build, without gradients (default).</span>
+<span class="sd">                False packs instead, without gradients for the atoms it</span>
+<span class="sd">                places, and builds missing heavy atoms.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            A pose whose coordinates remain differentiable with respect to</span>
@@ -667,6 +678,8 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_canonical_form</span><span class="p">(</span><span class="n">canonical_coords</span><span class="p">),</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="p">,</span>
                 <span class="n">no_optH</span><span class="o">=</span><span class="ow">not</span> <span class="n">opt_h</span><span class="p">,</span>
+                <span class="n">optH_minimize</span><span class="o">=</span><span class="n">opt_h_minimize</span><span class="p">,</span>
+                <span class="n">backprop_compatible_rebuild</span><span class="o">=</span><span class="n">backprop_compatible_rebuild</span><span class="p">,</span>
                 <span class="n">atom37_coords</span><span class="o">=</span><span class="n">atom37_coords</span><span class="p">,</span>
                 <span class="n">fragment_mapping</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">fragment_mapping</span><span class="p">,</span>
             <span class="p">)</span>
@@ -679,6 +692,7 @@
                 <span class="n">cf</span><span class="p">,</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="p">,</span>
                 <span class="n">no_optH</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">backprop_compatible_rebuild</span><span class="o">=</span><span class="n">backprop_compatible_rebuild</span><span class="p">,</span>
                 <span class="n">atom37_coords</span><span class="o">=</span><span class="n">atom37_coords</span><span class="p">,</span>
                 <span class="n">fragment_mapping</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">fragment_mapping</span><span class="p">,</span>
                 <span class="n">return_atom_mapping</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -690,7 +704,9 @@
                 <span class="k">return</span> <span class="n">_pose_stack_from_canonical_form_and_context</span><span class="p">(</span>
                     <span class="n">cf</span><span class="p">,</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="p">,</span>
-                    <span class="n">no_optH</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                    <span class="n">no_optH</span><span class="o">=</span><span class="ow">not</span> <span class="n">opt_h</span><span class="p">,</span>
+                    <span class="n">optH_minimize</span><span class="o">=</span><span class="n">opt_h_minimize</span><span class="p">,</span>
+                    <span class="n">backprop_compatible_rebuild</span><span class="o">=</span><span class="n">backprop_compatible_rebuild</span><span class="p">,</span>
                     <span class="n">atom37_coords</span><span class="o">=</span><span class="n">atom37_coords</span><span class="p">,</span>
                     <span class="n">fragment_mapping</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">fragment_mapping</span><span class="p">,</span>
                 <span class="p">)</span>
@@ -708,25 +724,48 @@
                     <span class="bp">self</span><span class="o">.</span><span class="n">_canonical_form</span><span class="p">(</span><span class="n">canonical_coords</span><span class="p">),</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="p">,</span>
                     <span class="n">no_optH</span><span class="o">=</span><span class="ow">not</span> <span class="n">opt_h</span><span class="p">,</span>
+                    <span class="n">optH_minimize</span><span class="o">=</span><span class="n">opt_h_minimize</span><span class="p">,</span>
+                    <span class="n">backprop_compatible_rebuild</span><span class="o">=</span><span class="n">backprop_compatible_rebuild</span><span class="p">,</span>
                     <span class="n">atom37_coords</span><span class="o">=</span><span class="n">atom37_coords</span><span class="p">,</span>
                     <span class="n">fragment_mapping</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">fragment_mapping</span><span class="p">,</span>
                 <span class="p">)</span>
-            <span class="n">pose_stack</span> <span class="o">=</span> <span class="n">topology</span><span class="o">.</span><span class="n">pose_from_canonical</span><span class="p">(</span><span class="n">canonical_coords</span><span class="p">)</span>
+        <span class="c1"># a new topology replays too, so every call places hydrogens the same way</span>
+        <span class="n">pose_stack</span> <span class="o">=</span> <span class="n">topology</span><span class="o">.</span><span class="n">pose_from_canonical</span><span class="p">(</span><span class="n">canonical_coords</span><span class="p">)</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pose_topologies</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">_MAX_PREPARED_BATCH_SIZES</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_pose_topologies</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pose_topologies</span><span class="p">)))</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pose_topologies</span><span class="p">[</span><span class="n">n_poses</span><span class="p">]</span> <span class="o">=</span> <span class="n">topology</span>
 
         <span class="k">if</span> <span class="n">opt_h</span><span class="p">:</span>
-            <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack._build_missing_sidechains</span><span class="w"> </span><span class="kn">import</span> <span class="n">_build_missing_sidechains</span>
-
-            <span class="n">pose_stack</span> <span class="o">=</span> <span class="n">_build_missing_sidechains</span><span class="p">(</span>
-                <span class="n">pose_stack</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="o">.</span><span class="n">_opth_score_function</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="o">.</span><span class="n">_dunbrack_sampler</span><span class="p">,</span>
-                <span class="n">topology</span><span class="o">.</span><span class="n">block_has_missing_atoms</span><span class="p">,</span>
-                <span class="n">no_optH</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-                <span class="n">has_missing_atoms</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io.details._optimize_hydrogens</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+                <span class="n">_minimize_proton_chis</span><span class="p">,</span>
+                <span class="n">_optimize_hydrogens</span><span class="p">,</span>
             <span class="p">)</span>
+
+            <span class="c1"># no NHQ flips, so the cached topology and atom layout still hold</span>
+            <span class="k">if</span> <span class="n">backprop_compatible_rebuild</span><span class="p">:</span>
+                <span class="n">pose_stack</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_optimize_hydrogens</span><span class="p">(</span>
+                    <span class="n">pose_stack</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="o">.</span><span class="n">_opth_score_function</span><span class="p">,</span>
+                    <span class="n">minimize</span><span class="o">=</span><span class="n">opt_h_minimize</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack._build_missing_sidechains</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+                    <span class="n">_build_missing_sidechains</span><span class="p">,</span>
+                <span class="p">)</span>
+
+                <span class="n">pose_stack</span> <span class="o">=</span> <span class="n">_build_missing_sidechains</span><span class="p">(</span>
+                    <span class="n">pose_stack</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="o">.</span><span class="n">_opth_score_function</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="o">.</span><span class="n">_dunbrack_sampler</span><span class="p">,</span>
+                    <span class="n">topology</span><span class="o">.</span><span class="n">block_has_missing_atoms</span><span class="p">,</span>
+                    <span class="n">no_optH</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                    <span class="n">has_missing_atoms</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                    <span class="n">flip_NHQ</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="n">opt_h_minimize</span><span class="p">:</span>
+                    <span class="n">pose_stack</span> <span class="o">=</span> <span class="n">_minimize_proton_chis</span><span class="p">(</span>
+                        <span class="n">pose_stack</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="o">.</span><span class="n">_opth_score_function</span>
+                    <span class="p">)</span>
             <span class="n">pose_stack</span> <span class="o">=</span> <span class="n">_restore_canonical_input_coords</span><span class="p">(</span>
                 <span class="n">pose_stack</span><span class="p">,</span>
                 <span class="n">canonical_coords</span><span class="p">,</span>
@@ -1067,6 +1106,8 @@
     <span class="n">param_db</span><span class="p">:</span> <span class="n">ParameterDatabase</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">missing_density_distance_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">2.4</span><span class="p">,</span>
     <span class="n">no_optH</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">optH_minimize</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">backprop_compatible_rebuild</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">prepare_ligands</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">ligand_ph</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">7.4</span><span class="p">,</span>
     <span class="n">strict_atom_types</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
@@ -1114,14 +1155,25 @@
 <span class="sd">        no_optH: Residues the input gives no hydrogens take AtomWorks'</span>
 <span class="sd">            protonation state: database residues then get hydrogens built by</span>
 <span class="sd">            tmol, other residues those AtomWorks places. When True,</span>
-<span class="sd">            preserve finite input hydrogen coordinates, except coincident</span>
-<span class="sd">            hydrogen-parent pairs, which are rebuilt with a warning,</span>
-<span class="sd">            and build only missing hydrogens and heavy-atom sidechains. When</span>
-<span class="sd">            False (default), residues with complete heavy atoms are packed with</span>
-<span class="sd">            OptHSampler to optimize hydrogen positions and NHQ flips, while</span>
-<span class="sd">            residues with missing heavy atoms are rebuilt with</span>
-<span class="sd">            DunbrackChiSampler. Generated ligand hydrogens follow</span>
-<span class="sd">            ``ligand_hydrogens`` instead.</span>
+<span class="sd">            preserve finite input hydrogen coordinates and build only missing</span>
+<span class="sd">            hydrogens and heavy-atom sidechains. When False (default),</span>
+<span class="sd">            residues with complete heavy atoms are packed with OptHSampler to</span>
+<span class="sd">            optimize hydrogen positions and NHQ flips, while residues with</span>
+<span class="sd">            missing heavy atoms are rebuilt with DunbrackChiSampler. With</span>
+<span class="sd">            ``atom37_coords``, nothing is flipped and input hydrogens keep</span>
+<span class="sd">            their coordinates; only missing ones are optimized. Generated</span>
+<span class="sd">            ligand hydrogens follow ``ligand_hydrogens`` instead.</span>
+<span class="sd">        optH_minimize: Unless ``no_optH``, minimize the proton chis in torsion</span>
+<span class="sd">            space after packing them, rather than leaving them at the sampled</span>
+<span class="sd">            values.</span>
+<span class="sd">        backprop_compatible_rebuild: Set when gradients through construction</span>
+<span class="sd">            will be used. Hydrogen optimization then rebuilds the atoms it</span>
+<span class="sd">            moves differentiably from the input atoms, and a residue missing</span>
+<span class="sd">            heavy atoms raises ``ValueError``, since only the packer can build</span>
+<span class="sd">            them and its coordinates carry no gradient. When False, hydrogen</span>
+<span class="sd">            optimization and any missing heavy atoms are packed together</span>
+<span class="sd">            without gradients. Defaults to True with ``atom37_coords`` and</span>
+<span class="sd">            False otherwise.</span>
 <span class="sd">        prepare_ligands: If True, detect and prepare non-standard residues</span>
 <span class="sd">            (see ``build_context_from_atom_array`` for details).</span>
 <span class="sd">        ligand_ph: pH AtomWorks protonates residues lacking hydrogens at</span>
@@ -1272,6 +1324,8 @@
         <span class="n">cf</span><span class="p">,</span>
         <span class="n">context</span><span class="p">,</span>
         <span class="n">no_optH</span><span class="o">=</span><span class="n">no_optH</span><span class="p">,</span>
+        <span class="n">optH_minimize</span><span class="o">=</span><span class="n">optH_minimize</span><span class="p">,</span>
+        <span class="n">backprop_compatible_rebuild</span><span class="o">=</span><span class="n">backprop_compatible_rebuild</span><span class="p">,</span>
         <span class="n">atom37_coords</span><span class="o">=</span><span class="n">atom37_coords</span><span class="p">,</span>
         <span class="n">fragment_mapping</span><span class="o">=</span><span class="n">fragment_mapping</span><span class="p">,</span>
         <span class="n">return_context</span><span class="o">=</span><span class="n">return_context</span><span class="p">,</span>
@@ -1288,6 +1342,8 @@
     <span class="o">*</span><span class="p">,</span>
     <span class="n">no_optH</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
     <span class="n">atom37_coords</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">optH_minimize</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">backprop_compatible_rebuild</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">fragment_mapping</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">return_context</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">packer_seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -1314,21 +1370,27 @@
 <span class="sd">      cf: Canonical-form tensors describing residue identity and coordinates.</span>
 <span class="sd">      context: Structure-independent chemistry resolved once.</span>
 <span class="sd">      no_optH: Preserve finite input hydrogens instead of optimizing them.</span>
+<span class="sd">        Otherwise optH runs after construction, flipping ASN/GLN/HIS unless</span>
+<span class="sd">        ``atom37_coords`` is given, in which case finite input coordinates,</span>
+<span class="sd">        hydrogens included, are kept.</span>
+<span class="sd">      optH_minimize: Minimize the optimized proton chis after packing them.</span>
+<span class="sd">      backprop_compatible_rebuild: The caller will use gradients through</span>
+<span class="sd">        construction. optH then rebuilds the atoms it moves differentiably</span>
+<span class="sd">        from the input atoms, and a block missing heavy atoms raises a</span>
+<span class="sd">        ``ValueError``: the packer that would build them gives its atoms no</span>
+<span class="sd">        gradient. When False, optH and any missing heavy atoms are packed</span>
+<span class="sd">        together without gradients, as before. ``None`` (default) means True</span>
+<span class="sd">        with ``atom37_coords`` and False otherwise.</span>
 <span class="sd">      atom37_coords: When supplied, the autograd-tracked source of ``cf``'s</span>
 <span class="sd">        coordinates; retained so gradients survive hydrogen rebuilding.</span>
 <span class="sd">      fragment_mapping: Mapping produced when fragmented ligands were expanded.</span>
 <span class="sd">      return_context: Also return the context used.</span>
 <span class="sd">      packer_seed: Seed of the packer, as for ``pose_stack_from_atom_array``.</span>
 
-<span class="sd">    For ordinary structure inputs, coincident bonded heavy atoms raise before</span>
-<span class="sd">    packing; hydrogens coincident with their parent are rebuilt without changing</span>
-<span class="sd">    protonation. Differentiable ``atom37_coords`` retain their supplied geometry.</span>
-
 <span class="sd">    Returns:</span>
 <span class="sd">      The constructed pose, optionally with atom mappings or the context.</span>
 <span class="sd">    """</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io._pose_stack_construction</span><span class="w"> </span><span class="kn">import</span> <span class="n">_pose_stack_from_canonical_form</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack._build_missing_sidechains</span><span class="w"> </span><span class="kn">import</span> <span class="n">_build_missing_sidechains</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack</span><span class="w"> </span><span class="kn">import</span> <span class="n">FixedAAChiSampler</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack.rotamer._bfs_sidechain</span><span class="w"> </span><span class="kn">import</span> <span class="n">_bfs_sidechain_atoms</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack.rotamer._single_residue_kinforest</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -1374,8 +1436,6 @@
     <span class="p">)</span>
 
     <span class="n">pose_stack</span><span class="p">,</span> <span class="n">opt_return_vals</span> <span class="o">=</span> <span class="n">result</span>
-    <span class="k">if</span> <span class="n">atom37_coords</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">pose_stack</span> <span class="o">=</span> <span class="n">_rebuild_coincident_hydrogens</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">fragment_mapping</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.ligand._fragmentation</span><span class="w"> </span><span class="kn">import</span> <span class="n">_apply_fragment_connections</span>
 
@@ -1389,35 +1449,51 @@
     <span class="k">if</span> <span class="n">has_missing_atoms</span><span class="p">:</span>
         <span class="n">_assert_no_ligand_with_missing_atoms</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">block_has_missing_atoms</span><span class="p">)</span>
 
-    <span class="n">needs_packing</span> <span class="o">=</span> <span class="n">block_has_missing_atoms</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span>
-        <span class="n">has_missing_atoms</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">no_optH</span>
+    <span class="k">if</span> <span class="n">backprop_compatible_rebuild</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">backprop_compatible_rebuild</span> <span class="o">=</span> <span class="n">atom37_coords</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">backprop_compatible_rebuild</span> <span class="ow">and</span> <span class="n">has_missing_atoms</span><span class="p">:</span>
+        <span class="n">_raise_missing_heavy_atoms_for_backprop</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">block_has_missing_atoms</span><span class="p">)</span>
+
+    <span class="c1"># An NHQ flip moves heavy atoms and may retype a histidine; atom37 inputs</span>
+    <span class="c1"># keep their heavy atoms, block types and atom layout as given.</span>
+    <span class="n">flip_NHQ</span> <span class="o">=</span> <span class="n">atom37_coords</span> <span class="ow">is</span> <span class="kc">None</span>
+    <span class="c1"># Differentiably: optH packs without gradients, then rebuilds what it</span>
+    <span class="c1"># moved from the input atoms.</span>
+    <span class="n">optimized</span> <span class="o">=</span> <span class="n">backprop_compatible_rebuild</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">no_optH</span>
+    <span class="k">if</span> <span class="n">optimized</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io.details._optimize_hydrogens</span><span class="w"> </span><span class="kn">import</span> <span class="n">_optimize_hydrogens</span>
+
+        <span class="n">pose_stack</span><span class="p">,</span> <span class="n">new_for_old</span> <span class="o">=</span> <span class="n">_optimize_hydrogens</span><span class="p">(</span>
+            <span class="n">pose_stack</span><span class="p">,</span>
+            <span class="n">context</span><span class="o">.</span><span class="n">_opth_score_function</span><span class="p">,</span>
+            <span class="n">packer_seed</span><span class="p">,</span>
+            <span class="n">minimize</span><span class="o">=</span><span class="n">optH_minimize</span><span class="p">,</span>
+            <span class="n">flip_NHQ</span><span class="o">=</span><span class="n">flip_NHQ</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">new_for_old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="s2">"ps_atom_mapping"</span> <span class="ow">in</span> <span class="n">opt_return_vals</span><span class="p">:</span>
+            <span class="n">_remap_atom_mapping</span><span class="p">(</span><span class="n">opt_return_vals</span><span class="p">,</span> <span class="n">new_for_old</span><span class="p">)</span>
+
+    <span class="c1"># Otherwise, as on master: one packing run, without gradients, for optH and</span>
+    <span class="c1"># any missing heavy atoms.</span>
+    <span class="n">needs_packing</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="ow">not</span> <span class="n">backprop_compatible_rebuild</span>
+        <span class="ow">and</span> <span class="n">block_has_missing_atoms</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="ow">and</span> <span class="p">(</span><span class="n">has_missing_atoms</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">no_optH</span><span class="p">)</span>
     <span class="p">)</span>
     <span class="k">if</span> <span class="n">needs_packing</span><span class="p">:</span>
-        <span class="n">sfxn</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">context</span><span class="o">.</span><span class="n">_packing_score_function</span>
-            <span class="k">if</span> <span class="n">has_missing_atoms</span>
-            <span class="k">else</span> <span class="n">context</span><span class="o">.</span><span class="n">_opth_score_function</span>
-        <span class="p">)</span>
-        <span class="n">dunbrack_sampler</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">_dunbrack_sampler</span>
-        <span class="n">na_sampler</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">_na_sampler</span> <span class="k">if</span> <span class="n">has_missing_atoms</span> <span class="k">else</span> <span class="kc">None</span>
-
-        <span class="k">if</span> <span class="n">has_missing_atoms</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-                <span class="s2">"</span><span class="si">%i</span><span class="s2"> blocks with missing heavy atoms"</span><span class="p">,</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">count_nonzero</span><span class="p">(</span><span class="n">block_has_missing_atoms</span><span class="p">),</span>
-            <span class="p">)</span>
-        <span class="n">pose_stack</span> <span class="o">=</span> <span class="n">_build_missing_sidechains</span><span class="p">(</span>
+        <span class="n">pose_stack</span> <span class="o">=</span> <span class="n">_pack_after_construction</span><span class="p">(</span>
             <span class="n">pose_stack</span><span class="p">,</span>
-            <span class="n">sfxn</span><span class="p">,</span>
-            <span class="n">dunbrack_sampler</span><span class="p">,</span>
+            <span class="n">context</span><span class="p">,</span>
             <span class="n">block_has_missing_atoms</span><span class="p">,</span>
+            <span class="n">has_missing_atoms</span><span class="p">,</span>
             <span class="n">no_optH</span><span class="o">=</span><span class="n">no_optH</span><span class="p">,</span>
-            <span class="n">na_sampler</span><span class="o">=</span><span class="n">na_sampler</span><span class="p">,</span>
-            <span class="n">has_missing_atoms</span><span class="o">=</span><span class="n">has_missing_atoms</span><span class="p">,</span>
-            <span class="n">seed</span><span class="o">=</span><span class="n">packer_seed</span><span class="p">,</span>
+            <span class="n">optH_minimize</span><span class="o">=</span><span class="n">optH_minimize</span><span class="p">,</span>
+            <span class="n">packer_seed</span><span class="o">=</span><span class="n">packer_seed</span><span class="p">,</span>
+            <span class="n">flip_NHQ</span><span class="o">=</span><span class="n">flip_NHQ</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">if</span> <span class="n">atom37_coords</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">needs_packing</span><span class="p">:</span>
+    <span class="c1"># finite atom37 inputs, hydrogens included, keep their coordinates</span>
+    <span class="k">if</span> <span class="n">atom37_coords</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span><span class="n">needs_packing</span> <span class="ow">or</span> <span class="n">optimized</span><span class="p">):</span>
         <span class="n">pose_stack</span> <span class="o">=</span> <span class="n">_restore_canonical_input_coords</span><span class="p">(</span>
             <span class="n">pose_stack</span><span class="p">,</span>
             <span class="n">cf</span><span class="o">.</span><span class="n">coords</span><span class="p">,</span>
@@ -1440,6 +1516,63 @@
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">opt_return_vals</span><span class="p">)</span> <span class="o">&gt;</span> <span class="p">(</span><span class="mi">0</span> <span class="k">if</span> <span class="n">return_block_has_missing_atoms</span> <span class="k">else</span> <span class="mi">1</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="n">opt_return_vals</span>
     <span class="k">return</span> <span class="n">pose_stack</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_pack_after_construction</span><span class="p">(</span>
+    <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+    <span class="n">context</span><span class="p">:</span> <span class="n">PoseBuildContext</span><span class="p">,</span>
+    <span class="n">block_has_missing_atoms</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">has_missing_atoms</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">no_optH</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">optH_minimize</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">packer_seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">flip_NHQ</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Master's packing run, without gradients: build missing heavy atoms and,</span>
+<span class="sd">    unless no_optH, optimize hydrogens on the complete residues."""</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.pack._build_missing_sidechains</span><span class="w"> </span><span class="kn">import</span> <span class="n">_build_missing_sidechains</span>
+
+    <span class="n">sfxn</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">_packing_score_function</span>
+        <span class="k">if</span> <span class="n">has_missing_atoms</span>
+        <span class="k">else</span> <span class="n">context</span><span class="o">.</span><span class="n">_opth_score_function</span>
+    <span class="p">)</span>
+    <span class="n">na_sampler</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">_na_sampler</span> <span class="k">if</span> <span class="n">has_missing_atoms</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">has_missing_atoms</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">"</span><span class="si">%i</span><span class="s2"> blocks with missing heavy atoms"</span><span class="p">,</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">count_nonzero</span><span class="p">(</span><span class="n">block_has_missing_atoms</span><span class="p">),</span>
+        <span class="p">)</span>
+    <span class="n">pose_stack</span> <span class="o">=</span> <span class="n">_build_missing_sidechains</span><span class="p">(</span>
+        <span class="n">pose_stack</span><span class="p">,</span>
+        <span class="n">sfxn</span><span class="p">,</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">_dunbrack_sampler</span><span class="p">,</span>
+        <span class="n">block_has_missing_atoms</span><span class="p">,</span>
+        <span class="n">no_optH</span><span class="o">=</span><span class="n">no_optH</span><span class="p">,</span>
+        <span class="n">na_sampler</span><span class="o">=</span><span class="n">na_sampler</span><span class="p">,</span>
+        <span class="n">has_missing_atoms</span><span class="o">=</span><span class="n">has_missing_atoms</span><span class="p">,</span>
+        <span class="n">seed</span><span class="o">=</span><span class="n">packer_seed</span><span class="p">,</span>
+        <span class="n">flip_NHQ</span><span class="o">=</span><span class="n">flip_NHQ</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">optH_minimize</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">no_optH</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io.details._optimize_hydrogens</span><span class="w"> </span><span class="kn">import</span> <span class="n">_minimize_proton_chis</span>
+
+        <span class="n">pose_stack</span> <span class="o">=</span> <span class="n">_minimize_proton_chis</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">context</span><span class="o">.</span><span class="n">_opth_score_function</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">pose_stack</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_remap_atom_mapping</span><span class="p">(</span><span class="n">opt_return_vals</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">new_for_old</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Point the atom mapping at the atoms' new indices after optH retyped a</span>
+<span class="sd">    histidine; an atom the new tautomer lacks maps nowhere and is dropped."""</span>
+    <span class="n">can</span> <span class="o">=</span> <span class="n">opt_return_vals</span><span class="p">[</span><span class="s2">"can_atom_mapping"</span><span class="p">]</span>
+    <span class="n">ps</span> <span class="o">=</span> <span class="n">opt_return_vals</span><span class="p">[</span><span class="s2">"ps_atom_mapping"</span><span class="p">]</span>
+    <span class="n">new</span> <span class="o">=</span> <span class="n">new_for_old</span><span class="p">[</span><span class="n">ps</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">long</span><span class="p">(),</span> <span class="n">ps</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">long</span><span class="p">()]</span>
+    <span class="n">kept</span> <span class="o">=</span> <span class="n">new</span> <span class="o">&gt;=</span> <span class="mi">0</span>
+    <span class="n">opt_return_vals</span><span class="p">[</span><span class="s2">"can_atom_mapping"</span><span class="p">]</span> <span class="o">=</span> <span class="n">can</span><span class="p">[</span><span class="n">kept</span><span class="p">]</span>
+    <span class="n">opt_return_vals</span><span class="p">[</span><span class="s2">"ps_atom_mapping"</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span>
+        <span class="p">(</span><span class="n">ps</span><span class="p">[</span><span class="n">kept</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">new</span><span class="p">[</span><span class="n">kept</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">ps</span><span class="o">.</span><span class="n">dtype</span><span class="p">)),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span>
+    <span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_restore_canonical_input_coords</span><span class="p">(</span>
@@ -1525,6 +1658,40 @@
             <span class="s2">"Provide enough resolved anchors or a complete ligand structure "</span>
             <span class="s2">"before calling pose_stack_from_atom_array:</span><span class="se">\n</span><span class="s2">  "</span> <span class="o">+</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">  "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">bad</span><span class="p">)</span>
         <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_raise_missing_heavy_atoms_for_backprop</span><span class="p">(</span>
+    <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span> <span class="n">block_has_missing_atoms</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Reject missing heavy atoms when the caller needs gradients: only the</span>
+<span class="sd">    packer can build them, and its coordinates carry no gradient."""</span>
+    <span class="n">pbt</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span>
+    <span class="n">pdb_info</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="s2">"pdb_info"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">bad</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">pi</span><span class="p">,</span> <span class="n">bi</span> <span class="ow">in</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">block_has_missing_atoms</span><span class="p">)</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">():</span>
+        <span class="n">bt_ind</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">block_type_ind</span><span class="p">[</span><span class="n">pi</span><span class="p">,</span> <span class="n">bi</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">bt_ind</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">bt</span> <span class="o">=</span> <span class="n">pbt</span><span class="o">.</span><span class="n">active_block_types</span><span class="p">[</span><span class="n">bt_ind</span><span class="p">]</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">block_coord_offset</span><span class="p">[</span><span class="n">pi</span><span class="p">,</span> <span class="n">bi</span><span class="p">])</span>
+        <span class="n">missing</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="n">pi</span><span class="p">,</span> <span class="n">start</span> <span class="p">:</span> <span class="n">start</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">atoms</span><span class="p">)])</span><span class="o">.</span><span class="n">any</span><span class="p">(</span>
+            <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span>
+        <span class="p">)</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">bt</span><span class="o">.</span><span class="n">atoms</span><span class="p">[</span><span class="n">a</span><span class="p">]</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">missing</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span>
+        <span class="n">label</span> <span class="o">=</span> <span class="s2">""</span>
+        <span class="k">if</span> <span class="n">pdb_info</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">pdb_info</span><span class="o">.</span><span class="n">residue_labels</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">label</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">" chain=</span><span class="si">{</span><span class="n">pdb_info</span><span class="o">.</span><span class="n">chain_labels</span><span class="p">[</span><span class="n">pi</span><span class="p">,</span><span class="w"> </span><span class="n">bi</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span>
+                <span class="sa">f</span><span class="s2">" resid=</span><span class="si">{</span><span class="n">pdb_info</span><span class="o">.</span><span class="n">residue_labels</span><span class="p">[</span><span class="n">pi</span><span class="p">,</span><span class="w"> </span><span class="n">bi</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">)</span>
+        <span class="n">bad</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"pose=</span><span class="si">{</span><span class="n">pi</span><span class="si">}</span><span class="s2"> block=</span><span class="si">{</span><span class="n">bi</span><span class="si">}</span><span class="s2"> bt=</span><span class="si">{</span><span class="n">bt</span><span class="o">.</span><span class="n">name</span><span class="si">}{</span><span class="n">label</span><span class="si">}</span><span class="s2"> missing_atoms=</span><span class="si">{</span><span class="n">names</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+        <span class="s2">"backprop_compatible_rebuild=True, but block(s) are missing heavy atoms. "</span>
+        <span class="s2">"Only rotamer packing can build them, and packed coordinates carry no "</span>
+        <span class="s2">"gradient. Supply the missing atoms, or pass "</span>
+        <span class="s2">"backprop_compatible_rebuild=False to build them without gradients:</span><span class="se">\n</span><span class="s2">  "</span>
+        <span class="o">+</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">  "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">bad</span><span class="p">[:</span><span class="mi">20</span><span class="p">])</span>
+    <span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_assert_no_nan_coords</span><span class="p">(</span>

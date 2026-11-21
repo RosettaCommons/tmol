@@ -647,7 +647,8 @@
     <span class="n">cyclic_bonds</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">covalent_bonds</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">res_not_connected</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="n">no_optH</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">no_optH</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">backprop_compatible_rebuild</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Build a differentiable PoseStack from Atom37 tensors alone.</span>
@@ -670,7 +671,16 @@
 <span class="sd">      cyclic_bonds: Explicit head-to-tail closures.</span>
 <span class="sd">      covalent_bonds: Explicit ``(pose, res1, atom1, res2, atom2)`` links.</span>
 <span class="sd">      res_not_connected: Suppressed polymer connections.</span>
-<span class="sd">      no_optH: Preserve finite input hydrogens rather than optimizing them.</span>
+<span class="sd">      no_optH: True keeps input hydrogens at their input positions and builds</span>
+<span class="sd">        missing ones from ideal geometry. By default the missing ones are then</span>
+<span class="sd">        optimized (no ASN/GLN/HIS flips); input hydrogens keep their</span>
+<span class="sd">        coordinates either way. Pass ``optH_minimize=True`` to also minimize</span>
+<span class="sd">        the optimized proton chis.</span>
+<span class="sd">      backprop_compatible_rebuild: Optimize hydrogens differentiably, and</span>
+<span class="sd">        raise ``ValueError`` if a residue is missing heavy atoms, which only</span>
+<span class="sd">        the packer can build, without gradients (default). False packs</span>
+<span class="sd">        instead, without gradients for the atoms it places, and builds</span>
+<span class="sd">        missing heavy atoms.</span>
 
 <span class="sd">    Returns:</span>
 <span class="sd">      A pose whose coordinates carry gradients back to ``atom37_coords``.</span>
@@ -702,6 +712,7 @@
         <span class="n">canonical_form</span><span class="p">,</span>
         <span class="n">context</span><span class="p">,</span>
         <span class="n">no_optH</span><span class="o">=</span><span class="n">no_optH</span><span class="p">,</span>
+        <span class="n">backprop_compatible_rebuild</span><span class="o">=</span><span class="n">backprop_compatible_rebuild</span><span class="p">,</span>
         <span class="n">atom37_coords</span><span class="o">=</span><span class="n">atom37_coords</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">)</span></div>

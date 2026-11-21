@@ -470,6 +470,8 @@
     <span class="n">coords</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">residue_type</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">chain_iid</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">no_optH</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">backprop_compatible_rebuild</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Build a PoseStack from atomworks UNIFIED_ATOM37_ENCODING tensors.</span>
@@ -497,8 +499,20 @@
 <span class="sd">        padding.</span>
 <span class="sd">    chain_iid : Tensor[int64], shape [batch, n_res]</span>
 <span class="sd">        Chain identifiers (integer IDs, not string labels).</span>
+<span class="sd">    no_optH : bool</span>
+<span class="sd">        True keeps input hydrogens at their input positions and builds missing</span>
+<span class="sd">        ones from ideal geometry. By default (False) the missing ones are then</span>
+<span class="sd">        optimized, differentiably and without ASN/GLN/HIS flips; finite input</span>
+<span class="sd">        coordinates are kept either way.</span>
+<span class="sd">    backprop_compatible_rebuild : bool</span>
+<span class="sd">        Optimize hydrogens differentiably, and raise ``ValueError`` if a</span>
+<span class="sd">        residue is missing heavy atoms, which only the packer can build,</span>
+<span class="sd">        without gradients (default). False packs instead, without gradients</span>
+<span class="sd">        for the atoms it places, and builds missing heavy atoms.</span>
 <span class="sd">    **kwargs</span>
-<span class="sd">        Additional arguments passed to ``_pose_stack_from_canonical_form``.</span>
+<span class="sd">        Additional arguments passed to</span>
+<span class="sd">        ``_pose_stack_from_canonical_form_and_context``, such as</span>
+<span class="sd">        ``optH_minimize`` and ``packer_seed``.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
@@ -510,14 +524,22 @@
 <span class="sd">        If any ``residue_type`` value is outside 1..20 (protein-only) and not</span>
 <span class="sd">        0 (padding).</span>
 <span class="sd">    """</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io._pose_stack_construction</span><span class="w"> </span><span class="kn">import</span> <span class="n">_pose_stack_from_canonical_form</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io._pose_stack_from_biotite</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+        <span class="n">_pose_stack_from_canonical_form_and_context</span><span class="p">,</span>
+    <span class="p">)</span>
 
     <span class="n">cf</span> <span class="o">=</span> <span class="n">_canonical_form_from_atomworks</span><span class="p">(</span><span class="n">coords</span><span class="p">,</span> <span class="n">residue_type</span><span class="p">,</span> <span class="n">chain_iid</span><span class="p">)</span>
 
-    <span class="n">co</span> <span class="o">=</span> <span class="n">_canonical_ordering_for_atomworks</span><span class="p">()</span>
-    <span class="n">pbt</span> <span class="o">=</span> <span class="n">_packed_block_types_for_atomworks</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-
-    <span class="k">return</span> <span class="n">_pose_stack_from_canonical_form</span><span class="p">(</span><span class="n">co</span><span class="p">,</span> <span class="n">pbt</span><span class="p">,</span> <span class="o">*</span><span class="n">cf</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+    <span class="c1"># the same construction path as the other atom37 entry points, with the</span>
+    <span class="c1"># context of the atomworks protein subset</span>
+    <span class="k">return</span> <span class="n">_pose_stack_from_canonical_form_and_context</span><span class="p">(</span>
+        <span class="n">cf</span><span class="p">,</span>
+        <span class="n">_build_context_for_atomworks</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">device</span><span class="p">),</span>
+        <span class="n">no_optH</span><span class="o">=</span><span class="n">no_optH</span><span class="p">,</span>
+        <span class="n">backprop_compatible_rebuild</span><span class="o">=</span><span class="n">backprop_compatible_rebuild</span><span class="p">,</span>
+        <span class="n">atom37_coords</span><span class="o">=</span><span class="n">coords</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span></div>
 
 
 
@@ -528,7 +550,8 @@
     <span class="n">atom37_coords</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">biotite_structure</span><span class="p">:</span> <span class="n">biotite</span><span class="o">.</span><span class="n">structure</span><span class="o">.</span><span class="n">AtomArray</span> <span class="o">|</span> <span class="n">biotite</span><span class="o">.</span><span class="n">structure</span><span class="o">.</span><span class="n">AtomArrayStack</span><span class="p">,</span>
     <span class="n">context</span><span class="p">:</span> <span class="n">PoseBuildContext</span><span class="p">,</span>
-    <span class="n">no_optH</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">no_optH</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">backprop_compatible_rebuild</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">PoseStack</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">PoseStack</span><span class="p">,</span> <span class="n">PoseBuildContext</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">"""Build a differentiable PoseStack from atom37 coordinates and a topology.</span>
@@ -576,9 +599,16 @@
 <span class="sd">    context : PoseBuildContext</span>
 <span class="sd">        Structure-independent context from :func:`build_context_from_atom_array`.</span>
 <span class="sd">    no_optH : bool</span>
-<span class="sd">        Preserve finite input hydrogens and leave newly built hydrogens at ideal</span>
-<span class="sd">        positions when True (default). Pass False to run TMol's hydrogen</span>
-<span class="sd">        optimization pipeline.</span>
+<span class="sd">        True keeps input hydrogens at their input positions and builds missing</span>
+<span class="sd">        ones from ideal geometry. By default (False) the missing ones are then</span>
+<span class="sd">        optimized, without ASN/GLN/HIS flips; finite input hydrogens keep</span>
+<span class="sd">        their coordinates either way. Pass ``optH_minimize=True`` to also</span>
+<span class="sd">        minimize the optimized proton chis.</span>
+<span class="sd">    backprop_compatible_rebuild : bool</span>
+<span class="sd">        Optimize hydrogens differentiably, and raise ``ValueError`` if a</span>
+<span class="sd">        residue is missing heavy atoms, which only the packer can build,</span>
+<span class="sd">        without gradients (default). False packs instead, without gradients</span>
+<span class="sd">        for the atoms it places, and builds missing heavy atoms.</span>
 <span class="sd">    **kwargs</span>
 <span class="sd">        Additional arguments forwarded to ``pose_stack_from_atom_array``.</span>
 
@@ -596,6 +626,7 @@
         <span class="n">missing_density_distance_threshold</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
         <span class="n">atom37_coords</span><span class="o">=</span><span class="n">atom37_coords</span><span class="p">,</span>
         <span class="n">no_optH</span><span class="o">=</span><span class="n">no_optH</span><span class="p">,</span>
+        <span class="n">backprop_compatible_rebuild</span><span class="o">=</span><span class="n">backprop_compatible_rebuild</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">)</span></div>
 
@@ -776,6 +807,18 @@
     <span class="n">restype_set</span> <span class="o">=</span> <span class="n">_restype_set_for_atomworks</span><span class="p">()</span>
     <span class="k">return</span> <span class="n">PackedBlockTypes</span><span class="o">.</span><span class="n">from_restype_list</span><span class="p">(</span>
         <span class="n">restype_set</span><span class="o">.</span><span class="n">chem_db</span><span class="p">,</span> <span class="n">restype_set</span><span class="p">,</span> <span class="n">restype_set</span><span class="o">.</span><span class="n">residue_types</span><span class="p">,</span> <span class="n">device</span>
+    <span class="p">)</span>
+
+
+<span class="nd">@toolz</span><span class="o">.</span><span class="n">functoolz</span><span class="o">.</span><span class="n">memoize</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_context_for_atomworks</span><span class="p">(</span><span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseBuildContext</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""The construction context of the atomworks protein subset, which</span>
+<span class="sd">    caches the score function hydrogen optimization uses."""</span>
+    <span class="k">return</span> <span class="n">PoseBuildContext</span><span class="p">(</span>
+        <span class="n">canonical_ordering</span><span class="o">=</span><span class="n">_canonical_ordering_for_atomworks</span><span class="p">(),</span>
+        <span class="n">packed_block_types</span><span class="o">=</span><span class="n">_packed_block_types_for_atomworks</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
+        <span class="n">parameter_database</span><span class="o">=</span><span class="n">_paramdb_for_atomworks</span><span class="p">(),</span>
+        <span class="n">restype_set</span><span class="o">=</span><span class="n">_restype_set_for_atomworks</span><span class="p">(),</span>
     <span class="p">)</span>
 
 
