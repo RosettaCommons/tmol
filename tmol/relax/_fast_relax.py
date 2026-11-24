@@ -321,7 +321,8 @@ def fast_relax(  # noqa: C901
     if schedule is None:
         schedule = DEFAULT_RELAX_SCHEDULE
 
-    constraint_weight_start = sfxn.get_weight(ScoreType.constraint)
+    # get_weight returns a view of the weight tensor; set_weight would change it.
+    constraint_weight_start = float(sfxn.get_weight(ScoreType.constraint))
     use_constraints = constraint_weight_start != 0
     if not use_constraints and ramp_constraints:
         print(
