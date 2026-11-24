@@ -176,10 +176,10 @@ class GridSet:
             if coefficients is None:
                 coefficients = compute_cubic_bspline_coefficients(grid)
                 object.__setattr__(self, coefficient_name, coefficients)
-            if coefficients.dtype != grid.dtype or coefficients.device != grid.device:
-                raise ValueError(
-                    f"{coefficient_name} must match {grid_name} dtype and device"
-                )
+            # Only the coefficients are interpolated, so they may sit on
+            # another device than the values they were fitted to.
+            if coefficients.shape != grid.shape:
+                raise ValueError(f"{coefficient_name} must match {grid_name} shape")
 
         for name in ("fa_atr", "fa_rep", "fa_sol", "fa_elec"):
             check_coefficients(name, f"{name}_coeffs")
@@ -309,17 +309,19 @@ class GridSet:
             geometry=geometry,
             atom_type_names=self.atom_type_names,
             atom_type_indices=move(self.atom_type_indices),
-            fa_atr=move(self.fa_atr),
-            fa_rep=move(self.fa_rep),
-            fa_sol=move(self.fa_sol),
-            fa_elec=move(self.fa_elec),
+            # Only the spline coefficients are interpolated; the sampled
+            # values are kept where they are, for serialization.
+            fa_atr=self.fa_atr,
+            fa_rep=self.fa_rep,
+            fa_sol=self.fa_sol,
+            fa_elec=self.fa_elec,
             fa_atr_coeffs=move(self.fa_atr_coeffs),
             fa_rep_coeffs=move(self.fa_rep_coeffs),
             fa_sol_coeffs=move(self.fa_sol_coeffs),
             fa_elec_coeffs=move(self.fa_elec_coeffs),
-            lk_ball=move(self.lk_ball),
-            lk_ball_water=move(self.lk_ball_water),
-            lk_bridge=move(self.lk_bridge),
+            lk_ball=self.lk_ball,
+            lk_ball_water=self.lk_ball_water,
+            lk_bridge=self.lk_bridge,
             lk_ball_enabled=self.lk_ball_enabled,
             lk_bridge_enabled=self.lk_bridge_enabled,
             lk_ball_weights=move(self.lk_ball_weights),

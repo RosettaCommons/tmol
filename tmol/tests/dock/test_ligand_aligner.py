@@ -143,7 +143,7 @@ def cpu_flexible_initialization_case(cpu_aligner_case):
 
 
 @pytest.mark.parametrize("initialization", ["random", "conformer", "aligner"])
-def test_flexible_initialization_retains_reference(
+def test_flexible_initialization_retains_sidechains(
     cpu_flexible_initialization_case, monkeypatch, initialization
 ):
     prepared = cpu_flexible_initialization_case
@@ -153,7 +153,7 @@ def test_flexible_initialization_retains_reference(
 
     def capture(genes, layout, scoring_backend, **kwargs):
         reference = layout.genes_from_pose_stack(layout.template)
-        captured.append((genes[0].clone(), reference[0].clone()))
+        captured.append((genes.clone(), reference.clone(), layout.n_ligand_torsions))
         return original(genes, layout, scoring_backend, **kwargs)
 
     monkeypatch.setattr(ga_module, "optimize_generation", capture)
@@ -165,5 +165,13 @@ def test_flexible_initialization_retains_reference(
         ligand_aligner=LigandAligner(n_candidates=4),
         seed=47,
     )
-    # Conformer without a mol2 also exercises reference retention on fallback.
-    torch.testing.assert_close(captured[0][0], captured[0][1], rtol=0.0, atol=0.0)
+    # Flexible sidechains start from the input receptor conformation; only the
+    # ligand's own placement and torsions are searched from scratch.
+    genes, reference, n_ligand_torsions = captured[0]
+    sidechains = slice(6 + n_ligand_torsions, None)
+    torch.testing.assert_close(
+        genes[:, sidechains], reference[:, sidechains], rtol=0.0, atol=1e-12
+    )
+    if initialization != "aligner":
+        ligand = slice(0, 6 + n_ligand_torsions)
+        assert not torch.allclose(genes[:, ligand], reference[:, ligand])

@@ -1460,10 +1460,11 @@ def _random_initial_genes(
     placement: RandomPlacement,
     generator: torch.Generator,
 ) -> torch.Tensor:
-    """Sample random position, uniform SO(3) orientation, and full torsions.
+    """Sample random position, uniform SO(3) orientation, and ligand torsions.
 
     Position means the ligand heavy-atom centroid.  It is uniform along each
-    axis of the pocket box.  All logical torsions are uniform on ``(-pi, pi]``.
+    axis of the pocket box.  Ligand torsions are uniform on ``(-pi, pi]``;
+    flexible sidechains keep the input conformation.
     """
 
     genes = layout.genes_from_pose_stack(layout.template)
@@ -1498,7 +1499,9 @@ def _random_initial_genes(
     result[:, 3:6] = _rotation_matrix_to_zyx(
         _quaternion_rotation_matrix(quaternion).transpose(-1, -2)
     )
-    n_random = result.shape[1] - 6
+    # Only the ligand's own torsions are randomized: flexible sidechains keep
+    # the input receptor conformation and move by rotamer from there.
+    n_random = layout.n_ligand_torsions
     if n_random:
         result[:, 6 : 6 + n_random] = (
             2
@@ -1792,10 +1795,6 @@ def run_docking(
         ligand_aligner=ligand_aligner,
         pose_stack=search_pose,
     )
-    if initialization in ("random", "conformer") and compact_sidechains:
-        # Keep the reference as the first flexible candidate, making the
-        # flexible search monotone w.r.t. the supplied ligand/sidechain state.
-        genes[0] = layout.genes_from_pose_stack(layout.template)[0]
     rotamers = (
         build_rotamer_gene_library(
             search_pose,
