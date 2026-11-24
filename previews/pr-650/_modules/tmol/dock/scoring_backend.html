@@ -456,6 +456,7 @@
     <span class="n">_sidechain_coordinate_indices</span><span class="p">,</span>
     <span class="n">build_ligand_docking_dofs</span><span class="p">,</span>
     <span class="n">merge_ligand_variant_dofs</span><span class="p">,</span>
+    <span class="n">per_pose_fold_forest_and_move_map</span><span class="p">,</span>
     <span class="n">repeat_docking_dofs</span><span class="p">,</span>
     <span class="n">LigandVariantDOFs</span><span class="p">,</span>
 <span class="p">)</span>
@@ -545,6 +546,7 @@
     <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
     <span class="n">docking_dofs</span><span class="p">:</span> <span class="n">LigandDockingDOFs</span><span class="p">,</span>
     <span class="n">kf_network</span><span class="p">,</span>
+    <span class="n">variants</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">LigandVariantDOFs</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Map final optimizer DOFs to six jump DOFs plus logical torsions."""</span>
 
@@ -557,6 +559,7 @@
         <span class="n">kmd</span><span class="o">.</span><span class="n">forest</span><span class="p">,</span>
         <span class="n">kf_network</span><span class="o">.</span><span class="n">dof_mask</span><span class="p">,</span>
         <span class="n">raw_dofs</span><span class="p">,</span>
+        <span class="n">variants</span><span class="o">=</span><span class="n">variants</span><span class="p">,</span>
     <span class="p">)</span>
 
 
@@ -608,6 +611,29 @@
 <span class="w">        </span><span class="sd">"""The pose, backend and flexible blocks the GA actually searches over."""</span>
         <span class="k">return</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="p">()</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_ligand_variants</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">variants</span><span class="p">:</span> <span class="s2">"LigandVariantDOFs"</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Register the block types a search can give this ligand.</span>
+
+<span class="sd">        A backend that scores one fixed ligand layout ignores this; one that</span>
+<span class="sd">        scores a pose as the form it holds records the union here.</span>
+<span class="sd">        """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply_pose_variants</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Point the scorer at the ligand form each pose of this population holds.</span>
+
+<span class="sd">        A backend that reads its chemistry from the PoseStack on every</span>
+<span class="sd">        evaluation needs nothing here.</span>
+<span class="sd">        """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_metal_term</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span> <span class="n">weight</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Score the ligand's bonds to receptor metals at ``weight``.</span>
+
+<span class="sd">        Only a backend whose objective lacks the term needs to render one;</span>
+<span class="sd">        beta2016 already carries ``metal_coordination`` at its database weight.</span>
+<span class="sd">        """</span>
+
     <span class="nd">@abstractmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Return the total energy of each pose as a ``[n_poses]`` tensor."""</span>
@@ -658,6 +684,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">kin_dtype</span> <span class="o">=</span> <span class="n">kin_dtype</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">value_only_line_search</span> <span class="o">=</span> <span class="n">value_only_line_search</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">ScoreFunction</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ligand_variant_dofs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">LigandVariantDOFs</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_single_variant_dofs</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_score_function</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ScoreFunction</span><span class="p">:</span>
         <span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
@@ -666,6 +694,38 @@
                 <span class="n">device</span><span class="p">,</span> <span class="n">param_db</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">param_db</span>
             <span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="p">[</span><span class="n">device</span><span class="p">]</span>
+
+<div class="viewcode-block" id="ContinuousBackend.set_ligand_variants">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.ContinuousBackend.set_ligand_variants">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_ligand_variants</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">variants</span><span class="p">:</span> <span class="s2">"LigandVariantDOFs"</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Record the ligand forms this search can reach.</span>
+
+<span class="sd">        Scoring reads each pose's chemistry from the PoseStack, so only</span>
+<span class="sd">        minimization needs these: they carry the per-form kinematics.</span>
+<span class="sd">        """</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ligand_variant_dofs</span> <span class="o">=</span> <span class="n">variants</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_minimized_variants</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="p">:</span> <span class="n">LigandDockingDOFs</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">LigandVariantDOFs</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""The union layout, when this population holds more than one form.</span>
+
+<span class="sd">        A population agreeing on its ligand form minimizes on the DOFs it was</span>
+<span class="sd">        handed, which is both the common case and the one the caller built.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ligand_variant_dofs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">block_types</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[:,</span> <span class="n">docking_dofs</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">]</span>
+        <span class="n">present</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">block_types</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">present</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">unknown</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">present</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ligand_variant_dofs</span><span class="o">.</span><span class="n">dofs</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">unknown</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"ligand block types </span><span class="si">{</span><span class="n">unknown</span><span class="si">}</span><span class="s2"> have no docking DOFs"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">ligand_variant_dofs</span>
 
 <div class="viewcode-block" id="ContinuousBackend.score">
 <a class="viewcode-back" href="../../../api/dock.html#tmol.dock.ContinuousBackend.score">[docs]</a>
@@ -697,11 +757,22 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MinimizationResult</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Run docking-DOF minimization and return optimizer-authored genes."""</span>
         <span class="n">kin_dtype</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">kin_dtype</span> <span class="ow">or</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">dtype</span>
+        <span class="n">variants</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_minimized_variants</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">variants</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">fold_forest</span><span class="p">,</span> <span class="n">move_map</span> <span class="o">=</span> <span class="n">docking_dofs</span><span class="o">.</span><span class="n">fold_forest</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="o">.</span><span class="n">move_map</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># The poses hold different ligand forms, whose torsions and jump</span>
+            <span class="c1"># stubs differ: each takes its own form's rows.</span>
+            <span class="n">fold_forest</span><span class="p">,</span> <span class="n">move_map</span> <span class="o">=</span> <span class="n">per_pose_fold_forest_and_move_map</span><span class="p">(</span>
+                <span class="n">pose_stack</span><span class="p">,</span>
+                <span class="n">docking_dofs</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">,</span>
+                <span class="n">sidechain_blocks</span><span class="o">=</span><span class="n">docking_dofs</span><span class="o">.</span><span class="n">sidechain_blocks</span><span class="p">,</span>
+            <span class="p">)</span>
         <span class="n">kf_network</span> <span class="o">=</span> <span class="n">_build_kinforest_network</span><span class="p">(</span>
             <span class="n">pose_stack</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_score_function</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">),</span>
-            <span class="n">docking_dofs</span><span class="o">.</span><span class="n">fold_forest</span><span class="p">,</span>
-            <span class="n">docking_dofs</span><span class="o">.</span><span class="n">move_map</span><span class="p">,</span>
+            <span class="n">fold_forest</span><span class="p">,</span>
+            <span class="n">move_map</span><span class="p">,</span>
             <span class="n">kin_dtype</span><span class="o">=</span><span class="n">kin_dtype</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">initial_raw_dofs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -724,7 +795,7 @@
         <span class="p">)</span>
         <span class="n">minimized</span><span class="o">.</span><span class="n">coords</span> <span class="o">=</span> <span class="n">minimized</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
         <span class="n">genes</span> <span class="o">=</span> <span class="n">_genes_from_kinforest_dofs</span><span class="p">(</span>
-            <span class="n">pose_stack</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="p">,</span> <span class="n">kf_network</span>
+            <span class="n">pose_stack</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="p">,</span> <span class="n">kf_network</span><span class="p">,</span> <span class="n">variants</span><span class="o">=</span><span class="n">variants</span>
         <span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">MinimizationResult</span><span class="p">(</span>
             <span class="n">pose_stack</span><span class="o">=</span><span class="n">minimized</span><span class="p">,</span>
