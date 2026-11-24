@@ -43,6 +43,20 @@ def _molecule(restype, atom_types, omit=frozenset()):
     return mol, [restype.atoms[i].name for i in source]
 
 
+def _perceived_molecule(restype, atom_types, omit=frozenset()):
+    """``_molecule``, or ``(None, None)`` if RDKit rejects the perceived bonds."""
+    try:
+        return _molecule(restype, atom_types, omit=omit)
+    except Exception as error:
+        logger.warning(
+            "%s: RDKit rejected the residue's bond orders (%s); bound to a metal, "
+            "its donors keep neutral charges",
+            restype.name,
+            error,
+        )
+        return None, None
+
+
 def _metal_bound_type(restype, atom_types, atom, hydrogen):
     """The atom type ``atom`` takes once ``hydrogen`` has left it."""
     mol, names = _molecule(restype, atom_types, omit=frozenset((hydrogen,)))
@@ -62,7 +76,9 @@ def _metal_deprotonation_charges(restype, atom_types, base_charges):
     donors = _deprotonating_donors(restype, atom_types)
     if not donors:
         return {}
-    neutral, names = _molecule(restype, atom_types)
+    neutral, names = _perceived_molecule(restype, atom_types)
+    if neutral is None:
+        return {}
     neutral_charges = _mmff94_charges(neutral, neutral.GetNumAtoms())
     if neutral_charges is None:
         logger.warning(
@@ -74,7 +90,11 @@ def _metal_deprotonation_charges(restype, atom_types, base_charges):
 
     rows = {}
     for atom, hydrogen in donors.items():
-        anion, kept = _molecule(restype, atom_types, omit=frozenset((hydrogen,)))
+        anion, kept = _perceived_molecule(
+            restype, atom_types, omit=frozenset((hydrogen,))
+        )
+        if anion is None:
+            continue
         anion_charges = _mmff94_charges(anion, anion.GetNumAtoms())
         if anion_charges is None:
             logger.warning(

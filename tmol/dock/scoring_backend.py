@@ -26,6 +26,7 @@ from tmol.dock.ligand_dofs import (
     _sidechain_coordinate_indices,
     build_ligand_docking_dofs,
     merge_ligand_variant_dofs,
+    per_pose_fold_forest_and_move_map,
     repeat_docking_dofs,
     LigandVariantDOFs,
 )
@@ -115,6 +116,7 @@ def _genes_from_kinforest_dofs(
     pose_stack: PoseStack,
     docking_dofs: LigandDockingDOFs,
     kf_network,
+    variants: Optional[LigandVariantDOFs] = None,
 ) -> torch.Tensor:
     """Map final optimizer DOFs to six jump DOFs plus logical torsions."""
 
@@ -127,6 +129,7 @@ def _genes_from_kinforest_dofs(
         kmd.forest,
         kf_network.dof_mask,
         raw_dofs,
+        variants=variants,
     )
 
 
@@ -178,6 +181,29 @@ class ScoringBackend(ABC):
         """The pose, backend and flexible blocks the GA actually searches over."""
         return pose_stack, self, ()
 
+    def set_ligand_variants(
+        self, variants: "LigandVariantDOFs", pose_stack: PoseStack
+    ) -> None:
+        """Register the block types a search can give this ligand.
+
+        A backend that scores one fixed ligand layout ignores this; one that
+        scores a pose as the form it holds records the union here.
+        """
+
+    def apply_pose_variants(self, pose_stack: PoseStack) -> None:
+        """Point the scorer at the ligand form each pose of this population holds.
+
+        A backend that reads its chemistry from the PoseStack on every
+        evaluation needs nothing here.
+        """
+
+    def set_metal_term(self, pose_stack: PoseStack, weight: float) -> None:
+        """Score the ligand's bonds to receptor metals at ``weight``.
+
+        Only a backend whose objective lacks the term needs to render one;
+        beta2016 already carries ``metal_coordination`` at its database weight.
+        """
+
     @abstractmethod
     def score(self, pose_stack: PoseStack) -> torch.Tensor:
         """Return the total energy of each pose as a ``[n_poses]`` tensor."""
@@ -226,6 +252,8 @@ class ContinuousBackend(ScoringBackend):
         self.kin_dtype = kin_dtype
         self.value_only_line_search = value_only_line_search
         self._score_functions: dict[torch.device, ScoreFunction] = {}
+        self.ligand_variant_dofs: Optional[LigandVariantDOFs] = None
+        self._single_variant_dofs: dict = {}
 
     def _score_function(self, device: torch.device) -> ScoreFunction:
         device = torch.device(device)
@@ -234,6 +262,35 @@ class ContinuousBackend(ScoringBackend):
                 device, param_db=self.param_db
             )
         return self._score_functions[device]
+
+    def set_ligand_variants(
+        self, variants: "LigandVariantDOFs", pose_stack: PoseStack
+    ) -> None:
+        """Record the ligand forms this search can reach.
+
+        Scoring reads each pose's chemistry from the PoseStack, so only
+        minimization needs these: they carry the per-form kinematics.
+        """
+        self.ligand_variant_dofs = variants
+
+    def _minimized_variants(
+        self, pose_stack: PoseStack, docking_dofs: LigandDockingDOFs
+    ) -> Optional[LigandVariantDOFs]:
+        """The union layout, when this population holds more than one form.
+
+        A population agreeing on its ligand form minimizes on the DOFs it was
+        handed, which is both the common case and the one the caller built.
+        """
+        if self.ligand_variant_dofs is None:
+            return None
+        block_types = pose_stack.block_type_ind64[:, docking_dofs.ligand_block]
+        present = set(block_types.tolist())
+        if len(present) == 1:
+            return None
+        unknown = sorted(present - set(self.ligand_variant_dofs.dofs))
+        if unknown:
+            raise ValueError(f"ligand block types {unknown} have no docking DOFs")
+        return self.ligand_variant_dofs
 
     def score(self, pose_stack: PoseStack) -> torch.Tensor:
         """Score a PoseStack with the weighted continuous beta2016 function."""
@@ -260,11 +317,22 @@ class ContinuousBackend(ScoringBackend):
     ) -> MinimizationResult:
         """Run docking-DOF minimization and return optimizer-authored genes."""
         kin_dtype = self.kin_dtype or pose_stack.coords.dtype
+        variants = self._minimized_variants(pose_stack, docking_dofs)
+        if variants is None:
+            fold_forest, move_map = docking_dofs.fold_forest, docking_dofs.move_map
+        else:
+            # The poses hold different ligand forms, whose torsions and jump
+            # stubs differ: each takes its own form's rows.
+            fold_forest, move_map = per_pose_fold_forest_and_move_map(
+                pose_stack,
+                docking_dofs.ligand_block,
+                sidechain_blocks=docking_dofs.sidechain_blocks,
+            )
         kf_network = _build_kinforest_network(
             pose_stack,
             self._score_function(pose_stack.device),
-            docking_dofs.fold_forest,
-            docking_dofs.move_map,
+            fold_forest,
+            move_map,
             kin_dtype=kin_dtype,
         )
         if initial_raw_dofs is not None:
@@ -287,7 +355,7 @@ class ContinuousBackend(ScoringBackend):
         )
         minimized.coords = minimized.coords.detach()
         genes = _genes_from_kinforest_dofs(
-            pose_stack, docking_dofs, kf_network
+            pose_stack, docking_dofs, kf_network, variants=variants
         ).detach()
         return MinimizationResult(
             pose_stack=minimized,

@@ -236,21 +236,26 @@ def repeat_docking_dofs(
 
 
 def per_pose_fold_forest_and_move_map(
-    pose_stack: PoseStack, ligand_block: int
+    pose_stack: PoseStack, ligand_block: int, sidechain_blocks=()
 ) -> tuple[FoldForest, MoveMap]:
     """Docking fold forest and move map for poses whose ligand forms differ.
 
     Each form is resolved on one pose holding it; every pose takes its own
     form's rows.
     """
+    sidechain_blocks = tuple(sidechain_blocks)
     types = pose_stack.block_type_ind64[:, ligand_block]
     present = sorted(set(types.tolist()))
     if len(present) == 1:
-        dofs = build_ligand_docking_dofs(pose_stack, ligand_block)
+        dofs = build_ligand_docking_dofs(
+            pose_stack, ligand_block, sidechain_blocks=sidechain_blocks
+        )
         return dofs.fold_forest, dofs.move_map
     built = {
         index: build_ligand_docking_dofs(
-            pose_stack.split(int(torch.nonzero(types == index)[0])), ligand_block
+            pose_stack.split(int(torch.nonzero(types == index)[0])),
+            ligand_block,
+            sidechain_blocks=sidechain_blocks,
         )
         for index in present
     }
