@@ -31,12 +31,24 @@ TMOL_HOST_DEVICE_FUNC void grid_score_atom_body(
 
   int const pose = work / ctx.n_grid_atoms;
   int const g = work % ctx.n_grid_atoms;
+  int const table = pose % int(ctx.atom_types.size(0));
   Real const voxel_spacing = ctx.voxel_spacing;
   Real const scale = Real(1) / voxel_spacing;
   Int const atom = ctx.grid_atoms[g];
-  Int const type = ctx.atom_types[g];
+  Int const type = ctx.atom_types[table][g];
   int const dims[3] = {
       int(ctx.atr.size(1)), int(ctx.atr.size(2)), int(ctx.atr.size(3))};
+
+  // An absent atom scores nothing; its coordinate is never read.
+  if (type == -1) {
+    ctx.energy[pose][g] = Real(0);
+    Real3 zero;
+    zero[0] = Real(0);
+    zero[1] = Real(0);
+    zero[2] = Real(0);
+    ctx.gradient[pose][atom] = zero;
+    return;
+  }
 
   Real3 const xyz = ctx.coords[pose][atom];
   Real position[3];
@@ -64,7 +76,7 @@ TMOL_HOST_DEVICE_FUNC void grid_score_atom_body(
   if (ctx.with_lk_ball) {
     contract_grid<D, Real>(ctx.lk_ball, int(type), stencil, v_lk, d_lk);
   }
-  Real const charge = ctx.charges[g];
+  Real const charge = ctx.charges[table][g];
   Real const w0 = ctx.weights[0];
   Real const w1 = ctx.weights[1];
   Real const w2 = ctx.weights[2];

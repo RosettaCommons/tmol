@@ -108,8 +108,8 @@ auto GridScoreDispatch<DeviceOps, D, Real, Int>::atoms(
     ContextManager& mgr,
     TView<GridVec<Real, 3>, 2, D> coords,
     TView<Int, 1, D> grid_atoms,
-    TView<Int, 1, D> atom_types,
-    TView<Real, 1, D> charges,
+    TView<Int, 2, D> atom_types,
+    TView<Real, 2, D> charges,
     TView<Real, 4, D> atr,
     TView<Real, 4, D> rep,
     TView<Real, 4, D> sol,
@@ -178,12 +178,12 @@ template <
 void GridScoreDispatch<DeviceOps, D, Real, Int>::waters(
     ContextManager& mgr,
     TView<GridVec<Real, 3>, 2, D> coords,
-    TView<Int, 1, D> polar_atoms,
-    TView<Int, 2, D> water_kinds,
-    TView<Int, 3, D> water_atoms,
-    TView<GridVec<Real, 3>, 2, D> water_params,
-    TView<Int, 2, D> water_is_ring,
-    TView<Int, 1, D> polar_types,
+    TView<Int, 2, D> polar_atoms,
+    TView<Int, 3, D> water_kinds,
+    TView<Int, 4, D> water_atoms,
+    TView<GridVec<Real, 3>, 3, D> water_params,
+    TView<Int, 3, D> water_is_ring,
+    TView<Int, 2, D> polar_types,
     TView<Real, 4, D> water_grid,
     TView<Real, 4, D> bridge_grid,
     TView<Real, 1, D> origin,
@@ -196,7 +196,10 @@ void GridScoreDispatch<DeviceOps, D, Real, Int>::waters(
   using Real3 = GridVec<Real, 3>;
   using namespace grid_score_detail;
   int const n_poses = coords.size(0);
-  int const n_polar = polar_atoms.size(0);
+  // Tables are [table pose, polar atom, ...]; batch pose p reads row
+  // p % n_tables. A polar slot this pose lacks has every water kind 0.
+  int const n_tables = water_kinds.size(0);
+  int const n_polar = polar_atoms.size(1);
   int const dims[3] = {
       int(water_grid.size(1)),
       int(water_grid.size(2)),
@@ -209,6 +212,7 @@ void GridScoreDispatch<DeviceOps, D, Real, Int>::waters(
       mgr, n_poses, n_polar, [=] TMOL_DEVICE_FUNC(int work) {
         int const pose = work / n_polar;
         int const polar = work % n_polar;
+        int const table = pose % n_tables;
         Real const scale = Real(1) / voxel_spacing;
         {
           bool active[4];
@@ -216,20 +220,20 @@ void GridScoreDispatch<DeviceOps, D, Real, Int>::waters(
           Real value_water[4], value_bridge[4];
           Real slope_water[4][3], slope_bridge[4][3];
           for (int slot = 0; slot < 4; ++slot) {
-            active[slot] = water_kinds[polar][slot] != 0;
+            active[slot] = water_kinds[table][polar][slot] != 0;
             any_water = any_water || active[slot];
             if (!active[slot]) continue;
             Int atoms[3] = {
-                water_atoms[polar][slot][0],
-                water_atoms[polar][slot][1],
-                water_atoms[polar][slot][2]};
+                water_atoms[table][polar][slot][0],
+                water_atoms[table][polar][slot][1],
+                water_atoms[table][polar][slot][2]};
             Real3 const water = water_position<D, Real, Int>(
                 coords,
                 pose,
-                water_kinds[polar][slot],
+                water_kinds[table][polar][slot],
                 atoms,
-                water_params[polar][slot],
-                water_is_ring[polar][slot] != 0,
+                water_params[table][polar][slot],
+                water_is_ring[table][polar][slot] != 0,
                 water_distance);
             Real position[3];
             for (int axis = 0; axis < 3; ++axis) {
@@ -247,13 +251,13 @@ void GridScoreDispatch<DeviceOps, D, Real, Int>::waters(
             }
             contract_grid<D, Real>(
                 water_grid,
-                polar_types[polar],
+                polar_types[table][polar],
                 stencil,
                 value_water[slot],
                 slope_water[slot]);
             contract_grid<D, Real>(
                 bridge_grid,
-                polar_types[polar],
+                polar_types[table][polar],
                 stencil,
                 value_bridge[slot],
                 slope_bridge[slot]);
@@ -296,17 +300,17 @@ void GridScoreDispatch<DeviceOps, D, Real, Int>::waters(
                             * scale;
             }
             Int atoms[3] = {
-                water_atoms[polar][slot][0],
-                water_atoms[polar][slot][1],
-                water_atoms[polar][slot][2]};
+                water_atoms[table][polar][slot][0],
+                water_atoms[table][polar][slot][1],
+                water_atoms[table][polar][slot][2]};
             propagate_water_gradient<D, Real, Int>(
                 coords,
                 gradient,
                 pose,
-                water_kinds[polar][slot],
+                water_kinds[table][polar][slot],
                 atoms,
-                water_params[polar][slot],
-                water_is_ring[polar][slot] != 0,
+                water_params[table][polar][slot],
+                water_is_ring[table][polar][slot] != 0,
                 water_distance,
                 dE_dW);
           }

@@ -12,12 +12,16 @@ import numpy
 import torch
 
 from tmol.database.chemical import (
+    MAX_DEPROTONATED_BRIDGE,
+    Atom,
     Connection,
     VariantScope,
     VariantType,
     _ideal_distances,
     _is_metal_cluster,
+    _metal_donor_connections,
     _metal_geometry_variant_index,
+    _metal_leaving_hydrogen,
     _metal_table,
     _special_case_variant_index,
 )
@@ -27,6 +31,7 @@ from tmol.io.details._metal_geometry import (
     _fit_geometry,
     _unit,
 )
+from tmol.ligand._metal_deprotonation import _metal_bound_type
 from tmol.pose._packed_block_types import PackedBlockTypes
 
 logger = logging.getLogger(__name__)
@@ -348,8 +353,13 @@ def _cluster_sites(res, index_of, atom_type, table):
     )
 
 
-def _pose_donor_table(pose, rt, xyz, excluded, tables):
-    """Every donor atom in one pose, in residue then atom order; built once per pose."""
+def _pose_donor_table(pose, rt, xyz, excluded, tables, protonated_donors=None):
+    """Every donor atom in one pose, in residue then atom order; built once per pose.
+
+    Residues flagged in ``protonated_donors`` offer donors that still carry a
+    hydrogen; elsewhere the input's protonation says which type of its class a
+    residue is, and a donor holding its own hydrogen cannot coordinate.
+    """
     types = rt[pose]
     live = (types >= 0) & ~excluded[pose]
     if not live.any():
@@ -365,6 +375,8 @@ def _pose_donor_table(pose, rt, xyz, excluded, tables):
     # an atom presenting a hydrogen of its own cannot donate
     hydrogens = tables.donor_hydrogens[types[residue], atom]
     held = ((hydrogens >= 0) & finite[residue[:, None], hydrogens]).any(-1)
+    if protonated_donors is not None:
+        held &= ~protonated_donors[pose][residue]
     residue, atom = residue[~held], atom[~held]
     return (
         numpy.ascontiguousarray(xyz[pose][residue, atom], dtype=numpy.float64).reshape(
@@ -615,9 +627,11 @@ def _find_metal_geometries(
     declared_sites: Optional[Dict[Tuple[int, int], tuple]] = None,
     find_additional: bool = True,
     required_donors: Optional[Dict[Tuple[int, int], set]] = None,
+    protonated_donors=None,
 ):
     """Each residue's res_type_variant (0 unless a metal) and each metal's assignment.
     ``geometries``/``declared_sites`` fix geometry/sites; ``required_donors`` stay.
+    ``protonated_donors`` marks residues whose donors may still hold a hydrogen.
     """
     table = _metal_table() if table is None else table
     table_vertices = {g["name"]: g["vertices"] for g in table["geometries"]}
@@ -643,7 +657,7 @@ def _find_metal_geometries(
     for pose, res in zip(*numpy.nonzero(is_metal_class)):
         if int(pose) not in donor_tables:
             donor_tables[int(pose)] = _pose_donor_table(
-                int(pose), rt, xyz, excluded, tables
+                int(pose), rt, xyz, excluded, tables, protonated_donors
             )
         donor_table = donor_tables[int(pose)]
         cls = int(rt[pose, res])
@@ -748,20 +762,30 @@ def _declared_assignment(metal, ion, geometry, filled, metal_xyz, xyz, vertices_
     )
 
 
-def _metal_donor_patch(base_name: str, atom: str, n_metals: int = 1) -> VariantType:
+def _metal_donor_patch(
+    base_name: str,
+    atom: str,
+    n_metals: int = 1,
+    leaving: Optional[str] = None,
+    bound_type: Optional[str] = None,
+) -> VariantType:
     """A patch giving ``atom`` a connection per metal: metal_<atom>, metal2_<atom>, ...
     Named for its last connection, so a patched type's name is one of its connections.
+    A donor binding as its conjugate base also loses ``leaving`` and, where its type
+    changes, takes ``bound_type``.
     """
-    names = [f"metal_{atom}"] + [f"metal{k}_{atom}" for k in range(2, n_metals + 1)]
+    names = _metal_donor_connections(atom, n_metals)
     prefix = f"metal{n_metals}" if n_metals > 1 else "metal"
     return VariantType(
         name=f"{prefix}_{base_name}_{atom}",
         display_name=names[-1],
         pattern="",
-        remove_atoms=(),
+        remove_atoms=(f"<{leaving}>",) if leaving else (),
         add_atoms=(),
         add_atom_aliases=(),
-        modify_atoms=(),
+        modify_atoms=(
+            (Atom(name=f"<{atom}>", atom_type=bound_type),) if bound_type else ()
+        ),
         add_connections=tuple(
             Connection(name=name, atom=f"<{atom}>", kinematic=False) for name in names
         ),
@@ -804,8 +828,107 @@ def _donor_patches(canonical_ordering, chemical_db, res_types, assignments):
             if any(
                 a.name == name and atom_type[a.atom_type].is_metal_donor for a in atoms
             ):
-                patches[(base.name, name, n)] = _metal_donor_patch(base.name, name, n)
+                patches[(base.name, name, n)] = _metal_donor_patch(
+                    base.name, name, n, *_conjugate_base(base, name, n, atom_type)
+                )
     return tuple(patches.values())
+
+
+def _conjugate_base(base, atom, n_metals, atom_type):
+    """(leaving hydrogen, new atom type or None) for a donor binding as its conjugate
+    base, else (None, None); past MAX_DEPROTONATED_BRIDGE metals no charges exist."""
+    if n_metals > MAX_DEPROTONATED_BRIDGE:
+        return None, None
+    leaving = _metal_leaving_hydrogen(base, atom, atom_type)
+    if leaving is None:
+        return None, None
+    bound = _metal_bound_type(base, atom_type.values(), atom, leaving)
+    current = next(a.atom_type for a in base.atoms if a.name == atom)
+    return leaving, (bound if bound != current else None)
+
+
+def _hydrogens_facing_metals(
+    canonical_ordering, chemical_db, res_types, coords, atom_is_present, assignments
+):
+    """``coords`` and ``atom_is_present`` with each conjugate-base donor's leaving
+    hydrogen the one nearest its metal.
+
+    The patch removes one hydrogen by name; hydrogens on one atom are
+    interchangeable, so swapping their positions changes no chemistry, and keeps
+    the one that remains from being the one pointing at the metal.
+    """
+    atom_type = {at.name: at for at in chemical_db.atom_types}
+    bases = defaultdict(list)
+    for res in chemical_db.residues:
+        if res.name == res.base_name:
+            bases[res.io_equiv_class].append(res)
+    classes = canonical_ordering.restype_io_equiv_classes
+    metals_of = defaultdict(list)
+    for (pose, metal), got in assignments:
+        for res, atom in got.donor_atoms:
+            metals_of[(pose, res, atom)].append(metal)
+
+    def metal_atoms(res_type):
+        return _metal_atom_indices(canonical_ordering, chemical_db, res_type)
+
+    swaps = []
+    for (pose, res, atom), metals in metals_of.items():
+        if len(metals) > MAX_DEPROTONATED_BRIDGE:
+            continue
+        equiv_class = classes[int(res_types[pose, res])]
+        name = canonical_ordering.restypes_ordered_atom_names[equiv_class][atom]
+        index = canonical_ordering.restypes_atom_index_mapping[equiv_class]
+        base = next(
+            (b for b in bases[equiv_class] if any(a.name == name for a in b.atoms)),
+            None,
+        )
+        leaving = (
+            None if base is None else _metal_leaving_hydrogen(base, name, atom_type)
+        )
+        if leaving is None:
+            continue
+        type_of = {a.name: a.atom_type for a in base.atoms}
+        hydrogens = [
+            index[other]
+            for a, b, *_ in base.bonds
+            for this, other in ((a, b), (b, a))
+            if this == name and atom_type[type_of[other]].element == "H"
+        ]
+        if len(hydrogens) < 2:
+            continue
+        metal_xyz = torch.cat(
+            [coords[pose, m][metal_atoms(res_types[pose, m])] for m in metals]
+        )
+        h_xyz = coords[pose, res, hydrogens]
+        distance = torch.cdist(h_xyz, metal_xyz).nan_to_num(float("inf")).amin(dim=1)
+        nearest = hydrogens[int(distance.argmin())]
+        if bool(torch.isfinite(distance).any()) and nearest != index[leaving]:
+            swaps.append((pose, res, index[leaving], nearest))
+
+    if not swaps:
+        return coords, atom_is_present
+    coords = coords.clone()
+    atom_is_present = atom_is_present.clone()
+    for pose, res, a, b in swaps:
+        coords[pose, res, [a, b]] = coords[pose, res, [b, a]]
+        atom_is_present[pose, res, [a, b]] = atom_is_present[pose, res, [b, a]]
+    return coords, atom_is_present
+
+
+def _metal_atom_indices(canonical_ordering, chemical_db, res_type):
+    """Canonical indices of a metal residue's metal atoms."""
+    equiv_class = canonical_ordering.restype_io_equiv_classes[int(res_type)]
+    index = canonical_ordering.restypes_atom_index_mapping[equiv_class]
+    is_metal = {at.name for at in chemical_db.atom_types if at.is_metal}
+    return sorted(
+        {
+            index[a.name]
+            for res in chemical_db.residues
+            if res.io_equiv_class == equiv_class
+            for a in res.atoms
+            if a.atom_type in is_metal and a.name in index
+        }
+    )
 
 
 def _with_donor_patches(pbt: PackedBlockTypes, patches) -> PackedBlockTypes:

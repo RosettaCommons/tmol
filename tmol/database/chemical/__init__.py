@@ -159,6 +159,8 @@ class AtomType:
     # donates a lone pair to a metal; not is_acceptor, which follows Rosetta's hbond
     #    typing and excludes thiolate and thioether sulfur
     is_metal_donor: bool = False
+    # coordinates a metal as its conjugate base: binding removes one hydrogen
+    deprotonates_on_metal_binding: bool = False
     # the type this atom takes when a covalent bond replaces its hydrogen:
     #    a hydroxyl becomes an ether, a thiol a thioether
     conjugated_type: Optional[str] = None
@@ -496,6 +498,45 @@ def _site_metal(restype, index: int) -> Tuple["MetalSite", int]:
             return site, index
         index -= len(site.site_connections)
     raise IndexError(f"{restype.name} has no free site {index}")
+
+
+# Metals a donor that binds as its conjugate base may bridge; its charges are
+# declared for each count, and a donor bridging more keeps its hydrogen.
+MAX_DEPROTONATED_BRIDGE = 2
+
+
+def _metal_donor_connections(atom: str, n_metals: int) -> Tuple[str, ...]:
+    """A donor atom's connections to its metals; the last names its patch."""
+    return (f"metal_{atom}",) + tuple(
+        f"metal{k}_{atom}" for k in range(2, n_metals + 1)
+    )
+
+
+def _metal_leaving_hydrogen(restype, atom: str, atom_types) -> Optional[str]:
+    """The hydrogen ``atom`` gives up on binding a metal, if its type binds as a
+    conjugate base; prep's charges and construction's patch both remove this one.
+
+    It is one no other atom is built from, so removing it orphans no icoor.
+    ``atom_types`` maps atom-type name to AtomType.
+    """
+    type_of = {a.name: a.atom_type for a in restype.atoms}
+    donor = atom_types.get(type_of.get(atom))
+    if donor is None or not donor.deprotonates_on_metal_binding:
+        return None
+    hydrogens = sorted(
+        other
+        for a, b, *_ in restype.bonds
+        for this, other in ((a, b), (b, a))
+        if this == atom and atom_types[type_of[other]].element == "H"
+    )
+    if not hydrogens:
+        return None
+    framed_on = {
+        ref
+        for icoor in restype.icoors
+        for ref in (icoor.parent, icoor.grand_parent, icoor.great_grand_parent)
+    }
+    return next((h for h in hydrogens if h not in framed_on), hydrogens[0])
 
 
 def _special_case_variant_index(restype) -> int:

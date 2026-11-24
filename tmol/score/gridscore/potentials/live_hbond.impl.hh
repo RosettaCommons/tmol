@@ -22,10 +22,10 @@ template <
 auto LiveHBondDispatch<DeviceOps, D, Real, Int>::forward(
     ContextManager& mgr,
     TView<HBVec<Real, 3>, 2, D> ligand_coords,
-    TView<Int, 2, D> ligand_donor_atoms,
-    TView<Int, 1, D> ligand_donor_types,
-    TView<Int, 2, D> ligand_acceptor_atoms,
-    TView<Int, 1, D> ligand_acceptor_types,
+    TView<Int, 3, D> ligand_donor_atoms,
+    TView<Int, 2, D> ligand_donor_types,
+    TView<Int, 3, D> ligand_acceptor_atoms,
+    TView<Int, 2, D> ligand_acceptor_types,
     TView<HBVec<Real, 3>, 2, D> receptor_donors,
     TView<Int, 1, D> receptor_donor_types,
     TView<HBVec<Real, 3>, 2, D> receptor_acceptors,
@@ -44,8 +44,11 @@ auto LiveHBondDispatch<DeviceOps, D, Real, Int>::forward(
 
   int const n_poses = ligand_coords.size(0);
   int const n_atoms = ligand_coords.size(1);
-  int const n_ligand_donors = ligand_donor_atoms.size(0);
-  int const n_ligand_acceptors = ligand_acceptor_atoms.size(0);
+  // Ligand site tables are [table pose, site, ...]; batch pose p reads row
+  // p % n_tables, so one table row per pool pose serves every tiled batch.
+  int const n_tables = ligand_donor_types.size(0);
+  int const n_ligand_donors = ligand_donor_atoms.size(1);
+  int const n_ligand_acceptors = ligand_acceptor_atoms.size(1);
   auto energies_t = TPack<Real, 1, D>::zeros({n_poses});
   auto gradients_t = TPack<HBVec<Real, 3>, 2, D>::zeros({n_poses, n_atoms});
   auto energies = energies_t.view;
@@ -63,20 +66,24 @@ auto LiveHBondDispatch<DeviceOps, D, Real, Int>::forward(
     auto const globals = global_params[0];
     Real const cutoff = globals.max_ha_dis;
 
+    int const table = pose % n_tables;
+
     // Ligand site: three atoms (donor, hydrogen, unused | acceptor, base,
     // base0).
     Int atoms[3] = {-1, -1, -1};
     Int site_type;
     if (is_donor) {
-      atoms[0] = ligand_donor_atoms[site][0];
-      atoms[1] = ligand_donor_atoms[site][1];
-      site_type = ligand_donor_types[site];
+      atoms[0] = ligand_donor_atoms[table][site][0];
+      atoms[1] = ligand_donor_atoms[table][site][1];
+      site_type = ligand_donor_types[table][site];
     } else {
       for (int k = 0; k < 3; ++k) {
-        atoms[k] = ligand_acceptor_atoms[site - n_ligand_donors][k];
+        atoms[k] = ligand_acceptor_atoms[table][site - n_ligand_donors][k];
       }
-      site_type = ligand_acceptor_types[site - n_ligand_donors];
+      site_type = ligand_acceptor_types[table][site - n_ligand_donors];
     }
+    // A site this pose's ligand does not have.
+    if (site_type < 0) return;
     Vec3 const p0 = ligand_coords[pose][atoms[0]];
     Vec3 const p1 = ligand_coords[pose][atoms[1]];
     Vec3 p2 = Vec3::Zero();

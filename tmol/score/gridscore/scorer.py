@@ -143,6 +143,14 @@ class GridScorer:
             device=device,
         )
         self._charges = ligand_charges.to(device=device, dtype=dtype)
+        # Per-pose overrides, set when a population's poses hold different
+        # ligand block types: [pose, atom] each, present=False zeroing a slot.
+        self._pose_grid_index: torch.Tensor | None = None
+        self._pose_charges: torch.Tensor | None = None
+        self._pose_present: torch.Tensor | None = None
+        #: (movable slot -> this pose's local index, slot is present) for the
+        #: ligand-intra modules, or None while every pose is one molecule.
+        self._intra_packing: tuple[torch.Tensor, torch.Tensor] | None = None
         self._grid_atom_index = (
             torch.arange(len(ligand_atom_types), device=device)
             if self._grid_atoms is None
@@ -177,26 +185,74 @@ class GridScorer:
                     "lk_ball weights must match those used in grid construction"
                 )
 
+        # Movable slot -> its column in the grid-atom tables, -1 if not scored.
+        self._grid_slot_of = None
         if lk_ball_grid:
-            polar = self.live_lk_ball.ligand_polar_atoms
-            if self._grid_atoms is None:
-                polar_grid_index = self._grid_index[polar]
-            else:
-                position = torch.full(
-                    (self.live_lk_ball.n_ligand_atoms,),
-                    -1,
-                    dtype=torch.int64,
-                    device=device,
-                )
-                position[self._grid_atoms] = torch.arange(
-                    self._grid_atoms.numel(), dtype=torch.int64, device=device
-                )
-                if bool(torch.any(position[polar] < 0)):
-                    raise ValueError("an LK-ball polar atom is not grid-scored")
-                polar_grid_index = self._grid_index[position[polar]]
-            self._polar_grid_index = polar_grid_index
+            slot_of = torch.full(
+                (self.live_lk_ball.n_ligand_atoms,),
+                -1,
+                dtype=torch.int64,
+                device=device,
+            )
+            slot_of[self._grid_atom_index] = torch.arange(
+                self._grid_atom_index.numel(), dtype=torch.int64, device=device
+            )
+            self._grid_slot_of = slot_of
+
+        # Kernel tables, [table pose, ...]: batch pose p reads row p % rows. One
+        # row while every pose holds the same ligand.
+        self._type_table = self._grid_index[None].clone()
+        self._charge_table = self._charges[None].clone()
+        self._polar_type_table = None
+        self._lk_tables = None
+        self._refresh_polar_tables()
 
         self._mps = self._mps_grid_tensors()
+
+    def _refresh_polar_tables(self) -> None:
+        """Polar types and LK-ball water tables at the grid tables' row count.
+
+        Every table one kernel reads must share its leading dimension. A polar
+        slot is read from the row for that pose, so a pose whose ligand bound a
+        metal takes its own sites, waters and retyped donor.
+        """
+        if self._grid_slot_of is None:
+            return
+        data = self.live_lk_ball
+        rows = self._type_table.shape[0]
+        tables = (
+            data.ligand_polar_atoms,
+            data.ligand_water_kinds,
+            data.ligand_water_atoms,
+            data.ligand_water_params,
+            data.ligand_water_is_ring,
+        )
+        lk_rows = tables[0].shape[0]
+        if rows == 1 and lk_rows > 1:
+            # Construction order: the grid tables take their per-pose rows from
+            # set_pose_atom_state, which runs next and refreshes these.
+            return
+        if rows % lk_rows:
+            raise ValueError("LK-ball tables and grid tables disagree on rows")
+        spread = torch.arange(rows, device=self.device) % lk_rows
+        tables = tuple(t[spread] for t in tables)
+        # Each polar atom's column in the grid-atom tables, then its type there.
+        polar = tables[0]
+        position = self._grid_slot_of[polar.clamp(min=0)]
+        # No host sync here: this runs inside the captured objective. That
+        # every polar atom is grid-scored is checked when the tables are set.
+        real = (polar >= 0) & (position >= 0)
+        types = self._type_table.gather(1, position.clamp(min=0))
+        types = torch.where(real, types, types.new_full((), -1))
+        if self._polar_type_table is None or self._polar_type_table.shape != (
+            types.shape
+        ):
+            self._polar_type_table = types.contiguous()
+            self._lk_tables = tuple(t.contiguous() for t in tables)
+            return
+        self._polar_type_table.copy_(types)
+        for buffer, t in zip(self._lk_tables, tables):
+            buffer.copy_(t)
 
     def _mps_grid_tensors(self) -> dict | None:
         """Metal copies of the per-atom grid kernel's inputs, or None.
@@ -216,8 +272,8 @@ class GridScorer:
         grids = self.grids
         return {
             "grid_atom_index": self._grid_atom_index.to(mps),
-            "grid_index": self._grid_index.to(mps),
-            "charges": self._charges.to(mps),
+            "grid_index": self._type_table.to(mps),
+            "charges": self._charge_table.to(mps),
             "atr": grids.fa_atr_coeffs.to(mps),
             "rep": grids.fa_rep_coeffs.to(mps),
             "sol": grids.fa_sol_coeffs.to(mps),
@@ -256,8 +312,16 @@ class GridScorer:
         indices = grids.geometry.zero_based_index_from_cartesian(
             grid_coords.reshape(-1, 3)
         ).contiguous()
-        atom_type = self._grid_index.repeat(n_poses)
-        charge = self._charges.repeat(n_poses)
+        rows = self._type_table.shape[0]
+        if n_poses % rows:
+            raise ValueError(
+                "grid tables need one row per pool pose, dividing the batch"
+            )
+        table_row = torch.arange(n_poses, device=self.device) % rows
+        atom_type = self._type_table[table_row].reshape(-1)
+        charge = self._charge_table[table_row].reshape(-1)
+        keep = atom_type >= 0
+        atom_type = atom_type.clamp(min=0)
 
         atr, d_atr, penalty, d_penalty = interpolate_with_derivatives(
             grids.fa_atr_coeffs, indices, atom_type, OUT_OF_BOUNDS_PENALTY
@@ -276,12 +340,125 @@ class GridScorer:
         # fa_rep is stored transformed; chain rule through its inverse.
         d_rep = d_rep * (-4.0 * rep.pow(-5))[:, None]
         gradients = torch.stack((d_atr, d_rep, d_sol, charge[:, None] * d_elec), dim=1)
+        # A slot this pose's block type has no atom for scores nothing, whatever
+        # its coordinate: replaced rather than scaled, since a coordinate off
+        # the grid gives a non-finite fa_rep chain rule.
+        zero = values.new_zeros(())
+        values = torch.where(keep[:, None], values, zero)
+        gradients = torch.where(keep[:, None, None], gradients, zero)
+        penalty = torch.where(keep, penalty, zero)
+        d_penalty = torch.where(keep[:, None], d_penalty, zero)
         return (
             values.reshape(n_poses, n_atoms, 4),
             (gradients * scale).reshape(n_poses, n_atoms, 4, 3),
             penalty.reshape(n_poses, n_atoms),
             (d_penalty * scale).reshape(n_poses, n_atoms, 3),
         )
+
+    def set_pose_atom_state(
+        self,
+        grid_index: torch.Tensor | None,
+        charges: torch.Tensor | None = None,
+        present: torch.Tensor | None = None,
+    ) -> None:
+        """Give each pose its own ``[pose, atom]`` grid types, charges and mask.
+
+        Deprotonating a donor to bind a metal retypes it, shifts its charges and
+        drops a hydrogen, so a population mid-search is not one molecule. Passing
+        ``None`` for ``grid_index`` restores the shared vectors.
+        """
+        if grid_index is None:
+            self._pose_grid_index = None
+            self._pose_charges = None
+            self._pose_present = None
+            self._set_tables(self._grid_index[None], self._charges[None])
+            return
+        if charges is None or present is None:
+            raise ValueError("per-pose grid state needs charges and a presence mask")
+        n_atoms = self._grid_index.shape[0]
+        for name, tensor in (
+            ("grid index", grid_index),
+            ("charges", charges),
+            ("presence", present),
+        ):
+            if tensor.dim() != 2 or tensor.shape[1] != n_atoms:
+                raise ValueError(
+                    f"per-pose {name} must be [pose, {n_atoms}], got "
+                    f"{tuple(tensor.shape)}"
+                )
+        # A captured CUDA graph reads these by address, so a new population
+        # writes into the same buffers. Only a changed pose count reallocates,
+        # and that invalidates the capture through its own shape.
+        shape = (grid_index.shape[0], n_atoms)
+        if self._pose_grid_index is None or self._pose_grid_index.shape != shape:
+            self._pose_grid_index = torch.empty(
+                shape, dtype=torch.int64, device=self.device
+            )
+            self._pose_charges = torch.empty(
+                shape, dtype=self._charges.dtype, device=self.device
+            )
+            self._pose_present = torch.empty(
+                shape, dtype=torch.bool, device=self.device
+            )
+        self._pose_grid_index.copy_(grid_index)
+        self._pose_charges.copy_(charges)
+        self._pose_present.copy_(present)
+        self._set_tables(
+            torch.where(
+                self._pose_present,
+                self._pose_grid_index,
+                self._pose_grid_index.new_full((), -1),
+            ),
+            self._pose_charges,
+        )
+
+    def set_intra_topology(
+        self,
+        block_types: torch.Tensor | None,
+        connections: torch.Tensor | None = None,
+        packed_index: torch.Tensor | None = None,
+        present: torch.Tensor | None = None,
+    ) -> None:
+        """Give the ligand-intra modules this population's per-pose ligand
+        block types, bonds and slot order. ``None`` restores one molecule."""
+        if self.live_ligand_intra is None:
+            return
+        self.live_ligand_intra.set_pose_topology(block_types, connections)
+        if block_types is None or packed_index is None:
+            self._intra_packing = None
+            return
+        if present is None:
+            raise ValueError("per-pose intra packing needs a presence mask")
+        packed_index = packed_index.to(device=self.device, dtype=torch.int64)
+        present = present.to(device=self.device, dtype=torch.bool)
+        # Written in place: a captured graph reads these by address.
+        if (
+            self._intra_packing is None
+            or self._intra_packing[0].shape != packed_index.shape
+        ):
+            self._intra_packing = (packed_index.clone(), present.clone())
+        else:
+            self._intra_packing[0].copy_(packed_index)
+            self._intra_packing[1].copy_(present)
+
+    def _set_tables(self, types: torch.Tensor, charges: torch.Tensor) -> None:
+        """Write the grid kernel tables in place; only a row-count change
+        reallocates, and that changes the batch a capture was taken for."""
+        if self._type_table.shape != types.shape:
+            self._type_table = types.contiguous().clone()
+            self._charge_table = charges.contiguous().clone()
+            self._polar_type_table = None
+        else:
+            self._type_table.copy_(types)
+            self._charge_table.copy_(charges)
+        self._refresh_polar_tables()
+        if self._mps is not None:
+            if self._mps["grid_index"].shape != self._type_table.shape:
+                self._mps["grid_index"] = self._type_table.to("mps")
+                self._mps["charges"] = self._charge_table.to("mps")
+            else:
+                self._mps["grid_index"].copy_(self._type_table)
+                self._mps["charges"].copy_(self._charge_table)
 
     def _grid_coords(self, coords: torch.Tensor) -> torch.Tensor:
         if self._grid_atoms is None:
@@ -335,8 +512,8 @@ class GridScorer:
                 atom_energies, grad = grid_score_atoms(
                     coords,
                     self._grid_atom_index,
-                    self._grid_index,
-                    self._charges,
+                    self._type_table,
+                    self._charge_table,
                     grids.fa_atr_coeffs,
                     grids.fa_rep_coeffs,
                     grids.fa_sol_coeffs,
@@ -353,15 +530,10 @@ class GridScorer:
                 self._lk_heavy_coeffs.shape[0]
                 and self.live_lk_ball.ligand_polar_atoms.numel()
             ):
-                data = self.live_lk_ball
                 grid_score_waters(
                     coords,
-                    data.ligand_polar_atoms,
-                    data.ligand_water_kinds,
-                    data.ligand_water_atoms,
-                    data.ligand_water_params,
-                    data.ligand_water_is_ring,
-                    self._polar_grid_index,
+                    *self._lk_tables,
+                    self._polar_type_table,
                     grids.lk_ball_water_coeffs,
                     grids.lk_bridge_coeffs,
                     grids.geometry.origin,
@@ -379,6 +551,41 @@ class GridScorer:
                 energies, grad = energies + e, grad + g
         return energies, grad
 
+    def _intra_term(self, coords: torch.Tensor):
+        """Ligand-intra energy and gradient, in movable-slot order.
+
+        A pose whose ligand bound a metal may hold a block type with fewer
+        atoms, which numbers the rest differently; the intra modules read a
+        block's atoms at its own local indices, so the slots are gathered into
+        that order and the gradient is taken back out of it. Index arithmetic
+        only, so a captured graph keeps following it.
+        """
+        data = self.live_ligand_intra
+        if self._intra_packing is None:
+            return score_ligand_intra_with_gradients(data, coords)
+        index, present = self._intra_packing
+        n_poses = coords.shape[0]
+        if n_poses % index.shape[0]:
+            raise ValueError(
+                "per-pose intra packing needs one row per pool pose, "
+                "dividing the batch"
+            )
+        table_row = torch.arange(n_poses, device=coords.device) % index.shape[0]
+        index, present = index[table_row], present[table_row]
+        rows = torch.arange(n_poses, device=coords.device)[:, None]
+        rows = rows.expand_as(index)
+        safe = torch.where(present, index, index.new_zeros(()))
+        packed = coords.new_zeros(coords.shape).index_put(
+            (rows, safe),
+            torch.where(present[..., None], coords, coords.new_zeros(())),
+            accumulate=True,
+        )
+        energies, gradients = score_ligand_intra_with_gradients(data, packed)
+        spread = gradients.gather(1, safe[..., None].expand(-1, -1, 3))
+        return energies, torch.where(
+            present[..., None], spread, gradients.new_zeros(())
+        )
+
     def _live_terms(self, coords: torch.Tensor) -> list:
         """Weighted (energy, gradient) of each live term, in a fixed order."""
         terms = []
@@ -395,9 +602,7 @@ class GridScorer:
                 )
             )
         if self.live_ligand_intra is not None:
-            terms.append(
-                score_ligand_intra_with_gradients(self.live_ligand_intra, coords)
-            )
+            terms.append(self._intra_term(coords))
         return terms
 
     def __call__(self, coords: torch.Tensor) -> torch.Tensor:

@@ -8,7 +8,12 @@ from . import _inter_block_bondsep  # noqa: F401
 from . import _pose_stack  # noqa: F401
 from . import _pose_stack_builder  # noqa: F401
 from . import _sequence  # noqa: F401
-from ._block_selection import repeat_pose_stack, select_blocks  # noqa: F401
+from ._block_selection import (  # noqa: F401
+    repeat_pose_stack,
+    replace_poses,
+    select_blocks,
+    select_poses,
+)
 from ._util import (  # noqa: F401
     atom_label,
     get_named_torsions,
@@ -23,6 +28,8 @@ __all__ = [
     "get_polymer_type_mask",
     "metal_blocks",
     "repeat_pose_stack",
+    "replace_poses",
+    "select_poses",
     "residue_label",
     "select_blocks",
 ]

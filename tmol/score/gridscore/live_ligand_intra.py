@@ -65,7 +65,17 @@ def _intra_score_function(
         # Flexible scoring needs the full beta2016 term set. Search-only
         # diagonal weights are applied after block-pair decomposition so that
         # inter-block interactions retain their full beta2016 weights.
-        return beta
+        # Metal coordination is excluded: docking declares and scores the
+        # ligand's bonds through the backend, and counting them here too would
+        # double every site the search forms.
+        whole = ScoreFunction(param_db, device)
+        for score_type in beta.all_score_types():
+            weight = float(beta.get_weight(score_type))
+            if score_type == ScoreType.metal_coordination:
+                weight = 0.0
+            if weight:
+                whole.set_weight(score_type, weight)
+        return whole
     result = ScoreFunction(param_db, device)
     score_types = _LJLK_ELEC_SCORE_TYPES + (ScoreType.gen_torsions,)
     if include_cart_bonded:
@@ -96,20 +106,20 @@ def _ligand_pose_to(
     device = torch.empty(0, device=device).device
 
     source_pbt = pose_stack.packed_block_types
-    source_type_indices = []
-    for value in pose_stack.block_type_ind64[0].tolist():
-        source_type_index = int(value)
-        if source_type_index >= 0 and source_type_index not in source_type_indices:
-            source_type_indices.append(source_type_index)
-    block_types = [
-        source_pbt.active_block_types[source_type_index]
-        for source_type_index in source_type_indices
-    ]
-    pbt = PackedBlockTypes.from_restype_list(
-        source_pbt.chem_db,
-        source_pbt.restype_set,
-        block_types,
-        device=device,
+    # The whole palette, not the types this pose happens to hold: detection
+    # writes a bound ligand's own block type into a rendered stack, and a
+    # compacted palette would not contain it.
+    source_type_indices = list(range(len(source_pbt.active_block_types)))
+    block_types = list(source_pbt.active_block_types)
+    pbt = (
+        source_pbt
+        if source_pbt.device == device
+        else PackedBlockTypes.from_restype_list(
+            source_pbt.chem_db,
+            source_pbt.restype_set,
+            block_types,
+            device=device,
+        )
     )
 
     def moved(value: torch.Tensor) -> torch.Tensor:
@@ -176,6 +186,14 @@ class LiveLigandIntraData:
     _weight_cache: dict[tuple, tuple] = field(
         default_factory=dict, compare=False, repr=False
     )
+    #: Every stack a rendered module reads, by batch size; its block types and
+    #: connections are written in place when detection moves the ligand's bonds.
+    _rendered_stacks: dict[int, list] = field(
+        default_factory=dict, compare=False, repr=False
+    )
+    #: Per-pose ligand topology to apply to each of those, or None for one
+    #: molecule; set by the backend after each detection.
+    _pose_topology: object = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         pose_stack = self.ligand_pose_stack
@@ -218,6 +236,57 @@ class LiveLigandIntraData:
         """Scale the repulsive weight of every movable interaction."""
         self._rep_scale.fill_(float(scale))
 
+    def _register(
+        self, pose_stack: PoseStack, column: int | None = None, apply: bool = True
+    ) -> PoseStack:
+        """Record a stack a module is rendered on, and give it this population's
+        ligand topology.
+
+        ``column`` names the movable-pose block a single-block stack holds;
+        ``None`` means the stack mirrors the whole movable layout.
+        """
+        self._rendered_stacks.setdefault(pose_stack.n_poses, []).append(
+            (pose_stack, column)
+        )
+        if apply:
+            self._apply_topology(pose_stack, column)
+        return pose_stack
+
+    def _apply_topology(self, pose_stack: PoseStack, column: int | None) -> None:
+        if self._pose_topology is None:
+            return
+        block_types, connections = self._pose_topology
+        rows = block_types.shape[0]
+        if pose_stack.n_poses % rows:
+            raise ValueError("per-pose ligand topology does not divide the batch")
+        repeats = pose_stack.n_poses // rows
+        if column is not None:
+            # A block scored alone: only its own type, and no realized bond.
+            types = block_types[:, column : column + 1]
+        else:
+            types = block_types
+        pose_stack.block_type_ind64.copy_(types.repeat(repeats, 1))
+        pose_stack.block_type_ind.copy_(pose_stack.block_type_ind64)
+        if column is None and connections is not None:
+            pose_stack.inter_residue_connections64.copy_(
+                connections.repeat(repeats, 1, 1, 1)
+            )
+            pose_stack.inter_residue_connections.copy_(
+                pose_stack.inter_residue_connections64
+            )
+
+    def set_pose_topology(self, block_types, connections) -> None:
+        """Give every rendered stack this population's per-pose ligand block
+        types and connections, written in place so captures stay valid."""
+        object.__setattr__(
+            self,
+            "_pose_topology",
+            None if block_types is None else (block_types, connections),
+        )
+        for stacks in self._rendered_stacks.values():
+            for stack, column in stacks:
+                self._apply_topology(stack, column)
+
     def to(
         self, device: torch.device | str, dtype: torch.dtype
     ) -> "LiveLigandIntraData":
@@ -248,6 +317,7 @@ def build_live_ligand_intra_data(
     *,
     weight_profile: LigandIntraWeightProfile,
     sidechain_blocks: tuple[int, ...] = (),
+    extra_blocks: tuple[int, ...] = (),
 ) -> LiveLigandIntraData:
     """Build CPU live scoring data for movable blocks and peptide context.
 
@@ -260,12 +330,12 @@ def build_live_ligand_intra_data(
         raise ValueError("live ligand-intra construction requires one reference pose")
 
     ligand_pose_stack = movable_pose_stack(
-        reference_pose_stack, ligand_block, sidechain_blocks
+        reference_pose_stack, ligand_block, sidechain_blocks, extra_blocks
     )
     context_block_indices: tuple[int, ...] = ()
-    if sidechain_blocks:
+    if sidechain_blocks or extra_blocks:
         _, _, context_block_indices = movable_block_mapping(
-            reference_pose_stack, ligand_block, sidechain_blocks
+            reference_pose_stack, ligand_block, sidechain_blocks, extra_blocks
         )
     ligand_pose_stack = _ligand_pose_to(
         ligand_pose_stack,
@@ -316,10 +386,12 @@ def _movable_block_mask(
     return mask
 
 
-def _scorer_for(data: LiveLigandIntraData, n_poses: int):
-    cached = data._scorer_cache.get(n_poses)
+def _scorer_for(data: LiveLigandIntraData, n_poses: int, register: bool = True):
+    cached = data._scorer_cache.get((n_poses, register))
     if cached is None:
         pose_stack = repeat_pose_stack(data.ligand_pose_stack, n_poses)
+        if register:
+            data._register(pose_stack)
         if data.ligand_pose_stack.max_n_blocks > 1:
             scorer = data.score_function.render_block_pair_scoring_module(
                 pose_stack, movable_blocks=_movable_block_mask(data, pose_stack)
@@ -327,7 +399,7 @@ def _scorer_for(data: LiveLigandIntraData, n_poses: int):
         else:
             scorer = data.score_function.render_whole_pose_scoring_module(pose_stack)
         cached = (pose_stack, scorer)
-        data._scorer_cache[n_poses] = cached
+        data._scorer_cache[(n_poses, register)] = cached
     return cached[1]
 
 
@@ -371,7 +443,7 @@ class _WholeMovableScorer:
             sfxn.set_weight(
                 score_type, float(data.score_function.get_weight(score_type))
             )
-        pose_stack = repeat_pose_stack(reference, n_poses)
+        pose_stack = data._register(repeat_pose_stack(reference, n_poses), apply=False)
         self._whole = sfxn.render_whole_pose_scoring_module(
             pose_stack, movable_blocks=_movable_block_mask(data, pose_stack)
         )
@@ -417,7 +489,11 @@ class _WholeMovableScorer:
             for block in range(reference.max_n_blocks):
                 if block in context:
                     continue
-                single = repeat_pose_stack(select_blocks(reference, [block]), n_poses)
+                single = data._register(
+                    repeat_pose_stack(select_blocks(reference, [block]), n_poses),
+                    column=block,
+                    apply=False,
+                )
                 begin = int(reference.block_coord_offset64[0, block])
                 n_atoms = reference.block_type(0, block).n_atoms
                 self._singles.append(
@@ -430,8 +506,15 @@ class _WholeMovableScorer:
         self._constant = torch.zeros((), dtype=dtype, device=device)
         coords = reference.coords.expand(n_poses, -1, -1).contiguous()
         with torch.no_grad():
-            expected = _movable_block_pair_energy(data, reference.coords)[0]
+            # The frozen context's own energy: context block types never vary,
+            # so this stays on the reference topology and is never rewritten.
+            expected = _movable_block_pair_energy(
+                data, reference.coords, register=False
+            )[0]
             self._constant = (self(coords)[0] - expected).detach()
+        # Both sides of the constant are now measured on the reference ligand;
+        # give these stacks the population's own topology.
+        data.set_pose_topology(*(data._pose_topology or (None, None)))
 
     def _set_weights(self) -> None:
         # Tensor ops and in-place copies only, so a captured CUDA graph keeps
@@ -512,7 +595,9 @@ def _pair_weight_vectors(
 
 
 def _movable_block_pair_energy(
-    data: LiveLigandIntraData, ligand_coords: torch.Tensor
+    data: LiveLigandIntraData,
+    ligand_coords: torch.Tensor,
+    register: bool = True,
 ) -> torch.Tensor:
     """Weighted movable block-pair energy of every pose.
 
@@ -521,7 +606,7 @@ def _movable_block_pair_energy(
     the full ``[term, pose, block, block]`` product is never materialized.
     """
 
-    scorer = _scorer_for(data, ligand_coords.shape[0])
+    scorer = _scorer_for(data, ligand_coords.shape[0], register)
     unweighted = scorer(
         ligand_coords.contiguous(), sum_terms=False, apply_weights=False
     )

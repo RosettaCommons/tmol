@@ -77,6 +77,7 @@ __all__ = [
     "pack_rotamers",
     "pose_stack_from_atom_array",
     "pose_stack_from_file",
+    "redetect_metal_coordination",
     "recombine_fragmented_ligands",
     "run_cart_min",
     "run_kin_min",
@@ -98,6 +99,7 @@ for _module, _names in (
             "pose_stack_from_atom_array",
         ),
     ),
+    ("tmol.io._metal_coordination", ("redetect_metal_coordination",)),
     ("tmol.io._pose_stack_from_sequence", ("extended_pose_stack_from_sequences",)),
     (
         "tmol.io._structure_io",

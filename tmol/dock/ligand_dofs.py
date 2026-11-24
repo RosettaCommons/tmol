@@ -12,8 +12,10 @@ existing cache contents, the default jump connection atom, or global
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import copy
+from dataclasses import dataclass, replace
 
+import attrs
 import numpy
 import torch
 
@@ -91,15 +93,250 @@ class LigandDockingDOFs:
 
 
 @dataclass(frozen=True)
+class LigandVariantDOFs:
+    """One gene layout shared by every block type a ligand can take in a search.
+
+    Coordinating a metal can deprotonate a donor, which drops a hydrogen and the
+    rotor about its bond, so the block types differ in both atom and torsion
+    count. Slots and gene columns are the union, taken from the block type that
+    holds them all; a pose holds the subset its own block type declares.
+    """
+
+    atom_names: tuple[str, ...]
+    torsion_names: tuple[str, ...]
+    #: block type index -> that variant's DOFs, built on its own population
+    dofs: dict[int, LigandDockingDOFs]
+    #: block type index -> [n_slots] block-local atom index, -1 where absent
+    atom_map: dict[int, torch.Tensor]
+    #: block type index -> [n_columns] torsion index into its own tuple, -1 absent
+    torsion_map: dict[int, torch.Tensor]
+
+    @classmethod
+    def single(
+        cls,
+        docking_dofs: LigandDockingDOFs,
+        block_type_index: int,
+        block_type,
+        device: torch.device,
+    ) -> "LigandVariantDOFs":
+        """Wrap already-built DOFs as a one-entry table.
+
+        A search that cannot change the ligand's block type is the degenerate
+        case of one that can, so it runs the same indexing.
+        """
+        atom_names = tuple(a.name for a in block_type.atoms[: block_type.n_atoms])
+        torsion_names = tuple(m.name for m in docking_dofs.torsions)
+        return cls(
+            atom_names=atom_names,
+            torsion_names=torsion_names,
+            dofs={block_type_index: docking_dofs},
+            atom_map={
+                block_type_index: torch.arange(
+                    len(atom_names), dtype=torch.int64, device=device
+                )
+            },
+            torsion_map={
+                block_type_index: torch.arange(
+                    len(torsion_names), dtype=torch.int64, device=device
+                )
+            },
+        )
+
+    def with_variant(
+        self,
+        docking_dofs: LigandDockingDOFs,
+        block_type_index: int,
+        block_type,
+        device: torch.device,
+    ) -> "LigandVariantDOFs":
+        """This table plus one more block type, on the same gene columns.
+
+        Search discovers metal variants as poses reach them, so the columns are
+        fixed once by the widest type and later variants only map onto them: a
+        reordering here would silently reinterpret every gene in the pool.
+        """
+        names = tuple(a.name for a in block_type.atoms[: block_type.n_atoms])
+        extra = set(names) - set(self.atom_names)
+        if extra:
+            raise ValueError(
+                f"ligand block type {block_type_index} has atoms outside the "
+                f"union: {sorted(extra)}"
+            )
+        held = {m.name: i for i, m in enumerate(docking_dofs.torsions)}
+        missing = set(held) - set(self.torsion_names)
+        if missing:
+            raise ValueError(
+                f"ligand block type {block_type_index} has torsions outside the "
+                f"union: {sorted(missing)}"
+            )
+        local = {name: i for i, name in enumerate(names)}
+        return LigandVariantDOFs(
+            atom_names=self.atom_names,
+            torsion_names=self.torsion_names,
+            dofs={**self.dofs, block_type_index: docking_dofs},
+            atom_map={
+                **self.atom_map,
+                block_type_index: torch.tensor(
+                    [local.get(name, -1) for name in self.atom_names],
+                    dtype=torch.int64,
+                    device=device,
+                ),
+            },
+            torsion_map={
+                **self.torsion_map,
+                block_type_index: torch.tensor(
+                    [held.get(name, -1) for name in self.torsion_names],
+                    dtype=torch.int64,
+                    device=device,
+                ),
+            },
+        )
+
+    @property
+    def reference(self) -> LigandDockingDOFs:
+        """The widest variant's DOFs; its fold forest and move map are shared."""
+        return self.dofs[self.reference_block_type]
+
+    @property
+    def reference_block_type(self) -> int:
+        return max(self.dofs, key=lambda i: int((self.atom_map[i] >= 0).sum()))
+
+
+def repeat_docking_dofs(
+    docking_dofs: LigandDockingDOFs, n_poses: int
+) -> LigandDockingDOFs:
+    """``n_poses`` copies of DOFs built on a single pose.
+
+    Every per-pose field is a row of that pose, so this equals building on
+    ``repeat_pose_stack(pose, n_poses)`` without measuring each copy again.
+    """
+    forest = docking_dofs.fold_forest
+    if forest.edges.shape[0] != 1:
+        raise ValueError("only DOFs built on a single pose can be repeated")
+
+    def tile(value: torch.Tensor) -> torch.Tensor:
+        return value.repeat((n_poses,) + (1,) * (value.ndim - 1))
+
+    move_map = copy.copy(docking_dofs.move_map)
+    for field in attrs.fields(type(move_map)):
+        value = getattr(move_map, field.name)
+        if isinstance(value, torch.Tensor):
+            setattr(move_map, field.name, tile(value))
+    return replace(
+        docking_dofs,
+        fold_forest=FoldForest.from_edges(numpy.repeat(forest.edges, n_poses, 0)),
+        move_map=move_map,
+        torsions=tuple(
+            replace(t, offset=tile(t.offset)) for t in docking_dofs.torsions
+        ),
+        sidechain_torsions=tuple(
+            replace(t, offset=tile(t.offset)) for t in docking_dofs.sidechain_torsions
+        ),
+    )
+
+
+def per_pose_fold_forest_and_move_map(
+    pose_stack: PoseStack, ligand_block: int
+) -> tuple[FoldForest, MoveMap]:
+    """Docking fold forest and move map for poses whose ligand forms differ.
+
+    Each form is resolved on one pose holding it; every pose takes its own
+    form's rows.
+    """
+    types = pose_stack.block_type_ind64[:, ligand_block]
+    present = sorted(set(types.tolist()))
+    if len(present) == 1:
+        dofs = build_ligand_docking_dofs(pose_stack, ligand_block)
+        return dofs.fold_forest, dofs.move_map
+    built = {
+        index: build_ligand_docking_dofs(
+            pose_stack.split(int(torch.nonzero(types == index)[0])), ligand_block
+        )
+        for index in present
+    }
+    host_types = types.tolist()
+    width = max(d.fold_forest.edges.shape[1] for d in built.values())
+    edges = numpy.full((pose_stack.n_poses, width, 4), -1, dtype=numpy.int64)
+    for pose, index in enumerate(host_types):
+        own = built[index].fold_forest.edges[0]
+        edges[pose, : own.shape[0]] = own
+    move_map = copy.copy(built[present[0]].move_map)
+    for field in attrs.fields(type(move_map)):
+        if isinstance(getattr(move_map, field.name), torch.Tensor):
+            setattr(
+                move_map,
+                field.name,
+                torch.cat(
+                    [getattr(built[index].move_map, field.name) for index in host_types]
+                ),
+            )
+    return FoldForest.from_edges(edges), move_map
+
+
+def merge_ligand_variant_dofs(
+    dofs: dict[int, LigandDockingDOFs], block_types, device: torch.device
+) -> LigandVariantDOFs:
+    """Lay already-built per-variant DOFs onto the widest variant's slots."""
+    atoms = {
+        index: tuple(
+            a.name for a in block_types[index].atoms[: block_types[index].n_atoms]
+        )
+        for index in dofs
+    }
+    widest = max(atoms, key=lambda i: len(atoms[i]))
+    atom_names = atoms[widest]
+    torsion_names = tuple(m.name for m in dofs[widest].torsions)
+
+    atom_map: dict[int, torch.Tensor] = {}
+    torsion_map: dict[int, torch.Tensor] = {}
+    for index, names in atoms.items():
+        extra = set(names) - set(atom_names)
+        if extra:
+            raise ValueError(
+                f"ligand block type {index} has atoms the widest one lacks: "
+                f"{sorted(extra)}"
+            )
+        local = {name: i for i, name in enumerate(names)}
+        atom_map[index] = torch.tensor(
+            [local.get(name, -1) for name in atom_names],
+            dtype=torch.int64,
+            device=device,
+        )
+        held = {m.name: i for i, m in enumerate(dofs[index].torsions)}
+        missing = set(held) - set(torsion_names)
+        if missing:
+            raise ValueError(
+                f"ligand block type {index} has torsions the widest one lacks: "
+                f"{sorted(missing)}"
+            )
+        torsion_map[index] = torch.tensor(
+            [held.get(name, -1) for name in torsion_names],
+            dtype=torch.int64,
+            device=device,
+        )
+    return LigandVariantDOFs(
+        atom_names=atom_names,
+        torsion_names=torsion_names,
+        dofs=dofs,
+        atom_map=atom_map,
+        torsion_map=torsion_map,
+    )
+
+
+@dataclass(frozen=True)
 class GeneIndex:
     """Where each gene (six jump DOFs, then logical chis) sits in the raw DOFs."""
 
     jump_nodes: torch.Tensor  # [pose] kinematic node of the ligand jump
     torsion_nodes: torch.Tensor  # [pose, chi]
-    torsion_dof_types: torch.Tensor  # [chi]
-    torsion_signs: torch.Tensor  # [chi]
+    torsion_dof_types: torch.Tensor  # [pose, chi]
+    torsion_signs: torch.Tensor  # [pose, chi]
     torsion_offsets: torch.Tensor  # [pose, chi]
     ligand_nodes: torch.Tensor  # [pose, ligand atom]
+    #: Columns a pose's own ligand block type holds. A pose whose ligand
+    #: deprotonated on binding a metal loses that hydroxyl's rotor, so the gene
+    #: columns are the union over block types and the rest ride along frozen.
+    torsion_valid: torch.Tensor  # [pose, chi]
 
     @classmethod
     def build(
@@ -111,7 +348,25 @@ class GeneIndex:
         dtype: torch.dtype,
         ligand_nodes: torch.Tensor | None = None,
     ) -> "GeneIndex":
-        device = pose_stack.device
+        """Index a population whose poses all hold one ligand block type."""
+        block_type_index = int(
+            pose_stack.block_type_ind64[0, docking_dofs.ligand_block]
+        )
+        block_type = pose_stack.packed_block_types.active_block_types[block_type_index]
+        return cls.build_union(
+            pose_stack,
+            LigandVariantDOFs.single(
+                docking_dofs, block_type_index, block_type, pose_stack.device
+            ),
+            forest,
+            dof_mask,
+            dtype,
+            ligand_nodes,
+        )
+
+    @staticmethod
+    def _jump_nodes(pose_stack: PoseStack, forest, dof_mask: torch.Tensor):
+        """The kinematic node of each pose's movable ligand jump."""
         jump_mask = (forest.doftype == int(NodeType.jump)) & torch.all(
             dof_mask[:, : int(JumpDOFTypes.RBdel_gamma) + 1], dim=1
         )
@@ -123,67 +378,148 @@ class GeneIndex:
             pose_stack.max_n_pose_atoms,
             rounding_mode="floor",
         ).to(torch.int64)
-        jump_nodes = torch.empty(pose_stack.n_poses, dtype=torch.int64, device=device)
+        jump_nodes = torch.empty(
+            pose_stack.n_poses, dtype=torch.int64, device=pose_stack.device
+        )
         jump_nodes.scatter_(0, jump_pose, jump_node_list)
+        return jump_nodes
 
-        def block_n_atoms(block: int) -> int:
-            return pose_stack.block_type(0, block).n_atoms
+    @classmethod
+    def build_union(
+        cls,
+        pose_stack: PoseStack,
+        variants: "LigandVariantDOFs",
+        forest,
+        dof_mask: torch.Tensor,
+        dtype: torch.dtype,
+        ligand_nodes: torch.Tensor | None = None,
+    ) -> "GeneIndex":
+        """Index a population whose poses hold different ligand block types.
 
+        Every pose gets the union's gene columns; the ones its block type does
+        not declare address a dead DOF slot of a bond node it does hold, so a
+        write lands nowhere and the frozen value comes from the previous gene.
+        """
+
+        device = pose_stack.device
+        n_poses = pose_stack.n_poses
+        ligand_block = variants.reference.ligand_block
+        block_types = pose_stack.block_type_ind64[:, ligand_block]
+        unknown = sorted(set(block_types.tolist()) - set(variants.dofs))
+        if unknown:
+            raise ValueError(f"ligand block types {unknown} have no docking DOFs")
+
+        jump_nodes = cls._jump_nodes(pose_stack, forest, dof_mask)
         if ligand_nodes is None:
-            ligand_nodes = _ligand_kinforest_nodes(
+            local_atom_map = torch.stack(
+                [variants.atom_map[int(i)] for i in block_types], dim=0
+            )
+            ligand_nodes = _block_kinforest_nodes(
                 pose_stack,
-                docking_dofs.ligand_block,
-                block_n_atoms(docking_dofs.ligand_block),
+                ligand_block,
+                len(variants.atom_names),
+                forest.id,
+                local_atom_map,
+            )
+
+        n_ligand = len(variants.torsion_names)
+        sidechains = variants.reference.sidechain_torsions
+        n_columns = n_ligand + len(sidechains)
+        nodes = torch.zeros((n_poses, n_columns), dtype=torch.int64, device=device)
+        types = torch.full((n_poses, n_columns), 8, dtype=torch.int64, device=device)
+        signs = torch.ones((n_poses, n_columns), dtype=dtype, device=device)
+        offsets = torch.zeros((n_poses, n_columns), dtype=dtype, device=device)
+        valid = torch.zeros((n_poses, n_columns), dtype=torch.bool, device=device)
+
+        for variant in sorted(set(block_types.tolist())):
+            chosen = block_types == variant
+            variant_dofs = variants.dofs[variant]
+            held = variants.torsion_map[variant]
+            atom_map = variants.atom_map[variant]
+            present = atom_map >= 0
+            slot_of_local = torch.empty(
+                int(present.sum()), dtype=torch.int64, device=device
+            )
+            slot_of_local[atom_map[present]] = torch.nonzero(present).flatten()
+            for column in range(n_ligand):
+                index = int(held[column])
+                if index < 0:
+                    continue
+                mapping = variant_dofs.torsions[index]
+                slot = int(slot_of_local[mapping.raw_atom])
+                nodes[chosen, column] = ligand_nodes[chosen, slot]
+                types[chosen, column] = int(mapping.dof_type)
+                signs[chosen, column] = mapping.sign
+                offsets[chosen, column] = mapping.offset.to(device=device, dtype=dtype)[
+                    chosen
+                ]
+                valid[chosen, column] = True
+
+        for k, mapping in enumerate(sidechains):
+            column = n_ligand + k
+            block_nodes = _block_kinforest_nodes(
+                pose_stack,
+                mapping.block,
+                pose_stack.block_type(0, mapping.block).n_atoms,
                 forest.id,
             )
-        all_torsions = docking_dofs.torsions + docking_dofs.sidechain_torsions
-        raw_atoms = torch.tensor(
-            [m.raw_atom for m in docking_dofs.torsions],
-            dtype=torch.int64,
-            device=device,
-        )
-        torsion_nodes = [ligand_nodes[:, raw_atoms]]
-        for mapping in docking_dofs.sidechain_torsions:
-            nodes = _block_kinforest_nodes(
-                pose_stack, mapping.block, block_n_atoms(mapping.block), forest.id
-            )
-            torsion_nodes.append(nodes[:, mapping.raw_atom, None])
-        offsets = [m.offset.to(dtype=dtype)[:, None] for m in all_torsions]
+            nodes[:, column] = block_nodes[:, mapping.raw_atom]
+            types[:, column] = int(mapping.dof_type)
+            signs[:, column] = mapping.sign
+            offsets[:, column] = mapping.offset.to(device=device, dtype=dtype)
+            valid[:, column] = True
+
+        if n_columns:
+            # A dead write needs a bond node: slot 8 of one is unused, while on
+            # the jump node it is RBgamma. A pose holding no column lands on
+            # any bond node of its own ligand.
+            first = valid.to(torch.int64).argmax(dim=1)
+            fallback = nodes[torch.arange(n_poses, device=device), first]
+            held_none = ~valid.any(dim=1)
+            if bool(held_none.any()):
+                doftype = forest.doftype.to(device)
+                bond = (ligand_nodes >= 0) & (
+                    doftype[ligand_nodes.clamp(min=0)] == int(NodeType.bond)
+                )
+                if not bool(bond[held_none].any(dim=1).all()):
+                    raise ValueError(
+                        "a pose holds no torsion and no ligand bond node for "
+                        "its dead DOF writes"
+                    )
+                bond_node = ligand_nodes.gather(
+                    1, bond.to(torch.int64).argmax(dim=1, keepdim=True)
+                )[:, 0]
+                fallback = torch.where(held_none, bond_node, fallback)
+            nodes = torch.where(valid, nodes, fallback[:, None])
+
         return cls(
             jump_nodes=jump_nodes,
-            torsion_nodes=torch.cat(torsion_nodes, dim=1),
-            torsion_dof_types=torch.tensor(
-                [int(m.dof_type) for m in all_torsions],
-                dtype=torch.int64,
-                device=device,
-            ),
-            torsion_signs=torch.tensor(
-                [m.sign for m in all_torsions], dtype=dtype, device=device
-            ),
-            torsion_offsets=(
-                torch.cat(offsets, dim=1)
-                if offsets
-                else torch.empty((pose_stack.n_poses, 0), dtype=dtype, device=device)
-            ),
+            torsion_nodes=nodes,
+            torsion_dof_types=types,
+            torsion_signs=signs,
+            torsion_offsets=offsets,
             ligand_nodes=ligand_nodes,
+            torsion_valid=valid,
         )
 
-    def genes_from_raw_dofs(self, raw_dofs: torch.Tensor) -> torch.Tensor:
-        """Gather ``[pose, 6 + n_chi]`` genes from a raw kinematic DOF tensor."""
+    def genes_from_raw_dofs(
+        self, raw_dofs: torch.Tensor, previous: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Gather ``[pose, 6 + n_chi]`` genes from a raw kinematic DOF tensor.
+
+        A column a pose does not hold reads a dead DOF slot, so it takes its
+        value from ``previous`` instead and stays frozen until the pose's block
+        type holds it again.
+        """
         jump_dofs = raw_dofs[
             self.jump_nodes[:, None],
             torch.arange(6, dtype=torch.int64, device=raw_dofs.device)[None, :],
         ]
-        raw_torsions = raw_dofs[self.torsion_nodes, self.torsion_dof_types[None, :]]
-        return torch.cat(
-            (
-                jump_dofs,
-                _wrap_angle(
-                    self.torsion_signs[None, :] * raw_torsions + self.torsion_offsets
-                ),
-            ),
-            dim=1,
-        )
+        raw_torsions = raw_dofs[self.torsion_nodes, self.torsion_dof_types]
+        chis = _wrap_angle(self.torsion_signs * raw_torsions + self.torsion_offsets)
+        if previous is not None:
+            chis = torch.where(self.torsion_valid, chis, previous[:, 6:])
+        return torch.cat((jump_dofs, chis), dim=1)
 
     def write_raw_dofs(self, raw_dofs: torch.Tensor, genes: torch.Tensor) -> None:
         """Write genes into ``raw_dofs`` in place."""
@@ -191,8 +527,8 @@ class GeneIndex:
             self.jump_nodes[:, None],
             torch.arange(6, dtype=torch.int64, device=genes.device)[None, :],
         ] = genes[:, :6]
-        raw_dofs[self.torsion_nodes, self.torsion_dof_types[None, :]] = _wrap_angle(
-            self.torsion_signs[None, :] * (genes[:, 6:] - self.torsion_offsets)
+        raw_dofs[self.torsion_nodes, self.torsion_dof_types] = _wrap_angle(
+            self.torsion_signs * (genes[:, 6:] - self.torsion_offsets)
         )
 
 
@@ -201,8 +537,14 @@ def _block_kinforest_nodes(
     block: int,
     n_atoms: int,
     forest_ids: torch.Tensor,
+    local_atom_map: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Return the ``[pose, block_atom]`` kinematic-node lookup."""
+    """Return the ``[pose, block_atom]`` kinematic-node lookup.
+
+    ``local_atom_map`` gives each pose its own ``[pose, slot]`` block-local atom
+    indices, -1 in a slot its block type has no atom for; those slots come back
+    -1 rather than raising.
+    """
 
     n_targets = pose_stack.n_poses * pose_stack.max_n_pose_atoms
     id_to_node = torch.full(
@@ -216,18 +558,24 @@ def _block_kinforest_nodes(
     poses = torch.arange(
         pose_stack.n_poses, dtype=torch.int64, device=pose_stack.device
     )
-    local_atoms = torch.arange(n_atoms, dtype=torch.int64, device=pose_stack.device)
+    if local_atom_map is None:
+        local_atoms = torch.arange(
+            n_atoms, dtype=torch.int64, device=pose_stack.device
+        ).expand(pose_stack.n_poses, -1)
+    else:
+        local_atoms = local_atom_map
+    absent = local_atoms < 0
     target_ids = (
         poses[:, None] * pose_stack.max_n_pose_atoms
         + pose_stack.block_coord_offset64[:, block, None]
-        + local_atoms[None, :]
+        + local_atoms.clamp(min=0)
     )
     block_nodes = id_to_node[target_ids]
-    if bool(torch.any(block_nodes < 0)):
+    if bool(torch.any((block_nodes < 0) & ~absent)):
         raise ValueError(
             f"an atom in block {block} is absent from the kinematic forest"
         )
-    return block_nodes
+    return block_nodes.masked_fill(absent, -1)
 
 
 def _ligand_kinforest_nodes(
@@ -235,10 +583,13 @@ def _ligand_kinforest_nodes(
     ligand_block: int,
     ligand_n_atoms: int,
     forest_ids: torch.Tensor,
+    local_atom_map: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Return the ``[pose, ligand_atom]`` kinematic-node lookup in one gather."""
 
-    return _block_kinforest_nodes(pose_stack, ligand_block, ligand_n_atoms, forest_ids)
+    return _block_kinforest_nodes(
+        pose_stack, ligand_block, ligand_n_atoms, forest_ids, local_atom_map
+    )
 
 
 def _raw_dof_affected_nodes(

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 
+import numpy
 import pytest
 import torch
 
 from tmol.database import ParameterDatabase
-from tmol.dock.ligand_dofs import build_ligand_docking_dofs
+from tmol.dock.ligand_dofs import build_ligand_docking_dofs, repeat_docking_dofs
+from tmol.pose import repeat_pose_stack
 from tmol.io._pose_stack_from_biotite import pose_stack_from_atom_array
 from tmol.optimization._minimizers import _build_kinforest_network
 from tmol.score import ScoreFunction
@@ -113,3 +115,26 @@ def _load_cdk2_pose_on_device(device: torch.device):
     )
     pose_stack.coords = pose_stack.coords.to(dtype=torch.float32)
     return pose_stack, context.parameter_database
+
+
+def test_repeated_single_pose_dofs_match_dofs_built_on_copies(cdk2_pose_and_db):
+    pose_stack, _ = cdk2_pose_and_db
+    ligand_block = _ligand_block(pose_stack)
+    single = build_ligand_docking_dofs(pose_stack, ligand_block)
+    tiled = repeat_docking_dofs(single, 3)
+    built = build_ligand_docking_dofs(repeat_pose_stack(pose_stack, 3), ligand_block)
+
+    numpy.testing.assert_array_equal(tiled.fold_forest.edges, built.fold_forest.edges)
+    for name in ("move_jump_dof", "move_root_jump_dof", "move_atom_dof"):
+        torch.testing.assert_close(
+            getattr(tiled.move_map, name), getattr(built.move_map, name)
+        )
+    assert len(tiled.torsions) == len(built.torsions)
+    for a, b in zip(tiled.torsions, built.torsions):
+        assert (a.name, a.raw_atom, a.dof_type, a.sign) == (
+            b.name,
+            b.raw_atom,
+            b.dof_type,
+            b.sign,
+        )
+        torch.testing.assert_close(a.offset, b.offset)

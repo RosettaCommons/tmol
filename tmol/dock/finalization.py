@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 import attr
@@ -13,7 +14,10 @@ from tmol.dock.ga import (
     LigandGeneLayout,
     _place_ligand_in_reference,
 )
-from tmol.dock.ligand_dofs import build_ligand_docking_dofs
+from tmol.dock.ligand_dofs import (
+    build_ligand_docking_dofs,
+    per_pose_fold_forest_and_move_map,
+)
 from tmol.optimization._minimizers import (
     CartesianMinimizer,
     KinematicMinimizer,
@@ -25,9 +29,11 @@ from tmol.relax._fast_relax import (
     default_relax_task_operation,
     fast_relax,
 )
+from tmol.io._metal_coordination import redetect_metal_coordination
 from tmol.pose._constraint_set import ConstraintSet
 
 from tmol.pose._pose_stack import PoseStack
+from tmol.pose._pose_stack_builder import PoseStackBuilder
 from tmol.pose import repeat_pose_stack, select_blocks
 from tmol.database import ParameterDatabase
 from tmol.score import beta2016_score_function
@@ -38,6 +44,8 @@ from tmol.score.gridscore._movable import (
     movable_pose_stack,
     sidechain_context_blocks,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -66,6 +74,10 @@ class RefineProtocol:
     #: Rebuild the movable sidechains from the rotamer library at each step;
     #: off leaves them at the conformation the search produced.
     repack: bool = False
+    #: Redeclare metal coordination from each promoted candidate's own
+    #: coordinates before refining it, so a ligand that reached an open site
+    #: coordinates it.
+    redetect_metal: bool = True
 
     def ramp(self) -> tuple[tuple[float, float, int], ...]:
         """(fa_rep multiplier, tolerance, iterations) per step."""
@@ -222,6 +234,54 @@ def _ligand_atom_indices(pose_stack: PoseStack, ligand_block: int) -> torch.Tens
     return pose_stack.block_coord_offset64[:, ligand_block, None] + local_atoms
 
 
+def _ligand_atom_mask(pose_stack: PoseStack, ligand_block: int) -> torch.Tensor:
+    """[pose, atom] mask of the ligand block; its form, and size, may vary by pose."""
+    block_type_indices = pose_stack.block_type_ind64[:, ligand_block]
+    if bool(torch.any(block_type_indices < 0)):
+        raise ValueError("ligand block is absent from at least one pose")
+    start = pose_stack.block_coord_offset64[:, ligand_block, None]
+    end = start + pose_stack.packed_block_types.n_atoms[block_type_indices, None]
+    atoms = torch.arange(pose_stack.coords.shape[1], device=pose_stack.device)
+    return (atoms >= start) & (atoms < end)
+
+
+def _stack_poses(poses: list[PoseStack]) -> PoseStack:
+    """Single-pose stacks, whose block layouts may differ, as one stack in their dtype."""
+    stacked = PoseStackBuilder.from_poses(poses, poses[0].device)
+    coords = torch.zeros_like(stacked.coords, dtype=poses[0].coords.dtype)
+    for i, pose in enumerate(poses):
+        coords[i, : pose.coords.shape[1]] = pose.coords[0]
+    return attr.evolve(stacked, coords=coords)
+
+
+def _reordered_poses(pose_stack: PoseStack, order: torch.Tensor) -> PoseStack:
+    """The poses in ``order``; whole poses move when their layouts differ."""
+    types = pose_stack.block_type_ind64
+    connections = pose_stack.inter_residue_connections64
+    if bool(torch.all(types == types[:1])) and bool(
+        torch.all(connections == connections[:1])
+    ):
+        return attr.evolve(pose_stack, coords=pose_stack.coords[order].detach().clone())
+    return _stack_poses([pose_stack.split(int(i)) for i in order])
+
+
+def _free_ligand_pose_stack(pose_stack: PoseStack, ligand_block: int) -> PoseStack:
+    """Each pose's ligand alone, in the form it takes in that complex.
+
+    A ligand that coordinates a metal stays the conjugate base it bound as; only
+    its connections go.
+    """
+    connected = pose_stack.inter_residue_connections64[:, ligand_block, :, 0] >= 0
+    if not bool(connected.any()):
+        return movable_pose_stack(pose_stack, ligand_block)
+    return _stack_poses(
+        [
+            select_blocks(pose_stack.split(i), [ligand_block])
+            for i in range(pose_stack.n_poses)
+        ]
+    )
+
+
 def _promote_top_candidates(
     reference_pose_stack: PoseStack,
     ligand_block: int,
@@ -231,6 +291,7 @@ def _promote_top_candidates(
     sidechain_blocks: tuple[int, ...] = (),
     compact_sidechain_blocks: tuple[int, ...] = (),
     sidechain_atom_indices: torch.Tensor | None = None,
+    ligand_atom_map: torch.Tensor | None = None,
 ) -> tuple[PoseStack, torch.Tensor]:
     """Copy the top grid/GA movable coordinates into full complexes."""
 
@@ -238,7 +299,9 @@ def _promote_top_candidates(
         raise ValueError("finalization requires one reference pose")
     flat = torch.argsort(ga_result.pool.energies)[:top_k]
 
-    if sidechain_blocks:
+    # A compact pool (flexible sidechains or retained metals) holds the ligand
+    # at block 0, in whatever form each pose coordinated.
+    if sidechain_blocks or ligand_atom_map is not None:
         promoted = repeat_pose_stack(reference_pose_stack, top_k)
         selected_compact = attr.evolve(
             repeat_pose_stack(ga_result.pool.pose_stack.split(0), promoted.n_poses),
@@ -251,12 +314,19 @@ def _promote_top_candidates(
             sidechain_blocks=sidechain_blocks,
             compact_sidechain_blocks=compact_sidechain_blocks,
             sidechain_atom_indices=sidechain_atom_indices,
+            ligand_atom_map=(
+                None
+                if ligand_atom_map is None
+                else ligand_atom_map[flat.to(ligand_atom_map.device)]
+            ),
         )
         genes = ga_result.pool.genes[flat].unsqueeze(0)
         return promoted, genes
 
     pool_ligand_block = (
-        0 if ga_result.pool.pose_stack.max_n_blocks == 1 else ligand_block
+        0
+        if ga_result.pool.pose_stack.max_n_blocks != reference_pose_stack.max_n_blocks
+        else ligand_block
     )
     source_indices = _ligand_atom_indices(ga_result.pool.pose_stack, pool_ligand_block)[
         flat
@@ -298,13 +368,29 @@ def _flexible_sidechain_mapping(
     compact_pose_stack = compact_pose_stack.split(0)
     if getattr(backend, "ligand_block", ligand_block) != ligand_block:
         raise ValueError("finalization backend ligand block does not match reference")
-    context_blocks = sidechain_context_blocks(
-        reference_pose_stack, ligand_block, sidechain_blocks
+    # Retained metals are context too: a search that can coordinate keeps them
+    # in the compact pose rather than in the rigid grid.
+    context_blocks = tuple(
+        sorted(
+            (
+                set(
+                    sidechain_context_blocks(
+                        reference_pose_stack, ligand_block, sidechain_blocks
+                    )
+                )
+                | set(getattr(backend, "metal_blocks", ()))
+            )
+            - {ligand_block}
+            - set(sidechain_blocks)
+        )
     )
     if tuple(getattr(backend, "context_blocks", ())) != context_blocks:
         raise ValueError("finalization peptide context does not match backend")
     source_blocks, compact_sidechain_blocks, _ = movable_block_mapping(
-        reference_pose_stack, ligand_block, sidechain_blocks
+        reference_pose_stack,
+        ligand_block,
+        sidechain_blocks,
+        tuple(getattr(backend, "metal_blocks", ())),
     )
     if compact_pose_stack.max_n_blocks != len(source_blocks):
         raise ValueError("GA pool compact topology does not match flexible backend")
@@ -498,7 +584,8 @@ def _refine_rigid(
     torsion_minimizers: dict[int, KinematicMinimizer] = {}
 
     promoted = _ligand_cartmin(promoted, exact_sfxn, ligand_mask, minimizer=cartesian)
-    ldofs = build_ligand_docking_dofs(promoted, ligand_block, sidechain_blocks=())
+    # Redetection can leave the promoted poses holding different ligand forms.
+    fold_forest, move_map = per_pose_fold_forest_and_move_map(promoted, ligand_block)
 
     def torsion_step(pose, step_sfxn, tol, max_iter):
         # Fixed-hydrogen harness: no whole-pose optH, ramp steps minimize only.
@@ -513,8 +600,8 @@ def _refine_rigid(
         return minimizer(
             pose,
             step_sfxn,
-            ldofs.fold_forest,
-            ldofs.move_map,
+            fold_forest,
+            move_map,
             optimizer_kwargs={"max_iter": max_iter, "rtol": tol},
         )
 
@@ -551,7 +638,7 @@ def _free_state_energies(
     constrained_sfxn = beta2016_score_function(refined.device, param_db=param_db)
     constrained_sfxn.set_weight(ScoreType.constraint, 1.0)
     relaxed_ligand = run_cart_min(
-        _with_coordinate_constraints(movable_pose_stack(refined, ligand_block)),
+        _with_coordinate_constraints(_free_ligand_pose_stack(refined, ligand_block)),
         constrained_sfxn,
         optimizer_kwargs={"max_iter": 30},
     )
@@ -610,11 +697,7 @@ def finalize_ga_docking(
         raise TypeError("finalization requires a backend with a parameter database")
     ligand_block = backend.ligand_block
     if refine is None:
-        refine = (
-            FLEX_REFINE
-            if tuple(getattr(backend, "sidechain_blocks", ()))
-            else RIGID_REFINE
-        )
+        refine = _default_refine(backend)
     if top_k is None:
         # The protocol's count is a default, not a demand on the pool size.
         top_k = min(refine.top_k, npool)
@@ -636,17 +719,70 @@ def finalize_ga_docking(
             sidechain_blocks=sidechain_blocks,
             compact_sidechain_blocks=compact_sidechain_blocks,
             sidechain_atom_indices=compact_sidechain_atoms,
+            # A pose that coordinated a metal hands back its own block type.
+            # The pool is the compact search pose, whose ligand is block 0.
+            ligand_atom_map=backend.for_ligand_block(0).ligand_local_atom_map(
+                ga_result.pool.pose_stack
+            ),
+        )
+    elif getattr(backend, "metal_blocks", ()):
+        promoted, genes = _promote_top_candidates(
+            reference_pose_stack,
+            ligand_block,
+            ga_result,
+            top_k,
+            ligand_atom_map=backend.for_ligand_block(0).ligand_local_atom_map(
+                ga_result.pool.pose_stack
+            ),
         )
     else:
         promoted, genes = _promote_top_candidates(
             reference_pose_stack, ligand_block, ga_result, top_k
         )
+    return _finalize_promoted(
+        reference_pose_stack,
+        backend,
+        refine,
+        top_pose_metric,
+        promoted,
+        genes,
+        (sidechain_blocks, compact_sidechain_blocks, block_local_atoms),
+    )
+
+
+def _default_refine(backend) -> RefineProtocol:
+    """FLEX_REFINE when the backend moves sidechains, else RIGID_REFINE."""
+    return (
+        FLEX_REFINE if tuple(getattr(backend, "sidechain_blocks", ())) else RIGID_REFINE
+    )
+
+
+def _finalize_promoted(
+    reference_pose_stack: PoseStack,
+    backend,
+    refine: RefineProtocol,
+    top_pose_metric: str,
+    promoted: PoseStack,
+    genes: torch.Tensor,
+    mapping,
+) -> DockingFinalization:
+    """Refine complexes laid out as the reference, score dH and dG, and rank them.
+
+    ``mapping`` is (sidechain blocks, their compact indices, their per-block
+    moving atoms), as ``_flexible_sidechain_mapping`` gives them.
+    """
+    ligand_block = backend.ligand_block
+    sidechain_blocks, compact_sidechain_blocks, block_local_atoms = mapping
+    if refine.redetect_metal:
+        try:
+            promoted = redetect_metal_coordination(promoted)
+        except Exception as error:
+            # A complex that cannot be rebuilt from its canonical form keeps the
+            # coordination it was built with; losing the candidate is worse.
+            logger.warning("metal coordination not redetected: %s", error)
     exact_sfxn = beta2016_score_function(promoted.device, param_db=backend.param_db)
     pre_refine = _score_pose_stack(promoted, exact_sfxn)
-    coord_mask = torch.zeros(
-        promoted.coords.shape[:2], dtype=torch.bool, device=promoted.device
-    )
-    coord_mask.scatter_(1, _ligand_atom_indices(promoted, ligand_block), True)
+    coord_mask = _ligand_atom_mask(promoted, ligand_block)
     if sidechain_blocks:
         coord_mask.scatter_(1, _mapped_atom_indices(promoted, block_local_atoms), True)
         pack_blocks = (
@@ -658,9 +794,10 @@ def finalize_ga_docking(
             promoted, exact_sfxn, backend.param_db, coord_mask, refine, pack_blocks
         )
     else:
+        # promoted, not the reference: redetection can change its atom layout
         refined, complex_energy = _refine_rigid(
             promoted,
-            reference_pose_stack,
+            promoted,
             exact_sfxn,
             backend.param_db,
             ligand_block,
@@ -690,20 +827,18 @@ def finalize_ga_docking(
     dH = complex_energy - free_ligand_energy - free_receptor_energies
     dG = dH + TdS
 
+    n_poses = promoted.n_poses
     sort_key = dG if top_pose_metric == "dG" else complex_energy
-    sort_order = torch.argsort(sort_key.reshape(1, top_k), dim=1)
+    sort_order = torch.argsort(sort_key.reshape(1, n_poses), dim=1)
 
     def rank(values: torch.Tensor) -> torch.Tensor:
-        matrix = values.reshape(1, top_k)
+        matrix = values.reshape(1, n_poses)
         return matrix.gather(1, sort_order)
 
     ranked_genes = genes.gather(
         1, sort_order[:, :, None].expand(-1, -1, genes.shape[2])
     )
-    ranked_flat = sort_order.reshape(-1)
-    ranked_pose_stack = attr.evolve(
-        refined, coords=refined.coords[ranked_flat].detach().clone()
-    )
+    ranked_pose_stack = _reordered_poses(refined, sort_order.reshape(-1))
     return DockingFinalization(
         pose_stack=ranked_pose_stack,
         genes=ranked_genes,
@@ -715,6 +850,50 @@ def finalize_ga_docking(
         dH=rank(dH),
         TdS=rank(TdS),
         dG=rank(dG),
+    )
+
+
+def _finalize_reference_pose(
+    reference_pose_stack: PoseStack,
+    backend,
+    *,
+    refine: RefineProtocol | None = None,
+    top_pose_metric: str = "score",
+) -> DockingFinalization:
+    """The reference complex itself, refined and scored as a docked candidate is."""
+    if reference_pose_stack.n_poses != 1:
+        raise ValueError("finalization requires one reference pose")
+    ligand_block = backend.ligand_block
+    sidechain_blocks = tuple(getattr(backend, "sidechain_blocks", ()))
+    (
+        sidechain_blocks,
+        compact_sidechain_blocks,
+        _,
+        block_local_atoms,
+    ) = _flexible_sidechain_mapping(
+        reference_pose_stack,
+        ligand_block,
+        backend,
+        movable_pose_stack(
+            reference_pose_stack,
+            ligand_block,
+            sidechain_blocks,
+            tuple(getattr(backend, "metal_blocks", ())),
+        ),
+    )
+    genes = torch.zeros(
+        (1, 1, 0),
+        dtype=reference_pose_stack.coords.dtype,
+        device=reference_pose_stack.device,
+    )
+    return _finalize_promoted(
+        reference_pose_stack,
+        backend,
+        _default_refine(backend) if refine is None else refine,
+        top_pose_metric,
+        reference_pose_stack,
+        genes,
+        (sidechain_blocks, compact_sidechain_blocks, block_local_atoms),
     )
 
 

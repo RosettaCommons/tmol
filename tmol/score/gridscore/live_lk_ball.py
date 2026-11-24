@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Sequence
 
 import torch
@@ -48,6 +48,9 @@ class LiveLKBallData(LiveData):
     receptor_polar_cell_offsets: torch.Tensor
     receptor_polar_cell_indices: torch.Tensor
     global_params: torch.Tensor
+    #: Ligand polar/water rows per block type the search can give the ligand,
+    #: in movable slots and padded to one width; empty for one molecule.
+    variant_waters: dict = field(default_factory=dict, compare=False, repr=False)
 
 
 def _pack_type_params(term: LKBallEnergyTerm) -> torch.Tensor:
@@ -223,6 +226,53 @@ def _ligand_water_topology(
     )
 
 
+def ligand_variant_waters(
+    pose_stack: PoseStack,
+    ligand_block: int,
+    term: LKBallEnergyTerm,
+    atom_maps: dict,
+) -> dict:
+    """Each bound form's ligand polar sites and waters, in movable slots.
+
+    Losing a hydrogen takes its donor water with it and leaves the acceptor
+    behind with a different water set, so each form's topology is read off a
+    one-block pose of its own and mapped back onto the shared slots.
+    """
+    import attr
+
+    from tmol.pose import select_blocks
+
+    one = select_blocks(pose_stack, [ligand_block])
+    width = one.max_n_pose_atoms
+    tables = {}
+    for index, atom_map in atom_maps.items():
+        local = atom_map.to(device=one.device, dtype=torch.int64)
+        present = local >= 0
+        slots = torch.nonzero(present).squeeze(1)
+        inverse = torch.full((width,), -1, dtype=torch.int64, device=one.device)
+        inverse[local[present]] = slots
+        coords = one.coords.clone()
+        coords[0, local[present]] = one.coords[0, slots]
+        types = torch.full_like(one.block_type_ind64, index)
+        variant = attr.evolve(
+            one,
+            coords=coords,
+            block_type_ind=types.to(torch.int32),
+            block_type_ind64=types,
+        )
+        polar, _, kinds, atoms, params, rings = _ligand_water_topology(
+            variant, 0, term, derived_atom_indices(variant)
+        )
+        tables[index] = (
+            inverse[polar],
+            kinds,
+            torch.where(atoms >= 0, inverse[atoms.clamp(min=0)], -1),
+            params,
+            rings,
+        )
+    return tables
+
+
 def _polar_atom_mask(pbt, block_types: torch.Tensor) -> torch.Tensor:
     """``[block type, atom]`` mask of hbond donor heavy atoms and acceptors."""
     mask = torch.zeros(pbt.atom_types.shape, dtype=torch.bool, device="cpu")
@@ -240,6 +290,8 @@ def build_live_lk_ball_data(
     *,
     sidechain_blocks: tuple[int, ...] = (),
     movable_atoms: Sequence[int] | None = None,
+    extra_blocks: tuple[int, ...] = (),
+    ligand_atom_maps: dict | None = None,
 ) -> LiveLKBallData:
     """Build movable water topology and one fixed-receptor cell structure.
 
@@ -252,7 +304,7 @@ def build_live_lk_ball_data(
     if sidechain_blocks and movable_atoms is None:
         raise ValueError("sidechain_blocks require the compact movable_atoms")
     device = pose_stack.device
-    moving = movable_atoms_of(pose_stack, ligand_block, sidechain_blocks)
+    moving = movable_atoms_of(pose_stack, ligand_block, sidechain_blocks, extra_blocks)
     is_query = torch.ones(moving.n_atoms, dtype=torch.bool, device=device)
     if movable_atoms is not None:
         is_query = torch.zeros(moving.n_atoms, dtype=torch.bool, device=device)
@@ -289,6 +341,7 @@ def build_live_lk_ball_data(
         water_atoms.append(torch.where(block_atoms >= 0, block_atoms + offset, -1))
         water_params.append(block_params)
         rings.append(block_rings)
+    ligand_width = pose_stack.block_type(0, ligand_block).n_atoms
     ligand_atom_types = torch.cat(atom_types)
     ligand_polar_atoms = torch.cat(polar).contiguous()
     ligand_atom_to_polar = torch.full(
@@ -328,16 +381,46 @@ def build_live_lk_ball_data(
         receptor_polar_atoms,
         "receptor LK-ball atom",
     )
+    variant_waters = {}
+    if ligand_atom_maps:
+        n_ligand_polar = int((ligand_polar_atoms < ligand_width).sum())
+        shared = (
+            ligand_polar_atoms[n_ligand_polar:],
+            torch.cat(kinds)[n_ligand_polar:],
+            torch.cat(water_atoms)[n_ligand_polar:],
+            torch.cat(water_params)[n_ligand_polar:],
+            torch.cat(rings)[n_ligand_polar:],
+        )
+        per_variant = {}
+        for index, rows in ligand_variant_waters(
+            pose_stack, ligand_block, term, ligand_atom_maps
+        ).items():
+            per_variant[index] = tuple(
+                torch.cat((row, keep)) for row, keep in zip(rows, shared)
+            )
+        n_polar = max(t[0].shape[0] for t in per_variant.values())
+        for index, rows in per_variant.items():
+            pad = n_polar - rows[0].shape[0]
+            if pad:
+                rows = tuple(
+                    torch.cat((row, row.new_zeros((pad,) + row.shape[1:])))
+                    for row in rows
+                )
+                # A padded polar slot has no water of any kind, so it is skipped.
+                rows = (rows[0], rows[1], rows[2], rows[3], rows[4])
+            per_variant[index] = rows
+        variant_waters = per_variant
     return LiveLKBallData(
         n_ligand_atoms=moving.n_atoms,
-        ligand_atom_params=type_params[ligand_atom_types].contiguous(),
-        ligand_heavy_atoms=ligand_heavy_atoms.contiguous(),
-        ligand_polar_atoms=ligand_polar_atoms,
-        ligand_atom_to_polar=ligand_atom_to_polar,
-        ligand_water_kinds=torch.cat(kinds).contiguous(),
-        ligand_water_atoms=torch.cat(water_atoms).contiguous(),
-        ligand_water_params=torch.cat(water_params).contiguous(),
-        ligand_water_is_ring=torch.cat(rings).contiguous(),
+        # One table row: every pose holds this ligand.
+        ligand_atom_params=type_params[ligand_atom_types][None].contiguous(),
+        ligand_heavy_atoms=ligand_heavy_atoms[None].contiguous(),
+        ligand_polar_atoms=ligand_polar_atoms[None].contiguous(),
+        ligand_atom_to_polar=ligand_atom_to_polar[None].contiguous(),
+        ligand_water_kinds=torch.cat(kinds)[None].contiguous(),
+        ligand_water_atoms=torch.cat(water_atoms)[None].contiguous(),
+        ligand_water_params=torch.cat(water_params)[None].contiguous(),
+        ligand_water_is_ring=torch.cat(rings)[None].contiguous(),
         receptor_coords=receptor_coords.contiguous(),
         receptor_params=type_params[pbt.atom_types[block_type, local].to(torch.int64)],
         receptor_waters=reference_waters[atom],
@@ -349,7 +432,42 @@ def build_live_lk_ball_data(
         receptor_polar_cell_offsets=polar_offsets,
         receptor_polar_cell_indices=polar_indices,
         global_params=global_params,
+        variant_waters=variant_waters,
     )
+
+
+def set_lk_ball_pose_variants(data: LiveLKBallData, block_types, slot_of=None) -> None:
+    """Point the kernel's ligand water tables at each pose's own bound form."""
+    if not data.variant_waters:
+        return
+    unknown = sorted(set(int(b) for b in block_types) - set(data.variant_waters))
+    if unknown:
+        raise ValueError(f"ligand block types {unknown} have no water topology")
+    rows = [data.variant_waters[int(b)] for b in block_types]
+    if slot_of is not None:
+        polar = torch.stack([row[0] for row in rows]).to(slot_of.device)
+        if bool(((polar >= 0) & (slot_of[polar.clamp(min=0)] < 0)).any()):
+            raise ValueError("an LK-ball polar atom is not grid-scored")
+    names = (
+        "ligand_polar_atoms",
+        "ligand_water_kinds",
+        "ligand_water_atoms",
+        "ligand_water_params",
+        "ligand_water_is_ring",
+    )
+    for position, name in enumerate(names):
+        current = getattr(data, name)
+        # Rows are built once on the reference data; each scorer holds its own
+        # device and dtype copy of the live tables.
+        stacked = (
+            torch.stack([row[position] for row in rows])
+            .to(device=current.device, dtype=current.dtype)
+            .contiguous()
+        )
+        if current.shape == stacked.shape:
+            current.copy_(stacked)
+        else:
+            object.__setattr__(data, name, stacked)
 
 
 def _validate_ligand_coords(data: LiveLKBallData, ligand_coords: torch.Tensor) -> None:

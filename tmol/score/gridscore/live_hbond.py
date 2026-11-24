@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar, Sequence
 
+import attr
 import torch
 
 from tmol.database import ParameterDatabase
@@ -50,6 +51,46 @@ class LiveHBondData(LiveData):
     pair_params: torch.Tensor
     pair_polynomials: torch.Tensor
     global_params: torch.Tensor
+    #: Ligand site rows per block type the search can give the ligand, in
+    #: movable-slot indices and padded to one width; empty for one molecule.
+    variant_sites: dict = field(default_factory=dict, compare=False, repr=False)
+
+
+def _padded_variant_tables(base, variant_sites, width):
+    """Full ligand+sidechain site rows per block type, padded to one width.
+
+    ``base`` holds the reference rows; a site whose heavy atom lies in the
+    ligand's slots is replaced by the form's own, the rest (flexible sidechain
+    sites) are shared. Padding rows carry type -1, which the kernel skips.
+    """
+    donor_atoms, donor_types, acceptor_atoms, acceptor_types = base
+    keep_d = donor_atoms[:, 0] >= width
+    keep_a = acceptor_atoms[:, 0] >= width
+    tables = {}
+    for index, (v_da, v_dt, v_aa, v_at) in variant_sites.items():
+        tables[index] = (
+            torch.cat((v_da, donor_atoms[keep_d])),
+            torch.cat((v_dt, donor_types[keep_d])),
+            torch.cat((v_aa, acceptor_atoms[keep_a])),
+            torch.cat((v_at, acceptor_types[keep_a])),
+        )
+    n_donor = max(t[0].shape[0] for t in tables.values())
+    n_acceptor = max(t[2].shape[0] for t in tables.values())
+
+    def pad(atoms, types, rows, arity):
+        if atoms.shape[0] == rows:
+            return atoms, types
+        extra = rows - atoms.shape[0]
+        return (
+            torch.cat((atoms, atoms.new_zeros((extra, arity)))),
+            torch.cat((types, types.new_full((extra,), -1))),
+        )
+
+    for index, (da, dt, aa, at) in tables.items():
+        da, dt = pad(da, dt, n_donor, 2)
+        aa, at = pad(aa, at, n_acceptor, 3)
+        tables[index] = (da, dt, aa, at)
+    return tables
 
 
 def _hbond_sites(pose_stack: PoseStack, derived: torch.Tensor):
@@ -88,6 +129,57 @@ def _hbond_sites(pose_stack: PoseStack, derived: torch.Tensor):
     )
 
 
+def ligand_variant_sites(
+    pose_stack: PoseStack,
+    ligand_block: int,
+    param_db: ParameterDatabase,
+    atom_maps: dict,
+) -> dict:
+    """Each bound form's own ligand hbond sites, in movable-slot indices.
+
+    Binding as a conjugate base takes a donor's hydrogen away: that donor site
+    goes, and the acceptor left behind has different parameters and a different
+    second base atom. Those follow from the block type, so each form's sites are
+    read off a one-block pose of its own and mapped back onto the shared slots.
+
+    ``atom_maps`` is block type index -> ``[slot] -> that form's local atom``,
+    -1 where the form has no atom for a slot.
+    """
+    from tmol.pose import select_blocks
+
+    one = select_blocks(pose_stack, [ligand_block])
+    width = one.max_n_pose_atoms
+    sites = {}
+    for index, atom_map in atom_maps.items():
+        local = atom_map.to(device=one.device, dtype=torch.int64)
+        inverse = torch.full((width,), -1, dtype=torch.int64, device=one.device)
+        present = local >= 0
+        inverse[local[present]] = torch.nonzero(present).squeeze(1)
+        coords = one.coords.clone()
+        coords[0, local[present]] = one.coords[0, torch.nonzero(present).squeeze(1)]
+        types = torch.full_like(one.block_type_ind64, index)
+        variant = attr.evolve(
+            one,
+            coords=coords,
+            block_type_ind=types.to(torch.int32),
+            block_type_ind64=types,
+        )
+        term = HBondEnergyTerm(param_db, variant.device)
+        for block_type in variant.packed_block_types.active_block_types:
+            term.setup_block_type(block_type)
+        term.setup_packed_block_types(variant.packed_block_types)
+        donors, acceptors = _hbond_sites(variant, derived_atom_indices(variant))
+        donor, hydrogen, donor_type = donors
+        acceptor, base, base0, acceptor_type = acceptors
+        sites[index] = (
+            torch.stack((inverse[donor], inverse[hydrogen]), 1),
+            donor_type.to(torch.int64),
+            torch.stack((inverse[acceptor], inverse[base], inverse[base0]), 1),
+            acceptor_type.to(torch.int64),
+        )
+    return sites
+
+
 def build_live_hbond_data(
     pose_stack: PoseStack,
     ligand_block: int,
@@ -95,6 +187,8 @@ def build_live_hbond_data(
     *,
     sidechain_blocks: tuple[int, ...] = (),
     movable_atoms: Sequence[int] | None = None,
+    extra_blocks: tuple[int, ...] = (),
+    ligand_atom_maps: dict | None = None,
 ) -> LiveHBondData:
     """Build movable-atom topology and shared fixed-receptor hbond cells.
 
@@ -107,7 +201,7 @@ def build_live_hbond_data(
     if sidechain_blocks and movable_atoms is None:
         raise ValueError("sidechain_blocks require the compact movable_atoms")
     device = pose_stack.device
-    moving = movable_atoms_of(pose_stack, ligand_block, sidechain_blocks)
+    moving = movable_atoms_of(pose_stack, ligand_block, sidechain_blocks, extra_blocks)
     atom_map = moving.atom_map
     is_query = torch.ones(moving.n_atoms, dtype=torch.bool, device=device)
     if movable_atoms is not None:
@@ -160,20 +254,34 @@ def build_live_hbond_data(
     acceptor_offsets, acceptor_cell_indices = build_cell_list(
         receptor_acceptors[:, 0], cell_origin, cell_dims, max_ha_dis
     )
+    base_tables = (
+        torch.stack((compact(donor), compact(hydrogen)), 1)[donor_mine],
+        donor_type[donor_mine].to(torch.int64),
+        torch.stack((compact(acceptor), compact(base), compact(base0)), 1)[
+            acceptor_mine
+        ],
+        acceptor_type[acceptor_mine].to(torch.int64),
+    )
+    variant_tables = {}
+    if ligand_atom_maps:
+        variant_tables = _padded_variant_tables(
+            base_tables,
+            ligand_variant_sites(pose_stack, ligand_block, param_db, ligand_atom_maps),
+            pose_stack.block_type(0, ligand_block).n_atoms,
+        )
     return LiveHBondData(
         n_ligand_atoms=moving.n_atoms,
         receptor_donors=receptor_donors,
         receptor_donor_types=donor_type[donor_fixed],
         receptor_acceptors=receptor_acceptors,
         receptor_acceptor_types=acceptor_type[acceptor_fixed],
-        ligand_donor_atoms=torch.stack((compact(donor), compact(hydrogen)), 1)[
-            donor_mine
-        ],
-        ligand_donor_types=donor_type[donor_mine],
-        ligand_acceptor_atoms=torch.stack(
-            (compact(acceptor), compact(base), compact(base0)), 1
-        )[acceptor_mine],
-        ligand_acceptor_types=acceptor_type[acceptor_mine],
+        # One table row while every pose holds the same ligand; detection
+        # swaps in a row per pose once the search can bind a metal.
+        ligand_donor_atoms=base_tables[0][None].contiguous(),
+        ligand_donor_types=base_tables[1][None].contiguous(),
+        ligand_acceptor_atoms=base_tables[2][None].contiguous(),
+        ligand_acceptor_types=base_tables[3][None].contiguous(),
+        variant_sites=variant_tables,
         cell_origin=cell_origin.to(torch.float64).contiguous(),
         cell_dims=cell_dims.contiguous(),
         receptor_donor_cell_offsets=donor_offsets,
@@ -184,6 +292,36 @@ def build_live_hbond_data(
         pair_polynomials=pair_polynomials.detach().clone().contiguous(),
         global_params=global_params.detach().clone().contiguous(),
     )
+
+
+def set_hbond_pose_variants(data: LiveHBondData, block_types) -> None:
+    """Point the kernel's ligand tables at each pose's own bound form."""
+    if not data.variant_sites:
+        return
+    unknown = sorted(set(int(b) for b in block_types) - set(data.variant_sites))
+    if unknown:
+        raise ValueError(f"ligand block types {unknown} have no hbond sites")
+    rows = [data.variant_sites[int(b)] for b in block_types]
+    for position, name in enumerate(
+        (
+            "ligand_donor_atoms",
+            "ligand_donor_types",
+            "ligand_acceptor_atoms",
+            "ligand_acceptor_types",
+        )
+    ):
+        current = getattr(data, name)
+        # Rows are built once on the reference data; each scorer holds its own
+        # device and dtype copy of the live tables.
+        stacked = (
+            torch.stack([row[position] for row in rows])
+            .to(device=current.device, dtype=current.dtype)
+            .contiguous()
+        )
+        if current.shape == stacked.shape:
+            current.copy_(stacked)
+        else:
+            object.__setattr__(data, name, stacked)
 
 
 def _validate_ligand_coords(data: LiveHBondData, ligand_coords: torch.Tensor) -> None:

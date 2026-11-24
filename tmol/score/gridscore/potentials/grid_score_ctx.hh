@@ -20,8 +20,10 @@ template <template <typename, int> class View, typename Real, typename Int>
 struct GridScoreAtomsCtxT {
   View<tmol::portable::Vec<Real, 3>, 2> coords;
   View<Int, 1> grid_atoms;
-  View<Int, 1> atom_types;
-  View<Real, 1> charges;
+  // [table pose, grid atom]; batch pose p reads row p % rows. Type -1 marks a
+  // slot this pose's ligand has no atom for.
+  View<Int, 2> atom_types;
+  View<Real, 2> charges;
   View<Real, 4> atr;
   View<Real, 4> rep;
   View<Real, 4> sol;

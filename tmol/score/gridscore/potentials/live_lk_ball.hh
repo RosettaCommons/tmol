@@ -26,15 +26,15 @@ struct LiveLKBallDispatch {
   static auto forward(
       ContextManager& mgr,
       TView<LKBVec<Real, 3>, 2, D> ligand_coords,
-      TView<lk_ball::potentials::LKBallTypeParams<Real>, 1, D>
+      TView<lk_ball::potentials::LKBallTypeParams<Real>, 2, D>
           ligand_atom_params,
-      TView<Int, 1, D> ligand_heavy_atoms,
-      TView<Int, 1, D> ligand_polar_atoms,
-      TView<Int, 1, D> ligand_atom_to_polar,
-      TView<Int, 2, D> ligand_water_kinds,
-      TView<Int, 3, D> ligand_water_atoms,
-      TView<LKBVec<Real, 3>, 2, D> ligand_water_params,
-      TView<Int, 2, D> ligand_water_is_ring,
+      TView<Int, 2, D> ligand_heavy_atoms,
+      TView<Int, 2, D> ligand_polar_atoms,
+      TView<Int, 2, D> ligand_atom_to_polar,
+      TView<Int, 3, D> ligand_water_kinds,
+      TView<Int, 4, D> ligand_water_atoms,
+      TView<LKBVec<Real, 3>, 3, D> ligand_water_params,
+      TView<Int, 3, D> ligand_water_is_ring,
       TView<LKBVec<Real, 3>, 1, D> receptor_coords,
       TView<lk_ball::potentials::LKBallTypeParams<Real>, 1, D> receptor_params,
       TView<LKBVec<Real, 3>, 2, D> receptor_waters,

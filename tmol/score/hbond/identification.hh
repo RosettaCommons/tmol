@@ -37,6 +37,9 @@ struct RotamerCentricAcceptorBases {
     BlockCentricAtom<Int> B0({-1, -1, -1});
 
     for (BlockCentricAtom<Int> other_atom : bonds.bound_to(A)) {
+      if (other_atom.atom < 0) {
+        continue;  // an unfilled connection has no atom
+      }
       if (!bt_atom_is_hydrogen[other_atom.block_type][other_atom.atom]) {
         B = other_atom;
         break;
@@ -48,6 +51,9 @@ struct RotamerCentricAcceptorBases {
     }
 
     for (BlockCentricAtom<Int> other_atom : bonds.bound_to(B)) {
+      if (other_atom.atom < 0) {
+        continue;  // an unfilled connection has no atom
+      }
       // If we have left the starting residue, then
       // skip other_atom if it has walked back to the
       // starting residue. It may very well be that other_atom != A
@@ -82,6 +88,9 @@ struct RotamerCentricAcceptorBases {
 
     // B is the primary (heavy-atom) base that A is bonded to.
     for (BlockCentricAtom<Int> other_atom : bonds.bound_to(A)) {
+      if (other_atom.atom < 0) {
+        continue;  // an unfilled connection has no atom
+      }
       if (!bt_atom_is_hydrogen[other_atom.block_type][other_atom.atom]) {
         B = other_atom;
         break;
@@ -90,6 +99,9 @@ struct RotamerCentricAcceptorBases {
 
     // B0: a bonded hydrogen, else any other bonded atom, else B itself.
     for (BlockCentricAtom<Int> other_atom : bonds.bound_to(A)) {
+      if (other_atom.atom < 0) {
+        continue;  // an unfilled connection has no atom
+      }
       if (other_atom != B
           && bt_atom_is_hydrogen[other_atom.block_type][other_atom.atom]) {
         B0 = other_atom;
@@ -98,6 +110,9 @@ struct RotamerCentricAcceptorBases {
     }
     if (B0.atom == -1) {
       for (BlockCentricAtom<Int> other_atom : bonds.bound_to(A)) {
+        if (other_atom.atom < 0) {
+          continue;  // an unfilled connection has no atom
+        }
         if (other_atom != B) {
           B0 = other_atom;
           break;
@@ -122,6 +137,9 @@ struct RotamerCentricAcceptorBases {
     BlockCentricAtom<Int> B0{-1, -1, -1};
 
     for (BlockCentricAtom<Int> other_atom : bonds.bound_to(A)) {
+      if (other_atom.atom < 0) {
+        continue;  // an unfilled connection has no atom
+      }
       if (!bt_atom_is_hydrogen[other_atom.block_type][other_atom.atom]) {
         B = other_atom;
         break;
@@ -133,6 +151,9 @@ struct RotamerCentricAcceptorBases {
     }
 
     for (BlockCentricAtom<Int> other_atom : bonds.bound_to(A)) {
+      if (other_atom.atom < 0) {
+        continue;  // an unfilled connection has no atom
+      }
       if (other_atom != B
           && !bt_atom_is_hydrogen[other_atom.block_type][other_atom.atom]) {
         B0 = other_atom;
@@ -179,6 +200,9 @@ struct RotamerCentricDonorBase {
 
     BlockCentricAtom<Int> D{-1, -1, -1};
     for (BlockCentricAtom<Int> other_atom : bonds.bound_to(H)) {
+      if (other_atom.atom < 0) {
+        continue;  // an unfilled connection has no atom
+      }
       if (!bt_atom_is_hydrogen[other_atom.block_type][other_atom.atom]) {
         D = other_atom;
       }

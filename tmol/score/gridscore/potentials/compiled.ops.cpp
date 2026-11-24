@@ -309,15 +309,22 @@ std::tuple<Tensor, Tensor> live_hbond(
           && ligand_coords.size(0) > 0 && ligand_coords.size(1) > 0,
       "ligand_coords must have shape [n_poses, n_atoms, 3]");
   TORCH_CHECK(
-      ligand_donor_atoms.dim() == 2 && ligand_donor_atoms.size(1) == 2
-          && ligand_donor_types.dim() == 1
-          && ligand_donor_types.size(0) == ligand_donor_atoms.size(0),
+      ligand_donor_atoms.dim() == 3 && ligand_donor_atoms.size(2) == 2
+          && ligand_donor_types.dim() == 2
+          && ligand_donor_types.size(0) == ligand_donor_atoms.size(0)
+          && ligand_donor_types.size(1) == ligand_donor_atoms.size(1),
       "ligand donor arrays have inconsistent shapes");
   TORCH_CHECK(
-      ligand_acceptor_atoms.dim() == 2 && ligand_acceptor_atoms.size(1) == 3
-          && ligand_acceptor_types.dim() == 1
-          && ligand_acceptor_types.size(0) == ligand_acceptor_atoms.size(0),
+      ligand_acceptor_atoms.dim() == 3 && ligand_acceptor_atoms.size(2) == 3
+          && ligand_acceptor_types.dim() == 2
+          && ligand_acceptor_types.size(0) == ligand_acceptor_atoms.size(0)
+          && ligand_acceptor_types.size(1) == ligand_acceptor_atoms.size(1),
       "ligand acceptor arrays have inconsistent shapes");
+  TORCH_CHECK(
+      ligand_donor_types.size(0) > 0
+          && ligand_acceptor_types.size(0) == ligand_donor_types.size(0)
+          && ligand_coords.size(0) % ligand_donor_types.size(0) == 0,
+      "ligand site tables need one row per pool pose, dividing the batch");
   TORCH_CHECK(
       receptor_donors.dim() == 3 && receptor_donors.size(1) == 2
           && receptor_donors.size(2) == 3 && receptor_donor_types.dim() == 1
@@ -462,27 +469,37 @@ std::tuple<Tensor, Tensor> live_lk_ball(
           && ligand_coords.size(0) > 0 && ligand_coords.size(1) > 0,
       "ligand_coords must have shape [n_poses, n_atoms, 3]");
   int64_t const n_atoms = ligand_coords.size(1);
-  int64_t const n_ligand_polar = ligand_polar_atoms.size(0);
+  // Ligand tables are [table pose, ...]; batch pose p reads row p % rows.
+  int64_t const n_tables = ligand_atom_params.size(0);
+  int64_t const n_ligand_polar =
+      ligand_polar_atoms.dim() == 2 ? ligand_polar_atoms.size(1) : -1;
   int64_t const n_receptor = receptor_coords.size(0);
   int64_t const n_receptor_polar = receptor_polar_atoms.size(0);
   TORCH_CHECK(
-      ligand_atom_params.dim() == 2 && ligand_atom_params.size(0) == n_atoms
-          && ligand_atom_params.size(1) == 9,
-      "ligand_atom_params must have shape [n_atoms, 9]");
+      ligand_atom_params.dim() == 3 && ligand_atom_params.size(1) == n_atoms
+          && ligand_atom_params.size(2) == 9,
+      "ligand_atom_params must have shape [table pose, n_atoms, 9]");
   TORCH_CHECK(
-      ligand_heavy_atoms.dim() == 1 && ligand_polar_atoms.dim() == 1
-          && ligand_atom_to_polar.dim() == 1
-          && ligand_atom_to_polar.size(0) == n_atoms,
+      n_tables > 0 && ligand_coords.size(0) % n_tables == 0,
+      "ligand LK-ball tables need one row per pool pose, dividing the batch");
+  TORCH_CHECK(
+      ligand_heavy_atoms.dim() == 2 && ligand_polar_atoms.dim() == 2
+          && ligand_atom_to_polar.dim() == 2
+          && ligand_heavy_atoms.size(0) == n_tables
+          && ligand_polar_atoms.size(0) == n_tables
+          && ligand_atom_to_polar.size(0) == n_tables
+          && ligand_atom_to_polar.size(1) == n_atoms,
       "ligand atom index arrays have inconsistent shapes");
   TORCH_CHECK(
-      ligand_water_kinds.dim() == 2
-          && ligand_water_kinds.size(0) == n_ligand_polar
-          && ligand_water_kinds.size(1) == 4 && ligand_water_atoms.dim() == 3
-          && ligand_water_atoms.size(0) == n_ligand_polar
-          && ligand_water_atoms.size(1) == 4 && ligand_water_atoms.size(2) == 3
-          && ligand_water_params.dim() == 3
+      ligand_water_kinds.dim() == 3 && ligand_water_kinds.size(0) == n_tables
+          && ligand_water_kinds.size(1) == n_ligand_polar
+          && ligand_water_kinds.size(2) == 4 && ligand_water_atoms.dim() == 4
+          && ligand_water_atoms.size(0) == n_tables
+          && ligand_water_atoms.size(1) == n_ligand_polar
+          && ligand_water_atoms.size(2) == 4 && ligand_water_atoms.size(3) == 3
+          && ligand_water_params.dim() == 4
           && ligand_water_params.sizes() == ligand_water_atoms.sizes()
-          && ligand_water_is_ring.dim() == 2
+          && ligand_water_is_ring.dim() == 3
           && ligand_water_is_ring.sizes() == ligand_water_kinds.sizes(),
       "ligand water arrays have inconsistent shapes");
   TORCH_CHECK(
@@ -571,6 +588,15 @@ std::tuple<Tensor, Tensor> grid_score_atoms(
     double voxel_spacing,
     Tensor weights,
     double out_of_bounds_penalty) {
+  TORCH_CHECK(
+      atom_types.dim() == 2 && charges.dim() == 2
+          && atom_types.size(0) == charges.size(0)
+          && atom_types.size(1) == grid_atoms.size(0)
+          && charges.size(1) == grid_atoms.size(0),
+      "atom_types and charges must have shape [table pose, grid atom]");
+  TORCH_CHECK(
+      atom_types.size(0) > 0 && coords.size(0) % atom_types.size(0) == 0,
+      "grid atom tables need one row per pool pose, dividing the batch");
   Tensor energy, gradient;
   TMOL_DISPATCH_FLOATING_DEVICE_MPS(
       coords.options(), "grid_score_atoms", ([&] {
@@ -617,6 +643,24 @@ Tensor grid_score_waters(
     bool bridge_enabled,
     Tensor energy,
     Tensor gradient) {
+  int64_t const n_tables = water_kinds.size(0);
+  int64_t const n_polar = polar_atoms.dim() == 2 ? polar_atoms.size(1) : -1;
+  TORCH_CHECK(
+      polar_atoms.dim() == 2 && polar_types.dim() == 2 && water_kinds.dim() == 3
+          && water_atoms.dim() == 4 && water_params.dim() == 4
+          && water_is_ring.dim() == 3,
+      "grid LK-ball water tables must carry a leading table-pose axis");
+  TORCH_CHECK(
+      polar_atoms.size(0) == n_tables && polar_types.size(0) == n_tables
+          && water_atoms.size(0) == n_tables && water_params.size(0) == n_tables
+          && water_is_ring.size(0) == n_tables && polar_types.size(1) == n_polar
+          && water_kinds.size(1) == n_polar && water_atoms.size(1) == n_polar
+          && water_params.size(1) == n_polar
+          && water_is_ring.size(1) == n_polar,
+      "grid LK-ball water tables have inconsistent shapes");
+  TORCH_CHECK(
+      n_tables > 0 && coords.size(0) % n_tables == 0,
+      "grid LK-ball tables need one row per pool pose, dividing the batch");
   TMOL_DISPATCH_FLOATING_DEVICE(
       coords.options(), "grid_score_waters", ([&] {
         using Real = scalar_t;

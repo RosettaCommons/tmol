@@ -112,25 +112,36 @@ def _is_element(symbol: str) -> bool:
         return False
 
 
-def _smiles(block_type, chem_db, atom_coords, attachments, hydrogens, atom_map):
-    """SMILES from a block type, its atom coordinates, and (connection index,
-    coordinate) for each attachment point."""
+def _mol_from_block_type(
+    block_type,
+    chem_db,
+    attachments=(),
+    atom_map=False,
+    hydrogens=True,
+    omit=frozenset(),
+):
+    """A residue type's real atoms (less ``omit``) as an RDKit molecule, formal
+    charges from valence, and the residue atom index behind each molecule atom.
+
+    ``attachments`` are connection indices, each bonded to a dummy atom appended
+    after the residue's own; a raw residue type takes none.
+    """
     element_for_type = {at.name: at.element for at in chem_db.atom_types}
     virtual = set(block_type.properties.virtual)
 
     mol = Chem.RWMol()
     index = {}
-    positions = []
+    source = []
     for i, atom in enumerate(block_type.atoms):
         element = element_for_type[atom.atom_type]
-        if atom.name in virtual or not _is_element(element):
+        if atom.name in virtual or atom.name in omit or not _is_element(element):
             continue
         rd_atom = Chem.Atom(element)
         rd_atom.SetNoImplicit(True)
         if atom_map and (hydrogens or rd_atom.GetAtomicNum() != 1):
             rd_atom.SetAtomMapNum(i + 1)
         index[atom.name] = mol.AddAtom(rd_atom)
-        positions.append(atom_coords[i])
+        source.append(i)
 
     for key, order in _chemical_bond_orders(block_type, chem_db).items():
         a, b = tuple(key)
@@ -142,7 +153,7 @@ def _smiles(block_type, chem_db, atom_coords, attachments, hydrogens, atom_map):
             mol.GetAtomWithIdx(index[a]).SetIsAromatic(True)
             mol.GetAtomWithIdx(index[b]).SetIsAromatic(True)
 
-    for conn, xyz in attachments:
+    for conn in attachments:
         dummy = mol.AddAtom(Chem.Atom(0))
         order = BondType(int(block_type.connection_bond_types[conn])).name
         mol.AddBond(
@@ -150,13 +161,25 @@ def _smiles(block_type, chem_db, atom_coords, attachments, hydrogens, atom_map):
             dummy,
             _RDKIT_ORDER["SINGLE" if order == "AROMATIC" else order],
         )
-        positions.append(xyz)
 
     for atom in mol.GetAtoms():
         if atom.GetAtomicNum() > 0:
             atom.SetFormalCharge(_lewis_charge(atom))
     _recombine_charges(mol)
-    mol = _sanitize(mol)
+    return _sanitize(mol), source
+
+
+def _smiles(block_type, chem_db, atom_coords, attachments, hydrogens, atom_map):
+    """SMILES from a block type, its atom coordinates, and (connection index,
+    coordinate) for each attachment point."""
+    mol, source = _mol_from_block_type(
+        block_type,
+        chem_db,
+        attachments=[conn for conn, _ in attachments],
+        atom_map=atom_map,
+        hydrogens=hydrogens,
+    )
+    positions = [atom_coords[i] for i in source] + [xyz for _, xyz in attachments]
 
     conformer = Chem.Conformer(mol.GetNumAtoms())
     conformer.Set3D(True)

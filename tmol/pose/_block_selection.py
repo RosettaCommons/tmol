@@ -17,30 +17,46 @@ from ._constraint_set import ConstraintSet
 def _select_inter_block_bondsep(
     pose_stack: PoseStack, blocks: torch.Tensor
 ) -> InterBlockBondsep:
-    """Restrict the sparse block-pair bond separations to ``blocks``."""
-    dense = pose_stack.inter_block_bondsep.to_dense()[
-        :, blocks[:, None], blocks[None, :]
-    ]
-    n_poses, n_blocks, _, n_conn, _ = dense.shape
-    if dense.numel() == 0:
-        return InterBlockBondsep.empty(n_poses, n_blocks, n_conn, pose_stack.device, 1)
-    minimum = dense.amin(dim=(-2, -1))
-    nearby = minimum < MAX_SIG_BOND_SEPARATION
-    slots = nearby.cumsum(dim=2) - 1
-    result = InterBlockBondsep.empty(
-        n_poses,
-        n_blocks,
-        n_conn,
-        pose_stack.device,
-        int(nearby.sum(dim=2).max()) + 1,
+    """Restrict the sparse block-pair bond separations to ``blocks``.
+
+    Kept slot rows are renumbered in place; the dense table is never built, as
+    it is quadratic in the source stack's block count.
+    """
+    source = pose_stack.inter_block_bondsep
+    device = pose_stack.device
+    n_poses = source.n_poses
+    n_blocks = int(blocks.numel())
+    n_conn = source.max_n_conn
+    if n_blocks == 0 or source.n_slots == 0:
+        return InterBlockBondsep.empty(n_poses, n_blocks, n_conn, device, 1)
+    new_of_old = torch.full(
+        (source.max_n_blocks,), -1, dtype=torch.int64, device=device
     )
-    pose, block1, block2 = torch.nonzero(nearby, as_tuple=True)
-    slot = slots[pose, block1, block2]
-    result.near_blocks[pose, block1, slot, 0] = block2.to(torch.int32)
-    result.near_blocks[pose, block1, slot, 1] = minimum[pose, block1, block2].to(
+    new_of_old[blocks] = torch.arange(n_blocks, dtype=torch.int64, device=device)
+    if int((new_of_old >= 0).sum()) != n_blocks:
+        raise ValueError("selecting blocks requires distinct block indices")
+
+    near = source.near_blocks[:, blocks]
+    bondsep = source.bondsep[:, blocks]
+    block2 = new_of_old[near[..., 0].to(torch.int64).clamp(min=0)]
+    kept = (
+        (near[..., 0] >= 0) & (block2 >= 0) & (near[..., 1] < MAX_SIG_BOND_SEPARATION)
+    )
+
+    # Rows list their block2 slots ascending, so sort the kept slots to the
+    # front in their new numbering.
+    order = torch.where(kept, block2, block2.new_full((), n_blocks)).argsort(dim=2)
+    kept = kept.gather(2, order)
+    pose, block1, slot = torch.nonzero(kept, as_tuple=True)
+    result = InterBlockBondsep.empty(
+        n_poses, n_blocks, n_conn, device, int(kept.sum(dim=2).max()) + 1
+    )
+    source_slot = order[pose, block1, slot]
+    result.near_blocks[pose, block1, slot, 0] = block2[pose, block1, source_slot].to(
         torch.int32
     )
-    result.bondsep[pose, block1, slot] = dense[pose, block1, block2]
+    result.near_blocks[pose, block1, slot, 1] = near[pose, block1, source_slot, 1]
+    result.bondsep[pose, block1, slot] = bondsep[pose, block1, source_slot]
     return result
 
 
@@ -172,4 +188,120 @@ def repeat_pose_stack(pose_stack: PoseStack, n_poses: int) -> PoseStack:
         ),
         pdb_info=pdb_info,
         constraint_set=constraints,
+    )
+
+
+_POSE_TENSORS = (
+    "coords",
+    "block_coord_offset",
+    "block_coord_offset64",
+    "inter_residue_connections",
+    "inter_residue_connections64",
+    "block_type_ind",
+    "block_type_ind64",
+    "chain_id",
+    "chain_id64",
+)
+
+_PDB_FIELDS = (
+    "residue_labels",
+    "residue_insertion_codes",
+    "chain_labels",
+    "atom_occupancy",
+    "atom_b_factor",
+    "metal_origins",
+    "residue_annotations",
+)
+
+
+def select_poses(pose_stack: PoseStack, poses: torch.Tensor) -> PoseStack:
+    """The poses at ``poses``, in that order; constraints are dropped."""
+    if pose_stack.split_block_mapping:
+        raise ValueError("selecting poses does not support split-block metadata")
+    poses = poses.to(device=pose_stack.device, dtype=torch.int64)
+    host = poses.cpu().numpy()
+    pdb = pose_stack.pdb_info
+    bondsep = pose_stack.inter_block_bondsep
+    return attr.evolve(
+        pose_stack,
+        **{name: getattr(pose_stack, name)[poses].clone() for name in _POSE_TENSORS},
+        inter_block_bondsep=InterBlockBondsep(
+            near_blocks=bondsep.near_blocks[poses].clone(),
+            bondsep=bondsep.bondsep[poses].clone(),
+        ),
+        pdb_info=PDBInfo(
+            **{
+                name: None if getattr(pdb, name) is None else getattr(pdb, name)[host]
+                for name in _PDB_FIELDS
+            }
+        ),
+        constraint_set=None,
+    )
+
+
+def replace_poses(
+    pose_stack: PoseStack, poses: torch.Tensor, replacement: PoseStack
+) -> PoseStack:
+    """``pose_stack`` with the poses at ``poses`` taken from ``replacement``.
+
+    The two must share packed block types and block count; atoms and bond
+    separation slots are padded to the wider of the two. Constraints and
+    split-block metadata are kept from ``pose_stack``.
+    """
+    if replacement.packed_block_types is not pose_stack.packed_block_types:
+        raise ValueError("replacement poses use other packed block types")
+    if replacement.max_n_blocks != pose_stack.max_n_blocks:
+        raise ValueError("replacement poses have another block count")
+    if replacement.n_poses != len(poses):
+        raise ValueError("one replacement pose is needed per replaced index")
+    poses = poses.to(device=pose_stack.device, dtype=torch.int64)
+    host = poses.cpu().numpy()
+    n_atoms = max(pose_stack.max_n_pose_atoms, replacement.max_n_pose_atoms)
+
+    def merged(name: str) -> torch.Tensor:
+        value = getattr(pose_stack, name)
+        part = getattr(replacement, name)
+        if name == "coords":
+            out = value.new_zeros((value.shape[0], n_atoms, 3))
+            out[:, : value.shape[1]] = value
+            out[poses] = 0
+            out[poses, : part.shape[1]] = part
+            return out
+        out = value.clone()
+        out[poses] = part
+        return out
+
+    def merged_pdb(name: str):
+        value = getattr(pose_stack.pdb_info, name)
+        part = getattr(replacement.pdb_info, name)
+        if value is None or part is None:
+            return value
+        if name.startswith("atom_"):
+            out = numpy.zeros((value.shape[0], n_atoms), dtype=value.dtype)
+            out[:, : value.shape[1]] = value
+            out[host] = 0
+            out[host, : part.shape[1]] = part
+            return out
+        out = value.copy()
+        out[host] = part
+        return out
+
+    old, new = pose_stack.inter_block_bondsep, replacement.inter_block_bondsep
+    n_conn = max(old.max_n_conn, new.max_n_conn)
+    # An empty part widens the slots to the replacement's.
+    widen = InterBlockBondsep.empty(
+        0, old.max_n_blocks, n_conn, old.device, new.n_slots
+    )
+    bondsep = InterBlockBondsep.concatenate([old, widen], old.max_n_blocks, n_conn)
+    k, m = new.n_slots, new.max_n_conn
+    bondsep.near_blocks[poses] = MAX_SIG_BOND_SEPARATION
+    bondsep.near_blocks[poses, :, :, 0] = -1
+    bondsep.bondsep[poses] = MAX_SIG_BOND_SEPARATION
+    bondsep.near_blocks[poses, :, :k] = new.near_blocks
+    bondsep.bondsep[poses, :, :k, :m, :m] = new.bondsep
+    return attr.evolve(
+        pose_stack,
+        **{name: merged(name) for name in _POSE_TENSORS},
+        inter_block_bondsep=bondsep,
+        pdb_info=PDBInfo(**{name: merged_pdb(name) for name in _PDB_FIELDS}),
     )

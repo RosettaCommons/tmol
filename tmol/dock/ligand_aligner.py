@@ -56,12 +56,14 @@ class LigandAligner:
         """Return ``n_placements`` rigid placements of the reference ligand."""
         if n_placements > self.n_candidates:
             raise ValueError("n_placements cannot exceed n_candidates")
+        # The aligner seeds the starting pool from one template ligand, so it
+        # reads that pose's own slots out of the per-pose maps.
         template_coordinates = layout.template.coords[0]
         ligand_atom_indices = (
             layout.template.block_coord_offset64[0, layout.docking_dofs.ligand_block]
-            + layout.ligand_local_atoms
+            + layout.ligand_local_atoms[0]
         )
-        heavy_atom_indices = layout.heavy_local_atoms
+        heavy_atom_indices = layout.heavy_local_atoms[0]
         bounds = self._pocket_bounds(
             backend,
             template_coordinates,

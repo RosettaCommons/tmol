@@ -49,8 +49,8 @@ def test_grid_score_atoms_on_metal_matches_cpu(offload, cdk2_case):
     host_args = (
         coords,
         scorer._grid_atom_index,
-        scorer._grid_index,
-        scorer._charges,
+        scorer._type_table,
+        scorer._charge_table,
         g.fa_atr_coeffs,
         g.fa_rep_coeffs,
         g.fa_sol_coeffs,
@@ -68,6 +68,46 @@ def test_grid_score_atoms_on_metal_matches_cpu(offload, cdk2_case):
     metal_energy, metal_grad = grid_score_atoms(*metal_args)
     torch.testing.assert_close(metal_energy.cpu(), host_energy, rtol=1e-5, atol=1e-4)
     torch.testing.assert_close(metal_grad.cpu(), host_grad, rtol=1e-5, atol=1e-4)
+
+
+def test_grid_score_atoms_per_pose_tables_on_metal(offload, cdk2_case):
+    """Two table rows over a four-pose batch, one marking an atom absent."""
+    grids, atom_types, charges, coords = cdk2_case
+    scorer = GridScorer(grids, atom_types, charges, device="cpu", dtype=torch.float32)
+    g = scorer.grids
+    coords = coords[:1].expand(4, -1, -1).contiguous()
+    types = scorer._type_table.expand(2, -1).clone()
+    table_charges = scorer._charge_table.expand(2, -1).clone()
+    types[1, 1] = -1
+    host_args = (
+        coords,
+        scorer._grid_atom_index,
+        types,
+        table_charges,
+        g.fa_atr_coeffs,
+        g.fa_rep_coeffs,
+        g.fa_sol_coeffs,
+        g.fa_elec_coeffs[None],
+        scorer._lk_heavy_coeffs,
+        g.geometry.origin,
+        g.geometry.voxel_spacing,
+        scorer._weights,
+        OUT_OF_BOUNDS_PENALTY,
+    )
+    metal_args = tuple(
+        a.to("mps") if isinstance(a, torch.Tensor) else a for a in host_args
+    )
+    host_energy, host_grad = grid_score_atoms(*host_args)
+    metal_energy, metal_grad = grid_score_atoms(*metal_args)
+    torch.testing.assert_close(metal_energy.cpu(), host_energy, rtol=1e-5, atol=1e-4)
+    torch.testing.assert_close(metal_grad.cpu(), host_grad, rtol=1e-5, atol=1e-4)
+    atom = int(scorer._grid_atom_index[1])
+    # Batch poses 1 and 3 read table row 1, where the atom is absent.
+    for pose in (1, 3):
+        assert float(host_energy[pose, 1]) == 0.0
+        assert float(host_grad[pose, atom].abs().sum()) == 0.0
+    torch.testing.assert_close(host_energy[0], host_energy[2])
+    assert float(host_energy[0, 1]) != 0.0
 
 
 def test_cpu_grid_scorer_offloads_and_matches_host(offload, monkeypatch, cdk2_case):

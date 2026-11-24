@@ -210,8 +210,14 @@ def movable_block_mapping(
     pose_stack: PoseStack,
     ligand_block: int,
     sidechain_blocks=(),
+    extra_blocks=(),
 ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
-    """Return compact source order and flexible/context compact indices."""
+    """Return compact source order and flexible/context compact indices.
+
+    ``extra_blocks`` are retained as fixed context on top of the peptide
+    neighbours: a receptor metal the ligand may coordinate has to survive
+    compaction, or the bond it forms has no partner.
+    """
 
     sidechain_blocks = validated_sidechain_blocks(
         pose_stack, ligand_block, sidechain_blocks
@@ -219,6 +225,10 @@ def movable_block_mapping(
     context_blocks = sidechain_context_blocks(
         pose_stack, ligand_block, sidechain_blocks
     )
+    extra_blocks = tuple(
+        sorted({int(b) for b in extra_blocks} - {ligand_block} - set(sidechain_blocks))
+    )
+    context_blocks = tuple(sorted(set(context_blocks) | set(extra_blocks)))
     receptor_blocks = tuple(sorted(sidechain_blocks + context_blocks))
     source_blocks = (ligand_block,) + receptor_blocks
     source_to_compact = {
@@ -235,24 +245,28 @@ def movable_block_mapping(
 
 
 def movable_pose_stack(
-    pose_stack: PoseStack, ligand_block: int, sidechain_blocks=()
+    pose_stack: PoseStack, ligand_block: int, sidechain_blocks=(), extra_blocks=()
 ) -> PoseStack:
     """Compact PoseStack of the ligand (block 0), sidechains and peptide context.
 
-    The disconnected ligand receives its own chain id, so it is always an
-    independent kinematic root. With no sidechains this is the ligand alone.
+    The ligand receives its own chain id, so it is always an independent
+    kinematic root. With no sidechains this is the ligand alone. A ligand bond
+    is allowed only to a block compaction retains, since a dropped partner
+    would leave it dangling; pass the partner in ``extra_blocks``.
     """
 
     sidechain_blocks = validated_sidechain_blocks(
         pose_stack, ligand_block, sidechain_blocks
     )
-    if bool(
-        torch.any(pose_stack.inter_residue_connections64[:, ligand_block, :, 0] >= 0)
-    ):
-        raise ValueError("grid docking requires a disconnected ligand block")
     source_blocks, _, _ = movable_block_mapping(
-        pose_stack, ligand_block, sidechain_blocks
+        pose_stack, ligand_block, sidechain_blocks, extra_blocks
     )
+    partners = pose_stack.inter_residue_connections64[:, ligand_block, :, 0]
+    retained = torch.tensor(source_blocks, dtype=partners.dtype, device=partners.device)
+    if bool(torch.any((partners >= 0) & ~torch.isin(partners, retained))):
+        raise ValueError(
+            "grid docking requires every ligand bond to reach a retained block"
+        )
     compact = select_blocks(pose_stack, source_blocks)
     chains = compact.chain_id64.clone()
     # One past the retained receptor maximum cannot collide with any chain.
@@ -270,14 +284,16 @@ class MovableAtoms(NamedTuple):
 
 
 def movable_atoms(
-    pose_stack: PoseStack, ligand_block: int, sidechain_blocks=()
+    pose_stack: PoseStack, ligand_block: int, sidechain_blocks=(), extra_blocks=()
 ) -> MovableAtoms:
     """Compact-pose index of every atom of the ligand, sidechains and context."""
 
     source_blocks, _, _ = movable_block_mapping(
-        pose_stack, ligand_block, sidechain_blocks
+        pose_stack, ligand_block, sidechain_blocks, extra_blocks
     )
-    compact = movable_pose_stack(pose_stack, ligand_block, sidechain_blocks)
+    compact = movable_pose_stack(
+        pose_stack, ligand_block, sidechain_blocks, extra_blocks
+    )
     device = pose_stack.device
     atom_map = torch.full(
         (pose_stack.coords.shape[1],), -1, dtype=torch.int64, device=device

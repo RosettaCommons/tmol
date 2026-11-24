@@ -24,6 +24,7 @@ from tmol.database.scoring._cartbonded import (
 )
 from tmol.io._canonical_ordering import CanonicalOrdering
 from tmol.ligand._chemistry_tables import _get_hbond_properties
+from tmol.ligand._metal_deprotonation import _metal_deprotonation_charges
 
 logger = logging.getLogger(__name__)
 
@@ -695,6 +696,11 @@ def _charges_with_termini(param_db, preps, atom_types) -> dict:
     for prep in preps:
         charges[prep.residue_type.name] = prep.partial_charges
         charges.update(_terminus_charge_entries(param_db, patched, prep.residue_type))
+        charges.update(
+            _metal_deprotonation_charges(
+                prep.residue_type, atom_types, prep.partial_charges
+            )
+        )
         charges.update(prep.variant_partial_charges or {})
     return charges
 
