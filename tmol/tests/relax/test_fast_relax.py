@@ -158,6 +158,35 @@ def test_fast_relax_defaults_to_cartesian(
     assert chosen == [((), {})]
 
 
+def test_fast_relax_scales_and_restores_constraint_weight(
+    default_database, ubq_pdb, torch_device, monkeypatch
+):
+    """Each stage gets its fraction of the starting constraint weight, in every
+    repeat, and the score function has that weight back afterwards."""
+    pose_stack = pose_stack_from_file(
+        ubq_pdb, torch_device, no_optH=True, missing_density_distance_threshold=0.0
+    )
+    sfxn = get_relax_sfxn(default_database, torch_device)
+    sfxn.set_weight(ScoreType.constraint, 2.0)
+    applied = []
+
+    def record_step(pose_stack, sfxn, cst_weight, **kwargs):
+        sfxn.set_weight(ScoreType.constraint, cst_weight)
+        applied.append(float(sfxn.get_weight(ScoreType.constraint)))
+        return pose_stack
+
+    monkeypatch.setattr(fast_relax_module, "_relax_pack_min_step", record_step)
+    schedule = [
+        {"fa_rep_pack_frac": 0.5, "fa_rep_min_frac": 0.5, "cst_frac": 1.0},
+        {"fa_rep_pack_frac": 0.5, "fa_rep_min_frac": 0.5, "cst_frac": 0.6},
+        {"fa_rep_pack_frac": 1.0, "fa_rep_min_frac": 1.0, "cst_frac": 0.2},
+    ]
+    fast_relax(pose_stack, sfxn, schedule=schedule, num_repeats=2)
+
+    assert applied == pytest.approx([2.0, 1.2, 0.4, 2.0, 1.2, 0.4])
+    assert float(sfxn.get_weight(ScoreType.constraint)) == pytest.approx(2.0)
+
+
 def test_relax_minimizers_reject_the_other_move_map(ubq_pdb, torch_device):
     pose_stack = pose_stack_from_file(
         ubq_pdb, torch_device, no_optH=True, missing_density_distance_threshold=0.0
