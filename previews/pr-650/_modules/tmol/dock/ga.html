@@ -1902,10 +1902,11 @@
     <span class="n">placement</span><span class="p">:</span> <span class="n">RandomPlacement</span><span class="p">,</span>
     <span class="n">generator</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Sample random position, uniform SO(3) orientation, and full torsions.</span>
+<span class="w">    </span><span class="sd">"""Sample random position, uniform SO(3) orientation, and ligand torsions.</span>
 
 <span class="sd">    Position means the ligand heavy-atom centroid.  It is uniform along each</span>
-<span class="sd">    axis of the pocket box.  All logical torsions are uniform on ``(-pi, pi]``.</span>
+<span class="sd">    axis of the pocket box.  Ligand torsions are uniform on ``(-pi, pi]``;</span>
+<span class="sd">    flexible sidechains keep the input conformation.</span>
 <span class="sd">    """</span>
 
     <span class="n">genes</span> <span class="o">=</span> <span class="n">layout</span><span class="o">.</span><span class="n">genes_from_pose_stack</span><span class="p">(</span><span class="n">layout</span><span class="o">.</span><span class="n">template</span><span class="p">)</span>
@@ -1940,7 +1941,9 @@
     <span class="n">result</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">6</span><span class="p">]</span> <span class="o">=</span> <span class="n">_rotation_matrix_to_zyx</span><span class="p">(</span>
         <span class="n">_quaternion_rotation_matrix</span><span class="p">(</span><span class="n">quaternion</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">)</span>
     <span class="p">)</span>
-    <span class="n">n_random</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">6</span>
+    <span class="c1"># Only the ligand's own torsions are randomized: flexible sidechains keep</span>
+    <span class="c1"># the input receptor conformation and move by rotamer from there.</span>
+    <span class="n">n_random</span> <span class="o">=</span> <span class="n">layout</span><span class="o">.</span><span class="n">n_ligand_torsions</span>
     <span class="k">if</span> <span class="n">n_random</span><span class="p">:</span>
         <span class="n">result</span><span class="p">[:,</span> <span class="mi">6</span> <span class="p">:</span> <span class="mi">6</span> <span class="o">+</span> <span class="n">n_random</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
             <span class="mi">2</span>
@@ -2236,10 +2239,6 @@
         <span class="n">ligand_aligner</span><span class="o">=</span><span class="n">ligand_aligner</span><span class="p">,</span>
         <span class="n">pose_stack</span><span class="o">=</span><span class="n">search_pose</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="k">if</span> <span class="n">initialization</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"random"</span><span class="p">,</span> <span class="s2">"conformer"</span><span class="p">)</span> <span class="ow">and</span> <span class="n">compact_sidechains</span><span class="p">:</span>
-        <span class="c1"># Keep the reference as the first flexible candidate, making the</span>
-        <span class="c1"># flexible search monotone w.r.t. the supplied ligand/sidechain state.</span>
-        <span class="n">genes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">layout</span><span class="o">.</span><span class="n">genes_from_pose_stack</span><span class="p">(</span><span class="n">layout</span><span class="o">.</span><span class="n">template</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
     <span class="n">rotamers</span> <span class="o">=</span> <span class="p">(</span>
         <span class="n">build_rotamer_gene_library</span><span class="p">(</span>
             <span class="n">search_pose</span><span class="p">,</span>
