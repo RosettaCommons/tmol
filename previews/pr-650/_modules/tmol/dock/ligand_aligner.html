@@ -490,12 +490,14 @@
 <span class="w">        </span><span class="sd">"""Return ``n_placements`` rigid placements of the reference ligand."""</span>
         <span class="k">if</span> <span class="n">n_placements</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_candidates</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"n_placements cannot exceed n_candidates"</span><span class="p">)</span>
+        <span class="c1"># The aligner seeds the starting pool from one template ligand, so it</span>
+        <span class="c1"># reads that pose's own slots out of the per-pose maps.</span>
         <span class="n">template_coordinates</span> <span class="o">=</span> <span class="n">layout</span><span class="o">.</span><span class="n">template</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
         <span class="n">ligand_atom_indices</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">layout</span><span class="o">.</span><span class="n">template</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">layout</span><span class="o">.</span><span class="n">docking_dofs</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">]</span>
-            <span class="o">+</span> <span class="n">layout</span><span class="o">.</span><span class="n">ligand_local_atoms</span>
+            <span class="o">+</span> <span class="n">layout</span><span class="o">.</span><span class="n">ligand_local_atoms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
         <span class="p">)</span>
-        <span class="n">heavy_atom_indices</span> <span class="o">=</span> <span class="n">layout</span><span class="o">.</span><span class="n">heavy_local_atoms</span>
+        <span class="n">heavy_atom_indices</span> <span class="o">=</span> <span class="n">layout</span><span class="o">.</span><span class="n">heavy_local_atoms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
         <span class="n">bounds</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pocket_bounds</span><span class="p">(</span>
             <span class="n">backend</span><span class="p">,</span>
             <span class="n">template_coordinates</span><span class="p">,</span>

@@ -542,25 +542,36 @@
         <span class="k">return</span> <span class="kc">False</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_smiles</span><span class="p">(</span><span class="n">block_type</span><span class="p">,</span> <span class="n">chem_db</span><span class="p">,</span> <span class="n">atom_coords</span><span class="p">,</span> <span class="n">attachments</span><span class="p">,</span> <span class="n">hydrogens</span><span class="p">,</span> <span class="n">atom_map</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""SMILES from a block type, its atom coordinates, and (connection index,</span>
-<span class="sd">    coordinate) for each attachment point."""</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_mol_from_block_type</span><span class="p">(</span>
+    <span class="n">block_type</span><span class="p">,</span>
+    <span class="n">chem_db</span><span class="p">,</span>
+    <span class="n">attachments</span><span class="o">=</span><span class="p">(),</span>
+    <span class="n">atom_map</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">hydrogens</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">omit</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(),</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">"""A residue type's real atoms (less ``omit``) as an RDKit molecule, formal</span>
+<span class="sd">    charges from valence, and the residue atom index behind each molecule atom.</span>
+
+<span class="sd">    ``attachments`` are connection indices, each bonded to a dummy atom appended</span>
+<span class="sd">    after the residue's own; a raw residue type takes none.</span>
+<span class="sd">    """</span>
     <span class="n">element_for_type</span> <span class="o">=</span> <span class="p">{</span><span class="n">at</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="n">at</span><span class="o">.</span><span class="n">element</span> <span class="k">for</span> <span class="n">at</span> <span class="ow">in</span> <span class="n">chem_db</span><span class="o">.</span><span class="n">atom_types</span><span class="p">}</span>
     <span class="n">virtual</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">block_type</span><span class="o">.</span><span class="n">properties</span><span class="o">.</span><span class="n">virtual</span><span class="p">)</span>
 
     <span class="n">mol</span> <span class="o">=</span> <span class="n">Chem</span><span class="o">.</span><span class="n">RWMol</span><span class="p">()</span>
     <span class="n">index</span> <span class="o">=</span> <span class="p">{}</span>
-    <span class="n">positions</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">source</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">atom</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">block_type</span><span class="o">.</span><span class="n">atoms</span><span class="p">):</span>
         <span class="n">element</span> <span class="o">=</span> <span class="n">element_for_type</span><span class="p">[</span><span class="n">atom</span><span class="o">.</span><span class="n">atom_type</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">atom</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">virtual</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">_is_element</span><span class="p">(</span><span class="n">element</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">atom</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">virtual</span> <span class="ow">or</span> <span class="n">atom</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">omit</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">_is_element</span><span class="p">(</span><span class="n">element</span><span class="p">):</span>
             <span class="k">continue</span>
         <span class="n">rd_atom</span> <span class="o">=</span> <span class="n">Chem</span><span class="o">.</span><span class="n">Atom</span><span class="p">(</span><span class="n">element</span><span class="p">)</span>
         <span class="n">rd_atom</span><span class="o">.</span><span class="n">SetNoImplicit</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">atom_map</span> <span class="ow">and</span> <span class="p">(</span><span class="n">hydrogens</span> <span class="ow">or</span> <span class="n">rd_atom</span><span class="o">.</span><span class="n">GetAtomicNum</span><span class="p">()</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">):</span>
             <span class="n">rd_atom</span><span class="o">.</span><span class="n">SetAtomMapNum</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
         <span class="n">index</span><span class="p">[</span><span class="n">atom</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">mol</span><span class="o">.</span><span class="n">AddAtom</span><span class="p">(</span><span class="n">rd_atom</span><span class="p">)</span>
-        <span class="n">positions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">atom_coords</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+        <span class="n">source</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
 
     <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">order</span> <span class="ow">in</span> <span class="n">_chemical_bond_orders</span><span class="p">(</span><span class="n">block_type</span><span class="p">,</span> <span class="n">chem_db</span><span class="p">)</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
@@ -572,7 +583,7 @@
             <span class="n">mol</span><span class="o">.</span><span class="n">GetAtomWithIdx</span><span class="p">(</span><span class="n">index</span><span class="p">[</span><span class="n">a</span><span class="p">])</span><span class="o">.</span><span class="n">SetIsAromatic</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
             <span class="n">mol</span><span class="o">.</span><span class="n">GetAtomWithIdx</span><span class="p">(</span><span class="n">index</span><span class="p">[</span><span class="n">b</span><span class="p">])</span><span class="o">.</span><span class="n">SetIsAromatic</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
 
-    <span class="k">for</span> <span class="n">conn</span><span class="p">,</span> <span class="n">xyz</span> <span class="ow">in</span> <span class="n">attachments</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">conn</span> <span class="ow">in</span> <span class="n">attachments</span><span class="p">:</span>
         <span class="n">dummy</span> <span class="o">=</span> <span class="n">mol</span><span class="o">.</span><span class="n">AddAtom</span><span class="p">(</span><span class="n">Chem</span><span class="o">.</span><span class="n">Atom</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
         <span class="n">order</span> <span class="o">=</span> <span class="n">BondType</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">block_type</span><span class="o">.</span><span class="n">connection_bond_types</span><span class="p">[</span><span class="n">conn</span><span class="p">]))</span><span class="o">.</span><span class="n">name</span>
         <span class="n">mol</span><span class="o">.</span><span class="n">AddBond</span><span class="p">(</span>
@@ -580,13 +591,25 @@
             <span class="n">dummy</span><span class="p">,</span>
             <span class="n">_RDKIT_ORDER</span><span class="p">[</span><span class="s2">"SINGLE"</span> <span class="k">if</span> <span class="n">order</span> <span class="o">==</span> <span class="s2">"AROMATIC"</span> <span class="k">else</span> <span class="n">order</span><span class="p">],</span>
         <span class="p">)</span>
-        <span class="n">positions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">xyz</span><span class="p">)</span>
 
     <span class="k">for</span> <span class="n">atom</span> <span class="ow">in</span> <span class="n">mol</span><span class="o">.</span><span class="n">GetAtoms</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">atom</span><span class="o">.</span><span class="n">GetAtomicNum</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">atom</span><span class="o">.</span><span class="n">SetFormalCharge</span><span class="p">(</span><span class="n">_lewis_charge</span><span class="p">(</span><span class="n">atom</span><span class="p">))</span>
     <span class="n">_recombine_charges</span><span class="p">(</span><span class="n">mol</span><span class="p">)</span>
-    <span class="n">mol</span> <span class="o">=</span> <span class="n">_sanitize</span><span class="p">(</span><span class="n">mol</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_sanitize</span><span class="p">(</span><span class="n">mol</span><span class="p">),</span> <span class="n">source</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_smiles</span><span class="p">(</span><span class="n">block_type</span><span class="p">,</span> <span class="n">chem_db</span><span class="p">,</span> <span class="n">atom_coords</span><span class="p">,</span> <span class="n">attachments</span><span class="p">,</span> <span class="n">hydrogens</span><span class="p">,</span> <span class="n">atom_map</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""SMILES from a block type, its atom coordinates, and (connection index,</span>
+<span class="sd">    coordinate) for each attachment point."""</span>
+    <span class="n">mol</span><span class="p">,</span> <span class="n">source</span> <span class="o">=</span> <span class="n">_mol_from_block_type</span><span class="p">(</span>
+        <span class="n">block_type</span><span class="p">,</span>
+        <span class="n">chem_db</span><span class="p">,</span>
+        <span class="n">attachments</span><span class="o">=</span><span class="p">[</span><span class="n">conn</span> <span class="k">for</span> <span class="n">conn</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">attachments</span><span class="p">],</span>
+        <span class="n">atom_map</span><span class="o">=</span><span class="n">atom_map</span><span class="p">,</span>
+        <span class="n">hydrogens</span><span class="o">=</span><span class="n">hydrogens</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">positions</span> <span class="o">=</span> <span class="p">[</span><span class="n">atom_coords</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">source</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="n">xyz</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">xyz</span> <span class="ow">in</span> <span class="n">attachments</span><span class="p">]</span>
 
     <span class="n">conformer</span> <span class="o">=</span> <span class="n">Chem</span><span class="o">.</span><span class="n">Conformer</span><span class="p">(</span><span class="n">mol</span><span class="o">.</span><span class="n">GetNumAtoms</span><span class="p">())</span>
     <span class="n">conformer</span><span class="o">.</span><span class="n">Set3D</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>

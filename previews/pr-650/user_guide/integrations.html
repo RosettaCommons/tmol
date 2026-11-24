@@ -611,9 +611,11 @@ steps:</p>
 <p>A single call handles one sample or a whole same-topology batch. For repeated
 diffusion or search,
 reuse both <code class="docutils literal notranslate"><span class="pre">pose_builder</span></code> and the scoring module for every compatible topology
-and batch shape. The default <code class="docutils literal notranslate"><span class="pre">opt_h=False</span></code> preserves finite supplied protein
-hydrogens and builds missing atoms. Pass <code class="docutils literal notranslate"><span class="pre">opt_h=True</span></code> when polar-hydrogen
-optimization is part of your preparation protocol. For one-off conversion,
+and batch shape. By default (<code class="docutils literal notranslate"><span class="pre">opt_h=True</span></code>) the builder keeps finite supplied
+hydrogens where they are, builds missing atoms, and optimizes the placement of
+the hydrogens it built; ASN/GLN/HIS are never flipped. <code class="docutils literal notranslate"><span class="pre">opt_h=False</span></code> keeps
+input hydrogens at their input positions and builds missing ones from ideal
+geometry. For one-off conversion,
 <code class="docutils literal notranslate"><span class="pre">pose_stack_from_atom37_and_topology(atom37_coords,</span> <span class="pre">atom_array,</span> <span class="pre">context)</span></code> remains
 available.</p>
 <p>A single <code class="docutils literal notranslate"><span class="pre">AtomArray</span></code> may provide topology for a batch of coordinate tensors. An

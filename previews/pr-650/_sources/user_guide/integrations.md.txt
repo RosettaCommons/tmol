@@ -137,9 +137,11 @@ score.backward()
 A single call handles one sample or a whole same-topology batch. For repeated
 diffusion or search,
 reuse both `pose_builder` and the scoring module for every compatible topology
-and batch shape. The default `opt_h=False` preserves finite supplied protein
-hydrogens and builds missing atoms. Pass `opt_h=True` when polar-hydrogen
-optimization is part of your preparation protocol. For one-off conversion,
+and batch shape. By default (`opt_h=True`) the builder keeps finite supplied
+hydrogens where they are, builds missing atoms, and optimizes the placement of
+the hydrogens it built; ASN/GLN/HIS are never flipped. `opt_h=False` keeps
+input hydrogens at their input positions and builds missing ones from ideal
+geometry. For one-off conversion,
 `pose_stack_from_atom37_and_topology(atom37_coords, atom_array, context)` remains
 available.
 
