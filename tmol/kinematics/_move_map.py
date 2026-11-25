@@ -41,8 +41,8 @@ class MoveMap:
 
     move_all_jumps: bool
     move_all_root_jumps: bool
-    move_all_mc: bool
-    move_all_sc: bool
+    move_all_mainchain_torsions: bool
+    move_all_sidechain_torsions: bool
     move_all_named_torsions: bool
     non_ideal: bool
 
@@ -52,19 +52,19 @@ class MoveMap:
     move_jumps_mask: Tensor[torch.bool][:, :]
     move_root_jumps: Tensor[torch.bool][:, :]
     move_root_jumps_mask: Tensor[torch.bool][:, :]
-    move_mcs: Tensor[torch.bool][:, :]
-    move_mcs_mask: Tensor[torch.bool][:, :]
-    move_scs: Tensor[torch.bool][:, :]
-    move_scs_mask: Tensor[torch.bool][:, :]
+    move_mainchain_torsions: Tensor[torch.bool][:, :]
+    move_mainchain_torsions_mask: Tensor[torch.bool][:, :]
+    move_sidechain_torsions: Tensor[torch.bool][:, :]
+    move_sidechain_torsions_mask: Tensor[torch.bool][:, :]
     move_named_torsions: Tensor[torch.bool][:, :]
     move_named_torsions_mask: Tensor[torch.bool][:, :]
 
     # data members on a per-torsion, per-residue basis; singular,
     # representing a single torsion of a particular class for a residue
-    move_mc: Tensor[torch.bool][:, :, :]
-    move_mc_mask: Tensor[torch.bool][:, :, :]
-    move_sc: Tensor[torch.bool][:, :, :]
-    move_sc_mask: Tensor[torch.bool][:, :, :]
+    move_mainchain_torsion: Tensor[torch.bool][:, :, :]
+    move_mainchain_torsion_mask: Tensor[torch.bool][:, :, :]
+    move_sidechain_torsion: Tensor[torch.bool][:, :, :]
+    move_sidechain_torsion_mask: Tensor[torch.bool][:, :, :]
     move_named_torsion: Tensor[torch.bool][:, :, :]
     move_named_torsion_mask: Tensor[torch.bool][:, :, :]
 
@@ -79,14 +79,14 @@ class MoveMap:
     move_atom_dof_mask: Tensor[torch.bool][:, :, :, :]
 
     @classmethod
-    def from_pose_stack(cls, ps: PoseStack) -> "MoveMap":
-        """Construct a move map sized for ``ps`` with all movement disabled."""
+    def from_pose_stack(cls, pose_stack: PoseStack) -> "MoveMap":
+        """Construct a move map sized for ``pose_stack`` with all movement disabled."""
         return cls(
-            ps.n_poses,
-            ps.max_n_blocks,
-            ps.packed_block_types.max_n_torsions,
-            ps.max_n_block_atoms,
-            ps.device,
+            pose_stack.n_poses,
+            pose_stack.max_n_blocks,
+            pose_stack.packed_block_types.max_n_torsions,
+            pose_stack.max_n_block_atoms,
+            pose_stack.device,
         )
 
     def set_move_all_jump_dofs_for_jump(
@@ -119,7 +119,7 @@ class MoveMap:
             pose_selection, root_jump_selection, "root_jumps", value
         )
 
-    def set_move_all_mc_tors_for_blocks(
+    def set_move_all_mainchain_torsions_for_blocks(
         self,
         pose_selection: TensorSelection,
         block_selection: TensorSelection | None = None,
@@ -138,16 +138,20 @@ class MoveMap:
           - pose_selection: Tensor[int][N], block_selection: Tensor[int][N] == different blocks on different poses, selected by index
         """
         self._assert_valid_pose_block_selection(pose_selection, block_selection)
-        self._set_val_and_mask_for_2dim(pose_selection, block_selection, "mcs", value)
+        self._set_val_and_mask_for_2dim(
+            pose_selection, block_selection, "mainchain_torsions", value
+        )
 
-    def set_move_all_sc_tors_for_blocks(
+    def set_move_all_sidechain_torsions_for_blocks(
         self,
         pose_selection: TensorSelection,
         block_selection: TensorSelection | None = None,
         value: bool = True,
     ) -> None:
         self._assert_valid_pose_block_selection(pose_selection, block_selection)
-        self._set_val_and_mask_for_2dim(pose_selection, block_selection, "scs", value)
+        self._set_val_and_mask_for_2dim(
+            pose_selection, block_selection, "sidechain_torsions", value
+        )
 
     def set_move_all_named_torsions_for_blocks(
         self,
@@ -160,7 +164,7 @@ class MoveMap:
             pose_selection, block_selection, "named_torsions", value
         )
 
-    def set_move_mc_tor_for_blocks(
+    def set_move_mainchain_torsion_for_blocks(
         self,
         pose_selection: TensorSelection,
         block_selection: TensorSelection | None = None,
@@ -178,22 +182,22 @@ class MoveMap:
             pose_selection, block_selection, tor_selection, self.max_n_named_torsions
         )
         self._set_val_and_mask_for_3dim(
-            pose_selection, block_selection, tor_selection, "mc", value
+            pose_selection, block_selection, tor_selection, "mainchain_torsion", value
         )
 
-    def set_move_sc_tor_for_blocks(
+    def set_move_sidechain_torsion_for_blocks(
         self,
         pose_selection: TensorSelection,
         block_selection: TensorSelection | None = None,
-        dof_selection: TensorSelection | None = None,
+        tor_selection: TensorSelection | None = None,
         value: bool = True,
     ) -> None:
         """Enable or disable partiular side-chain torsions for a particular set of blocks on particular poses."""
         self._assert_valid_pose_block_dof_selection(
-            pose_selection, block_selection, dof_selection, self.max_n_named_torsions
+            pose_selection, block_selection, tor_selection, self.max_n_named_torsions
         )
         self._set_val_and_mask_for_3dim(
-            pose_selection, block_selection, dof_selection, "sc", value
+            pose_selection, block_selection, tor_selection, "sidechain_torsion", value
         )
 
     def set_move_named_torsion_for_blocks(
@@ -293,7 +297,7 @@ class MoveMap:
 
     @property
     def max_n_blocks(self) -> int:
-        return self.move_mcs.shape[1]
+        return self.move_mainchain_torsions.shape[1]
 
     @property
     def max_n_named_torsions(self) -> int:
@@ -316,8 +320,8 @@ class MoveMap:
 
         self.move_all_jumps = False
         self.move_all_root_jumps = False
-        self.move_all_mc = False
-        self.move_all_sc = False
+        self.move_all_mainchain_torsions = False
+        self.move_all_sidechain_torsions = False
         self.move_all_named_torsions = False
         self.non_ideal = False
 
@@ -333,19 +337,19 @@ class MoveMap:
         self.move_jumps_mask = z_bool_pb()
         self.move_root_jumps = z_bool_pb()
         self.move_root_jumps_mask = z_bool_pb()
-        self.move_mcs = z_bool_pb()
-        self.move_mcs_mask = z_bool_pb()
-        self.move_scs = z_bool_pb()
-        self.move_scs_mask = z_bool_pb()
+        self.move_mainchain_torsions = z_bool_pb()
+        self.move_mainchain_torsions_mask = z_bool_pb()
+        self.move_sidechain_torsions = z_bool_pb()
+        self.move_sidechain_torsions_mask = z_bool_pb()
         self.move_named_torsions = z_bool_pb()
         self.move_named_torsions_mask = z_bool_pb()
 
         # data members on a per-torsion, per-residue basis; singular,
         # representing a single torsion of a particular class for a residue
-        self.move_mc = z_bool_pb((max_n_named_torsions,))
-        self.move_mc_mask = z_bool_pb((max_n_named_torsions,))
-        self.move_sc = z_bool_pb((max_n_named_torsions,))
-        self.move_sc_mask = z_bool_pb((max_n_named_torsions,))
+        self.move_mainchain_torsion = z_bool_pb((max_n_named_torsions,))
+        self.move_mainchain_torsion_mask = z_bool_pb((max_n_named_torsions,))
+        self.move_sidechain_torsion = z_bool_pb((max_n_named_torsions,))
+        self.move_sidechain_torsion_mask = z_bool_pb((max_n_named_torsions,))
         self.move_named_torsion = z_bool_pb((max_n_named_torsions,))
         self.move_named_torsion_mask = z_bool_pb((max_n_named_torsions,))
 
@@ -462,33 +466,33 @@ class MinimizerMap:
             kmd.keep_atom_fixed,
             pbt.n_torsions,
             pbt.gen_seg_scan_path_segs.uaid_for_torsion_by_inconn,
-            pbt.is_torsion_mc,
-            pbt.which_mcsc_torsions,
+            pbt.is_torsion_mainchain,
+            pbt.which_mainchain_or_sidechain_torsions,
             pbt.atom_downstream_of_conn,
             mm.move_all_jumps,
             mm.move_all_root_jumps,
-            mm.move_all_mc,
-            mm.move_all_sc,
+            mm.move_all_mainchain_torsions,
+            mm.move_all_sidechain_torsions,
             mm.move_all_named_torsions,
             mm.non_ideal,
             mm.move_jumps,
             mm.move_jumps_mask,
             mm.move_root_jumps,
             mm.move_root_jumps_mask,
-            mm.move_mcs,
-            mm.move_mcs_mask,
-            mm.move_scs,
-            mm.move_scs_mask,
+            mm.move_mainchain_torsions,
+            mm.move_mainchain_torsions_mask,
+            mm.move_sidechain_torsions,
+            mm.move_sidechain_torsions_mask,
             mm.move_named_torsions,
             mm.move_named_torsions_mask,
             mm.move_jump_dof,
             mm.move_jump_dof_mask,
             mm.move_root_jump_dof,
             mm.move_root_jump_dof_mask,
-            mm.move_mc,
-            mm.move_mc_mask,
-            mm.move_sc,
-            mm.move_sc_mask,
+            mm.move_mainchain_torsion,
+            mm.move_mainchain_torsion_mask,
+            mm.move_sidechain_torsion,
+            mm.move_sidechain_torsion_mask,
             mm.move_named_torsion,
             mm.move_named_torsion_mask,
             mm.move_atom_dof,

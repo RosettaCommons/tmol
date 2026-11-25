@@ -164,7 +164,9 @@ def test_free_oligosaccharide_still_prepares():
 
 
 def assert_canonical_bonds_match_source(atom_array, ordering):
-    form = canonical_form_from_biotite(atom_array, torch.device("cpu"), co=ordering)
+    form = canonical_form_from_biotite(
+        atom_array, torch.device("cpu"), canonical_ordering=ordering
+    )
     residue = struc.get_residue_positions(atom_array, range(len(atom_array)))
 
     def source_atom(index):

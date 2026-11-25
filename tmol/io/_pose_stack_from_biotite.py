@@ -462,7 +462,7 @@ def prepare_atom37_pose_builder(
     canonical_template = canonical_form_from_biotite(
         filtered,
         device,
-        co=context.canonical_ordering,
+        canonical_ordering=context.canonical_ordering,
         missing_density_distance_threshold=0.0,
         _filter_missing_mainchain=False,
     )
@@ -851,7 +851,7 @@ def pose_stack_from_atom_array(  # noqa: C901
     cf = canonical_form_from_biotite(
         biotite_structure,
         torch_device,
-        co=context.canonical_ordering,
+        canonical_ordering=context.canonical_ordering,
         missing_density_distance_threshold=missing_density_distance_threshold,
         atom37_coords=atom37_coords,
         _cut_covalent_partners=context.cut_covalent_partners,
@@ -966,7 +966,9 @@ def _pose_stack_from_canonical_form_and_context(
         for sampler in samplers:
             if sampler.defines_rotamers_for_rt(rt):
                 _construct_single_residue_kinforest(rt)
-                roots = [rt.atom_to_idx[a] for a in sampler.first_sc_atoms_for_rt(rt)]
+                roots = [
+                    rt.atom_to_idx[a] for a in sampler.first_sidechain_atoms_for_rt(rt)
+                ]
                 placed |= _bfs_sidechain_atoms(rt, roots).astype(bool)
         return placed
 
@@ -1314,7 +1316,7 @@ def _assert_no_nan_coords(
 @_validate_args
 def atom_array_from_pose_stack(
     pose_stack: PoseStack,
-    co: CanonicalOrdering | None = None,
+    canonical_ordering: CanonicalOrdering | None = None,
     merge_fragments: bool = True,
     include_virtual_atoms: bool = False,
 ) -> biotite.structure.AtomArray | biotite.structure.AtomArrayStack:
@@ -1322,7 +1324,7 @@ def atom_array_from_pose_stack(
 
     Args:
         pose_stack: Pose stack to convert.
-        co: Canonical ordering used for conversion. Provide the ordering that
+        canonical_ordering: Canonical ordering used for conversion. Provide the ordering that
             was used when ligands or custom residue types are present. By
             default it is built from the pose's own chemical database when
             the pose holds types outside the standard ordering.
@@ -1339,11 +1341,11 @@ def atom_array_from_pose_stack(
         bond orders within residues, and chemical bonds between them, metal
         coordination typed COORDINATION.
     """
-    if co is None:
-        co = _canonical_ordering_for_pose_stack(pose_stack)
-    cf = _canonical_form_from_pose_stack(co, pose_stack)
+    if canonical_ordering is None:
+        canonical_ordering = _canonical_ordering_for_pose_stack(pose_stack)
+    cf = _canonical_form_from_pose_stack(canonical_ordering, pose_stack)
     structure, block_for_atom = _biotite_from_canonical_form_impl(
-        cf, co, include_virtual_atoms
+        cf, canonical_ordering, include_virtual_atoms
     )
     structure.bonds = _bonds_from_pose_stack(pose_stack, structure, block_for_atom)
     if "is_polymer" not in structure.get_annotation_categories():
@@ -2704,7 +2706,7 @@ def _detected_metal_bonds(biotite_structure, co, chemdb):
     cf = canonical_form_from_biotite(
         biotite_structure if known.all() else template[known],
         torch.device("cpu"),
-        co=co,
+        canonical_ordering=co,
     )
     if not bool((cf.res_types >= 0).all()):
         return None
@@ -2771,7 +2773,7 @@ def _detected_metal_bonds(biotite_structure, co, chemdb):
 def canonical_form_from_biotite(
     biotite_structure: biotite.structure.AtomArray | biotite.structure.AtomArrayStack,
     torch_device: torch.device,
-    co: CanonicalOrdering | None = None,
+    canonical_ordering: CanonicalOrdering | None = None,
     missing_density_distance_threshold: float = 2.4,
     atom37_coords: torch.Tensor | None = None,
     _filter_missing_mainchain: bool = True,
@@ -2790,7 +2792,7 @@ def canonical_form_from_biotite(
             and optionally B-factors and occupancy values.
         torch_device: PyTorch device (e.g., torch.device('cuda') or torch.device('cpu'))
             where the resulting tensors should be allocated.
-        co: A CanonicalForm in case you want to use a non-default database (and thus may need
+        canonical_ordering: A CanonicalForm in case you want to use a non-default database (and thus may need
             a different mapping)
         missing_density_distance_threshold: Maximum distance in angstroms for
             treating a polymer gap as missing density rather than a chain break.
@@ -2819,19 +2821,19 @@ def canonical_form_from_biotite(
 
     """
     torch_device = resolve_device(torch_device)
-    if co is None:
-        co = _canonical_ordering_for_biotite()
+    if canonical_ordering is None:
+        canonical_ordering = _canonical_ordering_for_biotite()
 
     biotite_structure = _normalize_input_identifiers(
-        biotite_structure, co.name3_aliases
+        biotite_structure, canonical_ordering.name3_aliases
     )
     biotite_structure = _with_input_chemistry_normalized(
-        biotite_structure, _metal_atom_names(co=co)
+        biotite_structure, _metal_atom_names(co=canonical_ordering)
     )
     biotite_structure = _with_metal_coordination_typed(biotite_structure)
     biotite_structure, not_connected = _filter_supported_atoms_and_connectivity(
         biotite_structure,
-        co,
+        canonical_ordering,
         filter_missing_mainchain=(_filter_missing_mainchain and atom37_coords is None),
         cut_partners=_cut_covalent_partners,
     )
@@ -2847,11 +2849,13 @@ def canonical_form_from_biotite(
     biotite_name_for_atom = biotite_structure.atom_name
     biotite_res_name_for_atom = biotite_structure.res_name
 
-    restype_to_index = {name: i for i, name in enumerate(co.restype_io_equiv_classes)}
+    restype_to_index = {
+        name: i for i, name in enumerate(canonical_ordering.restype_io_equiv_classes)
+    }
     tmol_restypes = [restype_to_index[i_3lc] for i_3lc in biotite_residues]
 
     valid_atom_mask, valid_atom_inds, valid_res_inds = _map_atoms_to_canonical(
-        co,
+        canonical_ordering,
         atom_res_inds,
         biotite_res_name_for_atom,
         biotite_name_for_atom,
@@ -2867,7 +2871,9 @@ def canonical_form_from_biotite(
             >= NEUTRAL_TERMINUS_VAR_BASE
         )
         for atom in numpy.flatnonzero(neutral & (biotite_name_for_atom == "H")):
-            mapping = co.restypes_atom_index_mapping[biotite_res_name_for_atom[atom]]
+            mapping = canonical_ordering.restypes_atom_index_mapping[
+                biotite_res_name_for_atom[atom]
+            ]
             residue = atom_res_inds == atom_res_inds[atom]
             if "H1" in mapping and not numpy.any(
                 residue & (biotite_name_for_atom == "H1")
@@ -2875,7 +2881,7 @@ def canonical_form_from_biotite(
                 valid_atom_inds[valid_atom_mask.nonzero()[0] == atom] = mapping["H1"]
     covalent_bonds_np, disulfides_np, inferred_bonds = _covalent_bonds_from_biotite(
         _template_array(biotite_structure),
-        co,
+        canonical_ordering,
         atom_res_inds,
         tmol_restypes,
         valid_atom_mask,
@@ -2891,7 +2897,7 @@ def canonical_form_from_biotite(
         tmol_coords, n_poses = _populate_canonical_coords(
             biotite_structure,
             torch_device,
-            co,
+            canonical_ordering,
             biotite_residues,
             valid_atom_mask,
             valid_res_inds,
@@ -2902,20 +2908,21 @@ def canonical_form_from_biotite(
             atom37_coords,
             biotite_structure,
             torch_device,
-            co,
+            canonical_ordering,
             biotite_residues,
             valid_atom_mask,
             valid_res_inds,
             valid_atom_inds,
         )
         _validate_effective_mainchain_coords(
-            tmol_coords, _required_mainchain_entries(biotite_structure, co)
+            tmol_coords,
+            _required_mainchain_entries(biotite_structure, canonical_ordering),
         )
     biotite_b_factors, biotite_occupancy = _populate_optional_atom_metadata(
         biotite_structure,
         n_poses,
         len(biotite_residues),
-        co.max_n_canonical_atoms,
+        canonical_ordering.max_n_canonical_atoms,
         valid_res_inds,
         valid_atom_inds,
         valid_atom_mask,
@@ -2981,11 +2988,15 @@ def canonical_form_from_biotite(
             tmol_coords,
             numpy.asarray(tmol_restypes),
             biotite_chain_id_for_res,
-            co,
+            canonical_ordering,
             missing_density_distance_threshold,
         )
     _orient_polymer_gap_flags(
-        not_connected, biotite_chain_id_for_res, tmol_restypes, covalent_bonds_np, co
+        not_connected,
+        biotite_chain_id_for_res,
+        tmol_restypes,
+        covalent_bonds_np,
+        canonical_ordering,
     )
     res_not_connected = (
         torch.tensor(not_connected, dtype=torch.bool, device=torch_device)

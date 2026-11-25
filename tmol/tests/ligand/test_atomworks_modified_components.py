@@ -126,7 +126,7 @@ def test_missing_ligand_carbon_reconstructs_and_backpropagates(torch_device):
     # The tensor constructor must route gradients through the carbon and then
     # its dependent hydrogens, including passes that initially leave them NaN.
     canonical = canonical_form_from_biotite(
-        ligand, torch_device, co=context.canonical_ordering
+        ligand, torch_device, canonical_ordering=context.canonical_ordering
     )
     args = list(canonical)
     source = canonical.coords.clone().requires_grad_()

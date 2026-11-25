@@ -465,7 +465,7 @@ def test_terminal_nucleoside_keeps_its_backbone_and_minimizes(
         array.chain_id = np.array([name.split("_")[0] for name in array.chain_iid])
         original_chains = array.chain_id.copy()
         canonical = canonical_form_from_biotite(
-            array, torch_device, co=context.canonical_ordering
+            array, torch_device, canonical_ordering=context.canonical_ordering
         )
         assert torch.unique(canonical.chain_id).numel() == 2
         direct = pose_stack_from_atom_array(

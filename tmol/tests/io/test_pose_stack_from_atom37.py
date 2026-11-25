@@ -86,7 +86,7 @@ def test_tensor_path_matches_the_atom_array_path(source, torch_device):
     canonical_form = canonical_form_from_biotite(
         structure,
         torch_device,
-        co=canonical_ordering,
+        canonical_ordering=canonical_ordering,
         missing_density_distance_threshold=0.0,
     )
     reference = _pose_stack_from_canonical_form_and_context(
@@ -199,7 +199,7 @@ def test_tensor_path_rejects_more_slots_than_the_map_covers(torch_device):
     context = build_context_from_atom_array(structure, torch_device)
     canonical_ordering = context.canonical_ordering
     canonical_form = canonical_form_from_biotite(
-        structure, torch_device, co=canonical_ordering
+        structure, torch_device, canonical_ordering=canonical_ordering
     )
 
     slot_map = atom37_slot_map_for_ordering(

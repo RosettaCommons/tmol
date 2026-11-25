@@ -166,11 +166,11 @@ class ConjugatedChiSampler(ChiSampler):
         return "ConjugatedChiSampler"
 
     @_validate_args
-    def defines_rotamers_for_rt(self, rt: RefinedResidueType):
+    def defines_rotamers_for_rt(self, residue_type: RefinedResidueType):
         # a type-level necessary condition; which blocks are actually sampled is
         #    decided per pose, since being bonded to a sidechain is not a
         #    property of the residue type
-        return _has_conjugation(rt)
+        return _has_conjugation(residue_type)
 
     def defines_rotamers_for_bts(
         self, pbt: PackedBlockTypes, bt_inds: Tensor[torch.int64]
@@ -183,8 +183,12 @@ class ConjugatedChiSampler(ChiSampler):
         return builds[bt_inds]
 
     @_validate_args
-    def first_sc_atoms_for_rt(self, rt: RefinedResidueType) -> Tuple[str, ...]:
-        return _sc_roots_for_chis(rt, [cs.chi_dihedral for cs in _heavy_chi(rt)])
+    def first_sidechain_atoms_for_rt(
+        self, residue_type: RefinedResidueType
+    ) -> Tuple[str, ...]:
+        return _sc_roots_for_chis(
+            residue_type, [cs.chi_dihedral for cs in _heavy_chi(residue_type)]
+        )
 
     def group_conformers(
         self, pose_stack: PoseStack, anchor_chi=None, budget=None, *, plans=None

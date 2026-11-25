@@ -121,26 +121,29 @@ class NaChiRotamerSampler(ChiSampler):
             tuple(sorted(self.element_for_atom_type.items())),
         )
 
-    def annotate_residue_type(self, rt: RefinedResidueType):
+    def annotate_residue_type(self, residue_type: RefinedResidueType):
         key = self._annotation_key()
-        if getattr(rt, "_na_chi_sampler_key", None) == key and hasattr(
-            rt, "na_chi_sampler_params"
+        if getattr(residue_type, "_na_chi_sampler_key", None) == key and hasattr(
+            residue_type, "na_chi_sampler_params"
         ):
-            return rt.na_chi_sampler_params
-        p = _block_type_params(rt, self.element_for_atom_type)
-        chi1 = rt.torsion_to_uaids.get("chi1")
+            return residue_type.na_chi_sampler_params
+        p = _block_type_params(residue_type, self.element_for_atom_type)
+        chi1 = residue_type.torsion_to_uaids.get("chi1")
         # the third atom of a torsion is the one whose dof carries it
         p["chi1_atom"] = -1 if chi1 is None else chi1[2][0]
         # one residue at a time, so the budget is per residue: no grouping, but
         #    the same limits the rest of the packer applies
         # Protein/ligand chi must not enlarge this sampler's Cartesian product
         # or padded tensors. Other samplers own those residues.
-        sampled = list(rt.chi_samples) if p["base"] >= 0 else []
+        sampled = list(residue_type.chi_samples) if p["base"] >= 0 else []
         if sampled:
-            _construct_single_residue_kinforest(rt)
+            _construct_single_residue_kinforest(residue_type)
             depths = _chi_depths(
-                rt.residue_kinforest_data,
-                [rt.torsion_to_uaids[cs.chi_dihedral][2][0] for cs in sampled],
+                residue_type.residue_kinforest_data,
+                [
+                    residue_type.torsion_to_uaids[cs.chi_dihedral][2][0]
+                    for cs in sampled
+                ],
             )
             sampled = list(
                 _apply_chi_sample_budget(
@@ -153,13 +156,13 @@ class NaChiRotamerSampler(ChiSampler):
         p["proton_chi"] = [
             (
                 int(samp.chi_dihedral[3:]) - 1,
-                rt.torsion_to_uaids[samp.chi_dihedral][2][0],
+                residue_type.torsion_to_uaids[samp.chi_dihedral][2][0],
                 _expanded_samples(samp),
             )
             for samp in sampled
         ]
-        setattr(rt, "na_chi_sampler_params", p)
-        setattr(rt, "_na_chi_sampler_key", key)
+        setattr(residue_type, "na_chi_sampler_params", p)
+        setattr(residue_type, "_na_chi_sampler_key", key)
         return p
 
     def annotate_packed_block_types(self, packed_block_types: PackedBlockTypes):
@@ -201,17 +204,20 @@ class NaChiRotamerSampler(ChiSampler):
         setattr(packed_block_types, "_na_chi_sampler_key", key)
         return cache
 
-    def defines_rotamers_for_rt(self, rt: RefinedResidueType):
-        return self.annotate_residue_type(rt)["base"] >= 0
+    def defines_rotamers_for_rt(self, residue_type: RefinedResidueType):
+        return self.annotate_residue_type(residue_type)["base"] >= 0
 
     def defines_rotamers_for_bts(
         self, pbt: PackedBlockTypes, bt_inds: Tensor[torch.int64]
     ) -> Tensor[torch.bool]:
         return self.annotate_packed_block_types(pbt)["builds_bt"][bt_inds]
 
-    def first_sc_atoms_for_rt(self, rt: RefinedResidueType) -> Tuple[str, ...]:
+    def first_sidechain_atoms_for_rt(
+        self, residue_type: RefinedResidueType
+    ) -> Tuple[str, ...]:
         return _sc_roots_for_chis(
-            rt, ("chi1",) + tuple(cs.chi_dihedral for cs in rt.chi_samples)
+            residue_type,
+            ("chi1",) + tuple(cs.chi_dihedral for cs in residue_type.chi_samples),
         )
 
     def _pucker_for_blocks(

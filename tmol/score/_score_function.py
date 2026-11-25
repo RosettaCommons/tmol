@@ -539,49 +539,49 @@ class ScoreFunction:
 
         self.term_options = {}
 
-    def set_weight(self, st: ScoreType, weight: float) -> None:
+    def set_weight(self, score_type: ScoreType, weight: float) -> None:
         """Set the weight for one score type.
 
-        The energy term that implements ``st`` is created lazily when the
+        The energy term that implements ``score_type`` is created lazily when the
         requested weight is nonzero.
 
         Args:
-            st: Score type to update.
+            score_type: Score type to update.
             weight: New scalar weight.
         """
         # Do not construct an energy term merely to assign it a zero weight.
         # FastRelax updates its (usually disabled) constraint weight at every
         # schedule step; constructing that term adds a device-to-host sync to
         # every subsequent score evaluation even though it contributes zero.
-        if weight == 0 and not self.score_type_covered_by_contained_term(st):
-            self._weights[st.value] = weight
+        if weight == 0 and not self.score_type_covered_by_contained_term(score_type):
+            self._weights[score_type.value] = weight
             self._weights_tensor_out_of_date = True
             return
-        if not self.score_type_covered_by_contained_term(st):
-            self.retrieve_term_for_score_type(st)
-        if weight == 0 and self.term_for_st_has_no_other_non_zero_weights(st):
-            self.remove_term_for_score_type(st)
-        self._weights[st.value] = weight
+        if not self.score_type_covered_by_contained_term(score_type):
+            self.retrieve_term_for_score_type(score_type)
+        if weight == 0 and self.term_for_st_has_no_other_non_zero_weights(score_type):
+            self.remove_term_for_score_type(score_type)
+        self._weights[score_type.value] = weight
         self._weights_tensor_out_of_date = True
 
-    def get_weight(self, st: ScoreType) -> torch.Tensor:
-        """Return the scalar weight for ``st`` on the score-function device."""
-        return self._weights[st.value]
+    def get_weight(self, score_type: ScoreType) -> torch.Tensor:
+        """Return the scalar weight for ``score_type`` on the score-function device."""
+        return self._weights[score_type.value]
 
-    def score_type_covered_by_contained_term(self, st: ScoreType) -> bool:
-        """Return whether a constructed energy term implements ``st``."""
+    def score_type_covered_by_contained_term(self, score_type: ScoreType) -> bool:
+        """Return whether a constructed energy term implements ``score_type``."""
         # `_all_terms` is a lazily refreshed sorted cache; consulting it while
         # weights are being populated can miss a term already present in the
         # unordered source lists and construct duplicate term objects.
-        return self._term_for_st[st.value] is not None
+        return self._term_for_st[score_type.value] is not None
 
-    def retrieve_term_for_score_type(self, st: ScoreType):
+    def retrieve_term_for_score_type(self, score_type: ScoreType):
         term = ScoreTermFactory.create_term_for_score_type(
-            st, self._param_db, self._device
+            score_type, self._param_db, self._device
         )
         # sanity check: if the ScoreTermFactory returns the wrong term,
         # we want to know
-        assert st in term.score_types()
+        assert score_type in term.score_types()
         for tst in term.score_types():
             self._term_for_st[tst.value] = term
         self._all_terms_unordered.append(term)
@@ -598,18 +598,18 @@ class ScoreFunction:
             self._multi_body_terms_unordered.append(term)
             self._multi_body_terms_out_of_date = True
 
-    def term_for_st_has_no_other_non_zero_weights(self, st: ScoreType):
-        term = self._term_for_st[st.value]
+    def term_for_st_has_no_other_non_zero_weights(self, score_type: ScoreType):
+        term = self._term_for_st[score_type.value]
         for st2 in term.score_types():
-            if st2 == st:
+            if st2 == score_type:
                 continue
             if self._weights[st2.value] != 0:
                 return False
         return True
 
-    def remove_term_for_score_type(self, st: ScoreType):
-        """Remove the term containing ``st`` once all its weights are zero."""
-        term = self._term_for_st[st.value]
+    def remove_term_for_score_type(self, score_type: ScoreType):
+        """Remove the term containing ``score_type`` once all its weights are zero."""
+        term = self._term_for_st[score_type.value]
         if term is None:
             return
 

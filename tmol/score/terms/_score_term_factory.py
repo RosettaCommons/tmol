@@ -25,7 +25,7 @@ class ScoreTermFactory:
 
     @classmethod
     def create_term_for_score_type(
-        cls, st: ScoreType, param_db: ParameterDatabase, device: torch.device
+        cls, score_type: ScoreType, param_db: ParameterDatabase, device: torch.device
     ):
-        creator = cls.creator_map[st]
+        creator = cls.creator_map[score_type]
         return creator.create_term(param_db, device)

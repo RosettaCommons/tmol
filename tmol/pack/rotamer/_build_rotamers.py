@@ -7,7 +7,7 @@ from tmol.types._array import NDArray
 from tmol.types._torch import Tensor
 from tmol.types._functional import _validate_args
 from tmol.utility.tensor._common_operations import _exclusive_cumsum1d
-from tmol.database.chemical import ChemicalDatabase
+from tmol.database._patched_chemdb import PatchedChemicalDatabase
 from tmol.kinematics._datatypes import KinForest
 from tmol.chemical import RefinedResidueType
 from tmol.pose._packed_block_types import PackedBlockTypes
@@ -238,7 +238,7 @@ def _exc_cumsum_from_inc_cumsum(cumsum):
 def _annotate_restype(
     restype: RefinedResidueType,
     samplers: tuple[ChiSampler, ...],
-    chem_db: ChemicalDatabase,
+    chem_db: PatchedChemicalDatabase,
 ) -> None:
     _construct_single_residue_kinforest(restype)
     _annotate_residue_type_with_sampler_fingerprints(restype, samplers, chem_db)
@@ -250,7 +250,7 @@ def _annotate_packed_block_types(pbt: PackedBlockTypes) -> None:
 
 
 def _annotate_everything(
-    chem_db: ChemicalDatabase,
+    chem_db: PatchedChemicalDatabase,
     samplers: tuple[ChiSampler, ...],
     pbt: PackedBlockTypes,
 ) -> None:
@@ -790,12 +790,14 @@ def _correlated_groups_for_samples(task, samples):
 
 
 def build_rotamers(
-    poses: PoseStack, task: SetPackerTask, chem_db: ChemicalDatabase
+    pose_stack: PoseStack,
+    task: SetPackerTask,
+    chem_db: PatchedChemicalDatabase,
 ) -> tuple[PoseStack, RotamerSet]:
     """Build coordinates and indexing for every task-allowed conformer.
 
     Args:
-        poses: Input poses supplying backbone geometry and current conformers.
+        pose_stack: Input poses supplying backbone geometry and current conformers.
         task: Finalized packing choices and conformer samplers.
         chem_db: Chemical definitions used to annotate residue types.
 
@@ -827,7 +829,7 @@ def build_rotamers(
 
     # Step 1
     samplers = tuple(task.conformer_samplers)
-    pbt = poses.packed_block_types
+    pbt = pose_stack.packed_block_types
 
     # Step 2
     _annotate_everything(chem_db, samplers, pbt)
@@ -844,7 +846,7 @@ def build_rotamers(
     conformer_samples = [None] * len(samplers)
     for i, sampler in enumerate(samplers):
         if i not in deferred:
-            conformer_samples[i] = sampler.create_samples_for_poses(poses, task)
+            conformer_samples[i] = sampler.create_samples_for_poses(pose_stack, task)
     if deferred:
         built = None
         for i, sample in enumerate(conformer_samples):
@@ -854,7 +856,7 @@ def build_rotamers(
             built = counts.clone() if built is None else built + counts
         for i in deferred:
             conformer_samples[i] = samplers[i].create_samples_for_poses(
-                poses, task, built_rotamer_counts=built
+                pose_stack, task, built_rotamer_counts=built
             )
 
     correlated_groups = _correlated_groups_for_samples(task, conformer_samples)
@@ -922,7 +924,7 @@ def build_rotamers(
     )
 
     # Step 8 & 9
-    orig_kinforest, orig_dofs_kto = _measure_pose_dofs(poses)
+    orig_kinforest, orig_dofs_kto = _measure_pose_dofs(pose_stack)
 
     # Step 9a
     conf_dofs_kto = torch.zeros(
@@ -939,7 +941,7 @@ def build_rotamers(
 
     for i, sampler in enumerate(samplers):
         sampler.fill_dofs_for_samples(
-            poses,
+            pose_stack,
             task,
             orig_kinforest,
             orig_dofs_kto,
@@ -1001,12 +1003,12 @@ def build_rotamers(
         atom -= (torch.cumsum(sizes, 0) - sizes)[owner]
         rot = copied[owner]
         pose = pose_for_rot[rot]
-        source = poses.block_coord_offset[pose, block_ind_for_rot[rot]] + atom
+        source = pose_stack.block_coord_offset[pose, block_ind_for_rot[rot]] + atom
         destination = n_atoms_offset_for_conformer_torch[rot] + atom
-        rotamer_coords[destination] = poses.coords[pose, source]
+        rotamer_coords[destination] = pose_stack.coords[pose, source]
 
     return (
-        poses,
+        pose_stack,
         RotamerSet(
             max_n_rots_per_pose=torch.max(n_rots_for_pose).item(),
             n_rots_for_pose=n_rots_for_pose,

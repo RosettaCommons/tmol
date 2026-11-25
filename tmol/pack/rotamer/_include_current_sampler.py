@@ -19,13 +19,13 @@ class IncludeCurrentSampler(ConformerSampler):
     def sampler_name(cls):
         return "IncludeCurrentSampler"
 
-    def annotate_residue_type(self, rt: RefinedResidueType):
+    def annotate_residue_type(self, residue_type: RefinedResidueType):
         pass
 
     def annotate_packed_block_types(self, packed_block_types: PackedBlockTypes):
         pass
 
-    def defines_rotamers_for_rt(self, rt: RefinedResidueType):
+    def defines_rotamers_for_rt(self, residue_type: RefinedResidueType):
         return True
 
     def defines_rotamers_for_bts(
@@ -33,8 +33,10 @@ class IncludeCurrentSampler(ConformerSampler):
     ) -> Tensor[torch.bool]:
         return torch.ones_like(bt_inds, dtype=torch.bool)
 
-    def first_sc_atoms_for_rt(self, rt: RefinedResidueType) -> Tuple[str, ...]:
-        return (rt.default_jump_connection_atom,)
+    def first_sidechain_atoms_for_rt(
+        self, residue_type: RefinedResidueType
+    ) -> Tuple[str, ...]:
+        return (residue_type.default_jump_connection_atom,)
 
     def create_samples_for_poses(
         self,

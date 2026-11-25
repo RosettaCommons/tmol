@@ -37,7 +37,7 @@ ATOMWORKS_ATOM37_NAMES = {
 def pose_stack_from_canonical_aa_atom37(
     coords: torch.Tensor,
     residue_type: torch.Tensor,
-    chain_iid: torch.Tensor,
+    chain_id: torch.Tensor,
     no_optH: bool = False,
     backprop_compatible_rebuild: bool = True,
     **kwargs,
@@ -65,8 +65,9 @@ def pose_stack_from_canonical_aa_atom37(
     residue_type : Tensor[int64], shape [batch, n_res]
         Atomworks token indices in 1..20 (standard protein only), or 0 for
         padding.
-    chain_iid : Tensor[int64], shape [batch, n_res]
-        Chain identifiers (integer IDs, not string labels).
+    chain_id : Tensor[int64], shape [batch, n_res]
+        Chain identifiers (integer IDs, not string labels); atomworks calls
+        this tensor ``chain_iid``.
     no_optH : bool
         True keeps input hydrogens at their input positions and builds missing
         ones from ideal geometry. By default (False) the missing ones are then
@@ -96,7 +97,7 @@ def pose_stack_from_canonical_aa_atom37(
         _pose_stack_from_canonical_form_and_context,
     )
 
-    cf = _canonical_form_from_atomworks(coords, residue_type, chain_iid)
+    cf = _canonical_form_from_atomworks(coords, residue_type, chain_id)
 
     # the same construction path as the other atom37 entry points, with the
     # context of the atomworks protein subset
@@ -200,7 +201,7 @@ def pose_stack_from_atom37_and_topology(
 def _canonical_form_from_atomworks(
     coords: torch.Tensor,
     residue_type: torch.Tensor,
-    chain_iid: torch.Tensor,
+    chain_id: torch.Tensor,
 ) -> CanonicalForm:
     """Build a CanonicalForm from atomworks UNIFIED_ATOM37_ENCODING tensors.
 
@@ -211,7 +212,7 @@ def _canonical_form_from_atomworks(
     residue_type : Tensor[int64], shape [batch, n_res]
         Atomworks token indices in 1..20 (standard protein only), or 0 for
         padding, as atomworks_from_pose_stack writes it.
-    chain_iid : Tensor[int64], shape [batch, n_res]
+    chain_id : Tensor[int64], shape [batch, n_res]
         Chain identifiers.
 
     Returns
@@ -234,18 +235,18 @@ def _canonical_form_from_atomworks(
 
     assert len(coords.shape) == 4, "coords must be 4D [batch, n_res, 37, 3]"
     assert len(residue_type.shape) == 2, "residue_type must be 2D [batch, n_res]"
-    assert len(chain_iid.shape) == 2, "chain_iid must be 2D [batch, n_res]"
+    assert len(chain_id.shape) == 2, "chain_id must be 2D [batch, n_res]"
 
     device = coords.device
     assert device == residue_type.device
-    assert device == chain_iid.device
+    assert device == chain_id.device
 
     # Only the residue-index space is atomworks-specific. Once the tokens are
     # expressed as tmol residue types, the coordinate scatter is the shared one.
     return _canonical_form_from_atom37(
         coords,
         _aw_2_tmol_restype_map(device)[residue_type],
-        chain_iid,
+        chain_id,
         _canonical_ordering_for_atomworks(),
     )
 

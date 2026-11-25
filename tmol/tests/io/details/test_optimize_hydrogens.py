@@ -210,7 +210,7 @@ def test_build_flips_and_maps_atoms(biotite_1ubq, torch_device):
     structure = _his68_as_his_d(biotite_1ubq)
     context = build_context_from_atom_array(structure, torch_device)
     cf = canonical_form_from_biotite(
-        structure, torch_device, co=context.canonical_ordering
+        structure, torch_device, canonical_ordering=context.canonical_ordering
     )
 
     def build(no_optH):
@@ -266,7 +266,7 @@ def test_build_optimizes_hydrogens_differentiably(biotite_1ubq, torch_device):
 
     context = build_context_from_atom_array(biotite_1ubq, torch_device)
     cf = canonical_form_from_biotite(
-        biotite_1ubq, torch_device, co=context.canonical_ordering
+        biotite_1ubq, torch_device, canonical_ordering=context.canonical_ordering
     )
     coords = cf.coords.clone().requires_grad_(True)
     cf.coords = coords
