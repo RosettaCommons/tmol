@@ -30,8 +30,8 @@ merges require explicit user authority.
 ## References and output
 
 References: `docs/user_guide/development.md`,
-`docs/user_guide/benchmarking.md`, `docs/contributor_guide.md`, and CI workflow
-files.
+`docs/user_guide/benchmarking.md`, `docs/contributor_guide.md`,
+`docs/style_guide.md`, and CI workflow files.
 
 Output: a focused source/test/docs diff, reproducible validation commands,
 matched benchmark evidence when relevant, and a clean branch suitable for
@@ -39,4 +39,4 @@ review. External mutations remain subject to explicit authorization.
 
 ## Skill version
 
-0.1.0 (2026-09)
+0.2.0 (2026-11)

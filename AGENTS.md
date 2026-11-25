@@ -45,6 +45,8 @@ scores = scorer(pose.coords)  # One weighted total per pose, in TMol score units
 
 Read [the development skill](skills/tmol-develop/SKILL.md) before implementation
 work; it covers native builds, focused CPU/CUDA tests, and matched benchmarks.
+Follow the [style guide](docs/style_guide.md) for public names and signatures;
+`python scripts/check_api_style.py` checks it.
 Python code lives under `tmol/`, native kernels alongside their modules, and
 tests under `tmol/tests/`. Keep public APIs and scientific behavior intact.
 Use a source checkout with development dependencies and any required test

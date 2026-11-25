@@ -191,7 +191,9 @@ complete wheel matrix and CPU/GPU installation checks.
 ## Code style
 
 TMol uses Black for Python formatting, Flake8 for linting, and clang-format for
-C++/CUDA formatting.
+C++/CUDA formatting. Public API names follow the
+{doc}`style guide </style_guide>`, which pre-commit checks with
+`scripts/check_api_style.py`.
 
 ```bash
 black --check .

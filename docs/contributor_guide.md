@@ -76,6 +76,11 @@ For tutorials, keep the explanation next to the operation it explains:
   separate score summaries from geometry checks. State what the reader should
   compare before showing the table or plot.
 
+## Code style
+
+Follow the {doc}`style guide </style_guide>`. Pre-commit enforces its
+formatting and API naming rules.
+
 ## Pull requests
 
 Before opening a PR:
@@ -109,5 +114,6 @@ and its eval case together. See
 :hidden:
 
 Development <user_guide/development>
+Style guide <style_guide>
 Agent skills <agent_skills>
 ```
