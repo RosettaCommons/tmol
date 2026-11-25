@@ -457,31 +457,17 @@
   <section id="style-guide">
 <h1>Style guide<a class="headerlink" href="#style-guide" title="Link to this heading">#</a></h1>
 <p>Version: 2</p>
-<p>These rules apply to Python code under <code class="docutils literal notranslate"><span class="pre">tmol/</span></code>. Each rule has an ID. Rules
-marked <strong>Checked</strong> are enforced by pre-commit, so a violation fails the commit;
-rules marked <strong>Review</strong> are checked by reviewers; <a class="reference internal" href="#provisional-rules"><span class="std std-ref">provisional
-rules</span></a> are proposals that are reported only on request.</p>
+<p>These rules apply to code under <code class="docutils literal notranslate"><span class="pre">tmol/</span></code>. The naming and review rules are enforced on the
+<a class="reference internal" href="#what-counts-as-public"><span class="std std-ref">public API</span></a> only, but should serve as guidelines for the entire codebase. The formatting rules (<code class="docutils literal notranslate"><span class="pre">black</span></code>, etc) cover all code. Rules marked <strong>Checked</strong> are enforced by
+pre-commit, so a violation fails the commit; rules marked <strong>Review</strong> are
+checked by reviewers; <a class="reference internal" href="#provisional-rules"><span class="std std-ref">provisional rules</span></a> are proposals
+that are reported only on request.</p>
 <p>Run the checks before committing:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files
 python<span class="w"> </span>scripts/check_api_style.py<span class="w">   </span><span class="c1"># the API naming rules alone, in under a second</span>
 python<span class="w"> </span>scripts/check_api_style.py<span class="w"> </span>--extended<span class="w">   </span><span class="c1"># also report provisional rules</span>
 </pre></div>
 </div>
-<section id="checklist">
-<h2>Checklist<a class="headerlink" href="#checklist" title="Link to this heading">#</a></h2>
-<p>When you add or change a public function, method, class or field:</p>
-<ol class="arabic simple">
-<li><p>Spell names out. No public name of one or two characters (API001).</p></li>
-<li><p>Write <code class="docutils literal notranslate"><span class="pre">mainchain</span></code> and <code class="docutils literal notranslate"><span class="pre">sidechain</span></code>, never <code class="docutils literal notranslate"><span class="pre">mc</span></code> and <code class="docutils literal notranslate"><span class="pre">sc</span></code> (API002).</p></li>
-<li><p>Use the standard names in <a class="reference internal" href="#vocabulary"><span class="std std-ref">Vocabulary</span></a> for standard objects
-(API002, API004).</p></li>
-<li><p>Put <code class="docutils literal notranslate"><span class="pre">param_db</span></code> before <code class="docutils literal notranslate"><span class="pre">device</span></code> when a signature takes both (API003).</p></li>
-<li><p>Name converters <code class="docutils literal notranslate"><span class="pre">&lt;output&gt;_from_&lt;input&gt;</span></code> (REV1).</p></li>
-<li><p>Give public callables a Google- or NumPy-style docstring (REV2).</p></li>
-<li><p>When renaming, update every caller, doc, notebook and skill in the same
-change (REV3).</p></li>
-</ol>
-</section>
 <section id="what-counts-as-public">
 <h2>What counts as public<a class="headerlink" href="#what-counts-as-public" title="Link to this heading">#</a></h2>
 <p>A name is public when it is listed in an <code class="docutils literal notranslate"><span class="pre">__all__</span></code> of a <code class="docutils literal notranslate"><span class="pre">tmol</span></code> package, along
@@ -773,6 +759,12 @@ uses <code class="docutils literal notranslate"><span class="pre">opt_h</span></
 </section>
 <section id="conventions-checked-in-review">
 <h2>Conventions checked in review<a class="headerlink" href="#conventions-checked-in-review" title="Link to this heading">#</a></h2>
+<p>These conventions are checked by people in code review, not by
+<code class="docutils literal notranslate"><span class="pre">scripts/check_api_style.py</span></code>. Each depends on intent that can’t be read from
+the code, such as whether a function is a converter, whether a docstring
+explains anything, or whether an object is meant to be public, so an automated
+check would either miss violations or flag correct code. Apply them to the
+code you add or change.</p>
 <div class="pst-scrollable-table-container"><table class="table">
 <thead>
 <tr class="row-odd"><th class="head"><p>ID</p></th>
@@ -1090,7 +1082,6 @@ methods use internal abbreviations (<code class="docutils literal notranslate"><
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#checklist">Checklist</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-counts-as-public">What counts as public</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#formatting">Formatting</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#naming">Naming</a><ul class="nav section-nav flex-column">

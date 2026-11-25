@@ -2,10 +2,11 @@
 
 Version: 2
 
-These rules apply to Python code under `tmol/`. Each rule has an ID. Rules
-marked **Checked** are enforced by pre-commit, so a violation fails the commit;
-rules marked **Review** are checked by reviewers; [provisional
-rules](#provisional-rules) are proposals that are reported only on request.
+These rules apply to code under `tmol/`. The naming and review rules are enforced on the
+[public API](#what-counts-as-public) only, but should serve as guidelines for the entire codebase. The formatting rules (`black`, etc) cover all code. Rules marked **Checked** are enforced by
+pre-commit, so a violation fails the commit; rules marked **Review** are
+checked by reviewers; [provisional rules](#provisional-rules) are proposals
+that are reported only on request.
 
 Run the checks before committing:
 
@@ -14,20 +15,6 @@ pre-commit run --all-files
 python scripts/check_api_style.py   # the API naming rules alone, in under a second
 python scripts/check_api_style.py --extended   # also report provisional rules
 ```
-
-## Checklist
-
-When you add or change a public function, method, class or field:
-
-1. Spell names out. No public name of one or two characters (API001).
-2. Write `mainchain` and `sidechain`, never `mc` and `sc` (API002).
-3. Use the standard names in [Vocabulary](#vocabulary) for standard objects
-   (API002, API004).
-4. Put `param_db` before `device` when a signature takes both (API003).
-5. Name converters `<output>_from_<input>` (REV1).
-6. Give public callables a Google- or NumPy-style docstring (REV2).
-7. When renaming, update every caller, doc, notebook and skill in the same
-   change (REV3).
 
 ## What counts as public
 
@@ -207,6 +194,13 @@ Not yet decided: the positive name for `no_optH`. The atom37 builder already
 uses `opt_h`; `optimize_hydrogens` would also satisfy API001 and API002.
 
 ## Conventions checked in review
+
+These conventions are checked by people in code review, not by
+`scripts/check_api_style.py`. Each depends on intent that can't be read from
+the code, such as whether a function is a converter, whether a docstring
+explains anything, or whether an object is meant to be public, so an automated
+check would either miss violations or flag correct code. Apply them to the
+code you add or change.
 
 | ID | Rule | Why |
 |---|---|---|
