@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Style guide &#8212; TMol</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=75c7c72ae941e8b558d8" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=adb9cd23" />
+    <link rel="stylesheet" type="text/css" href="_static/page_feedback.css?v=d37b03bb" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="_static/scripts/fontawesome.js?digest=75c7c72ae941e8b558d8"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8" />
+
+    <script src="_static/documentation_options.js?v=8d563738"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script>let toggleHintShow = 'show code';</script>
+    <script>let toggleHintHide = 'hide code';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="_static/togglebutton.js?v=b8b12719"></script>
+    <script>var togglebuttonSelector = '#Setup .nbinput, .nbinput.collapse-code';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'style_guide';</script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+    <script src="_static/tmol-explorers.js?v=089c5f52"></script>
+    <script async="async" defer="defer" src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+    <script src="_static/page_feedback.js?v=8b09ebf1"></script>
+    <link rel="canonical" href="https://rosettacommons.github.io/tmol/latest/style_guide.html" />
+    <link rel="icon" href="_static/favicon.ico"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Agent skills" href="agent_skills.html" />
+    <link rel="prev" title="Development" href="user_guide/development.html" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="color-scheme" content="light dark"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="1.0.0" />
+  
+    
+    <script src="_static/searchtools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <script src="searchindex.js"></script>
+  
+  
+  <link rel="icon" type="image/svg+xml" sizes="any" href="_static/brand/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="_static/brand/apple-touch-icon.png">
+
+  </head>
+  <body data-default-mode="">
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button type="button" class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation" aria-expanded="false" aria-controls="pst-primary-sidebar-modal">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/tmol-logo-light.svg" class="logo__image only-light" alt="TMol documentation — Home"/>
+    <img src="_static/tmol-logo-dark.svg" class="logo__image only-dark pst-js-only" alt="TMol documentation — Home"/>
+  
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="installation.html">
+    Installation
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="quickstart.html">
+    Quickstart
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="terminology.html">
+    Glossary
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="examples_index.html">
+    Tutorials
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="api_reference.html">
+    API reference
+  </a>
+</li>
+
+
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="contributor_guide.html">
+    Contributing
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button type="button" class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button type="button" class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button type="button" class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page" aria-expanded="false" aria-controls="pst-secondary-sidebar-modal">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal" tabindex="-1"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="installation.html">
+    Installation
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="quickstart.html">
+    Quickstart
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="terminology.html">
+    Glossary
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="examples_index.html">
+    Tutorials
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="api_reference.html">
+    API reference
+  </a>
+</li>
+
+
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="contributor_guide.html">
+    Contributing
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button type="button" class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg me-1"></i>System Settings</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg me-1"></i>Light</button></li>
+    <li><button type="button" class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg me-1"></i>Dark</button></li>
+  </ul>
+</div></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/RosettaCommons/tmol" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i><span class="visually-hidden">GitHub</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item pst-sidebar-collapse"><button type="button" id="pst-collapse-sidebar-button" aria-expanded="true" aria-controls="pst-primary-sidebar">
+  <svg class="pst-icon" role="img" aria-hidden="true" focusable="false" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+    <path fill="currentColor" d="M3 15.5C2.36232 15.5 1.74874 15.2564 1.28478 14.8189C0.820828 14.3815 0.541576 13.7832 0.504167 13.1467L0.5 13L0.5 3C0.499965 2.36232 0.743605 1.74874 1.18107 1.28478C1.61854 0.820828 2.21676 0.541576 2.85333 0.504167L3 0.5L13 0.5C13.6377 0.499965 14.2513 0.743605 14.7152 1.18107C15.1792 1.61854 15.4584 2.21676 15.4958 2.85333L15.5 3L15.5 13C15.5 13.6377 15.2564 14.2513 14.8189 14.7152C14.3815 15.1792 13.7832 15.4584 13.1467 15.4958L13 15.5L3 15.5ZM3 13.8333L10.5 13.8333L10.5 2.16667L3 2.16667C2.79589 2.16669 2.59889 2.24163 2.44636 2.37726C2.29383 2.5129 2.19638 2.69979 2.1725 2.9025L2.16667 3L2.16667 13C2.16669 13.2041 2.24163 13.4011 2.37726 13.5536C2.5129 13.7062 2.69979 13.8036 2.9025 13.8275L3 13.8333ZM6.65583 10.325L6.5775 10.2558L4.91083 8.58917C4.76735 8.44567 4.68116 8.25476 4.66843 8.05223C4.65569 7.84971 4.71729 7.6495 4.84167 7.48917L4.91083 7.41083L6.5775 5.74417C6.72747 5.59471 6.9287 5.50794 7.14032 5.50148C7.35194 5.49502 7.55809 5.56935 7.7169 5.70937C7.8757 5.8494 7.97525 6.04463 7.99533 6.25539C8.01541 6.46616 7.95451 6.67667 7.825 6.84417L7.75583 6.9225L6.67917 8L7.75583 9.0775C7.89931 9.22099 7.98551 9.41191 7.99824 9.61443C8.01097 9.81695 7.94938 10.0172 7.825 10.1775L7.75583 10.2558C7.61234 10.3993 7.42142 10.4855 7.2189 10.4982C7.01638 10.511 6.81617 10.4494 6.65583 10.325Z"/>
+  </svg>
+  <span class="pst-collapse-sidebar-label">Collapse Sidebar</span>
+  <span class="pst-expand-sidebar-label">Expand Sidebar</span>
+</button></div>
+        <div class="sidebar-primary-item">
+
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"><ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="user_guide/development.html">Development</a></li>
+<li class="toctree-l1 current active"><a aria-current="page" class="current reference internal" href="#">Style guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agent_skills.html">Agent skills</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-house"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="contributor_guide.html" class="nav-link">Contributor guide</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Style guide</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+  
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="style-guide">
+<h1>Style guide<a class="headerlink" href="#style-guide" title="Link to this heading">#</a></h1>
+<p>Version: 2</p>
+<p>These rules apply to Python code under <code class="docutils literal notranslate"><span class="pre">tmol/</span></code>. Each rule has an ID. Rules
+marked <strong>Checked</strong> are enforced by pre-commit, so a violation fails the commit;
+rules marked <strong>Review</strong> are checked by reviewers; <a class="reference internal" href="#provisional-rules"><span class="std std-ref">provisional
+rules</span></a> are proposals that are reported only on request.</p>
+<p>Run the checks before committing:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files
+python<span class="w"> </span>scripts/check_api_style.py<span class="w">   </span><span class="c1"># the API naming rules alone, in under a second</span>
+python<span class="w"> </span>scripts/check_api_style.py<span class="w"> </span>--extended<span class="w">   </span><span class="c1"># also report provisional rules</span>
+</pre></div>
+</div>
+<section id="checklist">
+<h2>Checklist<a class="headerlink" href="#checklist" title="Link to this heading">#</a></h2>
+<p>When you add or change a public function, method, class or field:</p>
+<ol class="arabic simple">
+<li><p>Spell names out. No public name of one or two characters (API001).</p></li>
+<li><p>Write <code class="docutils literal notranslate"><span class="pre">mainchain</span></code> and <code class="docutils literal notranslate"><span class="pre">sidechain</span></code>, never <code class="docutils literal notranslate"><span class="pre">mc</span></code> and <code class="docutils literal notranslate"><span class="pre">sc</span></code> (API002).</p></li>
+<li><p>Use the standard names in <a class="reference internal" href="#vocabulary"><span class="std std-ref">Vocabulary</span></a> for standard objects
+(API002, API004).</p></li>
+<li><p>Put <code class="docutils literal notranslate"><span class="pre">param_db</span></code> before <code class="docutils literal notranslate"><span class="pre">device</span></code> when a signature takes both (API003).</p></li>
+<li><p>Name converters <code class="docutils literal notranslate"><span class="pre">&lt;output&gt;_from_&lt;input&gt;</span></code> (REV1).</p></li>
+<li><p>Give public callables a Google- or NumPy-style docstring (REV2).</p></li>
+<li><p>When renaming, update every caller, doc, notebook and skill in the same
+change (REV3).</p></li>
+</ol>
+</section>
+<section id="what-counts-as-public">
+<h2>What counts as public<a class="headerlink" href="#what-counts-as-public" title="Link to this heading">#</a></h2>
+<p>A name is public when it is listed in an <code class="docutils literal notranslate"><span class="pre">__all__</span></code> of a <code class="docutils literal notranslate"><span class="pre">tmol</span></code> package, along
+with the public methods and fields of public classes. Implementation modules
+are underscore-prefixed (<code class="docutils literal notranslate"><span class="pre">tmol/pose/_pose_stack.py</span></code>) and their objects are
+re-exported through a package <code class="docutils literal notranslate"><span class="pre">__init__.py</span></code>. Helpers that are not exported
+start with <code class="docutils literal notranslate"><span class="pre">_</span></code>.</p>
+<p>The naming rules below apply only to public names. Private helpers may use
+local abbreviations, but prefer the vocabulary there too.</p>
+</section>
+<section id="formatting">
+<h2>Formatting<a class="headerlink" href="#formatting" title="Link to this heading">#</a></h2>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>ID</p></th>
+<th class="head"><p>Rule</p></th>
+<th class="head"><p>Enforcement</p></th>
+<th class="head"><p>Why</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>FMT1</p></td>
+<td><p>Format Python with Black.</p></td>
+<td><p>Checked (<code class="docutils literal notranslate"><span class="pre">black</span></code>)</p></td>
+<td><p><a class="reference internal" href="#why-fmt1"><span class="std std-ref">why</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p>FMT2</p></td>
+<td><p>Pass Flake8 with the repository’s <code class="docutils literal notranslate"><span class="pre">.flake8</span></code> configuration.</p></td>
+<td><p>Checked (<code class="docutils literal notranslate"><span class="pre">flake8</span></code>)</p></td>
+<td><p><a class="reference internal" href="#why-fmt2"><span class="std std-ref">why</span></a></p></td>
+</tr>
+<tr class="row-even"><td><p>FMT3</p></td>
+<td><p>Format C++ and CUDA with clang-format.</p></td>
+<td><p>Checked (<code class="docutils literal notranslate"><span class="pre">clang-format</span></code>)</p></td>
+<td><p><a class="reference internal" href="#why-fmt3"><span class="std std-ref">why</span></a></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="naming">
+<h2>Naming<a class="headerlink" href="#naming" title="Link to this heading">#</a></h2>
+<section id="api001-no-one-or-two-character-public-names">
+<span id="api001-no-one--or-two-character-public-names"></span><h3>API001: no one- or two-character public names<a class="headerlink" href="#api001-no-one-or-two-character-public-names" title="Link to this heading">#</a></h3>
+<p><strong>Checked</strong> (<a class="reference internal" href="#why-api001"><span class="std std-ref">why</span></a>). Function, method, parameter and field names in the public API
+are longer than two characters.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Don't</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">run_kin_min</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">,</span> <span class="n">ff</span><span class="p">,</span> <span class="n">mm</span><span class="p">):</span> <span class="o">...</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">set_weight</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">st</span><span class="p">,</span> <span class="n">weight</span><span class="p">):</span> <span class="o">...</span>
+
+<span class="c1"># Do</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">run_kin_min</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">,</span> <span class="n">fold_forest</span><span class="p">,</span> <span class="n">move_map</span><span class="p">):</span> <span class="o">...</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">set_weight</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">score_type</span><span class="p">,</span> <span class="n">weight</span><span class="p">):</span> <span class="o">...</span>
+</pre></div>
+</div>
+<p>Allowed exceptions, because each is the established term rather than an
+abbreviation:</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Name</p></th>
+<th class="head"><p>Why</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ph</span></code></p></td>
+<td><p>pH</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">to</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">.to(device)</span></code>, matching <code class="docutils literal notranslate"><span class="pre">torch.Tensor.to</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="api002-no-banned-abbreviations">
+<h3>API002: no banned abbreviations<a class="headerlink" href="#api002-no-banned-abbreviations" title="Link to this heading">#</a></h3>
+<p><strong>Checked</strong> (<a class="reference internal" href="#why-api002"><span class="std std-ref">why</span></a>). These may not appear in a public name:</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Banned</p></th>
+<th class="head"><p>Write instead</p></th>
+<th class="head"><p>Applies to</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">mc</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">mainchain</span></code></p></td>
+<td><p>any underscore-separated part of a name</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">sc</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">sidechain</span></code></p></td>
+<td><p>any part</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">mcsc</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">mainchain_or_sidechain</span></code></p></td>
+<td><p>any part</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">mcs</span></code>, <code class="docutils literal notranslate"><span class="pre">scs</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">mainchain_torsions</span></code>, <code class="docutils literal notranslate"><span class="pre">sidechain_torsions</span></code></p></td>
+<td><p>any part</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">torch_device</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">device</span></code></p></td>
+<td><p>whole name</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">co</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">canonical_ordering</span></code></p></td>
+<td><p>whole name</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ff</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">fold_forest</span></code></p></td>
+<td><p>whole name</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">mm</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">move_map</span></code></p></td>
+<td><p>whole name</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">fn</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">constraint_function</span></code></p></td>
+<td><p>whole name</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">st</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">score_type</span></code></p></td>
+<td><p>whole name</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">rt</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">residue_type</span></code></p></td>
+<td><p>whole name</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">bt</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">block_type</span></code></p></td>
+<td><p>whole name</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Don't</span>
+<span class="n">move_map</span><span class="o">.</span><span class="n">set_move_all_mc_tors_for_blocks</span><span class="p">(</span><span class="n">mask</span><span class="p">)</span>
+<span class="c1"># Do</span>
+<span class="n">move_map</span><span class="o">.</span><span class="n">set_move_all_mainchain_torsions_for_blocks</span><span class="p">(</span><span class="n">mask</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="api003-param-db-before-device">
+<span id="api003-param_db-before-device"></span><h3>API003: <code class="docutils literal notranslate"><span class="pre">param_db</span></code> before <code class="docutils literal notranslate"><span class="pre">device</span></code><a class="headerlink" href="#api003-param-db-before-device" title="Link to this heading">#</a></h3>
+<p><strong>Checked</strong> (<a class="reference internal" href="#why-api003"><span class="std std-ref">why</span></a>). A signature that takes both lists the parameter database first.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Don't</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">make_thing</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">param_db</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span> <span class="o">...</span>
+<span class="c1"># Do</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">make_thing</span><span class="p">(</span><span class="n">param_db</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span> <span class="o">...</span>
+</pre></div>
+</div>
+</section>
+<section id="api004-names-follow-types">
+<h3>API004: names follow types<a class="headerlink" href="#api004-names-follow-types" title="Link to this heading">#</a></h3>
+<p><strong>Checked</strong> (<a class="reference internal" href="#why-api004"><span class="std std-ref">why</span></a>). A parameter annotated with one of these types uses the matching
+name. A suffixed name is allowed where a signature needs to tell two objects
+of the same type apart.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Type</p></th>
+<th class="head"><p>Name</p></th>
+<th class="head"><p>Also allowed</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ParameterDatabase</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">param_db</span></code></p></td>
+<td><p>—</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">torch.device</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">device</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">*_device</span></code>, such as <code class="docutils literal notranslate"><span class="pre">anneal_device</span></code> (never <code class="docutils literal notranslate"><span class="pre">torch_device</span></code>)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">PoseStack</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">pose_stack</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">*_pose_stack</span></code>, such as <code class="docutils literal notranslate"><span class="pre">orig_pose_stack</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Container annotations such as <code class="docutils literal notranslate"><span class="pre">list[PoseStack]</span></code> are exempt; name those as
+plurals (<code class="docutils literal notranslate"><span class="pre">pose_stacks</span></code>).</p>
+</section>
+<section id="vocabulary">
+<h3>Vocabulary<a class="headerlink" href="#vocabulary" title="Link to this heading">#</a></h3>
+<p>Use these names for these objects in public signatures and fields:</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Object</p></th>
+<th class="head"><p>Name</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">PoseStack</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">pose_stack</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ParameterDatabase</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">param_db</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">torch.device</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">device</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">CanonicalOrdering</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">canonical_ordering</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">FoldForest</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">fold_forest</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">MoveMap</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">move_map</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ScoreType</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">score_type</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Constraint scoring function</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">constraint_function</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">RefinedResidueType</span></code> in sampler methods</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">residue_type</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Main chain / side chain</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">mainchain</span></code> / <code class="docutils literal notranslate"><span class="pre">sidechain</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Integer chain index tensor</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">chain_id</span></code> (as on <code class="docutils literal notranslate"><span class="pre">PoseStack</span></code>; don’t use it for string chain labels)</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="provisional-rules">
+<h2>Provisional rules<a class="headerlink" href="#provisional-rules" title="Link to this heading">#</a></h2>
+<p>Provisional rules are proposed but not yet enforced. Pre-commit ignores them;
+<code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">scripts/check_api_style.py</span> <span class="pre">--extended</span></code> reports them alongside the
+checked rules, without failing and without adding them to the baseline. Follow
+them in new code where you can, so existing code is the only thing left to
+change when a rule is adopted.</p>
+<p>To adopt a provisional rule, move it into <a class="reference internal" href="#naming"><span class="std std-ref">Naming</span></a>, fix or baseline
+the existing violations, and bump the version.</p>
+<section id="api005-boolean-options-are-keyword-only-provisional">
+<h3>API005: boolean options are keyword-only (provisional)<a class="headerlink" href="#api005-boolean-options-are-keyword-only-provisional" title="Link to this heading">#</a></h3>
+<p><strong>Provisional</strong> (<a class="reference internal" href="#why-api005"><span class="std std-ref">why</span></a>). A boolean parameter with a default value in a public signature is
+keyword-only: put <code class="docutils literal notranslate"><span class="pre">*</span></code> before the first one. Every parameter after the <code class="docutils literal notranslate"><span class="pre">*</span></code> is
+then keyword-only as well.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Don't</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">pack_rotamers</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">,</span> <span class="n">task</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span> <span class="o">...</span>
+<span class="n">pack_rotamers</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">,</span> <span class="n">task</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>  <span class="c1"># True what?</span>
+
+<span class="c1"># Do</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">pack_rotamers</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">,</span> <span class="n">task</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span> <span class="o">...</span>
+<span class="n">pack_rotamers</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">,</span> <span class="n">task</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>A parameter counts as boolean when it is annotated <code class="docutils literal notranslate"><span class="pre">bool</span></code>, <code class="docutils literal notranslate"><span class="pre">Optional[bool]</span></code> or
+<code class="docutils literal notranslate"><span class="pre">bool</span> <span class="pre">|</span> <span class="pre">None</span></code>, or is unannotated with a <code class="docutils literal notranslate"><span class="pre">True</span></code> or <code class="docutils literal notranslate"><span class="pre">False</span></code> default. Exempt:</p>
+<ul class="simple">
+<li><p>a method whose only parameter is the boolean, such as
+<code class="docutils literal notranslate"><span class="pre">PackerTask.or_bump_check(setting)</span></code>, where the value is the subject of the
+call. Constructors are not exempt: <code class="docutils literal notranslate"><span class="pre">PackerPalette(True)</span></code> doesn’t say what
+<code class="docutils literal notranslate"><span class="pre">True</span></code> turns on;</p></li>
+<li><p>parameters whose names start with <code class="docutils literal notranslate"><span class="pre">_</span></code>.</p></li>
+</ul>
+<p>Not yet decided: whether unions such as <code class="docutils literal notranslate"><span class="pre">cuda_graph:</span> <span class="pre">bool</span> <span class="pre">|</span> <span class="pre">str</span></code> count.</p>
+</section>
+<section id="api006-no-negative-flags-provisional">
+<h3>API006: no negative flags (provisional)<a class="headerlink" href="#api006-no-negative-flags-provisional" title="Link to this heading">#</a></h3>
+<p><strong>Provisional</strong> (<a class="reference internal" href="#why-api006"><span class="std std-ref">why</span></a>). A boolean parameter or field in the
+public API names the behaviour it turns on, not the one it turns off. Its name
+does not start with <code class="docutils literal notranslate"><span class="pre">no_</span></code>, <code class="docutils literal notranslate"><span class="pre">not_</span></code>, <code class="docutils literal notranslate"><span class="pre">disable_</span></code>, <code class="docutils literal notranslate"><span class="pre">dont_</span></code>, <code class="docutils literal notranslate"><span class="pre">without_</span></code> or <code class="docutils literal notranslate"><span class="pre">skip_</span></code>.
+Flip the meaning and the default instead.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Don't</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span><span class="n">structure</span><span class="p">,</span> <span class="n">no_optH</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span> <span class="o">...</span>
+<span class="n">build</span><span class="p">(</span><span class="n">structure</span><span class="p">,</span> <span class="n">no_optH</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># does this optimize hydrogens? (yes)</span>
+
+<span class="c1"># Do</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span><span class="n">structure</span><span class="p">,</span> <span class="n">optimize_hydrogens</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">):</span> <span class="o">...</span>
+<span class="n">build</span><span class="p">(</span><span class="n">structure</span><span class="p">,</span> <span class="n">optimize_hydrogens</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>A name counts as boolean on the same terms as API005, and fields count when
+annotated <code class="docutils literal notranslate"><span class="pre">bool</span></code>. Words that merely begin with “non”, such as <code class="docutils literal notranslate"><span class="pre">non_ideal</span></code> or
+<code class="docutils literal notranslate"><span class="pre">noncanonical_design</span></code>, are not flagged: they name a property, not the absence
+of a behaviour.</p>
+<p>Not yet decided: the positive name for <code class="docutils literal notranslate"><span class="pre">no_optH</span></code>. The atom37 builder already
+uses <code class="docutils literal notranslate"><span class="pre">opt_h</span></code>; <code class="docutils literal notranslate"><span class="pre">optimize_hydrogens</span></code> would also satisfy API001 and API002.</p>
+</section>
+</section>
+<section id="conventions-checked-in-review">
+<h2>Conventions checked in review<a class="headerlink" href="#conventions-checked-in-review" title="Link to this heading">#</a></h2>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>ID</p></th>
+<th class="head"><p>Rule</p></th>
+<th class="head"><p>Why</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>REV1</p></td>
+<td><p>Name converters <code class="docutils literal notranslate"><span class="pre">&lt;output&gt;_from_&lt;input&gt;</span></code>: <code class="docutils literal notranslate"><span class="pre">pose_stack_from_file</span></code>, <code class="docutils literal notranslate"><span class="pre">atom_array_from_pose_stack</span></code>, <code class="docutils literal notranslate"><span class="pre">file_from_pose_stack</span></code>.</p></td>
+<td><p><a class="reference internal" href="#why-rev1"><span class="std std-ref">why</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p>REV2</p></td>
+<td><p>Give public modules, classes and functions Google- or NumPy-style docstrings; they become the API reference (see the <a class="reference internal" href="contributor_guide.html"><span class="doc">contributor guide</span></a>).</p></td>
+<td><p><a class="reference internal" href="#why-rev2"><span class="std std-ref">why</span></a></p></td>
+</tr>
+<tr class="row-even"><td><p>REV3</p></td>
+<td><p>When renaming a public name, update every in-repo caller, test, doc page, tutorial notebook and agent skill in the same change.</p></td>
+<td><p><a class="reference internal" href="#why-rev3"><span class="std std-ref">why</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p>REV4</p></td>
+<td><p>Export public objects through an <code class="docutils literal notranslate"><span class="pre">__all__</span></code>. Keep everything else underscore-prefixed.</p></td>
+<td><p><a class="reference internal" href="#why-rev4"><span class="std std-ref">why</span></a></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="reasoning">
+<h2>Reasoning<a class="headerlink" href="#reasoning" title="Link to this heading">#</a></h2>
+<p>Why each rule exists. When a case seems to call for breaking a rule, check
+it against the reasoning here; if the reasoning doesn’t apply, propose
+changing the rule rather than working around it.</p>
+<section id="why-fmt1">
+<h3>Why FMT1<a class="headerlink" href="#why-fmt1" title="Link to this heading">#</a></h3>
+<p><strong>Black.</strong> Formatting decided by a tool can’t be argued about in review, and
+diffs show only real changes rather than re-wrapped lines. It also means code
+written by an agent and by a person looks the same.</p>
+</section>
+<section id="why-fmt2">
+<h3>Why FMT2<a class="headerlink" href="#why-fmt2" title="Link to this heading">#</a></h3>
+<p><strong>Flake8.</strong> It catches real mistakes cheaply: undefined and unused names,
+shadowed imports, unreachable code. The repository’s configuration turns off
+checks that conflict with Black, and E711, because <code class="docutils literal notranslate"><span class="pre">x</span> <span class="pre">!=</span> <span class="pre">None</span></code> is a legitimate
+element-wise comparison on tensors and arrays.</p>
+</section>
+<section id="why-fmt3">
+<h3>Why FMT3<a class="headerlink" href="#why-fmt3" title="Link to this heading">#</a></h3>
+<p><strong>clang-format.</strong> TMol’s C++ and CUDA kernels live next to their Python modules
+and are reviewed together, so they get the same mechanical formatting for the
+same reasons as FMT1.</p>
+</section>
+<section id="why-api001">
+<h3>Why API001<a class="headerlink" href="#why-api001" title="Link to this heading">#</a></h3>
+<p><strong>No one- or two-character names.</strong> A name that short can’t be understood
+without opening the documentation: before this rule, <code class="docutils literal notranslate"><span class="pre">run_kin_min</span></code> took <code class="docutils literal notranslate"><span class="pre">ff</span></code>
+and <code class="docutils literal notranslate"><span class="pre">mm</span></code>, <code class="docutils literal notranslate"><span class="pre">ScoreFunction.set_weight</span></code> took <code class="docutils literal notranslate"><span class="pre">st</span></code>, and
+<code class="docutils literal notranslate"><span class="pre">atom_array_from_pose_stack</span></code> took <code class="docutils literal notranslate"><span class="pre">co</span></code>. TMol is used from notebooks by
+scientists and by agents that read signatures, and both rely on names saying
+what they are. The allowed exceptions are established terms (pH, PyTorch’s
+<code class="docutils literal notranslate"><span class="pre">.to</span></code>), not abbreviations.</p>
+</section>
+<section id="why-api002">
+<h3>Why API002<a class="headerlink" href="#why-api002" title="Link to this heading">#</a></h3>
+<p><strong>No banned abbreviations.</strong> Each banned form had a spelled-out twin elsewhere
+in the same API: <code class="docutils literal notranslate"><span class="pre">MoveMap</span></code> had <code class="docutils literal notranslate"><span class="pre">set_move_all_mc_tors_for_blocks</span></code> next to
+<code class="docutils literal notranslate"><span class="pre">set_move_all_named_torsions_for_blocks</span></code>, and some functions took
+<code class="docutils literal notranslate"><span class="pre">torch_device</span></code> while the rest took <code class="docutils literal notranslate"><span class="pre">device</span></code>. With one spelling per concept,
+names can be guessed, and searching for <code class="docutils literal notranslate"><span class="pre">sidechain</span></code> finds every use. <code class="docutils literal notranslate"><span class="pre">mc</span></code> and
+<code class="docutils literal notranslate"><span class="pre">sc</span></code> in particular are opaque outside Rosetta-style code.</p>
+</section>
+<section id="why-api003">
+<h3>Why API003<a class="headerlink" href="#why-api003" title="Link to this heading">#</a></h3>
+<p><strong><code class="docutils literal notranslate"><span class="pre">param_db</span></code> before <code class="docutils literal notranslate"><span class="pre">device</span></code>.</strong> 47 of the 53 signatures that take both already
+put the database first. A consistent order lets callers rely on position; with
+mixed orders, a device passed positionally to one function lands in another
+function’s <code class="docutils literal notranslate"><span class="pre">param_db</span></code> slot.</p>
+</section>
+<section id="why-api004">
+<h3>Why API004<a class="headerlink" href="#why-api004" title="Link to this heading">#</a></h3>
+<p><strong>Names follow types.</strong> The same object should have the same name everywhere,
+so code reads the same across modules and keyword arguments carry over from one
+function to the next. Before this rule a <code class="docutils literal notranslate"><span class="pre">PoseStack</span></code> was called <code class="docutils literal notranslate"><span class="pre">pose_stack</span></code>,
+<code class="docutils literal notranslate"><span class="pre">poses</span></code>, <code class="docutils literal notranslate"><span class="pre">systems</span></code> or <code class="docutils literal notranslate"><span class="pre">ps</span></code> depending on the file. Tying the name to the type
+annotation also makes the rule checkable without guessing what a parameter
+holds. The suffix form exists because some signatures take two objects of one
+type (<code class="docutils literal notranslate"><span class="pre">anneal_device</span></code> alongside <code class="docutils literal notranslate"><span class="pre">device</span></code>).</p>
+</section>
+<section id="why-api005">
+<h3>Why API005<a class="headerlink" href="#why-api005" title="Link to this heading">#</a></h3>
+<p><strong>Keyword-only booleans (provisional).</strong> A positional flag is unreadable at the
+call site: in <code class="docutils literal notranslate"><span class="pre">pose_stack_from_atom37_and_topology(coords,</span> <span class="pre">topology,</span> <span class="pre">context,</span> <span class="pre">True)</span></code>, nothing says what <code class="docutils literal notranslate"><span class="pre">True</span></code> does. Adjacent flags such as <code class="docutils literal notranslate"><span class="pre">no_optH</span></code> and
+<code class="docutils literal notranslate"><span class="pre">backprop_compatible_rebuild</span></code> can be swapped by mistake with no error.
+Keyword-only flags also make later changes safe: renaming or reordering a flag
+then fails loudly with a <code class="docutils literal notranslate"><span class="pre">TypeError</span></code> instead of silently changing what existing
+calls do, which matters while negative flags like <code class="docutils literal notranslate"><span class="pre">no_optH</span></code> are under
+discussion. A setter’s single argument is exempt because there the value is the
+subject of the call.</p>
+</section>
+<section id="why-api006">
+<h3>Why API006<a class="headerlink" href="#why-api006" title="Link to this heading">#</a></h3>
+<p><strong>No negative flags (provisional).</strong> A negative flag makes callers and readers
+undo a double negative: <code class="docutils literal notranslate"><span class="pre">no_optH=False</span></code> means “do optimize hydrogens”, and code
+that branches on it reads <code class="docutils literal notranslate"><span class="pre">if</span> <span class="pre">not</span> <span class="pre">no_optH</span></code>. Positive names make the default
+behaviour explicit in the signature (<code class="docutils literal notranslate"><span class="pre">optimize_hydrogens=True</span></code>) and keep the
+option’s name the same as the feature’s name in docs and logs. TMol already
+spells the same option both ways, <code class="docutils literal notranslate"><span class="pre">no_optH=False</span></code> in the atom37 functions and
+<code class="docutils literal notranslate"><span class="pre">opt_h=True</span></code> on the atom37 builder, which shows how easily the two drift
+apart; one rule picks a direction.</p>
+</section>
+<section id="why-rev1">
+<h3>Why REV1<a class="headerlink" href="#why-rev1" title="Link to this heading">#</a></h3>
+<p><strong><code class="docutils literal notranslate"><span class="pre">&lt;output&gt;_from_&lt;input&gt;</span></code>.</strong> Most converters already follow it, so a user who
+knows the input and output types can guess the function name, and the reverse
+conversion is easy to find (<code class="docutils literal notranslate"><span class="pre">atom_array_from_pose_stack</span></code>,
+<code class="docutils literal notranslate"><span class="pre">pose_stack_from_atom_array</span></code>).</p>
+</section>
+<section id="why-rev2">
+<h3>Why REV2<a class="headerlink" href="#why-rev2" title="Link to this heading">#</a></h3>
+<p><strong>Docstrings.</strong> The API reference pages are generated from docstrings, so a
+missing or unstructured docstring is a missing or broken reference page. A
+consistent style lets Sphinx render parameters and return values as structured
+fields.</p>
+</section>
+<section id="why-rev3">
+<h3>Why REV3<a class="headerlink" href="#why-rev3" title="Link to this heading">#</a></h3>
+<p><strong>Complete renames.</strong> A partial rename leaves something broken that no unit
+test catches: tutorial notebooks only run in their own CI job, and agent skills
+are instructions that silently go out of date. Doing the whole rename in one
+change also keeps the old name from lingering as a second spelling, which
+API002 and API004 exist to prevent.</p>
+</section>
+<section id="why-rev4">
+<h3>Why REV4<a class="headerlink" href="#why-rev4" title="Link to this heading">#</a></h3>
+<p><strong><code class="docutils literal notranslate"><span class="pre">__all__</span></code> and underscores.</strong> They tell users what is supported and what may
+change without notice. The style checker also uses <code class="docutils literal notranslate"><span class="pre">__all__</span></code> to find the public
+API, so an object missing from <code class="docutils literal notranslate"><span class="pre">__all__</span></code> escapes the naming rules.</p>
+</section>
+</section>
+<section id="versioning">
+<h2>Versioning<a class="headerlink" href="#versioning" title="Link to this heading">#</a></h2>
+<p>The version at the top of this page and <code class="docutils literal notranslate"><span class="pre">STYLE_GUIDE_VERSION</span></code> in
+<code class="docutils literal notranslate"><span class="pre">scripts/check_api_style.py</span></code> must match, and the checker also stores a
+fingerprint of the <a class="reference internal" href="#naming"><span class="std std-ref">Naming</span></a> and <a class="reference internal" href="#provisional-rules"><span class="std std-ref">Provisional rules</span></a>
+sections. If the two disagree, the checker
+stops with an error instead of checking against rules it doesn’t implement.</p>
+<p>To change a checked rule:</p>
+<ol class="arabic simple">
+<li><p>Edit the Naming or Provisional rules section and increase the version
+number above by one.</p></li>
+<li><p>Update the checker to implement the change.</p></li>
+<li><p>Set <code class="docutils literal notranslate"><span class="pre">STYLE_GUIDE_VERSION</span></code> to the new number and <code class="docutils literal notranslate"><span class="pre">STYLE_GUIDE_FINGERPRINT</span></code>
+to the output of <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">scripts/check_api_style.py</span> <span class="pre">--guide-fingerprint</span></code>.</p></li>
+</ol>
+<p>Edits outside those two sections don’t change the fingerprint and need no
+version bump.</p>
+</section>
+<section id="the-baseline">
+<h2>The baseline<a class="headerlink" href="#the-baseline" title="Link to this heading">#</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">scripts/api_style_baseline.txt</span></code> lists violations that existed before the
+checked rules did. The check fails only on violations not in that file, so old
+code doesn’t block commits while new code has to follow the rules.</p>
+<ul class="simple">
+<li><p>To fix a baselined violation, fix the code, then run
+<code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">scripts/check_api_style.py</span> <span class="pre">--update-baseline</span></code>. The check reminds you
+when the file has entries that are already fixed.</p></li>
+<li><p>Never add an entry by hand to get a new violation past the check. If a rule
+is wrong for a case, change the rule (and this page) instead.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">scripts/check_api_style.py</span> <span class="pre">--all</span></code> shows every violation, including
+baselined ones.</p></li>
+</ul>
+</section>
+<section id="open-decisions">
+<h2>Open decisions<a class="headerlink" href="#open-decisions" title="Link to this heading">#</a></h2>
+<p>These are inconsistent in the current API but have no agreed convention yet.
+Until one is agreed, match the code around your change and don’t add a third
+variant.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">sfxn</span></code> vs <code class="docutils literal notranslate"><span class="pre">score_function</span></code> for <code class="docutils literal notranslate"><span class="pre">ScoreFunction</span></code> parameters.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pose_ind</span></code> vs <code class="docutils literal notranslate"><span class="pre">pose_index</span></code> (and <code class="docutils literal notranslate"><span class="pre">block_ind</span></code> vs <code class="docutils literal notranslate"><span class="pre">block</span></code>) for indices.</p></li>
+<li><p>Names for PDB-space labels: <code class="docutils literal notranslate"><span class="pre">chain</span></code> vs <code class="docutils literal notranslate"><span class="pre">chain_label</span></code> for chain letters,
+<code class="docutils literal notranslate"><span class="pre">residue_id</span></code> for residue labels with insertion codes, <code class="docutils literal notranslate"><span class="pre">atom_name</span></code> for atom
+names.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">res_*</span></code> vs <code class="docutils literal notranslate"><span class="pre">residue_*</span></code>, and <code class="docutils literal notranslate"><span class="pre">tor</span></code> vs <code class="docutils literal notranslate"><span class="pre">torsion</span></code>.</p></li>
+<li><p>Whether non-boolean options after the main arguments are keyword-only
+(boolean options are covered by provisional rule API005).</p></li>
+<li><p>The positive replacement name for <code class="docutils literal notranslate"><span class="pre">no_optH</span></code> (negative flags themselves are
+covered by provisional rule API006).</p></li>
+<li><p>Whether <code class="docutils literal notranslate"><span class="pre">get_</span></code> prefixes accessors (<code class="docutils literal notranslate"><span class="pre">get_sequence</span></code> vs <code class="docutils literal notranslate"><span class="pre">residue_label</span></code>).</p></li>
+<li><p>Whether renamed public parameters keep a deprecated alias for a release.</p></li>
+<li><p>Whether the sampler and energy-term extension classes are public API; their
+methods use internal abbreviations (<code class="docutils literal notranslate"><span class="pre">gbt</span></code>, <code class="docutils literal notranslate"><span class="pre">kto</span></code>, <code class="docutils literal notranslate"><span class="pre">bt_inds</span></code>).</p></li>
+</ul>
+</section>
+</section>
+
+
+                </article>
+              
+  <div class="page-feedback d-print-none" data-source="inline">
+    
+  <p class="page-feedback-question">Was this page helpful?</p>
+  <div class="page-feedback-buttons">
+    <button type="button" class="page-feedback-button" data-helpful="yes" aria-label="Yes" title="Yes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+    </button>
+    <button type="button" class="page-feedback-button" data-helpful="no" aria-label="No" title="No">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+    </button>
+  </div>
+  <form class="page-feedback-comment" hidden>
+    <fieldset class="page-feedback-reasons">
+      <legend>Sorry about that. What went wrong? (optional)</legend>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="It's unclear or hard to follow"> It's unclear or hard to follow</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="It's outdated or incorrect"> It's outdated or incorrect</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="An example or command didn't work"> An example or command didn't work</label>
+      
+      <label><input type="radio" name="page-feedback-reason-inline" value="I didn't find what I needed"> I didn't find what I needed</label>
+      
+    </fieldset>
+    <label for="page-feedback-comment-inline">Tell us more (optional)</label>
+    <textarea id="page-feedback-comment-inline" rows="3" maxlength="1000"></textarea>
+    <p class="page-feedback-privacy">Please don't include personal information such as your name or email.</p>
+    <div class="page-feedback-comment-actions">
+      <button type="submit" class="page-feedback-send">Send</button>
+      <button type="button" class="page-feedback-skip">Skip</button>
+    </div>
+  </form>
+  <p class="page-feedback-thanks" role="status" hidden>Thanks for your feedback!</p>
+
+  </div>
+  <dialog class="page-feedback-popup" data-source="popup" aria-label="Page feedback">
+    <div class="page-feedback-popup-body">
+      <button type="button" class="page-feedback-popup-close" aria-label="Close" title="Close">&times;</button>
+      
+  <p class="page-feedback-question">Was this page helpful?</p>
+  <div class="page-feedback-buttons">
+    <button type="button" class="page-feedback-button" data-helpful="yes" aria-label="Yes" title="Yes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+    </button>
+    <button type="button" class="page-feedback-button" data-helpful="no" aria-label="No" title="No">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+    </button>
+  </div>
+  <form class="page-feedback-comment" hidden>
+    <fieldset class="page-feedback-reasons">
+      <legend>Sorry about that. What went wrong? (optional)</legend>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="It's unclear or hard to follow"> It's unclear or hard to follow</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="It's outdated or incorrect"> It's outdated or incorrect</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="An example or command didn't work"> An example or command didn't work</label>
+      
+      <label><input type="radio" name="page-feedback-reason-popup" value="I didn't find what I needed"> I didn't find what I needed</label>
+      
+    </fieldset>
+    <label for="page-feedback-comment-popup">Tell us more (optional)</label>
+    <textarea id="page-feedback-comment-popup" rows="3" maxlength="1000"></textarea>
+    <p class="page-feedback-privacy">Please don't include personal information such as your name or email.</p>
+    <div class="page-feedback-comment-actions">
+      <button type="submit" class="page-feedback-send">Send</button>
+      <button type="button" class="page-feedback-skip">Skip</button>
+    </div>
+  </form>
+  <p class="page-feedback-thanks" role="status" hidden>Thanks for your feedback!</p>
+
+    </div>
+  </dialog>
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="user_guide/development.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Development</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="agent_skills.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Agent skills</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal" tabindex="-1"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#checklist">Checklist</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-counts-as-public">What counts as public</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#formatting">Formatting</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#naming">Naming</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#api001-no-one-or-two-character-public-names">API001: no one- or two-character public names</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#api002-no-banned-abbreviations">API002: no banned abbreviations</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#api003-param-db-before-device">API003: <code class="docutils literal notranslate"><span class="pre">param_db</span></code> before <code class="docutils literal notranslate"><span class="pre">device</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#api004-names-follow-types">API004: names follow types</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#vocabulary">Vocabulary</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#provisional-rules">Provisional rules</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#api005-boolean-options-are-keyword-only-provisional">API005: boolean options are keyword-only (provisional)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#api006-no-negative-flags-provisional">API006: no negative flags (provisional)</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#conventions-checked-in-review">Conventions checked in review</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#reasoning">Reasoning</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-fmt1">Why FMT1</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-fmt2">Why FMT2</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-fmt3">Why FMT3</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-api001">Why API001</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-api002">Why API002</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-api003">Why API003</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-api004">Why API004</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-api005">Why API005</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-api006">Why API006</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-rev1">Why REV1</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-rev2">Why REV2</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-rev3">Why REV3</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#why-rev4">Why REV4</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#versioning">Versioning</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-baseline">The baseline</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#open-decisions">Open decisions</a></li>
+</ul>
+  </nav></div>
+
+  <div class="sidebar-secondary-item">
+
+  <div class="tocsection sourcelink">
+    <a href="_sources/style_guide.md.txt">
+      <i class="fa-solid fa-file-lines"></i> Show Source
+    </a>
+  </div>
+</div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=75c7c72ae941e8b558d8"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=75c7c72ae941e8b558d8"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2018-2026, Institute for Protein Design.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.1.1.
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  <!-- # L10n: Setting the PST URL as an argument as this does not need to be localized -->
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.24.0.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  </body>
+</html>
