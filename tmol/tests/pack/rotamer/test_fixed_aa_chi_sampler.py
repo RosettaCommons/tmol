@@ -40,7 +40,7 @@ def test_fixed_aa_residue_types(default_database):
     }
     for name, sc_atoms in expected_sc_atoms.items():
         assert sampler.defines_rotamers_for_rt(restypes[name])
-        assert sampler.first_sc_atoms_for_rt(restypes[name]) == sc_atoms
+        assert sampler.first_sidechain_atoms_for_rt(restypes[name]) == sc_atoms
 
 
 def test_annotate_packed_block_types_smoke(default_database, torch_device):

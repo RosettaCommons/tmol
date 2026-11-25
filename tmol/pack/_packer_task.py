@@ -382,26 +382,26 @@ DEFAULT_CHI_SAMPLE_LIMIT = 1000
 class PackerTask:
     """Configure residue identities, conformers, and movable sites for packing."""
 
-    def __init__(self, systems: PoseStack, palette: PackerPalette):
+    def __init__(self, pose_stack: PoseStack, palette: PackerPalette):
         # Retained so a sampler bundle can inspect connectivity when it
         # registers itself; the task already derives its tensors from here.
-        self.pose_stack = systems
-        self.pbt = systems.packed_block_types
-        self.device = systems.device
-        self.is_real_block = systems.block_type_ind64 != -1
+        self.pose_stack = pose_stack
+        self.pbt = pose_stack.packed_block_types
+        self.device = pose_stack.device
+        self.is_real_block = pose_stack.block_type_ind64 != -1
         self.real_block_pose, self.real_block_block = torch.nonzero(
             self.is_real_block, as_tuple=True
         )
-        self.per_block_orig_block_type = systems.block_type_ind64.detach().clone()
+        self.per_block_orig_block_type = pose_stack.block_type_ind64.detach().clone()
         (
             self.per_block_n_considered_block_types,
             self.per_block_considered_block_types,
             self.per_block_considered_block_types_is_orig,
         ) = palette.block_types_from_original(
-            systems.packed_block_types, systems.block_type_ind64
+            pose_stack.packed_block_types, pose_stack.block_type_ind64
         )
         self.restrict_to_repacking_masks = palette.create_restrict_to_repacking_mask(
-            systems.packed_block_types, systems.block_type_ind64
+            pose_stack.packed_block_types, pose_stack.block_type_ind64
         )
         self.per_block_is_block_type_allowed = torch.ones_like(
             self.per_block_considered_block_types, dtype=torch.bool
@@ -415,19 +415,19 @@ class PackerTask:
             id(sampler): i for i, sampler in enumerate(self.conformer_samplers)
         }
         self.per_block_conformer_sampler_allowed = torch.ones(
-            (systems.n_poses, systems.max_n_blocks, len(self.conformer_samplers)),
+            (pose_stack.n_poses, pose_stack.max_n_blocks, len(self.conformer_samplers)),
             dtype=torch.bool,
-            device=systems.device,
+            device=pose_stack.device,
         )
         self.per_block_chi_expansion = torch.zeros(
             (
-                systems.n_poses,
-                systems.max_n_blocks,
+                pose_stack.n_poses,
+                pose_stack.max_n_blocks,
                 self.per_block_considered_block_types.shape[2],
                 4,
             ),
             dtype=torch.int32,
-            device=systems.device,
+            device=pose_stack.device,
         )
         self._bump_check = False
         # how many conformers a block's (or a conjugated group's) sampled chi

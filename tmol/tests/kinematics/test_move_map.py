@@ -65,24 +65,24 @@ def test_movemap_construction_from_init(stack_of_two_six_res_ubqs_no_term):
     mxnapb = pose_stack.max_n_block_atoms
 
     assert mm.move_all_jumps is False
-    assert mm.move_all_mc is False
-    assert mm.move_all_sc is False
+    assert mm.move_all_mainchain_torsions is False
+    assert mm.move_all_sidechain_torsions is False
     assert mm.move_all_named_torsions is False
 
     assert mm.move_jumps.shape == (np, mxnb)
     assert mm.move_jumps_mask.shape == (np, mxnb)
-    assert mm.move_mcs.shape == (np, mxnb)
-    assert mm.move_mcs_mask.shape == (np, mxnb)
-    assert mm.move_scs.shape == (np, mxnb)
-    assert mm.move_scs_mask.shape == (np, mxnb)
+    assert mm.move_mainchain_torsions.shape == (np, mxnb)
+    assert mm.move_mainchain_torsions_mask.shape == (np, mxnb)
+    assert mm.move_sidechain_torsions.shape == (np, mxnb)
+    assert mm.move_sidechain_torsions_mask.shape == (np, mxnb)
     assert mm.move_named_torsions.shape == (np, mxnb)
     assert mm.move_named_torsions_mask.shape == (np, mxnb)
 
     # data members on a per-DOF basis
-    assert mm.move_mc.shape == (np, mxnb, mxnt)
-    assert mm.move_mc_mask.shape == (np, mxnb, mxnt)
-    assert mm.move_sc.shape == (np, mxnb, mxnt)
-    assert mm.move_sc_mask.shape == (np, mxnb, mxnt)
+    assert mm.move_mainchain_torsion.shape == (np, mxnb, mxnt)
+    assert mm.move_mainchain_torsion_mask.shape == (np, mxnb, mxnt)
+    assert mm.move_sidechain_torsion.shape == (np, mxnb, mxnt)
+    assert mm.move_sidechain_torsion_mask.shape == (np, mxnb, mxnt)
     assert mm.move_named_torsion.shape == (np, mxnb, mxnt)
     assert mm.move_named_torsion_mask.shape == (np, mxnb, mxnt)
 
@@ -105,24 +105,24 @@ def test_movemap_construction_from_helper(stack_of_two_six_res_ubqs_no_term):
     mxnapb = pose_stack.max_n_block_atoms
 
     assert mm.move_all_jumps is False
-    assert mm.move_all_mc is False
-    assert mm.move_all_sc is False
+    assert mm.move_all_mainchain_torsions is False
+    assert mm.move_all_sidechain_torsions is False
     assert mm.move_all_named_torsions is False
 
     assert mm.move_jumps.shape == (np, mxnb)
     assert mm.move_jumps_mask.shape == (np, mxnb)
-    assert mm.move_mcs.shape == (np, mxnb)
-    assert mm.move_mcs_mask.shape == (np, mxnb)
-    assert mm.move_scs.shape == (np, mxnb)
-    assert mm.move_scs_mask.shape == (np, mxnb)
+    assert mm.move_mainchain_torsions.shape == (np, mxnb)
+    assert mm.move_mainchain_torsions_mask.shape == (np, mxnb)
+    assert mm.move_sidechain_torsions.shape == (np, mxnb)
+    assert mm.move_sidechain_torsions_mask.shape == (np, mxnb)
     assert mm.move_named_torsions.shape == (np, mxnb)
     assert mm.move_named_torsions_mask.shape == (np, mxnb)
 
     # data members on a per-torsion basis
-    assert mm.move_mc.shape == (np, mxnb, mxnt)
-    assert mm.move_mc_mask.shape == (np, mxnb, mxnt)
-    assert mm.move_sc.shape == (np, mxnb, mxnt)
-    assert mm.move_sc_mask.shape == (np, mxnb, mxnt)
+    assert mm.move_mainchain_torsion.shape == (np, mxnb, mxnt)
+    assert mm.move_mainchain_torsion_mask.shape == (np, mxnb, mxnt)
+    assert mm.move_sidechain_torsion.shape == (np, mxnb, mxnt)
+    assert mm.move_sidechain_torsion_mask.shape == (np, mxnb, mxnt)
     assert mm.move_named_torsion.shape == (np, mxnb, mxnt)
     assert mm.move_named_torsion_mask.shape == (np, mxnb, mxnt)
 
@@ -134,17 +134,19 @@ def test_movemap_construction_from_helper(stack_of_two_six_res_ubqs_no_term):
 
 
 def move_all_setter_name_for_doftype(doftype):
-    if doftype == "mc":
-        return "set_move_all_mc_tors_for_blocks"
-    elif doftype == "sc":
-        return "set_move_all_sc_tors_for_blocks"
+    if doftype == "mainchain_torsion":
+        return "set_move_all_mainchain_torsions_for_blocks"
+    elif doftype == "sidechain_torsion":
+        return "set_move_all_sidechain_torsions_for_blocks"
     elif doftype == "named_torsion":
         return "set_move_all_named_torsions_for_blocks"
     else:
         raise ValueError(f"doftype {doftype} not recognized")
 
 
-@pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
+@pytest.mark.parametrize(
+    "doftype", ["mainchain_torsion", "sidechain_torsion", "named_torsion"]
+)
 def test_set_move_all_doftypes_for_block_by_integer(
     doftype, mm_for_two_six_res_ubqs_no_term
 ):
@@ -166,7 +168,9 @@ def test_set_move_all_doftypes_for_block_by_integer(
     assert mask[1, 4]
 
 
-@pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
+@pytest.mark.parametrize(
+    "doftype", ["mainchain_torsion", "sidechain_torsion", "named_torsion"]
+)
 def test_set_move_all_doftypes_for_block_by_boolean_mask(
     doftype, mm_for_two_six_res_ubqs_no_term
 ):
@@ -193,7 +197,9 @@ def test_set_move_all_doftypes_for_block_by_boolean_mask(
             assert mask[i, j] == bool_mask[i, j]
 
 
-@pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
+@pytest.mark.parametrize(
+    "doftype", ["mainchain_torsion", "sidechain_torsion", "named_torsion"]
+)
 def test_set_move_all_doftypes_for_block_by_boolean_mask2(
     doftype, mm_for_two_six_res_ubqs_no_term
 ):
@@ -221,7 +227,9 @@ def test_set_move_all_doftypes_for_block_by_boolean_mask2(
             assert mask[i, j] == bool_mask[i, j]
 
 
-@pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
+@pytest.mark.parametrize(
+    "doftype", ["mainchain_torsion", "sidechain_torsion", "named_torsion"]
+)
 def test_set_move_all_doftypes_for_block_by_boolean_masks(
     doftype, mm_for_two_six_res_ubqs_no_term
 ):
@@ -250,7 +258,9 @@ def test_set_move_all_doftypes_for_block_by_boolean_masks(
             assert mask[i, j] == (pose_mask[i] and block_mask[j])
 
 
-@pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
+@pytest.mark.parametrize(
+    "doftype", ["mainchain_torsion", "sidechain_torsion", "named_torsion"]
+)
 def test_set_move_all_doftypes_for_block_by_index_tensors(
     doftype, mm_for_two_six_res_ubqs_no_term
 ):
@@ -307,17 +317,19 @@ def test_set_move_all_jump_dofs_for_root_jump_by_index(mm_for_two_six_res_ubqs_n
 
 
 def move_particular_setter_name_for_doftype(doftype):
-    if doftype == "mc":
-        return "set_move_mc_tor_for_blocks"
-    elif doftype == "sc":
-        return "set_move_sc_tor_for_blocks"
+    if doftype == "mainchain_torsion":
+        return "set_move_mainchain_torsion_for_blocks"
+    elif doftype == "sidechain_torsion":
+        return "set_move_sidechain_torsion_for_blocks"
     elif doftype == "named_torsion":
         return "set_move_named_torsion_for_blocks"
     else:
         raise ValueError(f"doftype {doftype} not recognized")
 
 
-@pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
+@pytest.mark.parametrize(
+    "doftype", ["mainchain_torsion", "sidechain_torsion", "named_torsion"]
+)
 def test_set_move_particular_doftypes_for_block_by_integer(
     doftype, mm_for_two_six_res_ubqs_no_term
 ):
@@ -339,7 +351,9 @@ def test_set_move_particular_doftypes_for_block_by_integer(
     assert mask[1, 4, 1]
 
 
-@pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
+@pytest.mark.parametrize(
+    "doftype", ["mainchain_torsion", "sidechain_torsion", "named_torsion"]
+)
 def test_set_move_particular_doftypes_for_block_by_integer_jagged(
     doftype, mm_for_jagged_465_ubqs
 ):
@@ -361,7 +375,9 @@ def test_set_move_particular_doftypes_for_block_by_integer_jagged(
     assert mask[1, 4, 1]
 
 
-@pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
+@pytest.mark.parametrize(
+    "doftype", ["mainchain_torsion", "sidechain_torsion", "named_torsion"]
+)
 def test_set_move_particular_doftypes_for_block_by_boolean_mask(
     doftype, mm_for_two_six_res_ubqs_no_term
 ):
@@ -388,7 +404,9 @@ def test_set_move_particular_doftypes_for_block_by_boolean_mask(
                 assert mask[i, j, k] == bool_mask[i, j, k]
 
 
-@pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
+@pytest.mark.parametrize(
+    "doftype", ["mainchain_torsion", "sidechain_torsion", "named_torsion"]
+)
 def test_set_move_particular_doftypes_for_block_by_boolean_mask_jagged(
     doftype, mm_for_jagged_465_ubqs
 ):
@@ -415,7 +433,9 @@ def test_set_move_particular_doftypes_for_block_by_boolean_mask_jagged(
                 assert mask[i, j, k] == bool_mask[i, j, k]
 
 
-@pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
+@pytest.mark.parametrize(
+    "doftype", ["mainchain_torsion", "sidechain_torsion", "named_torsion"]
+)
 def test_set_move_particular_doftypes_for_block_by_boolean_mask2(
     doftype, mm_for_two_six_res_ubqs_no_term
 ):
@@ -443,7 +463,9 @@ def test_set_move_particular_doftypes_for_block_by_boolean_mask2(
                 assert mask[i, j, k] == bool_mask[i, j, k]
 
 
-@pytest.mark.parametrize("doftype", ["mc", "sc", "named_torsion"])
+@pytest.mark.parametrize(
+    "doftype", ["mainchain_torsion", "sidechain_torsion", "named_torsion"]
+)
 def test_set_move_particular_doftypes_for_block_by_index_tensors(
     doftype, mm_for_two_six_res_ubqs_no_term
 ):
@@ -544,7 +566,7 @@ def test_minimizermap_construction_2_sixres_ubq_just_sc(
 
     kmd = _construct_kin_module_data_for_pose(pose_stack, ff_edges_cpu)
     mm = MoveMap.from_pose_stack(pose_stack)
-    mm.move_all_sc = True
+    mm.move_all_sidechain_torsions = True
     minmap = MinimizerMap(pose_stack, kmd, mm)
     assert minmap is not None
 
@@ -585,7 +607,7 @@ def test_minimizermap_construction_2_sixres_ubq_just_bb(
 
     kmd = _construct_kin_module_data_for_pose(pose_stack, ff_edges_cpu)
     mm = MoveMap.from_pose_stack(pose_stack)
-    mm.move_all_mc = True
+    mm.move_all_mainchain_torsions = True
     minmap = MinimizerMap(pose_stack, kmd, mm)
     assert minmap is not None
 
@@ -745,7 +767,7 @@ def test_minimizermap_construction_jagged_465_ubq_just_sc(
 
     kmd = _construct_kin_module_data_for_pose(pose_stack, ff_edges_cpu)
     mm = MoveMap.from_pose_stack(pose_stack)
-    mm.move_all_sc = True
+    mm.move_all_sidechain_torsions = True
     minmap = MinimizerMap(pose_stack, kmd, mm)
     assert minmap is not None
     assert torch.sum(minmap.dof_mask) == 36
@@ -794,7 +816,7 @@ def test_minimizermap_construction_jagged_465_ubq_just_mc(
 
     kmd = _construct_kin_module_data_for_pose(pose_stack, ff_edges_cpu)
     mm = MoveMap.from_pose_stack(pose_stack)
-    mm.move_all_mc = True
+    mm.move_all_mainchain_torsions = True
     minmap = MinimizerMap(pose_stack, kmd, mm)
     assert minmap is not None
     assert torch.sum(minmap.dof_mask) == 27

@@ -177,8 +177,8 @@ def _run_min(
 def run_kin_min(
     pose_stack: PoseStack,
     sfxn: ScoreFunction,
-    ff: FoldForest,
-    mm: MoveMap,
+    fold_forest: FoldForest,
+    move_map: MoveMap,
     optimizer_cls: type[torch.optim.Optimizer] = LBFGS_Armijo,
     optimizer_kwargs: dict[str, object] | None = None,
     verbose: bool = False,
@@ -192,8 +192,8 @@ def run_kin_min(
     Args:
         pose_stack: Structures and coordinates to minimize.
         sfxn: Score function defining the objective.
-        ff: Fold forest defining the kinematic tree.
-        mm: Internal-coordinate degrees of freedom allowed to move.
+        fold_forest: Fold forest defining the kinematic tree.
+        move_map: Internal-coordinate degrees of freedom allowed to move.
         optimizer_cls: Closure-based PyTorch optimizer class.
         optimizer_kwargs: Optional optimizer constructor arguments.
         verbose: Print synchronized setup and minimization timings.
@@ -207,8 +207,8 @@ def run_kin_min(
     return KinematicMinimizer(cuda_graph=cuda_graph, kin_dtype=kin_dtype)(
         pose_stack,
         sfxn,
-        ff,
-        mm,
+        fold_forest,
+        move_map,
         optimizer_cls=optimizer_cls,
         optimizer_kwargs=optimizer_kwargs,
         verbose=verbose,

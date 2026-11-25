@@ -439,7 +439,7 @@ class DunbrackChiSampler(ChiSampler):
             index = self._library_index(rt.dunbrack_reference)
         return int(index)
 
-    def defines_rotamers_for_rt(self, rt: RefinedResidueType):
+    def defines_rotamers_for_rt(self, residue_type: RefinedResidueType):
         """Whether a rotamer library reaches this residue type.
 
         A library resolving answers it for most residues: glycine and alanine
@@ -447,16 +447,16 @@ class DunbrackChiSampler(ChiSampler):
         where a reference names it. A residue that samples heavy chi of its
         own is built from those alone.
         """
-        if not rt.properties.polymer.is_polymer:
+        if not residue_type.properties.polymer.is_polymer:
             return False
-        if rt.properties.polymer.polymer_type != "amino_acid":
+        if residue_type.properties.polymer.polymer_type != "amino_acid":
             return False
-        if self._library_for_rt(rt) >= 0:
+        if self._library_for_rt(residue_type) >= 0:
             return True
         # no library, but chi of its own to turn. A proton chi alone is not
         #    enough: optH samples those, and rotamers varying only hydrogens
         #    would duplicate its work.
-        return any(not cs.is_proton for cs in rt.chi_samples)
+        return any(not cs.is_proton for cs in residue_type.chi_samples)
 
     def defines_rotamers_for_bts(
         self, pbt: PackedBlockTypes, bt_inds: Tensor[torch.int64]
@@ -464,19 +464,23 @@ class DunbrackChiSampler(ChiSampler):
         self.annotate_packed_block_types(pbt)
         return pbt.dun_sampler_cache.defines_rotamers_for_bts[bt_inds]
 
-    def first_sc_atoms_for_rt(self, rt: RefinedResidueType) -> Tuple[str, ...]:
+    def first_sidechain_atoms_for_rt(
+        self, residue_type: RefinedResidueType
+    ) -> Tuple[str, ...]:
         """The atom chi1 rotates, which is where the sidechain starts.
 
         Read off the residue rather than named, so a noncanonical whose
         sidechain does not begin at an atom called CB still transfers its
         rotamers correctly. Empty for a residue with no chi to rotate.
         """
-        assert self.defines_rotamers_for_rt(rt)
+        assert self.defines_rotamers_for_rt(residue_type)
         # Explicit chi can start after an unsampled axis. Copy upstream input
         # geometry instead of treating the entire chi1 branch as rebuilt.
-        if self._library_for_rt(rt) < 0:
-            return _sc_roots_for_chis(rt, (cs.chi_dihedral for cs in rt.chi_samples))
-        return tuple(t.c.atom for t in rt.torsions if t.name == "chi1")
+        if self._library_for_rt(residue_type) < 0:
+            return _sc_roots_for_chis(
+                residue_type, (cs.chi_dihedral for cs in residue_type.chi_samples)
+            )
+        return tuple(t.c.atom for t in residue_type.torsions if t.name == "chi1")
 
     def sample_chi_for_poses(
         self, pose_stack: PoseStack, task: SetPackerTask

@@ -161,20 +161,20 @@ def test_mc_sc_torsion_properties(fresh_default_restype_set):
     leu_restype = next(
         x for x in fresh_default_restype_set.residue_types if x.name == "LEU"
     )
-    assert leu_restype.n_mc_torsions == 3
-    assert leu_restype.n_sc_torsions == 2
-    assert leu_restype.is_torsion_mc[0]
-    assert leu_restype.is_torsion_mc[1]
-    assert leu_restype.is_torsion_mc[2]
-    assert leu_restype.is_torsion_mc[3].item() is False
-    assert leu_restype.is_torsion_mc[4].item() is False
-    assert leu_restype.mc_torsions[0] == 0
-    assert leu_restype.mc_torsions[1] == 1
-    assert leu_restype.mc_torsions[2] == 2
-    assert leu_restype.sc_torsions[0] == 3
-    assert leu_restype.sc_torsions[1] == 4
-    assert leu_restype.which_mcsc_torsion[0] == 0
-    assert leu_restype.which_mcsc_torsion[1] == 1
-    assert leu_restype.which_mcsc_torsion[2] == 2
-    assert leu_restype.which_mcsc_torsion[3] == 0
-    assert leu_restype.which_mcsc_torsion[4] == 1
+    assert leu_restype.n_mainchain_torsions == 3
+    assert leu_restype.n_sidechain_torsions == 2
+    assert leu_restype.is_torsion_mainchain[0]
+    assert leu_restype.is_torsion_mainchain[1]
+    assert leu_restype.is_torsion_mainchain[2]
+    assert leu_restype.is_torsion_mainchain[3].item() is False
+    assert leu_restype.is_torsion_mainchain[4].item() is False
+    assert leu_restype.mainchain_torsions[0] == 0
+    assert leu_restype.mainchain_torsions[1] == 1
+    assert leu_restype.mainchain_torsions[2] == 2
+    assert leu_restype.sidechain_torsions[0] == 3
+    assert leu_restype.sidechain_torsions[1] == 4
+    assert leu_restype.which_mainchain_or_sidechain_torsion[0] == 0
+    assert leu_restype.which_mainchain_or_sidechain_torsion[1] == 1
+    assert leu_restype.which_mainchain_or_sidechain_torsion[2] == 2
+    assert leu_restype.which_mainchain_or_sidechain_torsion[3] == 0
+    assert leu_restype.which_mainchain_or_sidechain_torsion[4] == 1

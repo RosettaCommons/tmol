@@ -49,6 +49,10 @@ pytest -q tmol/tests/optimization tmol/tests/pack tmol/tests/score
 pre-commit run --all-files --show-diff-on-failure
 ```
 
+Public API changes must follow `docs/style_guide.md`; run
+`python scripts/check_api_style.py` (also a pre-commit hook) and fix new
+violations instead of adding them to its baseline.
+
 If a format command changes files, inspect the diff rather than committing a
 mechanical rewrite blindly. Build docs when public behavior, APIs, or examples
 change.

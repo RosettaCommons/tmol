@@ -30,3 +30,12 @@ repos:
                 dev/.* |
                 \.venv/.*
             )$
+  - repo: local
+    hooks:
+      - id: tmol-api-style
+        name: tmol API naming style (docs/style_guide.md)
+        entry: python scripts/check_api_style.py
+        language: python
+        pass_filenames: false
+        files: ^(tmol/.*\.py|docs/style_guide\.md|scripts/(check_api_style\.py|api_style_baseline\.txt))$
+        exclude: ^tmol/(extern|tests)/

@@ -491,9 +491,9 @@ class OptHSampler(ConformerSampler):
         setattr(packed_block_types, "_opth_sampler_key", key)
 
     @_validate_args
-    def defines_rotamers_for_rt(self, rt: RefinedResidueType):
-        self._annotate_residue_type(rt)
-        cache = rt.opth_sampler_cache
+    def defines_rotamers_for_rt(self, residue_type: RefinedResidueType):
+        self._annotate_residue_type(residue_type)
+        cache = residue_type.opth_sampler_cache
         return cache.has_proton_chi or (self.flip_NHQ and cache.nhq_chi_col >= 0)
 
     def defines_rotamers_for_bts(
@@ -503,13 +503,15 @@ class OptHSampler(ConformerSampler):
         return pbt.opth_sample_cache.opth_sample_for_bt[bt_inds]
 
     @_validate_args
-    def first_sc_atoms_for_rt(self, rt: RefinedResidueType) -> Tuple[str, ...]:
+    def first_sidechain_atoms_for_rt(
+        self, residue_type: RefinedResidueType
+    ) -> Tuple[str, ...]:
         """Roots for the chis optH turns: every proton chi, plus the flipped chi."""
-        self._annotate_residue_type(rt)
-        chis = [cs.chi_dihedral for cs in rt.chi_samples if cs.is_proton]
-        if self.flip_NHQ and rt.opth_sampler_cache.nhq_chi_col >= 0:
-            chis.append(f"chi{rt.opth_sampler_cache.nhq_chi_col + 1}")
-        return _sc_roots_for_chis(rt, chis)
+        self._annotate_residue_type(residue_type)
+        chis = [cs.chi_dihedral for cs in residue_type.chi_samples if cs.is_proton]
+        if self.flip_NHQ and residue_type.opth_sampler_cache.nhq_chi_col >= 0:
+            chis.append(f"chi{residue_type.opth_sampler_cache.nhq_chi_col + 1}")
+        return _sc_roots_for_chis(residue_type, chis)
 
     def _assert_no_dun_opth_conflict(self, task: "SetPackerTask"):  # noqa: F821
         self_index_in_task = task.conformer_sampler_index[id(self)]

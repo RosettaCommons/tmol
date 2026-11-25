@@ -33,15 +33,17 @@ class FixedAAChiSampler(ChiSampler):
     def sampler_name(cls):
         return "FixedAAChiSampler"
 
-    def defines_rotamers_for_rt(self, rt: RefinedResidueType):
-        return _is_fixed_aa(rt)
+    def defines_rotamers_for_rt(self, residue_type: RefinedResidueType):
+        return _is_fixed_aa(residue_type)
 
     def defines_rotamers_for_bts(
         self, pbt: PackedBlockTypes, bt_inds: Tensor[torch.int64]
     ) -> Tensor[torch.bool]:
         return pbt.fixed_aa_chi_sampler_builds_bt[bt_inds]
 
-    def first_sc_atoms_for_rt(self, rt: RefinedResidueType) -> Tuple[str, ...]:
+    def first_sidechain_atoms_for_rt(
+        self, residue_type: RefinedResidueType
+    ) -> Tuple[str, ...]:
         """CA's sidechain branches: the substituents that carry further atoms.
 
         With none (glycine), every non-mainchain CA substituent is rebuilt:
@@ -49,15 +51,20 @@ class FixedAAChiSampler(ChiSampler):
         one can place it on top of the retained one, and a glycine-to-amino-acid
         design must not inherit an arbitrary one.
         """
-        ca, mainchain = rt.atom_to_idx["CA"], rt.properties.polymer.mainchain_atoms
-        n_bonds = numpy.bincount(rt.bond_indices[:, 0], minlength=len(rt.atoms))
+        ca, mainchain = (
+            residue_type.atom_to_idx["CA"],
+            residue_type.properties.polymer.mainchain_atoms,
+        )
+        n_bonds = numpy.bincount(
+            residue_type.bond_indices[:, 0], minlength=len(residue_type.atoms)
+        )
         substituents = [
             j
-            for i, j in rt.bond_indices
-            if i == ca and rt.atoms[j].name not in mainchain
+            for i, j in residue_type.bond_indices
+            if i == ca and residue_type.atoms[j].name not in mainchain
         ]
         branches = [j for j in substituents if n_bonds[j] > 1]
-        return tuple(rt.atoms[j].name for j in (branches or substituents))
+        return tuple(residue_type.atoms[j].name for j in (branches or substituents))
 
     def annotate_residue_type(self, block_type):
         if hasattr(block_type, "fixed_aa_chi_sampler_builds_bt"):

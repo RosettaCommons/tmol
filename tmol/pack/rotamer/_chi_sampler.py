@@ -25,7 +25,7 @@ class ChiSampler(ConformerSampler):
         raise NotImplementedError()
 
     @_validate_args
-    def annotate_residue_type(self, rt: RefinedResidueType) -> None:
+    def annotate_residue_type(self, residue_type: RefinedResidueType) -> None:
         """Attach optional sampler metadata to one residue type."""
         pass
 
@@ -35,12 +35,12 @@ class ChiSampler(ConformerSampler):
         pass
 
     @_validate_args
-    def defines_rotamers_for_rt(self, rt: RefinedResidueType) -> bool:
+    def defines_rotamers_for_rt(self, residue_type: RefinedResidueType) -> bool:
         """Return whether this sampler supports a residue type."""
         raise NotImplementedError()
 
     @_validate_args
-    def first_sc_atoms_for_rt(self, rt_name: str) -> tuple[str, ...]:
+    def first_sidechain_atoms_for_rt(self, rt_name: str) -> tuple[str, ...]:
         """Return side-chain roots used to transfer main-chain geometry."""
         raise NotImplementedError()
 

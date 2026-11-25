@@ -292,7 +292,7 @@ def _annotate_residue_type_with_sampler_fingerprints(
                 continue
             name = names[index]
             slot = name if names.count(name) == 1 else id(sampler)
-            roots = tuple(sorted(set(sampler.first_sc_atoms_for_rt(restype))))
+            roots = tuple(sorted(set(sampler.first_sidechain_atoms_for_rt(restype))))
             key = AnnotationKey.from_sources(chem_db, settings=roots)
             cached = next(
                 (

@@ -1,0 +1,32 @@
+# Known violations of scripts/check_api_style.py that predate the rules.
+# The pre-commit check fails only on violations NOT listed here.
+# Fix an entry, then run: python scripts/check_api_style.py --update-baseline
+# Never add entries by hand to get a new violation past the check.
+API001 tmol/database/scoring/_genbonded.py::GenBondedDatabase.find_improper_params parameter 'n1'
+API001 tmol/database/scoring/_genbonded.py::GenBondedDatabase.find_improper_params parameter 'n2'
+API001 tmol/database/scoring/_genbonded.py::GenBondedDatabase.find_improper_params parameter 'n3'
+API001 tmol/numeric/_dihedrals.py::coord_dihedrals parameter 'a'
+API001 tmol/numeric/_dihedrals.py::coord_dihedrals parameter 'b'
+API001 tmol/numeric/_dihedrals.py::coord_dihedrals parameter 'c'
+API001 tmol/numeric/_dihedrals.py::coord_dihedrals parameter 'd'
+API002 tmol/io/_pose_stack_from_biotite.py::build_context_from_atom_array parameter 'torch_device'
+API002 tmol/io/_pose_stack_from_biotite.py::canonical_form_from_biotite parameter 'torch_device'
+API002 tmol/io/_pose_stack_from_biotite.py::pose_stack_from_atom_array parameter 'torch_device'
+API003 tmol/io/_pose_stack_from_biotite.py::build_context_from_atom_array device before param_db
+API003 tmol/io/_pose_stack_from_biotite.py::pose_stack_from_atom_array device before param_db
+API003 tmol/io/_pose_stack_from_sequence.py::extended_pose_stack_from_sequences device before param_db
+API003 tmol/score/__init__.py::beta2016_score_function device before param_db
+API004 tmol/ops/_score_utils.py::calculate_block_pair_ddg parameter 'database' (ParameterDatabase)
+API004 tmol/pack/rotamer/_chi_sampler.py::ChiSampler.sample_chi_for_poses parameter 'systems' (PoseStack)
+API004 tmol/pack/rotamer/_fixed_aa_chi_sampler.py::FixedAAChiSampler.sample_chi_for_poses parameter 'poses' (PoseStack)
+API004 tmol/pack/rotamer/_na_chi_sampler.py::NaChiRotamerSampler.sample_chi_for_poses parameter 'poses' (PoseStack)
+API004 tmol/score/cartbonded/_cartbonded_energy_term.py::CartBondedEnergyTerm.setup_poses parameter 'poses' (PoseStack)
+API004 tmol/score/constraint/_constraint_energy_term.py::ConstraintEnergyTerm.setup_poses parameter 'poses' (PoseStack)
+API004 tmol/score/disulfide/_disulfide_energy_term.py::DisulfideEnergyTerm.setup_poses parameter 'poses' (PoseStack)
+API004 tmol/score/dunbrack/_dunbrack_energy_term.py::DunbrackEnergyTerm.setup_poses parameter 'poses' (PoseStack)
+API004 tmol/score/elec/_elec_energy_term.py::ElecEnergyTerm.setup_poses parameter 'poses' (PoseStack)
+API004 tmol/score/genbonded/_genbonded_energy_term.py::GenBondedEnergyTerm.setup_poses parameter 'poses' (PoseStack)
+API004 tmol/score/hbond/_hbond_energy_term.py::HBondEnergyTerm.setup_poses parameter 'poses' (PoseStack)
+API004 tmol/score/ljlk/_ljlk_energy_term.py::LJLKEnergyTerm.setup_poses parameter 'poses' (PoseStack)
+API004 tmol/score/na_torsion/_na_torsion_energy_term.py::NaTorsionEnergyTerm.setup_poses parameter 'poses' (PoseStack)
+API004 tmol/score/ref/_ref_energy_term.py::RefEnergyTerm.setup_poses parameter 'poses' (PoseStack)

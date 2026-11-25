@@ -183,7 +183,11 @@ def test_kinematic_relax_default_move_map(ubq_pdb, torch_device):
     minimizer.minimizer = record
     minimizer(pose_stack, None)
     (move_map,) = seen
-    assert move_map.move_all_mc and move_map.move_all_sc and move_map.move_all_jumps
+    assert (
+        move_map.move_all_mainchain_torsions
+        and move_map.move_all_sidechain_torsions
+        and move_map.move_all_jumps
+    )
 
 
 def test_relax_minimizer_graph_mode(ubq_pdb, torch_device):

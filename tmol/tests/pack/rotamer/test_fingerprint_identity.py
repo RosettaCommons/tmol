@@ -193,7 +193,7 @@ def test_fingerprint_chemical_identity_and_source_expiry(
         _annotate_residue_type_with_sampler_fingerprints(rt, (sampler,), database)
         cached = rt.mc_fingerprints[sampler.sampler_name()]
         atoms, fingerprints, _ = _create_mainchain_fingerprint(
-            rt, sampler.first_sc_atoms_for_rt(rt), database
+            rt, sampler.first_sidechain_atoms_for_rt(rt), database
         )
         numpy.testing.assert_array_equal(cached.mc_ats, atoms)
         assert cached.fingerprint == tuple(sorted(fingerprints))

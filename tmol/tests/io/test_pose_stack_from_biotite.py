@@ -331,7 +331,9 @@ def test_canonical_form_multipose_metadata_propagation(biotite_1r21, torch_devic
     numpy.testing.assert_array_equal(
         restored.coord[1, missing_row], cf.coords[1, 0, missing].detach().cpu().numpy()
     )
-    canonical = canonical_form_from_biotite(restored, torch_device, co=co)
+    canonical = canonical_form_from_biotite(
+        restored, torch_device, canonical_ordering=co
+    )
     numpy.testing.assert_array_equal(
         canonical.residue_insertion_codes, cf.residue_insertion_codes
     )
@@ -348,7 +350,9 @@ def test_canonical_form_multipose_metadata_propagation(biotite_1r21, torch_devic
     empty = attr.evolve(cf, coords=torch.full_like(cf.coords, float("nan")))
     empty_array = _biotite_from_canonical_form(empty, co)
     assert empty_array.array_length() == 0
-    empty_canonical = canonical_form_from_biotite(empty_array, torch_device, co=co)
+    empty_canonical = canonical_form_from_biotite(
+        empty_array, torch_device, canonical_ordering=co
+    )
     assert empty_canonical.res_types.shape == (biotite_1r21.stack_depth(), 0)
 
 
@@ -731,7 +735,7 @@ def test_an_excised_residue_leaves_the_others_their_residue_metadata(path):
     structure = structure[~numpy.isin(structure.res_name, ("HOH", "ACE"))]
     device = torch.device("cpu")
     co = _canonical_ordering_for_biotite()
-    cf = canonical_form_from_biotite(structure, device, co=co)
+    cf = canonical_form_from_biotite(structure, device, canonical_ordering=co)
     labels = list(zip(cf.chain_labels[0], cf.res_labels[0]))
     by_label = {
         name: dict(zip(labels, getattr(cf, name)[0].tolist()))

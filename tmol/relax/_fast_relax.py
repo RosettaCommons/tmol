@@ -245,8 +245,8 @@ class KinematicRelaxMinimizer:
         move_map = self.move_map
         if move_map is None:
             move_map = MoveMap.from_pose_stack(pose_stack)
-            move_map.move_all_mc = True
-            move_map.move_all_sc = True
+            move_map.move_all_mainchain_torsions = True
+            move_map.move_all_sidechain_torsions = True
             move_map.move_all_jumps = True
         fold_forest = self.fold_forest
         if fold_forest is None:

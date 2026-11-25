@@ -276,14 +276,14 @@ class ConstraintSet:
 
     def add_constraints_to_all_poses(
         self,
-        fn: ConstraintFunction,
+        constraint_function: ConstraintFunction,
         atom_indices: Tensor[torch.int32][:, :, :],
         params: Tensor[torch.float32][:, :] | None = None,
     ) -> "ConstraintSet":
         """Add the same constraints to every pose in the batch.
 
         Args:
-            fn: Function that scores coordinates and per-constraint parameters.
+            constraint_function: Function that scores coordinates and per-constraint parameters.
             atom_indices: Integer ``[constraint, atom, block/atom]`` indices, or
                 full ``[constraint, atom, pose/block/atom]`` indices.
             params: Optional float ``[constraint, parameter]`` values.
@@ -295,18 +295,18 @@ class ConstraintSet:
             # if we just drop the "which-pose-is-it-from? dimension", then
             # the normal call to add_constraints will apply it to all poses
             atom_indices = atom_indices[:, :, 1:3]
-        return self.add_constraints(fn, atom_indices, params)
+        return self.add_constraints(constraint_function, atom_indices, params)
 
     def add_constraints(
         self,
-        fn: ConstraintFunction,
+        constraint_function: ConstraintFunction,
         atom_indices: Tensor[torch.int32][:, :, :],
         params: Tensor[torch.float32][:, :] | None = None,
     ) -> "ConstraintSet":  # noqa: C901
         """Return a constraint set containing the existing and new constraints.
 
         Args:
-            fn: Function that scores coordinates and per-constraint parameters.
+            constraint_function: Function that scores coordinates and per-constraint parameters.
             atom_indices: Integer ``[constraint, atom, pose/block/atom]`` indices.
                 Omitting the pose column applies each constraint to every pose.
             params: Optional float ``[constraint, parameter]`` values.
@@ -336,9 +336,9 @@ class ConstraintSet:
 
         constraint_functions_list = list(self.constraint_functions)
         try:
-            fn_index = constraint_functions_list.index(fn)
+            fn_index = constraint_functions_list.index(constraint_function)
         except ValueError:
-            constraint_functions_list.append(fn)
+            constraint_functions_list.append(constraint_function)
             fn_index = len(constraint_functions_list) - 1
 
         if (

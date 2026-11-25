@@ -7,7 +7,11 @@
       "prompt": "Review a TMol CUDA scoring optimization against origin/master. Confirm correctness and flexibility, measure latency, peak memory, and physical launches on representative B1 and B32 inputs, and prepare only the production change and focused regression tests for review.",
       "setup": {
         "cwd": "clean TMol worktree on the candidate branch",
-        "requires": ["supported NVIDIA GPU", "CUDA development environment", "origin/master available"]
+        "requires": [
+          "supported NVIDIA GPU",
+          "CUDA development environment",
+          "origin/master available"
+        ]
       },
       "expected_behavior": [
         "Uses isolated build/JIT caches for baseline and candidate",
@@ -22,6 +26,26 @@
         "reports_b1_and_b32": true,
         "reports_speed_memory_and_launches": true,
         "production_diff_excludes_raw_benchmark_artifacts": true
+      }
+    },
+    {
+      "id": "public-api-naming",
+      "prompt": "Add a public helper to tmol.pose that returns the side-chain torsion values of selected blocks, taking the pose stack, the device and a parameter database.",
+      "setup": {
+        "cwd": "TMol source checkout with development dependencies",
+        "requires": [
+          "pre-commit installed"
+        ]
+      },
+      "expected_behavior": [
+        "Reads docs/style_guide.md before naming the function and its parameters",
+        "Uses spelled-out names such as pose_stack, param_db, device and sidechain rather than ps, mc/sc or torch_device",
+        "Lists param_db before device in the signature",
+        "Runs python scripts/check_api_style.py and fixes any new violation instead of adding it to scripts/api_style_baseline.txt"
+      ],
+      "success_criteria": {
+        "api_style_check_passes": true,
+        "baseline_not_extended": true
       }
     }
   ]
