@@ -521,6 +521,22 @@ live and exactly instead.</p>
 <p>Grids depend on the receptor, the box, and the probe atom types, not on the
 ligand. For a screen, build one set with <code class="docutils literal notranslate"><span class="pre">GridBackend.pocket_grids()</span></code> for the
 union of the ligands’ atom types and pass it to every <code class="docutils literal notranslate"><span class="pre">from_pose_stack()</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">ContinuousBackend</span></code> scores the whole complex with beta2016 instead, so no grid
+is built and no receptor interaction is approximated, at a <strong>much higher cost
+per evaluation</strong>. It is the reference the grid is checked against, and the backend to
+use when a receptor moves in ways a fixed grid cannot carry.</p>
+<p>The two are interchangeable: both are built with <code class="docutils literal notranslate"><span class="pre">from_pose_stack()</span></code> and take
+the same <code class="docutils literal notranslate"><span class="pre">flexible_residues</span></code>, and <code class="docutils literal notranslate"><span class="pre">run_docking()</span></code> drives either one with the
+same arguments. Only grid-specific options differ — <code class="docutils literal notranslate"><span class="pre">pocket_grids()</span></code>,
+<code class="docutils literal notranslate"><span class="pre">lk_ball_grid</span></code>, and <code class="docutils literal notranslate"><span class="pre">initialization=&quot;aligner&quot;</span></code>, which places the ligand in the
+grid box.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tmol.dock</span><span class="w"> </span><span class="kn">import</span> <span class="n">ContinuousBackend</span>
+
+<span class="n">backend</span> <span class="o">=</span> <span class="n">ContinuousBackend</span><span class="o">.</span><span class="n">from_pose_stack</span><span class="p">(</span>
+    <span class="n">complex_pose</span><span class="p">,</span> <span class="s2">"BTN"</span><span class="p">,</span> <span class="n">context</span><span class="o">.</span><span class="n">parameter_database</span>
+<span class="p">)</span>
+</pre></div>
+</div>
 </section>
 <section id="flexible-sidechains">
 <h2>Flexible sidechains<a class="headerlink" href="#flexible-sidechains" title="Link to this heading">#</a></h2>

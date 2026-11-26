@@ -491,6 +491,7 @@
     <span class="n">set_lk_ball_pose_variants</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScoreFunction</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score._score_types</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScoreType</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score.gridscore._movable</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">movable_block_mapping</span><span class="p">,</span>
     <span class="n">movable_atoms</span><span class="p">,</span>
@@ -586,6 +587,90 @@
     <span class="k">return</span> <span class="n">index</span><span class="o">.</span><span class="n">genes_from_raw_dofs</span><span class="p">(</span><span class="n">raw_dofs</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
 
 
+<span class="nd">@attrs</span><span class="o">.</span><span class="n">frozen</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">_DockingSite</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""The ligand, flexible sidechains and reachable metals of one complex."""</span>
+
+    <span class="c1">#: The reference, on the complete block types when a metal is in reach</span>
+    <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span>
+    <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">sidechain_blocks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">metal_blocks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="c1">#: Packed block types holding every bound form a search can reach, or None</span>
+    <span class="n">complete_block_types</span><span class="p">:</span> <span class="nb">object</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_docking_site</span><span class="p">(</span>
+    <span class="n">reference_pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+    <span class="n">ligand</span><span class="p">,</span>
+    <span class="n">param_db</span><span class="p">:</span> <span class="n">ParameterDatabase</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">flexible_residues</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">metal_context</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">voxel_spacing</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">bbox_padding</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_DockingSite</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Resolve what a backend docks, the same way for every backend."""</span>
+    <span class="k">if</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">n_poses</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"a docking backend is built from one reference pose"</span><span class="p">)</span>
+    <span class="n">ligand_block</span> <span class="o">=</span> <span class="n">resolve_ligand_block</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">ligand</span><span class="p">)</span>
+    <span class="n">sidechain_blocks</span> <span class="o">=</span> <span class="n">validated_sidechain_blocks</span><span class="p">(</span>
+        <span class="n">reference_pose_stack</span><span class="p">,</span>
+        <span class="n">ligand_block</span><span class="p">,</span>
+        <span class="p">()</span> <span class="k">if</span> <span class="n">flexible_residues</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">flexible_residues</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">metal_blocks</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">reachable_metal_blocks</span><span class="p">(</span>
+            <span class="n">reference_pose_stack</span><span class="p">,</span>
+            <span class="n">ligand_block</span><span class="p">,</span>
+            <span class="n">voxel_spacing</span><span class="o">=</span><span class="n">voxel_spacing</span><span class="p">,</span>
+            <span class="n">bbox_padding</span><span class="o">=</span><span class="n">bbox_padding</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">metal_context</span>
+        <span class="k">else</span> <span class="p">()</span>
+    <span class="p">)</span>
+    <span class="n">complete_block_types</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">metal_blocks</span><span class="p">:</span>
+        <span class="c1"># Every bound form the search can reach, built before anything is</span>
+        <span class="c1"># rendered: detection then only picks among these block types, so</span>
+        <span class="c1"># no scoring module is rebuilt and no captured graph is invalidated.</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io.details._metal_detection</span><span class="w"> </span><span class="kn">import</span> <span class="n">_with_donor_patches</span>
+
+        <span class="n">pbt</span> <span class="o">=</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span>
+        <span class="n">complete</span> <span class="o">=</span> <span class="n">_with_donor_patches</span><span class="p">(</span>
+            <span class="n">pbt</span><span class="p">,</span>
+            <span class="n">ligand_donor_patches</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="n">param_db</span><span class="o">.</span><span class="n">chemical</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">complete</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">pbt</span><span class="p">:</span>
+            <span class="n">reference_pose_stack</span> <span class="o">=</span> <span class="n">attrs</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span>
+                <span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">packed_block_types</span><span class="o">=</span><span class="n">complete</span>
+            <span class="p">)</span>
+            <span class="n">complete_block_types</span> <span class="o">=</span> <span class="n">complete</span>
+    <span class="k">return</span> <span class="n">_DockingSite</span><span class="p">(</span>
+        <span class="n">pose_stack</span><span class="o">=</span><span class="n">reference_pose_stack</span><span class="p">,</span>
+        <span class="n">ligand_block</span><span class="o">=</span><span class="n">ligand_block</span><span class="p">,</span>
+        <span class="n">sidechain_blocks</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">sidechain_blocks</span><span class="p">),</span>
+        <span class="n">metal_blocks</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">metal_blocks</span><span class="p">),</span>
+        <span class="n">complete_block_types</span><span class="o">=</span><span class="n">complete_block_types</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_on_complete_block_types</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""``pose_stack`` on the block types every bound form was enumerated into.</span>
+
+<span class="sd">    Detection then never grows them. Their leading run is the caller's. The</span>
+<span class="sd">    palette is built on the reference pose's device; the search runs on its</span>
+<span class="sd">    own, so a copy is kept per device.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">complete_block_types</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">pose_stack</span>
+    <span class="n">complete</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_complete_on</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">complete</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">complete</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">complete_block_types</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">backend</span><span class="o">.</span><span class="n">_complete_on</span><span class="p">[</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="n">complete</span>
+    <span class="k">return</span> <span class="n">attrs</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">packed_block_types</span><span class="o">=</span><span class="n">complete</span><span class="p">)</span>
+
+
 <span class="k">class</span><span class="w"> </span><span class="nc">ScoringBackend</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""The scoring contract used by the docking loop.</span>
 
@@ -599,17 +684,35 @@
 
 <span class="sd">    A backend is built for one ligand: ``ligand_block`` is its block index in</span>
 <span class="sd">    the reference complex, and ``sidechain_blocks`` the receptor residues</span>
-<span class="sd">    (block indices) whose sidechains move with it.</span>
+<span class="sd">    (block indices) whose sidechains move with it. Every backend is built the</span>
+<span class="sd">    same way, with ``from_pose_stack``, and docks through the same calls.</span>
 <span class="sd">    """</span>
 
     <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span>
     <span class="n">sidechain_blocks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="c1">#: Receptor metals in the ligand's reach, which a search may coordinate</span>
+    <span class="n">metal_blocks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="c1">#: Ligand-extended parameter database; None uses tmol's default</span>
+    <span class="n">param_db</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ParameterDatabase</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">search_view</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">PoseStack</span><span class="p">,</span> <span class="s2">"ScoringBackend"</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">"""The pose, backend and flexible blocks the GA actually searches over."""</span>
-        <span class="k">return</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="p">()</span>
+<span class="w">        </span><span class="sd">"""The pose, backend and flexible blocks the GA actually searches over.</span>
+
+<span class="sd">        The default searches the whole complex with this backend's own</span>
+<span class="sd">        sidechains. A backend that searches a smaller pose returns it with a</span>
+<span class="sd">        backend addressing that pose's block numbering.</span>
+<span class="sd">        """</span>
+        <span class="k">return</span> <span class="n">pose_stack</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sidechain_blocks</span><span class="p">)</span>
+
+    <span class="nd">@contextmanager</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rep_scale</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Scale fa_rep for the duration of the block (the GA packing ramp).</span>
+
+<span class="sd">        A backend without a repulsive term to soften leaves this a no-op.</span>
+<span class="sd">        """</span>
+        <span class="k">yield</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">set_ligand_variants</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">variants</span><span class="p">:</span> <span class="s2">"LigandVariantDOFs"</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span>
@@ -655,14 +758,23 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">ContinuousBackend</span><span class="p">(</span><span class="n">ScoringBackend</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Full continuous beta2016 scoring and kinematic minimization.</span>
 
+<span class="sd">    The search runs on the whole complex, so every receptor interaction is</span>
+<span class="sd">    scored exactly; it is slower per evaluation than :class:`GridBackend` and</span>
+<span class="sd">    needs no grid. Build it with :meth:`from_pose_stack`, as for the grid</span>
+<span class="sd">    backend; the two dock through the same calls and options.</span>
+
 <span class="sd">    ``param_db`` should be the ligand-extended parameter database returned by</span>
-<span class="sd">    ligand preparation. If it is omitted, tmol's memoized default beta2016</span>
-<span class="sd">    score function is used. A score function is cached per device, while the</span>
-<span class="sd">    whole-pose scoring module is rendered for each input PoseStack.</span>
+<span class="sd">    ligand preparation; omitted, tmol's default database is used. The backend</span>
+<span class="sd">    scores with its own copy of beta2016 per device, so the repulsive ramp and</span>
+<span class="sd">    the search's metal weight never write into the shared memoized one.</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        ligand_block: Block index of the ligand in the complex to be docked.</span>
 <span class="sd">        param_db: Optional ligand-extended scoring parameter database.</span>
+<span class="sd">        sidechain_blocks: Receptor residues whose chis the search moves.</span>
+<span class="sd">        metal_blocks: Receptor metals the ligand may coordinate.</span>
+<span class="sd">        complete_block_types: Packed block types holding every bound form the</span>
+<span class="sd">            search can reach (see :meth:`from_pose_stack`).</span>
 <span class="sd">        kin_dtype: Internal-coordinate dtype for minimization. By default the</span>
 <span class="sd">            input coordinate dtype is used.</span>
 <span class="sd">        value_only_line_search: Evaluate Armijo trials without gradients and</span>
@@ -674,6 +786,9 @@
         <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">param_db</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ParameterDatabase</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
+        <span class="n">sidechain_blocks</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
+        <span class="n">metal_blocks</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
+        <span class="n">complete_block_types</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
         <span class="n">kin_dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">value_only_line_search</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -681,19 +796,137 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"kin_dtype must be torch.float32 or torch.float64"</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">ligand_block</span> <span class="o">=</span> <span class="n">ligand_block</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">param_db</span> <span class="o">=</span> <span class="n">param_db</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sidechain_blocks</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">b</span><span class="p">)</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">sidechain_blocks</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">metal_blocks</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">b</span><span class="p">)</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">metal_blocks</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">complete_block_types</span> <span class="o">=</span> <span class="n">complete_block_types</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_complete_on</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">kin_dtype</span> <span class="o">=</span> <span class="n">kin_dtype</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">value_only_line_search</span> <span class="o">=</span> <span class="n">value_only_line_search</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">ScoreFunction</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_base_weights</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_rep_scale</span> <span class="o">=</span> <span class="mf">1.0</span>
+        <span class="c1">#: Search weight on metal coordination; None keeps beta2016's own</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_metal_weight</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">ligand_variant_dofs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">LigandVariantDOFs</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_single_variant_dofs</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
 
+<div class="viewcode-block" id="ContinuousBackend.from_pose_stack">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.ContinuousBackend.from_pose_stack">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_pose_stack</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">reference_pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+        <span class="n">ligand</span><span class="p">,</span>
+        <span class="n">param_db</span><span class="p">:</span> <span class="n">ParameterDatabase</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">flexible_residues</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">metal_context</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">voxel_spacing</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.25</span><span class="p">,</span>
+        <span class="n">bbox_padding</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">4.0</span><span class="p">,</span>
+        <span class="n">kin_dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">value_only_line_search</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"ContinuousBackend"</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Build the backend for one ligand of a complex.</span>
+
+<span class="sd">        Takes the same arguments as :meth:`GridBackend.from_pose_stack` where</span>
+<span class="sd">        they apply. ``voxel_spacing`` and ``bbox_padding`` only set the box</span>
+<span class="sd">        whose metals count as within the ligand's reach, as the grid's box does.</span>
+<span class="sd">        """</span>
+        <span class="n">site</span> <span class="o">=</span> <span class="n">_docking_site</span><span class="p">(</span>
+            <span class="n">reference_pose_stack</span><span class="p">,</span>
+            <span class="n">ligand</span><span class="p">,</span>
+            <span class="n">param_db</span><span class="p">,</span>
+            <span class="n">flexible_residues</span><span class="o">=</span><span class="n">flexible_residues</span><span class="p">,</span>
+            <span class="n">metal_context</span><span class="o">=</span><span class="n">metal_context</span><span class="p">,</span>
+            <span class="n">voxel_spacing</span><span class="o">=</span><span class="n">voxel_spacing</span><span class="p">,</span>
+            <span class="n">bbox_padding</span><span class="o">=</span><span class="n">bbox_padding</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">site</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">,</span>
+            <span class="n">param_db</span><span class="p">,</span>
+            <span class="n">sidechain_blocks</span><span class="o">=</span><span class="n">site</span><span class="o">.</span><span class="n">sidechain_blocks</span><span class="p">,</span>
+            <span class="n">metal_blocks</span><span class="o">=</span><span class="n">site</span><span class="o">.</span><span class="n">metal_blocks</span><span class="p">,</span>
+            <span class="n">complete_block_types</span><span class="o">=</span><span class="n">site</span><span class="o">.</span><span class="n">complete_block_types</span><span class="p">,</span>
+            <span class="n">kin_dtype</span><span class="o">=</span><span class="n">kin_dtype</span><span class="p">,</span>
+            <span class="n">value_only_line_search</span><span class="o">=</span><span class="n">value_only_line_search</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ContinuousBackend.search_view">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.ContinuousBackend.search_view">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">search_view</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">PoseStack</span><span class="p">,</span> <span class="s2">"ContinuousBackend"</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""The whole complex, on the block types every bound form needs."""</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">_on_complete_block_types</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">),</span>
+            <span class="bp">self</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sidechain_blocks</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_score_function</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ScoreFunction</span><span class="p">:</span>
         <span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">device</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="p">[</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="n">beta2016_score_function</span><span class="p">(</span>
-                <span class="n">device</span><span class="p">,</span> <span class="n">param_db</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">param_db</span>
-            <span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="p">[</span><span class="n">device</span><span class="p">]</span>
+        <span class="n">sfxn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">sfxn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">param_db</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">param_db</span> <span class="ow">or</span> <span class="n">ParameterDatabase</span><span class="o">.</span><span class="n">get_default</span><span class="p">()</span>
+            <span class="n">beta</span> <span class="o">=</span> <span class="n">beta2016_score_function</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">param_db</span><span class="o">=</span><span class="n">param_db</span><span class="p">)</span>
+            <span class="n">sfxn</span> <span class="o">=</span> <span class="n">ScoreFunction</span><span class="p">(</span><span class="n">param_db</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">score_type</span> <span class="ow">in</span> <span class="n">beta</span><span class="o">.</span><span class="n">all_score_types</span><span class="p">():</span>
+                <span class="n">weight</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">beta</span><span class="o">.</span><span class="n">get_weight</span><span class="p">(</span><span class="n">score_type</span><span class="p">))</span>
+                <span class="k">if</span> <span class="n">weight</span><span class="p">:</span>
+                    <span class="n">sfxn</span><span class="o">.</span><span class="n">set_weight</span><span class="p">(</span><span class="n">score_type</span><span class="p">,</span> <span class="n">weight</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_base_weights</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">ScoreType</span><span class="o">.</span><span class="n">fa_ljrep</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">beta</span><span class="o">.</span><span class="n">get_weight</span><span class="p">(</span><span class="n">ScoreType</span><span class="o">.</span><span class="n">fa_ljrep</span><span class="p">)),</span>
+                <span class="n">ScoreType</span><span class="o">.</span><span class="n">metal_coordination</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span>
+                    <span class="n">beta</span><span class="o">.</span><span class="n">get_weight</span><span class="p">(</span><span class="n">ScoreType</span><span class="o">.</span><span class="n">metal_coordination</span><span class="p">)</span>
+                <span class="p">),</span>
+            <span class="p">}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="p">[</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="n">sfxn</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_weights</span><span class="p">(</span><span class="n">sfxn</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">sfxn</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sfxn</span><span class="p">:</span> <span class="n">ScoreFunction</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">sfxn</span><span class="o">.</span><span class="n">set_weight</span><span class="p">(</span>
+            <span class="n">ScoreType</span><span class="o">.</span><span class="n">fa_ljrep</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_base_weights</span><span class="p">[</span><span class="n">ScoreType</span><span class="o">.</span><span class="n">fa_ljrep</span><span class="p">]</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rep_scale</span>
+        <span class="p">)</span>
+        <span class="n">sfxn</span><span class="o">.</span><span class="n">set_weight</span><span class="p">(</span>
+            <span class="n">ScoreType</span><span class="o">.</span><span class="n">metal_coordination</span><span class="p">,</span>
+            <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_base_weights</span><span class="p">[</span><span class="n">ScoreType</span><span class="o">.</span><span class="n">metal_coordination</span><span class="p">]</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metal_weight</span> <span class="ow">is</span> <span class="kc">None</span>
+                <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metal_weight</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="ContinuousBackend.rep_scale">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.ContinuousBackend.rep_scale">[docs]</a>
+    <span class="nd">@contextmanager</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rep_scale</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Scale fa_rep for the duration of the block, as the grid backend does."""</span>
+        <span class="n">previous</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rep_scale</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_rep_scale</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">scale</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">sfxn</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_weights</span><span class="p">(</span><span class="n">sfxn</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">yield</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_rep_scale</span> <span class="o">=</span> <span class="n">previous</span>
+            <span class="k">for</span> <span class="n">sfxn</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_apply_weights</span><span class="p">(</span><span class="n">sfxn</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ContinuousBackend.set_metal_term">
+<a class="viewcode-back" href="../../../api/dock.html#tmol.dock.ContinuousBackend.set_metal_term">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_metal_term</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span> <span class="n">weight</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Score the ligand's metal bonds at the search's ``weight``.</span>
+
+<span class="sd">        beta2016 already carries the term; only its weight changes.</span>
+<span class="sd">        """</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_metal_weight</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">weight</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">sfxn</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_functions</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_weights</span><span class="p">(</span><span class="n">sfxn</span><span class="p">)</span></div>
+
 
 <div class="viewcode-block" id="ContinuousBackend.set_ligand_variants">
 <a class="viewcode-back" href="../../../api/dock.html#tmol.dock.ContinuousBackend.set_ligand_variants">[docs]</a>
@@ -1391,16 +1624,7 @@
         <span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">PoseStack</span><span class="p">,</span> <span class="s2">"GridBackend"</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">"""Compact ligand(+flexible sidechain) pose the GA searches over."""</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">complete_block_types</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># Search on the block types every bound form was enumerated into,</span>
-            <span class="c1"># so detection never grows them. Their leading run is the caller's.</span>
-            <span class="c1"># The palette is built on the reference pose's device; the search</span>
-            <span class="c1"># runs on its own, so keep a copy per device.</span>
-            <span class="n">complete</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_complete_on</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">complete</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">complete</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">complete_block_types</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_complete_on</span><span class="p">[</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="n">complete</span>
-            <span class="n">pose_stack</span> <span class="o">=</span> <span class="n">attrs</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">packed_block_types</span><span class="o">=</span><span class="n">complete</span><span class="p">)</span>
+        <span class="n">pose_stack</span> <span class="o">=</span> <span class="n">_on_complete_block_types</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pose_stack</span><span class="p">)</span>
         <span class="n">compact_sidechains</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">sidechain_blocks</span><span class="p">:</span>
             <span class="n">_</span><span class="p">,</span> <span class="n">compact_sidechains</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">movable_block_mapping</span><span class="p">(</span>
@@ -1533,47 +1757,24 @@
 <span class="sd">        (ignored on CPU).</span>
 <span class="sd">        """</span>
 
-        <span class="k">if</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">n_poses</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"grid construction requires one reference pose"</span><span class="p">)</span>
-        <span class="n">ligand_block</span> <span class="o">=</span> <span class="n">resolve_ligand_block</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">ligand</span><span class="p">)</span>
-        <span class="n">pbt</span> <span class="o">=</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span>
-        <span class="n">block_type_index</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">])</span>
-        <span class="n">block_type</span> <span class="o">=</span> <span class="n">pbt</span><span class="o">.</span><span class="n">active_block_types</span><span class="p">[</span><span class="n">block_type_index</span><span class="p">]</span>
-        <span class="n">sidechain_blocks</span> <span class="o">=</span> <span class="n">validated_sidechain_blocks</span><span class="p">(</span>
+        <span class="n">site</span> <span class="o">=</span> <span class="n">_docking_site</span><span class="p">(</span>
             <span class="n">reference_pose_stack</span><span class="p">,</span>
-            <span class="n">ligand_block</span><span class="p">,</span>
-            <span class="p">()</span> <span class="k">if</span> <span class="n">flexible_residues</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">flexible_residues</span><span class="p">,</span>
+            <span class="n">ligand</span><span class="p">,</span>
+            <span class="n">param_db</span><span class="p">,</span>
+            <span class="n">flexible_residues</span><span class="o">=</span><span class="n">flexible_residues</span><span class="p">,</span>
+            <span class="n">metal_context</span><span class="o">=</span><span class="n">metal_context</span><span class="p">,</span>
+            <span class="n">voxel_spacing</span><span class="o">=</span><span class="n">voxel_spacing</span><span class="p">,</span>
+            <span class="n">bbox_padding</span><span class="o">=</span><span class="n">bbox_padding</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="n">metal_blocks</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">reachable_metal_blocks</span><span class="p">(</span>
-                <span class="n">reference_pose_stack</span><span class="p">,</span>
-                <span class="n">ligand_block</span><span class="p">,</span>
-                <span class="n">voxel_spacing</span><span class="o">=</span><span class="n">voxel_spacing</span><span class="p">,</span>
-                <span class="n">bbox_padding</span><span class="o">=</span><span class="n">bbox_padding</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="k">if</span> <span class="n">metal_context</span>
-            <span class="k">else</span> <span class="p">()</span>
-        <span class="p">)</span>
-        <span class="n">complete_block_types</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="n">metal_blocks</span><span class="p">:</span>
-            <span class="c1"># Every bound form the search can reach, built before anything is</span>
-            <span class="c1"># rendered: detection then only picks among these block types, so</span>
-            <span class="c1"># no scoring module is rebuilt and no captured graph is invalidated.</span>
-            <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.io.details._metal_detection</span><span class="w"> </span><span class="kn">import</span> <span class="n">_with_donor_patches</span>
-
-            <span class="n">complete</span> <span class="o">=</span> <span class="n">_with_donor_patches</span><span class="p">(</span>
-                <span class="n">pbt</span><span class="p">,</span>
-                <span class="n">ligand_donor_patches</span><span class="p">(</span>
-                    <span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="n">param_db</span><span class="o">.</span><span class="n">chemical</span>
-                <span class="p">),</span>
-            <span class="p">)</span>
-            <span class="k">if</span> <span class="n">complete</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">pbt</span><span class="p">:</span>
-                <span class="n">reference_pose_stack</span> <span class="o">=</span> <span class="n">attrs</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span>
-                    <span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">packed_block_types</span><span class="o">=</span><span class="n">complete</span>
-                <span class="p">)</span>
-                <span class="n">pbt</span> <span class="o">=</span> <span class="n">complete</span>
-                <span class="n">block_type</span> <span class="o">=</span> <span class="n">pbt</span><span class="o">.</span><span class="n">active_block_types</span><span class="p">[</span><span class="n">block_type_index</span><span class="p">]</span>
-                <span class="n">complete_block_types</span> <span class="o">=</span> <span class="n">complete</span>
+        <span class="n">reference_pose_stack</span> <span class="o">=</span> <span class="n">site</span><span class="o">.</span><span class="n">pose_stack</span>
+        <span class="n">ligand_block</span> <span class="o">=</span> <span class="n">site</span><span class="o">.</span><span class="n">ligand_block</span>
+        <span class="n">sidechain_blocks</span> <span class="o">=</span> <span class="n">site</span><span class="o">.</span><span class="n">sidechain_blocks</span>
+        <span class="n">metal_blocks</span> <span class="o">=</span> <span class="n">site</span><span class="o">.</span><span class="n">metal_blocks</span>
+        <span class="n">complete_block_types</span> <span class="o">=</span> <span class="n">site</span><span class="o">.</span><span class="n">complete_block_types</span>
+        <span class="n">pbt</span> <span class="o">=</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span>
+        <span class="n">block_type</span> <span class="o">=</span> <span class="n">pbt</span><span class="o">.</span><span class="n">active_block_types</span><span class="p">[</span>
+            <span class="nb">int</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">])</span>
+        <span class="p">]</span>
         <span class="n">context_blocks</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
             <span class="nb">sorted</span><span class="p">(</span>
                 <span class="p">(</span>
@@ -1816,7 +2017,6 @@
 <span class="sd">        ``weight`` of zero, or a pose with no metal site, drops the term.</span>
 <span class="sd">        """</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScoreFunction</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">tmol.score._score_types</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScoreType</span>
 
         <span class="n">pbt</span> <span class="o">=</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span>
         <span class="n">has_metal</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>

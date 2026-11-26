@@ -42,6 +42,25 @@ Grids depend on the receptor, the box, and the probe atom types, not on the
 ligand. For a screen, build one set with `GridBackend.pocket_grids()` for the
 union of the ligands' atom types and pass it to every `from_pose_stack()`.
 
+`ContinuousBackend` scores the whole complex with beta2016 instead, so no grid
+is built and no receptor interaction is approximated, at a **much higher cost
+per evaluation**. It is the reference the grid is checked against, and the backend to
+use when a receptor moves in ways a fixed grid cannot carry.
+
+The two are interchangeable: both are built with `from_pose_stack()` and take
+the same `flexible_residues`, and `run_docking()` drives either one with the
+same arguments. Only grid-specific options differ --- `pocket_grids()`,
+`lk_ball_grid`, and `initialization="aligner"`, which places the ligand in the
+grid box.
+
+```python
+from tmol.dock import ContinuousBackend
+
+backend = ContinuousBackend.from_pose_stack(
+    complex_pose, "BTN", context.parameter_database
+)
+```
+
 ## Flexible sidechains
 
 Pass `flexible_residues` to let pocket sidechains move. Their chis become part of

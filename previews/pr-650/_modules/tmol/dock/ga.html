@@ -447,7 +447,6 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">contextlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">nullcontext</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Literal</span>
@@ -465,6 +464,7 @@
     <span class="n">LigandDockingDOFs</span><span class="p">,</span>
     <span class="n">_inverse_dofs</span><span class="p">,</span>
     <span class="n">_local_torsion_atoms</span><span class="p">,</span>
+    <span class="n">_sidechain_coordinate_indices</span><span class="p">,</span>
     <span class="n">_sidechain_coordinate_metadata</span><span class="p">,</span>
     <span class="n">_sidechain_end_local_atoms</span><span class="p">,</span>
     <span class="n">_sidechain_logical_torsions_from_coords</span><span class="p">,</span>
@@ -928,6 +928,9 @@
     <span class="n">best_genes</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">best_energies</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">best_pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1">#: [pool pose, reference ligand atom] -&gt; that pose's own ligand atom, -1</span>
+    <span class="c1">#: where its form has none; None when every pose holds the reference form</span>
+    <span class="n">pool_ligand_atoms</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
 
 <div class="viewcode-block" id="DockingResult">
@@ -965,110 +968,140 @@
 
 
 
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SearchLayout</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Where a backend's search pose keeps what the reference complex moves.</span>
+
+<span class="sd">    Backends search on different poses: the grid backend on a compact pose of</span>
+<span class="sd">    the ligand and the blocks it moves, the continuous one on the whole</span>
+<span class="sd">    complex. This is the one mapping between that pose and the reference, so</span>
+<span class="sd">    the GA and finalization never assume either layout.</span>
+<span class="sd">    """</span>
+
+    <span class="c1">#: One-pose search template, as ``ScoringBackend.search_view`` returns it</span>
+    <span class="n">pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span>
+    <span class="c1">#: The backend that scores the search pose</span>
+    <span class="n">backend</span><span class="p">:</span> <span class="n">ScoringBackend</span>
+    <span class="c1">#: Ligand block in the reference complex</span>
+    <span class="n">reference_ligand_block</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="c1">#: Ligand block in the search pose</span>
+    <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="c1">#: Flexible sidechain blocks in the search pose, in the backend's order</span>
+    <span class="n">sidechain_blocks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="c1">#: (search block, reference block, block-local moving atoms) per sidechain</span>
+    <span class="n">sidechain_atoms</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">search_layout</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span> <span class="n">backend</span><span class="p">:</span> <span class="n">ScoringBackend</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""The search pose ``backend`` docks on, mapped onto ``reference_pose_stack``."""</span>
+    <span class="k">if</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">n_poses</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"a search layout needs one reference pose"</span><span class="p">)</span>
+    <span class="n">search_pose</span><span class="p">,</span> <span class="n">search_backend</span><span class="p">,</span> <span class="n">search_sidechains</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">search_view</span><span class="p">(</span>
+        <span class="n">reference_pose_stack</span>
+    <span class="p">)</span>
+    <span class="n">sidechain_blocks</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">sidechain_blocks</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">search_sidechains</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">sidechain_blocks</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"search view does not hold every flexible sidechain"</span><span class="p">)</span>
+    <span class="n">sidechain_atoms</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">search_sidechains</span><span class="p">:</span>
+        <span class="n">docking_dofs</span> <span class="o">=</span> <span class="n">build_ligand_docking_dofs</span><span class="p">(</span>
+            <span class="n">search_pose</span><span class="p">,</span>
+            <span class="n">search_backend</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">,</span>
+            <span class="n">sidechain_blocks</span><span class="o">=</span><span class="n">search_sidechains</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">atom_indices</span> <span class="o">=</span> <span class="n">_sidechain_coordinate_indices</span><span class="p">(</span>
+            <span class="n">search_pose</span><span class="p">,</span>
+            <span class="n">docking_dofs</span><span class="p">,</span>
+            <span class="n">PoseStackKinematicsModule</span><span class="p">(</span><span class="n">search_pose</span><span class="p">,</span> <span class="n">docking_dofs</span><span class="o">.</span><span class="n">fold_forest</span><span class="p">)</span><span class="o">.</span><span class="n">kmd</span><span class="o">.</span><span class="n">forest</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">moving</span> <span class="o">=</span> <span class="n">atom_indices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">search_block</span><span class="p">,</span> <span class="n">reference_block</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">search_sidechains</span><span class="p">,</span> <span class="n">sidechain_blocks</span><span class="p">):</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">search_pose</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">search_block</span><span class="p">])</span>
+            <span class="n">end</span> <span class="o">=</span> <span class="n">start</span> <span class="o">+</span> <span class="n">search_pose</span><span class="o">.</span><span class="n">block_type</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">search_block</span><span class="p">)</span><span class="o">.</span><span class="n">n_atoms</span>
+            <span class="n">selected</span> <span class="o">=</span> <span class="n">moving</span><span class="p">[(</span><span class="n">moving</span> <span class="o">&gt;=</span> <span class="n">start</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">moving</span> <span class="o">&lt;</span> <span class="n">end</span><span class="p">)]</span>
+            <span class="k">if</span> <span class="n">selected</span><span class="o">.</span><span class="n">numel</span><span class="p">():</span>
+                <span class="n">sidechain_atoms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="p">(</span><span class="n">search_block</span><span class="p">,</span> <span class="n">reference_block</span><span class="p">,</span> <span class="n">selected</span> <span class="o">-</span> <span class="n">start</span><span class="p">)</span>
+                <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">numel</span><span class="p">())</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">sidechain_atoms</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">int</span><span class="p">(</span><span class="n">moving</span><span class="o">.</span><span class="n">numel</span><span class="p">()):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"sidechain atom mapping is incomplete"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">SearchLayout</span><span class="p">(</span>
+        <span class="n">pose_stack</span><span class="o">=</span><span class="n">search_pose</span><span class="p">,</span>
+        <span class="n">backend</span><span class="o">=</span><span class="n">search_backend</span><span class="p">,</span>
+        <span class="n">reference_ligand_block</span><span class="o">=</span><span class="n">backend</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">,</span>
+        <span class="n">ligand_block</span><span class="o">=</span><span class="n">search_backend</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">,</span>
+        <span class="n">sidechain_blocks</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">search_sidechains</span><span class="p">),</span>
+        <span class="n">sidechain_atoms</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">sidechain_atoms</span><span class="p">),</span>
+    <span class="p">)</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_place_ligand_in_reference</span><span class="p">(</span>
     <span class="n">reference_pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
-    <span class="n">ligand_block</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-    <span class="n">ligand_pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+    <span class="n">search_pose_stack</span><span class="p">:</span> <span class="n">PoseStack</span><span class="p">,</span>
+    <span class="n">layout</span><span class="p">:</span> <span class="n">SearchLayout</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
-    <span class="n">sidechain_blocks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
-    <span class="n">compact_sidechain_blocks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
-    <span class="n">sidechain_atom_indices</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">ligand_atom_map</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoseStack</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Restore ligand and moved sidechain atoms into a reference complex.</span>
+<span class="w">    </span><span class="sd">"""Copy the ligand and moved sidechain atoms of each search pose into the</span>
+<span class="sd">    matching reference complex.</span>
 
 <span class="sd">    ``ligand_atom_map`` is ``[pose, reference atom] -&gt; that pose's own ligand</span>
 <span class="sd">    atom``, -1 where its block type has none: a search that coordinated a metal</span>
 <span class="sd">    may hand back a conjugate base, which is the reference ligand less a</span>
 <span class="sd">    hydrogen. An absent atom keeps its reference coordinate, and finalization's</span>
-<span class="sd">    own redetection rebuilds the bound form from the placed complex.</span>
+<span class="sd">    own redetection rebuilds the bound form from the placed complex. Offsets are</span>
+<span class="sd">    read per pose, since a pose holding a different ligand form shifts every</span>
+<span class="sd">    block after it.</span>
 <span class="sd">    """</span>
 
-    <span class="k">if</span> <span class="n">ligand_pose_stack</span><span class="o">.</span><span class="n">n_poses</span> <span class="o">!=</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"ligand and reference pose counts must match"</span><span class="p">)</span>
-    <span class="n">block_type_indices</span> <span class="o">=</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[:,</span> <span class="n">ligand_block</span><span class="p">]</span>
-    <span class="k">if</span> <span class="n">ligand_atom_map</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">block_type_indices</span> <span class="o">==</span> <span class="n">ligand_pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">])</span>
-    <span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"ligand and reference block types must match"</span><span class="p">)</span>
-    <span class="n">block_type_index</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">block_type_indices</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
-    <span class="n">n_atoms</span> <span class="o">=</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">packed_block_types</span><span class="o">.</span><span class="n">active_block_types</span><span class="p">[</span>
-        <span class="n">block_type_index</span>
-    <span class="p">]</span><span class="o">.</span><span class="n">n_atoms</span>
-    <span class="k">if</span> <span class="p">(</span>
-        <span class="n">ligand_pose_stack</span><span class="o">.</span><span class="n">max_n_blocks</span> <span class="o">==</span> <span class="mi">1</span>
-        <span class="ow">and</span> <span class="n">ligand_pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">n_atoms</span>
-    <span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"ligand atom counts must match"</span><span class="p">)</span>
-
-    <span class="n">pose_indices</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span>
-        <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">,</span>
-        <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span>
-        <span class="n">device</span><span class="o">=</span><span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">atom_indices</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">[:,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
-        <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_atoms</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">device</span><span class="p">)[</span>
-            <span class="kc">None</span><span class="p">,</span> <span class="p">:</span>
-        <span class="p">]</span>
-    <span class="p">)</span>
-    <span class="n">coords</span> <span class="o">=</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">search_pose_stack</span><span class="o">.</span><span class="n">n_poses</span> <span class="o">!=</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"search and reference pose counts must match"</span><span class="p">)</span>
+    <span class="n">ligand_block</span> <span class="o">=</span> <span class="n">layout</span><span class="o">.</span><span class="n">reference_ligand_block</span>
+    <span class="n">device</span> <span class="o">=</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">device</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span>
+    <span class="n">n_atoms</span> <span class="o">=</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">block_type</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">)</span><span class="o">.</span><span class="n">n_atoms</span>
     <span class="k">if</span> <span class="n">ligand_atom_map</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">coords</span><span class="p">[</span><span class="n">pose_indices</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">atom_indices</span><span class="p">]</span> <span class="o">=</span> <span class="n">ligand_pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span>
-            <span class="p">:,</span> <span class="p">:</span><span class="n">n_atoms</span>
-        <span class="p">]</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">local</span> <span class="o">=</span> <span class="n">ligand_atom_map</span><span class="p">[:,</span> <span class="p">:</span><span class="n">n_atoms</span><span class="p">]</span>
-        <span class="n">present</span> <span class="o">=</span> <span class="n">local</span> <span class="o">&gt;=</span> <span class="mi">0</span>
-        <span class="n">taken</span> <span class="o">=</span> <span class="n">ligand_pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span>
-            <span class="mi">1</span><span class="p">,</span> <span class="n">local</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">0</span><span class="p">)[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
-        <span class="p">)</span>
-        <span class="n">coords</span><span class="p">[</span><span class="n">pose_indices</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">atom_indices</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
-            <span class="n">present</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span>
-            <span class="n">taken</span><span class="p">,</span>
-            <span class="n">coords</span><span class="p">[</span><span class="n">pose_indices</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">atom_indices</span><span class="p">],</span>
-        <span class="p">)</span>
-    <span class="k">if</span> <span class="n">sidechain_blocks</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">sidechain_atom_indices</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">sidechain_atom_indices</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">"flexible restoration requires one-dimensional sidechain atom indices"</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">all</span><span class="p">(</span>
+                <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[:,</span> <span class="n">ligand_block</span><span class="p">]</span>
+                <span class="o">==</span> <span class="n">search_pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[:,</span> <span class="n">layout</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">]</span>
             <span class="p">)</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">compact_sidechain_blocks</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">sidechain_blocks</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">"flexible restoration requires compact sidechain block mapping"</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="n">ligand_pose_stack</span><span class="o">.</span><span class="n">max_n_blocks</span> <span class="o">&lt;</span> <span class="mi">1</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">sidechain_blocks</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"movable pose is missing requested sidechain blocks"</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">compact_block</span><span class="p">,</span> <span class="n">source_block</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
-            <span class="n">compact_sidechain_blocks</span><span class="p">,</span> <span class="n">sidechain_blocks</span>
         <span class="p">):</span>
-            <span class="n">compact_start</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span>
-                <span class="n">ligand_pose_stack</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">compact_block</span><span class="p">]</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"ligand and reference block types must match"</span><span class="p">)</span>
+        <span class="n">local</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_atoms</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span>
+            <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">n_poses</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">local</span> <span class="o">=</span> <span class="n">ligand_atom_map</span><span class="p">[:,</span> <span class="p">:</span><span class="n">n_atoms</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">present</span> <span class="o">=</span> <span class="n">local</span> <span class="o">&gt;=</span> <span class="mi">0</span>
+    <span class="n">target</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">[:,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_atoms</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span>
+    <span class="p">)</span>
+    <span class="n">source</span> <span class="o">=</span> <span class="n">search_pose_stack</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">[</span>
+        <span class="p">:,</span> <span class="n">layout</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="p">]</span> <span class="o">+</span> <span class="n">local</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">coords</span> <span class="o">=</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+    <span class="n">coords</span><span class="p">[</span><span class="n">rows</span><span class="p">,</span> <span class="n">target</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+        <span class="n">present</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">search_pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="n">rows</span><span class="p">,</span> <span class="n">source</span><span class="p">],</span> <span class="n">coords</span><span class="p">[</span><span class="n">rows</span><span class="p">,</span> <span class="n">target</span><span class="p">]</span>
+    <span class="p">)</span>
+    <span class="k">for</span> <span class="n">search_block</span><span class="p">,</span> <span class="n">reference_block</span><span class="p">,</span> <span class="n">local_atoms</span> <span class="ow">in</span> <span class="n">layout</span><span class="o">.</span><span class="n">sidechain_atoms</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">all</span><span class="p">(</span>
+                <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[:,</span> <span class="n">reference_block</span><span class="p">]</span>
+                <span class="o">==</span> <span class="n">search_pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[:,</span> <span class="n">search_block</span><span class="p">]</span>
             <span class="p">)</span>
-            <span class="n">compact_type</span> <span class="o">=</span> <span class="n">ligand_pose_stack</span><span class="o">.</span><span class="n">block_type</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">compact_block</span><span class="p">)</span>
-            <span class="n">compact_end</span> <span class="o">=</span> <span class="n">compact_start</span> <span class="o">+</span> <span class="n">compact_type</span><span class="o">.</span><span class="n">n_atoms</span>
-            <span class="n">selected</span> <span class="o">=</span> <span class="n">sidechain_atom_indices</span><span class="p">[</span>
-                <span class="p">(</span><span class="n">sidechain_atom_indices</span> <span class="o">&gt;=</span> <span class="n">compact_start</span><span class="p">)</span>
-                <span class="o">&amp;</span> <span class="p">(</span><span class="n">sidechain_atom_indices</span> <span class="o">&lt;</span> <span class="n">compact_end</span><span class="p">)</span>
-            <span class="p">]</span>
-            <span class="k">if</span> <span class="n">selected</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-                <span class="k">continue</span>
-            <span class="n">local_atoms</span> <span class="o">=</span> <span class="n">selected</span> <span class="o">-</span> <span class="n">compact_start</span>
-            <span class="n">source_type_indices</span> <span class="o">=</span> <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[:,</span> <span class="n">source_block</span><span class="p">]</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">all</span><span class="p">(</span>
-                    <span class="n">source_type_indices</span>
-                    <span class="o">==</span> <span class="n">ligand_pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[:,</span> <span class="n">compact_block</span><span class="p">]</span>
-                <span class="p">)</span>
-            <span class="p">):</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"sidechain and reference block types must match"</span><span class="p">)</span>
-            <span class="n">target_atoms</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">[:,</span> <span class="n">source_block</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
-                <span class="o">+</span> <span class="n">local_atoms</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span>
-            <span class="p">)</span>
-            <span class="n">coords</span><span class="p">[</span><span class="n">pose_indices</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">target_atoms</span><span class="p">]</span> <span class="o">=</span> <span class="n">ligand_pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span>
-                <span class="n">pose_indices</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">selected</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span>
-            <span class="p">]</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"sidechain and reference block types must match"</span><span class="p">)</span>
+        <span class="n">local_atoms</span> <span class="o">=</span> <span class="n">local_atoms</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="n">coords</span><span class="p">[</span>
+            <span class="n">rows</span><span class="p">,</span>
+            <span class="n">reference_pose_stack</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">[:,</span> <span class="n">reference_block</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
+            <span class="o">+</span> <span class="n">local_atoms</span><span class="p">,</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="n">search_pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span>
+            <span class="n">rows</span><span class="p">,</span>
+            <span class="n">search_pose_stack</span><span class="o">.</span><span class="n">block_coord_offset64</span><span class="p">[:,</span> <span class="n">search_block</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">+</span> <span class="n">local_atoms</span><span class="p">,</span>
+        <span class="p">]</span>
     <span class="k">return</span> <span class="n">attr</span><span class="o">.</span><span class="n">evolve</span><span class="p">(</span><span class="n">reference_pose_stack</span><span class="p">,</span> <span class="n">coords</span><span class="o">=</span><span class="n">coords</span><span class="p">)</span>
 
 
@@ -1600,8 +1633,7 @@
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_rep_scale_of</span><span class="p">(</span><span class="n">backend</span><span class="p">:</span> <span class="n">ScoringBackend</span><span class="p">,</span> <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Scale the backend's repulsive weight if it supports a packing ramp."""</span>
-    <span class="n">setter</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">"rep_scale"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">nullcontext</span><span class="p">()</span> <span class="k">if</span> <span class="n">setter</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">setter</span><span class="p">(</span><span class="n">scale</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">backend</span><span class="o">.</span><span class="n">rep_scale</span><span class="p">(</span><span class="n">scale</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_ligand_contact_weights</span><span class="p">(</span>
@@ -2209,11 +2241,18 @@
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"pose_stack must contain one reference pose"</span><span class="p">)</span>
     <span class="n">_warn_if_search_device_is_slower</span><span class="p">(</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">backend</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">initialization</span> <span class="o">==</span> <span class="s2">"aligner"</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">GridBackend</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"aligner initialization requires a GridBackend"</span><span class="p">)</span>
+        <span class="c1"># The aligner scores placements on the grid box itself, so it is the</span>
+        <span class="c1"># one option a gridless backend cannot offer.</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s1">'initialization="aligner" needs a GridBackend; the other '</span>
+            <span class="s2">"initializations work with any backend"</span>
+        <span class="p">)</span>
     <span class="n">reference</span> <span class="o">=</span> <span class="n">pose_stack</span>
-    <span class="n">search_pose</span><span class="p">,</span> <span class="n">search_backend</span><span class="p">,</span> <span class="n">compact_sidechains</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">search_view</span><span class="p">(</span><span class="n">reference</span><span class="p">)</span>
+    <span class="n">view</span> <span class="o">=</span> <span class="n">search_layout</span><span class="p">(</span><span class="n">reference</span><span class="p">,</span> <span class="n">backend</span><span class="p">)</span>
+    <span class="n">search_pose</span><span class="p">,</span> <span class="n">search_backend</span> <span class="o">=</span> <span class="n">view</span><span class="o">.</span><span class="n">pose_stack</span><span class="p">,</span> <span class="n">view</span><span class="o">.</span><span class="n">backend</span>
+    <span class="n">compact_sidechains</span> <span class="o">=</span> <span class="n">view</span><span class="o">.</span><span class="n">sidechain_blocks</span>
     <span class="n">population</span> <span class="o">=</span> <span class="n">repeat_pose_stack</span><span class="p">(</span><span class="n">search_pose</span><span class="p">,</span> <span class="n">schedule</span><span class="o">.</span><span class="n">npool</span><span class="p">)</span>
-    <span class="n">ligand_block</span> <span class="o">=</span> <span class="n">search_backend</span><span class="o">.</span><span class="n">ligand_block</span>
+    <span class="n">ligand_block</span> <span class="o">=</span> <span class="n">view</span><span class="o">.</span><span class="n">ligand_block</span>
     <span class="n">docking_dofs</span> <span class="o">=</span> <span class="n">build_ligand_docking_dofs</span><span class="p">(</span>
         <span class="n">population</span><span class="p">,</span> <span class="n">ligand_block</span><span class="p">,</span> <span class="n">sidechain_blocks</span><span class="o">=</span><span class="n">compact_sidechains</span>
     <span class="p">)</span>
@@ -2321,18 +2360,18 @@
         <span class="n">best_pose_stack</span><span class="p">,</span>
         <span class="n">best_index</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">=</span> <span class="n">_ranked_result</span><span class="p">(</span><span class="n">search_pose</span><span class="p">,</span> <span class="n">pool</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">search_pose</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">reference</span><span class="p">:</span>
-        <span class="n">best_pose_stack</span> <span class="o">=</span> <span class="n">_place_ligand_in_reference</span><span class="p">(</span>
-            <span class="n">reference</span><span class="p">,</span>
-            <span class="n">backend</span><span class="o">.</span><span class="n">ligand_block</span><span class="p">,</span>
-            <span class="n">best_pose_stack</span><span class="p">,</span>
-            <span class="n">sidechain_blocks</span><span class="o">=</span><span class="n">backend</span><span class="o">.</span><span class="n">sidechain_blocks</span><span class="p">,</span>
-            <span class="n">compact_sidechain_blocks</span><span class="o">=</span><span class="n">compact_sidechains</span><span class="p">,</span>
-            <span class="n">sidechain_atom_indices</span><span class="o">=</span><span class="p">(</span>
-                <span class="n">layout</span><span class="o">.</span><span class="n">sidechain_atom_indices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">compact_sidechains</span> <span class="k">else</span> <span class="kc">None</span>
-            <span class="p">),</span>
-            <span class="n">ligand_atom_map</span><span class="o">=</span><span class="n">layout</span><span class="o">.</span><span class="n">ligand_local_atoms</span><span class="p">[</span><span class="n">best_index</span> <span class="p">:</span> <span class="n">best_index</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span>
-        <span class="p">)</span>
+    <span class="n">pool_ligand_atoms</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span>
+        <span class="p">[</span>
+            <span class="n">layout</span><span class="o">.</span><span class="n">variants</span><span class="o">.</span><span class="n">atom_map</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">b</span><span class="p">)]</span>
+            <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">pool</span><span class="o">.</span><span class="n">pose_stack</span><span class="o">.</span><span class="n">block_type_ind64</span><span class="p">[:,</span> <span class="n">ligand_block</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="p">]</span>
+    <span class="p">)</span>
+    <span class="n">best_pose_stack</span> <span class="o">=</span> <span class="n">_place_ligand_in_reference</span><span class="p">(</span>
+        <span class="n">reference</span><span class="p">,</span>
+        <span class="n">best_pose_stack</span><span class="p">,</span>
+        <span class="n">view</span><span class="p">,</span>
+        <span class="n">ligand_atom_map</span><span class="o">=</span><span class="n">pool_ligand_atoms</span><span class="p">[</span><span class="n">best_index</span> <span class="p">:</span> <span class="n">best_index</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="p">)</span>
     <span class="n">ga_result</span> <span class="o">=</span> <span class="n">GAResult</span><span class="p">(</span>
         <span class="n">pool</span><span class="o">=</span><span class="n">pool</span><span class="p">,</span>
         <span class="n">best_energy_history</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">best_history</span><span class="p">),</span>
@@ -2342,6 +2381,7 @@
         <span class="n">best_genes</span><span class="o">=</span><span class="n">best_genes</span><span class="p">,</span>
         <span class="n">best_energies</span><span class="o">=</span><span class="n">best_energies</span><span class="p">,</span>
         <span class="n">best_pose_stack</span><span class="o">=</span><span class="n">best_pose_stack</span><span class="p">,</span>
+        <span class="n">pool_ligand_atoms</span><span class="o">=</span><span class="n">pool_ligand_atoms</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">finalize</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">DockingResult</span><span class="p">(</span>
@@ -2389,6 +2429,8 @@
     <span class="s2">"next_generation"</span><span class="p">,</span>
     <span class="s2">"optimize_generation"</span><span class="p">,</span>
     <span class="s2">"run_docking"</span><span class="p">,</span>
+    <span class="s2">"SearchLayout"</span><span class="p">,</span>
+    <span class="s2">"search_layout"</span><span class="p">,</span>
     <span class="s2">"select_pocket_residues"</span><span class="p">,</span>
     <span class="s2">"update_pool"</span><span class="p">,</span>
 <span class="p">]</span>

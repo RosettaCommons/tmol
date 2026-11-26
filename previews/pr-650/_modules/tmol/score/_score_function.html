@@ -1317,6 +1317,9 @@
             <span class="k">return</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_weights</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">mps_offload_enabled</span><span class="p">():</span>
             <span class="k">return</span> <span class="kc">None</span>
+        <span class="c1"># Metal has no float64; a double-precision pose is scored on the host.</span>
+        <span class="k">if</span> <span class="n">pose_stack</span><span class="o">.</span><span class="n">coords</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">float64</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
         <span class="k">return</span> <span class="n">OffloadPlan</span><span class="o">.</span><span class="n">for_terms</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">all_terms</span><span class="p">(),</span> <span class="n">offloadable</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_mps_twin</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">plan</span><span class="p">):</span>
