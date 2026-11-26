@@ -12,6 +12,7 @@ import tmol.dock.ga as ga_module
 import tmol.dock.scoring_backend as scoring_backend_module
 from tmol.dock import ContinuousBackend, GASchedule, GridBackend, run_docking
 from tmol.dock.ga import LigandGeneLayout
+from tmol.dock.scoring_backend import ScoringBackend
 from tmol.dock.ligand_dofs import build_ligand_docking_dofs
 from tmol.tests.dock.test_ligand_dof_roundtrip import _load_cdk2_pose_on_device
 from tmol.tests.dock.test_ligand_dof_roundtrip import (
@@ -117,11 +118,29 @@ def test_grid_backend_gridded_term_gradients_match_autograd_and_finite_differenc
     torch.testing.assert_close(direct_gradient[:1], finite, rtol=2.0e-5, atol=2.0e-5)
 
 
-class _FullComplexGridBackend:
-    """Legacy full-complex adapter used as the M6 numerical oracle."""
+class _FullComplexGridBackend(ScoringBackend):
+    """Legacy full-complex adapter used as the M6 numerical oracle.
+
+    Keeps the base ``search_view`` (the uncompacted complex) so the GA searches
+    the full complex, while scoring with the wrapped grid backend.
+    """
 
     def __init__(self, backend):
         self.backend = backend
+        self.ligand_block = backend.ligand_block
+        self.sidechain_blocks = backend.sidechain_blocks
+
+    def set_ligand_variants(self, variants, pose_stack):
+        self.backend.set_ligand_variants(variants, pose_stack)
+
+    def apply_pose_variants(self, pose_stack):
+        self.backend.apply_pose_variants(pose_stack)
+
+    def set_metal_term(self, pose_stack, weight):
+        self.backend.set_metal_term(pose_stack, weight)
+
+    def rep_scale(self, scale):
+        return self.backend.rep_scale(scale)
 
     def score(self, pose_stack):
         return self.backend.score(pose_stack)
@@ -522,14 +541,23 @@ def test_run_docking_returns_ranked_single_cdk2_output(
         result.best_genes, result.ranked_genes[:, 0], rtol=0.0, atol=0.0
     )
     best_index = torch.argsort(result.ga_result.pool.energies)[:1]
-    expected_coords = result.ga_result.pool.pose_stack.coords[best_index]
+    pool = result.ga_result.pool.pose_stack
+    best_pool_coords = pool.coords[best_index]
+    # Whatever pose a backend searches on, the result is the reference complex
+    # with the searched ligand's coordinates copied in and nothing else touched.
+    search_ligand_block = 0 if backend_kind == "grid" else ligand_block
     if backend_kind == "grid":
-        assert result.ga_result.pool.pose_stack.max_n_blocks == 1
-        assert expected_coords.shape[1] == len(backend.ligand_atom_types)
-        ligand_indices = backend._ligand_atom_indices(reference, ligand_block)[0]
-        complex_coords = reference.coords.clone()
-        complex_coords[:, ligand_indices] = expected_coords
-        expected_coords = complex_coords
+        assert pool.max_n_blocks == 1
+        assert best_pool_coords.shape[1] == len(backend.ligand_atom_types)
+    n_ligand_atoms = reference.block_type(0, ligand_block).n_atoms
+    source = int(pool.block_coord_offset64[0, search_ligand_block]) + torch.arange(
+        n_ligand_atoms, device=reference.device
+    )
+    ligand_indices = int(
+        reference.block_coord_offset64[0, ligand_block]
+    ) + torch.arange(n_ligand_atoms, device=reference.device)
+    expected_coords = reference.coords.clone()
+    expected_coords[:, ligand_indices] = best_pool_coords[:, source]
     assert result.best_pose_stack.max_n_blocks == reference.max_n_blocks
     assert result.best_pose_stack.pdb_info is reference.pdb_info
     assert result.best_pose_stack.constraint_set is reference.constraint_set

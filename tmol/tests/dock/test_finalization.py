@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from types import SimpleNamespace
+import copy
 
 import pytest
 import torch
@@ -17,12 +17,14 @@ from tmol.dock.ligand_dofs import build_ligand_docking_dofs
 from tmol.pack._packer_task import PackerPalette, PackerTask
 from tmol.pack.rotamer.dunbrack._dunbrack_chi_sampler import DunbrackChiSampler
 from tmol.score import ScoreFunction
+from tmol.dock.ga import search_layout
+from tmol.dock.scoring_backend import ScoringBackend
 from tmol.dock.finalization import (
-    _flexible_sidechain_mapping,
     refine_task_operations,
     _ligand_atom_indices,
     _mapped_atom_indices,
     _promote_top_candidates,
+    _sidechain_block_atoms,
     _receptor_only_pose_stack,
     _score_pose_stack,
     finalize_ga_docking,
@@ -40,8 +42,65 @@ from tmol.pose import repeat_pose_stack
 from tmol.score.gridscore._movable import (
     movable_block_mapping,
     movable_pose_stack,
-    sidechain_context_blocks,
 )
+
+
+class _CompactStubBackend(ScoringBackend):
+    """Finalization-only backend searching the grid's compact layout.
+
+    It never scores: the tests hand finalization a GA result directly.
+    """
+
+    def __init__(self, param_db, ligand_block, sidechain_blocks=()):
+        self.param_db = param_db
+        self.ligand_block = ligand_block
+        self.sidechain_blocks = tuple(sidechain_blocks)
+
+    def search_view(self, pose_stack):
+        _, compact_sidechains, _ = movable_block_mapping(
+            pose_stack, self.ligand_block, self.sidechain_blocks
+        )
+        view = copy.copy(self)
+        view.ligand_block = 0
+        return (
+            movable_pose_stack(pose_stack, self.ligand_block, self.sidechain_blocks),
+            view,
+            compact_sidechains,
+        )
+
+    def score(self, pose_stack):
+        raise NotImplementedError
+
+    def minimize(self, pose_stack, docking_dofs, **kwargs):
+        raise NotImplementedError
+
+
+def _compact_atoms(layout):
+    """Search-pose atom indices of the moving sidechain atoms, layout order."""
+    offsets = layout.pose_stack.block_coord_offset64[0]
+    return torch.cat([offsets[b] + atoms for b, _, atoms in layout.sidechain_atoms])
+
+
+def _refinable_atom_mask(reference, ligand_block, sidechain_blocks):
+    """Atoms flexible refinement may move: the ligand, and each flexible
+    residue except its backbone heavy atoms.
+
+    Repacking rebuilds a whole sidechain from the rotamer library, so CB and
+    the backbone hydrogens are placed anew, not only the chi-driven atoms. The
+    backbone heavy atoms are the invariant: a sidechain refinement must leave
+    them, and the rest of the receptor, exactly where they were.
+    """
+    mask = torch.zeros(
+        reference.max_n_pose_atoms, dtype=torch.bool, device=reference.device
+    )
+    mask[_ligand_atom_indices(reference, ligand_block)[0]] = True
+    for block in sidechain_blocks:
+        block_type = reference.block_type(0, block)
+        start = int(reference.block_coord_offset64[0, block])
+        for index, atom in enumerate(block_type.atoms[: block_type.n_atoms]):
+            if atom.name not in ("N", "CA", "C", "O"):
+                mask[start + index] = True
+    return mask
 
 
 def _load_target(target: str, device: torch.device):
@@ -175,13 +234,12 @@ def test_top_candidates_are_promoted_without_moving_receptor():
     )
 
     with pytest.raises(ValueError, match="requires one reference pose"):
-        _promote_top_candidates(population, ligand_block, ga_result, top_k=2)
+        _promote_top_candidates(population, ga_result, 2, None)
     with pytest.raises(ValueError, match="requires one reference pose"):
         finalize_ga_docking(population, None, ga_result, top_k=2)
 
-    promoted, promoted_genes = _promote_top_candidates(
-        reference, ligand_block, ga_result, top_k=2
-    )
+    layout = search_layout(reference, _CompactStubBackend(None, ligand_block))
+    promoted, promoted_genes = _promote_top_candidates(reference, ga_result, 2, layout)
     ligand_indices = (
         promoted.block_coord_offset64[:, ligand_block, None]
         + torch.arange(ligand_population.max_n_pose_atoms)[None, :]
@@ -208,32 +266,12 @@ def test_flexible_top_candidates_restore_distinct_sidechains():
     ligand_block = _ligand_block(reference)
     sidechain_blocks = _flexible_sidechains(reference, ligand_block, count=2)
     ga_result = _flexible_ga_result(reference, ligand_block, sidechain_blocks, npool=3)
-    backend = SimpleNamespace(
-        param_db=param_db,
-        ligand_block=ligand_block,
-        sidechain_blocks=sidechain_blocks,
-        context_blocks=sidechain_context_blocks(
-            reference, ligand_block, sidechain_blocks
-        ),
-    )
-    (
-        _,
-        compact_sidechains,
-        compact_atoms,
-        block_local_atoms,
-    ) = _flexible_sidechain_mapping(
-        reference, ligand_block, backend, ga_result.pool.pose_stack
-    )
+    backend = _CompactStubBackend(param_db, ligand_block, sidechain_blocks)
+    layout = search_layout(reference, backend)
+    compact_atoms = _compact_atoms(layout)
+    block_local_atoms = _sidechain_block_atoms(layout)
 
-    promoted, promoted_genes = _promote_top_candidates(
-        reference,
-        ligand_block,
-        ga_result,
-        top_k=2,
-        sidechain_blocks=sidechain_blocks,
-        compact_sidechain_blocks=compact_sidechains,
-        sidechain_atom_indices=compact_atoms,
-    )
+    promoted, promoted_genes = _promote_top_candidates(reference, ga_result, 2, layout)
     full_atoms = _mapped_atom_indices(promoted, block_local_atoms)
     rows = torch.arange(2)[:, None]
     torch.testing.assert_close(
@@ -250,15 +288,7 @@ def test_flexible_top_candidates_restore_distinct_sidechains():
         promoted.coords[0, full_atoms[0]] != promoted.coords[1, full_atoms[1]]
     )
 
-    promoted_one, _ = _promote_top_candidates(
-        reference,
-        ligand_block,
-        ga_result,
-        top_k=1,
-        sidechain_blocks=sidechain_blocks,
-        compact_sidechain_blocks=compact_sidechains,
-        sidechain_atom_indices=compact_atoms,
-    )
+    promoted_one, _ = _promote_top_candidates(reference, ga_result, 1, layout)
     one_full_atoms = _mapped_atom_indices(promoted_one, block_local_atoms)
     torch.testing.assert_close(
         promoted_one.coords[0, one_full_atoms[0]],
@@ -274,31 +304,10 @@ def test_cdk2_cpu_flexible_finalization_refines_sidechain_and_apo(monkeypatch):
     ligand_block = _ligand_block(reference)
     sidechain_blocks = _flexible_sidechains(reference, ligand_block)
     ga_result = _flexible_ga_result(reference, ligand_block, sidechain_blocks, npool=1)
-    backend = SimpleNamespace(
-        param_db=param_db,
-        ligand_block=ligand_block,
-        sidechain_blocks=sidechain_blocks,
-        context_blocks=sidechain_context_blocks(
-            reference, ligand_block, sidechain_blocks
-        ),
-    )
-    (
-        _,
-        compact_sidechains,
-        compact_atoms,
-        block_local_atoms,
-    ) = _flexible_sidechain_mapping(
-        reference, ligand_block, backend, ga_result.pool.pose_stack
-    )
-    promoted, _ = _promote_top_candidates(
-        reference,
-        ligand_block,
-        ga_result,
-        top_k=1,
-        sidechain_blocks=sidechain_blocks,
-        compact_sidechain_blocks=compact_sidechains,
-        sidechain_atom_indices=compact_atoms,
-    )
+    backend = _CompactStubBackend(param_db, ligand_block, sidechain_blocks)
+    layout = search_layout(reference, backend)
+    block_local_atoms = _sidechain_block_atoms(layout)
+    promoted, _ = _promote_top_candidates(reference, ga_result, 1, layout)
     promoted_sidechain_atoms = _mapped_atom_indices(promoted, block_local_atoms)
 
     captured_apo = {}
@@ -324,11 +333,7 @@ def test_cdk2_cpu_flexible_finalization_refines_sidechain_and_apo(monkeypatch):
     )
     assert sidechain_refine_delta > 1.0e-6
 
-    moving_mask = torch.zeros(
-        reference.max_n_pose_atoms, dtype=torch.bool, device=reference.device
-    )
-    moving_mask[_ligand_atom_indices(reference, ligand_block)[0]] = True
-    moving_mask[final_sidechain_atoms[0]] = True
+    moving_mask = _refinable_atom_mask(reference, ligand_block, sidechain_blocks)
     torch.testing.assert_close(
         final.pose_stack.coords[0, ~moving_mask],
         reference.coords[0, ~moving_mask],
@@ -508,12 +513,7 @@ def test_cdk2_flexible_grid_docking_exact_finalization_e2e():
     assert final is not None
     assert torch.isfinite(final.dG).all()
     assert torch.all(final.complex_energies <= final.pre_refine_energies + 5.0e-3)
-    _, _, _, block_local_atoms = _flexible_sidechain_mapping(
-        reference,
-        ligand_block,
-        grid_backend,
-        result.ga_result.pool.pose_stack,
-    )
+    block_local_atoms = _sidechain_block_atoms(search_layout(reference, grid_backend))
     sidechain_atoms = _mapped_atom_indices(final.pose_stack, block_local_atoms)
     displacement = torch.linalg.vector_norm(
         final.pose_stack.coords[0, sidechain_atoms[0]]
@@ -522,11 +522,7 @@ def test_cdk2_flexible_grid_docking_exact_finalization_e2e():
     )
     assert torch.any(displacement > 1.0e-5)
 
-    moving_mask = torch.zeros(
-        reference.max_n_pose_atoms, dtype=torch.bool, device=reference.device
-    )
-    moving_mask[_ligand_atom_indices(reference, ligand_block)[0]] = True
-    moving_mask[sidechain_atoms[0]] = True
+    moving_mask = _refinable_atom_mask(reference, ligand_block, sidechain_blocks)
     torch.testing.assert_close(
         final.pose_stack.coords[0, ~moving_mask],
         reference.coords[0, ~moving_mask],

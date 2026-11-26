@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 import math
-from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -35,6 +34,7 @@ from tmol.dock.ligand_dofs import (
     LigandDockingDOFs,
     _inverse_dofs,
     _local_torsion_atoms,
+    _sidechain_coordinate_indices,
     _sidechain_coordinate_metadata,
     _sidechain_end_local_atoms,
     _sidechain_logical_torsions_from_coords,
@@ -489,6 +489,9 @@ class GAResult:
     best_genes: torch.Tensor | None = None
     best_energies: torch.Tensor | None = None
     best_pose_stack: PoseStack | None = None
+    #: [pool pose, reference ligand atom] -> that pose's own ligand atom, -1
+    #: where its form has none; None when every pose holds the reference form
+    pool_ligand_atoms: torch.Tensor | None = None
 
 
 @dataclass(frozen=True)
@@ -523,110 +526,140 @@ class DockingResult:
         return None if self.finalization is None else getattr(self.finalization, field)
 
 
+@dataclass(frozen=True)
+class SearchLayout:
+    """Where a backend's search pose keeps what the reference complex moves.
+
+    Backends search on different poses: the grid backend on a compact pose of
+    the ligand and the blocks it moves, the continuous one on the whole
+    complex. This is the one mapping between that pose and the reference, so
+    the GA and finalization never assume either layout.
+    """
+
+    #: One-pose search template, as ``ScoringBackend.search_view`` returns it
+    pose_stack: PoseStack
+    #: The backend that scores the search pose
+    backend: ScoringBackend
+    #: Ligand block in the reference complex
+    reference_ligand_block: int
+    #: Ligand block in the search pose
+    ligand_block: int
+    #: Flexible sidechain blocks in the search pose, in the backend's order
+    sidechain_blocks: tuple[int, ...]
+    #: (search block, reference block, block-local moving atoms) per sidechain
+    sidechain_atoms: tuple[tuple[int, int, torch.Tensor], ...]
+
+
+def search_layout(reference_pose_stack: PoseStack, backend: ScoringBackend):
+    """The search pose ``backend`` docks on, mapped onto ``reference_pose_stack``."""
+    if reference_pose_stack.n_poses != 1:
+        raise ValueError("a search layout needs one reference pose")
+    search_pose, search_backend, search_sidechains = backend.search_view(
+        reference_pose_stack
+    )
+    sidechain_blocks = tuple(backend.sidechain_blocks)
+    if len(search_sidechains) != len(sidechain_blocks):
+        raise ValueError("search view does not hold every flexible sidechain")
+    sidechain_atoms = []
+    if search_sidechains:
+        docking_dofs = build_ligand_docking_dofs(
+            search_pose,
+            search_backend.ligand_block,
+            sidechain_blocks=search_sidechains,
+        )
+        _, atom_indices = _sidechain_coordinate_indices(
+            search_pose,
+            docking_dofs,
+            PoseStackKinematicsModule(search_pose, docking_dofs.fold_forest).kmd.forest,
+        )
+        moving = atom_indices[0]
+        for search_block, reference_block in zip(search_sidechains, sidechain_blocks):
+            start = int(search_pose.block_coord_offset64[0, search_block])
+            end = start + search_pose.block_type(0, search_block).n_atoms
+            selected = moving[(moving >= start) & (moving < end)]
+            if selected.numel():
+                sidechain_atoms.append(
+                    (search_block, reference_block, selected - start)
+                )
+        if sum(int(a.numel()) for _, _, a in sidechain_atoms) != int(moving.numel()):
+            raise ValueError("sidechain atom mapping is incomplete")
+    return SearchLayout(
+        pose_stack=search_pose,
+        backend=search_backend,
+        reference_ligand_block=backend.ligand_block,
+        ligand_block=search_backend.ligand_block,
+        sidechain_blocks=tuple(search_sidechains),
+        sidechain_atoms=tuple(sidechain_atoms),
+    )
+
+
 def _place_ligand_in_reference(
     reference_pose_stack: PoseStack,
-    ligand_block: int,
-    ligand_pose_stack: PoseStack,
+    search_pose_stack: PoseStack,
+    layout: SearchLayout,
     *,
-    sidechain_blocks: tuple[int, ...] = (),
-    compact_sidechain_blocks: tuple[int, ...] = (),
-    sidechain_atom_indices: torch.Tensor | None = None,
     ligand_atom_map: torch.Tensor | None = None,
 ) -> PoseStack:
-    """Restore ligand and moved sidechain atoms into a reference complex.
+    """Copy the ligand and moved sidechain atoms of each search pose into the
+    matching reference complex.
 
     ``ligand_atom_map`` is ``[pose, reference atom] -> that pose's own ligand
     atom``, -1 where its block type has none: a search that coordinated a metal
     may hand back a conjugate base, which is the reference ligand less a
     hydrogen. An absent atom keeps its reference coordinate, and finalization's
-    own redetection rebuilds the bound form from the placed complex.
+    own redetection rebuilds the bound form from the placed complex. Offsets are
+    read per pose, since a pose holding a different ligand form shifts every
+    block after it.
     """
 
-    if ligand_pose_stack.n_poses != reference_pose_stack.n_poses:
-        raise ValueError("ligand and reference pose counts must match")
-    block_type_indices = reference_pose_stack.block_type_ind64[:, ligand_block]
-    if ligand_atom_map is None and not bool(
-        torch.all(block_type_indices == ligand_pose_stack.block_type_ind64[:, 0])
-    ):
-        raise ValueError("ligand and reference block types must match")
-    block_type_index = int(block_type_indices[0])
-    n_atoms = reference_pose_stack.packed_block_types.active_block_types[
-        block_type_index
-    ].n_atoms
-    if (
-        ligand_pose_stack.max_n_blocks == 1
-        and ligand_pose_stack.coords.shape[1] != n_atoms
-    ):
-        raise ValueError("ligand atom counts must match")
-
-    pose_indices = torch.arange(
-        reference_pose_stack.n_poses,
-        dtype=torch.int64,
-        device=reference_pose_stack.device,
-    )
-    atom_indices = (
-        reference_pose_stack.block_coord_offset64[:, ligand_block, None]
-        + torch.arange(n_atoms, dtype=torch.int64, device=reference_pose_stack.device)[
-            None, :
-        ]
-    )
-    coords = reference_pose_stack.coords.clone()
+    if search_pose_stack.n_poses != reference_pose_stack.n_poses:
+        raise ValueError("search and reference pose counts must match")
+    ligand_block = layout.reference_ligand_block
+    device = reference_pose_stack.device
+    rows = torch.arange(reference_pose_stack.n_poses, device=device)[:, None]
+    n_atoms = reference_pose_stack.block_type(0, ligand_block).n_atoms
     if ligand_atom_map is None:
-        coords[pose_indices[:, None], atom_indices] = ligand_pose_stack.coords[
-            :, :n_atoms
-        ]
-    else:
-        local = ligand_atom_map[:, :n_atoms]
-        present = local >= 0
-        taken = ligand_pose_stack.coords.gather(
-            1, local.clamp(min=0)[..., None].expand(-1, -1, 3)
-        )
-        coords[pose_indices[:, None], atom_indices] = torch.where(
-            present[..., None],
-            taken,
-            coords[pose_indices[:, None], atom_indices],
-        )
-    if sidechain_blocks:
-        if sidechain_atom_indices is None or sidechain_atom_indices.ndim != 1:
-            raise ValueError(
-                "flexible restoration requires one-dimensional sidechain atom indices"
+        if not bool(
+            torch.all(
+                reference_pose_stack.block_type_ind64[:, ligand_block]
+                == search_pose_stack.block_type_ind64[:, layout.ligand_block]
             )
-        if len(compact_sidechain_blocks) != len(sidechain_blocks):
-            raise ValueError(
-                "flexible restoration requires compact sidechain block mapping"
-            )
-        if ligand_pose_stack.max_n_blocks < 1 + len(sidechain_blocks):
-            raise ValueError("movable pose is missing requested sidechain blocks")
-        for compact_block, source_block in zip(
-            compact_sidechain_blocks, sidechain_blocks
         ):
-            compact_start = int(
-                ligand_pose_stack.block_coord_offset64[0, compact_block]
+            raise ValueError("ligand and reference block types must match")
+        local = torch.arange(n_atoms, dtype=torch.int64, device=device).expand(
+            reference_pose_stack.n_poses, -1
+        )
+    else:
+        local = ligand_atom_map[:, :n_atoms].to(device)
+    present = local >= 0
+    target = (
+        reference_pose_stack.block_coord_offset64[:, ligand_block, None]
+        + torch.arange(n_atoms, dtype=torch.int64, device=device)[None, :]
+    )
+    source = search_pose_stack.block_coord_offset64[
+        :, layout.ligand_block, None
+    ] + local.clamp(min=0)
+    coords = reference_pose_stack.coords.clone()
+    coords[rows, target] = torch.where(
+        present[..., None], search_pose_stack.coords[rows, source], coords[rows, target]
+    )
+    for search_block, reference_block, local_atoms in layout.sidechain_atoms:
+        if not bool(
+            torch.all(
+                reference_pose_stack.block_type_ind64[:, reference_block]
+                == search_pose_stack.block_type_ind64[:, search_block]
             )
-            compact_type = ligand_pose_stack.block_type(0, compact_block)
-            compact_end = compact_start + compact_type.n_atoms
-            selected = sidechain_atom_indices[
-                (sidechain_atom_indices >= compact_start)
-                & (sidechain_atom_indices < compact_end)
-            ]
-            if selected.numel() == 0:
-                continue
-            local_atoms = selected - compact_start
-            source_type_indices = reference_pose_stack.block_type_ind64[:, source_block]
-            if not bool(
-                torch.all(
-                    source_type_indices
-                    == ligand_pose_stack.block_type_ind64[:, compact_block]
-                )
-            ):
-                raise ValueError("sidechain and reference block types must match")
-            target_atoms = (
-                reference_pose_stack.block_coord_offset64[:, source_block, None]
-                + local_atoms[None, :]
-            )
-            coords[pose_indices[:, None], target_atoms] = ligand_pose_stack.coords[
-                pose_indices[:, None], selected[None, :]
-            ]
+        ):
+            raise ValueError("sidechain and reference block types must match")
+        local_atoms = local_atoms.to(device)[None, :]
+        coords[
+            rows,
+            reference_pose_stack.block_coord_offset64[:, reference_block, None]
+            + local_atoms,
+        ] = search_pose_stack.coords[
+            rows,
+            search_pose_stack.block_coord_offset64[:, search_block, None] + local_atoms,
+        ]
     return attr.evolve(reference_pose_stack, coords=coords)
 
 
@@ -1158,8 +1191,7 @@ def detect_metal_variants(
 
 def _rep_scale_of(backend: ScoringBackend, scale: float):
     """Scale the backend's repulsive weight if it supports a packing ramp."""
-    setter = getattr(backend, "rep_scale", None)
-    return nullcontext() if setter is None else setter(scale)
+    return backend.rep_scale(scale)
 
 
 def _ligand_contact_weights(
@@ -1765,11 +1797,18 @@ def run_docking(
         raise ValueError("pose_stack must contain one reference pose")
     _warn_if_search_device_is_slower(pose_stack, backend)
     if initialization == "aligner" and not isinstance(backend, GridBackend):
-        raise ValueError("aligner initialization requires a GridBackend")
+        # The aligner scores placements on the grid box itself, so it is the
+        # one option a gridless backend cannot offer.
+        raise ValueError(
+            'initialization="aligner" needs a GridBackend; the other '
+            "initializations work with any backend"
+        )
     reference = pose_stack
-    search_pose, search_backend, compact_sidechains = backend.search_view(reference)
+    view = search_layout(reference, backend)
+    search_pose, search_backend = view.pose_stack, view.backend
+    compact_sidechains = view.sidechain_blocks
     population = repeat_pose_stack(search_pose, schedule.npool)
-    ligand_block = search_backend.ligand_block
+    ligand_block = view.ligand_block
     docking_dofs = build_ligand_docking_dofs(
         population, ligand_block, sidechain_blocks=compact_sidechains
     )
@@ -1877,18 +1916,18 @@ def run_docking(
         best_pose_stack,
         best_index,
     ) = _ranked_result(search_pose, pool)
-    if search_pose is not reference:
-        best_pose_stack = _place_ligand_in_reference(
-            reference,
-            backend.ligand_block,
-            best_pose_stack,
-            sidechain_blocks=backend.sidechain_blocks,
-            compact_sidechain_blocks=compact_sidechains,
-            sidechain_atom_indices=(
-                layout.sidechain_atom_indices[0] if compact_sidechains else None
-            ),
-            ligand_atom_map=layout.ligand_local_atoms[best_index : best_index + 1],
-        )
+    pool_ligand_atoms = torch.stack(
+        [
+            layout.variants.atom_map[int(b)]
+            for b in pool.pose_stack.block_type_ind64[:, ligand_block].tolist()
+        ]
+    )
+    best_pose_stack = _place_ligand_in_reference(
+        reference,
+        best_pose_stack,
+        view,
+        ligand_atom_map=pool_ligand_atoms[best_index : best_index + 1],
+    )
     ga_result = GAResult(
         pool=pool,
         best_energy_history=torch.stack(best_history),
@@ -1898,6 +1937,7 @@ def run_docking(
         best_genes=best_genes,
         best_energies=best_energies,
         best_pose_stack=best_pose_stack,
+        pool_ligand_atoms=pool_ligand_atoms,
     )
     if not finalize:
         return DockingResult(
@@ -1944,6 +1984,8 @@ __all__ = [
     "next_generation",
     "optimize_generation",
     "run_docking",
+    "SearchLayout",
+    "search_layout",
     "select_pocket_residues",
     "update_pool",
 ]

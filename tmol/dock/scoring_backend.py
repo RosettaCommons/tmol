@@ -61,6 +61,7 @@ from tmol.score.gridscore.live_lk_ball import (
     set_lk_ball_pose_variants,
 )
 from tmol.score import ScoreFunction
+from tmol.score._score_types import ScoreType
 from tmol.score.gridscore._movable import (
     movable_block_mapping,
     movable_atoms,
@@ -156,6 +157,90 @@ def _genes_from_raw_kinforest_dofs(
     return index.genes_from_raw_dofs(raw_dofs).to(dtype=pose_stack.coords.dtype)
 
 
+@attrs.frozen
+class _DockingSite:
+    """The ligand, flexible sidechains and reachable metals of one complex."""
+
+    #: The reference, on the complete block types when a metal is in reach
+    pose_stack: PoseStack
+    ligand_block: int
+    sidechain_blocks: tuple[int, ...]
+    metal_blocks: tuple[int, ...]
+    #: Packed block types holding every bound form a search can reach, or None
+    complete_block_types: object
+
+
+def _docking_site(
+    reference_pose_stack: PoseStack,
+    ligand,
+    param_db: ParameterDatabase,
+    *,
+    flexible_residues: Sequence[int] | None,
+    metal_context: bool,
+    voxel_spacing: float,
+    bbox_padding: float,
+) -> _DockingSite:
+    """Resolve what a backend docks, the same way for every backend."""
+    if reference_pose_stack.n_poses != 1:
+        raise ValueError("a docking backend is built from one reference pose")
+    ligand_block = resolve_ligand_block(reference_pose_stack, ligand)
+    sidechain_blocks = validated_sidechain_blocks(
+        reference_pose_stack,
+        ligand_block,
+        () if flexible_residues is None else flexible_residues,
+    )
+    metal_blocks = (
+        reachable_metal_blocks(
+            reference_pose_stack,
+            ligand_block,
+            voxel_spacing=voxel_spacing,
+            bbox_padding=bbox_padding,
+        )
+        if metal_context
+        else ()
+    )
+    complete_block_types = None
+    if metal_blocks:
+        # Every bound form the search can reach, built before anything is
+        # rendered: detection then only picks among these block types, so
+        # no scoring module is rebuilt and no captured graph is invalidated.
+        from tmol.io.details._metal_detection import _with_donor_patches
+
+        pbt = reference_pose_stack.packed_block_types
+        complete = _with_donor_patches(
+            pbt,
+            ligand_donor_patches(reference_pose_stack, ligand_block, param_db.chemical),
+        )
+        if complete is not pbt:
+            reference_pose_stack = attrs.evolve(
+                reference_pose_stack, packed_block_types=complete
+            )
+            complete_block_types = complete
+    return _DockingSite(
+        pose_stack=reference_pose_stack,
+        ligand_block=ligand_block,
+        sidechain_blocks=tuple(sidechain_blocks),
+        metal_blocks=tuple(metal_blocks),
+        complete_block_types=complete_block_types,
+    )
+
+
+def _on_complete_block_types(backend, pose_stack: PoseStack) -> PoseStack:
+    """``pose_stack`` on the block types every bound form was enumerated into.
+
+    Detection then never grows them. Their leading run is the caller's. The
+    palette is built on the reference pose's device; the search runs on its
+    own, so a copy is kept per device.
+    """
+    if backend.complete_block_types is None:
+        return pose_stack
+    complete = backend._complete_on.get(pose_stack.device)
+    if complete is None:
+        complete = backend.complete_block_types.to(pose_stack.device)
+        backend._complete_on[pose_stack.device] = complete
+    return attrs.evolve(pose_stack, packed_block_types=complete)
+
+
 class ScoringBackend(ABC):
     """The scoring contract used by the docking loop.
 
@@ -169,17 +254,35 @@ class ScoringBackend(ABC):
 
     A backend is built for one ligand: ``ligand_block`` is its block index in
     the reference complex, and ``sidechain_blocks`` the receptor residues
-    (block indices) whose sidechains move with it.
+    (block indices) whose sidechains move with it. Every backend is built the
+    same way, with ``from_pose_stack``, and docks through the same calls.
     """
 
     ligand_block: int
     sidechain_blocks: tuple[int, ...] = ()
+    #: Receptor metals in the ligand's reach, which a search may coordinate
+    metal_blocks: tuple[int, ...] = ()
+    #: Ligand-extended parameter database; None uses tmol's default
+    param_db: Optional[ParameterDatabase] = None
 
     def search_view(
         self, pose_stack: PoseStack
     ) -> tuple[PoseStack, "ScoringBackend", tuple[int, ...]]:
-        """The pose, backend and flexible blocks the GA actually searches over."""
-        return pose_stack, self, ()
+        """The pose, backend and flexible blocks the GA actually searches over.
+
+        The default searches the whole complex with this backend's own
+        sidechains. A backend that searches a smaller pose returns it with a
+        backend addressing that pose's block numbering.
+        """
+        return pose_stack, self, tuple(self.sidechain_blocks)
+
+    @contextmanager
+    def rep_scale(self, scale: float):
+        """Scale fa_rep for the duration of the block (the GA packing ramp).
+
+        A backend without a repulsive term to soften leaves this a no-op.
+        """
+        yield
 
     def set_ligand_variants(
         self, variants: "LigandVariantDOFs", pose_stack: PoseStack
@@ -223,14 +326,23 @@ class ScoringBackend(ABC):
 class ContinuousBackend(ScoringBackend):
     """Full continuous beta2016 scoring and kinematic minimization.
 
+    The search runs on the whole complex, so every receptor interaction is
+    scored exactly; it is slower per evaluation than :class:`GridBackend` and
+    needs no grid. Build it with :meth:`from_pose_stack`, as for the grid
+    backend; the two dock through the same calls and options.
+
     ``param_db`` should be the ligand-extended parameter database returned by
-    ligand preparation. If it is omitted, tmol's memoized default beta2016
-    score function is used. A score function is cached per device, while the
-    whole-pose scoring module is rendered for each input PoseStack.
+    ligand preparation; omitted, tmol's default database is used. The backend
+    scores with its own copy of beta2016 per device, so the repulsive ramp and
+    the search's metal weight never write into the shared memoized one.
 
     Args:
         ligand_block: Block index of the ligand in the complex to be docked.
         param_db: Optional ligand-extended scoring parameter database.
+        sidechain_blocks: Receptor residues whose chis the search moves.
+        metal_blocks: Receptor metals the ligand may coordinate.
+        complete_block_types: Packed block types holding every bound form the
+            search can reach (see :meth:`from_pose_stack`).
         kin_dtype: Internal-coordinate dtype for minimization. By default the
             input coordinate dtype is used.
         value_only_line_search: Evaluate Armijo trials without gradients and
@@ -242,6 +354,9 @@ class ContinuousBackend(ScoringBackend):
         ligand_block: int,
         param_db: Optional[ParameterDatabase] = None,
         *,
+        sidechain_blocks: Sequence[int] = (),
+        metal_blocks: Sequence[int] = (),
+        complete_block_types=None,
         kin_dtype: Optional[torch.dtype] = None,
         value_only_line_search: bool = False,
     ) -> None:
@@ -249,19 +364,125 @@ class ContinuousBackend(ScoringBackend):
             raise ValueError("kin_dtype must be torch.float32 or torch.float64")
         self.ligand_block = ligand_block
         self.param_db = param_db
+        self.sidechain_blocks = tuple(int(b) for b in sidechain_blocks)
+        self.metal_blocks = tuple(int(b) for b in metal_blocks)
+        self.complete_block_types = complete_block_types
+        self._complete_on: dict = {}
         self.kin_dtype = kin_dtype
         self.value_only_line_search = value_only_line_search
         self._score_functions: dict[torch.device, ScoreFunction] = {}
+        self._base_weights: dict = {}
+        self._rep_scale = 1.0
+        #: Search weight on metal coordination; None keeps beta2016's own
+        self._metal_weight: Optional[float] = None
         self.ligand_variant_dofs: Optional[LigandVariantDOFs] = None
         self._single_variant_dofs: dict = {}
 
+    @classmethod
+    def from_pose_stack(
+        cls,
+        reference_pose_stack: PoseStack,
+        ligand,
+        param_db: ParameterDatabase,
+        *,
+        flexible_residues: Sequence[int] | None = None,
+        metal_context: bool = True,
+        voxel_spacing: float = 0.25,
+        bbox_padding: float = 4.0,
+        kin_dtype: Optional[torch.dtype] = None,
+        value_only_line_search: bool = False,
+    ) -> "ContinuousBackend":
+        """Build the backend for one ligand of a complex.
+
+        Takes the same arguments as :meth:`GridBackend.from_pose_stack` where
+        they apply. ``voxel_spacing`` and ``bbox_padding`` only set the box
+        whose metals count as within the ligand's reach, as the grid's box does.
+        """
+        site = _docking_site(
+            reference_pose_stack,
+            ligand,
+            param_db,
+            flexible_residues=flexible_residues,
+            metal_context=metal_context,
+            voxel_spacing=voxel_spacing,
+            bbox_padding=bbox_padding,
+        )
+        return cls(
+            site.ligand_block,
+            param_db,
+            sidechain_blocks=site.sidechain_blocks,
+            metal_blocks=site.metal_blocks,
+            complete_block_types=site.complete_block_types,
+            kin_dtype=kin_dtype,
+            value_only_line_search=value_only_line_search,
+        )
+
+    def search_view(
+        self, pose_stack: PoseStack
+    ) -> tuple[PoseStack, "ContinuousBackend", tuple[int, ...]]:
+        """The whole complex, on the block types every bound form needs."""
+        return (
+            _on_complete_block_types(self, pose_stack),
+            self,
+            self.sidechain_blocks,
+        )
+
     def _score_function(self, device: torch.device) -> ScoreFunction:
         device = torch.device(device)
-        if device not in self._score_functions:
-            self._score_functions[device] = beta2016_score_function(
-                device, param_db=self.param_db
-            )
-        return self._score_functions[device]
+        sfxn = self._score_functions.get(device)
+        if sfxn is None:
+            param_db = self.param_db or ParameterDatabase.get_default()
+            beta = beta2016_score_function(device, param_db=param_db)
+            sfxn = ScoreFunction(param_db, device)
+            for score_type in beta.all_score_types():
+                weight = float(beta.get_weight(score_type))
+                if weight:
+                    sfxn.set_weight(score_type, weight)
+            self._base_weights = {
+                ScoreType.fa_ljrep: float(beta.get_weight(ScoreType.fa_ljrep)),
+                ScoreType.metal_coordination: float(
+                    beta.get_weight(ScoreType.metal_coordination)
+                ),
+            }
+            self._score_functions[device] = sfxn
+            self._apply_weights(sfxn)
+        return sfxn
+
+    def _apply_weights(self, sfxn: ScoreFunction) -> None:
+        sfxn.set_weight(
+            ScoreType.fa_ljrep, self._base_weights[ScoreType.fa_ljrep] * self._rep_scale
+        )
+        sfxn.set_weight(
+            ScoreType.metal_coordination,
+            (
+                self._base_weights[ScoreType.metal_coordination]
+                if self._metal_weight is None
+                else self._metal_weight
+            ),
+        )
+
+    @contextmanager
+    def rep_scale(self, scale: float):
+        """Scale fa_rep for the duration of the block, as the grid backend does."""
+        previous = self._rep_scale
+        self._rep_scale = float(scale)
+        for sfxn in self._score_functions.values():
+            self._apply_weights(sfxn)
+        try:
+            yield
+        finally:
+            self._rep_scale = previous
+            for sfxn in self._score_functions.values():
+                self._apply_weights(sfxn)
+
+    def set_metal_term(self, pose_stack: PoseStack, weight: float) -> None:
+        """Score the ligand's metal bonds at the search's ``weight``.
+
+        beta2016 already carries the term; only its weight changes.
+        """
+        self._metal_weight = float(weight)
+        for sfxn in self._score_functions.values():
+            self._apply_weights(sfxn)
 
     def set_ligand_variants(
         self, variants: "LigandVariantDOFs", pose_stack: PoseStack
@@ -945,16 +1166,7 @@ class GridBackend(ScoringBackend):
         self, pose_stack: PoseStack
     ) -> tuple[PoseStack, "GridBackend", tuple[int, ...]]:
         """Compact ligand(+flexible sidechain) pose the GA searches over."""
-        if self.complete_block_types is not None:
-            # Search on the block types every bound form was enumerated into,
-            # so detection never grows them. Their leading run is the caller's.
-            # The palette is built on the reference pose's device; the search
-            # runs on its own, so keep a copy per device.
-            complete = self._complete_on.get(pose_stack.device)
-            if complete is None:
-                complete = self.complete_block_types.to(pose_stack.device)
-                self._complete_on[pose_stack.device] = complete
-            pose_stack = attrs.evolve(pose_stack, packed_block_types=complete)
+        pose_stack = _on_complete_block_types(self, pose_stack)
         compact_sidechains: tuple[int, ...] = ()
         if self.sidechain_blocks:
             _, compact_sidechains, _ = movable_block_mapping(
@@ -1078,47 +1290,24 @@ class GridBackend(ScoringBackend):
         (ignored on CPU).
         """
 
-        if reference_pose_stack.n_poses != 1:
-            raise ValueError("grid construction requires one reference pose")
-        ligand_block = resolve_ligand_block(reference_pose_stack, ligand)
-        pbt = reference_pose_stack.packed_block_types
-        block_type_index = int(reference_pose_stack.block_type_ind64[0, ligand_block])
-        block_type = pbt.active_block_types[block_type_index]
-        sidechain_blocks = validated_sidechain_blocks(
+        site = _docking_site(
             reference_pose_stack,
-            ligand_block,
-            () if flexible_residues is None else flexible_residues,
+            ligand,
+            param_db,
+            flexible_residues=flexible_residues,
+            metal_context=metal_context,
+            voxel_spacing=voxel_spacing,
+            bbox_padding=bbox_padding,
         )
-        metal_blocks = (
-            reachable_metal_blocks(
-                reference_pose_stack,
-                ligand_block,
-                voxel_spacing=voxel_spacing,
-                bbox_padding=bbox_padding,
-            )
-            if metal_context
-            else ()
-        )
-        complete_block_types = None
-        if metal_blocks:
-            # Every bound form the search can reach, built before anything is
-            # rendered: detection then only picks among these block types, so
-            # no scoring module is rebuilt and no captured graph is invalidated.
-            from tmol.io.details._metal_detection import _with_donor_patches
-
-            complete = _with_donor_patches(
-                pbt,
-                ligand_donor_patches(
-                    reference_pose_stack, ligand_block, param_db.chemical
-                ),
-            )
-            if complete is not pbt:
-                reference_pose_stack = attrs.evolve(
-                    reference_pose_stack, packed_block_types=complete
-                )
-                pbt = complete
-                block_type = pbt.active_block_types[block_type_index]
-                complete_block_types = complete
+        reference_pose_stack = site.pose_stack
+        ligand_block = site.ligand_block
+        sidechain_blocks = site.sidechain_blocks
+        metal_blocks = site.metal_blocks
+        complete_block_types = site.complete_block_types
+        pbt = reference_pose_stack.packed_block_types
+        block_type = pbt.active_block_types[
+            int(reference_pose_stack.block_type_ind64[0, ligand_block])
+        ]
         context_blocks = tuple(
             sorted(
                 (
@@ -1355,7 +1544,6 @@ class GridBackend(ScoringBackend):
         ``weight`` of zero, or a pose with no metal site, drops the term.
         """
         from tmol.score import ScoreFunction
-        from tmol.score._score_types import ScoreType
 
         pbt = pose_stack.packed_block_types
         has_metal = any(

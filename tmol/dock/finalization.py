@@ -11,13 +11,12 @@ import torch
 
 from tmol.dock.ga import (
     GAResult,
-    LigandGeneLayout,
+    SearchLayout,
     _place_ligand_in_reference,
+    search_layout,
 )
-from tmol.dock.ligand_dofs import (
-    build_ligand_docking_dofs,
-    per_pose_fold_forest_and_move_map,
-)
+from tmol.dock.scoring_backend import ScoringBackend
+from tmol.dock.ligand_dofs import per_pose_fold_forest_and_move_map
 from tmol.optimization._minimizers import (
     CartesianMinimizer,
     KinematicMinimizer,
@@ -34,16 +33,12 @@ from tmol.pose._constraint_set import ConstraintSet
 
 from tmol.pose._pose_stack import PoseStack
 from tmol.pose._pose_stack_builder import PoseStackBuilder
-from tmol.pose import repeat_pose_stack, select_blocks
+from tmol.pose import repeat_pose_stack, select_blocks, select_poses
 from tmol.database import ParameterDatabase
 from tmol.score import beta2016_score_function
 from tmol.score.constraint._constraint_energy_term import ConstraintEnergyTerm
 from tmol.score._score_types import ScoreType
-from tmol.score.gridscore._movable import (
-    movable_block_mapping,
-    movable_pose_stack,
-    sidechain_context_blocks,
-)
+from tmol.score.gridscore._movable import movable_pose_stack
 
 logger = logging.getLogger(__name__)
 
@@ -284,148 +279,37 @@ def _free_ligand_pose_stack(pose_stack: PoseStack, ligand_block: int) -> PoseSta
 
 def _promote_top_candidates(
     reference_pose_stack: PoseStack,
-    ligand_block: int,
     ga_result: GAResult,
     top_k: int,
-    *,
-    sidechain_blocks: tuple[int, ...] = (),
-    compact_sidechain_blocks: tuple[int, ...] = (),
-    sidechain_atom_indices: torch.Tensor | None = None,
-    ligand_atom_map: torch.Tensor | None = None,
+    layout: SearchLayout,
 ) -> tuple[PoseStack, torch.Tensor]:
-    """Copy the top grid/GA movable coordinates into full complexes."""
+    """Copy the top ``top_k`` pool poses' moving atoms into full complexes."""
 
     if reference_pose_stack.n_poses != 1:
         raise ValueError("finalization requires one reference pose")
+    pool = ga_result.pool.pose_stack
+    if pool.max_n_blocks != layout.pose_stack.max_n_blocks:
+        raise ValueError("GA pool topology does not match the backend's search view")
     flat = torch.argsort(ga_result.pool.energies)[:top_k]
-
-    # A compact pool (flexible sidechains or retained metals) holds the ligand
-    # at block 0, in whatever form each pose coordinated.
-    if sidechain_blocks or ligand_atom_map is not None:
-        promoted = repeat_pose_stack(reference_pose_stack, top_k)
-        selected_compact = attr.evolve(
-            repeat_pose_stack(ga_result.pool.pose_stack.split(0), promoted.n_poses),
-            coords=ga_result.pool.pose_stack.coords[flat].detach().clone(),
-        )
-        promoted = _place_ligand_in_reference(
-            promoted,
-            ligand_block,
-            selected_compact,
-            sidechain_blocks=sidechain_blocks,
-            compact_sidechain_blocks=compact_sidechain_blocks,
-            sidechain_atom_indices=sidechain_atom_indices,
-            ligand_atom_map=(
-                None
-                if ligand_atom_map is None
-                else ligand_atom_map[flat.to(ligand_atom_map.device)]
-            ),
-        )
-        genes = ga_result.pool.genes[flat].unsqueeze(0)
-        return promoted, genes
-
-    pool_ligand_block = (
-        0
-        if ga_result.pool.pose_stack.max_n_blocks != reference_pose_stack.max_n_blocks
-        else ligand_block
+    ligand_atom_map = ga_result.pool_ligand_atoms
+    promoted = _place_ligand_in_reference(
+        repeat_pose_stack(reference_pose_stack, int(flat.numel())),
+        select_poses(pool, flat),
+        layout,
+        ligand_atom_map=(
+            None
+            if ligand_atom_map is None
+            else ligand_atom_map[flat.to(ligand_atom_map.device)]
+        ),
     )
-    source_indices = _ligand_atom_indices(ga_result.pool.pose_stack, pool_ligand_block)[
-        flat
-    ]
-    local_atoms = torch.arange(
-        source_indices.shape[1], dtype=torch.int64, device=reference_pose_stack.device
-    )
-    promoted = repeat_pose_stack(reference_pose_stack, top_k)
-    target_indices = promoted.block_coord_offset64[:, ligand_block, None] + local_atoms
-    rows = torch.arange(promoted.n_poses, device=promoted.device)[:, None]
-    coords = promoted.coords.clone()
-    coords[rows, target_indices] = ga_result.pool.pose_stack.coords[
-        flat[:, None], source_indices
-    ]
-    genes = ga_result.pool.genes[flat].unsqueeze(0)
-    return attr.evolve(promoted, coords=coords), genes
+    return promoted, ga_result.pool.genes[flat].unsqueeze(0)
 
 
-def _flexible_sidechain_mapping(
-    reference_pose_stack: PoseStack,
-    ligand_block: int,
-    backend,
-    compact_pose_stack: PoseStack,
-) -> tuple[
-    tuple[int, ...],
-    tuple[int, ...],
-    torch.Tensor | None,
-    tuple[tuple[int, torch.Tensor], ...],
-]:
-    """Rebuild compact and full moving-sidechain coordinate mappings."""
-
-    sidechain_blocks = tuple(getattr(backend, "sidechain_blocks", ()))
-    if not sidechain_blocks:
-        return (), (), None, ()
-    # The compact topology (block types, offsets, sidechain atom indices) is
-    # identical across every pool pose, so rebuild the mapping metadata from a
-    # single-pose slice instead of running inverse kinematics + fp64 torsion
-    # response checks over all npool sampled conformations.
-    compact_pose_stack = compact_pose_stack.split(0)
-    if getattr(backend, "ligand_block", ligand_block) != ligand_block:
-        raise ValueError("finalization backend ligand block does not match reference")
-    # Retained metals are context too: a search that can coordinate keeps them
-    # in the compact pose rather than in the rigid grid.
-    context_blocks = tuple(
-        sorted(
-            (
-                set(
-                    sidechain_context_blocks(
-                        reference_pose_stack, ligand_block, sidechain_blocks
-                    )
-                )
-                | set(getattr(backend, "metal_blocks", ()))
-            )
-            - {ligand_block}
-            - set(sidechain_blocks)
-        )
-    )
-    if tuple(getattr(backend, "context_blocks", ())) != context_blocks:
-        raise ValueError("finalization peptide context does not match backend")
-    source_blocks, compact_sidechain_blocks, _ = movable_block_mapping(
-        reference_pose_stack,
-        ligand_block,
-        sidechain_blocks,
-        tuple(getattr(backend, "metal_blocks", ())),
-    )
-    if compact_pose_stack.max_n_blocks != len(source_blocks):
-        raise ValueError("GA pool compact topology does not match flexible backend")
-
-    docking_dofs = build_ligand_docking_dofs(
-        compact_pose_stack,
-        0,
-        sidechain_blocks=compact_sidechain_blocks,
-    )
-    layout = LigandGeneLayout.from_pose_stack(compact_pose_stack, docking_dofs)
-    compact_atoms = layout.sidechain_atom_indices[0]
-    if not bool(torch.all(layout.sidechain_atom_indices == compact_atoms[None, :])):
-        raise ValueError("finalization requires identical sidechain atom mappings")
-
-    block_local_atoms = []
-    for compact_block, source_block in zip(compact_sidechain_blocks, sidechain_blocks):
-        compact_start = compact_pose_stack.block_coord_offset64[0, compact_block]
-        compact_end = (
-            compact_start + compact_pose_stack.block_type(0, compact_block).n_atoms
-        )
-        selected = compact_atoms[
-            (compact_atoms >= compact_start) & (compact_atoms < compact_end)
-        ]
-        if selected.numel() != 0:
-            block_local_atoms.append((source_block, selected - compact_start))
-    if sum(local_atoms.numel() for _, local_atoms in block_local_atoms) != int(
-        compact_atoms.numel()
-    ):
-        raise ValueError("sidechain atom mapping is incomplete")
-    return (
-        sidechain_blocks,
-        compact_sidechain_blocks,
-        compact_atoms,
-        tuple(block_local_atoms),
-    )
+def _sidechain_block_atoms(
+    layout: SearchLayout,
+) -> tuple[tuple[int, torch.Tensor], ...]:
+    """(reference block, block-local moving atoms) of each flexible sidechain."""
+    return tuple((block, atoms) for _, block, atoms in layout.sidechain_atoms)
 
 
 def _mapped_atom_indices(
@@ -671,7 +555,7 @@ def _free_state_energies(
 
 def finalize_ga_docking(
     reference_pose_stack: PoseStack,
-    backend,
+    backend: ScoringBackend,
     ga_result: GAResult,
     *,
     refine: RefineProtocol | None = None,
@@ -693,52 +577,16 @@ def finalize_ga_docking(
     npool = ga_result.ranked_energies.shape[1]
     if top_k is not None and top_k > npool:
         raise ValueError(f"top_k ({top_k}) cannot exceed GA pool size ({npool})")
-    if not hasattr(backend, "param_db"):
-        raise TypeError("finalization requires a backend with a parameter database")
-    ligand_block = backend.ligand_block
     if refine is None:
         refine = _default_refine(backend)
     if top_k is None:
         # The protocol's count is a default, not a demand on the pool size.
         top_k = min(refine.top_k, npool)
 
-    (
-        sidechain_blocks,
-        compact_sidechain_blocks,
-        compact_sidechain_atoms,
-        block_local_atoms,
-    ) = _flexible_sidechain_mapping(
-        reference_pose_stack, ligand_block, backend, ga_result.pool.pose_stack
+    layout = search_layout(reference_pose_stack, backend)
+    promoted, genes = _promote_top_candidates(
+        reference_pose_stack, ga_result, top_k, layout
     )
-    if sidechain_blocks:
-        promoted, genes = _promote_top_candidates(
-            reference_pose_stack,
-            ligand_block,
-            ga_result,
-            top_k,
-            sidechain_blocks=sidechain_blocks,
-            compact_sidechain_blocks=compact_sidechain_blocks,
-            sidechain_atom_indices=compact_sidechain_atoms,
-            # A pose that coordinated a metal hands back its own block type.
-            # The pool is the compact search pose, whose ligand is block 0.
-            ligand_atom_map=backend.for_ligand_block(0).ligand_local_atom_map(
-                ga_result.pool.pose_stack
-            ),
-        )
-    elif getattr(backend, "metal_blocks", ()):
-        promoted, genes = _promote_top_candidates(
-            reference_pose_stack,
-            ligand_block,
-            ga_result,
-            top_k,
-            ligand_atom_map=backend.for_ligand_block(0).ligand_local_atom_map(
-                ga_result.pool.pose_stack
-            ),
-        )
-    else:
-        promoted, genes = _promote_top_candidates(
-            reference_pose_stack, ligand_block, ga_result, top_k
-        )
     return _finalize_promoted(
         reference_pose_stack,
         backend,
@@ -746,33 +594,28 @@ def finalize_ga_docking(
         top_pose_metric,
         promoted,
         genes,
-        (sidechain_blocks, compact_sidechain_blocks, block_local_atoms),
+        layout,
     )
 
 
 def _default_refine(backend) -> RefineProtocol:
     """FLEX_REFINE when the backend moves sidechains, else RIGID_REFINE."""
-    return (
-        FLEX_REFINE if tuple(getattr(backend, "sidechain_blocks", ())) else RIGID_REFINE
-    )
+    return FLEX_REFINE if backend.sidechain_blocks else RIGID_REFINE
 
 
 def _finalize_promoted(
     reference_pose_stack: PoseStack,
-    backend,
+    backend: ScoringBackend,
     refine: RefineProtocol,
     top_pose_metric: str,
     promoted: PoseStack,
     genes: torch.Tensor,
-    mapping,
+    layout: SearchLayout,
 ) -> DockingFinalization:
-    """Refine complexes laid out as the reference, score dH and dG, and rank them.
-
-    ``mapping`` is (sidechain blocks, their compact indices, their per-block
-    moving atoms), as ``_flexible_sidechain_mapping`` gives them.
-    """
+    """Refine complexes laid out as the reference, score dH and dG, and rank them."""
     ligand_block = backend.ligand_block
-    sidechain_blocks, compact_sidechain_blocks, block_local_atoms = mapping
+    sidechain_blocks = tuple(backend.sidechain_blocks)
+    block_local_atoms = _sidechain_block_atoms(layout)
     if refine.redetect_metal:
         try:
             promoted = redetect_metal_coordination(promoted)
@@ -785,8 +628,9 @@ def _finalize_promoted(
     coord_mask = _ligand_atom_mask(promoted, ligand_block)
     if sidechain_blocks:
         coord_mask.scatter_(1, _mapped_atom_indices(promoted, block_local_atoms), True)
+        # Reference-complex block indices: refinement runs on full complexes.
         pack_blocks = (
-            compact_sidechain_blocks
+            sidechain_blocks
             if refine.sidechains == "backend"
             else tuple(refine.sidechains)
         )
@@ -855,7 +699,7 @@ def _finalize_promoted(
 
 def _finalize_reference_pose(
     reference_pose_stack: PoseStack,
-    backend,
+    backend: ScoringBackend,
     *,
     refine: RefineProtocol | None = None,
     top_pose_metric: str = "score",
@@ -863,24 +707,6 @@ def _finalize_reference_pose(
     """The reference complex itself, refined and scored as a docked candidate is."""
     if reference_pose_stack.n_poses != 1:
         raise ValueError("finalization requires one reference pose")
-    ligand_block = backend.ligand_block
-    sidechain_blocks = tuple(getattr(backend, "sidechain_blocks", ()))
-    (
-        sidechain_blocks,
-        compact_sidechain_blocks,
-        _,
-        block_local_atoms,
-    ) = _flexible_sidechain_mapping(
-        reference_pose_stack,
-        ligand_block,
-        backend,
-        movable_pose_stack(
-            reference_pose_stack,
-            ligand_block,
-            sidechain_blocks,
-            tuple(getattr(backend, "metal_blocks", ())),
-        ),
-    )
     genes = torch.zeros(
         (1, 1, 0),
         dtype=reference_pose_stack.coords.dtype,
@@ -893,7 +719,7 @@ def _finalize_reference_pose(
         top_pose_metric,
         reference_pose_stack,
         genes,
-        (sidechain_blocks, compact_sidechain_blocks, block_local_atoms),
+        search_layout(reference_pose_stack, backend),
     )
 
 

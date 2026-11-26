@@ -846,6 +846,9 @@ class ScoreFunction:
             return None
         if self._weights.requires_grad or not mps_offload_enabled():
             return None
+        # Metal has no float64; a double-precision pose is scored on the host.
+        if pose_stack.coords.dtype == torch.float64:
+            return None
         return OffloadPlan.for_terms(self.all_terms(), offloadable)
 
     def _mps_twin(self, plan):
