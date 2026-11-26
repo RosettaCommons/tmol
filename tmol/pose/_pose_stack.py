@@ -4,6 +4,7 @@ import attr
 import torch
 
 from tmol.types._torch import Tensor
+from tmol.utility import resolve_device
 from tmol.chemical import RefinedResidueType
 from tmol.pose._pdb_info import PDBInfo
 from tmol.pose._packed_block_types import PackedBlockTypes
@@ -68,6 +69,34 @@ class PoseStack:
 
     device: torch.device
     split_block_mapping: "SplitBlockMapping | None" = None
+
+    def to(self, device: torch.device) -> "PoseStack":
+        """This PoseStack on ``device``, or itself if it is there already.
+
+        PDB info and the split-block mapping are device-independent and shared
+        with the original.
+        """
+        device = resolve_device(device)
+        if device == self.device:
+            return self
+        return attr.evolve(
+            self,
+            packed_block_types=self.packed_block_types.to(device),
+            coords=self.coords.to(device),
+            block_coord_offset=self.block_coord_offset.to(device),
+            block_coord_offset64=self.block_coord_offset64.to(device),
+            inter_residue_connections=self.inter_residue_connections.to(device),
+            inter_residue_connections64=self.inter_residue_connections64.to(device),
+            inter_block_bondsep=self.inter_block_bondsep.to(device),
+            block_type_ind=self.block_type_ind.to(device),
+            block_type_ind64=self.block_type_ind64.to(device),
+            chain_id=self.chain_id.to(device),
+            chain_id64=self.chain_id64.to(device),
+            constraint_set=(
+                None if self.constraint_set is None else self.constraint_set.to(device)
+            ),
+            device=device,
+        )
 
     #################### INIT #####################
 

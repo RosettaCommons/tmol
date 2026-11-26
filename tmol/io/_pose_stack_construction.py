@@ -111,6 +111,7 @@ def _pose_stack_from_canonical_form(  # noqa: C901
     from tmol.io.details._metal_detection import (
         _donor_patches,
         _find_metal_geometries,
+        _hydrogens_facing_metals,
         _metal_connection_rows,
         _place_site_virtuals,
         _with_donor_patches,
@@ -265,6 +266,14 @@ def _pose_stack_from_canonical_form(  # noqa: C901
     )
     res_type_variants = torch.where(
         metal_variants != 0, metal_variants, res_type_variants
+    )
+    coords, atom_is_present = _hydrogens_facing_metals(
+        canonical_ordering,
+        pbt.chem_db,
+        res_types,
+        coords,
+        atom_is_present,
+        metal_assignments,
     )
 
     # 3b

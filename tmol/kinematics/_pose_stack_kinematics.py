@@ -68,7 +68,9 @@ def _apply_torsion_deltas(pose_stack, requests, deltas, fold_forest=None):
     kmd = kin_module.kmd
 
     kincoords = torch.zeros(
-        (kmd.forest.id.shape[0], 3), dtype=torch.float32, device=pose_stack.device
+        (kmd.forest.id.shape[0], 3),
+        dtype=pose_stack.coords.dtype,
+        device=pose_stack.device,
     )
     kincoords[1:] = pose_stack.coords.view(-1, 3)[kmd.forest.id[1:].to(torch.int64)]
     dofs = _inverse_kin(

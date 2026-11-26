@@ -80,6 +80,7 @@ class DunbrackPoseScoreOp : public tmol::native::autograd::Function<
       Tensor res_rotamer_index_to_table_index,
       Tensor block_semirotameric_tableset_offset,
       Tensor block_is_mirrored,
+      Tensor movable_blocks,
       bool output_block_pair_energies) {
     tmol::native::Tensor score;
     tmol::native::Tensor dscore_dcoords;
@@ -147,6 +148,7 @@ class DunbrackPoseScoreOp : public tmol::native::autograd::Function<
                       TCAST(res_rotamer_index_to_table_index),
                       TCAST(block_semirotameric_tableset_offset),
                       TCAST(block_is_mirrored),
+                      TCAST(movable_blocks),
                       output_block_pair_energies,
                       rot_coords.requires_grad());
 
@@ -209,7 +211,8 @@ class DunbrackPoseScoreOp : public tmol::native::autograd::Function<
            res_mean_table_offset,
            res_rotamer_index_to_table_index,
            block_semirotameric_tableset_offset,
-           block_is_mirrored});
+           block_is_mirrored,
+           movable_blocks});
     } else {
       score = score.reshape({score.size(0), score.size(1)});
       ctx->save_for_backward({dscore_dcoords});
@@ -297,6 +300,7 @@ class DunbrackPoseScoreOp : public tmol::native::autograd::Function<
       auto res_rotamer_index_to_table_index = saved[i++];
       auto block_semirotameric_tableset_offset = saved[i++];
       auto block_is_mirrored = saved[i++];
+      auto movable_blocks = saved[i++];
 
       using Int = int32_t;
 
@@ -366,6 +370,7 @@ class DunbrackPoseScoreOp : public tmol::native::autograd::Function<
                     TCAST(res_rotamer_index_to_table_index),
                     TCAST(block_semirotameric_tableset_offset),
                     TCAST(block_is_mirrored),
+                    TCAST(movable_blocks),
                     TCAST(dTdV));
 
             dV_d_pose_coords = result.tensor;
@@ -430,6 +435,7 @@ class DunbrackPoseScoreOp : public tmol::native::autograd::Function<
         tmol::native::Tensor(),
         tmol::native::Tensor(),
 
+        tmol::native::Tensor(),
         tmol::native::Tensor()};
   }
 };
@@ -903,6 +909,7 @@ std::vector<Tensor> dunbrack_pose_scores_op(
     Tensor res_rotamer_index_to_table_index,
     Tensor block_semirotameric_tableset_offset,
     Tensor block_is_mirrored,
+    Tensor movable_blocks,
     bool output_block_pair_energies) {
   return DunbrackPoseScoreOp<DispatchMethod>::apply(
       // common params
@@ -957,6 +964,7 @@ std::vector<Tensor> dunbrack_pose_scores_op(
       res_rotamer_index_to_table_index,
       block_semirotameric_tableset_offset,
       block_is_mirrored,
+      movable_blocks,
       output_block_pair_energies);
 }
 

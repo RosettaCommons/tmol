@@ -50,6 +50,7 @@ struct MetalCoordinationPoseScoreDispatch {
       TView<Int, 3, D> bridge_internal_metal,
       TView<Real, 3, D> bridge_internal_d0,
       TView<MetalBridgeParams<Real>, 1, D> bridge_params,
+      TView<Int, 2, D> movable_blocks,
       bool output_block_pair_energies,
       bool compute_derivs)
       -> std::tuple<TPack<Real, 4, D>, TPack<Vec<Real, 3>, 2, D>>;
@@ -82,6 +83,7 @@ struct MetalCoordinationPoseScoreDispatch {
       TView<Int, 3, D> bridge_internal_metal,
       TView<Real, 3, D> bridge_internal_d0,
       TView<MetalBridgeParams<Real>, 1, D> bridge_params,
+      TView<Int, 2, D> movable_blocks,
       TView<Real, 4, D> dTdV) -> TPack<Vec<Real, 3>, 2, D>;
 };
 

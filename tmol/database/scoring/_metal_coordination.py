@@ -65,7 +65,14 @@ class MetalCoordinationDatabase:
         return None
 
     def well_depth(self, atom_type: str, donor: str) -> float:
+        """Depth for one filled site; "*" matches any metal or donor, exact first."""
+        best, best_rank = 0.0, -1
         for well in self.well_depths:
-            if well.atom_type == atom_type and well.donor == donor:
-                return well.depth
-        return 0.0
+            metal_ok = well.atom_type in (atom_type, "*")
+            donor_ok = well.donor in (donor, "*")
+            if not (metal_ok and donor_ok):
+                continue
+            rank = (well.atom_type != "*") + (well.donor != "*")
+            if rank > best_rank:
+                best, best_rank = well.depth, rank
+        return best

@@ -92,6 +92,10 @@ class DunbrackEnergyTerm(EnergyTerm):
     def class_name(cls):
         return "Dunbrack"
 
+    def takes_movable_blocks(self) -> bool:
+        """This term's pose-score kernel takes a movable-block mask."""
+        return True
+
     @classmethod
     def score_types(cls):
         import tmol.score.terms._dunbrack_creator

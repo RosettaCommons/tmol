@@ -150,16 +150,16 @@ class HBondPoseScoresOp : public tmol::native::autograd::Function<
                   TCAST(derived_coords),
                   TCAST(derived_atom_inds),
 
-                  TCAST(shared_compact_block_neighbors),
+                  TPack<Int, 1, Dev>(shared_compact_block_neighbors),
                   output_block_pair_energies,
                   rot_coords.requires_grad(),
                   allow_split_pairs);
 
           score = std::get<0>(result).tensor;
           dscore_dcoords = std::get<1>(result).tensor;
-          block_neighbors = shared_compact_block_neighbors.numel() != 0
-                                ? shared_compact_block_neighbors
-                                : std::get<2>(result).tensor;
+          // The indices the forward walked, given or built; the backward reuses
+          // them.
+          block_neighbors = std::get<2>(result).tensor;
         }));
 
     if (output_block_pair_energies) {

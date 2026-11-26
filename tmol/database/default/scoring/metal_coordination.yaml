@@ -11,8 +11,8 @@ global_parameters:
 #   - { atom_type: Zn2p, radial_sd: 0.15, lateral_sd: 0.30 }
 ions: []
 
-# well depth (kcal/mol) per filled site by metal atom type and donor_radii key; absent is 0
-#   - { atom_type: Zn2p, donor: S, depth: -10.0 }
+# well depth (kcal/mol) per filled site by metal atom type and donor_radii key; "*" matches
+#    any, an exact key wins over it, and an absent one is 0
 well_depths: []
 
 # smallest metal-donor-metal angle (deg) per donor_radii key: bridged metals get a wall,

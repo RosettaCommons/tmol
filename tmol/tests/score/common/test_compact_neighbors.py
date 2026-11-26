@@ -37,6 +37,7 @@ def test_cpu_compact_neighbors_preserve_chunk_and_pose_boundaries(dtype, shape):
                 pose_ids,
                 rotamer_types,
                 atom_counts,
+                torch.empty((0, 0), dtype=torch.int32),
                 6.0,
             )
             assert int(neighbors[0]) == expected.numel()

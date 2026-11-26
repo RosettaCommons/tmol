@@ -96,6 +96,10 @@ def _use_weighted_fused_score(
     """Select weighted native reduction without latency or stability regressions."""
     if force_for_cuda_graph:
         return True
+    if coords.device.type == "mps":
+        # No Metal kernel for the weighted reduction; see
+        # _FusedLJLKAndElecWholePoseModule.forward.
+        return False
     if coords.device.type == "cpu":
         if needs_gradient is None:
             needs_gradient = torch.is_grad_enabled() and coords.requires_grad
@@ -684,7 +688,10 @@ class ScoreFunction:
         return self._multi_body_terms
 
     def render_whole_pose_scoring_module(
-        self, pose_stack: PoseStack, cuda_graph: bool | str = False
+        self,
+        pose_stack: PoseStack,
+        cuda_graph: bool | str = False,
+        movable_blocks: torch.Tensor | None = None,
     ) -> "WholePoseScoringModule":
         """Render a callable that repeatedly scores one fixed pose topology.
 
@@ -704,6 +711,11 @@ class ScoreFunction:
             if cuda_graph
             else self._mps_offload_plan(pose_stack, _MPS_WHOLE_POSE_SCORE_TYPES)
         )
+        mask = (
+            None
+            if movable_blocks is None
+            else _normalized_movable_blocks(pose_stack, movable_blocks)
+        )
         term_modules = []
         for term in plan.host_terms if plan else self.all_terms():
             module = term.render_whole_pose_scoring_module(pose_stack)
@@ -713,14 +725,19 @@ class ScoreFunction:
             module.n_score_types = len(term.score_types())
             term_modules.append(module)
         if plan is not None:
+            # Each half masks its own terms, so frozen pairs are skipped on
+            # both sides of the split.
             weights = self.weights_tensor()
             host = (
-                WholePoseScoringModule(weights[plan.host_lanes], term_modules)
+                _whole_pose_module(
+                    weights[plan.host_lanes], term_modules, pose_stack, mask
+                )
                 if term_modules
                 else None
             )
             gpu = self._mps_twin(plan).render_whole_pose_scoring_module(
-                to_mps(pose_stack)
+                to_mps(pose_stack),
+                movable_blocks=None if mask is None else to_mps(mask),
             )
 
             def render_host_twin():
@@ -730,19 +747,27 @@ class ScoreFunction:
                     module = term.render_whole_pose_scoring_module(pose_stack)
                     module.n_score_types = len(term.score_types())
                     modules.append(module)
-                return WholePoseScoringModule(weights[plan.gpu_lanes], modules)
+                return _whole_pose_module(
+                    weights[plan.gpu_lanes], modules, pose_stack, mask
+                )
 
             return OffloadedWholePoseScoringModule(
                 plan, weights, host, gpu, render_host_twin
             )
-        scoring_module = WholePoseScoringModule(self.weights_tensor(), term_modules)
+        scoring_module = _whole_pose_module(
+            self.weights_tensor(), term_modules, pose_stack, mask
+        )
         if cuda_graph:
             mode = "both" if cuda_graph is True else cuda_graph
             scoring_module.enable_cuda_graphs(pose_stack.coords, mode=mode)
         return scoring_module
 
     def render_block_pair_scoring_module(
-        self, pose_stack: PoseStack, *, interaction_only: bool = False
+        self,
+        pose_stack: PoseStack,
+        *,
+        interaction_only: bool = False,
+        movable_blocks: torch.Tensor | None = None,
     ) -> "BlockPairScoringModule":
         """Render a callable that retains scores for every residue-block pair.
 
@@ -753,6 +778,10 @@ class ScoreFunction:
         pairs will be consumed. Terms whose block-pair scores are known to be
         diagonal-only are then omitted. Diagonal entries in the returned
         matrix are incomplete in this mode.
+
+        ``movable_blocks`` marks the blocks whose coordinates can change; the
+        per-block terms then skip the blocks it leaves out, whose energies are
+        constant. Entries for those blocks are incomplete in the result.
         """
         self.pre_work_initialization(pose_stack)
         term_modules = [
@@ -761,7 +790,13 @@ class ScoreFunction:
             )
             for t in self.all_terms()
         ]
-        return BlockPairScoringModule(self.weights_tensor(), term_modules)
+        mask = (
+            None
+            if movable_blocks is None
+            else _normalized_movable_blocks(pose_stack, movable_blocks)
+        )
+        _declare_movable_blocks(term_modules, pose_stack, mask)
+        return BlockPairScoringModule(self.weights_tensor(), term_modules, mask)
 
     def render_rotamer_scoring_module(
         self,
@@ -810,6 +845,9 @@ class ScoreFunction:
         if self._device.type != "cpu" or pose_stack.device.type != "cpu":
             return None
         if self._weights.requires_grad or not mps_offload_enabled():
+            return None
+        # Metal has no float64; a double-precision pose is scored on the host.
+        if pose_stack.coords.dtype == torch.float64:
             return None
         return OffloadPlan.for_terms(self.all_terms(), offloadable)
 
@@ -1071,8 +1109,10 @@ class _FusedLJLKAndElecWholePoseModule(torch.nn.Module):
         if block_types.is_cuda and block_types.numel() >= 1024:
             self.n_valid_rots = int((block_types >= 0).sum().item())
 
-    def build_compact_block_neighbors(self, coords, reach):
-        return self.ljlk_module.build_compact_block_neighbors(coords, reach)
+    def build_compact_block_neighbors(self, coords, reach, movable_blocks=None):
+        return self.ljlk_module.build_compact_block_neighbors(
+            coords, reach, movable_blocks
+        )
 
     def _native_arguments(self, coords, shared_block_neighbors, flat_coords=None):
         return (
@@ -1086,6 +1126,15 @@ class _FusedLJLKAndElecWholePoseModule(torch.nn.Module):
         if shared_block_neighbors is None:
             return torch.cat(
                 (self.ljlk_module(coords), self.elec_module(coords)), dim=0
+            )
+        if coords.device.type == "mps":
+            # Metal has no fused kernel; the two terms share the list instead.
+            return torch.cat(
+                (
+                    self.ljlk_module(coords, shared_block_neighbors),
+                    self.elec_module(coords, shared_block_neighbors),
+                ),
+                dim=0,
             )
         from tmol.score.ljlk.potentials._compiled import _ljlk_elec_pose_scores
 
@@ -1114,7 +1163,7 @@ class _FusedLJLKAndElecWholePoseModule(torch.nn.Module):
         return scores
 
 
-def _whole_pose_execution_modules(term_modules, device):
+def _whole_pose_execution_modules(term_modules):
     """Build conservative built-in execution groups without changing lanes."""
     grouped = []
     index = 0
@@ -1142,11 +1191,6 @@ def _whole_pose_execution_modules(term_modules, device):
                     parameter.requires_grad
                     for term in (first, second)
                     for parameter in term.parameters()
-                )
-                and not (
-                    device.type == "cpu"
-                    and torch.get_num_threads() > 1
-                    and getattr(first, "n_poses", None) != 1
                 )
             ):
                 grouped.append(_FusedLJLKAndElecWholePoseModule(first, second))
@@ -1230,6 +1274,154 @@ class _WholePoseScore(torch.autograd.Function):
         return gradient, upstream, None, None
 
 
+# Terms dispatched over the (pose, block) grid cannot have that grid compacted,
+# so they take the movable mask as an argument and skip work whose blocks are
+# all frozen. Only cartbonded reads it so far; the rest still take the empty
+# view, which every kernel treats as "everything moves".
+_MOVABLE_BLOCK_TERMS = frozenset(
+    {"CartBonded", "BackboneTorsion", "Dunbrack", "GenBonded", "MetalCoordination"}
+)
+# Terms whose guard is trusted. The rest still take the argument -- the op
+# arity is fixed -- but receive the empty view, so they skip nothing.
+_MOVABLE_GUARD_ACTIVE = frozenset(
+    {"CartBonded", "BackboneTorsion", "Dunbrack", "GenBonded", "MetalCoordination"}
+)
+
+
+def _declare_movable_blocks(term_modules, pose_stack, mask) -> None:
+    """Hand the movable mask to each per-block term that accepts one.
+
+    Idempotent: the argument occupies one fixed slot, so a later call replaces
+    it rather than growing the term's argument list.
+    """
+
+    empty = torch.empty((0, 0), dtype=torch.int32, device=pose_stack.device)
+    value = empty if mask is None else mask.to(torch.int32)
+    for module in term_modules:
+        if str(getattr(module, "classname", "")) not in _MOVABLE_BLOCK_TERMS:
+            continue
+        # A term with nothing to score renders as a zero module, which has no
+        # argument list and no kernel to guard.
+        if not hasattr(module, "term_parameters"):
+            continue
+        active = str(getattr(module, "classname", "")) in _MOVABLE_GUARD_ACTIVE
+        parameter = torch.nn.Parameter(value if active else empty, requires_grad=False)
+        slot = getattr(module, "_movable_blocks_slot", None)
+        if slot is None:
+            module._movable_blocks_slot = len(module.term_parameters)
+            module.term_parameters.append(parameter)
+        else:
+            module.term_parameters[slot] = parameter
+        # Rebuilding must preserve the module's own block-pair output flag.
+        module._build_static_tails(bool(module._static_tail_f32[-1]))
+
+
+def _whole_pose_module(weights, term_modules, pose_stack, mask):
+    """A whole-pose scorer over ``term_modules``, masked when ``mask`` is given.
+
+    A masked scorer skips pairs of two frozen blocks and is wrapped to restore
+    their constant energy, so it reports the same scores as an unmasked one.
+    """
+    _declare_movable_blocks(term_modules, pose_stack, None)
+    if mask is None:
+        return WholePoseScoringModule(weights, term_modules)
+    # Measure the whole-pose score before anything is masked; the difference
+    # afterwards is the frozen energy to restore. The term modules are shared,
+    # so the order matters.
+    unmasked = WholePoseScoringModule(weights, term_modules)
+    with torch.no_grad():
+        coords = pose_stack.coords.detach()
+        reference = unmasked(coords)
+    _declare_movable_blocks(term_modules, pose_stack, mask)
+    masked = WholePoseScoringModule(weights, term_modules, movable_blocks=mask)
+    with torch.no_grad():
+        offset = reference - masked(coords)
+    return FrozenContextScoringModule(masked, offset)
+
+
+def _normalized_movable_blocks(
+    pose_stack: PoseStack, movable_blocks: torch.Tensor
+) -> torch.Tensor:
+    """Int [n_poses, max_n_blocks] movable mask from a block or atom selection.
+
+    An atom-shaped mask (as minimization coord masks are) marks a block movable
+    when any of its atoms move. Movability is declared by the caller, never
+    inferred from proximity: a movable block far from every other movable block
+    still has all of its pairs evaluated.
+    """
+
+    mask = torch.as_tensor(movable_blocks, device=pose_stack.device)
+    n_poses, max_n_blocks = pose_stack.block_type_ind64.shape
+    if mask.shape == (n_poses, max_n_blocks):
+        blocks = mask
+    elif mask.shape == pose_stack.coords.shape[:2]:
+        block_types = pose_stack.block_type_ind64
+        real = block_types >= 0
+        n_atoms = torch.where(
+            real,
+            pose_stack.packed_block_types.n_atoms[block_types.clamp(min=0)].to(
+                torch.int64
+            ),
+            torch.zeros_like(block_types),
+        )
+        # Blocks hold contiguous atoms at increasing offsets, so marking each
+        # block's first atom and running a cumulative max labels every atom.
+        pose_of_block, index_of_block = torch.nonzero(real, as_tuple=True)
+        marker = torch.full(
+            pose_stack.coords.shape[:2], -1, dtype=torch.int64, device=mask.device
+        )
+        marker[pose_of_block, pose_stack.block_coord_offset64[real]] = index_of_block
+        block_of_atom = torch.cummax(marker, dim=1).values
+        # Trailing padding carries the last block's label; bound it by the real
+        # atom count so padded slots cannot mark a block movable.
+        n_real_atoms = n_atoms.sum(dim=1, keepdim=True)
+        atom_index = torch.arange(mask.shape[1], device=mask.device)[None, :]
+        valid = (block_of_atom >= 0) & (atom_index < n_real_atoms)
+        # scatter_reduce has no bool kernel on CUDA, so reduce over int32.
+        blocks = torch.zeros(
+            (n_poses, max_n_blocks), dtype=torch.int32, device=mask.device
+        )
+        blocks.scatter_reduce_(
+            1,
+            block_of_atom.clamp(min=0),
+            (mask.to(torch.bool) & valid).to(torch.int32),
+            reduce="amax",
+            include_self=True,
+        )
+    else:
+        raise ValueError(
+            "movable_blocks must be shaped [n_poses, max_n_blocks] or like the "
+            f"pose's atoms; got {tuple(mask.shape)}"
+        )
+    return blocks.to(torch.int32)
+
+
+class FrozenContextScoringModule:
+    """A masked whole-pose scorer that restores the frozen-pair constant.
+
+    Pairs of two frozen blocks are skipped by the neighbor builder, so the
+    masked scorer omits an energy that cannot change while those blocks are
+    fixed. Adding it back keeps every reported energy equal to a whole-pose
+    score. Valid only while the frozen blocks hold the coordinates the offset
+    was measured at.
+    """
+
+    def __init__(self, masked, offset: torch.Tensor):
+        self._masked = masked
+        self.offset = offset
+
+    def __getattr__(self, name):
+        return getattr(self._masked, name)
+
+    def __call__(self, coords: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        scores = self._masked(coords, *args, **kwargs)
+        if scores.shape == self.offset.shape:
+            return scores + self.offset
+        # Per-term lanes: the omitted energy belongs to the pair terms, which
+        # the unsummed layout cannot attribute, so it is not restored here.
+        return scores
+
+
 class WholePoseScoringModule:
     """Rendered energy modules that score complete poses."""
 
@@ -1237,12 +1429,13 @@ class WholePoseScoringModule:
         self,
         weights: Tensor[torch.float32][:],
         term_modules: Sequence[torch.nn.Module],
+        movable_blocks: torch.Tensor | None = None,
     ):
         self.weights = torch.nn.Parameter(weights.unsqueeze(1), requires_grad=False)
         self.term_modules = tuple(term_modules)
-        self._execution_modules = _whole_pose_execution_modules(
-            self.term_modules, weights.device
-        )
+        self.movable_blocks = movable_blocks
+        self.frozen_pair_energy = None
+        self._execution_modules = _whole_pose_execution_modules(self.term_modules)
         from tmol._cpp_lib import _native
 
         self._native_score_capture = getattr(_native, "_ScoreCapture", None)
@@ -1326,20 +1519,14 @@ class WholePoseScoringModule:
     def _shares_block_neighbors(self, coords: torch.Tensor) -> bool:
         """Whether this call will build and share one compact neighbor list.
 
-        The shared list is a CUDA-oriented optimization for sparse poses, and
-        its builder (build_compact_block_neighbors) has no Metal kernel. The
-        ported MPS kernels read the dense scratch_rot_neighbors grid instead,
-        which sphere_overlap produces on the device, so MPS opts out and keeps
-        everything on the GPU rather than failing.
+        Built whenever at least two terms take one, on every device.
 
         Also decides which module list runs, which is why it is a predicate
         rather than inline: the fused LJLK/elec module lives in
         ``_execution_modules`` only, and its index means nothing against the
         fallback list.
         """
-        if len(self._shared_neighbor_term_indices) < 2:
-            return False
-        return coords.device.type != "mps"
+        return len(self._shared_neighbor_term_indices) >= 2
 
     def _build_shared_block_neighbors(
         self, coords: torch.Tensor
@@ -1348,7 +1535,7 @@ class WholePoseScoringModule:
             return None
         builder = self.term_modules[self._shared_neighbor_term_indices[0]]
         return builder.build_compact_block_neighbors(
-            coords, self._shared_neighbor_cutoff
+            coords, self._shared_neighbor_cutoff, self.movable_blocks
         )
 
     def _score_with_gradients(self, coords):
@@ -1896,8 +2083,7 @@ class _DefaultWholePoseScoringModule(torch.nn.Module):
 
     def forward(self, coords):
         shared_block_neighbors = None
-        # See _build_shared_block_neighbors for why MPS opts out.
-        if len(self._shared_neighbor_terms) >= 2 and coords.device.type != "mps":
+        if len(self._shared_neighbor_terms) >= 2:
             builder = self._shared_neighbor_terms[0]
             shared_block_neighbors = builder.build_compact_block_neighbors(
                 coords, self._shared_neighbor_cutoff
@@ -1989,11 +2175,22 @@ class BlockPairScoringModule:
         self,
         weights: Tensor[torch.float32][:],
         term_modules: Sequence[torch.nn.Module],
+        movable_blocks: torch.Tensor | None = None,
     ):
         self.weights = torch.nn.Parameter(
             weights.unsqueeze(1).unsqueeze(1).unsqueeze(1), requires_grad=False
         )
         self.term_modules = tuple(term_modules)
+        self.movable_blocks = movable_blocks
+        self._shared_neighbor_terms = tuple(
+            term
+            for term in term_modules
+            if getattr(term, "block_neighbor_cutoff", None) is not None
+        )
+        self._shared_neighbor_cutoff = max(
+            (term.block_neighbor_cutoff for term in self._shared_neighbor_terms),
+            default=None,
+        )
         self._active_term_modules = tuple(
             term
             for term in self.term_modules
@@ -2008,8 +2205,31 @@ class BlockPairScoringModule:
             len(self.term_modules), weights.device
         )
 
-    def _parallel_forward_scores(
+    def _build_shared_block_neighbors(
         self, coords: torch.Tensor
+    ) -> torch.Tensor | None:
+        """One compact neighbor list for every term that takes one.
+
+        Pairs of two frozen blocks are dropped. One term alone would not
+        amortize the build. Unlike whole-pose scoring, every term here takes
+        the list itself, with no fused module, so MPS shares it too.
+        """
+        if len(self._shared_neighbor_terms) < 2:
+            return None
+        return self._shared_neighbor_terms[0].build_compact_block_neighbors(
+            coords, self._shared_neighbor_cutoff, self.movable_blocks
+        )
+
+    def _term_score(self, term, coords, shared_block_neighbors):
+        if (
+            shared_block_neighbors is not None
+            and getattr(term, "block_neighbor_cutoff", None) is not None
+        ):
+            return term(coords, shared_block_neighbors)
+        return term(coords)
+
+    def _parallel_forward_scores(
+        self, coords: torch.Tensor, shared_block_neighbors: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, ...] | None:
         """Evaluate active CPU terms concurrently for a forward-only call."""
         cpu_workers = self._cpu_term_workers
@@ -2028,7 +2248,17 @@ class BlockPairScoringModule:
             torch.is_autocast_cache_enabled(),
         )
         futures = [
-            executor.submit(_score_call_in_thread, term, coords, *context)
+            executor.submit(
+                _score_call_in_thread,
+                term,
+                coords,
+                *context,
+                (
+                    shared_block_neighbors
+                    if getattr(term, "block_neighbor_cutoff", None) is not None
+                    else None
+                ),
+            )
             for term in self._active_term_modules
         ]
         return tuple(future.result() for future in futures)
@@ -2041,8 +2271,11 @@ class BlockPairScoringModule:
     ) -> torch.Tensor:
         if not torch.is_grad_enabled() and coords.requires_grad:
             coords = coords.detach()
+        shared_block_neighbors = self._build_shared_block_neighbors(coords)
         if sum_terms and apply_weights:
-            parallel_scores = self._parallel_forward_scores(coords)
+            parallel_scores = self._parallel_forward_scores(
+                coords, shared_block_neighbors
+            )
             active_results = (
                 iter(parallel_scores) if parallel_scores is not None else None
             )
@@ -2055,7 +2288,9 @@ class BlockPairScoringModule:
                     weight_offset += term.shape[0]
                     continue
                 scores = (
-                    term(coords) if active_results is None else next(active_results)
+                    self._term_score(term, coords, shared_block_neighbors)
+                    if active_results is None
+                    else next(active_results)
                 )
                 next_offset = weight_offset + scores.shape[0]
                 active_scores.append(scores)
@@ -2065,7 +2300,7 @@ class BlockPairScoringModule:
                 unweighted = torch.cat(active_scores, dim=0)
                 weights = torch.cat(active_weights, dim=0)
                 return unweighted.mul_(weights).sum(dim=0)
-        unweighted = self.unweighted_scores(coords)
+        unweighted = self.unweighted_scores(coords, shared_block_neighbors)
         weighted = unweighted.mul_(self.weights) if apply_weights else unweighted
         summed = torch.sum(weighted, dim=0) if sum_terms else weighted
 
@@ -2106,10 +2341,18 @@ class BlockPairScoringModule:
         pair_dimension = 1 if sum_terms else 2
         return scores[..., block_i, block_j].sum(dim=pair_dimension)
 
-    def unweighted_scores(self, coords: torch.Tensor) -> torch.Tensor:
-        parallel_scores = self._parallel_forward_scores(coords)
+    def unweighted_scores(
+        self, coords: torch.Tensor, shared_block_neighbors: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        parallel_scores = self._parallel_forward_scores(coords, shared_block_neighbors)
         if parallel_scores is None:
-            return torch.cat([term(coords) for term in self.term_modules], dim=0)
+            return torch.cat(
+                [
+                    self._term_score(term, coords, shared_block_neighbors)
+                    for term in self.term_modules
+                ],
+                dim=0,
+            )
 
         active_results = iter(parallel_scores)
         return torch.cat(

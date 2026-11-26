@@ -41,11 +41,14 @@ typedef ElecSharedMem<float, TILE_SIZE, MAX_N_CONN, launch_t> ElecShared;
 // it from the launch width keeps it correct if nt grows.
 #define TMOL_N_SIMDS ((launch_t::sm_ptx::nt + 31) / 32)
 
-// The twenty view buffers are declared positionally and immediately collected
+// The view buffers are declared positionally and immediately collected
 // into an array: ElecCtxT::visit_views assigns them to fields in this order,
 // and the host binds them in that same order, so neither side repeats the
 // field list. The count is checked against the context below.
-#define TMOL_ELEC_ENTRY(ENTRY_NAME, BODY, CTX_T)                             \
+// PREAMBLE runs once the context is built and WORK is the index the body
+// decodes: the threadgroup itself for rotamer pairs, the candidate read from
+// the block-neighbor list for whole poses.
+#define TMOL_ELEC_ENTRY_AT(ENTRY_NAME, BODY, CTX_T, PREAMBLE, WORK)          \
   kernel void ENTRY_NAME(                                                    \
       device const int64_t* meta [[buffer(0)]],                              \
       TMOL_MPS_BIND_20, \
@@ -59,13 +62,28 @@ typedef ElecSharedMem<float, TILE_SIZE, MAX_N_CONN, launch_t> ElecShared;
     threadgroup ElecShared shared;                                           \
     threadgroup float reduce_scratch[TMOL_N_SIMDS];                          \
     CTX_T ctx = tmol::score::common::mps_build_ctx<CTX_T>(ptrs, meta);                     \
+    PREAMBLE;                                                                \
     Lane lane(tid, n_threads, reduce_scratch);                               \
     BODY<DeviceOperations, tmol::Device::MPS, float, int32_t, launch_t>(     \
-        ctx, shared, int(cta), lane);                                        \
+        ctx, shared, WORK, lane);                                            \
   }
 
-TMOL_ELEC_ENTRY(
-    elec_eval_energies_by_block_2_f32, elec_eval_energies_by_block_2, PoseCtx)
-TMOL_ELEC_ENTRY(elec_eval_energies_f32, elec_eval_energies, PoseCtx)
+#define TMOL_ELEC_ENTRY(ENTRY_NAME, BODY, CTX_T) \
+  TMOL_ELEC_ENTRY_AT(ENTRY_NAME, BODY, CTX_T, (void)0, int(cta))
+
+// Whole-pose entries walk the compact block-neighbor list.
+#define TMOL_ELEC_POSE_ENTRY(ENTRY_NAME, BODY)                         \
+  TMOL_ELEC_ENTRY_AT(                                                   \
+      ENTRY_NAME,                                                       \
+      BODY,                                                             \
+      PoseCtx,                                                          \
+      TMOL_MPS_BLOCK_NEIGHBOR_CANDIDATE(                                \
+          candidate, ctx.block_neighbors, cta),                         \
+      candidate)
+
+TMOL_ELEC_POSE_ENTRY(
+    elec_eval_energies_by_block_2_f32, elec_eval_energies_by_block_2)
+TMOL_ELEC_POSE_ENTRY(elec_eval_energies_f32, elec_eval_energies)
+
 TMOL_ELEC_ENTRY(
     elec_eval_energies_by_block_f32, elec_eval_energies_by_block, RotCtx)

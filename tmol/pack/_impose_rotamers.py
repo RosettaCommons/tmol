@@ -157,10 +157,13 @@ def _impose_top_rotamer_assignments(
     src_inds = (rot_coord_offset_for_atom64 + max_n_atoms_arange64)[is_pose_atom_real]
 
     # now lets copy the coordinates
+    # Rotamers are built in float32; the imposed pose keeps the caller's.
     new_coords = torch.zeros(
-        (n_poses * new_max_n_pose_atoms, 3), dtype=torch.float32, device=device
+        (n_poses * new_max_n_pose_atoms, 3),
+        dtype=orig_pose_stack.coords.dtype,
+        device=device,
     )
-    new_coords[dst_inds] = rotamer_set.coords[src_inds]
+    new_coords[dst_inds] = rotamer_set.coords[src_inds].to(new_coords.dtype)
     new_coords = new_coords.view(n_poses, new_max_n_pose_atoms, 3)
 
     # Now let's create a new PDBInfo object for the new PoseStack

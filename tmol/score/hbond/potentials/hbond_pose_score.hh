@@ -98,14 +98,14 @@ struct HBondPoseScoreDispatch {
       TView<Vec<Real, 3>, 2, Dev> derived_coords,
       TView<Int, 2, Dev> derived_atom_inds,
 
-      TView<Int, 1, Dev> shared_compact_block_neighbors,
+      TPack<Int, 1, Dev> shared_compact_block_neighbors,
       bool output_block_pair_energies,
       bool compute_derivs,
       bool allow_split_pairs = false)
       -> std::tuple<
           TPack<Real, 4, Dev>,
           TPack<Vec<Real, 3>, 2, Dev>,
-          TPack<Int, 3, Dev>>;
+          TPack<Int, 1, Dev>>;
 
   static auto backward(
       ContextManager& mgr,
@@ -177,7 +177,7 @@ struct HBondPoseScoreDispatch {
       TView<Vec<Real, 3>, 2, Dev> derived_coords,
       TView<Int, 2, Dev> derived_atom_inds,
 
-      TView<Int, 3, Dev> block_neighbors,  // from forward pass
+      TView<Int, 1, Dev> block_neighbors,  // from forward pass
       TView<Real, 4, Dev> dTdV             // nterms x nposes x len x len
       ) -> TPack<Vec<Real, 3>, 1, Dev>;
 };

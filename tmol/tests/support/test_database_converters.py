@@ -38,8 +38,11 @@ def test_rama_table_read(rosetta_database, default_database):
 
     ramatables = default_database.scoring.rama.rama_tables
 
-    assert len(ramatables) == 40
     table_keys = [i.table_id for i in ramatables]
+
+    # tmol ships every Rosetta table plus tables of its own
+    assert set(r3_general) | {aa + "_prepro" for aa in r3_general} <= set(table_keys)
+
     for aa in r3_general:
         gen_idx = table_keys.index(aa)
         numpy.testing.assert_allclose(r3_general[aa], ramatables[gen_idx].table)
@@ -80,9 +83,11 @@ def test_dunbrack_table_read(rosetta_database, default_database):
 
     default = default_database.scoring.dun
 
-    assert len(default.dun_lookup) == len(fresh.dun_lookup)
-    assert len(default.rotameric_libraries) == len(fresh.rotameric_libraries)
-    assert len(default.semi_rotameric_libraries) == len(fresh.semi_rotameric_libraries)
+    # tmol ships every Rosetta library plus the D-amino-acid mirrors
+    def lookup_pairs(library):
+        return {(m.dun_table_name, m.residue_name) for m in library.dun_lookup}
+
+    assert lookup_pairs(fresh) <= lookup_pairs(default)
 
     def compare_rotameric_data(default_rotdat, fresh_rotdat):
         torch.testing.assert_close(default_rotdat.rotamers, fresh_rotdat.rotamers)
@@ -102,14 +107,11 @@ def test_dunbrack_table_read(rosetta_database, default_database):
             default_rotdat.rotamer_alias, fresh_rotdat.rotamer_alias
         )
 
-    for i in range(len(default.rotameric_libraries)):
-        assert (
-            default.rotameric_libraries[i].table_name
-            == fresh.rotameric_libraries[i].table_name
-        )
+    default_rotameric = {lib.table_name: lib for lib in default.rotameric_libraries}
+    for fresh_lib in fresh.rotameric_libraries:
         compare_rotameric_data(
-            default.rotameric_libraries[i].rotameric_data,
-            fresh.rotameric_libraries[i].rotameric_data,
+            default_rotameric[fresh_lib.table_name].rotameric_data,
+            fresh_lib.rotameric_data,
         )
 
     def compare_semirotameric_data(default_srdat, fresh_srdat):
@@ -134,11 +136,10 @@ def test_dunbrack_table_read(rosetta_database, default_database):
             default_srdat.rotamer_boundaries, fresh_srdat.rotamer_boundaries
         )
 
-    for i in range(len(default.semi_rotameric_libraries)):
-        assert (
-            default.semi_rotameric_libraries[i].table_name
-            == fresh.semi_rotameric_libraries[i].table_name
-        )
+    default_semi_rotameric = {
+        lib.table_name: lib for lib in default.semi_rotameric_libraries
+    }
+    for fresh_lib in fresh.semi_rotameric_libraries:
         compare_semirotameric_data(
-            default.semi_rotameric_libraries[i], fresh.semi_rotameric_libraries[i]
+            default_semi_rotameric[fresh_lib.table_name], fresh_lib
         )

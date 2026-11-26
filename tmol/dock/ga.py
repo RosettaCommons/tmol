@@ -1,0 +1,1991 @@
+"""Vectorized GALigandDock genetic operators for one ligand population.
+
+The control flow mirrors Rosetta ``GAOptimizer.cc:104-113``: generate an
+offspring batch, optimize the whole batch, then merge it into the parent pool.
+The gene is exactly the MoveMap-freed raw DOFs: the ligand jump's three
+translations and three delta rotations followed by logical ligand chis and
+then selected receptor-sidechain chis. Logical chis use the docking-local
+sign/offset mapping in ``ligand_dofs.py``.
+Genes are only converted to coordinates by forward kinematics; minimized genes
+come directly from the optimizer's freed DOFs, never from inverse kinematics of
+the minimized pose. Ring genes are out of scope.
+Continuous scoring has no grid smoothing or fa_rep ramp, so this module runs
+the same schedule un-ramped until a grid backend implements those knobs.
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal
+
+import attr
+import numpy
+import torch
+
+from tmol.dock.conformer_seed import generate_conformer_library
+from tmol.dock.rotamers import RotamerGeneLibrary, build_rotamer_gene_library
+from tmol.dock._diversity import ligand_heavy_atom_rms, select_diverse_low_energy
+from tmol.dock.ligand_aligner import LigandAligner
+from tmol.dock.ligand_dofs import (
+    GeneIndex,
+    LigandDockingDOFs,
+    _inverse_dofs,
+    _local_torsion_atoms,
+    _sidechain_coordinate_indices,
+    _sidechain_coordinate_metadata,
+    _sidechain_end_local_atoms,
+    _sidechain_logical_torsions_from_coords,
+    _wrap_angle,
+    build_ligand_docking_dofs,
+    LigandVariantDOFs,
+)
+from tmol.dock.scoring_backend import (
+    GridBackend,
+    MinimizationResult,
+    ScoringBackend,
+    variant_docking_dofs,
+)
+from tmol.io._metal_coordination import redetect_metal_coordination
+from tmol.kinematics._move_map import MinimizerMap
+from tmol.kinematics import PoseStackKinematicsModule
+from tmol.pose._pose_stack import PoseStack
+from tmol.database.chemical import _is_metal_cluster
+from tmol.dock._metal_context import _max_metal_donor_distance
+from tmol.pose import metal_blocks, repeat_pose_stack, replace_poses, select_poses
+from tmol.score.gridscore._movable import (
+    has_nonpolymer_connection,
+    resolve_ligand_block,
+)
+
+if TYPE_CHECKING:
+    from tmol.dock.finalization import RefineProtocol
+
+    from tmol.dock.finalization import DockingFinalization
+
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class DockingPerturbation:
+    """Uniform half-widths for the initial ligand DOF jitter.
+
+    The defaults sample each translation DOF uniformly within +/-0.25 A,
+    each jump-rotation DOF within +/-5 degrees, and each ligand torsion raw
+    DOF within +/-10 degrees. Rotation and torsion values are stored in
+    radians because that is the kinematics representation.
+    """
+
+    translation_angstrom: float = 0.25
+    rotation_radians: float = math.radians(5.0)
+    torsion_radians: float = math.radians(10.0)
+
+
+@dataclass(frozen=True)
+class GASchedule:
+    """Single-stage VSX schedule for the continuous backend."""
+
+    generations: int = 10
+    npool: int = 800
+    rmsdthreshold: float = 2.0
+    pmut: float = 0.2
+    #: Redeclare the ligand's metal bonds from each generation's own geometry,
+    #: so coordination is part of the search rather than only of finalization
+    detect_metal: bool = True
+    #: How far past its ideal distance a donor may sit and still bind
+    metal_tolerance: float = 0.55
+    #: Weight on metal coordination during the search, separate from the one
+    #: finalization uses: the search has no count-pair suppression to repay
+    metal_weight: float = 1.0
+    maxiter: int = 50
+    initial_perturbation: DockingPerturbation = DockingPerturbation()
+    #: How flexible sidechains are searched. ``jitter`` perturbs their chis
+    #: with the ligand's operator; ``rotamer`` mutates them to whole Dunbrack
+    #: rotamers; ``packer`` leaves them to an annealed rotamer search before
+    #: each minimization, as Rosetta does; ``minimize`` never samples them
+    #: genetically, so they adapt only through the continuous minimizer and
+    #: the final refinement's repack.
+    sidechain_sampling: Literal["jitter", "rotamer", "packer", "minimize"] = "rotamer"
+    #: Annealing passes per ramp step, for ``packer``.
+    pack_steps: int = 50
+    #: Contact distance biasing which residue a packing pass proposes; None
+    #: draws residues uniformly.
+    pack_contact_cutoff: float | None = None
+    #: Repulsive-weight ramp; each entry packs at that weight, then minimizes.
+    ramp: tuple[float, ...] = (0.1, 1.0)
+
+
+@dataclass(frozen=True)
+class RandomPlacement:
+    """Ranges for an unbiased initial ligand population.
+
+    The ligand heavy-atom centroid is placed uniformly inside the supplied
+    pocket axis-aligned bounding box.  When no box is supplied, the reference
+    ligand-heavy-atom box is expanded by ``pocket_padding_angstrom`` on every
+    side.  Orientations are uniform on SO(3), and each logical torsion is
+    uniform on ``(-pi, pi]``.
+    """
+
+    pocket_padding_angstrom: float = 2.0
+
+
+_GENE_INDEX_FIELDS = (
+    "jump_nodes",
+    "torsion_nodes",
+    "torsion_dof_types",
+    "torsion_signs",
+    "torsion_offsets",
+    "ligand_nodes",
+    "torsion_valid",
+)
+
+
+@dataclass(frozen=True)
+class LigandGeneLayout:
+    """Map ``[pose, jump | ligand chis | receptor chis]`` to coordinates."""
+
+    template: PoseStack
+    docking_dofs: LigandDockingDOFs
+    kin_module: PoseStackKinematicsModule
+    base_raw_dofs: torch.Tensor
+    index: GeneIndex
+    #: [pose, slot] ligand-block-local atom index, -1 in a slot the pose's own
+    #: block type has no atom for
+    ligand_local_atoms: torch.Tensor
+    #: [pose, heavy] ligand-block-local heavy atom index; metal variants differ
+    #: only by hydrogens, so the heavy set is shared and only the indices shift
+    heavy_local_atoms: torch.Tensor
+    #: The ligand block types this search can reach, and their union columns
+    variants: LigandVariantDOFs
+    sidechain_nodes: torch.Tensor
+    sidechain_atom_indices: torch.Tensor
+    sidechain_atom_influence: torch.Tensor
+
+    @property
+    def n_ligand_torsions(self) -> int:
+        return len(self.docking_dofs.torsions)
+
+    @property
+    def torsion_groups(self) -> torch.Tensor:
+        """Gene-column groups: each ligand chi alone, a residue's chis together.
+
+        The genetic operators act on groups, so a sidechain is inherited or
+        resampled as a whole rotamer rather than one chi at a time.
+        """
+        groups = list(range(self.n_ligand_torsions))
+        next_group = self.n_ligand_torsions
+        block_group: dict[int, int] = {}
+        for dof in self.docking_dofs.sidechain_torsions:
+            group = block_group.setdefault(dof.block, next_group)
+            if group == next_group:
+                next_group += 1
+            groups.append(group)
+        return torch.tensor(groups, dtype=torch.int64, device=self.template.device)
+
+    @classmethod
+    def from_pose_stack(
+        cls, pose_stack: PoseStack, docking_dofs: LigandDockingDOFs
+    ) -> "LigandGeneLayout":
+        """Lay out a population whose poses all hold one ligand block type."""
+        block_type_index = int(
+            pose_stack.block_type_ind64[0, docking_dofs.ligand_block]
+        )
+        block_type = pose_stack.packed_block_types.active_block_types[block_type_index]
+        return cls.from_pose_stack_union(
+            pose_stack,
+            LigandVariantDOFs.single(
+                docking_dofs, block_type_index, block_type, pose_stack.device
+            ),
+        )
+
+    @classmethod
+    def from_pose_stack_union(
+        cls, pose_stack: PoseStack, variants: LigandVariantDOFs
+    ) -> "LigandGeneLayout":
+        """Lay out a population whose poses hold different ligand block types."""
+
+        docking_dofs = variants.reference
+        kin_module = PoseStackKinematicsModule(pose_stack, docking_dofs.fold_forest)
+        kmd = kin_module.kmd
+        raw_dofs = _inverse_dofs(pose_stack, kin_module)
+        minmap = MinimizerMap(pose_stack, kmd, docking_dofs.move_map)
+        index = GeneIndex.build_union(
+            pose_stack, variants, kmd.forest, minmap.dof_mask, raw_dofs.dtype
+        )
+
+        pbt = pose_stack.packed_block_types
+        block_types = pose_stack.block_type_ind64[:, docking_dofs.ligand_block]
+        heavy_of = {}
+        for variant in sorted(set(block_types.tolist())):
+            block_type = pbt.active_block_types[variant]
+            heavy_of[variant] = torch.nonzero(
+                ~pbt.atom_is_hydrogen[variant, : block_type.n_atoms].to(torch.bool),
+                as_tuple=False,
+            ).flatten()
+        if len({int(t.numel()) for t in heavy_of.values()}) != 1:
+            raise ValueError("ligand block types differ in heavy atom count")
+
+        (
+            sidechain_nodes,
+            sidechain_atom_indices,
+            sidechain_atom_influence,
+        ) = _sidechain_coordinate_metadata(pose_stack, docking_dofs, kmd.forest)
+
+        return cls(
+            template=pose_stack,
+            docking_dofs=docking_dofs,
+            kin_module=kin_module,
+            base_raw_dofs=raw_dofs,
+            index=index,
+            ligand_local_atoms=torch.stack(
+                [variants.atom_map[int(v)] for v in block_types], dim=0
+            ),
+            heavy_local_atoms=torch.stack(
+                [heavy_of[int(v)] for v in block_types], dim=0
+            ),
+            variants=variants,
+            sidechain_nodes=sidechain_nodes,
+            sidechain_atom_indices=sidechain_atom_indices,
+            sidechain_atom_influence=sidechain_atom_influence,
+        )
+
+    def rebound(
+        self, pose_stack: PoseStack, variants: LigandVariantDOFs | None = None
+    ) -> "LigandGeneLayout":
+        """This layout re-indexed against a population whose ligand types moved.
+
+        Detection can hand a pose a different metal variant between generations,
+        which changes its atoms, its kinematics and which gene columns are live.
+        """
+        return type(self).from_pose_stack_union(
+            pose_stack, self.variants if variants is None else variants
+        )
+
+    def __getattr__(self, name: str):
+        if name in _GENE_INDEX_FIELDS:
+            return getattr(self.index, name)
+        raise AttributeError(name)
+
+    @property
+    def n_dof(self) -> int:
+        return 6 + self.index.torsion_nodes.shape[1]
+
+    def genes_from_raw_dofs(
+        self, raw_dofs: torch.Tensor, previous: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Gather the fixed-order gene from a raw kinematic DOF tensor.
+
+        ``previous`` supplies the columns a pose's block type does not hold.
+        """
+
+        if raw_dofs.shape != self.base_raw_dofs.shape:
+            raise ValueError(
+                "raw DOF shape does not match the gene layout: "
+                f"{tuple(raw_dofs.shape)} != {tuple(self.base_raw_dofs.shape)}"
+            )
+        return self.index.genes_from_raw_dofs(raw_dofs, previous)
+
+    def genes_from_pose_stack(self, pose_stack: PoseStack) -> torch.Tensor:
+        """Extract the starting template gene from its freed raw DOFs.
+
+        This inverse-kinematics path exists only to seed the initial pool. The
+        generation loop receives minimized genes directly from the optimizer.
+        """
+
+        if pose_stack.n_poses != self.template.n_poses:
+            raise ValueError("pose stack size does not match the gene layout")
+        raw_dofs = _inverse_dofs(pose_stack, self.kin_module)
+        genes = self.genes_from_raw_dofs(raw_dofs)
+        n_sidechain_torsions = len(self.docking_dofs.sidechain_torsions)
+        if n_sidechain_torsions:
+            # Recover each sidechain gene from its pose-local named chi delta.
+            # Starting from the base raw-DOF gene preserves the native path's
+            # bit identity while avoiding the cross-pose corruption observed
+            # in batched inverse-kinematics sidechain columns.
+            base_genes = self.genes_from_raw_dofs(self.base_raw_dofs)[
+                :, -n_sidechain_torsions:
+            ]
+            base_chis = _sidechain_logical_torsions_from_coords(
+                self.template, self.docking_dofs
+            )
+            chis = _sidechain_logical_torsions_from_coords(
+                pose_stack, self.docking_dofs
+            )
+            sidechain_genes = base_genes + _wrap_angle(chis - base_chis)
+            in_canonical_range = (sidechain_genes > -math.pi) & (
+                sidechain_genes <= math.pi
+            )
+            genes[:, -n_sidechain_torsions:] = torch.where(
+                in_canonical_range,
+                sidechain_genes,
+                _wrap_angle(sidechain_genes),
+            )
+        return genes
+
+    def raw_dofs_from_genes(self, genes: torch.Tensor) -> torch.Tensor:
+        """Write genes into a clone of the template raw-DOF tensor."""
+
+        expected = (self.template.n_poses, self.n_dof)
+        if genes.shape != expected:
+            raise ValueError(
+                f"genes have shape {tuple(genes.shape)}; expected {expected}"
+            )
+
+        raw_dofs = self.base_raw_dofs.clone()
+        self.index.write_raw_dofs(raw_dofs, genes)
+        return raw_dofs
+
+    def pose_stack_from_genes(self, genes: torch.Tensor) -> PoseStack:
+        """Rebuild ligand and movable-sidechain coordinates from genes."""
+
+        raw_dofs = self.raw_dofs_from_genes(genes)
+        kin_coords = self.kin_module(raw_dofs)
+        coords = self.template.coords.clone()
+        pose_indices = torch.arange(
+            self.template.n_poses,
+            dtype=torch.int64,
+            device=self.template.device,
+        )
+        atom_indices = self.template.block_coord_offset64[
+            :, self.docking_dofs.ligand_block, None
+        ] + self.ligand_local_atoms.clamp(min=0)
+        present = self.ligand_local_atoms >= 0
+        rows = pose_indices[:, None].expand_as(atom_indices)
+        ligand_xyz = kin_coords[self.ligand_nodes.clamp(min=0)].to(coords.dtype)
+        coords[rows[present], atom_indices[present]] = ligand_xyz[present]
+        if self.sidechain_nodes.shape[1]:
+            rebuilt_sidechains = kin_coords[self.sidechain_nodes].to(coords.dtype)
+            coords[pose_indices[:, None], self.sidechain_atom_indices] = (
+                rebuilt_sidechains
+            )
+        return attr.evolve(self.template, coords=coords)
+
+    def ligand_heavy_coords(self, pose_stack: PoseStack) -> torch.Tensor:
+        """Gather ligand heavy atoms as ``[pose, heavy_atom, xyz]``."""
+
+        return _block_heavy_coords(
+            pose_stack,
+            self.docking_dofs.ligand_block,
+            self.heavy_local_atoms,
+        )
+
+
+def _block_heavy_coords(
+    pose_stack: PoseStack,
+    block: int,
+    heavy_local_atoms: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Gather a block's heavy-atom coordinates.
+
+    ``heavy_local_atoms`` may be per-pose ``[pose, heavy]``, which is what lets
+    poses holding different block types be gathered together; derived here it
+    requires one block type across the stack.
+    """
+
+    block_type_indices = pose_stack.block_type_ind64[:, block]
+    if bool(torch.any(block_type_indices < 0)):
+        raise ValueError(f"block {block} is absent from at least one pose")
+    if heavy_local_atoms is None:
+        if bool(torch.any(block_type_indices != block_type_indices[0])):
+            raise ValueError(f"all poses must use the same type at block {block}")
+        block_type_index = int(block_type_indices[0])
+        block_type = pose_stack.packed_block_types.active_block_types[block_type_index]
+        heavy_local_atoms = torch.nonzero(
+            ~pose_stack.packed_block_types.atom_is_hydrogen[
+                block_type_index, : block_type.n_atoms
+            ].to(torch.bool),
+            as_tuple=False,
+        ).flatten()
+    if heavy_local_atoms.dim() == 1:
+        heavy_local_atoms = heavy_local_atoms.expand(pose_stack.n_poses, -1)
+    pose_indices = torch.arange(
+        pose_stack.n_poses, dtype=torch.int64, device=pose_stack.device
+    )
+    atom_indices = pose_stack.block_coord_offset64[:, block, None] + heavy_local_atoms
+    return pose_stack.coords[pose_indices[:, None], atom_indices]
+
+
+def _has_ring_closed_chi(block_type) -> bool:
+    """True if any sidechain chi's central bond lies in a ring.
+
+    Rotating such a chi would move atoms outside the sidechain, so the torsion
+    has no controller the docking kinematics can expose.
+    """
+    cpu = torch.device("cpu")
+    for torsion_index in block_type.sc_torsions:
+        atoms = _local_torsion_atoms(block_type, int(torsion_index))
+        if _sidechain_end_local_atoms(block_type, atoms, cpu).numel() == 0:
+            return True
+    return False
+
+
+def select_pocket_residues(
+    pose_stack: PoseStack,
+    ligand,
+    cutoff: float = 4.0,
+) -> torch.Tensor:
+    """Return sorted polymer residues (block indices) contacting ligand heavy atoms.
+
+    A block is selected when any of its heavy atoms is within ``cutoff`` of a
+    ligand heavy atom in any pose. Non-polymer blocks, including cofactors and
+    solvent, are excluded. Polymer residues carrying a non-polymer covalent
+    connection (e.g. a disulfide-bonded cysteine) are also excluded, because
+    flexible-sidechain kinematics cannot preserve that bond; passing such a
+    residue explicitly is rejected downstream by ``validated_sidechain_blocks``.
+    Chi-less residues (e.g. ALA, GLY) are excluded as well: they have nothing to
+    move, and so are residues whose sidechain closes a ring onto the backbone
+    (e.g. PRO), whose chis no controller can rotate independently. The returned
+    set is directly usable as flexible ``sidechain_blocks``.
+    """
+    ligand_block = resolve_ligand_block(pose_stack, ligand)
+    cutoff = float(cutoff)
+
+    ligand_heavy = _block_heavy_coords(pose_stack, ligand_block)
+    selected = []
+    for block in range(pose_stack.max_n_blocks):
+        if block == ligand_block:
+            continue
+        block_type_indices = pose_stack.block_type_ind64[:, block]
+        if bool(torch.any(block_type_indices < 0)):
+            continue
+        if bool(torch.any(block_type_indices != block_type_indices[0])):
+            raise ValueError(f"all poses must use the same type at block {block}")
+        block_type = pose_stack.packed_block_types.active_block_types[
+            int(block_type_indices[0])
+        ]
+        if not block_type.properties.polymer.is_polymer:
+            continue
+        if has_nonpolymer_connection(pose_stack, block, int(block_type_indices[0])):
+            continue
+        if int(block_type.n_sc_torsions) == 0:
+            continue
+        if _has_ring_closed_chi(block_type):
+            continue
+        receptor_heavy = _block_heavy_coords(pose_stack, block)
+        if bool(torch.any(torch.cdist(receptor_heavy, ligand_heavy) <= cutoff)):
+            selected.append(block)
+    return torch.tensor(selected, dtype=torch.int64, device=pose_stack.device)
+
+
+@dataclass(frozen=True)
+class GAPool:
+    genes: torch.Tensor
+    pose_stack: PoseStack
+    energies: torch.Tensor
+    n_diverse: int
+    selected_indices: torch.Tensor | None = None
+
+
+@dataclass(frozen=True)
+class GAResult:
+    pool: GAPool
+    best_energy_history: torch.Tensor
+    diverse_count_history: tuple[int, ...]
+    ranked_genes: torch.Tensor | None = None
+    ranked_energies: torch.Tensor | None = None
+    best_genes: torch.Tensor | None = None
+    best_energies: torch.Tensor | None = None
+    best_pose_stack: PoseStack | None = None
+    #: [pool pose, reference ligand atom] -> that pose's own ligand atom, -1
+    #: where its form has none; None when every pose holds the reference form
+    pool_ligand_atoms: torch.Tensor | None = None
+
+
+@dataclass(frozen=True)
+class DockingResult:
+    """Ranked end-to-end docking output for one input ligand."""
+
+    best_pose_stack: PoseStack
+    best_energies: torch.Tensor
+    best_genes: torch.Tensor
+    ranked_energies: torch.Tensor
+    ranked_genes: torch.Tensor
+    ga_result: GAResult
+    finalization: DockingFinalization | None = None
+
+    # Finalization outputs, exposed here as ``None`` until finalization has run.
+    _FINALIZATION_FIELDS = {
+        "finalized_pose_stack": "pose_stack",
+        "pre_refine_energies": "pre_refine_energies",
+        "complex_energies": "complex_energies",
+        "free_ligand_energies": "free_ligand_energies",
+        "free_receptor_energies": "free_receptor_energies",
+        "nchi": "nchi",
+        "dH": "dH",
+        "TdS": "TdS",
+        "dG": "dG",
+    }
+
+    def __getattr__(self, name: str):
+        field = DockingResult._FINALIZATION_FIELDS.get(name)
+        if field is None:
+            raise AttributeError(name)
+        return None if self.finalization is None else getattr(self.finalization, field)
+
+
+@dataclass(frozen=True)
+class SearchLayout:
+    """Where a backend's search pose keeps what the reference complex moves.
+
+    Backends search on different poses: the grid backend on a compact pose of
+    the ligand and the blocks it moves, the continuous one on the whole
+    complex. This is the one mapping between that pose and the reference, so
+    the GA and finalization never assume either layout.
+    """
+
+    #: One-pose search template, as ``ScoringBackend.search_view`` returns it
+    pose_stack: PoseStack
+    #: The backend that scores the search pose
+    backend: ScoringBackend
+    #: Ligand block in the reference complex
+    reference_ligand_block: int
+    #: Ligand block in the search pose
+    ligand_block: int
+    #: Flexible sidechain blocks in the search pose, in the backend's order
+    sidechain_blocks: tuple[int, ...]
+    #: (search block, reference block, block-local moving atoms) per sidechain
+    sidechain_atoms: tuple[tuple[int, int, torch.Tensor], ...]
+
+
+def search_layout(reference_pose_stack: PoseStack, backend: ScoringBackend):
+    """The search pose ``backend`` docks on, mapped onto ``reference_pose_stack``."""
+    if reference_pose_stack.n_poses != 1:
+        raise ValueError("a search layout needs one reference pose")
+    search_pose, search_backend, search_sidechains = backend.search_view(
+        reference_pose_stack
+    )
+    sidechain_blocks = tuple(backend.sidechain_blocks)
+    if len(search_sidechains) != len(sidechain_blocks):
+        raise ValueError("search view does not hold every flexible sidechain")
+    sidechain_atoms = []
+    if search_sidechains:
+        docking_dofs = build_ligand_docking_dofs(
+            search_pose,
+            search_backend.ligand_block,
+            sidechain_blocks=search_sidechains,
+        )
+        _, atom_indices = _sidechain_coordinate_indices(
+            search_pose,
+            docking_dofs,
+            PoseStackKinematicsModule(search_pose, docking_dofs.fold_forest).kmd.forest,
+        )
+        moving = atom_indices[0]
+        for search_block, reference_block in zip(search_sidechains, sidechain_blocks):
+            start = int(search_pose.block_coord_offset64[0, search_block])
+            end = start + search_pose.block_type(0, search_block).n_atoms
+            selected = moving[(moving >= start) & (moving < end)]
+            if selected.numel():
+                sidechain_atoms.append(
+                    (search_block, reference_block, selected - start)
+                )
+        if sum(int(a.numel()) for _, _, a in sidechain_atoms) != int(moving.numel()):
+            raise ValueError("sidechain atom mapping is incomplete")
+    return SearchLayout(
+        pose_stack=search_pose,
+        backend=search_backend,
+        reference_ligand_block=backend.ligand_block,
+        ligand_block=search_backend.ligand_block,
+        sidechain_blocks=tuple(search_sidechains),
+        sidechain_atoms=tuple(sidechain_atoms),
+    )
+
+
+def _place_ligand_in_reference(
+    reference_pose_stack: PoseStack,
+    search_pose_stack: PoseStack,
+    layout: SearchLayout,
+    *,
+    ligand_atom_map: torch.Tensor | None = None,
+) -> PoseStack:
+    """Copy the ligand and moved sidechain atoms of each search pose into the
+    matching reference complex.
+
+    ``ligand_atom_map`` is ``[pose, reference atom] -> that pose's own ligand
+    atom``, -1 where its block type has none: a search that coordinated a metal
+    may hand back a conjugate base, which is the reference ligand less a
+    hydrogen. An absent atom keeps its reference coordinate, and finalization's
+    own redetection rebuilds the bound form from the placed complex. Offsets are
+    read per pose, since a pose holding a different ligand form shifts every
+    block after it.
+    """
+
+    if search_pose_stack.n_poses != reference_pose_stack.n_poses:
+        raise ValueError("search and reference pose counts must match")
+    ligand_block = layout.reference_ligand_block
+    device = reference_pose_stack.device
+    rows = torch.arange(reference_pose_stack.n_poses, device=device)[:, None]
+    n_atoms = reference_pose_stack.block_type(0, ligand_block).n_atoms
+    if ligand_atom_map is None:
+        if not bool(
+            torch.all(
+                reference_pose_stack.block_type_ind64[:, ligand_block]
+                == search_pose_stack.block_type_ind64[:, layout.ligand_block]
+            )
+        ):
+            raise ValueError("ligand and reference block types must match")
+        local = torch.arange(n_atoms, dtype=torch.int64, device=device).expand(
+            reference_pose_stack.n_poses, -1
+        )
+    else:
+        local = ligand_atom_map[:, :n_atoms].to(device)
+    present = local >= 0
+    target = (
+        reference_pose_stack.block_coord_offset64[:, ligand_block, None]
+        + torch.arange(n_atoms, dtype=torch.int64, device=device)[None, :]
+    )
+    source = search_pose_stack.block_coord_offset64[
+        :, layout.ligand_block, None
+    ] + local.clamp(min=0)
+    coords = reference_pose_stack.coords.clone()
+    coords[rows, target] = torch.where(
+        present[..., None], search_pose_stack.coords[rows, source], coords[rows, target]
+    )
+    for search_block, reference_block, local_atoms in layout.sidechain_atoms:
+        if not bool(
+            torch.all(
+                reference_pose_stack.block_type_ind64[:, reference_block]
+                == search_pose_stack.block_type_ind64[:, search_block]
+            )
+        ):
+            raise ValueError("sidechain and reference block types must match")
+        local_atoms = local_atoms.to(device)[None, :]
+        coords[
+            rows,
+            reference_pose_stack.block_coord_offset64[:, reference_block, None]
+            + local_atoms,
+        ] = search_pose_stack.coords[
+            rows,
+            search_pose_stack.block_coord_offset64[:, search_block, None] + local_atoms,
+        ]
+    return attr.evolve(reference_pose_stack, coords=coords)
+
+
+def _unit_vectors(
+    count: int,
+    *,
+    dtype: torch.dtype,
+    device: torch.device,
+    generator: torch.Generator,
+) -> torch.Tensor:
+    vectors = torch.randn((count, 3), dtype=dtype, device=device, generator=generator)
+    return vectors / torch.linalg.vector_norm(vectors, dim=1, keepdim=True).clamp_min(
+        torch.finfo(dtype).tiny
+    )
+
+
+def _canonical_torsions(torsions: torch.Tensor) -> torch.Tensor:
+    """Wrap torsions to the unique interval ``(-pi, pi]``."""
+
+    wrapped = torch.remainder(torsions + math.pi, 2 * math.pi) - math.pi
+    return torch.where(
+        wrapped == -math.pi,
+        torch.full_like(wrapped, math.pi),
+        wrapped,
+    )
+
+
+def _canonicalize_genes(genes: torch.Tensor) -> torch.Tensor:
+    """Wrap only logical torsions; preserve all six freed jump DOFs."""
+    return torch.cat(
+        (genes[:, :6], _canonical_torsions(genes[:, 6:])),
+        dim=1,
+    )
+
+
+def _zyx_rotation_matrix(euler: torch.Tensor) -> torch.Tensor:
+    """Build tmol's row-vector ZYX rotation matrix from ``[..., 3]`` angles."""
+
+    alpha, beta, gamma = torch.unbind(euler, dim=-1)
+    si, sj, sk = torch.sin(alpha), torch.sin(beta), torch.sin(gamma)
+    ci, cj, ck = torch.cos(alpha), torch.cos(beta), torch.cos(gamma)
+    return torch.stack(
+        (
+            cj * ck,
+            cj * sk,
+            -sj,
+            sj * si * ck - ci * sk,
+            sj * si * sk + ci * ck,
+            cj * si,
+            sj * ci * ck + si * sk,
+            sj * ci * sk - si * ck,
+            cj * ci,
+        ),
+        dim=-1,
+    ).reshape(euler.shape[:-1] + (3, 3))
+
+
+def _rotation_matrix_to_zyx(rotation: torch.Tensor) -> torch.Tensor:
+    """Invert ``_zyx_rotation_matrix`` with common.hh's canonical branch."""
+
+    cy = torch.sqrt(rotation[..., 0, 0] ** 2 + rotation[..., 0, 1] ** 2)
+    singular = cy < 1.0e-6
+    alpha = torch.where(
+        singular,
+        torch.atan2(-rotation[..., 2, 1], rotation[..., 1, 1]),
+        torch.atan2(rotation[..., 1, 2], rotation[..., 2, 2]),
+    )
+    beta = torch.atan2(-rotation[..., 0, 2], cy)
+    gamma = torch.where(
+        singular,
+        torch.zeros_like(cy),
+        torch.atan2(rotation[..., 0, 1], rotation[..., 0, 0]),
+    )
+    return torch.stack((alpha, beta, gamma), dim=-1)
+
+
+def _quaternion_rotation_matrix(quaternion: torch.Tensor) -> torch.Tensor:
+    """Build Rosetta's column-vector rotation matrix from ``[..., w,x,y,z]``."""
+
+    w, x, y, z = torch.unbind(quaternion, dim=-1)
+    return torch.stack(
+        (
+            1 - 2 * (y * y + z * z),
+            2 * (x * y - z * w),
+            2 * (x * z + y * w),
+            2 * (x * y + z * w),
+            1 - 2 * (x * x + z * z),
+            2 * (y * z - x * w),
+            2 * (x * z - y * w),
+            2 * (y * z + x * w),
+            1 - 2 * (x * x + y * y),
+        ),
+        dim=-1,
+    ).reshape(quaternion.shape[:-1] + (3, 3))
+
+
+def _apply_rosetta_rotation_mutation(
+    parent_euler: torch.Tensor,
+    axis: torch.Tensor,
+    angle: torch.Tensor,
+) -> torch.Tensor:
+    """Left-compose Rosetta's ``(cos(a), sin(a)*axis)`` perturbation.
+
+    Rosetta rotation matrices act on column vectors, while tmol's kinematics
+    stores their transposes for row-vector homogeneous transforms. Composition
+    is therefore performed in Rosetta's convention and transposed only at the
+    ZYX conversion boundaries.
+    """
+
+    perturbation_quaternion = torch.cat(
+        (torch.cos(angle)[..., None], torch.sin(angle)[..., None] * axis),
+        dim=-1,
+    )
+    parent_rotation = _zyx_rotation_matrix(parent_euler).transpose(-1, -2)
+    perturbation_rotation = _quaternion_rotation_matrix(perturbation_quaternion)
+    composed_rotation = perturbation_rotation @ parent_rotation
+    return _rotation_matrix_to_zyx(composed_rotation.transpose(-1, -2))
+
+
+def _torsion_group_index(
+    groups: torch.Tensor | None, n_torsions: int, device: torch.device
+) -> tuple[torch.Tensor, int]:
+    """Column-to-group map and group count; one group per column by default."""
+    if groups is None:
+        return torch.arange(n_torsions, dtype=torch.int64, device=device), n_torsions
+    if tuple(groups.shape) != (n_torsions,):
+        raise ValueError("torsion groups must label every torsion gene column")
+    return groups.to(device=device, dtype=torch.int64), int(groups.max()) + 1
+
+
+def mutate(
+    genes: torch.Tensor,
+    *,
+    generator: torch.Generator,
+    rtmutation_rate: float = 0.5,
+    torsmutation_rate: float = 0.1,
+    translation_width: float = 2.0,
+    rotation_width: float = math.radians(60.0),
+    torsion_width: float = math.radians(120.0),
+    groups: torch.Tensor | None = None,
+    n_ligand_groups: int | None = None,
+    mutable_groups: int | None = None,
+    rotamers: "RotamerGeneLibrary | None" = None,
+) -> torch.Tensor:
+    """Mutate a gene batch with Rosetta's rigid-body-or-chi semantics.
+
+    ``LigandConformer.cc:765-820`` selects rigid-body mutation with probability
+    0.5; otherwise each chi mutates with probability 0.1 and one chi is forced
+    when none was selected. Translation has a uniform radius and chi jitter is
+    uniform in its width. Rotation draws Rosetta's Gaussian quaternion
+    parameter about a random axis and left-composes the perturbation with the
+    parent rotation. The composed orientation is written back as raw ZYX
+    delta-Euler DOFs for forward kinematics.
+
+    ``groups`` labels each torsion column with the unit it mutates in, so a
+    flexible sidechain moves as one rotamer; ``n_ligand_groups`` keeps the
+    forced-mutation fallback on a ligand chi. ``mutable_groups`` bounds which
+    groups may mutate at all, leaving flexible sidechains to the packer as
+    Rosetta does. With ``rotamers``, a selected sidechain group takes a whole
+    Dunbrack rotamer instead of the uniform chi jitter.
+    """
+    n_genes, n_dof = genes.shape
+    device, dtype = genes.device, genes.dtype
+    randomize_rt = (
+        torch.rand((n_genes,), device=device, generator=generator) < rtmutation_rate
+    )
+    result = genes.clone()
+
+    translation_axis = _unit_vectors(
+        n_genes, dtype=dtype, device=device, generator=generator
+    )
+    translation_length = (
+        torch.rand((n_genes, 1), dtype=dtype, device=device, generator=generator)
+        * translation_width
+    )
+    result[:, :3] += randomize_rt[:, None] * translation_axis * translation_length
+
+    if rotation_width > math.pi:
+        random_values = torch.rand(
+            (n_genes, 3), dtype=dtype, device=device, generator=generator
+        )
+        u1 = random_values[:, 0]
+        u2 = 2 * math.pi * random_values[:, 1]
+        u3 = 2 * math.pi * random_values[:, 2]
+        random_quaternion = torch.stack(
+            (
+                torch.sqrt(1 - u1) * torch.sin(u2),
+                torch.sqrt(1 - u1) * torch.cos(u2),
+                torch.sqrt(u1) * torch.sin(u3),
+                torch.sqrt(u1) * torch.cos(u3),
+            ),
+            dim=1,
+        )
+        random_rotation = _quaternion_rotation_matrix(random_quaternion)
+        mutated_rotation = _rotation_matrix_to_zyx(random_rotation.transpose(-1, -2))
+    else:
+        rotation_axis = _unit_vectors(
+            n_genes, dtype=dtype, device=device, generator=generator
+        )
+        angle = rotation_width * torch.randn(
+            (n_genes,), dtype=dtype, device=device, generator=generator
+        )
+        mutated_rotation = _apply_rosetta_rotation_mutation(
+            genes[:, 3:6], rotation_axis, angle
+        )
+    result[:, 3:6] = torch.where(randomize_rt[:, None], mutated_rotation, genes[:, 3:6])
+
+    n_torsions = n_dof - 6
+    if n_torsions:
+        column_group, n_groups = _torsion_group_index(groups, n_torsions, device)
+        mutate_group = (
+            torch.rand((n_genes, n_groups), device=device, generator=generator)
+            < torsmutation_rate
+        ) & ~randomize_rt[:, None]
+        if mutable_groups is not None:
+            mutate_group[:, mutable_groups:] = False
+        force = ~randomize_rt & ~torch.any(mutate_group, dim=1)
+        # Rosetta forces a ligand chi, never a sidechain, when nothing mutated.
+        n_forced = n_groups if n_ligand_groups is None else n_ligand_groups
+        if n_forced:
+            forced_index = torch.randint(
+                n_forced, (n_genes, 1), device=device, generator=generator
+            )
+            forced = torch.zeros_like(mutate_group)
+            forced.scatter_(1, forced_index, force[:, None])
+            mutate_group |= forced
+        mutate_torsion = mutate_group[:, column_group]
+
+        if torsion_width > math.pi:
+            mutated_torsions = (
+                2
+                * math.pi
+                * torch.rand(
+                    (n_genes, n_torsions),
+                    dtype=dtype,
+                    device=device,
+                    generator=generator,
+                )
+            )
+        else:
+            delta = torsion_width * (
+                1
+                - 2
+                * torch.rand(
+                    (n_genes, n_torsions),
+                    dtype=dtype,
+                    device=device,
+                    generator=generator,
+                )
+            )
+            mutated_torsions = genes[:, 6:] + delta
+        if rotamers is not None and rotamers.n_sidechain_columns:
+            mutated_torsions = mutated_torsions.clone()
+            mutated_torsions[:, -rotamers.n_sidechain_columns :] = rotamers.draw(
+                n_genes, generator=generator, dtype=dtype
+            )
+        result[:, 6:] = torch.where(mutate_torsion, mutated_torsions, genes[:, 6:])
+    return _canonicalize_genes(result)
+
+
+def crossover(
+    parent1: torch.Tensor,
+    parent2: torch.Tensor,
+    *,
+    generator: torch.Generator,
+    groups: torch.Tensor | None = None,
+    n_ligand_groups: int | None = None,
+) -> torch.Tensor:
+    """Uniform crossover with rigid body inherited as one indivisible unit.
+
+    Rosetta selects the complete rigid body from one parent, then each chi
+    independently, forcing one partner-2 chi when all independent choices took
+    parent 1 (``LigandConformer.cc:862-897``). ``groups`` makes a flexible
+    sidechain's chis inherit together, so an offspring never mixes two parents'
+    rotamers within one residue.
+    """
+    if parent1.shape[1] < 6:
+        raise ValueError("crossover genes need a six-value rigid body")
+    n_genes, n_dof = parent1.shape
+    take_rb_1 = (
+        torch.rand((n_genes, 1), device=parent1.device, generator=generator) < 0.5
+    )
+    result = torch.empty_like(parent1)
+    result[:, :6] = torch.where(take_rb_1, parent1[:, :6], parent2[:, :6])
+
+    n_torsions = n_dof - 6
+    if n_torsions:
+        column_group, n_groups = _torsion_group_index(
+            groups, n_torsions, parent1.device
+        )
+        take_group_1 = (
+            torch.rand(
+                (n_genes, n_groups),
+                device=parent1.device,
+                generator=generator,
+            )
+            < 0.5
+        )
+        force_partner2 = torch.all(take_group_1, dim=1)
+        n_forced = n_groups if n_ligand_groups is None else n_ligand_groups
+        if n_forced:
+            forced_index = torch.randint(
+                n_forced,
+                (n_genes, 1),
+                device=parent1.device,
+                generator=generator,
+            )
+            forced_partner2 = torch.zeros_like(take_group_1)
+            forced_partner2.scatter_(1, forced_index, force_partner2[:, None])
+            take_group_1 &= ~forced_partner2
+        take_chi_1 = take_group_1[:, column_group]
+        result[:, 6:] = torch.where(take_chi_1, parent1[:, 6:], parent2[:, 6:])
+    return _canonicalize_genes(result)
+
+
+def next_generation(
+    genes: torch.Tensor,
+    npoolout: int,
+    pmut: float,
+    *,
+    generator: torch.Generator,
+    groups: torch.Tensor | None = None,
+    n_ligand_groups: int | None = None,
+    mutable_groups: int | None = None,
+    rotamers: "RotamerGeneLibrary | None" = None,
+    valid: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Create offspring by cyclic parent assignment and mutation/crossover.
+
+    This is the batched equivalent of ``GAOptimizer.cc:220-258``. Parent ``i``
+    cycles modulo the input pool; mutation is chosen with ``pmut`` and a
+    crossover partner is sampled uniformly from every other parent.
+    ``valid`` marks each parent's live torsion columns; the rest are held.
+    """
+    npoolin = genes.shape[0]
+    parent_indices = (
+        torch.arange(npoolout, dtype=torch.int64, device=genes.device) % npoolin
+    )
+    parents = genes[parent_indices]
+    mutate_choice = (
+        torch.rand((npoolout,), device=genes.device, generator=generator) <= pmut
+    )
+    if npoolin == 1:
+        mutate_choice = torch.ones_like(mutate_choice)
+        partners = parents
+    else:
+        partner_indices = torch.randint(
+            npoolin - 1,
+            (npoolout,),
+            device=genes.device,
+            generator=generator,
+        )
+        partner_indices += (partner_indices >= parent_indices).to(torch.int64)
+        partners = genes[partner_indices]
+    mutated = mutate(
+        parents,
+        generator=generator,
+        groups=groups,
+        n_ligand_groups=n_ligand_groups,
+        mutable_groups=mutable_groups,
+        rotamers=rotamers,
+    )
+    crossed = crossover(
+        parents,
+        partners,
+        generator=generator,
+        groups=groups,
+        n_ligand_groups=n_ligand_groups,
+    )
+    children = torch.where(mutate_choice[:, None], mutated, crossed)
+    if valid is not None:
+        # A column the parent's block type does not hold is inert: hold it at
+        # the parent's value so it comes back as a rotamer, not as drift.
+        parent_valid = valid[parent_indices]
+        children = torch.cat(
+            (
+                children[:, :6],
+                torch.where(parent_valid, children[:, 6:], parents[:, 6:]),
+            ),
+            dim=1,
+        )
+    return children
+
+
+def _ligand_donor_mask(pose_stack: PoseStack, ligand_block: int) -> torch.Tensor:
+    """[pose, atom] the ligand atoms detection may take as donors.
+
+    Detection's rule: an atom donates if any residue type of its io class gives
+    that atom name a metal-donor type.
+    """
+    pbt = pose_stack.packed_block_types
+    donor_type = {t.name for t in pbt.chem_db.atom_types if t.is_metal_donor}
+    types = pose_stack.block_type_ind64[:, ligand_block]
+    present = sorted(set(types.tolist()))
+    width = int(pbt.n_atoms[present].max())
+    rows = torch.zeros((len(present), width), dtype=torch.bool)
+    for row, index in enumerate(present):
+        block_type = pbt.active_block_types[index]
+        names = {
+            atom.name
+            for residue in pbt.chem_db.residues
+            if residue.io_equiv_class == block_type.io_equiv_class
+            for atom in residue.atoms
+            if atom.atom_type in donor_type
+        }
+        for position, atom in enumerate(block_type.atoms[: block_type.n_atoms]):
+            rows[row, position] = atom.name in names
+    lookup = torch.full(
+        (int(types.max()) + 1,), -1, dtype=torch.int64, device=pose_stack.device
+    )
+    lookup[present] = torch.arange(len(present), device=pose_stack.device)
+    return rows.to(pose_stack.device)[lookup[types]]
+
+
+def _metal_reachable(
+    pose_stack: PoseStack, ligand_block: int, tolerance: float
+) -> torch.Tensor:
+    """[pose] whether redetection could change this pose's ligand bonds.
+
+    True where the ligand holds a metal bond or has a donor within the longest
+    ideal metal-donor distance plus ``tolerance`` of a metal atom; detection
+    considers no donor farther out. Cluster metals are always rechecked.
+    """
+    bound = (pose_stack.inter_residue_connections64[:, ligand_block, :, 0] >= 0).any(1)
+    metals = metal_blocks(pose_stack, 0)
+    if not metals:
+        return bound
+    if any(_is_metal_cluster(pose_stack.block_type(0, block)) for block in metals):
+        return torch.ones_like(bound)
+    rows = torch.arange(pose_stack.n_poses, device=pose_stack.device)[:, None]
+    donors = _ligand_donor_mask(pose_stack, ligand_block)
+    local = torch.arange(donors.shape[1], device=pose_stack.device)
+    ligand = pose_stack.coords[
+        rows,
+        (pose_stack.block_coord_offset64[:, ligand_block, None] + local).clamp(
+            max=pose_stack.max_n_pose_atoms - 1
+        ),
+    ]
+    metal_atoms = []
+    for block in metals:
+        block_type = pose_stack.block_type(0, block)
+        for site in block_type.metal_sites:
+            metal_atoms.append(
+                pose_stack.block_coord_offset64[:, block]
+                + block_type.atom_to_idx[site.metal_atom]
+            )
+    metal = pose_stack.coords[rows, torch.stack(metal_atoms, dim=1)]
+    reach = _max_metal_donor_distance() + tolerance
+    distance = torch.cdist(ligand.to(torch.float32), metal.to(torch.float32))
+    near = (distance <= reach).any(2) & donors
+    return bound | near.any(1)
+
+
+def detect_metal_variants(
+    pose_stack: PoseStack,
+    layout: LigandGeneLayout,
+    backend: ScoringBackend,
+    *,
+    tolerance: float = 0.55,
+    metal_weight: float = 1.0,
+) -> tuple[PoseStack, LigandGeneLayout]:
+    """Redeclare the ligand's metal bonds from this pool's own geometry.
+
+    Bonds are both made and dropped, so a donor that has moved off its metal
+    lets go rather than being held by an unbounded harmonic. A block type the
+    search has not reached before is resolved here and added to the layout's
+    columns; the columns themselves never move.
+    """
+
+    ligand_block = layout.docking_dofs.ligand_block
+    # The ligand keeps its hydrogens while it searches. Dropping one would
+    # change its atom count between poses, and the live terms score cartesian
+    # bonded energies, which no placeholder for a missing atom can satisfy.
+    # Finalization deprotonates the promoted poses as usual.
+    # Only a pose whose ligand holds a metal bond, or has an atom in a metal's
+    # reach, can come back different; the rest are left as they are.
+    poses = torch.nonzero(
+        _metal_reachable(pose_stack, ligand_block, tolerance)
+    ).squeeze(-1)
+    if poses.numel() == 0:
+        detected = pose_stack
+    else:
+        subset = (
+            pose_stack
+            if poses.numel() == pose_stack.n_poses
+            else select_poses(pose_stack, poses)
+        )
+        protonated = torch.zeros(
+            (subset.n_poses, subset.max_n_blocks),
+            dtype=torch.bool,
+            device=subset.device,
+        )
+        protonated[:, ligand_block] = True
+        redetected = redetect_metal_coordination(
+            subset,
+            tolerance=tolerance,
+            drop_existing=(ligand_block,),
+            only_donor_blocks=(ligand_block,),
+            protonated_donors=protonated,
+        )
+        if redetected is subset:
+            detected = pose_stack
+        elif subset is pose_stack:
+            detected = redetected
+        else:
+            detected = replace_poses(pose_stack, poses, redetected)
+    block_types = detected.block_type_ind64[:, ligand_block]
+    variants = layout.variants
+    for index in sorted(set(block_types.tolist()) - set(variants.dofs)):
+        pose = int(torch.nonzero(block_types == index)[0])
+        variants = variants.with_variant(
+            variant_docking_dofs(
+                backend,
+                detected.split(pose),
+                ligand_block,
+                layout.docking_dofs.sidechain_blocks,
+                detected.n_poses,
+            ),
+            index,
+            detected.packed_block_types.active_block_types[index],
+            detected.device,
+        )
+    if variants is not layout.variants:
+        backend.set_ligand_variants(variants, detected)
+    backend.apply_pose_variants(detected)
+    backend.set_metal_term(detected, metal_weight)
+    return detected, layout.rebound(detected, variants)
+
+
+def _rep_scale_of(backend: ScoringBackend, scale: float):
+    """Scale the backend's repulsive weight if it supports a packing ramp."""
+    return backend.rep_scale(scale)
+
+
+def _ligand_contact_weights(
+    pose_stack: PoseStack, layout: LigandGeneLayout, cutoff: float
+) -> torch.Tensor:
+    """Per-pose weight of each flexible residue, by heavy-atom ligand contact.
+
+    A uniformly chosen residue is usually one the ligand never touches, so its
+    rotamer makes no difference and the packing pass is spent for nothing.
+    Weighting by contact puts the passes where the ligand actually is.
+    """
+
+    dofs = layout.docking_dofs
+    ligand = _block_heavy_coords(
+        pose_stack, dofs.ligand_block, layout.heavy_local_atoms
+    )
+    counts = [
+        torch.count_nonzero(
+            torch.cdist(_block_heavy_coords(pose_stack, block), ligand) <= cutoff,
+            dim=(1, 2),
+        )
+        for block in dofs.sidechain_blocks
+    ]
+    weights = torch.stack(counts, dim=1).to(ligand.dtype)
+    # A residue out of contact in every candidate still needs some weight, or
+    # multinomial has nothing to draw from.
+    return weights + 1.0e-3
+
+
+def anneal_rotamers(
+    genes: torch.Tensor,
+    layout: LigandGeneLayout,
+    backend: ScoringBackend,
+    rotamers: "RotamerGeneLibrary",
+    *,
+    generator: torch.Generator,
+    steps: int,
+    hot: float = 10.0,
+    cold: float = 1.0,
+    contact_cutoff: float | None = None,
+) -> torch.Tensor:
+    """Re-choose flexible sidechain rotamers for a whole population.
+
+    This is Rosetta's ``packer_loop`` step: discrete whole-rotamer moves
+    accepted by Metropolis on a 10-to-1 temperature ramp, recovering the best
+    assignment seen. One pass proposes a move for every candidate at once and
+    costs one population scoring, so the search is batched rather than run
+    candidate by candidate.
+    """
+
+    if steps <= 0 or rotamers.n_groups == 0:
+        return genes
+    current = genes
+    current_energy = backend.score(layout.pose_stack_from_genes(current))
+    best, best_energy = current, current_energy
+    start_energy = current_energy
+    n_accepted = 0
+    contact_weights = (
+        None
+        if contact_cutoff is None
+        else _ligand_contact_weights(
+            layout.pose_stack_from_genes(current), layout, contact_cutoff
+        )
+    )
+    decay = (cold / hot) ** (1.0 / max(steps - 1, 1))
+    temperature = hot
+    for _ in range(steps):
+        group, rotamer_index = rotamers.random_moves(
+            genes.shape[0], generator=generator, weights=contact_weights
+        )
+        proposal = rotamers.substitute(current, group, rotamer_index)
+        energy = backend.score(layout.pose_stack_from_genes(proposal))
+        delta = torch.clamp((current_energy - energy) / temperature, -20.0, 20.0)
+        accept = torch.rand(
+            delta.shape, device=delta.device, generator=generator
+        ) < torch.exp(delta)
+        current = torch.where(accept[:, None], proposal, current)
+        current_energy = torch.where(accept, energy, current_energy)
+        improved = current_energy < best_energy
+        best = torch.where(improved[:, None], current, best)
+        best_energy = torch.where(improved, current_energy, best_energy)
+        temperature *= decay
+        if logger.isEnabledFor(logging.DEBUG):
+            n_accepted += int(torch.count_nonzero(accept))
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "rotamer anneal: %d residues, %d passes, accepted %.1f%%, "
+            "mean energy %.2f -> %.2f",
+            rotamers.n_groups,
+            steps,
+            100.0 * n_accepted / (steps * genes.shape[0]),
+            float(start_energy.mean()),
+            float(best_energy.mean()),
+        )
+    return best
+
+
+def optimize_generation(
+    genes: torch.Tensor,
+    layout: LigandGeneLayout,
+    backend: ScoringBackend,
+    *,
+    maxiter: int,
+    rotamers: "RotamerGeneLibrary | None" = None,
+    pack_steps: int = 0,
+    pack_contact_cutoff: float | None = None,
+    ramp: tuple[float, ...] = (1.0,),
+    generator: torch.Generator | None = None,
+) -> GAPool:
+    """Score and locally minimize one whole population as a batch.
+
+    This mirrors the score-then-optimize operation at
+    ``GAOptimizer.cc:195-208`` while delegating the batched objective to the
+    Phase 2 backend. With a rotamer library, each ``ramp`` entry packs the
+    flexible sidechains at that repulsive weight and then minimizes at the
+    full one, as ``GridScorer::optimize`` does.
+    """
+
+    packing = rotamers is not None and pack_steps > 0
+    if packing:
+        if generator is None:
+            raise ValueError("rotamer packing needs a random generator")
+        for rep_scale in ramp:
+            with _rep_scale_of(backend, rep_scale):
+                genes = anneal_rotamers(
+                    genes,
+                    layout,
+                    backend,
+                    rotamers,
+                    generator=generator,
+                    steps=pack_steps,
+                    contact_cutoff=pack_contact_cutoff,
+                )
+            if rep_scale != ramp[-1]:
+                genes = optimize_generation(
+                    genes, layout, backend, maxiter=maxiter
+                ).genes
+
+    proposed = layout.pose_stack_from_genes(genes)
+    proposed_raw_dofs = layout.raw_dofs_from_genes(genes)
+    expected = (genes.shape[0],)
+    minimize_result = backend.minimize(
+        proposed,
+        layout.docking_dofs,
+        maxiter=maxiter,
+        initial_raw_dofs=proposed_raw_dofs,
+    )
+    if not isinstance(minimize_result, MinimizationResult):
+        raise TypeError(
+            "GA backends must return MinimizationResult with optimizer genes"
+        )
+    minimized = minimize_result.pose_stack
+    minimized_genes = minimize_result.genes
+    if minimized_genes is None:
+        raise ValueError("GA minimization did not return a freed-DOF gene")
+    if minimized_genes.shape != genes.shape:
+        raise ValueError(
+            "backend.minimize returned genes with shape "
+            f"{tuple(minimized_genes.shape)}; expected {tuple(genes.shape)}"
+        )
+    if minimized_genes.device != genes.device:
+        raise ValueError("minimized genes moved to a different device")
+    if minimized_genes.dtype != genes.dtype:
+        raise ValueError("minimized genes changed dtype")
+    if not bool(layout.torsion_valid.all()):
+        # A column the pose's own block type does not hold addresses a dead DOF
+        # slot, so its minimized value is meaningless: keep what came in.
+        minimized_genes = torch.cat(
+            (
+                minimized_genes[:, :6],
+                torch.where(layout.torsion_valid, minimized_genes[:, 6:], genes[:, 6:]),
+            ),
+            dim=1,
+        )
+    energies = minimize_result.energies
+    if energies is None:
+        energies = backend.score(minimized)
+    if energies.shape != expected:
+        raise ValueError(
+            f"backend.score returned {tuple(energies.shape)}; expected {expected}"
+        )
+    return GAPool(
+        genes=minimized_genes.detach(),
+        pose_stack=minimized,
+        energies=energies.detach(),
+        n_diverse=genes.shape[0],
+    )
+
+
+def update_pool(
+    parents: GAPool,
+    offspring: GAPool,
+    layout: LigandGeneLayout,
+    *,
+    npool: int,
+    rmsdthreshold: float,
+) -> GAPool:
+    """Greedily retain energy-ranked RMS-diverse genes, then fill if needed.
+
+    Rosetta concatenates offspring and parents, sorts by energy, greedily keeps
+    candidates whose heavy-atom RMS is not below the cutoff, and finally fills
+    any missing slots with rejected candidates (``GAOptimizer.cc:268-313``).
+    Consequently ``n_diverse < npool`` documents a filled pool that cannot
+    satisfy the cutoff, matching Rosetta rather than returning a short pool.
+    """
+
+    genes = torch.cat((offspring.genes, parents.genes), dim=0)
+    energies = torch.cat((offspring.energies, parents.energies), dim=0)
+    # Each pool carries the pose its genes produced, so RMS niching reads those
+    # coordinates rather than refolding both populations.
+    coords = torch.cat(
+        (
+            layout.ligand_heavy_coords(offspring.pose_stack),
+            layout.ligand_heavy_coords(parents.pose_stack),
+        ),
+        dim=0,
+    )
+    if genes.shape[0] <= npool:
+        raise ValueError("combined parent and offspring pools must exceed npool")
+    selected_tensor, n_diverse = select_diverse_low_energy(
+        energies, coords, npool=npool, rmsdthreshold=rmsdthreshold
+    )
+    n_diverse = int(n_diverse)
+
+    candidate_coords = torch.cat(
+        (offspring.pose_stack.coords, parents.pose_stack.coords), dim=0
+    )
+    selected_pose_stack = attr.evolve(
+        parents.pose_stack, coords=candidate_coords[selected_tensor]
+    )
+    return GAPool(
+        genes=genes[selected_tensor],
+        pose_stack=selected_pose_stack,
+        energies=energies[selected_tensor],
+        n_diverse=n_diverse,
+        selected_indices=selected_tensor,
+    )
+
+
+def _initial_genes(
+    layout: LigandGeneLayout,
+    perturbation: DockingPerturbation,
+    generator: torch.Generator,
+) -> torch.Tensor:
+    genes = layout.genes_from_pose_stack(layout.template)
+    unit_jitter = (
+        2
+        * torch.rand(
+            genes.shape,
+            dtype=genes.dtype,
+            device=genes.device,
+            generator=generator,
+        )
+        - 1
+    )
+    jitter_rows = torch.arange(genes.shape[0], device=genes.device) > 0
+    result = genes.clone()
+    result[:, :3] += (
+        jitter_rows[:, None] * unit_jitter[:, :3] * perturbation.translation_angstrom
+    )
+    result[:, 3:6] += (
+        jitter_rows[:, None] * unit_jitter[:, 3:6] * perturbation.rotation_radians
+    )
+    result[:, 6:] += (
+        jitter_rows[:, None] * unit_jitter[:, 6:] * perturbation.torsion_radians
+    )
+    return _canonicalize_genes(result)
+
+
+def _normalize_pocket_bounds(
+    layout: LigandGeneLayout,
+    *,
+    pocket_bounds: torch.Tensor | None,
+    placement: RandomPlacement,
+) -> torch.Tensor:
+    """Return the reference ligand's pocket box as ``[min/max, xyz]``."""
+
+    if pocket_bounds is None:
+        heavy = layout.ligand_heavy_coords(layout.template)[0]
+        padding = placement.pocket_padding_angstrom
+        return torch.stack(
+            (
+                torch.amin(heavy, dim=0) - padding,
+                torch.amax(heavy, dim=0) + padding,
+            ),
+            dim=0,
+        )
+    bounds = torch.as_tensor(
+        pocket_bounds, dtype=layout.base_raw_dofs.dtype, device=layout.template.device
+    )
+    return bounds
+
+
+def _random_initial_genes(
+    layout: LigandGeneLayout,
+    *,
+    pocket_bounds: torch.Tensor | None,
+    placement: RandomPlacement,
+    generator: torch.Generator,
+) -> torch.Tensor:
+    """Sample random position, uniform SO(3) orientation, and ligand torsions.
+
+    Position means the ligand heavy-atom centroid.  It is uniform along each
+    axis of the pocket box.  Ligand torsions are uniform on ``(-pi, pi]``;
+    flexible sidechains keep the input conformation.
+    """
+
+    genes = layout.genes_from_pose_stack(layout.template)
+    npool = genes.shape[0]
+    bounds = _normalize_pocket_bounds(
+        layout,
+        pocket_bounds=pocket_bounds,
+        placement=placement,
+    )
+    dtype, device = genes.dtype, genes.device
+    unit_position = torch.rand(
+        (npool, 3), dtype=dtype, device=device, generator=generator
+    )
+    target_centroid = bounds[0] + unit_position * (bounds[1] - bounds[0])
+    result = genes.clone()
+
+    random_values = torch.rand(
+        (npool, 3), dtype=dtype, device=device, generator=generator
+    )
+    u1, u2, u3 = torch.unbind(random_values, dim=1)
+    u2 = 2 * math.pi * u2
+    u3 = 2 * math.pi * u3
+    quaternion = torch.stack(
+        (
+            torch.sqrt(u1) * torch.cos(u3),
+            torch.sqrt(1 - u1) * torch.sin(u2),
+            torch.sqrt(1 - u1) * torch.cos(u2),
+            torch.sqrt(u1) * torch.sin(u3),
+        ),
+        dim=1,
+    )
+    result[:, 3:6] = _rotation_matrix_to_zyx(
+        _quaternion_rotation_matrix(quaternion).transpose(-1, -2)
+    )
+    # Only the ligand's own torsions are randomized: flexible sidechains keep
+    # the input receptor conformation and move by rotamer from there.
+    n_random = layout.n_ligand_torsions
+    if n_random:
+        result[:, 6 : 6 + n_random] = (
+            2
+            * math.pi
+            * torch.rand(
+                (npool, n_random),
+                dtype=dtype,
+                device=device,
+                generator=generator,
+            )
+            - math.pi
+        )
+    result = _canonicalize_genes(result)
+    oriented = layout.pose_stack_from_genes(result)
+    current_centroid = layout.ligand_heavy_coords(oriented).mean(dim=1)
+    result[:, :3] += target_centroid - current_centroid
+    return result
+
+
+def _conformer_initial_genes(
+    layout: LigandGeneLayout,
+    conformer_coords: numpy.ndarray,
+    *,
+    seed_fraction: float,
+    pocket_bounds: torch.Tensor | None,
+    placement: RandomPlacement,
+    generator: torch.Generator,
+) -> torch.Tensor:
+    """Replace a fraction of blind ligand torsions with conformer torsions."""
+
+    random_genes = _random_initial_genes(
+        layout,
+        pocket_bounds=pocket_bounds,
+        placement=placement,
+        generator=generator,
+    )
+    npool = random_genes.shape[0]
+    n_seeded = min(int(math.floor(seed_fraction * npool)), npool - 1)
+    if n_seeded == 0:
+        return random_genes
+
+    library = torch.as_tensor(
+        conformer_coords,
+        dtype=layout.template.coords.dtype,
+        device=layout.template.device,
+    )
+
+    seeded_rows = torch.arange(1, n_seeded + 1, device=layout.template.device)
+    conformer_indices = (seeded_rows - 1) % library.shape[0]
+    atom_indices = (
+        layout.template.block_coord_offset64[
+            seeded_rows, layout.docking_dofs.ligand_block, None
+        ]
+        + layout.ligand_local_atoms[None, :]
+    )
+    coords = layout.template.coords.clone()
+    coords[seeded_rows[:, None], atom_indices] = library[conformer_indices]
+    conformer_pose = attr.evolve(layout.template, coords=coords)
+    conformer_genes = layout.genes_from_pose_stack(conformer_pose)
+
+    result = random_genes.clone()
+    n_ligand_torsions = len(layout.docking_dofs.torsions)
+    result[seeded_rows, 6 : 6 + n_ligand_torsions] = conformer_genes[
+        seeded_rows, 6 : 6 + n_ligand_torsions
+    ]
+
+    random_pose = layout.pose_stack_from_genes(random_genes)
+    target_centroids = layout.ligand_heavy_coords(random_pose).mean(dim=1)
+    seeded_pose = layout.pose_stack_from_genes(result)
+    current_centroids = layout.ligand_heavy_coords(seeded_pose).mean(dim=1)
+    result[seeded_rows, :3] += (
+        target_centroids[seeded_rows] - current_centroids[seeded_rows]
+    )
+    return result
+
+
+def _ranked_result(
+    reference_pose_stack: PoseStack,
+    pool: GAPool,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, PoseStack]:
+    """Rank the candidate population and construct the single best pose.
+
+    Ranked tensors keep a leading singleton dimension, matching the single
+    reference pose: energies are ``[1, npool]`` and genes ``[1, npool, ndof]``.
+    """
+
+    order = torch.argsort(pool.energies)
+    ranked_energies = pool.energies[order].unsqueeze(0)
+    ranked_genes = pool.genes[order].unsqueeze(0)
+    # A pose that coordinated a metal carries its own ligand block type and
+    # bonds, so it is sliced from the pool; otherwise the reference is kept.
+    best = int(order[0])
+    winner = pool.pose_stack.split(best)
+    same_topology = torch.equal(
+        winner.block_type_ind64, reference_pose_stack.block_type_ind64
+    ) and torch.equal(
+        winner.inter_residue_connections64,
+        reference_pose_stack.inter_residue_connections64,
+    )
+    best_pose_stack = attr.evolve(
+        reference_pose_stack if same_topology else winner,
+        coords=pool.pose_stack.coords[order[:1]].detach().clone(),
+    )
+    return (
+        ranked_genes,
+        ranked_energies,
+        ranked_genes[:, 0],
+        ranked_energies[:, 0],
+        best_pose_stack,
+        best,
+    )
+
+
+def _conformer_library_or_none(ligand_mol2, pose_stack, ligand_block, **library_kwargs):
+    """Conformer library for the ligand, or ``None`` (with a warning) if absent."""
+    if ligand_mol2 is None:
+        logger.warning(
+            "conformer initialization requested without ligand_mol2; "
+            "falling back to blind random initialization"
+        )
+        return None
+    block_type = pose_stack.block_type(0, ligand_block)
+    try:
+        return generate_conformer_library(
+            ligand_mol2, block_type, pose_stack.packed_block_types, **library_kwargs
+        )
+    except Exception as exc:
+        logger.warning(
+            "ligand conformer generation failed (%s: %s); falling "
+            "back to blind random initialization",
+            type(exc).__name__,
+            exc,
+        )
+        return None
+
+
+def _initial_genes_for(
+    initialization: str,
+    layout: LigandGeneLayout,
+    backend: ScoringBackend,
+    generator: torch.Generator,
+    *,
+    schedule: GASchedule,
+    pocket_bounds: torch.Tensor | None,
+    random_placement: RandomPlacement,
+    conformers: dict,
+    ligand_aligner: LigandAligner,
+    pose_stack: PoseStack,
+) -> torch.Tensor:
+    """Starting genes of the population for the chosen ``initialization``."""
+
+    def random_genes():
+        return _random_initial_genes(
+            layout,
+            pocket_bounds=pocket_bounds,
+            placement=random_placement,
+            generator=generator,
+        )
+
+    if initialization == "jitter":
+        return _initial_genes(layout, schedule.initial_perturbation, generator)
+    if initialization == "random":
+        return random_genes()
+    if initialization == "conformer":
+        library = _conformer_library_or_none(
+            conformers["ligand_mol2"],
+            pose_stack,
+            0,
+            n_conformers=conformers["n_conformers"],
+            energy_window=conformers["energy_window"],
+            cluster_rmsd=conformers["cluster_rmsd"],
+        )
+        if library is None:
+            return random_genes()
+        return _conformer_initial_genes(
+            layout,
+            library.coords,
+            seed_fraction=conformers["seed_fraction"],
+            pocket_bounds=pocket_bounds,
+            placement=random_placement,
+            generator=generator,
+        )
+    return ligand_aligner.seed_genes(
+        layout,
+        backend,
+        random_genes(),
+        pocket_bounds=pocket_bounds,
+        generator=generator,
+    )
+
+
+def _warn_if_search_device_is_slower(
+    pose_stack: PoseStack, backend: ScoringBackend
+) -> None:
+    """Log when the grids sit on an accelerator the search will not use.
+
+    The GA runs on the pose's device, so a CPU pose searches on the CPU however
+    the backend's grids were built.
+    """
+    grids = getattr(backend, "grids", None)
+    if grids is None or pose_stack.device.type != "cpu":
+        return
+    grid_device = grids.fa_atr.device
+    if grid_device.type == "cpu":
+        return
+    logger.warning(
+        "grids are on %s but pose_stack is on cpu, so the genetic algorithm "
+        "will run on the cpu; pass pose_stack.to('%s') to search on %s",
+        grid_device,
+        grid_device.type,
+        grid_device,
+    )
+
+
+def run_docking(
+    pose_stack: PoseStack,
+    backend: ScoringBackend,
+    *,
+    schedule: GASchedule = GASchedule(),
+    seed: int = 0,
+    initialization: Literal["random", "jitter", "conformer", "aligner"] = "random",
+    pocket_bounds: torch.Tensor | None = None,
+    random_placement: RandomPlacement = RandomPlacement(),
+    ligand_mol2: str | Path | None = None,
+    n_conformers: int = 200,
+    seed_fraction: float = 0.5,
+    energy_window: float = 20.0,
+    cluster_rmsd: float = 0.5,
+    ligand_aligner: LigandAligner = LigandAligner(),
+    finalize: bool | "RefineProtocol" = False,
+    top_k: int | None = None,
+) -> DockingResult:
+    """Dock the backend's ligand into the complex ``pose_stack``.
+
+    ``pose_stack`` is the single-pose complex the backend was built from, with
+    the ligand in any placement. The backend chooses the ligand and which
+    receptor sidechains are flexible; a genetic algorithm (``schedule``) then
+    searches ligand pose, torsions and flexible chis.
+
+    ``initialization`` selects the starting population: ``"random"`` places the
+    ligand randomly (inside ``pocket_bounds`` if given), ``"jitter"`` perturbs
+    the input pose (refinement), ``"conformer"`` seeds torsions from a
+    conformer library of ``ligand_mol2``, ``"aligner"`` uses ``ligand_aligner``.
+
+    ``finalize=True`` uses the refinement protocol matching the backend's mode
+    (``FLEX_REFINE`` when it declares flexible sidechains, else
+    ``RIGID_REFINE``); pass a ``RefineProtocol`` to override it, and ``top_k``
+    to override that protocol's candidate count.
+
+    Without ``finalize`` the result holds the grid-ranked pool. With
+    ``finalize`` set the top candidates are promoted to full complexes,
+    exact-refined, and ranked by exact complex energy. ``best_pose_stack``
+    follows that ranking; the returned energies are the corresponding ``dG``
+    estimates in the same order. ``best_genes`` /
+    ``ranked_genes`` stay the grid-GA genes (Cartesian refinement changes bond
+    lengths that torsion genes cannot represent). The grid-GA output is always
+    available as ``ga_result``.
+    """
+
+    if pose_stack.n_poses != 1:
+        raise ValueError("pose_stack must contain one reference pose")
+    _warn_if_search_device_is_slower(pose_stack, backend)
+    if initialization == "aligner" and not isinstance(backend, GridBackend):
+        # The aligner scores placements on the grid box itself, so it is the
+        # one option a gridless backend cannot offer.
+        raise ValueError(
+            'initialization="aligner" needs a GridBackend; the other '
+            "initializations work with any backend"
+        )
+    reference = pose_stack
+    view = search_layout(reference, backend)
+    search_pose, search_backend = view.pose_stack, view.backend
+    compact_sidechains = view.sidechain_blocks
+    population = repeat_pose_stack(search_pose, schedule.npool)
+    ligand_block = view.ligand_block
+    docking_dofs = build_ligand_docking_dofs(
+        population, ligand_block, sidechain_blocks=compact_sidechains
+    )
+    layout = LigandGeneLayout.from_pose_stack(population, docking_dofs)
+    generator = torch.Generator(device=reference.device)
+    generator.manual_seed(seed)
+
+    genes = _initial_genes_for(
+        initialization,
+        layout,
+        search_backend,
+        generator,
+        schedule=schedule,
+        pocket_bounds=pocket_bounds,
+        random_placement=random_placement,
+        conformers=dict(
+            ligand_mol2=ligand_mol2,
+            n_conformers=n_conformers,
+            seed_fraction=seed_fraction,
+            energy_window=energy_window,
+            cluster_rmsd=cluster_rmsd,
+        ),
+        ligand_aligner=ligand_aligner,
+        pose_stack=search_pose,
+    )
+    rotamers = (
+        build_rotamer_gene_library(
+            search_pose,
+            docking_dofs,
+            layout.genes_from_pose_stack(layout.template)[
+                0, 6 + layout.n_ligand_torsions :
+            ],
+        )
+        if compact_sidechains
+        else None
+    )
+    groups = layout.torsion_groups
+    packing = schedule.sidechain_sampling == "packer"
+    generation_kwargs = dict(
+        maxiter=schedule.maxiter,
+        rotamers=rotamers if packing else None,
+        pack_steps=schedule.pack_steps,
+        pack_contact_cutoff=schedule.pack_contact_cutoff,
+        ramp=schedule.ramp,
+        generator=generator,
+    )
+
+    def _detected(child_genes, current):
+        """Redeclare metal bonds for this pool before it is scored."""
+        if not schedule.detect_metal:
+            return current
+        _, rebound = detect_metal_variants(
+            current.pose_stack_from_genes(child_genes),
+            current,
+            search_backend,
+            tolerance=schedule.metal_tolerance,
+            metal_weight=schedule.metal_weight,
+        )
+        return rebound
+
+    layout = _detected(genes, layout)
+    pool = optimize_generation(genes, layout, search_backend, **generation_kwargs)
+    best_history = [torch.min(pool.energies)]
+    diverse_history: list[int] = []
+
+    # Rosetta GAOptimizer.cc:104-113.
+    for _ in range(schedule.generations):
+        child_genes = next_generation(
+            pool.genes,
+            schedule.npool,
+            schedule.pmut,
+            generator=generator,
+            groups=groups,
+            n_ligand_groups=layout.n_ligand_torsions,
+            mutable_groups=(
+                layout.n_ligand_torsions
+                if schedule.sidechain_sampling in ("packer", "minimize")
+                else None
+            ),
+            rotamers=(rotamers if schedule.sidechain_sampling == "rotamer" else None),
+            valid=layout.torsion_valid,
+        )
+        layout = _detected(child_genes, layout)
+        offspring = optimize_generation(
+            child_genes,
+            layout,
+            search_backend,
+            **generation_kwargs,
+        )
+        pool = update_pool(
+            pool,
+            offspring,
+            layout,
+            npool=schedule.npool,
+            rmsdthreshold=schedule.rmsdthreshold,
+        )
+        best_history.append(torch.min(pool.energies))
+        diverse_history.append(pool.n_diverse)
+
+    (
+        ranked_genes,
+        ranked_energies,
+        best_genes,
+        best_energies,
+        best_pose_stack,
+        best_index,
+    ) = _ranked_result(search_pose, pool)
+    pool_ligand_atoms = torch.stack(
+        [
+            layout.variants.atom_map[int(b)]
+            for b in pool.pose_stack.block_type_ind64[:, ligand_block].tolist()
+        ]
+    )
+    best_pose_stack = _place_ligand_in_reference(
+        reference,
+        best_pose_stack,
+        view,
+        ligand_atom_map=pool_ligand_atoms[best_index : best_index + 1],
+    )
+    ga_result = GAResult(
+        pool=pool,
+        best_energy_history=torch.stack(best_history),
+        diverse_count_history=tuple(diverse_history),
+        ranked_genes=ranked_genes,
+        ranked_energies=ranked_energies,
+        best_genes=best_genes,
+        best_energies=best_energies,
+        best_pose_stack=best_pose_stack,
+        pool_ligand_atoms=pool_ligand_atoms,
+    )
+    if not finalize:
+        return DockingResult(
+            best_pose_stack=ga_result.best_pose_stack,
+            best_energies=ga_result.best_energies,
+            best_genes=ga_result.best_genes,
+            ranked_energies=ga_result.ranked_energies,
+            ranked_genes=ga_result.ranked_genes,
+            ga_result=ga_result,
+        )
+
+    from tmol.dock.finalization import finalize_ga_docking
+
+    finalization = finalize_ga_docking(
+        reference,
+        backend,
+        ga_result,
+        refine=None if finalize is True else finalize,
+        top_k=top_k,
+    )
+    return DockingResult(
+        best_pose_stack=attr.evolve(
+            reference, coords=finalization.pose_stack.coords[:1].detach().clone()
+        ),
+        best_energies=finalization.dG[:, 0],
+        best_genes=finalization.genes[:, 0],
+        ranked_energies=finalization.dG,
+        ranked_genes=finalization.genes,
+        ga_result=ga_result,
+        finalization=finalization,
+    )
+
+
+__all__ = [
+    "GAPool",
+    "GAResult",
+    "GASchedule",
+    "DockingResult",
+    "LigandGeneLayout",
+    "RandomPlacement",
+    "crossover",
+    "ligand_heavy_atom_rms",
+    "mutate",
+    "next_generation",
+    "optimize_generation",
+    "run_docking",
+    "SearchLayout",
+    "search_layout",
+    "select_pocket_residues",
+    "update_pool",
+]

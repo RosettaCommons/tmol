@@ -67,6 +67,7 @@ class CartBondedPoseScoreOp : public tmol::native::autograd::Function<
       Tensor cart_subgraph_type_counts,
       Tensor cart_subgraph_type_offsets,
       Tensor cart_subgraph_param_indices,
+      Tensor movable_blocks,
 
       bool output_block_pair_energies) {
     tmol::native::Tensor score;
@@ -115,6 +116,7 @@ class CartBondedPoseScoreOp : public tmol::native::autograd::Function<
                       TCAST(cart_subgraph_type_counts),
                       TCAST(cart_subgraph_type_offsets),
                       TCAST(cart_subgraph_param_indices),
+                      TCAST(movable_blocks),
 
                       output_block_pair_energies,
                       rot_coords.requires_grad());
@@ -157,7 +159,8 @@ class CartBondedPoseScoreOp : public tmol::native::autograd::Function<
            cart_subgraph_offsets,
            cart_subgraph_type_counts,
            cart_subgraph_type_offsets,
-           cart_subgraph_param_indices});
+           cart_subgraph_param_indices,
+           movable_blocks});
     } else {
       // Return a 2D tensor with shape [5 x n_poses]
       score = score.reshape({score.size(0), score.size(1)});
@@ -226,6 +229,7 @@ class CartBondedPoseScoreOp : public tmol::native::autograd::Function<
       auto cart_subgraph_type_counts = saved[i++];
       auto cart_subgraph_type_offsets = saved[i++];
       auto cart_subgraph_param_indices = saved[i++];
+      auto movable_blocks = saved[i++];
 
       using Int = int32_t;
 
@@ -272,6 +276,7 @@ class CartBondedPoseScoreOp : public tmol::native::autograd::Function<
                         TCAST(cart_subgraph_type_counts),
                         TCAST(cart_subgraph_type_offsets),
                         TCAST(cart_subgraph_param_indices),
+                        TCAST(movable_blocks),
 
                         TCAST(dTdV));
 
@@ -279,7 +284,7 @@ class CartBondedPoseScoreOp : public tmol::native::autograd::Function<
           }));
     }
 
-    tensor_list gradients(31);
+    tensor_list gradients(32);
     gradients[0] = dV_d_pose_coords;
     return gradients;
   }
@@ -608,6 +613,7 @@ std::vector<Tensor> cartbonded_pose_scores_op(
     Tensor cart_subgraph_type_counts,
     Tensor cart_subgraph_type_offsets,
     Tensor cart_subgraph_param_indices,
+    Tensor movable_blocks,
 
     bool output_block_pair_energies) {
   return CartBondedPoseScoreOp<DispatchMethod>::apply(
@@ -643,6 +649,7 @@ std::vector<Tensor> cartbonded_pose_scores_op(
       cart_subgraph_type_counts,
       cart_subgraph_type_offsets,
       cart_subgraph_param_indices,
+      movable_blocks,
       output_block_pair_energies);
 }
 

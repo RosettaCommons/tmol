@@ -1,8 +1,9 @@
+import attr
 import numpy
 import torch
 
 from tmol import PoseStackBuilder
-from tmol.pose import repeat_pose_stack, select_blocks
+from tmol.pose import repeat_pose_stack, replace_poses, select_blocks, select_poses
 
 
 def _single_pose(ubq_40_60_pose_stack):
@@ -59,4 +60,27 @@ def test_select_blocks_keeps_selected_atoms_and_clears_dropped_links(
     torch.testing.assert_close(
         selected.inter_block_bondsep.to_dense(),
         single.inter_block_bondsep.to_dense()[:, blocks][:, :, blocks],
+    )
+
+
+def test_select_then_replace_poses_round_trips(ubq_40_60_pose_stack):
+    stack = repeat_pose_stack(_single_pose(ubq_40_60_pose_stack), 4)
+    offsets = torch.arange(4, dtype=stack.coords.dtype, device=stack.device)
+    stack.coords = stack.coords + offsets[:, None, None]
+    poses = torch.tensor([3, 1])
+    subset = select_poses(stack, poses)
+    assert subset.n_poses == 2
+    torch.testing.assert_close(subset.coords, stack.coords[poses])
+
+    edited = subset.coords + 10.0
+    merged = replace_poses(stack, poses, attr.evolve(subset, coords=edited))
+    torch.testing.assert_close(merged.coords[poses], edited)
+    torch.testing.assert_close(merged.coords[[0, 2]], stack.coords[[0, 2]])
+    for name in ("block_type_ind64", "inter_residue_connections64", "chain_id64"):
+        torch.testing.assert_close(getattr(merged, name), getattr(stack, name))
+    torch.testing.assert_close(
+        merged.inter_block_bondsep.to_dense(), stack.inter_block_bondsep.to_dense()
+    )
+    numpy.testing.assert_array_equal(
+        merged.pdb_info.atom_b_factor, stack.pdb_info.atom_b_factor
     )

@@ -536,90 +536,25 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::
         ContextManager& mgr,
         TView<Vec<Real, 3>, 1, D> rot_coords,
         TView<Int, 1, D> rot_coord_offset,
-        TView<Int, 2, D> first_rot_for_block,
+        TView<Int, 2, D> pose_stack_block_type,
         TView<Int, 1, D> block_ind_for_rot,
         TView<Int, 1, D> pose_ind_for_rot,
         TView<Int, 1, D> block_type_ind_for_rot,
         TView<Int, 1, D> block_type_n_atoms,
+        TView<Int, 2, D> movable_blocks,
         Real reach) -> TPack<Int, 1, D> {
-  int const n_poses = first_rot_for_block.size(0);
-  int const max_n_blocks = first_rot_for_block.size(1);
-  int const n_pairs = score::common::checked_triangular_size(
-      max_n_blocks, true, "LJ/LK compact block-neighbor dispatch");
-  int const n_candidates = score::common::checked_dispatch_product(
-      n_poses, n_pairs, "LJ/LK compact block-neighbor dispatch");
-  auto block_spheres_t =
-      D == Device::CPU ? TPack<Real, 3, D>::zeros({n_poses, max_n_blocks, 4})
-                       : TPack<Real, 3, D>::empty({n_poses, max_n_blocks, 4});
-  if constexpr (D == Device::CUDA) {
-    auto neighbor_indices_t =
-        rot_coord_offset.size(0) == 0
-            ? TPack<Int, 1, D>::zeros({int64_t(n_candidates) + 1})
-            : TPack<Int, 1, D>::empty({int64_t(n_candidates) + 1});
-    score::common::sphere_overlap::
-        compute_block_spheres<DeviceOperations, D, Real, Int, true>::f(
-            mgr,
-            rot_coords,
-            rot_coord_offset,
-            block_ind_for_rot,
-            pose_ind_for_rot,
-            block_type_ind_for_rot,
-            block_type_n_atoms,
-            block_spheres_t.view,
-            neighbor_indices_t.view.data());
-    score::common::sphere_overlap::
-        detect_compact_block_neighbors<DeviceOperations, D, Real, Int>::f(
-            mgr,
-            first_rot_for_block,
-            block_spheres_t.view,
-            neighbor_indices_t.view,
-            reach);
-    return neighbor_indices_t;
-  } else if constexpr (D == Device::MPS) {
-    // The compact block-neighbor list is a CPU/CUDA optimization; the Metal
-    // forward tests for MPS before reaching the paths that consume it, so
-    // this is unreachable rather than merely unported. The CPU branch below
-    // cannot be instantiated here in any case -- its spatial-sweep helper
-    // reads host memory, and an MPS tensor's data pointer is an MTLBuffer.
-    throw std::runtime_error(
-        "tmol: LJ/LK compact block neighbors are not available on the Metal "
-        "backend");
-  } else {
-    score::common::sphere_overlap::
-        compute_block_spheres<DeviceOperations, D, Real, Int>::f(
-            mgr,
-            rot_coords,
-            rot_coord_offset,
-            block_ind_for_rot,
-            pose_ind_for_rot,
-            block_type_ind_for_rot,
-            block_type_n_atoms,
-            block_spheres_t.view);
-    std::vector<Int> retained;
-    if (score::common::sphere_overlap::try_cpu_spatial_compact_block_neighbors(
-            first_rot_for_block, block_spheres_t.view, reach, retained)) {
-      auto neighbor_indices_t =
-          TPack<Int, 1, D>::empty({int64_t(retained.size()) + 1});
-      neighbor_indices_t.view[0] = static_cast<Int>(retained.size());
-      if (!retained.empty()) {
-        std::memcpy(
-            neighbor_indices_t.view.data() + 1,
-            retained.data(),
-            retained.size() * sizeof(Int));
-      }
-      return neighbor_indices_t;
-    }
-    auto neighbor_indices_t =
-        TPack<Int, 1, D>::zeros({int64_t(n_candidates) + 1});
-    score::common::sphere_overlap::
-        detect_compact_block_neighbors<DeviceOperations, D, Real, Int>::f(
-            mgr,
-            first_rot_for_block,
-            block_spheres_t.view,
-            neighbor_indices_t.view,
-            reach);
-    return neighbor_indices_t;
-  }
+  return score::common::sphere_overlap::
+      build_block_neighbor_indices<DeviceOperations, D, Real, Int>::f(
+          mgr,
+          rot_coords,
+          rot_coord_offset,
+          pose_stack_block_type,
+          block_ind_for_rot,
+          pose_ind_for_rot,
+          block_type_ind_for_rot,
+          block_type_n_atoms,
+          movable_blocks,
+          reach);
 }
 
 template <
@@ -682,13 +617,13 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
 
     Real max_dis,
 
-    TView<Int, 1, D> shared_compact_block_neighbors,
+    TPack<Int, 1, D> shared_compact_block_neighbors,
 
     // should the output be per-pose (npose x nterms x 1 x 1)
     //   or per block-pair (npose x nterms x len x len)
     bool output_block_pair_energies,
     bool require_gradient) -> std::
-    tuple<TPack<Real, 4, D>, TPack<Vec<Real, 3>, 2, D>, TPack<Int, 3, D> > {
+    tuple<TPack<Real, 4, D>, TPack<Vec<Real, 3>, 2, D>, TPack<Int, 1, D> > {
   using Real3 = Vec<Real, 3>;
 
   int const n_atoms = rot_coords.size(0);
@@ -757,45 +692,43 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
                           : TPack<Vec<Real, 3>, 2, D>::empty({3, 0});
   auto dV_dcoords = dV_dcoords_t.view;
 
-  bool const use_shared_compact_block_neighbors =
-      shared_compact_block_neighbors.size(0) != 0;
-  TPack<Real, 3, D> scratch_rot_spheres_t;
-  TPack<Int, 3, D> scratch_rot_neighbors_t;
-  TView<Real, 3, D> scratch_rot_spheres;
-  TView<Int, 3, D> scratch_rot_neighbors;
-  if (!use_shared_compact_block_neighbors) {
-    scratch_rot_spheres_t =
-        D == Device::CPU ? TPack<Real, 3, D>::zeros({n_poses, max_n_blocks, 4})
-                         : TPack<Real, 3, D>::empty({n_poses, max_n_blocks, 4});
-    scratch_rot_neighbors_t =
-        D == Device::CPU
-            ? TPack<Int, 3, D>::zeros({n_poses, max_n_blocks, max_n_blocks})
-            : TPack<Int, 3, D>::empty({n_poses, max_n_blocks, max_n_blocks});
-    scratch_rot_spheres = scratch_rot_spheres_t.view;
-    scratch_rot_neighbors = scratch_rot_neighbors_t.view;
+  // Every launch walks block-neighbor indices; build them here when the caller
+  // supplied none.
+  if (shared_compact_block_neighbors.view.size(0) == 0) {
+    shared_compact_block_neighbors = score::common::sphere_overlap::
+        build_block_neighbor_indices<DeviceOperations, D, Real, Int>::f(
+            mgr,
+            rot_coords,
+            rot_coord_offset,
+            first_rot_block_type,
+            block_ind_for_rot,
+            pose_ind_for_rot,
+            block_type_ind_for_rot,
+            block_type_n_atoms,
+            TPack<Int, 2, D>::empty({0, 0}).view,
+            max_dis);
   }
+  auto block_neighbors = shared_compact_block_neighbors.view;
+
+  // Block-pair output stays zero wherever a pair is not in the index list.
+  auto output_t =
+      output_block_pair_energies
+          ? TPack<Real, 4, D>::zeros({3, n_poses, max_n_blocks, max_n_blocks})
+          : TPack<Real, 4, D>::zeros({3, n_poses, 1, 1});
 
   // Metal accumulates whole-pose totals into per-block-pair cells and reduces
   // them afterwards; see the same comment in elec_pose_score.impl.hh for why.
-  // In short: one atomic per threadgroup is already the CUDA shape, but
-  // thousands of them per pose still land in a varying order, float addition
-  // is not associative, and a line search that finite-differences the energy
-  // cannot tolerate a non-reproducible total. Writing a cell per threadgroup
-  // removes the atomic; summing the cells is fixed-order. The CPU path below
-  // already avoids this with a serial double accumulator.
+  // In short: one atomic per threadgroup lands in a varying order, float
+  // addition is not associative, and a line search that finite-differences
+  // the energy cannot tolerate a non-reproducible total. Writing a cell per
+  // threadgroup removes the atomic; summing the cells is fixed-order. The CPU
+  // path below already avoids this with a serial double accumulator.
   bool const mps_cell_reduction =
       D == tmol::Device::MPS && !output_block_pair_energies;
-  TPack<Real, 4, D> output_t;
   TPack<Real, 4, D> cells_t;
-  if (output_block_pair_energies) {
-    output_t =
+  if (mps_cell_reduction) {
+    cells_t =
         TPack<Real, 4, D>::zeros({3, n_poses, max_n_blocks, max_n_blocks});
-  } else {
-    output_t = TPack<Real, 4, D>::zeros({3, n_poses, 1, 1});
-    if (mps_cell_reduction) {
-      cells_t =
-          TPack<Real, 4, D>::zeros({3, n_poses, max_n_blocks, max_n_blocks});
-    }
   }
   auto output = mps_cell_reduction ? cells_t.view : output_t.view;
 
@@ -811,12 +744,9 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
 
   // Optimal launch box on v100 and a100 is nt=32, vt=1
   LAUNCH_BOX_32;
-  // Large workloads benefit from a second kernel variant whose register budget
-  // exposes a full 32 resident warps per SM. Keep the unconstrained variant for
-  // small workloads, where register pressure is less important than avoiding
-  // spills.
+  // The neighbor-list launch uses a variant whose register budget exposes a
+  // full 32 resident warps per SM.
   LAUNCH_BOX_32_OCC_AS(launch_t_high_occupancy, 32);
-  constexpr int min_high_occupancy_workgroups = 1 << 14;
   // Define nt and reduce_t
   CTA_REAL_REDUCE_T_TYPEDEF;
   // The total number of unique block pairs (including self-pairs)
@@ -851,8 +781,7 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
   ctx.rot_offset_for_block = rot_offset_for_block;
   ctx.pose_stack_near_blocks = pose_stack_near_blocks;
   ctx.pose_stack_inter_block_bondsep = pose_stack_inter_block_bondsep;
-  ctx.scratch_rot_neighbors = scratch_rot_neighbors;
-  ctx.shared_compact_block_neighbors = shared_compact_block_neighbors;
+  ctx.shared_compact_block_neighbors = block_neighbors;
   ctx.block_type_n_atoms = block_type_n_atoms;
   ctx.block_type_atom_types = block_type_atom_types;
   ctx.block_type_n_interblock_bonds = block_type_n_interblock_bonds;
@@ -869,7 +798,6 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
   // The store writes cells whenever the output view is cell-shaped.
   ctx.output_block_pair_energies =
       output_block_pair_energies || mps_cell_reduction;
-  ctx.use_shared_compact_block_neighbors = use_shared_compact_block_neighbors;
   ctx.require_gradient = require_gradient;
   ctx.max_dis = max_dis;
 
@@ -889,131 +817,37 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
         ctx, shared, cta, cpu_pose_accum);
   });
 
-  ///////////////////////////////////////////////////////////////////////
-
-  // Three steps
-  // 0: setup
-  // 1: launch a kernel to find a small bounding sphere surrounding the blocks
-  // 2: launch a kernel to look for spheres that are within striking distance of
-  // each other
-  // 3: launch a kernel to evaluate lj/lk between pairs of blocks
-  // within striking distance
-  if (!use_shared_compact_block_neighbors) {
-    score::common::sphere_overlap::
-        compute_block_spheres<DeviceOperations, D, Real, Int>::f(
-            mgr,
-            rot_coords,
-            rot_coord_offset,
-            block_ind_for_rot,
-            pose_ind_for_rot,
-            block_type_ind_for_rot,
-            block_type_n_atoms,
-            scratch_rot_spheres);
-
-    score::common::sphere_overlap::
-        detect_block_neighbors<DeviceOperations, D, Real, Int>::f(
-            mgr,
-            first_rot_block_type,
-            scratch_rot_spheres,
-            scratch_rot_neighbors,
-            max_dis);
-  }
-
+  // Whole-pose calls with gradients accumulate derivatives as they go; every
+  // other call, including all block-pair output, uses the energy-only body.
   if (D == tmol::Device::MPS) {
-    // Metal cannot launch a device lambda -- there is nowhere for a closure
-    // to live, and entry points are compiled by a separate toolchain -- so
-    // the same kernel body is reached through a named entry rather than
-    // through eval_energies_by_block / eval_energies. The context those
-    // lambdas close over is the same object either way.
-    //
-    // This is tested ahead of the compact-block-neighbor paths because those
-    // launch through DeviceOperations, which on this backend would run the
-    // kernel on the CPU.
-    // Entry selection depends on whether gradients are wanted, not on the
-    // output shape: the cell store is independent of the derivative
-    // accumulation, so a whole-pose call with gradients gets both.
-    tmol::score::common::mps_launch_if<D>(
+    // Metal cannot launch a device lambda, so the same bodies are reached
+    // through named entries that walk the same neighbor list.
+    score::common::sphere_overlap::mps_launch_block_neighbors<D>(
         TMOL_MPS_SOURCE(kLJLKMetalShaderSource),
         require_gradient && !output_block_pair_energies
             ? "ljlk_eval_energies_f32"
             : "ljlk_eval_energies_by_block_f32",
         ctx,
-        int64_t(n_poses) * int64_t(max_n_upper_triangle_inds),
-        true);
+        block_neighbors);
     if (mps_cell_reduction) {
-      // Compensated, fixed-order reduction rather than torch's tree sum.
-      // A tree sum is reproducible but still lets the total move by several
-      // ULP when a coordinate moves by a fraction of one, because its error
-      // term moves with its inputs; see pose_total_reduce_kernels.hh.
+      // Compensated, fixed-order reduction rather than torch's tree sum; see
+      // pose_total_reduce_kernels.hh.
       score::common::pose_total_reduce<DeviceOperations, D, Real>::f(
           mgr, cells_t.view, output_t.view);
     }
-  } else if (
-      !output_block_pair_energies && use_shared_compact_block_neighbors) {
-    if (require_gradient) {
-      score::common::sphere_overlap::launch_precomputed_block_neighbors<
-          DeviceOperations,
-          D,
-          launch_t_high_occupancy,
-          Int>(
-          mgr,
-          shared_compact_block_neighbors,
-          n_poses,
-          max_n_blocks,
-          eval_energies);
-    } else {
-      score::common::sphere_overlap::launch_precomputed_block_neighbors<
-          DeviceOperations,
-          D,
-          launch_t_high_occupancy,
-          Int>(
-          mgr,
-          shared_compact_block_neighbors,
-          n_poses,
-          max_n_blocks,
-          eval_energies_by_block);
-    }
-  } else if (output_block_pair_energies) {
-    DeviceOperations<D>::template foreach_pose_workgroup<launch_t>(
-        mgr, n_poses, max_n_upper_triangle_inds, eval_energies_by_block);
+  } else if (require_gradient && !output_block_pair_energies) {
+    score::common::sphere_overlap::launch_precomputed_block_neighbors<
+        DeviceOperations,
+        D,
+        launch_t_high_occupancy,
+        Int>(mgr, block_neighbors, n_poses, max_n_blocks, eval_energies);
   } else {
-    int const n_workgroups = score::common::checked_dispatch_product(
-        n_poses, max_n_upper_triangle_inds, "LJ/LK block-pair dispatch");
-#ifdef __NVCC__
-    if (score::common::sphere_overlap::should_compact_block_neighbors(
-            n_poses, max_n_blocks, require_gradient)) {
-      if (require_gradient) {
-        score::common::sphere_overlap::launch_compact_block_neighbors<
-            DeviceOperations,
-            D,
-            launch_t_high_occupancy,
-            Int>(mgr, scratch_rot_neighbors, eval_energies);
-      } else {
-        score::common::sphere_overlap::launch_compact_block_neighbors<
-            DeviceOperations,
-            D,
-            launch_t_high_occupancy,
-            Int>(mgr, scratch_rot_neighbors, eval_energies_by_block);
-      }
-    } else
-#endif
-    {
-      if (!require_gradient && n_workgroups >= min_high_occupancy_workgroups) {
-        DeviceOperations<D>::template foreach_pose_workgroup<
-            launch_t_high_occupancy>(
-            mgr, n_poses, max_n_upper_triangle_inds, eval_energies_by_block);
-      } else if (!require_gradient) {
-        DeviceOperations<D>::template foreach_pose_workgroup<launch_t>(
-            mgr, n_poses, max_n_upper_triangle_inds, eval_energies_by_block);
-      } else if (n_workgroups >= min_high_occupancy_workgroups) {
-        DeviceOperations<D>::template foreach_pose_workgroup<
-            launch_t_high_occupancy>(
-            mgr, n_poses, max_n_upper_triangle_inds, eval_energies);
-      } else {
-        DeviceOperations<D>::template foreach_pose_workgroup<launch_t>(
-            mgr, n_poses, max_n_upper_triangle_inds, eval_energies);
-      }
-    }
+    score::common::sphere_overlap::launch_precomputed_block_neighbors<
+        DeviceOperations,
+        D,
+        launch_t_high_occupancy,
+        Int>(
+        mgr, block_neighbors, n_poses, max_n_blocks, eval_energies_by_block);
   }
 
   if constexpr (D == tmol::Device::CPU) {
@@ -1026,7 +860,7 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
     }
   }
 
-  return {output_t, dV_dcoords_t, scratch_rot_neighbors_t};
+  return {output_t, dV_dcoords_t, shared_compact_block_neighbors};
 }  // LJLKPoseScoreDispatch::forward
 
 template <
@@ -1087,7 +921,7 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::backward(
     TView<LJLKTypeParams<Real>, 1, D> type_params,
     TView<LJGlobalParams<Real>, 1, D> global_params,
 
-    TView<Int, 3, D> scratch_rot_neighbors,  // from forward pass
+    TView<Int, 1, D> block_neighbors,  // from forward pass
 
     TView<Real, 4, D> dTdV  // nterms x nposes x len x len
     ) -> TPack<Vec<Real, 3>, 1, D> {
@@ -1220,10 +1054,6 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::backward(
     int const rot_ind1 = rot_offset_for_block[pose_ind][block_ind1];
     int const rot_ind2 = rot_offset_for_block[pose_ind][block_ind2];
 
-    if (scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0) {
-      return;
-    }
-
     if (dTdV[0][pose_ind][block_ind1][block_ind2] == 0
         && dTdV[1][pose_ind][block_ind1][block_ind2] == 0
         && dTdV[2][pose_ind][block_ind1][block_ind2] == 0) {
@@ -1306,16 +1136,9 @@ auto LJLKPoseScoreDispatch<DeviceOperations, D, Real, Int>::backward(
 
   ///////////////////////////////////////////////////////////////////////
 
-  // Three steps
-  // 0: setup
-  // 1: launch a kernel to find a small bounding sphere surrounding the blocks
-  // 2: launch a kernel to look for spheres that are within striking distance of
-  // each other
-  // 3: launch a kernel to evaluate lj/lk between pairs of blocks
-  // within striking distance
-
-  DeviceOperations<D>::template foreach_pose_workgroup<launch_t>(
-      mgr, n_poses, max_n_upper_triangle_inds, eval_derivs);
+  score::common::sphere_overlap::
+      launch_precomputed_block_neighbors<DeviceOperations, D, launch_t, Int>(
+          mgr, block_neighbors, n_poses, max_n_blocks, eval_derivs);
 
   return dV_dcoords_t;
 }
@@ -1538,7 +1361,6 @@ auto LJLKRotamerScoreDispatch<DeviceOperations, D, Real, Int>::forward(
   // Metal launcher copies every scalar slot, so none may be left
   // uninitialized.
   ctx.max_n_upper_triangle_inds = 0;
-  ctx.use_shared_compact_block_neighbors = false;
   ctx.require_gradient = false;
 
   // Only the whole-pose CPU path accumulates in double; the rotamer path

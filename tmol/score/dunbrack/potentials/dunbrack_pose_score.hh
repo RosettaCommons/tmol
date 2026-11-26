@@ -81,6 +81,7 @@ struct DunbrackPoseScoreDispatch {
       TView<Int, 1, D> res_rotamer_index_to_table_index,
       TView<Int, 1, D> block_semirotameric_tableset_offset,
       TView<Int, 1, D> block_is_mirrored,
+      TView<Int, 2, D> movable_blocks,
       bool output_block_pair_energies,
 
       bool compute_derivs
@@ -140,6 +141,7 @@ struct DunbrackPoseScoreDispatch {
       TView<Int, 1, D> res_rotamer_index_to_table_index,
       TView<Int, 1, D> block_semirotameric_tableset_offset,
       TView<Int, 1, D> block_is_mirrored,
+      TView<Int, 2, D> movable_blocks,
       TView<Real, 4, D> dTdV  // n_terms x n_rotamers
       ) -> TPack<Vec<Real, 3>, 2, D>;
 };

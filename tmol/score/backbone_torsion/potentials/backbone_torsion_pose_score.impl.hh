@@ -75,6 +75,7 @@ auto BackboneTorsionPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
     TView<RamaTableParams<Real>, 1, Dev> rama_table_params,
     TView<Real, 4, Dev> omega_tables,
     TView<RamaTableParams<Real>, 1, Dev> omega_table_params,
+    TView<Int, 2, Dev> movable_blocks,
     bool output_block_pair_energies,
     bool compute_derivs)
     -> std::tuple<TPack<Real, 4, Dev>, TPack<Vec<Real, 3>, 2, Dev>> {
@@ -158,6 +159,9 @@ auto BackboneTorsionPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
       // Filter out blocks that are not real
       return;
     }
+    auto block_is_movable = ([=] TMOL_DEVICE_FUNC(int p, int b) {
+      return movable_blocks.size(0) == 0 || movable_blocks[p][b] != 0;
+    });
 
     bool block1_has_upper_neighbor = true;
     int const upper_conn = block_type_upper_conn_ind[block_type1];
@@ -168,6 +172,19 @@ auto BackboneTorsionPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
         pose_stack_inter_block_connections[pose_ind][block_ind1][upper_conn][0];
     if (block_ind2 == -1) {
       // the upper neighbor is not a real residue: skip
+      return;
+    }
+    // phi resolves through block1's lower connection, so this work item can
+    // read atoms from three blocks: the lower neighbor, block1 and block2.
+    int const lower_conn1 = block_type_lower_conn_ind[block_type1];
+    int const block_ind0 =
+        lower_conn1 < 0
+            ? -1
+            : pose_stack_inter_block_connections[pose_ind][block_ind1]
+                                                [lower_conn1][0];
+    if (!block_is_movable(pose_ind, block_ind1)
+        && !block_is_movable(pose_ind, block_ind2)
+        && (block_ind0 == -1 || !block_is_movable(pose_ind, block_ind0))) {
       return;
     }
     int const block_type2 = first_rot_block_type[pose_ind][block_ind2];
@@ -414,6 +431,7 @@ auto BackboneTorsionPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
     TView<Real, 4, Dev> omega_tables,
     TView<RamaTableParams<Real>, 1, Dev> omega_table_params,
 
+    TView<Int, 2, Dev> movable_blocks,
     TView<Real, 4, Dev> dTdV  // nterms x nposes x (len) x (len)
     ) -> TPack<Vec<Real, 3>, 2, Dev> {
   using tmol::score::common::accumulate;
@@ -482,6 +500,9 @@ auto BackboneTorsionPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
       // Filter out blocks that are not real
       return;
     }
+    auto block_is_movable = ([=] TMOL_DEVICE_FUNC(int p, int b) {
+      return movable_blocks.size(0) == 0 || movable_blocks[p][b] != 0;
+    });
 
     bool block1_has_upper_neighbor = true;
     int const upper_conn = block_type_upper_conn_ind[block_type1];
@@ -492,6 +513,19 @@ auto BackboneTorsionPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::backward(
         pose_stack_inter_block_connections[pose_ind][block_ind1][upper_conn][0];
     if (block_ind2 == -1) {
       // the upper neighbor is not a real residue: skip
+      return;
+    }
+    // phi resolves through block1's lower connection, so this work item can
+    // read atoms from three blocks: the lower neighbor, block1 and block2.
+    int const lower_conn1 = block_type_lower_conn_ind[block_type1];
+    int const block_ind0 =
+        lower_conn1 < 0
+            ? -1
+            : pose_stack_inter_block_connections[pose_ind][block_ind1]
+                                                [lower_conn1][0];
+    if (!block_is_movable(pose_ind, block_ind1)
+        && !block_is_movable(pose_ind, block_ind2)
+        && (block_ind0 == -1 || !block_is_movable(pose_ind, block_ind0))) {
       return;
     }
 
